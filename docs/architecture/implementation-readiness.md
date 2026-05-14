@@ -7,7 +7,7 @@
 1. 平台 HTTP 服务命名已经冻结为 .Web、.Domain、.Infrastructure。
 2. Agent 与平台的 v1 协议边界已经冻结到公开接口和最小对象级别。
 3. 后端 CleanDDD 与 netcorepal 的模板参数、目录、事件、事务、仓储和测试约定已经冻结。
-4. 核心术语、知识源生命周期和首批纵切验收口径已经补齐。
+4. 核心术语、IAM 对外授权边界、知识源生命周期和首批纵切验收口径已经补齐。
 5. 首批实现可以从 backend、agents 两个工作面直接开工，无需再等待新的架构决策。
 
 ## 环境前置
@@ -81,19 +81,20 @@
 ### 立即进入实现的范围
 
 1. backend 与 agents 两套 solution 创建。
-2. AppHub registrations、heartbeats、state-snapshots 三个接口。
-3. PlatformGateway 实例列表与实例详情查询接口。
-4. Agent Host 到 AppHub 的 HTTP 客户端与 Docker Connector 空壳。
-5. 统一 OpenTelemetry 接线、health、build info、基础 structured logging。
-6. 以 docs/architecture/first-vertical-slice.md 作为首批纵切验收口径。
-7. 以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 作为后端代码放置、事件转换、事务和测试验收口径。
+2. IAM 用户、角色、权限、外部客户端和授权授予的最小事实骨架。
+3. AppHub registrations、heartbeats、state-snapshots 三个接口。
+4. PlatformGateway 实例列表与实例详情查询接口。
+5. Agent Host 到 AppHub 的 HTTP 客户端与 Docker Connector 空壳。
+6. 统一 OpenTelemetry 接线、health、build info、基础 structured logging。
+7. 以 docs/architecture/first-vertical-slice.md 作为首批纵切验收口径。
+8. 以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 作为后端代码放置、事件转换、事务和测试验收口径。
 
 ### 可以并行但不阻塞开工的事项
 
 1. Ops 到 Agent 的最终命令下发传输机制。
 2. AI Integration 与 Knowledge 的具体代码骨架。
 3. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
-4. 更复杂的 IAM 授权模型。
+4. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、细粒度 ABAC 与第三方应用市场。
 5. 前端视觉系统和组件皮肤细节。
 
 ## 开工验收标准

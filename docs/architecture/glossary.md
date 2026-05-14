@@ -13,12 +13,16 @@
 
 | 术语 | 中文口径 | 归属 | 说明 |
 | --- | --- | --- | --- |
-| Control Plane | 平台控制面 | 平台整体 | 管理身份、组织、应用目录、实例事实、运维动作、审计与 AI 治理的后台能力集合。 |
+| Control Plane | 平台控制面 | 平台整体 | 管理身份、权限、组织、对外授权、应用目录、实例事实、运维动作、审计与 AI 治理的后台能力集合。 |
+| IAM | 身份权限服务 | IAM | 统一管理用户、组织、角色、权限、外部客户端与授权事实，是平台内部鉴权和对外授权的事实源。 |
 | Application Onboarding Plane | 应用接入面 | Agent Host | 通过 Agent Host 与 Connector 发现、观测和控制受管目标的接入能力集合。 |
 | Knowledge and AI Plane | 知识与 AI 面 | Knowledge、AI Integration | 管理知识引入、检索、模型接入、工具治理与人机确认的能力集合。 |
 | Organization | 组织 | IAM | 权限、环境、用户与资源隔离的上层边界。 |
 | Plant | 工厂 | IAM | 组织下的工业现场或生产单位，可用于环境、用户与资产归属。 |
 | Environment | 环境 | IAM | dev、test、prod 或客户现场等运行边界，所有跨环境操作必须显式携带。 |
+| ExternalClient | 外部客户端 | IAM | 需要被底座授权以访问平台 API、MCP 工具或受管应用能力的外部应用或系统，不等同于 AppHub 的 Application。 |
+| AuthorizationGrant | 授权授予 | IAM | 记录某个用户、角色、组织或服务主体对外部客户端、资源范围或能力范围的授权关系。 |
+| PermissionScope | 权限范围 | IAM | 可被授予给用户、角色或外部客户端的资源或能力范围，用于约束跨服务访问。 |
 | PlatformGateway | 平台网关/BFF | PlatformGateway | 面向前端聚合查询、上下文透传和页面级接口，不沉淀领域规则。 |
 
 ## 应用与实例
@@ -89,3 +93,4 @@
 3. `Heartbeat` 与 `StateSnapshot` 是两类契约：前者更新存活投影，后者更新上报状态。
 4. `CapabilityDescriptor` 描述可用能力，不代表平台已经授权某用户或 AI 工具调用该能力。
 5. `KnowledgeSource` 管理知识来源和生命周期，`AI Integration` 只消费检索或工具能力，不维护私有向量索引。
+6. `ExternalClient` 是 IAM 管理的授权对象，不应与 AppHub 管理的 `Application` 混用。

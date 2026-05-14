@@ -15,6 +15,7 @@
 
 - 提供平台身份、组织、工厂、环境、角色与权限事实。
 - 为 Gateway、AppHub、Ops 提供稳定的组织上下文与权限判断基础。
+- 为底座应用和外部应用提供统一授权事实，约束外部客户端可访问的组织、环境、资源和能力范围。
 
 ### 首批聚合建议
 
@@ -24,6 +25,8 @@
 - User
 - Role
 - Membership
+- ExternalClient
+- AuthorizationGrant
 
 ### 首批主表建议
 
@@ -34,6 +37,9 @@
 - iam_roles
 - iam_memberships
 - iam_role_permissions
+- iam_external_clients
+- iam_authorization_grants
+- iam_client_permissions
 
 ### 首批事件建议
 
@@ -43,12 +49,16 @@
 - UserActivated
 - RoleGrantedToUser
 - PermissionSetChanged
+- ExternalClientRegistered
+- ExternalAuthorizationGranted
+- ExternalAuthorizationRevoked
 
 ### 首批不做
 
 1. 复杂 ABAC 规则引擎
 2. 菜单编排细节
 3. 跨组织委派和临时授权流
+4. 完整第三方应用市场、复杂 OAuth/OIDC 协议矩阵和细粒度 consent 页面
 
 ## AppHub 一阶模型
 
@@ -169,4 +179,4 @@
 2. 心跳和状态同步是两类不同契约，不能合并成一个万能上报接口。
 3. AppHub 记录 reported state，Ops 不维护实例事实真相源。
 4. restart 这类动作的成功与否由 Ops 记录，实例最终状态是否恢复由 AppHub 后续状态同步确认。
-5. IAM 首批先服务于组织、环境与权限上下文，不先扩展复杂授权模型。
+5. IAM 首批先服务于组织、环境、权限上下文和外部授权事实基线，不先扩展复杂委派、临时授权或完整第三方应用市场模型。

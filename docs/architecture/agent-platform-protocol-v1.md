@@ -13,6 +13,7 @@
 1. 平台与 Agent 共用的协议契约固定放在 backend/common/Contracts/Nerv.IIP.Contracts.AgentProtocol。
 2. backend/Nerv.IIP.sln 与 agents/Nerv.IIP.AgentHost.sln 共同引用同一个契约项目，禁止在 agents/src/Nerv.IIP.AgentHost.Contracts 中复制一份同构 DTO。
 3. agents/src/Nerv.IIP.AgentHost.Contracts 只承载 Agent 内部抽象，例如 Connector 接口、本地执行上下文、宿主生命周期模型，不承载平台公共协议 DTO。
+4. Agent 或外部客户端调用平台公开接口时，其身份凭证、组织环境范围和能力授权由 IAM 统一管理；本协议只定义业务载荷和公共上下文字段，不复制 IAM 的授权模型。
 
 ## 首批公开接口
 
@@ -192,3 +193,4 @@
 1. 不在本文档中冻结平台到 Agent 的最终命令下发传输机制。
 2. 不在本文档中定义全部动作参数 schema 与错误码表。
 3. 不在本文档中定义 Windows Service Connector 与 HTTP Connector 的特有扩展字段。
+4. 不在本文档中定义外部客户端注册、授权授予、令牌签发或 consent 页面细节，这些属于 IAM 边界。

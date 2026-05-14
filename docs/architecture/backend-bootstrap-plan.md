@@ -36,6 +36,7 @@
 
 - 先起 PlatformGateway、Iam、AppHub、Ops 四个最小 Web 服务。
 - 每个服务只放健康检查、基础配置、OpenTelemetry 接线、最小 HTTP 入口。
+- Iam 最小骨架需要包含用户、角色、权限、外部客户端和授权授予的领域边界，但不要求首批实现完整 OAuth/OIDC 协议矩阵。
 - Application 相关命令、查询和事件处理器先以内聚目录形式放在 Web/Application 下，不默认拆成独立项目。
 
 产物：
