@@ -6,16 +6,20 @@
 
 1. 平台 HTTP 服务命名已经冻结为 .Web、.Domain、.Infrastructure。
 2. Agent 与平台的 v1 协议边界已经冻结到公开接口和最小对象级别。
-3. 首批实现可以从 backend、agents 两个工作面直接开工，无需再等待新的架构决策。
+3. 后端 CleanDDD 与 netcorepal 的模板参数、目录、事件、事务、仓储和测试约定已经冻结。
+4. 核心术语、知识源生命周期和首批纵切验收口径已经补齐。
+5. 首批实现可以从 backend、agents 两个工作面直接开工，无需再等待新的架构决策。
 
 ## 环境前置
 
 根据 netcorepal-cloud-framework 官方入门文档，首批后端实施需要先满足以下条件：
 
-1. 安装 .NET 9 SDK。
+1. 安装 .NET 10 SDK，作为 Nerv-IIP 当前目标框架。
 2. 安装 Docker 环境，用于本地调试、自动化测试和依赖服务联调。
-3. 安装 NetCorePal.Template：dotnet new install NetCorePal.Template。
-4. 平台 HTTP 服务优先使用 netcorepal 的 web 模板作为初始骨架：dotnet new netcorepal-web -n <ServiceName>。
+3. 创建服务时显式生成 `net10.0`；后续等 netcorepal-cloud-framework 明确适配 .NET 11 后，再统一升级到 .NET 11。
+4. 安装 NetCorePal.Template：`dotnet new install NetCorePal.Template`。
+5. 创建服务前运行 `dotnet new netcorepal-web --help` 核对本机模板参数。
+6. 平台领域服务优先使用 netcorepal 的 web 模板作为初始骨架，但命令必须显式指定 `--Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false`，详见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
 
 ## 共享契约落点
 
@@ -81,13 +85,16 @@
 3. PlatformGateway 实例列表与实例详情查询接口。
 4. Agent Host 到 AppHub 的 HTTP 客户端与 Docker Connector 空壳。
 5. 统一 OpenTelemetry 接线、health、build info、基础 structured logging。
+6. 以 docs/architecture/first-vertical-slice.md 作为首批纵切验收口径。
+7. 以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 作为后端代码放置、事件转换、事务和测试验收口径。
 
 ### 可以并行但不阻塞开工的事项
 
 1. Ops 到 Agent 的最终命令下发传输机制。
 2. AI Integration 与 Knowledge 的具体代码骨架。
-3. 更复杂的 IAM 授权模型。
-4. 前端视觉系统和组件皮肤细节。
+3. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
+4. 更复杂的 IAM 授权模型。
+5. 前端视觉系统和组件皮肤细节。
 
 ## 开工验收标准
 

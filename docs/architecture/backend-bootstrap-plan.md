@@ -17,6 +17,8 @@
 - 创建 Directory.Build.props 与 Directory.Packages.props。
 - 建立 services、gateway、common、tests 的基础目录与命名规则。
 - 每个平台 HTTP 服务目录内部默认采用 src 与 tests，并在 src 下采用 .Web、.Domain、.Infrastructure 三项目主线。
+- Iam、AppHub、Ops 优先通过 netcorepal-web 模板创建，但必须显式传入 `--Framework net10.0`、`--Database PostgreSQL`、`--MessageQueue RabbitMQ`、`--UseAspire false`、`--IncludeCopilotInstructions false`、`--UseAdmin false`，具体约定见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
+- PlatformGateway 是薄 BFF 例外，默认只保留 .Web，不为它强行创建空 Domain 与 Infrastructure。
 
 产物：
 
@@ -112,6 +114,8 @@
 
 ### Step 6. 打第一条纵切链路
 
+详细验收口径见 docs/architecture/first-vertical-slice.md。
+
 第一条链路：
 
 - 应用注册 -> 心跳 -> 实例状态同步 -> 控制台可见
@@ -142,6 +146,8 @@
 6. 项目名统一采用点分 PascalCase，例如 Nerv.IIP.AppHub.Web。
 
 ## 建议命令
+
+模板创建命令以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 为准。后端 solution 创建后，基础验证命令为：
 
 ```powershell
 dotnet restore backend/Nerv.IIP.sln
