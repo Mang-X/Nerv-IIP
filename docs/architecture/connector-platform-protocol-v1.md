@@ -1,31 +1,36 @@
-# Agent 与平台协议 V1
+# Connector Host 与平台协议 V1
 
-本文档冻结 Nerv-IIP 首批纵切所需的 Agent 与平台交互基线，目标不是一次性穷尽全部动作协议，而是先把“实例如何进入平台事实模型”这件事压到可直接实现的粒度。
+本文档冻结 Nerv-IIP 首批纵切所需的 Connector Host 与平台交互基线，目标不是一次性穷尽全部动作协议，而是先把“实例如何进入平台事实模型”这件事压到可直接实现的粒度。
 
 ## 目标
 
-1. 为 AppHub、PlatformGateway、Agent Host 和 Docker Connector 提供同一份协议边界。
-2. 避免注册、心跳、状态同步在平台与 Agent 两侧各自长成不同模型。
-3. 在不冻结平台到 Agent 最终下发传输机制的前提下，先冻结 Agent 到平台的公开写接口和最小查询接口。
+1. 为 AppHub、PlatformGateway、Connector Host 和 Docker Connector 提供同一份协议边界。
+2. 避免注册、心跳、状态同步在平台与 Connector Host 两侧各自长成不同模型。
+3. 在不冻结平台到 Connector Host 最终下发传输机制的前提下，先冻结 Connector Host 到平台的公开写接口和最小查询接口。
 
-## 单一事实来源
+## 契约事实来源与独立升级
 
-1. 平台与 Agent 共用的协议契约固定放在 backend/common/Contracts/Nerv.IIP.Contracts.AgentProtocol。
-2. backend/Nerv.IIP.sln 与 agents/Nerv.IIP.AgentHost.sln 共同引用同一个契约项目，禁止在 agents/src/Nerv.IIP.AgentHost.Contracts 中复制一份同构 DTO。
-3. agents/src/Nerv.IIP.AgentHost.Contracts 只承载 Agent 内部抽象，例如 Connector 接口、本地执行上下文、宿主生命周期模型，不承载平台公共协议 DTO。
-4. Agent 或外部客户端调用平台公开接口时，其身份凭证、组织环境范围和能力授权由 IAM 统一管理；本协议只定义业务载荷和公共上下文字段，不复制 IAM 的授权模型。
+1. Connector Protocol 的源码事实来源固定放在 backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol。
+2. Connector Protocol 的客户端封装固定落在 backend/common/Sdk/Nerv.IIP.Sdk.ConnectorProtocol，并依赖 Sdk.Core、Sdk.Auth 与公开协议契约。
+3. 首批单仓实施时，backend/Nerv.IIP.sln 与 connector-hosts/Nerv.IIP.ConnectorHost.sln 可以临时以项目引用方式消费 SDK 与契约源码以减少重复代码。
+4. 发布边界上，Connector Protocol 是 Platform SDK 的一部分，必须表现为版本化契约包、OpenAPI 契约或等价的公开契约；Connector Host 不能依赖主平台服务实现项目。
+5. Connector Host 的主版本必须与主平台主版本对齐；同一主版本内，Connector Host 小版本可以低于主平台小版本。
+6. 主平台必须兼容受支持的 Connector Protocol 小版本；同一主版本内应尽量只做向后兼容新增，引入破坏性变更时必须显式提升协议主版本，并保留迁移窗口。
+7. connector-hosts/src/Nerv.IIP.ConnectorHost.Contracts 只承载 Connector Host 内部抽象，例如 Connector 接口、本地执行上下文、宿主生命周期模型，不承载平台公共协议 DTO。
+8. Connector Host 或外部客户端调用平台公开接口时，其身份凭证、组织环境范围和能力授权由 IAM 统一管理；本协议只定义业务载荷和公共上下文字段，不复制 IAM 的授权模型。
+9. 主平台、Connector Host 和各类 Connector 在同一主版本内允许独立发布和升级；互操作性由 platformVersion、sdkVersion、protocolVersion、capabilityVersion、公开 API 版本和权限范围共同保证。
 
 ## 首批公开接口
 
 ### AppHub.Web
 
-1. POST /api/agent/v1/registrations
+1. POST /api/connectors/v1/registrations
 作用：创建或更新 Application、ApplicationVersion、ManagedNode、ApplicationInstance 的基础事实。
 
-2. POST /api/agent/v1/heartbeats
+2. POST /api/connectors/v1/heartbeats
 作用：仅更新实例存活投影与最近一次可达时间，不直接改写 reported state。
 
-3. POST /api/agent/v1/state-snapshots
+3. POST /api/connectors/v1/state-snapshots
 作用：更新 ApplicationInstance.reportedStatus、状态详情和状态历史；只有状态变化时才发布状态变化事件。
 
 ### PlatformGateway.Web
@@ -39,25 +44,26 @@
 ### Ops.Web
 
 1. POST /api/ops/v1/operation-tasks
-作用：为下一条低风险动作链路预留统一入口；首批脚手架阶段可以先落审计和任务创建，不要求同时冻结平台到 Agent 的下发传输机制。
+作用：为下一条低风险动作链路预留统一入口；首批脚手架阶段可以先落审计和任务创建，不要求同时冻结平台到 Connector Host 的下发传输机制。
 
 2. POST /api/ops/v1/operation-results
-作用：接收 Agent 回传的执行结果，写入 OperationTask、OperationAttempt 与 AuditRecord；实例最终状态仍以后续状态同步驱动 AppHub 更新。
+作用：接收 Connector Host 回传的执行结果，写入 OperationTask、OperationAttempt 与 AuditRecord；实例最终状态仍以后续状态同步驱动 AppHub 更新。
 
 ## 最小契约对象
 
 ### 公共元数据
 
-每个 Agent 到平台的写请求都应带以下公共字段：
+每个 Connector Host 到平台的写请求都应带以下公共字段：
 
 - protocolVersion
+- sdkVersion
 - correlationId
 - occurredAtUtc
 - organizationId
 - environmentId
-- agentId
+- connectorHostId
 
-其中 protocolVersion 首批固定为 1.0。
+其中 protocolVersion 和 sdkVersion 首批固定为 1.0。平台应拒绝未知主版本，并对受支持主版本内的小版本差异做兼容处理或返回可诊断错误。
 
 ### ApplicationRegistration
 
@@ -102,14 +108,14 @@
 - instanceKey
 - heartbeatAtUtc
 - reachable
-- agentStartedAtUtc
+- connectorHostStartedAtUtc
 - latencyMs
 - metadata
 
 约束：
 
 1. 心跳只证明存活，不承载 reported status。
-2. 心跳超时后的不可达标记由 AppHub 自己计算，不要求 Agent 显式上报 unreachable 终态。
+2. 心跳超时后的不可达标记由 AppHub 自己计算，不要求 Connector Host 显式上报 unreachable 终态。
 
 ### InstanceStateSnapshot
 
@@ -185,12 +191,12 @@
 
 1. 立即实现 AppHub 的 registrations、heartbeats、state-snapshots 三个写接口。
 2. 立即实现 PlatformGateway 的实例列表与实例详情两个查询接口。
-3. 立即实现 Agent Host 到 AppHub 的注册、心跳、状态同步 HTTP 客户端。
+3. 立即实现 Connector Host 通过 Nerv.IIP.Sdk.ConnectorProtocol 到 AppHub 的注册、心跳、状态同步客户端。
 4. Ops 的 operation-tasks 与 operation-results 允许先落 API 骨架和审计模型，不要求在第一批提交中完成完整动作派发。
 
 ## 非目标
 
-1. 不在本文档中冻结平台到 Agent 的最终命令下发传输机制。
+1. 不在本文档中冻结平台到 Connector Host 的最终命令下发传输机制。
 2. 不在本文档中定义全部动作参数 schema 与错误码表。
 3. 不在本文档中定义 Windows Service Connector 与 HTTP Connector 的特有扩展字段。
 4. 不在本文档中定义外部客户端注册、授权授予、令牌签发或 consent 页面细节，这些属于 IAM 边界。

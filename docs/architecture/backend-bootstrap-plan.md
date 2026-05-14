@@ -6,8 +6,8 @@
 
 1. 先建工程底座，再建服务骨架。
 2. 先冻结契约和边界，再做动作闭环。
-3. 先跑 Agent 与 Docker Connector，再扩展更多宿主环境。
-4. 先验证应用注册、心跳、状态同步与一个低风险动作，不先追全量运维能力。
+3. 先跑 Connector Host 与 Docker Connector，再扩展更多宿主环境。
+4. 第一迭代先验证应用注册、心跳、状态同步与 Gateway 可见；低风险动作闭环进入第二迭代。
 
 ## 实施顺序
 
@@ -17,7 +17,7 @@
 - 创建 Directory.Build.props 与 Directory.Packages.props。
 - 建立 services、gateway、common、tests 的基础目录与命名规则。
 - 每个平台 HTTP 服务目录内部默认采用 src 与 tests，并在 src 下采用 .Web、.Domain、.Infrastructure 三项目主线。
-- Iam、AppHub、Ops 优先通过 netcorepal-web 模板创建，但必须显式传入 `--Framework net10.0`、`--Database PostgreSQL`、`--MessageQueue RabbitMQ`、`--UseAspire false`、`--IncludeCopilotInstructions false`、`--UseAdmin false`，具体约定见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
+- Iam、FileStorage、AppHub、Ops 优先通过 netcorepal-web 模板创建，但必须显式传入 `--Framework net10.0`、`--Database PostgreSQL`、`--MessageQueue RabbitMQ`、`--UseAspire false`、`--IncludeCopilotInstructions false`、`--UseAdmin false`，具体约定见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
 - PlatformGateway 是薄 BFF 例外，默认只保留 .Web，不为它强行创建空 Domain 与 Infrastructure。
 
 产物：
@@ -25,7 +25,7 @@
 - backend/Nerv.IIP.sln
 - backend/Directory.Build.props
 - backend/Directory.Packages.props
-- backend/common/Contracts、Caching、Observability、Testing 四个最小共享库
+- backend/common/Contracts、Sdk、Caching、Observability、Testing 五类最小共享库
 
 验收：
 
@@ -34,9 +34,10 @@
 
 ### Step 2. 起平台核心服务骨架
 
-- 先起 PlatformGateway、Iam、AppHub、Ops 四个最小 Web 服务。
+- 先起 PlatformGateway、Iam、FileStorage、AppHub、Ops 五个最小 Web 服务。
 - 每个服务只放健康检查、基础配置、OpenTelemetry 接线、最小 HTTP 入口。
-- Iam 最小骨架需要包含用户、角色、权限、外部客户端和授权授予的领域边界，但不要求首批实现完整 OAuth/OIDC 协议矩阵。
+- Iam 最小骨架需要包含用户、角色、权限、会话、外部客户端和授权授予的领域边界；认证基线以 docs/architecture/iam-authentication-baseline.md 为准，但不要求首批实现完整 OAuth/OIDC 协议矩阵。
+- FileStorage 最小骨架需要包含文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和对象存储适配边界；文件存储基线以 docs/architecture/file-storage-baseline.md 为准，但不要求首批实现复杂网盘、预览或转码能力。
 - Application 相关命令、查询和事件处理器先以内聚目录形式放在 Web/Application 下，不默认拆成独立项目。
 
 产物：
@@ -47,6 +48,10 @@
 - backend/services/Iam/src/Nerv.IIP.Iam.Domain
 - backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure
 - backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests
+- backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web
+- backend/services/FileStorage/src/Nerv.IIP.FileStorage.Domain
+- backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure
+- backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests
 - backend/services/AppHub/src/Nerv.IIP.AppHub.Web
 - backend/services/AppHub/src/Nerv.IIP.AppHub.Domain
 - backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure
@@ -58,7 +63,7 @@
 
 验收：
 
-- 四个 Web 服务都能启动
+- 五个 Web 服务都能启动
 - 至少暴露 health 与 build info 端点
 - 输出统一 traces、metrics 和 structured logs
 
@@ -66,7 +71,8 @@
 
 - 定义注册、心跳、能力声明、实例状态同步四类契约。
 - 固化版本号、幂等键与错误结果模型。
-- 共享契约项目固定放在 backend/common/Contracts/Nerv.IIP.Contracts.AgentProtocol，并由 backend 与 agents 两套 solution 共同引用。
+- Connector Protocol 源码事实来源固定放在 backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol；首批单仓实施可由 backend 与 connector-hosts 两套 solution 共同引用，发布边界必须按版本化公开契约处理。
+- Connector Host 调用平台的客户端能力优先落到 backend/common/Sdk/Nerv.IIP.Sdk.ConnectorProtocol，并依赖 Sdk.Core 与 Sdk.Auth，不在 Connector Host 内部重复拼接平台 API。
 
 推荐首批契约对象：
 
@@ -79,24 +85,25 @@
 
 验收：
 
-- 平台与 Agent 共享同一份契约定义
+- 平台与 Connector Host 使用同一份版本化契约定义
 - 至少完成一轮端到端序列化与反序列化测试
 
-### Step 4. 起 Agent Host 独立工程与首个 Connector
+### Step 4. 起 Connector Host 独立工程与首个 Connector
 
-- 在 agents 根目录下建立独立 solution。
-- 实现 Agent Host 最小宿主。
+- 在 connector-hosts 根目录下建立独立 solution。
+- 实现 Connector Host 最小宿主。
 - 首个 Connector 优先做 Docker Connector。
-- Agent Host 属于独立后台宿主，不适用平台 HTTP 服务的 .Web、.Domain、.Infrastructure 命名约束。
+- Connector Host 属于独立后台宿主，不适用平台 HTTP 服务的 .Web、.Domain、.Infrastructure 命名约束。
+- Connector Host 只通过 Platform SDK、Connector Protocol、公开 HTTP API 和 IAM 授权调用平台，不引用平台服务实现项目。
 
 产物：
 
-- agents/Nerv.IIP.AgentHost.sln
-- agents/src/Nerv.IIP.AgentHost.Host
-- agents/src/Nerv.IIP.AgentHost.Application
-- agents/src/Nerv.IIP.AgentHost.Contracts
-- agents/src/Nerv.IIP.AgentHost.Connectors.Abstractions
-- agents/src/Nerv.IIP.AgentHost.Connectors.Docker
+- connector-hosts/Nerv.IIP.ConnectorHost.sln
+- connector-hosts/src/Nerv.IIP.ConnectorHost.Host
+- connector-hosts/src/Nerv.IIP.ConnectorHost.Application
+- connector-hosts/src/Nerv.IIP.ConnectorHost.Contracts
+- connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Abstractions
+- connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Docker
 
 验收：
 
@@ -106,29 +113,29 @@
 ### Step 5. 落基础设施开发编排
 
 - 提供 PostgreSQL、Redis、RabbitMQ、MinIO、Qdrant、OpenTelemetry 的本地开发编排。
-- 让 Gateway、AppHub、Ops、Agent Host 在同一本地开发编排中联调。
+- 让 Gateway、Iam、FileStorage、AppHub、Ops、Connector Host 在同一本地开发编排中联调。
 
 验收：
 
 - 本地依赖服务可一键拉起
-- 平台服务与 Agent Host 可共同运行并互通
+- 平台服务与 Connector Host 可共同运行并互通
 
 ### Step 6. 打第一条纵切链路
 
 详细验收口径见 docs/architecture/first-vertical-slice.md。
 
-第一条链路：
+第一迭代链路：
 
 - 应用注册 -> 心跳 -> 实例状态同步 -> 控制台可见
 
-第二条链路：
+第二迭代链路：
 
 - 重启动作 -> 审计记录 -> 结果回传
 
-验收：
+第一迭代验收：
 
 - 控制台或 Gateway 可查询最新实例事实
-- 至少一个低风险动作具备任务记录、执行、审计与结果回传
+- Connector Host、AppHub、Gateway 的日志和追踪能通过 correlationId 串联
 
 ## 并行关系
 
@@ -143,7 +150,7 @@
 2. Domain 与 Infrastructure 保持独立项目。
 3. Application 默认作为 .Web 项目内部目录，而不是默认独立项目。
 4. Contracts 仅在确有跨进程共享契约时按需拆出，不作为默认层。
-5. Agent Host 仍可保留 .Host 命名，因为它不是平台 HTTP Web 服务。
+5. Connector Host 仍可保留 .Host 命名，因为它不是平台 HTTP Web 服务。
 6. 项目名统一采用点分 PascalCase，例如 Nerv.IIP.AppHub.Web。
 
 ## 建议命令
@@ -153,14 +160,14 @@
 ```powershell
 dotnet restore backend/Nerv.IIP.sln
 dotnet build backend/Nerv.IIP.sln
-dotnet restore agents/Nerv.IIP.AgentHost.sln
-dotnet build agents/Nerv.IIP.AgentHost.sln
+dotnet restore connector-hosts/Nerv.IIP.ConnectorHost.sln
+dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 ```
 
 ## 冻结结论
 
 1. 不先做 Knowledge 实现，先做平台控制面闭环。
-2. 不先做复杂 AI agent 流程，先做 AI Integration 的治理边界。
+2. 不先做复杂 AI 自主流程，先做 AI Integration 的治理边界。
 3. 不先做多 Connector，先用 Docker Connector 跑通协议。
-4. 不先做所有运维动作，先做注册、状态同步和一个低风险动作。
+4. 不先做所有运维动作，第一迭代只做注册、心跳、状态同步和 Gateway 可见；低风险动作作为第二迭代闭环。
 5. 不先细抠全部领域模型，先用最短纵切验证服务边界是否合理。

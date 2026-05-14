@@ -1,23 +1,45 @@
 # 平台上下文地图
 
-本文档定义 Nerv-IIP 平台的核心上下文、服务边界与交互方式，用于约束后端服务划分、前端聚合接口和 Agent 协议设计。
+本文档定义 Nerv-IIP 平台的核心上下文、服务边界与交互方式，用于约束后端服务划分、前端聚合接口和 Connector Host 协议设计。
 
 ## 总体视角
 
 平台由三层上下文构成：
 
-1. 平台控制面：负责身份、权限、组织、对外授权、应用目录、实例事实、运维动作、审计、AI 治理。
-2. 应用接入面：负责 Agent Host、Connector、本地资源探测、状态上报与动作执行。
+1. 平台控制面：负责身份、权限、组织、对外授权、文件存储、应用目录、实例事实、运维动作、审计、AI 治理。
+2. 应用接入面：负责 Connector Host、Connector、本地资源探测、状态上报与动作执行。
 3. 知识与 AI 面：负责知识引入与检索、MCP 工具、模型接入与执行治理。
+
+## 主平台独立性
+
+1. 主平台只拥有通用控制面能力，不拥有行业组织模型、具体业务应用模型或 Connector 实现细节。
+2. 行业扩展、示例应用、Connector Host 和具体 Connector 都是主平台之外的独立演进单元。
+3. 主平台通过 Platform SDK 向应用、Connector Host 和扩展模块提供契约、认证、授权上下文、客户端和扩展点能力。
+4. 主平台与外部演进单元只通过 Platform SDK、版本化公开契约、公开 API、集成事件和 IAM 授权关系协作。
+5. 主平台与应用、Connector Host、行业扩展采用主版本对齐策略：例如主平台 1.x 只承诺兼容 1.x 应用和 1.x SDK。
+6. 同一主版本内，小版本应用可以低于主平台小版本；主平台 1.5 应尽量兼容基于 1.0 到 1.5 SDK 构建的应用。
+7. 同一主版本内应避免破坏性 SDK、API、事件或协议变更；确需破坏性变更时必须提升主版本，并提供迁移窗口。
+8. Connector Host、Connector 或行业扩展不得通过引用主平台内部 Domain、Infrastructure、数据库表或私有接口来获得能力。
+9. Platform SDK 只提供模块化客户端能力，不拥有服务发现事实、权限事实、审计事实或文件事实。
 
 ## 服务上下文
 
 ### IAM
 
-- 负责用户、角色、权限、组织、工厂、环境、访问策略和外部应用授权关系。
+- 负责用户、角色、权限、组织、环境、访问策略和外部应用授权关系。
 - 提供统一身份、权限与授权事实。
-- 是平台内部访问控制、底座应用身份权限管理和对外授权的事实源。
+- 是平台内部访问控制、平台应用身份权限管理和对外授权的事实源。
 - 不承载应用注册、实例状态或运维动作。
+- 不内置工厂、产线、设备等行业组织模型；这些概念应由后续领域扩展、应用扩展或插件式业务模块承载。
+
+### File Storage
+
+- 负责文件元数据、上传会话、下载授权、对象存储 key、保留策略和归档状态。
+- 是主平台关于“文件如何被保存、访问和治理”的事实源。
+- 二进制内容默认落到 MinIO 或等价对象存储，但对象存储内部 key 不作为公开业务契约。
+- tus、S3 multipart 和平台中转上传通过 Upload Provider 抽象接入，不成为业务服务依赖的领域模型。
+- filePurpose、大小限制、content type allowlist、scanStatus、保留策略和配额口径由 File Storage 统一治理。
+- 不解释文件的业务语义；KnowledgeSource、OperationTask、Application 等业务对象只通过 fileId 或 FileReference 关联文件。
 
 ### AppHub
 
@@ -46,26 +68,45 @@
 - 负责前端聚合查询、上下文透传、页面级 BFF 接口。
 - 不沉淀领域规则，不直接依赖任何服务的 Domain 或 Infrastructure。
 
-### Agent Host
+### Connector Host
 
 - 负责本地资源发现、能力探测、命令执行、日志采集、备份入口与本地状态上报。
-- Connector 是 Agent Host 的适配层，而不是平台服务的一部分。
+- Connector 是 Connector Host 的适配层，而不是平台服务的一部分。
 
 ## 边界关系
+
+### Platform SDK 与服务边界
+
+1. Platform SDK 是公开客户端能力集合，不是新的运行时中心。
+2. `Sdk.Auth` 可以处理 token、client credential 和认证头，但最终授权判断和会话事实仍归 IAM。
+3. `Sdk.ConnectorProtocol` 可以发送注册、心跳和状态快照，但本地资源发现仍归 Connector Host 与 Connector，应用与实例事实仍归 AppHub。
+4. `Sdk.FileStorage` 可以创建上传会话、获取上传指令和下载授权，但文件元数据与对象存储定位事实仍归 File Storage。
+5. `Sdk.Ops` 可以创建任务、查询任务和回传动作结果，但 OperationTask、OperationAttempt 与 AuditRecord 仍归 Ops。
+6. `Sdk.Observability` 可以提供 correlationId、trace context 和标准日志字段，但不替代平台日志采集、保留策略或审计落库。
+7. SDK 模块之间只通过公开 DTO 和 `Sdk.Core` 协作，不通过服务端内部项目、数据库表或私有接口协作。
 
 ### IAM 与其它服务及外部应用
 
 1. IAM 拥有用户、角色、权限、组织、环境、外部客户端和授权授予事实。
 2. AppHub、Ops、Knowledge、AI Integration 和 Gateway 只能消费 IAM 的身份、权限和授权判断，不各自维护平行权限模型。
-3. 底座应用对外授权时，应显式绑定组织、环境、资源范围、能力范围和有效期；外部应用获得的是受约束访问能力，不获得跨服务内部事实所有权。
+3. 平台应用对外授权时，应显式绑定组织、环境、资源范围、能力范围和有效期；外部应用获得的是受约束访问能力，不获得跨服务内部事实所有权。
 4. 对外授权、工具授权和运维动作审批是不同概念：IAM 提供身份与权限授予事实，AI Integration 负责工具治理，Ops 负责动作任务与审计闭环。
+
+### File Storage 与其它服务
+
+1. File Storage 拥有文件元数据、上传下载授权、对象存储 key 和保留策略。
+2. Knowledge、Ops、AppHub 和行业扩展只能通过 fileId、FileReference、File Storage API 或 Platform SDK 使用文件能力。
+3. Knowledge 拥有知识源、解析、分块、嵌入和索引事实；File Storage 只管理原始文件和派生附件的存储治理。
+4. Ops 拥有动作任务和审计事实；File Storage 只保存日志包、诊断包、备份包或审计附件的文件事实。
+5. UI、外部应用和 Connector Host 不直接访问 MinIO；需要上传或下载时必须由 File Storage 发放受控入口或短期授权。
+6. UI、外部应用和 Connector Host 可以根据 UploadInstructions 使用 tus 或 S3 multipart 上传，但不能绕过 UploadSession 完成校验与提交。
 
 ### AppHub 与 Ops
 
 1. AppHub 拥有应用、版本、节点、能力、实例、存活和状态事实。
 2. Ops 拥有动作任务、执行结果、审计与审批挂点。
 3. restart 一类动作由 Ops 创建任务并记录结果。
-4. 实例最终状态是否变化，由 Agent 后续状态同步驱动 AppHub 更新，而不是由 Ops 直接改写。
+4. 实例最终状态是否变化，由 Connector Host 后续状态同步驱动 AppHub 更新，而不是由 Ops 直接改写。
 
 ### AI Integration 与 Knowledge
 
@@ -96,22 +137,22 @@
 
 ### 应用注册到实例可见
 
-1. Agent 发送注册契约。
+1. Connector Host 发送注册契约。
 2. AppHub 创建或更新 Application、ApplicationVersion、ManagedNode、ApplicationInstance。
 3. Gateway 查询到新增实例事实。
 
 ### 心跳与状态同步
 
-1. Agent 上报心跳。
+1. Connector Host 上报心跳。
 2. AppHub 更新实例存活投影。
-3. Agent 上报实例状态。
+3. Connector Host 上报实例状态。
 4. AppHub 更新 ApplicationInstance.reportedStatus 与状态历史。
 
 ### 低风险动作闭环
 
 1. 控制台或 Gateway 发起重启动作。
 2. Ops 创建 OperationTask 与 AuditRecord。
-3. Agent 执行动作并回传结果。
+3. Connector Host 执行动作并回传结果。
 4. Ops 记录 OperationCompleted 或 OperationFailed。
 5. AppHub 通过后续状态同步确认最终实例状态。
 
@@ -122,3 +163,6 @@
 3. Connector 直接依赖 AppHub、Ops、IAM 的内部实现。
 4. AI Integration 直接维护知识索引。
 5. Ops 成为实例状态真相源。
+6. 业务服务、前端、外部应用或 Connector Host 绕过 File Storage 直接使用对象存储 key 作为长期业务契约。
+7. Platform SDK 反向引用主平台服务 Domain、Infrastructure、数据库表或私有接口。
+8. Platform SDK 直接写入最终 AuditRecord、权限授予、会话撤销或应用实例事实。

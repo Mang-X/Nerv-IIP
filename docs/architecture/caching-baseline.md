@@ -23,15 +23,17 @@
 1. PlatformGateway 的实例列表、实例详情和页面级聚合查询。
 2. AppHub 的应用目录、能力清单和只读投影。
 3. IAM 的权限码、角色权限快照、外部客户端只读信息和组织环境上下文。
-4. 配置字典、枚举映射、低频变化的系统元数据。
-5. Knowledge 检索中的来源元数据、权限过滤辅助数据和引用回显元数据。
+4. FileStorage 的只读文件元数据和短 TTL 下载授权校验辅助数据。
+5. 配置字典、枚举映射、低频变化的系统元数据。
+6. Knowledge 检索中的来源元数据、权限过滤辅助数据和引用回显元数据。
 
 暂不用于：
 
 1. OperationTask、OperationAttempt、AuditRecord 的真实状态。
 2. refresh token、session revoke list、一次性凭证和高风险授权结果的唯一存储。
 3. ApplicationInstance 的最终 reported state 和 state history 真相源。
-4. 需要严格读己之写语义的命令侧校验。
+4. StoredFile、FileVersion、UploadSession、DownloadGrant 的唯一事实来源。
+5. 需要严格读己之写语义的命令侧校验。
 
 ## 配置基线
 

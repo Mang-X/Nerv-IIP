@@ -37,7 +37,7 @@
 ## 模型接入原则
 
 1. 平台不提供内置模型托管。
-2. 模型调用统一通过外部 API 配置或外部 Agent 客户端接入。
+2. 模型调用统一通过外部 API 配置或模型提供方适配器接入，不通过 Connector Host 接入。
 3. 平台内部凡是需要直接调用模型的场景，默认通过 Microsoft.Extensions.AI 抽象接入。
 4. 平台不把具体模型 SDK 散落到各个服务中。
 
@@ -81,7 +81,7 @@
 1. Microsoft.Extensions.AI：默认统一 AI 调用抽象。
 2. Microsoft.Extensions.DataIngestion：默认文档引入主路径。
 3. Microsoft.Extensions.VectorData：默认向量索引抽象。
-4. Microsoft Agent Framework：仅在确有长流程、多代理或复杂人机协同场景时评估引入。
+4. 复杂 AI 自主工作流框架：仅在确有长流程、多智能体或复杂人机协同场景时评估引入。
 
 ## 当前冻结结论
 

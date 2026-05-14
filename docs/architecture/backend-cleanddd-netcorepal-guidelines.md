@@ -1,6 +1,6 @@
 # 后端 CleanDDD 与 netcorepal 落地规范
 
-本文档定义 Nerv-IIP 后端平台服务在 CleanDDD 与 netcorepal-cloud-framework 上的落地约定。它承接 ADR 0001 的 solution 边界、ADR 0003 的基础设施基线，以及首批纵切中的 AppHub、PlatformGateway、Ops、Agent Protocol 实现要求。
+本文档定义 Nerv-IIP 后端平台服务在 CleanDDD 与 netcorepal-cloud-framework 上的落地约定。它承接 ADR 0001 的 solution 边界、ADR 0003 的基础设施基线，以及首批纵切中的 AppHub、PlatformGateway、Ops、Connector Protocol 实现要求。
 
 参考来源：
 
@@ -14,9 +14,9 @@
 
 ## 适用范围
 
-1. 本文档适用于 backend 下的平台 HTTP 服务：Iam、AppHub、Ops、AI Integration、Knowledge。
+1. 本文档适用于 backend 下的平台 HTTP 服务：Iam、FileStorage、AppHub、Ops、AI Integration、Knowledge。
 2. PlatformGateway 只采用其中的 Web、Endpoint、响应、观测与契约消费约定；默认不强制创建 Domain 与 Infrastructure。
-3. Agent Host 不适用平台 HTTP 服务的三项目约定，仍按 agents 独立宿主模型实现。
+3. Connector Host 不适用平台 HTTP 服务的三项目约定，仍按 connector-hosts 独立宿主模型实现。
 4. 当前仓库尚未创建业务代码，本文档用于约束下一步 scaffold 和首批纵切代码生成。
 
 ## 模板使用基线
@@ -52,7 +52,7 @@ dotnet new netcorepal-web -n Nerv.IIP.Ops -o backend/services/Ops --Framework ne
 2. 当前项目目标框架固定显式传 `net10.0`，除非 ADR 更新。
 3. `--Database PostgreSQL` 与 `--MessageQueue RabbitMQ` 必须显式传入，避免落到模板默认 MySQL 或其他消息队列。
 4. `--UseAdmin false` 必须显式传入，避免把模板内置 Admin、RBAC 或前端后台与 Nerv-IIP 自有 IAM、console 规划混在一起。
-5. `--IncludeCopilotInstructions false` 保持 agent 指南由仓库根统一维护，不让每个服务生成一份局部指令。
+5. `--IncludeCopilotInstructions false` 保持协作指引由仓库根统一维护，不让每个服务生成一份局部指令。
 6. `--UseAspire false` 是首批每个服务的默认值；若后续决定引入统一 AppHost 或 Aspire Dashboard，应在 infra 或单独 ADR 中冻结，不让每个服务各自生成一套编排入口。
 
 ## .NET 版本策略
@@ -263,4 +263,4 @@ dotnet test backend/Nerv.IIP.sln
 7. 让集成事件携带聚合实例、数据库实体或敏感字段。
 8. 在 common 中创建 SharedKernel、Utils、Helpers 一类无边界聚合库。
 9. PlatformGateway 直接引用服务 Domain 或 Infrastructure。
-10. Agent Host 引用平台服务实现项目。
+10. Connector Host 引用平台服务实现项目。

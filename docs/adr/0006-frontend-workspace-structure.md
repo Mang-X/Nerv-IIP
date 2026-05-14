@@ -1,6 +1,6 @@
 # ADR 0006: 前端工作区与目录结构
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-05-13
 
 ## Context

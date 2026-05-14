@@ -13,7 +13,7 @@
 
 | 对象 | 职责 | 首批说明 |
 | --- | --- | --- |
-| KnowledgeSource | 管理知识来源、权限边界、同步策略与生命周期状态 | 可以表示对象存储路径、上传文件集合或后续外部系统来源。 |
+| KnowledgeSource | 管理知识来源、权限边界、同步策略与生命周期状态 | 可以表示 File Storage 文件集合、受控外部来源或后续外部系统来源。 |
 | SourceDocument | 表示知识源下的单个原始文档 | 保存来源标识、版本指纹、解析状态和引用元数据。 |
 | IngestionJob | 承载首次导入、增量同步、重建索引、删除同步等异步任务 | 需要记录触发原因、开始结束时间、失败原因和重试信息。 |
 | DocumentChunk | 文档抽取和分块后的检索单元 | 需要保留源文档引用、位置、权限标签和内容指纹。 |
@@ -84,8 +84,8 @@
 1. KnowledgeSource、SourceDocument 和 DocumentChunk 都必须携带组织与环境上下文。
 2. 检索请求必须经过权限过滤后再返回内容片段。
 3. 检索结果必须返回 RetrievalCitation，不能只返回脱离来源的纯文本。
-4. AI Integration、Gateway 和平台服务只能消费 Knowledge 的检索接口，不应绕过权限过滤直接访问 Qdrant 或对象存储。
-5. 引用中不应暴露内部存储密钥、临时访问凭证或未授权路径。
+4. AI Integration、Gateway 和平台服务只能消费 Knowledge 的检索接口，不应绕过权限过滤直接访问 Qdrant、File Storage 或对象存储。
+5. Knowledge 引用原始文件时应使用 File Storage 的 fileId 或短期下载授权，不应暴露内部存储密钥、objectKey、临时访问凭证或未授权路径。
 
 ## 失败与重试
 

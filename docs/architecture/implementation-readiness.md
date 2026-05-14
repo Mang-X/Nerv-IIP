@@ -5,10 +5,10 @@
 ## 当前结论
 
 1. 平台 HTTP 服务命名已经冻结为 .Web、.Domain、.Infrastructure。
-2. Agent 与平台的 v1 协议边界已经冻结到公开接口和最小对象级别。
+2. Connector Host 与平台的 v1 协议边界已经冻结到公开接口和最小对象级别。
 3. 后端 CleanDDD 与 netcorepal 的模板参数、目录、事件、事务、仓储和测试约定已经冻结。
-4. 核心术语、IAM 对外授权边界、知识源生命周期和首批纵切验收口径已经补齐。
-5. 首批实现可以从 backend、agents 两个工作面直接开工，无需再等待新的架构决策。
+4. 核心术语、Platform SDK 模块边界、IAM 对外授权边界、文件存储基线、知识源生命周期和首批纵切验收口径已经补齐。
+5. 首批实现可以从 backend、connector-hosts 两个工作面直接开工，无需再等待新的架构决策。
 
 ## 环境前置
 
@@ -23,19 +23,26 @@
 
 ## 共享契约落点
 
-1. 平台与 Agent 公共协议契约固定放在 backend/common/Contracts/Nerv.IIP.Contracts.AgentProtocol。
-2. backend/Nerv.IIP.sln 与 agents/Nerv.IIP.AgentHost.sln 共同引用该项目，确保注册、心跳、状态同步、动作结果 DTO 只有一份代码实现。
-3. agents/src/Nerv.IIP.AgentHost.Contracts 只保留 Agent 内部抽象，不复制公共协议 DTO。
+1. 平台与 Connector Host 公共协议契约的源码事实来源固定放在 backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol。
+2. 首批单仓实施时，backend/Nerv.IIP.sln 与 connector-hosts/Nerv.IIP.ConnectorHost.sln 可以共同引用该项目，确保注册、心跳、状态同步、动作结果 DTO 只有一份代码实现。
+3. Platform SDK 的首批源码落点固定放在 backend/common/Sdk，先按 Core、Auth、ConnectorProtocol、FileStorage 四个最小模块拆分。
+4. 发布边界上，Connector Host 只依赖 Platform SDK、版本化公开契约包、OpenAPI 契约或等价契约，不依赖主平台源码或服务实现项目。
+5. Connector Host 与主平台主版本必须对齐；同一主版本内，Connector Host 小版本可以低于主平台小版本。
+6. connector-hosts/src/Nerv.IIP.ConnectorHost.Contracts 只保留 Connector Host 内部抽象，不复制公共协议 DTO。
 
 ## 首批工程创建顺序
 
 ### Wave 1. 底座
 
 1. backend/Nerv.IIP.sln
-2. backend/common/Contracts/Nerv.IIP.Contracts.AgentProtocol
-3. backend/common/Caching/Nerv.IIP.Caching
-4. backend/common/Observability/Nerv.IIP.Observability
-5. backend/common/Testing/Nerv.IIP.Testing
+2. backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol
+3. backend/common/Sdk/Nerv.IIP.Sdk.Core
+4. backend/common/Sdk/Nerv.IIP.Sdk.Auth
+5. backend/common/Sdk/Nerv.IIP.Sdk.ConnectorProtocol
+6. backend/common/Sdk/Nerv.IIP.Sdk.FileStorage
+7. backend/common/Caching/Nerv.IIP.Caching
+8. backend/common/Observability/Nerv.IIP.Observability
+9. backend/common/Testing/Nerv.IIP.Testing
 
 ### Wave 2. 平台服务骨架
 
@@ -46,18 +53,21 @@
 5. backend/services/Iam/src/Nerv.IIP.Iam.Web
 6. backend/services/Iam/src/Nerv.IIP.Iam.Domain
 7. backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure
-8. backend/services/Ops/src/Nerv.IIP.Ops.Web
-9. backend/services/Ops/src/Nerv.IIP.Ops.Domain
-10. backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure
+8. backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web
+9. backend/services/FileStorage/src/Nerv.IIP.FileStorage.Domain
+10. backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure
+11. backend/services/Ops/src/Nerv.IIP.Ops.Web
+12. backend/services/Ops/src/Nerv.IIP.Ops.Domain
+13. backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure
 
-### Wave 3. Agent 工程骨架
+### Wave 3. Connector Host 工程骨架
 
-1. agents/Nerv.IIP.AgentHost.sln
-2. agents/src/Nerv.IIP.AgentHost.Host
-3. agents/src/Nerv.IIP.AgentHost.Application
-4. agents/src/Nerv.IIP.AgentHost.Contracts
-5. agents/src/Nerv.IIP.AgentHost.Connectors.Abstractions
-6. agents/src/Nerv.IIP.AgentHost.Connectors.Docker
+1. connector-hosts/Nerv.IIP.ConnectorHost.sln
+2. connector-hosts/src/Nerv.IIP.ConnectorHost.Host
+3. connector-hosts/src/Nerv.IIP.ConnectorHost.Application
+4. connector-hosts/src/Nerv.IIP.ConnectorHost.Contracts
+5. connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Abstractions
+6. connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Docker
 
 ### Wave 4. 前端骨架
 
@@ -75,29 +85,33 @@
 2. *.Domain 不引用 *.Infrastructure，也不引用其它服务的 Domain。
 3. *.Infrastructure 可以引用同服务的 *.Domain 和 backend/common 下的窄共享库。
 4. PlatformGateway.Web 不引用任何服务的 Domain 或 Infrastructure，只通过稳定契约、OpenAPI 客户端或明确的查询接口聚合数据。
-5. AgentHost.Application 可以引用 Nerv.IIP.Contracts.AgentProtocol 和 AgentHost 内部抽象，但不直接引用平台服务实现项目。
+5. ConnectorHost.Application 可以引用 Nerv.IIP.Sdk.Core、Nerv.IIP.Sdk.Auth、Nerv.IIP.Sdk.ConnectorProtocol、Nerv.IIP.Contracts.ConnectorProtocol 和 Connector Host 内部抽象，但不直接引用平台服务实现项目；发布后以 Platform SDK、版本化契约包或等价契约作为依赖边界。
+6. SDK 项目只能引用公开契约、Sdk.Core、Sdk.Auth 或其它明确允许的 SDK 模块，不能引用服务 Web、Domain、Infrastructure 或数据库模型。
 
 ## 开工边界
 
 ### 立即进入实现的范围
 
-1. backend 与 agents 两套 solution 创建。
-2. IAM 用户、角色、权限、外部客户端和授权授予的最小事实骨架。
-3. AppHub registrations、heartbeats、state-snapshots 三个接口。
-4. PlatformGateway 实例列表与实例详情查询接口。
-5. Agent Host 到 AppHub 的 HTTP 客户端与 Docker Connector 空壳。
-6. 统一 OpenTelemetry 接线、health、build info、基础 structured logging。
-7. 统一 FusionCache 接线、Redis L2/backplane、缓存键命名和首批读侧缓存策略。
-8. 以 docs/architecture/first-vertical-slice.md 作为首批纵切验收口径。
-9. 以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 作为后端代码放置、事件转换、事务和测试验收口径。
+1. backend 与 connector-hosts 两套 solution 创建。
+2. Platform SDK 的 Core、Auth、ConnectorProtocol、FileStorage 最小项目骨架。
+3. IAM 用户、角色、权限、会话、外部客户端、Connector Host 凭证和授权授予的最小事实骨架。
+4. FileStorage 文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和 MinIO/object storage 适配的最小服务骨架。
+5. AppHub registrations、heartbeats、state-snapshots 三个接口。
+6. PlatformGateway 实例列表与实例详情查询接口。
+7. Connector Host 通过 Nerv.IIP.Sdk.ConnectorProtocol 到 AppHub 的客户端与 Docker Connector 空壳。
+8. 统一 OpenTelemetry 接线、health、build info、基础 structured logging。
+9. 统一 FusionCache 接线、Redis L2/backplane、缓存键命名和首批读侧缓存策略。
+10. 以 docs/architecture/first-vertical-slice.md 作为首批纵切验收口径。
+11. 以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 作为后端代码放置、事件转换、事务和测试验收口径。
 
 ### 可以并行但不阻塞开工的事项
 
-1. Ops 到 Agent 的最终命令下发传输机制。
-2. AI Integration 与 Knowledge 的具体代码骨架。
-3. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
-4. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、细粒度 ABAC 与第三方应用市场。
-5. 前端视觉系统和组件皮肤细节。
+1. Ops 到 Connector Host 的最终命令下发传输机制。
+2. Sdk.Ops 与 Sdk.Observability 的完整实现；第一迭代只冻结方向，不阻塞注册纵切。
+3. AI Integration 与 Knowledge 的具体代码骨架。
+4. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
+5. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
+6. 前端视觉系统和组件皮肤细节。
 
 ## 开工验收标准
 
@@ -105,12 +119,12 @@
 
 1. dotnet restore backend/Nerv.IIP.sln 通过。
 2. dotnet build backend/Nerv.IIP.sln 通过。
-3. dotnet restore agents/Nerv.IIP.AgentHost.sln 通过。
-4. dotnet build agents/Nerv.IIP.AgentHost.sln 通过。
+3. dotnet restore connector-hosts/Nerv.IIP.ConnectorHost.sln 通过。
+4. dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln 通过。
 5. AppHub.Web 可接收 registration、heartbeat、state snapshot。
-6. Agent Host 可向本地 AppHub 成功发送至少一组注册、心跳、状态同步请求。
+6. Connector Host 可向本地 AppHub 成功发送至少一组注册、心跳、状态同步请求。
 7. PlatformGateway 能查询到至少一个被注册的实例事实。
 
 ## 结论
 
-就当前文档状态而言，Nerv-IIP 已经达到可以开始实施的程度。下一步不再需要新增架构决策，直接进入 backend/common、AppHub、PlatformGateway、Agent Host 的实际 scaffold 与最短纵切实现。
+就当前文档状态而言，Nerv-IIP 已经达到可以开始实施的程度。下一步不再需要新增架构决策，直接进入 backend/common、Iam、FileStorage、AppHub、PlatformGateway、Connector Host 的实际 scaffold 与最短纵切实现。具体第一迭代任务清单见 docs/superpowers/plans/2026-05-14-first-vertical-slice.md。
