@@ -25,7 +25,7 @@
 - backend/Nerv.IIP.sln
 - backend/Directory.Build.props
 - backend/Directory.Packages.props
-- backend/common/Contracts、Observability、Testing 三个最小共享库
+- backend/common/Contracts、Caching、Observability、Testing 四个最小共享库
 
 验收：
 

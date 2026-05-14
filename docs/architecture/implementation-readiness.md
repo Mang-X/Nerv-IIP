@@ -33,8 +33,9 @@
 
 1. backend/Nerv.IIP.sln
 2. backend/common/Contracts/Nerv.IIP.Contracts.AgentProtocol
-3. backend/common/Observability/Nerv.IIP.Observability
-4. backend/common/Testing/Nerv.IIP.Testing
+3. backend/common/Caching/Nerv.IIP.Caching
+4. backend/common/Observability/Nerv.IIP.Observability
+5. backend/common/Testing/Nerv.IIP.Testing
 
 ### Wave 2. 平台服务骨架
 
@@ -86,8 +87,9 @@
 4. PlatformGateway 实例列表与实例详情查询接口。
 5. Agent Host 到 AppHub 的 HTTP 客户端与 Docker Connector 空壳。
 6. 统一 OpenTelemetry 接线、health、build info、基础 structured logging。
-7. 以 docs/architecture/first-vertical-slice.md 作为首批纵切验收口径。
-8. 以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 作为后端代码放置、事件转换、事务和测试验收口径。
+7. 统一 FusionCache 接线、Redis L2/backplane、缓存键命名和首批读侧缓存策略。
+8. 以 docs/architecture/first-vertical-slice.md 作为首批纵切验收口径。
+9. 以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 作为后端代码放置、事件转换、事务和测试验收口径。
 
 ### 可以并行但不阻塞开工的事项
 
