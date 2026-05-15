@@ -19,6 +19,12 @@ Docker Connector
   -> Console or API verification
 ```
 
+平台 HTTP 接口实现约束：
+
+1. Iam、FileStorage、AppHub、Ops 和 PlatformGateway 的 HTTP 入口统一使用 FastEndpoints。
+2. `Program.cs` 只保留服务注册、中间件和 `UseFastEndpoints()` 接线；具体接口类放在各 Web 项目的 `Endpoints/` 目录。
+3. 新增平台 HTTP 接口不得在 `Program.cs` 或其它启动文件中使用 Minimal API 的 `.MapGet()`、`.MapPost()`、`.MapPatch()` 等路由映射。
+
 第二迭代链路在第一迭代稳定后推进：
 
 ```text

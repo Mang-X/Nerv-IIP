@@ -115,6 +115,8 @@ connector-hosts/
 10. tus、S3 multipart 和 server-proxy 只作为 FileStorage Upload Provider 策略存在，业务服务和领域模型不直接依赖具体上传协议。
 11. SDK 模块只封装公开 API、公开 DTO、认证上下文、错误模型和客户端传输，不引用服务端 Web、Domain、Infrastructure 或数据库模型。
 12. SDK 不成为权限事实源、审计事实源、服务发现中心或文件事实源。
+13. 平台 HTTP 接口统一使用 FastEndpoints；`Program.cs` 只保留服务注册、中间件和 `UseFastEndpoints()` 接线，具体接口放在各 Web 项目的 `Endpoints/**`。
+14. 新增平台 HTTP 接口不得使用 Minimal API 的 `.MapGet()`、`.MapPost()`、`.MapPatch()` 等启动文件路由映射。
 
 ## Task 1: Scaffold Backend Solution And Common Projects
 
