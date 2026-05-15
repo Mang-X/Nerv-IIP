@@ -1,0 +1,132 @@
+using System.Security.Cryptography;
+using System.Text;
+using Nerv.IIP.Iam.Domain;
+
+namespace Nerv.IIP.Iam.Infrastructure;
+
+public sealed class InMemoryIamStore
+{
+    private readonly object _gate = new();
+    private readonly List<OrganizationFact> _organizations = [];
+    private readonly List<IamEnvironmentFact> _environments = [];
+    private readonly List<UserFact> _users = [];
+    private readonly List<RoleFact> _roles = [];
+    private readonly List<MembershipFact> _memberships = [];
+    private readonly List<UserSessionFact> _sessions = [];
+    private readonly List<ConnectorHostCredentialFact> _connectorHostCredentials = [];
+
+    public InMemoryIamStore()
+    {
+        Seed();
+    }
+
+    public AuthResult Login(string loginName, string password)
+    {
+        lock (_gate)
+        {
+            var user = _users.SingleOrDefault(x => x.LoginName == loginName && x.Enabled && x.PasswordHash == Hash(password));
+            if (user is null)
+            {
+                throw new UnauthorizedAccessException("Invalid login.");
+            }
+
+            return CreateSession(user);
+        }
+    }
+
+    public AuthResult Refresh(string refreshToken)
+    {
+        lock (_gate)
+        {
+            var hash = Hash(refreshToken);
+            var session = _sessions.SingleOrDefault(x => x.RefreshTokenHash == hash && x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTimeOffset.UtcNow)
+                ?? throw new UnauthorizedAccessException("Invalid refresh token.");
+            var user = _users.Single(x => x.UserId == session.UserId);
+            if (!user.Enabled)
+            {
+                throw new UnauthorizedAccessException("User disabled.");
+            }
+
+            RevokeSession(session.SessionId);
+            return CreateSession(user);
+        }
+    }
+
+    public void Logout(string sessionId)
+    {
+        lock (_gate)
+        {
+            RevokeSession(sessionId);
+        }
+    }
+
+    public UserFact ValidateAccessToken(string token)
+    {
+        lock (_gate)
+        {
+            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(token)).Split('|');
+            if (parts.Length != 3)
+            {
+                throw new UnauthorizedAccessException("Invalid access token.");
+            }
+
+            var session = _sessions.SingleOrDefault(x => x.SessionId == parts[0] && x.RevokedAtUtc is null)
+                ?? throw new UnauthorizedAccessException("Session revoked.");
+            var user = _users.Single(x => x.UserId == session.UserId);
+            if (!user.Enabled || user.SecurityStamp != parts[1] || user.PermissionVersion.ToString() != parts[2])
+            {
+                throw new UnauthorizedAccessException("Stale access token.");
+            }
+
+            return user;
+        }
+    }
+
+    public ConnectorPrincipal ValidateConnectorHost(string connectorHostId, string secret)
+    {
+        lock (_gate)
+        {
+            var credential = _connectorHostCredentials.SingleOrDefault(x => x.ConnectorHostId == connectorHostId && x.SecretHash == Hash(secret) && x.ValidFromUtc <= DateTimeOffset.UtcNow && (x.ValidToUtc is null || x.ValidToUtc > DateTimeOffset.UtcNow))
+                ?? throw new UnauthorizedAccessException("Invalid Connector Host credential.");
+            return new ConnectorPrincipal("connector-host", credential.OrganizationId, credential.EnvironmentId, credential.ConnectorHostId);
+        }
+    }
+
+    public IReadOnlyList<UserFact> Users => _users;
+    public IReadOnlyList<RoleFact> Roles => _roles;
+    public IReadOnlyList<UserSessionFact> Sessions => _sessions;
+
+    private AuthResult CreateSession(UserFact user)
+    {
+        var sessionId = Guid.NewGuid().ToString("n");
+        var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var session = new UserSessionFact(sessionId, user.UserId, Hash(refreshToken), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(14), null, user.PermissionVersion);
+        _sessions.Add(session);
+        var accessToken = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{sessionId}|{user.SecurityStamp}|{user.PermissionVersion}"));
+        return new AuthResult(accessToken, refreshToken, sessionId);
+    }
+
+    private void RevokeSession(string sessionId)
+    {
+        var session = _sessions.SingleOrDefault(x => x.SessionId == sessionId);
+        if (session is not null)
+        {
+            _sessions[_sessions.IndexOf(session)] = session with { RevokedAtUtc = DateTimeOffset.UtcNow };
+        }
+    }
+
+    private void Seed()
+    {
+        _organizations.Add(new OrganizationFact("org-001", "Nerv IIP", "active"));
+        _environments.Add(new IamEnvironmentFact("env-dev", "org-001", "Development", "active"));
+        _roles.Add(new RoleFact("role-platform-admin", "Platform Administrator", NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal)));
+        _users.Add(new UserFact("user-admin", "admin", "admin@nerv-iip.local", Hash("Admin123!"), true, Guid.NewGuid().ToString("n"), 1));
+        _memberships.Add(new MembershipFact("user-admin", "org-001", "env-dev", new HashSet<string> { "role-platform-admin" }));
+        _connectorHostCredentials.Add(new ConnectorHostCredentialFact("connector-host-001", "org-001", "env-dev", new HashSet<string>(NervIipSeedPermissions.All.Where(x => x.StartsWith("connectors.", StringComparison.Ordinal))), Hash("local-connector-secret"), DateTimeOffset.UtcNow.AddDays(-1), null));
+    }
+
+    private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+}
+
+public sealed record AuthResult(string AccessToken, string RefreshToken, string SessionId);
+public sealed record ConnectorPrincipal(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
