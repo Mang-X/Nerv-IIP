@@ -13,13 +13,14 @@
 
 | 术语 | 中文口径 | 归属 | 说明 |
 | --- | --- | --- | --- |
-| Control Plane | 平台控制面 | 平台整体 | 管理身份、权限、组织、对外授权、应用目录、实例事实、运维动作、审计与 AI 治理的后台能力集合。 |
+| Control Plane | 平台控制面 | 平台整体 | 管理身份、权限、组织、对外授权、应用目录、实例事实、运维动作、审计、通知与 AI 治理的后台能力集合。 |
 | IAM | 身份权限服务 | IAM | 统一管理用户、组织、角色、权限、外部客户端与授权事实，是平台内部鉴权和对外授权的事实源。 |
 | Application Onboarding Plane | 应用接入面 | Connector Host | 通过 Connector Host 与 Connector 发现、观测和控制受管目标的接入能力集合。 |
 | Knowledge and AI Plane | 知识与 AI 面 | Knowledge、AI Integration | 管理知识引入、检索、模型接入、工具治理与人机确认的能力集合。 |
-| Platform SDK | 平台 SDK | 主平台 | 主平台提供给应用、Connector Host、行业扩展和前端包的模块化客户端能力集合，包括公开 DTO、生成客户端、认证上下文、文件存储、运维调用、观测上下文、错误模型、事件契约和 Connector Protocol。 |
+| Platform SDK | 平台 SDK | 主平台 | 主平台提供给应用、Connector Host、行业扩展和前端包的模块化客户端能力集合，包括公开 DTO、生成客户端、认证上下文、文件存储、运维调用、通知意图、观测上下文、错误模型、事件契约和 Connector Protocol。 |
 | Platform SDK Compatibility Version | 平台 SDK 兼容版本 | 主平台 | 应用、Connector Host 或扩展声明其兼容的主平台 SDK 版本；主版本必须与主平台对齐，小版本允许低于主平台小版本。 |
 | File Storage | 文件存储服务 | File Storage | 主平台通用文件能力，管理文件元数据、上传下载授权、对象存储定位、保留策略和归档状态。 |
+| Notification | 通知服务 | Notification | 主平台通用通知能力，管理通知意图、站内通知、待办、接收人解析、偏好、去重、已读未读和投递状态。 |
 | Organization | 组织 | IAM | 权限、环境、用户与资源隔离的上层边界。 |
 | Environment | 环境 | IAM | dev、test、prod、customer-hosted 等运行边界，所有跨环境操作必须显式携带。 |
 | ExternalClient | 外部客户端 | IAM | 需要被主平台授权以访问平台 API、MCP 工具或受管应用能力的外部应用或系统，不等同于 AppHub 的 Application。 |
@@ -36,6 +37,7 @@
 | Sdk.ConnectorProtocol | SDK 接入协议模块 | Platform SDK | 提供注册、心跳、状态快照和动作结果回传客户端，不拥有 AppHub 事实。 |
 | Sdk.FileStorage | SDK 文件存储模块 | Platform SDK | 提供上传会话、上传指令、完成上传、取消上传和下载授权客户端，不解释文件业务语义。 |
 | Sdk.Ops | SDK 运维模块 | Platform SDK | 提供运维任务、任务查询、动作结果和审计意图提交客户端，不直接写最终 AuditRecord。 |
+| Sdk.Notification | SDK 通知模块 | Platform SDK | 提供通知意图提交、通知查询和已读状态客户端，不直接调用外部通道 provider。 |
 | Sdk.Observability | SDK 观测上下文模块 | Platform SDK | 提供 trace context、correlationId 和标准日志字段辅助，不替代日志采集或审计落库。 |
 | AuditIntent | 审计意图 | Ops、Platform SDK | 客户端提交的审计上下文或动作说明，必须由 Ops 服务端校验后才能形成正式 AuditRecord。 |
 
@@ -94,6 +96,19 @@
 | Low-risk Operation | 低风险动作 | Ops、AI Integration | 可在授权与审计下执行的动作，例如重启、重新拉取状态、触发标准备份。 |
 | High-risk Operation | 高风险动作 | Ops、AI Integration | 破坏性、跨环境批量或不可逆数据操作，必须预留审批与人工确认。 |
 
+## 通知与待办
+
+| 术语 | 中文口径 | 归属 | 说明 |
+| --- | --- | --- | --- |
+| NotificationIntent | 通知意图 | Notification | 某个服务希望把平台事实、任务结果或待处理事项通知给人的结构化意图，包含来源事件、资源引用、严重性、建议接收范围和去重键。 |
+| NotificationMessage | 通知消息 | Notification | 面向单个用户或主体的用户可见消息，承载标题、摘要、资源跳转、已读未读和归档状态。 |
+| NotificationSubscription | 通知订阅 | Notification | 用户、角色、组织或外部客户端对某类平台事件的订阅关系。 |
+| NotificationPreference | 通知偏好 | Notification | 用户、角色或组织对站内、邮件、企业 IM、Webhook 等通道的偏好和静默设置。 |
+| DeliveryAttempt | 投递尝试 | Notification | 对某个通道的一次投递记录，包含 provider、状态、失败原因、重试次数和最后错误摘要。 |
+| In-app Notification | 站内通知 | Notification | 平台控制台内可见的通知，是首批默认通道和外部投递失败后的兜底视图。 |
+| Todo Notification | 待办通知 | Notification、Ops、AI Integration | 需要用户动作的通知，例如审批、确认、失败处理或补充信息；动作事实仍归发起服务。 |
+| Notification Provider | 通知通道提供方 | Notification Infrastructure | 邮件、短信、企业微信、钉钉、Webhook 等外部通道适配器，不属于其它领域服务依赖。 |
+
 ## 知识与 AI
 
 | 术语 | 中文口径 | 归属 | 说明 |
@@ -125,6 +140,7 @@
 4. `CapabilityDescriptor` 描述可用能力，不代表平台已经授权某用户或 AI 工具调用该能力。
 5. `KnowledgeSource` 管理知识来源和生命周期，`AI Integration` 只消费检索或工具能力，不维护私有向量索引。
 6. `StoredFile` 管理文件存储事实，不解释文件在 Knowledge、Ops、AppHub 或行业扩展中的业务含义。
-7. `Platform SDK` 是客户端能力集合，不是服务发现中心、权限事实源、审计事实源或领域模型副本。
+7. `Platform SDK` 是客户端能力集合，不是服务发现中心、权限事实源、审计事实源、通知事实源或领域模型副本。
 8. `ExternalClient` 是 IAM 管理的授权对象，不应与 AppHub 管理的 `Application` 混用。
-9. 工厂、产线、设备、站点等行业概念不属于主平台核心术语；需要时由领域扩展定义，不能反向污染 IAM、FileStorage、AppHub、Ops 的通用模型。
+9. `NotificationMessage` 是用户可见通知事实，不应替代 `AuditRecord`、`OperationTask`、`ApplicationInstance` 或 `KnowledgeSource`。
+10. 工厂、产线、设备、站点等行业概念不属于主平台核心术语；需要时由领域扩展定义，不能反向污染 IAM、FileStorage、AppHub、Ops、Notification 的通用模型。

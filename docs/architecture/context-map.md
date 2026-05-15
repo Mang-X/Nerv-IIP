@@ -6,7 +6,7 @@
 
 平台由三层上下文构成：
 
-1. 平台控制面：负责身份、权限、组织、对外授权、文件存储、应用目录、实例事实、运维动作、审计、AI 治理。
+1. 平台控制面：负责身份、权限、组织、对外授权、文件存储、应用目录、实例事实、运维动作、审计、通知、AI 治理。
 2. 应用接入面：负责 Connector Host、Connector、本地资源探测、状态上报与动作执行。
 3. 知识与 AI 面：负责知识引入与检索、MCP 工具、模型接入与执行治理。
 
@@ -53,6 +53,12 @@
 - 所有会改变目标系统状态的动作都应进入 Ops 的任务闭环。
 - 不成为实例最终状态的真相源。
 
+### Notification
+
+- 负责站内通知、待办入口、接收人解析、通知偏好、去重合并、已读未读、投递状态和通道适配边界。
+- 消费 AppHub、Ops、AI Integration、Knowledge 等服务发布的平台事实或明确通知意图，把它们转换为用户可见消息、待办或外部通道投递。
+- 不拥有业务触发规则，不替代 Ops 审计、Observability 告警，也不把 RabbitMQ/CAP 集成消息直接暴露给最终用户。
+
 ### AI Integration
 
 - 负责模型提供方配置、MCP Server、Skill 注册、工具授权、执行审批与人机确认编排。
@@ -82,13 +88,14 @@
 3. `Sdk.ConnectorProtocol` 可以发送注册、心跳和状态快照，但本地资源发现仍归 Connector Host 与 Connector，应用与实例事实仍归 AppHub。
 4. `Sdk.FileStorage` 可以创建上传会话、获取上传指令和下载授权，但文件元数据与对象存储定位事实仍归 File Storage。
 5. `Sdk.Ops` 可以创建任务、查询任务和回传动作结果，但 OperationTask、OperationAttempt 与 AuditRecord 仍归 Ops。
-6. `Sdk.Observability` 可以提供 correlationId、trace context 和标准日志字段，但不替代平台日志采集、保留策略或审计落库。
-7. SDK 模块之间只通过公开 DTO 和 `Sdk.Core` 协作，不通过服务端内部项目、数据库表或私有接口协作。
+6. `Sdk.Notification` 可以提交通知意图、查询通知和标记已读，但 NotificationIntent、NotificationMessage、偏好和投递状态仍归 Notification。
+7. `Sdk.Observability` 可以提供 correlationId、trace context 和标准日志字段，但不替代平台日志采集、保留策略或审计落库。
+8. SDK 模块之间只通过公开 DTO 和 `Sdk.Core` 协作，不通过服务端内部项目、数据库表或私有接口协作。
 
 ### IAM 与其它服务及外部应用
 
 1. IAM 拥有用户、角色、权限、组织、环境、外部客户端和授权授予事实。
-2. AppHub、Ops、Knowledge、AI Integration 和 Gateway 只能消费 IAM 的身份、权限和授权判断，不各自维护平行权限模型。
+2. AppHub、Ops、Notification、Knowledge、AI Integration 和 Gateway 只能消费 IAM 的身份、权限和授权判断，不各自维护平行权限模型。
 3. 平台应用对外授权时，应显式绑定组织、环境、资源范围、能力范围和有效期；外部应用获得的是受约束访问能力，不获得跨服务内部事实所有权。
 4. 对外授权、工具授权和运维动作审批是不同概念：IAM 提供身份与权限授予事实，AI Integration 负责工具治理，Ops 负责动作任务与审计闭环。
 
@@ -107,6 +114,13 @@
 2. Ops 拥有动作任务、执行结果、审计与审批挂点。
 3. restart 一类动作由 Ops 创建任务并记录结果。
 4. 实例最终状态是否变化，由 Connector Host 后续状态同步驱动 AppHub 更新，而不是由 Ops 直接改写。
+
+### Notification 与其它服务
+
+1. Notification 消费跨服务集成事件或明确的通知意图，不直接进入其它服务的命令事务做外部通道投递。
+2. AppHub、Ops、AI Integration、Knowledge 等服务只表达已发生事实、待处理事项或建议接收范围，不各自实现站内通知、邮件、短信、企业 IM 或 Webhook 投递。
+3. Notification 可通过 IAM 解析用户、角色、组织、环境和授权范围，但不维护平行权限模型。
+4. Notification 记录投递、已读未读、偏好和去重事实；审计事实仍归 Ops 或对应领域服务，日志与指标仍归 Observability。
 
 ### AI Integration 与 Knowledge
 
@@ -166,3 +180,4 @@
 6. 业务服务、前端、外部应用或 Connector Host 绕过 File Storage 直接使用对象存储 key 作为长期业务契约。
 7. Platform SDK 反向引用主平台服务 Domain、Infrastructure、数据库表或私有接口。
 8. Platform SDK 直接写入最终 AuditRecord、权限授予、会话撤销或应用实例事实。
+9. AppHub、Ops、AI Integration、Knowledge 或行业扩展各自直连外部通知通道，绕过 Notification 的接收人解析、偏好、去重、投递状态和审计挂点。

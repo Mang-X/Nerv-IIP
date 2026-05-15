@@ -1,6 +1,6 @@
 # 一阶领域模型 V1
 
-本文档定义 IAM、File Storage、AppHub、Ops 在首批纵切中的一阶领域模型。目标不是一次性穷尽所有聚合，而是先明确谁拥有什么事实、谁发布什么事件、谁负责任务闭环。
+本文档定义 IAM、File Storage、AppHub、Ops、Notification 在首批纵切和后续平台闭环中的一阶领域模型。目标不是一次性穷尽所有聚合，而是先明确谁拥有什么事实、谁发布什么事件、谁负责任务闭环。
 
 ## 建模原则
 
@@ -209,6 +209,53 @@
 2. 动作执行完成后，Ops 记录结果；实例最终状态仍以 Connector Host 后续状态同步驱动 AppHub 更新为准。
 3. 审计是 Ops 的一级能力，不是每个服务各自补一份日志表。
 
+## Notification 一阶模型
+
+### 目标职责
+
+- 拥有平台通知、待办、接收人解析结果、通知偏好、去重合并、已读未读和投递状态事实。
+- 消费 AppHub、Ops、AI Integration、Knowledge 等服务发布的平台事实或明确通知意图，生成用户可见消息。
+- 不拥有业务触发规则，不替代 Ops 审计、Observability 告警或行业扩展的告警阈值模型。
+
+### 首批聚合建议
+
+- NotificationIntent
+- NotificationMessage
+- NotificationSubscription
+- NotificationPreference
+- DeliveryAttempt
+- NotificationTemplate
+
+### 首批主表建议
+
+- notification_intents
+- notification_messages
+- notification_recipients
+- notification_subscriptions
+- notification_preferences
+- notification_delivery_attempts
+- notification_templates
+
+### 首批事件建议
+
+- NotificationIntentCreated
+- NotificationMessageCreated
+- NotificationMessageRead
+- NotificationMessageArchived
+- NotificationDeliveryRequested
+- NotificationDeliverySucceeded
+- NotificationDeliveryFailed
+- NotificationSuppressed
+
+### 关键边界
+
+1. Notification 负责“如何通知、通知谁、是否重复、是否已读、是否投递成功”，不替业务服务决定业务事实是否成立。
+2. AppHub、Ops、AI Integration、Knowledge 和行业扩展只发布领域事实、待处理事项或通知意图，不各自直连邮件、短信、企业 IM 或 Webhook。
+3. Notification 通过 IAM 解析用户、角色、组织、环境和授权范围，但不维护平行权限模型。
+4. 站内通知是首批默认通道；邮件、短信、企业微信、钉钉和 Webhook 只作为后续 provider 扩展。
+5. 通知投递按最终一致性处理，外部通道失败不能回滚原业务事务。
+6. Notification 可以保存 sourceEventId、resourceRef、correlationId 和展示摘要，但不复制 AppHub、Ops、Knowledge 或 AI Integration 的领域模型。
+
 ## 首批纵切映射
 
 ### 应用注册链路
@@ -237,6 +284,13 @@
 4. Ops 记录 OperationCompleted 或 OperationFailed。
 5. AppHub 仍等待后续状态同步来更新最终实例事实。
 
+### 通知链路
+
+1. AppHub、Ops、AI Integration 或 Knowledge 发布平台事实或明确通知意图。
+2. Notification 解析接收范围、用户偏好和去重键。
+3. Notification 创建站内 NotificationMessage 或待办，并按通道策略创建 DeliveryAttempt。
+4. Gateway 查询用户未读、全部、待办和资源相关通知。
+
 ## 当前冻结结论
 
 1. AppHub 拥有应用与实例事实，Ops 拥有动作与审计事实。
@@ -245,3 +299,4 @@
 4. restart 这类动作的成功与否由 Ops 记录，实例最终状态是否恢复由 AppHub 后续状态同步确认。
 5. IAM 首批先服务于组织、环境、权限上下文、用户会话、Connector Host 凭证和外部授权事实基线，不先扩展复杂委派、临时授权或完整第三方应用市场模型。
 6. File Storage 拥有文件元数据、对象存储定位、上传下载授权和保留策略；Knowledge、Ops、AppHub 只通过 fileId 或 FileReference 引用文件，不直接保存对象存储 key 作为业务事实。
+7. Notification 是主平台通用能力，拥有通知与待办事实；业务服务只表达事实或通知意图，不各自实现通知表或外部通道投递。

@@ -7,7 +7,7 @@
 1. 平台 HTTP 服务命名已经冻结为 .Web、.Domain、.Infrastructure。
 2. Connector Host 与平台的 v1 协议边界已经冻结到公开接口和最小对象级别。
 3. 后端 CleanDDD 与 netcorepal 的模板参数、目录、事件、事务、仓储和测试约定已经冻结。
-4. 核心术语、Platform SDK 模块边界、IAM 对外授权边界、文件存储基线、知识源生命周期和首批纵切验收口径已经补齐。
+4. 核心术语、Platform SDK 模块边界、IAM 对外授权边界、文件存储基线、通知能力基线、知识源生命周期和首批纵切验收口径已经补齐。
 5. 首批实现可以从 backend、connector-hosts 两个工作面直接开工，无需再等待新的架构决策。
 
 ## 环境前置
@@ -109,9 +109,10 @@
 1. Ops 到 Connector Host 的最终命令下发传输机制。
 2. Sdk.Ops 与 Sdk.Observability 的完整实现；第一迭代只冻结方向，不阻塞注册纵切。
 3. AI Integration 与 Knowledge 的具体代码骨架。
-4. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
-5. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
-6. 前端视觉系统和组件皮肤细节。
+4. Notification 的具体代码骨架、站内通知纵切和外部通道 provider；边界口径应遵守 docs/architecture/notification-baseline.md。
+5. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
+6. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
+7. 前端视觉系统和组件皮肤细节。
 
 ## 开工验收标准
 

@@ -14,7 +14,7 @@
 
 ## 适用范围
 
-1. 本文档适用于 backend 下的平台 HTTP 服务：Iam、FileStorage、AppHub、Ops、AI Integration、Knowledge。
+1. 本文档适用于 backend 下的平台 HTTP 服务：Iam、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge。
 2. PlatformGateway 只采用其中的 Web、Endpoint、响应、观测与契约消费约定；默认不强制创建 Domain 与 Infrastructure。
 3. Connector Host 不适用平台 HTTP 服务的三项目约定，仍按 connector-hosts 独立宿主模型实现。
 4. 当前仓库尚未创建业务代码，本文档用于约束下一步 scaffold 和首批纵切代码生成。
@@ -181,9 +181,9 @@ Endpoint：
 | --- | --- | --- | --- |
 | ApplicationRegisteredDomainEvent | ApplicationRegisteredIntegrationEvent | AppHub | 后续异步订阅者或查询投影 |
 | InstanceHeartbeatReceivedDomainEvent | InstanceHeartbeatReceivedIntegrationEvent | AppHub | 观测、告警或后续订阅者 |
-| InstanceStatusChangedDomainEvent | InstanceStatusChangedIntegrationEvent | AppHub | Ops、观测告警或后续订阅者 |
-| OperationCompletedDomainEvent | OperationCompletedIntegrationEvent | Ops | AppHub 不直接改状态，仅可用于审计或通知 |
-| OperationFailedDomainEvent | OperationFailedIntegrationEvent | Ops | 审计、告警或通知 |
+| InstanceStatusChangedDomainEvent | InstanceStatusChangedIntegrationEvent | AppHub | Ops、Notification、观测告警或后续订阅者 |
+| OperationCompletedDomainEvent | OperationCompletedIntegrationEvent | Ops | AppHub 不直接改状态，仅可用于审计或通知；Notification 可生成用户可见结果消息 |
+| OperationFailedDomainEvent | OperationFailedIntegrationEvent | Ops | 审计、告警或 Notification |
 
 ## 仓储、DbContext 与 EF 配置
 
