@@ -4,7 +4,7 @@
 
 **Goal:** 建立 Nerv-IIP 第一迭代纵切：Connector Host 发现一个 Docker 运行目标，上报注册、心跳和状态快照，AppHub 沉淀应用与实例事实，PlatformGateway 能查询到最新状态。
 
-**Architecture:** 第一迭代采用文档冻结的服务边界：IAM 先提供身份、权限、会话和 Connector Host 凭证底座；FileStorage 先提供主平台文件存储服务骨架和边界约束；AppHub 拥有应用与实例事实；PlatformGateway 只做薄 BFF，通过 AppHub 显式 HTTP/query contract 聚合数据；Connector Host 独立于 backend solution，通过 Platform SDK 的 ConnectorProtocol 客户端和共享 Connector Protocol DTO 调用平台。Ops 只创建服务骨架和健康入口，不进入第一迭代完成定义。
+**Architecture:** 第一迭代采用文档冻结的服务边界：IAM 先提供身份、权限、会话和 Connector Host 凭证底座；FileStorage 先提供主平台文件存储服务骨架和边界约束；AppHub 拥有应用与实例事实；PlatformGateway 只做薄 BFF，通过 AppHub 显式 HTTP/query contract 聚合数据；Connector Host 独立于 backend solution，通过 Platform SDK 的 ConnectorProtocol 客户端和共享 Connector Protocol DTO 调用平台。Ops 只创建服务骨架和健康入口，不进入第一迭代完成定义。Notification 已作为独立平台通知边界冻结，但第一迭代不创建通知服务、通知表、`Sdk.Notification` 或外部通道 provider；其它服务不得临时内置站内通知、邮件、短信、企业 IM 或 Webhook 投递逻辑。
 
 **Tech Stack:** .NET 10、ASP.NET Core、netcorepal-cloud-framework、FastEndpoints、PostgreSQL、RabbitMQ、Redis、FusionCache、MinIO、OpenTelemetry、Docker、xUnit 或模板默认测试框架。
 
@@ -33,8 +33,9 @@
 3. 完整控制台 UI、菜单编排和视觉系统。
 4. OAuth2/OIDC 授权服务器、SSO、MFA、WebAuthn、第三方应用市场。
 5. FileStorage 的完整文件管理后台、文件预览、转码、复杂保留策略和跨服务附件工作流。
-6. Sdk.Ops、Sdk.Observability 的完整实现和 SDK 多语言发布流水线。
-7. Knowledge、AI Integration、复杂 autonomous workflow。
+6. Sdk.Ops、Sdk.Notification、Sdk.Observability 的完整实现和 SDK 多语言发布流水线。
+7. Notification 服务骨架、站内通知、待办、通知偏好、去重合并、投递状态和外部通道 provider。
+8. Knowledge、AI Integration、复杂 autonomous workflow。
 
 ## File Structure Map
 
@@ -114,7 +115,8 @@ connector-hosts/
 9. FileStorage 拥有文件元数据、上传下载授权和对象存储 key；其它服务只通过 `fileId`、`FileReference` 或 Platform SDK 使用文件能力。
 10. tus、S3 multipart 和 server-proxy 只作为 FileStorage Upload Provider 策略存在，业务服务和领域模型不直接依赖具体上传协议。
 11. SDK 模块只封装公开 API、公开 DTO、认证上下文、错误模型和客户端传输，不引用服务端 Web、Domain、Infrastructure 或数据库模型。
-12. SDK 不成为权限事实源、审计事实源、服务发现中心或文件事实源。
+12. SDK 不成为权限事实源、审计事实源、通知事实源、服务发现中心或文件事实源。
+13. Notification 是独立平台服务边界；第一迭代内 AppHub、Ops、Gateway、Connector Host 和行业扩展不得各自创建站内通知表或直连外部通知通道。
 
 ## Task 1: Scaffold Backend Solution And Common Projects
 
@@ -1195,7 +1197,7 @@ The first iteration is complete when all statements are true:
 1. `dotnet restore`, `dotnet build`, and `dotnet test` pass for backend solution.
 2. `dotnet restore`, `dotnet build`, and `dotnet test` pass for connector-hosts solution.
 3. IAM can seed an administrator and one Connector Host credential.
-4. Platform SDK Core/Auth/ConnectorProtocol/FileStorage projects exist and do not reference backend service Web, Domain, Infrastructure, or database models.
+4. Platform SDK Core/Auth/ConnectorProtocol/FileStorage projects exist and do not reference backend service Web, Domain, Infrastructure, or database models; `Sdk.Notification` remains outside this first iteration.
 5. FileStorage service exists as a health/build-info skeleton with file metadata, upload session, upload instructions, download grant, Upload Provider abstraction, FilePurposePolicy, scanStatus, and object storage adapter boundaries documented in code structure.
 6. Connector Host can authenticate to AppHub as `principalType = connector-host`.
 7. Connector Host can send registration, heartbeat, and state snapshot through `Nerv.IIP.Sdk.ConnectorProtocol`.
@@ -1204,6 +1206,7 @@ The first iteration is complete when all statements are true:
 10. Gateway does not reference AppHub Domain or Infrastructure projects.
 11. Logs and traces can be correlated across Connector Host, AppHub, and Gateway.
 12. Ops service exists only as a health/build-info skeleton in this iteration.
+13. No first-iteration service implements ad hoc notification tables, notification preferences, delivery attempts, or direct SMS/email/enterprise IM/Webhook provider calls.
 
 ## Self Review
 
@@ -1212,11 +1215,12 @@ Spec coverage:
 1. Architecture boundary: covered by Boundary Rules, Task 4, Task 6, Task 7, and Task 9.
 2. Implementability: covered by concrete scaffold commands, file map, task ordering, and verification script.
 3. Maintainability and extensibility: covered by common contracts, modular SDK boundary, caching boundary, observability boundary, and Gateway/AppHub query contract separation.
-4. Complexity control: Ops action loop, full UI, OAuth/OIDC, SSO, MFA, Knowledge, AI Integration, and advanced file-management workflows are outside this plan.
+4. Complexity control: Ops action loop, Notification implementation, full UI, OAuth/OIDC, SSO, MFA, Knowledge, AI Integration, and advanced file-management workflows are outside this plan.
 5. Basic admin timing: IAM foundation starts in Task 5, before AppHub Connector Host authentication and before Gateway protected queries.
 
 Plan self-check:
 
 1. No task relies on an undefined service boundary.
 2. No first-iteration acceptance item depends on Ops action dispatch.
-3. Query contract names match Task 3, Task 6, and Task 7.
+3. No first-iteration acceptance item depends on Notification implementation.
+4. Query contract names match Task 3, Task 6, and Task 7.
