@@ -6,8 +6,6 @@ name = "Nerv-IIP"
 script = '''
 cd "$CODEX_WORKTREE_PATH"
 npx skills experimental_install
-pnpm install
-
 '''
 
 [[actions]]
