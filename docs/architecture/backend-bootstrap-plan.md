@@ -7,7 +7,7 @@
 1. 先建工程底座，再建服务骨架。
 2. 先冻结契约和边界，再做动作闭环。
 3. 先跑 Connector Host 与 Docker Connector，再扩展更多宿主环境。
-4. 第一迭代先验证应用注册、心跳、状态同步与 Gateway 可见；低风险动作闭环进入第二迭代。
+4. 第一迭代已经验证应用注册、心跳、状态同步与 Gateway 可见；第二迭代已经验证低风险 restart 动作闭环。
 
 ## 实施顺序
 
@@ -71,10 +71,11 @@
 
 ### Step 3. 定应用接入协议最小闭环
 
-- 定义注册、心跳、能力声明、实例状态同步四类契约。
+- 定义注册、心跳、能力声明、实例状态同步、低风险运维任务和动作结果契约。
 - 固化版本号、幂等键与错误结果模型。
 - Connector Protocol 源码事实来源固定放在 backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol；首批单仓实施可由 backend 与 connector-hosts 两套 solution 共同引用，发布边界必须按版本化公开契约处理。
 - Connector Host 调用平台的客户端能力优先落到 backend/common/Sdk/Nerv.IIP.Sdk.ConnectorProtocol，并依赖 Sdk.Core 与 Sdk.Auth，不在 Connector Host 内部重复拼接平台 API。
+- Ops 源码事实来源固定放在 backend/common/Contracts/Nerv.IIP.Contracts.Ops；Connector Host 通过 backend/common/Sdk/Nerv.IIP.Sdk.Ops 拉取 pending task 并回传 result。
 
 推荐首批契约对象：
 
@@ -82,6 +83,7 @@
 - ApplicationHeartbeat
 - CapabilityDescriptor
 - InstanceStateSnapshot
+- OperationTask
 - OperationResult
 - FailureReason
 
@@ -124,7 +126,7 @@
 
 ### Step 6. 打第一条纵切链路
 
-详细验收口径见 docs/architecture/first-vertical-slice.md。
+详细验收口径见 docs/architecture/first-vertical-slice.md 与 docs/architecture/second-vertical-slice-ops.md。
 
 第一迭代链路：
 
@@ -138,6 +140,12 @@
 
 - 控制台或 Gateway 可查询最新实例事实
 - Connector Host、AppHub、Gateway 的日志和追踪能通过 correlationId 串联
+
+第二迭代验收：
+
+- Gateway 可创建 restart OperationTask 并查询任务详情
+- Connector Host 可领取 pending task、调用 Docker Connector 执行 `lifecycle.restart` 并回传结果
+- Ops 记录 OperationTask、OperationAttempt 和 AuditRecord，且不直接修改 AppHub 实例状态
 
 ## 并行关系
 
@@ -172,5 +180,5 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 2. 不先做 Notification 完整外部通道，通知能力先冻结边界，后续以站内通知和待办作为最小纵切。
 3. 不先做复杂 AI 自主流程，先做 AI Integration 的治理边界。
 4. 不先做多 Connector，先用 Docker Connector 跑通协议。
-5. 不先做所有运维动作，第一迭代只做注册、心跳、状态同步和 Gateway 可见；低风险动作作为第二迭代闭环。
+5. 不先做所有运维动作，第一迭代只做注册、心跳、状态同步和 Gateway 可见；第二迭代只做低风险 restart 闭环。
 6. 不先细抠全部领域模型，先用最短纵切验证服务边界是否合理。

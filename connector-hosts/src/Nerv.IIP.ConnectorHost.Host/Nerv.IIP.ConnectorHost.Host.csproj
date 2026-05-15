@@ -15,5 +15,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Application\Nerv.IIP.ConnectorHost.Application.csproj" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Docker\Nerv.IIP.ConnectorHost.Connectors.Docker.csproj" />
+    <ProjectReference Include="..\..\..\backend\common\Sdk\Nerv.IIP.Sdk.Ops\Nerv.IIP.Sdk.Ops.csproj" />
   </ItemGroup>
 </Project>

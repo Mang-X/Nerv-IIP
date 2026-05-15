@@ -2,7 +2,7 @@
 
 Nerv-IIP 是一个从 0 到 1 规划的原生 AI 应用管理平台，可面向多类行业和应用场景扩展。核心目标不是先做复杂业务系统，而是先建立一个稳定的控制面与应用管理底座，使平台能够统一管理身份权限、文件存储与对外受控访问能力，并接入、发现、观测、控制和治理真实运行中的应用实例。
 
-当前仓库以文档优先方式启动。第一阶段先冻结不可轻易反转的架构决策、服务边界、前端范式、AI 边界与基础设施基线，再进入工程骨架和最短纵切链路实现。
+当前仓库以文档优先方式启动，并已经从首批架构冻结推进到第一、第二阶段纵切实现：第一阶段验证 Connector Host 接入、AppHub 状态沉淀与 Gateway 查询，第二阶段验证低风险运维动作创建、派发、执行、结果回传与审计记录。
 
 ## 项目目标
 
@@ -112,16 +112,18 @@ Nerv-IIP/
 10. docs/architecture/core-domain-model-v1.md
 11. docs/architecture/connector-platform-protocol-v1.md
 12. docs/architecture/first-vertical-slice.md
-13. docs/architecture/frontend-structure.md
-14. docs/architecture/api-contract-and-codegen.md
-15. docs/architecture/ai-boundaries.md
-16. docs/architecture/knowledge-source-lifecycle.md
-17. docs/architecture/backend-bootstrap-plan.md
-18. docs/architecture/implementation-readiness.md
+13. docs/architecture/second-vertical-slice-ops.md
+14. docs/architecture/frontend-structure.md
+15. docs/architecture/api-contract-and-codegen.md
+16. docs/architecture/ai-boundaries.md
+17. docs/architecture/knowledge-source-lifecycle.md
+18. docs/architecture/backend-bootstrap-plan.md
+19. docs/architecture/implementation-readiness.md
 
 ### 实施计划
 
 1. docs/superpowers/plans/2026-05-14-first-vertical-slice.md
+2. docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md
 
 ## 里程碑
 
@@ -134,16 +136,18 @@ Nerv-IIP/
 
 ## 当前状态
 
-当前仓库已经在首批架构文档基础上落地第一迭代纵切骨架，并将关键设计沉淀为 ADR 与架构文档。平台 HTTP 接口统一采用 FastEndpoints；Program.cs 只负责服务注册、中间件和 `UseFastEndpoints()` 接线，具体接口放在各 Web 项目的 `Endpoints/` 目录。
+当前仓库已经在首批架构文档基础上落地第一、第二阶段纵切，并将关键设计沉淀为 ADR 与架构文档。平台 HTTP 接口统一采用 FastEndpoints；Program.cs 只负责服务注册、中间件和 `UseFastEndpoints()` 接线，具体接口放在各 Web 项目的 `Endpoints/` 目录。
 
-第一迭代当前已经可以用 `scripts/verify-first-slice.ps1` 完成本地纵切验证：backend 与 connector-hosts 两套 solution 可 restore/build/test，AppHub 可接收注册、心跳和状态快照，PlatformGateway 可通过 AppHub 查询实例列表与详情，Connector Host 可通过 Platform SDK 上报一个 Docker Connector 发现的目标。该状态适合工程联调、接口走查和后续功能开发；尚不是面向真实用户的可部署产品。
+第一阶段可以用 `scripts/verify-first-slice.ps1` 完成本地纵切验证：backend 与 connector-hosts 两套 solution 可 restore/build/test，AppHub 可接收注册、心跳和状态快照，PlatformGateway 可通过 AppHub 查询实例列表与详情，Connector Host 可通过 Platform SDK 上报一个 Docker Connector 发现的目标。
+
+第二阶段可以用 `scripts/verify-second-slice-ops.ps1` 完成本地低风险动作闭环验证：Gateway 创建实例 restart 运维任务，Ops 记录任务、尝试和审计事实，Connector Host 通过 Ops SDK 拉取 pending task，Docker Connector 执行动作并回传结果，Gateway 可查询任务详情。当前状态适合工程联调、接口走查和后续功能开发；尚不是面向真实用户的可部署产品。
 
 下一阶段重点：
 
-1. 建立 frontend 工作区骨架与 api-client 生成链路。
-2. 将当前内存态 IAM、AppHub 和缓存实现推进到 PostgreSQL、RabbitMQ、Redis 等真实基础设施。
+1. 建立 frontend 工作区骨架与 api-client 生成链路，把实例查询和低风险 restart 操作接入控制台。
+2. 将当前内存态 IAM、AppHub、Ops 和缓存实现推进到 PostgreSQL、RabbitMQ、Redis 等真实基础设施。
 3. 补齐 FileStorage 的真实上传下载闭环、IAM 完整授权链路和控制台登录能力。
-4. 进入第二迭代低风险运维动作与审计闭环。
+4. 扩展 Ops 的审批、权限、通知和持久化 outbox，逐步覆盖更高风险动作。
 
 ## 非目标
 

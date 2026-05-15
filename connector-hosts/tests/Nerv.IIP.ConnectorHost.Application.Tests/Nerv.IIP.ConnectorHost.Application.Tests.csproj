@@ -22,6 +22,9 @@
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Application\Nerv.IIP.ConnectorHost.Application.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Connectors.Abstractions\Nerv.IIP.ConnectorHost.Connectors.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\backend\common\Contracts\Nerv.IIP.Contracts.ConnectorProtocol\Nerv.IIP.Contracts.ConnectorProtocol.csproj" />
+    <ProjectReference Include="..\..\..\backend\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
+    <ProjectReference Include="..\..\..\backend\common\Sdk\Nerv.IIP.Sdk.Ops\Nerv.IIP.Sdk.Ops.csproj" />
+    <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Connectors.Docker\Nerv.IIP.ConnectorHost.Connectors.Docker.csproj" />
   </ItemGroup>
 
 </Project>
