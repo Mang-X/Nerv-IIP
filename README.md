@@ -134,12 +134,16 @@ Nerv-IIP/
 
 ## 当前状态
 
-当前仓库已经在首批架构文档基础上落地第一迭代纵切骨架，并将关键设计沉淀为 ADR 与架构文档。平台 HTTP 接口统一采用 FastEndpoints；Program.cs 只负责服务注册、中间件和 `UseFastEndpoints()` 接线，具体接口放在各 Web 项目的 `Endpoints/` 目录。当前已经补齐首批实现所需的环境前置、平台与 Connector Host 的 v1 协议边界、Platform SDK 模块边界、共享契约放置规则、核心术语、后端 CleanDDD/netcorepal 落地规范、文件存储基线、通知能力基线、知识源生命周期，以及第一条纵切链路的验收口径。下一阶段可以按以下顺序继续推进：
+当前仓库已经在首批架构文档基础上落地第一迭代纵切骨架，并将关键设计沉淀为 ADR 与架构文档。平台 HTTP 接口统一采用 FastEndpoints；Program.cs 只负责服务注册、中间件和 `UseFastEndpoints()` 接线，具体接口放在各 Web 项目的 `Endpoints/` 目录。
 
-1. 建立 backend 与 connector-hosts 两套 solution 骨架。
-2. 建立 frontend 工作区骨架与 api-client 生成链路。
-3. 打通应用注册、心跳、状态同步到控制台可见的最短纵切链路。
-4. 再进入低风险运维动作与知识能力实现。
+第一迭代当前已经可以用 `scripts/verify-first-slice.ps1` 完成本地纵切验证：backend 与 connector-hosts 两套 solution 可 restore/build/test，AppHub 可接收注册、心跳和状态快照，PlatformGateway 可通过 AppHub 查询实例列表与详情，Connector Host 可通过 Platform SDK 上报一个 Docker Connector 发现的目标。该状态适合工程联调、接口走查和后续功能开发；尚不是面向真实用户的可部署产品。
+
+下一阶段重点：
+
+1. 建立 frontend 工作区骨架与 api-client 生成链路。
+2. 将当前内存态 IAM、AppHub 和缓存实现推进到 PostgreSQL、RabbitMQ、Redis 等真实基础设施。
+3. 补齐 FileStorage 的真实上传下载闭环、IAM 完整授权链路和控制台登录能力。
+4. 进入第二迭代低风险运维动作与审计闭环。
 
 ## 非目标
 
