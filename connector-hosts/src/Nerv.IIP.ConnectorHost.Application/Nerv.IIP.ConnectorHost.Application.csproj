@@ -7,6 +7,8 @@
     <ProjectReference Include="..\..\..\backend\common\Contracts\Nerv.IIP.Contracts.ConnectorProtocol\Nerv.IIP.Contracts.ConnectorProtocol.csproj" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Contracts\Nerv.IIP.ConnectorHost.Contracts.csproj" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Abstractions\Nerv.IIP.ConnectorHost.Connectors.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\backend\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
+    <ProjectReference Include="..\..\..\backend\common\Sdk\Nerv.IIP.Sdk.Ops\Nerv.IIP.Sdk.Ops.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

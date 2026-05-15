@@ -56,7 +56,7 @@ Nerv.IIP.Sdk.Observability
 
 职责：
 
-1. Connector Host 注册、心跳、状态快照和动作结果回传客户端。
+1. Connector Host 注册、心跳和状态快照客户端。
 2. Connector Protocol DTO、版本字段、幂等键和错误结果处理。
 3. 使用 `Sdk.Core` 与 `Sdk.Auth` 发送受 IAM 授权的请求。
 
@@ -155,13 +155,14 @@ Nerv.IIP.Sdk.Observability
 4. 删除字段、改变认证语义、改变授权 scope 语义、移除方法或改变事件含义属于破坏性变更，必须提升主版本。
 5. 每个 SDK 请求应携带 SDK 名称与版本，便于服务端兼容性诊断和观测。
 
-## 首批实现建议
+## 当前实现状态
 
-第一迭代只需要最小可用 SDK 边界：
+第一、第二阶段已经落地以下最小可用 SDK 边界：
 
 1. `Sdk.Core`：公共上下文、错误模型、HTTP transport。
 2. `Sdk.Auth`：Connector Host credential 注入和 token 处理薄封装。
 3. `Sdk.ConnectorProtocol`：注册、心跳、状态快照客户端。
 4. `Sdk.FileStorage`：上传会话和上传指令客户端可以先落接口骨架，文件内容流转不阻塞第一条 Connector Host 纵切。
+5. `Sdk.Ops`：pending task 拉取、operation result 回传和本地 Connector Host 认证头注入。
 
-`Sdk.Ops`、`Sdk.Notification` 和 `Sdk.Observability` 可以先冻结接口方向，在第二迭代低风险动作闭环、站内通知纵切和诊断附件场景中补齐。
+`Sdk.Notification` 和 `Sdk.Observability` 仍可以先冻结接口方向，在站内通知纵切和诊断附件场景中补齐；`Sdk.Ops` 后续需要继续补充任务创建、任务详情、附件引用、持久化 outbox 协作和完整 IAM scope 支持。

@@ -25,7 +25,7 @@ Docker Connector
 2. `Program.cs` 只保留服务注册、中间件和 `UseFastEndpoints()` 接线；具体接口类放在各 Web 项目的 `Endpoints/` 目录。
 3. 新增平台 HTTP 接口不得在 `Program.cs` 或其它启动文件中使用 Minimal API 的 `.MapGet()`、`.MapPost()`、`.MapPatch()` 等路由映射。
 
-第二迭代链路在第一迭代稳定后推进：
+第二迭代链路已经按低风险 restart 场景落地，完整说明见 docs/architecture/second-vertical-slice-ops.md：
 
 ```text
 Console or Gateway
@@ -50,13 +50,12 @@ Console or Gateway
 
 ### 暂不阻塞
 
-1. Ops 到 Connector Host 的最终命令下发传输机制。
-2. Windows Service Connector 与 HTTP Connector。
-3. 完整控制台 UI。
-4. FileStorage 的完整文件管理后台、预览、转码和复杂保留策略。
-5. AI Integration 与 Knowledge 的代码骨架。
-6. 低风险动作闭环。
-7. 高风险动作审批和人工确认 UI。
+1. Windows Service Connector 与 HTTP Connector。
+2. 完整控制台 UI。
+3. FileStorage 的完整文件管理后台、预览、转码和复杂保留策略。
+4. AI Integration 与 Knowledge 的代码骨架。
+5. 高风险动作审批和人工确认 UI。
+6. Ops 持久化、领取租约、并发执行限制和持久化 outbox。
 
 ## 服务责任切分
 
@@ -78,7 +77,7 @@ Console or Gateway
 3. `nodeKey` 标识受管节点。
 4. `instanceKey` 标识具体应用实例，必须在重复注册、心跳和状态同步中保持稳定。
 5. `correlationId` 串联 Connector Host、AppHub、Gateway、Ops 的日志和追踪。
-6. `idempotencyKey` 用于注册和动作结果幂等处理。
+6. `idempotencyKey` 用于注册和动作任务创建幂等处理；动作结果以 operationTaskId、attemptId 和 Connector Host 范围关联。
 
 ## 实现顺序
 
@@ -140,13 +139,14 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 2. 实例详情能显示最近心跳时间、reportedStatus、healthStatus 和能力清单。
 3. Gateway 不直接依赖 AppHub.Domain 或 AppHub.Infrastructure。
 
-### 5. 第二迭代加入低风险动作闭环
+### 5. 第二迭代低风险动作闭环
 
 1. 控制台或 Gateway 创建 restart 类型 OperationTask。
 2. Ops 写入 AuditRecord。
-3. Connector Host 执行动作并回传 OperationResult。
-4. Ops 记录 OperationCompleted 或 OperationFailed。
-5. AppHub 只通过后续 InstanceStateSnapshot 观察最终状态变化。
+3. Connector Host 通过 pending 接口领取低风险任务。
+4. Connector Host 调用 Docker Connector 执行动作并回传 OperationResult。
+5. Ops 记录 OperationCompleted 或 OperationFailed。
+6. AppHub 只通过后续 InstanceStateSnapshot 观察最终状态变化。
 
 验收：
 
@@ -179,7 +179,7 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 
 ## 当前实现状态
 
-截至 2026-05-15，第一迭代纵切骨架已经落地并通过 `scripts/verify-first-slice.ps1` 验证。当前可用范围：
+截至 2026-05-15，第一迭代接入查询纵切已经通过 `scripts/verify-first-slice.ps1` 验证，第二迭代低风险动作闭环已经通过 `scripts/verify-second-slice-ops.ps1` 验证。当前可用范围：
 
 1. backend 与 connector-hosts 两套 solution 已创建，并可 restore、build、test。
 2. 平台 HTTP 服务已统一使用 FastEndpoints，路由实现放在各 Web 项目的 `Endpoints/` 目录。
@@ -187,12 +187,14 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 4. AppHub 可接收 Connector Host registration、heartbeat、state snapshot。
 5. PlatformGateway 可查询 AppHub 的实例列表与实例详情。
 6. Connector Host 可通过 `Nerv.IIP.Sdk.ConnectorProtocol` 完成注册、心跳和状态快照上报。
-7. 自动化验证脚本会启动 AppHub 与 PlatformGateway，并用 `corr-first-slice` 走通一条本地 API 验证链路。
+7. Ops 可创建 operation task、提供 pending 拉取、接收 operation result，并记录任务、尝试和审计事实。
+8. Connector Host 可通过 `Nerv.IIP.Sdk.Ops` 领取低风险 restart 任务并回传执行结果。
+9. 自动化验证脚本会启动 AppHub、Ops、PlatformGateway 和 Connector Host，并用本地 API 走通接入查询与 restart 动作闭环。
 
 当前限制：
 
-1. IAM 与 AppHub 的第一迭代事实仍是内存态实现，进程重启后不会持久化。
+1. IAM、AppHub 与 Ops 的第一、第二阶段事实仍是内存态实现，进程重启后不会持久化。
 2. FileStorage 目前是服务骨架和边界验证，尚未完成真实对象存储上传下载闭环。
-3. Ops 只保留健康入口和骨架，低风险动作闭环进入第二迭代。
+3. Ops 当前只覆盖低风险 restart 纵切，尚未覆盖高风险审批、持久化 outbox、租约和生产级重试。
 4. 控制台 UI 尚未落地，当前初步使用入口以 API 和验证脚本为主。
 5. 当前状态适合本地开发、接口联调和架构验证；不能视为生产可用版本。

@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Abstractions\Nerv.IIP.ConnectorHost.Connectors.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\backend\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
