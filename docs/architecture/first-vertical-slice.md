@@ -19,6 +19,12 @@ Docker Connector
   -> Console or API verification
 ```
 
+平台 HTTP 接口实现约束：
+
+1. Iam、FileStorage、AppHub、Ops 和 PlatformGateway 的 HTTP 入口统一使用 FastEndpoints。
+2. `Program.cs` 只保留服务注册、中间件和 `UseFastEndpoints()` 接线；具体接口类放在各 Web 项目的 `Endpoints/` 目录。
+3. 新增平台 HTTP 接口不得在 `Program.cs` 或其它启动文件中使用 Minimal API 的 `.MapGet()`、`.MapPost()`、`.MapPatch()` 等路由映射。
+
 第二迭代链路在第一迭代稳定后推进：
 
 ```text
@@ -170,3 +176,23 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 5. Platform SDK 项目不引用 backend/services 或 backend/gateway 的 Web、Domain、Infrastructure。
 6. PlatformGateway 能查询到该实例及其最近状态。
 7. 日志和追踪能通过 correlationId 串起 Connector Host、AppHub、Gateway 的关键步骤。
+
+## 当前实现状态
+
+截至 2026-05-15，第一迭代纵切骨架已经落地并通过 `scripts/verify-first-slice.ps1` 验证。当前可用范围：
+
+1. backend 与 connector-hosts 两套 solution 已创建，并可 restore、build、test。
+2. 平台 HTTP 服务已统一使用 FastEndpoints，路由实现放在各 Web 项目的 `Endpoints/` 目录。
+3. IAM、FileStorage、AppHub、Ops 和 PlatformGateway 都有最小 Web 服务入口、health 和 build info。
+4. AppHub 可接收 Connector Host registration、heartbeat、state snapshot。
+5. PlatformGateway 可查询 AppHub 的实例列表与实例详情。
+6. Connector Host 可通过 `Nerv.IIP.Sdk.ConnectorProtocol` 完成注册、心跳和状态快照上报。
+7. 自动化验证脚本会启动 AppHub 与 PlatformGateway，并用 `corr-first-slice` 走通一条本地 API 验证链路。
+
+当前限制：
+
+1. IAM 与 AppHub 的第一迭代事实仍是内存态实现，进程重启后不会持久化。
+2. FileStorage 目前是服务骨架和边界验证，尚未完成真实对象存储上传下载闭环。
+3. Ops 只保留健康入口和骨架，低风险动作闭环进入第二迭代。
+4. 控制台 UI 尚未落地，当前初步使用入口以 API 和验证脚本为主。
+5. 当前状态适合本地开发、接口联调和架构验证；不能视为生产可用版本。

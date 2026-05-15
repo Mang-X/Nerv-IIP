@@ -36,6 +36,8 @@
 
 - 先起 PlatformGateway、Iam、FileStorage、AppHub、Ops 五个最小 Web 服务。
 - 每个服务只放健康检查、基础配置、OpenTelemetry 接线、最小 HTTP 入口。
+- 平台 HTTP 入口统一使用 FastEndpoints；`Program.cs` 只负责 `AddFastEndpoints()`、中间件和 `UseFastEndpoints()` 接线，具体接口类放在各 Web 项目的 `Endpoints/` 目录。
+- 新增接口不得使用 Minimal API 的 `.MapGet()`、`.MapPost()`、`.MapPatch()` 等启动文件路由映射。
 - Iam 最小骨架需要包含用户、角色、权限、会话、外部客户端和授权授予的领域边界；认证基线以 docs/architecture/iam-authentication-baseline.md 为准，但不要求首批实现完整 OAuth/OIDC 协议矩阵。
 - FileStorage 最小骨架需要包含文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和对象存储适配边界；文件存储基线以 docs/architecture/file-storage-baseline.md 为准，但不要求首批实现复杂网盘、预览或转码能力。
 - Application 相关命令、查询和事件处理器先以内聚目录形式放在 Web/Application 下，不默认拆成独立项目。

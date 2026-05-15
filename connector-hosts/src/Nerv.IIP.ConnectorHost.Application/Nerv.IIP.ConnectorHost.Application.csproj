@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\backend\common\Sdk\Nerv.IIP.Sdk.Core\Nerv.IIP.Sdk.Core.csproj" />
+    <ProjectReference Include="..\..\..\backend\common\Sdk\Nerv.IIP.Sdk.Auth\Nerv.IIP.Sdk.Auth.csproj" />
+    <ProjectReference Include="..\..\..\backend\common\Sdk\Nerv.IIP.Sdk.ConnectorProtocol\Nerv.IIP.Sdk.ConnectorProtocol.csproj" />
+    <ProjectReference Include="..\..\..\backend\common\Contracts\Nerv.IIP.Contracts.ConnectorProtocol\Nerv.IIP.Contracts.ConnectorProtocol.csproj" />
+    <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Contracts\Nerv.IIP.ConnectorHost.Contracts.csproj" />
+    <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Abstractions\Nerv.IIP.ConnectorHost.Connectors.Abstractions.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

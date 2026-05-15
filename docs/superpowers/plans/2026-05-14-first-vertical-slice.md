@@ -4,6 +4,8 @@
 
 **Goal:** 建立 Nerv-IIP 第一迭代纵切：Connector Host 发现一个 Docker 运行目标，上报注册、心跳和状态快照，AppHub 沉淀应用与实例事实，PlatformGateway 能查询到最新状态。
 
+**Execution Status (2026-05-15):** 第一迭代纵切骨架已经落地，并通过 `pwsh scripts/verify-first-slice.ps1` 验证。当前实现满足本计划的本地纵切验收口径：backend 与 connector-hosts 可 restore/build/test，Connector Host 可通过 Platform SDK 上报 registration、heartbeat、state snapshot，AppHub 可接收并沉淀内存态实例事实，PlatformGateway 可查询实例列表与详情。本文档保留为原始执行计划和后续补齐真实持久化、完整 IAM、FileStorage、Ops 等能力的任务来源。
+
 **Architecture:** 第一迭代采用文档冻结的服务边界：IAM 先提供身份、权限、会话和 Connector Host 凭证底座；FileStorage 先提供主平台文件存储服务骨架和边界约束；AppHub 拥有应用与实例事实；PlatformGateway 只做薄 BFF，通过 AppHub 显式 HTTP/query contract 聚合数据；Connector Host 独立于 backend solution，通过 Platform SDK 的 ConnectorProtocol 客户端和共享 Connector Protocol DTO 调用平台。Ops 只创建服务骨架和健康入口，不进入第一迭代完成定义。Notification 已作为独立平台通知边界冻结，但第一迭代不创建通知服务、通知表、`Sdk.Notification` 或外部通道 provider；其它服务不得临时内置站内通知、邮件、短信、企业 IM 或 Webhook 投递逻辑。
 
 **Tech Stack:** .NET 10、ASP.NET Core、netcorepal-cloud-framework、FastEndpoints、PostgreSQL、RabbitMQ、Redis、FusionCache、MinIO、OpenTelemetry、Docker、xUnit 或模板默认测试框架。
@@ -117,6 +119,8 @@ connector-hosts/
 11. SDK 模块只封装公开 API、公开 DTO、认证上下文、错误模型和客户端传输，不引用服务端 Web、Domain、Infrastructure 或数据库模型。
 12. SDK 不成为权限事实源、审计事实源、通知事实源、服务发现中心或文件事实源。
 13. Notification 是独立平台服务边界；第一迭代内 AppHub、Ops、Gateway、Connector Host 和行业扩展不得各自创建站内通知表或直连外部通知通道。
+14. 平台 HTTP 接口统一使用 FastEndpoints；`Program.cs` 只保留服务注册、中间件和 `UseFastEndpoints()` 接线，具体接口放在各 Web 项目的 `Endpoints/**`。
+15. 新增平台 HTTP 接口不得使用 Minimal API 的 `.MapGet()`、`.MapPost()`、`.MapPatch()` 等启动文件路由映射。
 
 ## Task 1: Scaffold Backend Solution And Common Projects
 

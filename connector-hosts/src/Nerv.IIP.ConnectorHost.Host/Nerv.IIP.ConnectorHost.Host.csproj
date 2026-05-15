@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-Nerv.IIP.ConnectorHost.Host-1e29a21c-8483-4de8-bd5f-9c7d66f92140</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Application\Nerv.IIP.ConnectorHost.Application.csproj" />
+    <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Docker\Nerv.IIP.ConnectorHost.Connectors.Docker.csproj" />
+  </ItemGroup>
+</Project>

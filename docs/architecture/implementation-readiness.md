@@ -1,6 +1,6 @@
-# 实施就绪清单
+# 实施状态清单
 
-本文档把 Nerv-IIP 从“文档冻结完成”推进到“可以直接开始建工程”的状态，给出首批实施的环境前置、目录落点、引用规则与开工边界。
+本文档记录 Nerv-IIP 从“文档冻结完成”到“第一迭代纵切骨架已落地”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
 ## 当前结论
 
@@ -8,7 +8,8 @@
 2. Connector Host 与平台的 v1 协议边界已经冻结到公开接口和最小对象级别。
 3. 后端 CleanDDD 与 netcorepal 的模板参数、目录、事件、事务、仓储和测试约定已经冻结。
 4. 核心术语、Platform SDK 模块边界、IAM 对外授权边界、文件存储基线、通知能力基线、知识源生命周期和首批纵切验收口径已经补齐。
-5. 首批实现可以从 backend、connector-hosts 两个工作面直接开工，无需再等待新的架构决策。
+5. backend、connector-hosts 两个工作面已经完成第一迭代纵切骨架，可通过 `scripts/verify-first-slice.ps1` 做本地验证。
+6. 平台 HTTP 接口统一使用 FastEndpoints；新增接口必须放在 Web 项目的 `Endpoints/` 目录，不在启动文件中写 Minimal API 路由映射。
 
 ## 环境前置
 
@@ -90,7 +91,7 @@
 
 ## 开工边界
 
-### 立即进入实现的范围
+### 第一迭代已落地范围
 
 1. backend 与 connector-hosts 两套 solution 创建。
 2. Platform SDK 的 Core、Auth、ConnectorProtocol、FileStorage 最小项目骨架。
@@ -103,6 +104,14 @@
 9. 统一 FusionCache 接线、Redis L2/backplane、缓存键命名和首批读侧缓存策略。
 10. 以 docs/architecture/first-vertical-slice.md 作为首批纵切验收口径。
 11. 以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 作为后端代码放置、事件转换、事务和测试验收口径。
+
+### 当前初步使用方式
+
+1. 运行 `pwsh scripts/verify-first-slice.ps1` 可验证 backend 与 connector-hosts 的 restore、build、test，以及 AppHub 到 PlatformGateway 的第一条本地纵切。
+2. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
+3. PlatformGateway 当前提供实例列表与实例详情查询接口。
+4. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub。
+5. 当前实现用于本地开发和接口联调，不包含生产部署、真实持久化、完整认证授权 UI 或运维动作闭环。
 
 ### 可以并行但不阻塞开工的事项
 
@@ -128,4 +137,4 @@
 
 ## 结论
 
-就当前文档状态而言，Nerv-IIP 已经达到可以开始实施的程度。下一步不再需要新增架构决策，直接进入 backend/common、Iam、FileStorage、AppHub、PlatformGateway、Connector Host 的实际 scaffold 与最短纵切实现。具体第一迭代任务清单见 docs/superpowers/plans/2026-05-14-first-vertical-slice.md。
+Nerv-IIP 已经完成第一迭代纵切骨架：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host 和 Docker Connector 的最小工程结构与验证链路已经存在。下一步不再是 scaffold，而是把当前内存态和骨架能力推进到真实持久化、完整 IAM 授权、FileStorage 上传下载、前端控制台和第二迭代低风险动作闭环。具体第一迭代任务清单见 docs/superpowers/plans/2026-05-14-first-vertical-slice.md。

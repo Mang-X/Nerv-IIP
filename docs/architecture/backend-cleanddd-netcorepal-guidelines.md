@@ -17,7 +17,7 @@
 1. 本文档适用于 backend 下的平台 HTTP 服务：Iam、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge。
 2. PlatformGateway 只采用其中的 Web、Endpoint、响应、观测与契约消费约定；默认不强制创建 Domain 与 Infrastructure。
 3. Connector Host 不适用平台 HTTP 服务的三项目约定，仍按 connector-hosts 独立宿主模型实现。
-4. 当前仓库尚未创建业务代码，本文档用于约束下一步 scaffold 和首批纵切代码生成。
+4. 当前仓库已经落地第一迭代纵切骨架；本文档继续约束后续平台服务、Endpoint、领域模型和基础设施实现。
 
 ## 模板使用基线
 
