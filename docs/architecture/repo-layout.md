@@ -45,7 +45,7 @@ Nerv-IIP/
 
 ### backend
 
-- services：平台领域服务，如 IAM、FileStorage、AppHub、Ops、AI Integration、Knowledge。
+- services：平台领域服务，如 IAM、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge。
 - gateway：PlatformGateway 与前端聚合接口。
 - common：窄共享库，如 Contracts、Sdk、Caching、Observability、Testing。
 - tests：后端测试项目与测试宿主。

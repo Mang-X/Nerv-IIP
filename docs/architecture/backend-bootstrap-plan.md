@@ -113,7 +113,7 @@
 ### Step 5. 落基础设施开发编排
 
 - 提供 PostgreSQL、Redis、RabbitMQ、MinIO、Qdrant、OpenTelemetry 的本地开发编排。
-- 让 Gateway、Iam、FileStorage、AppHub、Ops、Connector Host 在同一本地开发编排中联调。
+- 让 Gateway、Iam、FileStorage、AppHub、Ops、Connector Host 在同一本地开发编排中联调；Notification 可在通知纵切进入时加入同一编排，但不阻塞首条注册纵切。
 
 验收：
 
@@ -167,7 +167,8 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 ## 冻结结论
 
 1. 不先做 Knowledge 实现，先做平台控制面闭环。
-2. 不先做复杂 AI 自主流程，先做 AI Integration 的治理边界。
-3. 不先做多 Connector，先用 Docker Connector 跑通协议。
-4. 不先做所有运维动作，第一迭代只做注册、心跳、状态同步和 Gateway 可见；低风险动作作为第二迭代闭环。
-5. 不先细抠全部领域模型，先用最短纵切验证服务边界是否合理。
+2. 不先做 Notification 完整外部通道，通知能力先冻结边界，后续以站内通知和待办作为最小纵切。
+3. 不先做复杂 AI 自主流程，先做 AI Integration 的治理边界。
+4. 不先做多 Connector，先用 Docker Connector 跑通协议。
+5. 不先做所有运维动作，第一迭代只做注册、心跳、状态同步和 Gateway 可见；低风险动作作为第二迭代闭环。
+6. 不先细抠全部领域模型，先用最短纵切验证服务边界是否合理。

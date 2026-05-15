@@ -6,7 +6,7 @@
 
 1. Platform SDK 负责降低外部演进单元接入主平台的成本。
 2. Platform SDK 只封装公开 API、公开 DTO、认证上下文、错误模型、追踪上下文和少量客户端协议细节。
-3. Platform SDK 不拥有任何平台事实，不保存服务端状态，不替代 IAM、AppHub、File Storage、Ops、Knowledge 或 AI Integration。
+3. Platform SDK 不拥有任何平台事实，不保存服务端状态，不替代 IAM、AppHub、File Storage、Ops、Notification、Knowledge 或 AI Integration。
 4. Platform SDK 不参与服务端领域决策；所有权限判断、事实写入、审计落库和状态转换仍在主平台服务端完成。
 5. Platform SDK 与主平台采用主版本对齐、小版本向后兼容策略。
 
@@ -20,6 +20,7 @@ Nerv.IIP.Sdk.Auth
 Nerv.IIP.Sdk.ConnectorProtocol
 Nerv.IIP.Sdk.FileStorage
 Nerv.IIP.Sdk.Ops
+Nerv.IIP.Sdk.Notification
 Nerv.IIP.Sdk.Observability
 ```
 
@@ -93,6 +94,20 @@ Nerv.IIP.Sdk.Observability
 2. 不绕过 Ops 的任务状态机、审批挂点或失败分类。
 3. 不成为动作执行结果的唯一真相源。
 
+### Nerv.IIP.Sdk.Notification
+
+职责：
+
+1. 提交通知意图、查询通知、标记已读、归档和查询待办入口。
+2. 支持外部应用或行业扩展在受 IAM 授权下表达通知意图。
+3. 使用 `Sdk.Core` 与 `Sdk.Auth` 携带组织、环境、资源引用、correlationId 和幂等键。
+
+不做：
+
+1. 不直接调用短信、邮件、企业 IM 或 Webhook provider。
+2. 不绕过 Notification 的接收人解析、偏好、去重和投递状态记录。
+3. 不把 NotificationMessage 当作 Ops 审计、AppHub 状态或 Knowledge 引入事实。
+
 ### Nerv.IIP.Sdk.Observability
 
 职责：
@@ -121,14 +136,14 @@ Nerv.IIP.Sdk.Observability
 1. 服务发现注册仍然属于 Connector Host 与 Connector Protocol 边界。
 2. Connector 发现本地目标，Connector Host 生成注册、心跳和状态快照。
 3. `Sdk.ConnectorProtocol` 只负责把这些公开契约可靠发送到平台。
-4. File Storage、Ops、Observability 和 Auth SDK 模块不会改变 AppHub 的应用与实例事实所有权。
+4. File Storage、Ops、Notification、Observability 和 Auth SDK 模块不会改变 AppHub 的应用与实例事实所有权。
 5. Connector Host 可以在动作结果或诊断场景中组合使用 `Sdk.FileStorage` 上传附件，再通过 `Sdk.Ops` 回传 `fileId`。
 
 ## 依赖规则
 
 1. 所有 SDK 模块可以依赖 `Sdk.Core`。
 2. 需要认证的 SDK 模块可以依赖 `Sdk.Auth` 或接收外部 token provider。
-3. `Sdk.ConnectorProtocol`、`Sdk.FileStorage`、`Sdk.Ops` 之间不能互相强依赖；组合编排应留在调用方。
+3. `Sdk.ConnectorProtocol`、`Sdk.FileStorage`、`Sdk.Ops`、`Sdk.Notification` 之间不能互相强依赖；组合编排应留在调用方。
 4. `Sdk.Observability` 只能提供上下文与日志辅助，不依赖 Ops 或 File Storage。
 5. SDK 不引用 backend/services、backend/gateway 下任何 Web、Domain、Infrastructure 项目。
 
@@ -149,4 +164,4 @@ Nerv.IIP.Sdk.Observability
 3. `Sdk.ConnectorProtocol`：注册、心跳、状态快照客户端。
 4. `Sdk.FileStorage`：上传会话和上传指令客户端可以先落接口骨架，文件内容流转不阻塞第一条 Connector Host 纵切。
 
-`Sdk.Ops` 和 `Sdk.Observability` 可以先冻结接口方向，在第二迭代低风险动作闭环和诊断附件场景中补齐。
+`Sdk.Ops`、`Sdk.Notification` 和 `Sdk.Observability` 可以先冻结接口方向，在第二迭代低风险动作闭环、站内通知纵切和诊断附件场景中补齐。
