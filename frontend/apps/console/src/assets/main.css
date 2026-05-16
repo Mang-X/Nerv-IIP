@@ -1,0 +1,30 @@
+:root {
+  color-scheme: light;
+  --color-page: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-border: #d8dde6;
+  --color-text: #172033;
+  --color-text-muted: #62708a;
+  --color-accent: #256f67;
+  --color-on-accent: #ffffff;
+  --color-danger: #b8323a;
+  --color-on-danger: #ffffff;
+  --color-success: #15724b;
+  --color-warning: #9a6200;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
