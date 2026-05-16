@@ -1,0 +1,33 @@
+{
+  "name": "@nerv-iip/frontend-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate:api": "vp run -w workspace:generate-api",
+    "check": "vp check",
+    "fmt": "vp fmt --check .",
+    "fmt:fix": "vp fmt --write .",
+    "lint": "vp lint .",
+    "test": "vp test run",
+    "typecheck": "vp run -w workspace:typecheck",
+    "build": "vp run -w workspace:build"
+  },
+  "devDependencies": {
+    "@types/node": "25.8.0",
+    "@vitejs/plugin-vue": "6.0.7",
+    "@voidzero-dev/vite-plus-core": "0.1.21",
+    "@voidzero-dev/vite-plus-test": "0.1.21",
+    "@vue/test-utils": "2.4.10",
+    "jsdom": "29.1.1",
+    "typescript": "6.0.3",
+    "vite": "8.0.13",
+    "vite-plus": "0.1.21",
+    "vitest": "4.1.6",
+    "vue-tsc": "3.2.9"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "packageManager": "pnpm@10.13.1"
+}

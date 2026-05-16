@@ -1,0 +1,21 @@
+{
+  "name": "@nerv-iip/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "openapi-ts",
+    "test": "vp test run src --environment jsdom",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hey-api/client-fetch": "0.13.1",
+    "@pinia/colada": "1.3.0"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "0.97.1"
+  }
+}

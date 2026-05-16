@@ -1,11 +1,23 @@
 using FastEndpoints;
+using FastEndpoints.Swagger;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Observability;
 using Nerv.IIP.PlatformGateway.Web;
+using Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
+using Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddFastEndpoints();
+builder.Services
+    .AddFastEndpoints()
+    .SwaggerDocument(o =>
+    {
+        o.DocumentSettings = s =>
+        {
+            s.Title = "Nerv IIP Platform Gateway";
+            s.Version = "v1";
+        };
+    });
 builder.Services.AddNervIipCaching(builder.Configuration, "platform-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "platform-gateway");
 builder.Services.AddHttpClient<IAppHubClient, HttpAppHubClient>(client =>
@@ -19,7 +31,17 @@ builder.Services.AddHttpClient<IGatewayOpsClient, GatewayOpsClient>(client =>
 
 var app = builder.Build();
 app.UseNervIipCorrelation();
-app.UseFastEndpoints();
+app.UseFastEndpoints(c =>
+{
+    c.Endpoints.NameGenerator = ctx => ctx.EndpointType.Name switch
+    {
+        nameof(ListInstancesEndpoint) => "listConsoleInstances",
+        nameof(GetInstanceDetailEndpoint) => "getConsoleInstanceDetail",
+        nameof(RestartInstanceEndpoint) => "restartConsoleInstance",
+        nameof(GetConsoleOperationTaskEndpoint) => "getConsoleOperationTask",
+        _ => ctx.EndpointType.Name
+    };
+}).UseSwaggerGen();
 app.Run();
 
 public partial class Program;

@@ -6,7 +6,7 @@
 
 **Architecture:** PlatformGateway 继续作为前端唯一控制台 API 入口，先补齐稳定 OpenAPI 文档与 operationId，再由 `frontend/packages/api-client` 使用 Hey API 生成 fetch SDK、TypeScript types 和 Pinia Colada query/mutation options。`frontend/apps/console` 使用 Vue Router 官方文件路由插件、Pinia、Pinia Colada 和薄页面组件消费 `api-client` 的稳定导出，不在页面里手写 URL 或 DTO。
 
-**Tech Stack:** .NET 10、FastEndpoints、FastEndpoints.Swagger、PowerShell、pnpm 10.13.1、Node.js 22.17.0、Vue 3.5.34、Vue Router 5.0.7、Vite 8.0.13、TypeScript 6.0.3、Pinia 3.0.4、Pinia Colada 1.3.0、Pinia Colada Auto Refetch 0.2.6、Hey API OpenAPI TypeScript 0.97.1、Vitest 4.1.6。
+**Tech Stack:** .NET 10、FastEndpoints、FastEndpoints.Swagger、PowerShell、pnpm 10.13.1、Node.js >=22.18.0、Vue 3.5.34、Vue Router 5.0.7、Vite 8.0.13、Vite+ 0.1.21、TypeScript 6.0.3、Pinia 3.0.4、Pinia Colada 1.3.0、Pinia Colada Auto Refetch 0.2.6、Hey API OpenAPI TypeScript 0.97.1、Vitest 4.1.6。
 
 ---
 
@@ -27,6 +27,33 @@ Second vertical slice verified with operationTaskId op-000001.
 ```
 
 The project is ready for the third phase. The only pre-plan adjustment already made is `NuGet.config`, which keeps Central Package Management from failing on local machines with multiple global NuGet sources and `TreatWarningsAsErrors=true`.
+
+## Completion Record
+
+2026-05-17 更新：第三阶段控制台纵切已完成并复验通过。
+
+验证命令：
+
+```powershell
+node --version
+pnpm -C frontend check
+pnpm -C frontend lint
+pnpm -C frontend fmt
+pnpm -C frontend typecheck
+pnpm -C frontend test
+pnpm -C frontend build
+pwsh scripts/verify-third-slice-console.ps1
+```
+
+当前验证结果：
+
+```text
+node --version: v22.22.3
+pnpm check/lint/fmt/typecheck/test/build: exit 0
+scripts/verify-third-slice-console.ps1: Third vertical slice console verified.
+```
+
+注意：Vite+ 的 lint/fmt 路径会直接读取根级 `frontend/vite.config.ts`。Node.js `22.17.x` 会触发 TypeScript config loading 错误；第三阶段已将本机 OpenJS.NodeJS.22 升级到 `22.22.3`，仓库根 `.node-version` 固定为 `22.22.3`，项目基线保持为 Node.js `>=22.18.0`。
 
 ## Scope
 
@@ -343,19 +370,29 @@ Create `frontend/package.json`:
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.13.1",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
-    "generate:api": "pnpm --filter @nerv-iip/api-client generate",
-    "test": "vitest run",
-    "typecheck": "pnpm -r --if-present typecheck",
-    "build": "pnpm --filter @nerv-iip/console build"
+    "generate:api": "vp run -w workspace:generate-api",
+    "check": "vp check",
+    "fmt": "vp fmt --check .",
+    "fmt:fix": "vp fmt --write .",
+    "lint": "vp lint .",
+    "test": "vp test run",
+    "typecheck": "vp run -w workspace:typecheck",
+    "build": "vp run -w workspace:build"
   },
   "devDependencies": {
     "@types/node": "25.8.0",
     "@vitejs/plugin-vue": "6.0.7",
+    "@voidzero-dev/vite-plus-core": "0.1.21",
+    "@voidzero-dev/vite-plus-test": "0.1.21",
     "@vue/test-utils": "2.4.10",
     "jsdom": "29.1.1",
     "typescript": "6.0.3",
     "vite": "8.0.13",
+    "vite-plus": "0.1.21",
     "vitest": "4.1.6",
     "vue-tsc": "3.2.9"
   }
@@ -370,6 +407,9 @@ Create `frontend/pnpm-workspace.yaml`:
 packages:
   - apps/*
   - packages/*
+overrides:
+  vite: npm:@voidzero-dev/vite-plus-core@0.1.21
+  vitest: npm:@voidzero-dev/vite-plus-test@0.1.21
 ```
 
 - [ ] **Step 4: Create shared TypeScript baseline**
@@ -379,7 +419,7 @@ Create `frontend/tsconfig.base.json`:
 ```json
 {
   "compilerOptions": {
-    "target": "ES2024",
+    "target": "ES2023",
     "useDefineForClassFields": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
@@ -387,6 +427,7 @@ Create `frontend/tsconfig.base.json`:
     "jsx": "preserve",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "skipLibCheck": true,
     "noEmit": true,
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": ["node", "vite/client", "vitest/globals"]
@@ -394,17 +435,92 @@ Create `frontend/tsconfig.base.json`:
 }
 ```
 
-- [ ] **Step 5: Create root Vite config for shared Vitest defaults**
+- [ ] **Step 5: Create root Vite+ config for shared checks, tests and workspace tasks**
 
 Create `frontend/vite.config.ts`:
 
 ```ts
-import { defineConfig } from 'vitest/config'
+import { fileURLToPath, URL } from 'node:url'
+import Vue from '@vitejs/plugin-vue'
+import { defineConfig } from 'vite-plus'
 
 export default defineConfig({
+  fmt: {
+    semi: false,
+    singleQuote: true,
+    ignorePatterns: [
+      'apps/console/dist/**',
+      'apps/console/typed-router.d.ts',
+      'packages/api-client/openapi/**',
+      'packages/api-client/src/generated/**',
+    ],
+  },
+  plugins: [Vue()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./apps/console/src', import.meta.url)),
+      '@nerv-iip/api-client': fileURLToPath(
+        new URL('./packages/api-client/src/index.ts', import.meta.url),
+      ),
+      '@nerv-iip/app-shell': fileURLToPath(
+        new URL('./packages/app-shell/src/index.ts', import.meta.url),
+      ),
+      '@nerv-iip/ui': fileURLToPath(new URL('./packages/ui/src/index.ts', import.meta.url)),
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',
+  },
+  lint: {
+    ignorePatterns: [
+      'apps/console/dist/**',
+      'apps/console/typed-router.d.ts',
+      'packages/api-client/src/generated/**',
+    ],
+  },
+  run: {
+    cache: {
+      tasks: true,
+      scripts: false,
+    },
+    tasks: {
+      'workspace:generate-api': {
+        command: 'pnpm --filter @nerv-iip/api-client generate',
+        input: [
+          'packages/api-client/openapi-ts.config.ts',
+          'packages/api-client/openapi/platform-gateway.v1.json',
+        ],
+        output: ['packages/api-client/src/generated/**'],
+      },
+      'workspace:typecheck': {
+        command: 'pnpm -r --if-present typecheck',
+        input: [
+          'apps/**/src/**',
+          'apps/**/tsconfig.json',
+          'apps/**/typed-router.d.ts',
+          'packages/**/src/**',
+          'packages/**/tsconfig.json',
+          'tsconfig.base.json',
+        ],
+      },
+      'workspace:build': {
+        command: 'pnpm --filter @nerv-iip/console build',
+        dependsOn: ['workspace:typecheck'],
+        input: [
+          'apps/console/index.html',
+          'apps/console/src/**',
+          'apps/console/tsconfig.json',
+          'apps/console/vite.config.ts',
+          'apps/console/typed-router.d.ts',
+          'packages/api-client/src/**',
+          'packages/app-shell/src/**',
+          'packages/ui/src/**',
+          'tsconfig.base.json',
+        ],
+        output: ['apps/console/dist/**'],
+      },
+    },
   },
 })
 ```
@@ -419,6 +535,8 @@ pnpm -C frontend install
 ```
 
 Expected: exit code `0`; `frontend/pnpm-lock.yaml` is created.
+
+`pnpm check` / `pnpm lint` load `frontend/vite.config.ts` through the Vite+ lint/fmt path. Run these on Node.js `>=22.18.0`; Node.js `22.17.x` can install and run build/test tasks, but fails TS config loading for this path.
 
 - [ ] **Step 7: Commit**
 
@@ -516,7 +634,7 @@ Create `frontend/packages/api-client/package.json`:
   },
   "scripts": {
     "generate": "openapi-ts",
-    "test": "vitest run src",
+    "test": "vp test run src --environment jsdom",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -1072,7 +1190,7 @@ Create `frontend/apps/console/package.json`:
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "vue-tsc --noEmit -p tsconfig.json && vite build",
-    "test": "vitest run src",
+    "test": "vp test run src",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -1470,7 +1588,7 @@ describe('ConsoleIndexPage', () => {
 Run:
 
 ```powershell
-pnpm -C frontend --filter @nerv-iip/console test -- --run src/pages/index.test.ts
+pnpm -C frontend --filter @nerv-iip/console exec vp test run src/pages/index.test.ts
 ```
 
 Expected: FAIL because the console page and components do not exist yet.
