@@ -12,6 +12,7 @@
 6. 第二阶段低风险动作闭环已经落地，可通过 `scripts/verify-second-slice-ops.ps1` 验证 Gateway、Ops、Connector Host 和 Docker Connector 的 restart 闭环。
 7. 平台 HTTP 接口统一使用 FastEndpoints；新增接口必须放在 Web 项目的 `Endpoints/` 目录，不在启动文件中写 Minimal API 路由映射。
 8. 部署策略已经冻结为“多部署目标，单一部署模型”：平台级 Aspire AppHost 作为统一拓扑入口，Docker Compose、安装包和整合安装脚本作为不同环境的交付目标。
+9. 仓库根必须保留 `NuGet.config` 固定 NuGet restore 包源，避免本机全局多包源配置与 Central Package Management、`TreatWarningsAsErrors` 组合后触发 `NU1507`。
 
 ## 环境前置
 
@@ -24,6 +25,14 @@
 5. 创建服务前运行 `dotnet new netcorepal-web --help` 核对本机模板参数。
 6. 平台领域服务优先使用 netcorepal 的 web 模板作为初始骨架，但命令必须显式指定 `--Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false`，详见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
 7. 后续落地平台级 AppHost、Compose 生成和 Aspire Dashboard 时，需要安装 Aspire CLI；服务模板仍保持 `--UseAspire false`，避免生成服务级局部编排入口。
+
+## 包源恢复基线
+
+1. backend 启用 Central Package Management，且 `backend/Directory.Build.props` 将 warning 视为 error。
+2. 如果开发者全局 NuGet 配置同时启用多个 HTTP 包源，NuGet 会产生 `NU1507`；在本仓库中该 warning 会被提升为 restore error。
+3. 仓库根 `NuGet.config` 使用 `<clear />` 后只保留 `nuget.org`，用于确保本地与自动化 restore 结果一致。
+4. 如客户或离线环境需要镜像源，应通过受控环境配置或后续交付脚本生成，不修改仓库默认 `NuGet.config` 为私有镜像。
+5. 验证脚本默认使用仓库根 `NuGet.config`，不要求开发者修改个人全局 NuGet 源。
 
 ## 共享契约落点
 
@@ -121,6 +130,14 @@
 6. Ops 当前会记录 OperationTask、OperationAttempt 和 AuditRecord 的内存态事实。
 7. 以 docs/architecture/second-vertical-slice-ops.md 和 docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md 作为第二阶段验收口径。
 
+### 第三迭代计划范围
+
+1. Gateway 补齐控制台 OpenAPI 文档与稳定 operationId。
+2. frontend 工作区创建 pnpm workspace、console 应用、api-client、ui 和 app-shell 初版。
+3. api-client 通过 Hey API 从 Gateway OpenAPI 生成 types、fetch SDK 和 Pinia Colada query/mutation options。
+4. console 首屏展示实例列表、实例详情、restart 动作入口和 OperationTask 状态页。
+5. 以 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 作为第三阶段实施计划与验收口径。
+
 ### 当前初步使用方式
 
 1. 运行 `pwsh scripts/verify-first-slice.ps1` 可验证 backend 与 connector-hosts 的 restore、build、test，以及 AppHub 到 PlatformGateway 的第一条本地纵切。
@@ -159,4 +176,4 @@
 
 ## 结论
 
-Nerv-IIP 已经完成第一迭代接入查询纵切和第二迭代低风险动作闭环：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host 和 Docker Connector 的最小工程结构与验证链路已经存在。下一步不再是 scaffold，而是把当前内存态和骨架能力推进到真实持久化、完整 IAM 授权、FileStorage 上传下载、前端控制台、高风险动作审批、通知联动和多目标部署交付。具体任务清单见 docs/superpowers/plans/2026-05-14-first-vertical-slice.md、docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md 与 docs/architecture/deployment-baseline.md。
+Nerv-IIP 已经完成第一迭代接入查询纵切和第二迭代低风险动作闭环：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host 和 Docker Connector 的最小工程结构与验证链路已经存在。下一步不再是 scaffold，而是把当前内存态和骨架能力推进到前端控制台、真实持久化、完整 IAM 授权、FileStorage 上传下载、高风险动作审批、通知联动和多目标部署交付。第三迭代优先按 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 落地控制台纵切；其它后续任务继续参考 docs/superpowers/plans/2026-05-14-first-vertical-slice.md、docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md 与 docs/architecture/deployment-baseline.md。

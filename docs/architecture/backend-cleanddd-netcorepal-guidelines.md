@@ -146,9 +146,12 @@ Endpoint：
 
 1. HTTP Endpoint 使用 FastEndpoints。
 2. Endpoint 只做请求绑定、鉴权声明、mediator 调度和响应包装，不写领域规则。
-3. 本项目采用 CleanDDD 技能里的属性路由风格，优先使用 `[HttpGet]`、`[HttpPost]`、`[Tags]`、`[AllowAnonymous]` 等特性，不在新代码中默认使用 `Configure()`。
-4. 响应统一使用 `ResponseData<T>` 和 `.AsResponseData()`。
-5. 请求/响应类型可以直接使用强类型 ID，不解包 `.Value`。
+3. 本项目采用 CleanDDD 技能里的属性路由风格，常规 Endpoint 优先使用 `[HttpGet]`、`[HttpPost]`、`[Tags]`、`[AllowAnonymous]` 等特性声明 HTTP 入口。
+4. FastEndpoints 的属性配置能力是受限集合；当 Endpoint 需要只能通过 fluent API 表达的高级配置时，可以改用 `Configure()`，但同一个 Endpoint 不混用属性路由与 `Configure()`。
+5. PlatformGateway 控制台接口的稳定 OpenAPI `operationId` 优先通过 Gateway 启动配置中的 Endpoint name generator 集中维护，避免为了命名批量把属性路由 Endpoint 改写成 `Configure()`。
+6. 只有当单个 Endpoint 同时需要复杂 metadata、特殊 Swagger 描述或其它高级 FastEndpoints 配置时，才把该 Endpoint 完整切换到 `Configure()`；切换后路由、鉴权和 metadata 都放在同一个 `Configure()` 中。
+7. 响应统一使用 `ResponseData<T>` 和 `.AsResponseData()`。
+8. 请求/响应类型可以直接使用强类型 ID，不解包 `.Value`。
 
 ## 事务、领域事件与集成事件
 

@@ -128,6 +128,7 @@ Nerv-IIP/
 
 1. docs/superpowers/plans/2026-05-14-first-vertical-slice.md
 2. docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md
+3. docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md
 
 ## 里程碑
 
@@ -148,7 +149,7 @@ Nerv-IIP/
 
 下一阶段重点：
 
-1. 建立 frontend 工作区骨架与 api-client 生成链路，把实例查询和低风险 restart 操作接入控制台。
+1. 按 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 建立 frontend 工作区骨架与 api-client 生成链路，把实例查询和低风险 restart 操作接入控制台。
 2. 将当前内存态 IAM、AppHub、Ops 和缓存实现推进到 PostgreSQL、RabbitMQ、Redis 等真实基础设施。
 3. 补齐 FileStorage 的真实上传下载闭环、IAM 完整授权链路和控制台登录能力。
 4. 扩展 Ops 的审批、权限、通知和持久化 outbox，逐步覆盖更高风险动作。
