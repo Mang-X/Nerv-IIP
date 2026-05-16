@@ -53,7 +53,7 @@ Nerv-IIP/
 2. Iam、FileStorage、AppHub、Ops。
 3. Connector Host。
 4. PostgreSQL、Redis、RabbitMQ、MinIO、Qdrant。
-5. OpenTelemetry Collector，以及后续 Grafana 体系的接入点。
+5. OpenTelemetry Collector，以及后续开源、自托管观测后端或暂不预置可视化后端的接入点。
 
 后续 Notification、Knowledge、AI Integration 和 frontend console 进入可运行状态后，应纳入同一 AppHost，而不是新增第二套平台编排入口。
 
