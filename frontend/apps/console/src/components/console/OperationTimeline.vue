@@ -33,11 +33,15 @@ function badgeTone(status?: string | null) {
 }
 
 function attemptKey(attempt: OperationAttempt, index: number) {
-  return attempt.attemptId ?? `attempt:${attempt.startedAtUtc ?? attempt.status ?? 'unknown'}:${index}`
+  return (
+    attempt.attemptId ?? `attempt:${attempt.startedAtUtc ?? attempt.status ?? 'unknown'}:${index}`
+  )
 }
 
 function auditRecordKey(record: AuditRecord, index: number) {
-  return record.auditRecordId ?? `audit:${record.occurredAtUtc ?? record.action ?? 'unknown'}:${index}`
+  return (
+    record.auditRecordId ?? `audit:${record.occurredAtUtc ?? record.action ?? 'unknown'}:${index}`
+  )
 }
 </script>
 
@@ -55,7 +59,9 @@ function auditRecordKey(record: AuditRecord, index: number) {
       </UiBadge>
     </div>
 
-    <p v-if="pending && !operationTask" class="operation-timeline__muted">Loading operation task...</p>
+    <p v-if="pending && !operationTask" class="operation-timeline__muted">
+      Loading operation task...
+    </p>
 
     <template v-else-if="operationTask">
       <dl class="operation-timeline__facts">
@@ -80,16 +86,26 @@ function auditRecordKey(record: AuditRecord, index: number) {
       <section class="operation-timeline__section" aria-labelledby="attempts-title">
         <h2 id="attempts-title" class="operation-timeline__section-title">Attempts</h2>
         <ol v-if="attempts.length" class="operation-timeline__list">
-          <li v-for="(attempt, index) in attempts" :key="attemptKey(attempt, index)" class="operation-timeline__item">
+          <li
+            v-for="(attempt, index) in attempts"
+            :key="attemptKey(attempt, index)"
+            class="operation-timeline__item"
+          >
             <div class="operation-timeline__item-topline">
               <strong>{{ attempt.attemptId ?? 'Attempt' }}</strong>
               <UiBadge :tone="badgeTone(attempt.status)">
                 {{ attempt.status ?? 'unknown' }}
               </UiBadge>
             </div>
-            <span class="operation-timeline__muted">{{ attempt.startedAtUtc ?? 'No start time' }}</span>
-            <span v-if="attempt.finishedAtUtc" class="operation-timeline__muted">{{ attempt.finishedAtUtc }}</span>
-            <span v-if="attempt.failureCode" class="operation-timeline__failure">{{ attempt.failureCode }}</span>
+            <span class="operation-timeline__muted">{{
+              attempt.startedAtUtc ?? 'No start time'
+            }}</span>
+            <span v-if="attempt.finishedAtUtc" class="operation-timeline__muted">{{
+              attempt.finishedAtUtc
+            }}</span>
+            <span v-if="attempt.failureCode" class="operation-timeline__failure">{{
+              attempt.failureCode
+            }}</span>
           </li>
         </ol>
         <p v-else class="operation-timeline__muted">No attempts reported yet.</p>
@@ -98,13 +114,21 @@ function auditRecordKey(record: AuditRecord, index: number) {
       <section class="operation-timeline__section" aria-labelledby="audit-title">
         <h2 id="audit-title" class="operation-timeline__section-title">Audit Records</h2>
         <ol v-if="auditRecords.length" class="operation-timeline__list">
-          <li v-for="(record, index) in auditRecords" :key="auditRecordKey(record, index)" class="operation-timeline__item">
+          <li
+            v-for="(record, index) in auditRecords"
+            :key="auditRecordKey(record, index)"
+            class="operation-timeline__item"
+          >
             <div class="operation-timeline__item-topline">
               <strong>{{ record.action ?? 'Audit event' }}</strong>
               <span>{{ record.actor ?? 'Unknown actor' }}</span>
             </div>
-            <span class="operation-timeline__muted">{{ record.occurredAtUtc ?? 'No timestamp' }}</span>
-            <span class="operation-timeline__muted">{{ record.correlationId ?? 'No correlation ID' }}</span>
+            <span class="operation-timeline__muted">{{
+              record.occurredAtUtc ?? 'No timestamp'
+            }}</span>
+            <span class="operation-timeline__muted">{{
+              record.correlationId ?? 'No correlation ID'
+            }}</span>
           </li>
         </ol>
         <p v-else class="operation-timeline__muted">No audit records reported yet.</p>

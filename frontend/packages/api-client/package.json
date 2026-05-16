@@ -8,7 +8,7 @@
   },
   "scripts": {
     "generate": "openapi-ts",
-    "test": "vitest run src",
+    "test": "vp test run src --environment jsdom",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

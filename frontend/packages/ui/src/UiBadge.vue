@@ -1,9 +1,12 @@
 <script setup lang="ts">
-withDefaults(defineProps<{
-  tone?: 'neutral' | 'success' | 'warning' | 'danger'
-}>(), {
-  tone: 'neutral'
-})
+withDefaults(
+  defineProps<{
+    tone?: 'neutral' | 'success' | 'warning' | 'danger'
+  }>(),
+  {
+    tone: 'neutral',
+  },
+)
 </script>
 
 <template>

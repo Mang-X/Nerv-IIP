@@ -19,12 +19,7 @@ defineProps<{
       </a>
 
       <nav class="app-shell__nav" aria-label="Primary navigation">
-        <a
-          v-for="item in navItems"
-          :key="item.href"
-          class="app-shell__nav-link"
-          :href="item.href"
-        >
+        <a v-for="item in navItems" :key="item.href" class="app-shell__nav-link" :href="item.href">
           {{ item.label }}
         </a>
       </nav>

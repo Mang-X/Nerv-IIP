@@ -15,12 +15,7 @@ const {
   selectInstance,
 } = useConsoleInstances()
 
-const {
-  latestOperationTask,
-  restartError,
-  restartInstance,
-  restartPending,
-} = useRestartOperation()
+const { latestOperationTask, restartError, restartInstance, restartPending } = useRestartOperation()
 
 const latestOperationPath = computed(() => {
   const operationTaskId = latestOperationTask.value?.operationTaskId
@@ -48,7 +43,11 @@ async function handleRestart(instanceKey: string) {
         <p v-if="listPending" class="console-page__notice">Loading instances...</p>
         <p v-if="listError" class="console-page__error">{{ listError.message }}</p>
         <p v-if="restartError" class="console-page__error">{{ restartError.message }}</p>
-        <RouterLink v-if="latestOperationPath" class="console-page__operation-link" :to="latestOperationPath">
+        <RouterLink
+          v-if="latestOperationPath"
+          class="console-page__operation-link"
+          :to="latestOperationPath"
+        >
           Latest operation task
         </RouterLink>
       </div>

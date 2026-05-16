@@ -8,11 +8,7 @@ import { useRoute } from 'vue-router'
 const route = useRoute('/operations/[operationTaskId]')
 const operationTaskId = computed(() => String(route.params.operationTaskId ?? ''))
 
-const {
-  operationError,
-  operationPending,
-  operationTask,
-} = useOperationTask(operationTaskId)
+const { operationError, operationPending, operationTask } = useOperationTask(operationTaskId)
 </script>
 
 <template>

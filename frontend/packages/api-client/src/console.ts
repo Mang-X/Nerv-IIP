@@ -17,4 +17,5 @@ export type InstanceDetailResponse = NervIipContractsAppHubQueriesInstanceDetail
 export type InstanceListItem = NervIipContractsAppHubQueriesInstanceListItem
 export type InstanceListResponse = NervIipContractsAppHubQueriesInstanceListResponse
 export type OperationTaskResponse = NervIipContractsOpsOperationTaskResponse
-export type RestartInstanceRequest = NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest
+export type RestartInstanceRequest =
+  NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest

@@ -95,9 +95,13 @@ function capabilityKey(capability: Capability, index: number) {
             :key="capabilityKey(capability, index)"
             class="detail-panel__capability"
           >
-            <span class="detail-panel__capability-code">{{ capability.capabilityCode ?? 'unknown' }}</span>
+            <span class="detail-panel__capability-code">{{
+              capability.capabilityCode ?? 'unknown'
+            }}</span>
             <span class="detail-panel__muted">{{ capability.category ?? 'uncategorized' }}</span>
-            <span class="detail-panel__muted">{{ capability.supportedOperations?.join(', ') ?? 'No operations' }}</span>
+            <span class="detail-panel__muted">{{
+              capability.supportedOperations?.join(', ') ?? 'No operations'
+            }}</span>
           </li>
         </ul>
         <p v-else class="detail-panel__muted">No capabilities reported.</p>
@@ -106,7 +110,11 @@ function capabilityKey(capability: Capability, index: number) {
       <section class="detail-panel__section" aria-labelledby="metadata-title">
         <h3 id="metadata-title" class="detail-panel__section-title">Metadata</h3>
         <dl v-if="metadataEntries.length" class="detail-panel__metadata">
-          <div v-for="[key, value] in metadataEntries" :key="key" class="detail-panel__metadata-row">
+          <div
+            v-for="[key, value] in metadataEntries"
+            :key="key"
+            class="detail-panel__metadata-row"
+          >
             <dt>{{ key }}</dt>
             <dd>{{ value }}</dd>
           </div>

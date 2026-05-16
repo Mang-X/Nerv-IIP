@@ -88,10 +88,7 @@ describe('Console index page', () => {
   function mountPage() {
     return mount(IndexPage, {
       global: {
-        plugins: [
-          createPinia(),
-          [PiniaColada, { queryOptions: { gcTime: 300_000 } }],
-        ],
+        plugins: [createPinia(), [PiniaColada, { queryOptions: { gcTime: 300_000 } }]],
         stubs: {
           RouterLink: {
             props: ['to'],
@@ -119,7 +116,7 @@ describe('Console index page', () => {
 
     await flushPromises()
 
-    const restartButton = wrapper.findAll('button').find(button => button.text() === 'Restart')
+    const restartButton = wrapper.findAll('button').find((button) => button.text() === 'Restart')
     expect(restartButton).toBeDefined()
 
     await restartButton!.trigger('click')

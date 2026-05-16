@@ -84,6 +84,7 @@ frontend/packages/api-client/
 - 保存由脚本从 Gateway 导出的版本化 OpenAPI 快照。
 - `platform-gateway.v1.json` 对应 PlatformGateway 当前主版本控制台 API。
 - 快照更新必须能追溯到后端 Endpoint、测试和文档变化。
+- 快照是生成产物输入，格式以导出脚本输出为准，不纳入 Vite+ formatter 检查。
 
 ### transport
 
@@ -102,8 +103,8 @@ frontend/packages/api-client/
 ## 生成链路
 
 1. 后端更新接口并同步 OpenAPI。
-2. 第三迭代会创建并使用 `scripts/export-gateway-openapi.ps1` 导出 Gateway OpenAPI 快照。
-3. 前端运行 Hey API 生成命令。
+2. 使用 `scripts/export-gateway-openapi.ps1` 导出 Gateway OpenAPI 快照。
+3. 前端运行 `pnpm -C frontend generate:api`，通过 Vite+ workspace task 调用 Hey API 生成命令。
 4. api-client 更新 generated 与 transport 组合导出。
 5. console 应用与共享 composables 通过稳定入口消费新的 sdk/query/mutation。
 6. 变更涉及 breaking change 时，必须同步更新对应页面、组合函数和文档。
@@ -115,7 +116,7 @@ frontend/packages/api-client/
 3. `@hey-api/sdk` 生成按 `operationId` 命名的调用函数。
 4. `@pinia/colada` 生成查询和变更 options。
 
-生成入口固定为 `frontend/packages/api-client/openapi-ts.config.ts`，应用侧只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated` 深层路径导入。
+生成入口固定为 `frontend/packages/api-client/openapi-ts.config.ts`，应用侧只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated` 深层路径导入。第三阶段总验收入口为 `scripts/verify-third-slice-console.ps1`，该脚本会串起 Gateway OpenAPI 导出、api-client 生成、前端 typecheck/test/build。
 
 ## 使用规则
 

@@ -20,27 +20,33 @@ function isListConsoleInstancesEntry(entry: UseQueryEntry) {
   const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
 
   return keyParts.some((part) => {
-    return typeof part === 'object'
-      && part !== null
-      && '_id' in part
-      && part._id === 'listConsoleInstances'
+    return (
+      typeof part === 'object' &&
+      part !== null &&
+      '_id' in part &&
+      part._id === 'listConsoleInstances'
+    )
   })
 }
 
 export function useConsoleInstances() {
   const selectedInstanceKey = shallowRef<string>()
 
-  const listQuery = useQuery(() => listConsoleInstancesQueryOptions({
-    query: {
-      organizationId: ORGANIZATION_ID,
-      environmentId: ENVIRONMENT_ID,
-      pageNumber: PAGE_NUMBER,
-      pageSize: PAGE_SIZE,
-    },
-  } as Parameters<typeof listConsoleInstancesQueryOptions>[0]))
+  const listQuery = useQuery(() =>
+    listConsoleInstancesQueryOptions({
+      query: {
+        organizationId: ORGANIZATION_ID,
+        environmentId: ENVIRONMENT_ID,
+        pageNumber: PAGE_NUMBER,
+        pageSize: PAGE_SIZE,
+      },
+    } as Parameters<typeof listConsoleInstancesQueryOptions>[0]),
+  )
 
   const instances = computed<InstanceListItem[]>(() => listQuery.data.value?.items ?? [])
-  const effectiveInstanceKey = computed(() => selectedInstanceKey.value ?? instances.value[0]?.instanceKey ?? '')
+  const effectiveInstanceKey = computed(
+    () => selectedInstanceKey.value ?? instances.value[0]?.instanceKey ?? '',
+  )
 
   const detailQuery = useQuery(() => ({
     ...getConsoleInstanceDetailQueryOptions({

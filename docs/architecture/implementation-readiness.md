@@ -1,6 +1,6 @@
 # 实施状态清单
 
-本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二阶段纵切已落地”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
+本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
 ## 当前结论
 
@@ -13,6 +13,9 @@
 7. 平台 HTTP 接口统一使用 FastEndpoints；新增接口必须放在 Web 项目的 `Endpoints/` 目录，不在启动文件中写 Minimal API 路由映射。
 8. 部署策略已经冻结为“多部署目标，单一部署模型”：平台级 Aspire AppHost 作为统一拓扑入口，Docker Compose、安装包和整合安装脚本作为不同环境的交付目标。
 9. 仓库根必须保留 `NuGet.config` 固定 NuGet restore 包源，避免本机全局多包源配置与 Central Package Management、`TreatWarningsAsErrors` 组合后触发 `NU1507`。
+10. 第三阶段控制台纵切已经落地，可通过 `scripts/verify-third-slice-console.ps1` 验证 Gateway OpenAPI、Hey API 生成、Vue 控制台 typecheck/test/build。
+11. 前端工作区使用 Vite+ 作为统一工具入口；`pnpm -C frontend check`、`lint`、`fmt` 需要 Node.js `>=22.18.0`，仓库根 `.node-version` 固定为 22.22.3，本机验证版本为 OpenJS.NodeJS.22 v22.22.3。
+12. 技术栈官方文档与源码仓库链接统一维护在 docs/architecture/technology-stack-references.md；新增长期技术选型时必须同步更新，避免同名项目或社区分叉造成歧义。
 
 ## 环境前置
 
@@ -25,6 +28,7 @@
 5. 创建服务前运行 `dotnet new netcorepal-web --help` 核对本机模板参数。
 6. 平台领域服务优先使用 netcorepal 的 web 模板作为初始骨架，但命令必须显式指定 `--Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false`，详见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
 7. 后续落地平台级 AppHost、Compose 生成和 Aspire Dashboard 时，需要安装 Aspire CLI；服务模板仍保持 `--UseAspire false`，避免生成服务级局部编排入口。
+8. 第三阶段前端工具链需要 Node.js `>=22.18.0`、pnpm 10.13.1 和 Vite+ 0.1.21。仓库根 `.node-version` 固定为 22.22.3；本机已通过 `winget` 将 OpenJS.NodeJS.22 升级到 22.22.3，避免 Vite+ lint/fmt 路径读取 `vite.config.ts` 时触发 Node `22.17.x` 的 TS config 加载错误。
 
 ## 包源恢复基线
 
@@ -92,8 +96,7 @@
 3. frontend/packages/api-client
 4. frontend/packages/ui
 5. frontend/packages/app-shell
-6. frontend/packages/layer-base
-7. frontend/packages/layer-platform
+6. frontend/packages/layer-base、layer-platform、auth、shared-types 作为长期边界保留，不在第三阶段空建。
 
 ## 引用规则
 
@@ -133,20 +136,23 @@
 ### 第三迭代已落地范围
 
 1. Gateway 已提供控制台 OpenAPI 文档与稳定 operationId。
-2. frontend 工作区已创建 pnpm workspace、console 应用、api-client、ui 和 app-shell 初版。
+2. frontend 工作区已创建 pnpm workspace、Vite+ 根配置、console 应用、api-client、ui 和 app-shell 初版。
 3. api-client 已通过 Hey API 从 Gateway OpenAPI 生成 types、fetch SDK 和 Pinia Colada query/mutation options。
 4. console 首屏已展示实例列表、实例详情、restart 动作入口和 OperationTask 状态页。
-5. 以 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 和 scripts/verify-third-slice-console.ps1 作为第三阶段验收口径。
+5. Vite+ 质量门禁已覆盖 `check`、`lint`、`fmt`、`typecheck`、`test`、`build`。
+6. 以 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 和 scripts/verify-third-slice-console.ps1 作为第三阶段验收口径。
 
 ### 当前初步使用方式
 
 1. 运行 `pwsh scripts/verify-first-slice.ps1` 可验证 backend 与 connector-hosts 的 restore、build、test，以及 AppHub 到 PlatformGateway 的第一条本地纵切。
 2. 运行 `pwsh scripts/verify-second-slice-ops.ps1` 可验证 Gateway、Ops、Connector Host 和 Docker Connector 的低风险 restart 闭环。
-3. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
-4. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
-5. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-6. 当前实现用于本地开发和接口联调，不包含生产部署、真实持久化、完整认证授权 UI 或高风险动作审批。
-7. 当前部署交付仍处于策略冻结阶段；完整平台 AppHost、生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
+3. 运行 `pwsh scripts/verify-third-slice-console.ps1` 可验证 Gateway OpenAPI 导出、前端 api-client 生成、Vue 控制台 typecheck/test/build。
+4. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁。
+5. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
+6. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
+7. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
+8. 当前实现用于本地开发和接口联调，不包含生产部署、真实持久化、完整认证授权 UI 或高风险动作审批。
+9. 当前部署交付仍处于策略冻结阶段；完整平台 AppHost、生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
 
@@ -176,4 +182,4 @@
 
 ## 结论
 
-Nerv-IIP 已经完成第一迭代接入查询纵切和第二迭代低风险动作闭环：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host 和 Docker Connector 的最小工程结构与验证链路已经存在。下一步不再是 scaffold，而是把当前内存态和骨架能力推进到前端控制台、真实持久化、完整 IAM 授权、FileStorage 上传下载、高风险动作审批、通知联动和多目标部署交付。第三迭代优先按 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 落地控制台纵切；其它后续任务继续参考 docs/superpowers/plans/2026-05-14-first-vertical-slice.md、docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md 与 docs/architecture/deployment-baseline.md。
+Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环和第三迭代控制台纵切：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui 和 app-shell 的最小工程结构与验证链路已经存在。下一步不再是 scaffold，而是把当前内存态和骨架能力推进到真实持久化、完整 IAM 授权、FileStorage 上传下载、高风险动作审批、通知联动和多目标部署交付。后续任务继续参考 docs/superpowers/plans/2026-05-14-first-vertical-slice.md、docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md、docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 与 docs/architecture/deployment-baseline.md。

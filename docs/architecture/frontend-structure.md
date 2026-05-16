@@ -35,8 +35,8 @@ frontend/
 
 - package.json：工作区脚本入口与前端依赖入口。
 - pnpm-workspace.yaml：纳入 apps 与 packages。
-- vite.config.ts：工作区级 Vite+ 配置，只负责 check、fmt、run、workspace task 定义。
-- tsconfig.base.json：前端共享 TypeScript 基线。
+- vite.config.ts：工作区级 Vite+ 配置，负责 check、fmt、lint、test、run 与 workspace task 定义。根级测试配置会提供 Vue SFC 解析与 workspace alias，应用 dev/build/runtime 仍由应用级 vite.config.ts 负责。
+- tsconfig.base.json：前端共享 TypeScript 基线；第三阶段为了兼容 Vite+ 当前构建目标，`target` 使用 `ES2023`，`lib` 仍保留 `ES2024`。
 
 ### 应用级配置
 
@@ -50,6 +50,22 @@ frontend/
 - frontend/packages/api-client/openapi-ts.config.ts：Hey API 生成配置，输入来自 Gateway OpenAPI 快照。
 - frontend/packages/ui/package.json：轻量 UI primitives 的类型检查入口；第三迭代先保留本地实现，后续再接入 shadcn-vue registry。
 - frontend/packages/app-shell/package.json：应用壳层组件的类型检查入口。
+
+### 第三阶段工具入口
+
+第三阶段根级脚本固定为：
+
+```powershell
+pnpm -C frontend check
+pnpm -C frontend lint
+pnpm -C frontend fmt
+pnpm -C frontend generate:api
+pnpm -C frontend typecheck
+pnpm -C frontend test
+pnpm -C frontend build
+```
+
+`check`、`lint`、`fmt` 由 Vite+ 读取根级 `vite.config.ts` 中的 `fmt` / `lint` 配置。该路径要求 Node.js `>=22.18.0`，仓库根 `.node-version` 固定为 22.22.3，本机第三阶段验证使用 OpenJS.NodeJS.22 v22.22.3。
 
 ## 控制台应用目录职责
 

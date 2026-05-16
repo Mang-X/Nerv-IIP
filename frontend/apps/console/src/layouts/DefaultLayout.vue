@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { AppShell } from '@nerv-iip/app-shell'
 
-const navItems = [
-  { label: '实例', href: '/' },
-]
+const navItems = [{ label: '实例', href: '/' }]
 </script>
 
 <template>

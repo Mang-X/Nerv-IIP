@@ -1,22 +1,20 @@
 <script setup lang="ts">
-withDefaults(defineProps<{
-  disabled?: boolean
-  type?: 'button' | 'submit' | 'reset'
-  variant?: 'primary' | 'secondary' | 'danger'
-}>(), {
-  disabled: false,
-  type: 'button',
-  variant: 'primary'
-})
+withDefaults(
+  defineProps<{
+    disabled?: boolean
+    type?: 'button' | 'submit' | 'reset'
+    variant?: 'primary' | 'secondary' | 'danger'
+  }>(),
+  {
+    disabled: false,
+    type: 'button',
+    variant: 'primary',
+  },
+)
 </script>
 
 <template>
-  <button
-    class="ui-button"
-    :class="`ui-button--${variant}`"
-    :disabled="disabled"
-    :type="type"
-  >
+  <button class="ui-button" :class="`ui-button--${variant}`" :disabled="disabled" :type="type">
     <slot />
   </button>
 </template>
