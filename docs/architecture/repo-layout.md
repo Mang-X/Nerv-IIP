@@ -68,14 +68,16 @@ Nerv-IIP/
 
 ### infra
 
-- 本地开发编排、依赖服务模板、观测栈配置、环境变量示例。
-- 首期重点是 docker-compose.dev.yml、依赖服务最小配置、OpenTelemetry 接线示例。
+- 平台级 Aspire AppHost、本地开发编排、Docker Compose 生成产物、依赖服务模板、观测栈配置、环境变量示例。
+- 首期重点是 docker-compose.dev.yml、依赖服务最小配置、OpenTelemetry 接线示例；后续完整平台编排统一收敛到 infra/aspire 下的 AppHost。
+- infra 可以保存部署目标模板和 overlay，但不保存真实客户密钥或环境私有配置。
 - 不在 infra 中编写业务逻辑。
 
 ### scripts
 
-- 统一放置初始化、环境校验、代码生成、发布辅助脚本。
+- 统一放置初始化、环境校验、代码生成、安装、发布辅助脚本。
 - 前后端脚手架脚本都应从这里暴露稳定入口，而不是散落在各自子目录。
+- Windows/Linux 整合安装脚本归 scripts 管理；脚本只编排安装和运维动作，不承载业务规则。
 
 ## 放置规则
 
@@ -87,6 +89,7 @@ Nerv-IIP/
 6. 平台 HTTP 服务入口项目统一使用 .Web 命名；仅 Connector Host 宿主或后台进程类项目保留 .Host 命名。
 7. 主平台代码不得引用 connector-hosts 下的项目；Connector Host 也不得引用 backend/services 或 backend/gateway 下的服务实现项目。
 8. backend/common/Sdk 下的项目不得引用 backend/services 或 backend/gateway 下的 Web、Domain、Infrastructure 项目。
+9. 每个平台服务不得各自创建长期维护的 Aspire AppHost；统一平台编排入口归 infra/aspire。
 
 ## 非目标
 
