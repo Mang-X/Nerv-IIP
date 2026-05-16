@@ -27,6 +27,10 @@
 | AuthorizationGrant | 授权授予 | IAM | 记录某个用户、角色、组织或服务主体对外部客户端、资源范围或能力范围的授权关系。 |
 | PermissionScope | 权限范围 | IAM | 可被授予给用户、角色或外部客户端的资源或能力范围，用于约束跨服务访问。 |
 | PlatformGateway | 平台网关/BFF | PlatformGateway | 面向前端聚合查询、上下文透传和页面级接口，不沉淀领域规则。 |
+| Aspire AppHost | Aspire 编排宿主 | infra | 平台级分布式拓扑模型入口，用于本地联调、Dashboard、服务发现和生成部署产物；不属于任何单个领域服务。 |
+| Docker Compose Deployment | Compose 部署 | infra | 面向 PoC、小规模私有化和容器化单机部署的目标形态，完整平台 Compose 优先从 Aspire AppHost 生成。 |
+| Install Package | 安装包 | 发布制品 | 面向无容器或传统运维环境的发布制品，Windows 默认注册为 Windows Service，Linux 默认注册为 systemd service。 |
+| Integrated Install Script | 整合安装脚本 | scripts | 面向实施交付的 PowerShell 或 Bash 入口，负责检查、配置、初始化、服务注册、启动和诊断。 |
 
 ## Platform SDK
 

@@ -17,7 +17,7 @@
 - 创建 Directory.Build.props 与 Directory.Packages.props。
 - 建立 services、gateway、common、tests 的基础目录与命名规则。
 - 每个平台 HTTP 服务目录内部默认采用 src 与 tests，并在 src 下采用 .Web、.Domain、.Infrastructure 三项目主线。
-- Iam、FileStorage、AppHub、Ops 优先通过 netcorepal-web 模板创建，但必须显式传入 `--Framework net10.0`、`--Database PostgreSQL`、`--MessageQueue RabbitMQ`、`--UseAspire false`、`--IncludeCopilotInstructions false`、`--UseAdmin false`，具体约定见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
+- Iam、FileStorage、AppHub、Ops 优先通过 netcorepal-web 模板创建，但必须显式传入 `--Framework net10.0`、`--Database PostgreSQL`、`--MessageQueue RabbitMQ`、`--UseAspire false`、`--IncludeCopilotInstructions false`、`--UseAdmin false`，具体约定见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md；其中 `--UseAspire false` 仅表示不生成服务级 AppHost，平台级 AppHost 后续统一落到 infra。
 - PlatformGateway 是薄 BFF 例外，默认只保留 .Web，不为它强行创建空 Domain 与 Infrastructure。
 
 产物：
@@ -114,15 +114,19 @@
 - Docker Connector 能发现本地测试容器
 - 能向平台发送注册、心跳、状态同步
 
-### Step 5. 落基础设施开发编排
+### Step 5. 落统一部署与基础设施开发编排
 
 - 提供 PostgreSQL、Redis、RabbitMQ、MinIO、Qdrant、OpenTelemetry 的本地开发编排。
 - 让 Gateway、Iam、FileStorage、AppHub、Ops、Connector Host 在同一本地开发编排中联调；Notification 可在通知纵切进入时加入同一编排，但不阻塞首条注册纵切。
+- 新增平台级 Aspire AppHost 作为统一拓扑模型，后续用于本地联调、Dashboard、服务发现和 Docker Compose 生成。
+- 保留 `infra/docker-compose.dev.yml` 作为早期本地依赖兜底入口，但完整平台 Compose 应从 Aspire AppHost 派生。
+- 为后续安装包与 Windows/Linux 整合安装脚本预留 scripts/install 落点，确保无容器环境也能交付。
 
 验收：
 
 - 本地依赖服务可一键拉起
 - 平台服务与 Connector Host 可共同运行并互通
+- 平台级部署模型不与服务级模板编排入口重复
 
 ### Step 6. 打第一条纵切链路
 
@@ -182,3 +186,4 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 4. 不先做多 Connector，先用 Docker Connector 跑通协议。
 5. 不先做所有运维动作，第一迭代只做注册、心跳、状态同步和 Gateway 可见；第二迭代只做低风险 restart 闭环。
 6. 不先细抠全部领域模型，先用最短纵切验证服务边界是否合理。
+7. 不把手写 Docker Compose 作为最终唯一部署方式；Aspire、Docker Compose、安装包和整合安装脚本按 ADR 0008 统一演进。

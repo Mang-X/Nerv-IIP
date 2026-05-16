@@ -11,6 +11,7 @@
 5. backend、connector-hosts 两个工作面已经完成第一迭代纵切骨架，可通过 `scripts/verify-first-slice.ps1` 做本地验证。
 6. 第二阶段低风险动作闭环已经落地，可通过 `scripts/verify-second-slice-ops.ps1` 验证 Gateway、Ops、Connector Host 和 Docker Connector 的 restart 闭环。
 7. 平台 HTTP 接口统一使用 FastEndpoints；新增接口必须放在 Web 项目的 `Endpoints/` 目录，不在启动文件中写 Minimal API 路由映射。
+8. 部署策略已经冻结为“多部署目标，单一部署模型”：平台级 Aspire AppHost 作为统一拓扑入口，Docker Compose、安装包和整合安装脚本作为不同环境的交付目标。
 
 ## 环境前置
 
@@ -22,6 +23,7 @@
 4. 安装 NetCorePal.Template：`dotnet new install NetCorePal.Template`。
 5. 创建服务前运行 `dotnet new netcorepal-web --help` 核对本机模板参数。
 6. 平台领域服务优先使用 netcorepal 的 web 模板作为初始骨架，但命令必须显式指定 `--Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false`，详见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
+7. 后续落地平台级 AppHost、Compose 生成和 Aspire Dashboard 时，需要安装 Aspire CLI；服务模板仍保持 `--UseAspire false`，避免生成服务级局部编排入口。
 
 ## 共享契约落点
 
@@ -127,6 +129,7 @@
 4. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
 5. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
 6. 当前实现用于本地开发和接口联调，不包含生产部署、真实持久化、完整认证授权 UI 或高风险动作审批。
+7. 当前部署交付仍处于策略冻结阶段；完整平台 AppHost、生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
 
@@ -138,6 +141,7 @@
 6. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
 7. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
 8. 前端视觉系统和组件皮肤细节。
+9. 平台级 Aspire AppHost、Compose 发布产物、安装包和整合安装脚本，口径见 docs/architecture/deployment-baseline.md。
 
 ## 开工验收标准
 
@@ -155,4 +159,4 @@
 
 ## 结论
 
-Nerv-IIP 已经完成第一迭代接入查询纵切和第二迭代低风险动作闭环：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host 和 Docker Connector 的最小工程结构与验证链路已经存在。下一步不再是 scaffold，而是把当前内存态和骨架能力推进到真实持久化、完整 IAM 授权、FileStorage 上传下载、前端控制台、高风险动作审批和通知联动。具体任务清单见 docs/superpowers/plans/2026-05-14-first-vertical-slice.md 与 docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md。
+Nerv-IIP 已经完成第一迭代接入查询纵切和第二迭代低风险动作闭环：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host 和 Docker Connector 的最小工程结构与验证链路已经存在。下一步不再是 scaffold，而是把当前内存态和骨架能力推进到真实持久化、完整 IAM 授权、FileStorage 上传下载、前端控制台、高风险动作审批、通知联动和多目标部署交付。具体任务清单见 docs/superpowers/plans/2026-05-14-first-vertical-slice.md、docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md 与 docs/architecture/deployment-baseline.md。

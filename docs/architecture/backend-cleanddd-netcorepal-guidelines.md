@@ -53,7 +53,7 @@ dotnet new netcorepal-web -n Nerv.IIP.Ops -o backend/services/Ops --Framework ne
 3. `--Database PostgreSQL` 与 `--MessageQueue RabbitMQ` 必须显式传入，避免落到模板默认 MySQL 或其他消息队列。
 4. `--UseAdmin false` 必须显式传入，避免把模板内置 Admin、RBAC 或前端后台与 Nerv-IIP 自有 IAM、console 规划混在一起。
 5. `--IncludeCopilotInstructions false` 保持协作指引由仓库根统一维护，不让每个服务生成一份局部指令。
-6. `--UseAspire false` 是首批每个服务的默认值；若后续决定引入统一 AppHost 或 Aspire Dashboard，应在 infra 或单独 ADR 中冻结，不让每个服务各自生成一套编排入口。
+6. `--UseAspire false` 是每个平台领域服务的默认值，含义是不让每个服务各自生成局部 AppHost；平台统一 Aspire AppHost 由 ADR 0008 冻结，后续落点在 `infra/aspire`。
 
 ## .NET 版本策略
 
