@@ -7,7 +7,7 @@ withDefaults(defineProps<{
 </script>
 
 <template>
-  <span class="ui-badge" :class="`ui-badge--${tone}`">
+  <span class="ui-badge" :data-tone="tone">
     <slot />
   </span>
 </template>
@@ -27,25 +27,25 @@ withDefaults(defineProps<{
   white-space: nowrap;
 }
 
-.ui-badge--neutral {
+.ui-badge[data-tone='neutral'] {
   background: #eef2f7;
   border-color: #d7dee9;
   color: #334155;
 }
 
-.ui-badge--success {
+.ui-badge[data-tone='success'] {
   background: #dcfce7;
   border-color: #bbf7d0;
   color: #166534;
 }
 
-.ui-badge--warning {
+.ui-badge[data-tone='warning'] {
   background: #fef3c7;
   border-color: #fde68a;
   color: #92400e;
 }
 
-.ui-badge--danger {
+.ui-badge[data-tone='danger'] {
   background: #fee2e2;
   border-color: #fecaca;
   color: #991b1b;
