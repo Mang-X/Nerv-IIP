@@ -14,6 +14,7 @@ const ORGANIZATION_ID = 'org-001'
 const ENVIRONMENT_ID = 'env-dev'
 const PAGE_NUMBER = 1
 const PAGE_SIZE = 20
+const ignoreBackgroundError = (_error: unknown) => {}
 
 function isListConsoleInstancesEntry(entry: UseQueryEntry) {
   const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
@@ -78,9 +79,11 @@ export function useRestartOperation() {
 
   const restartMutation = useMutation({
     ...restartConsoleInstanceMutationOptions(),
-    async onSuccess(task) {
+    onSuccess(task) {
       latestOperationTask.value = task
-      await queryCache.invalidateQueries({ predicate: isListConsoleInstancesEntry })
+      void queryCache
+        .invalidateQueries({ predicate: isListConsoleInstancesEntry })
+        .catch(ignoreBackgroundError)
     },
   })
 

@@ -8,6 +8,9 @@ const props = defineProps<{
   pending?: boolean
 }>()
 
+type AuditRecord = NonNullable<OperationTaskResponse['auditRecords']>[number]
+type OperationAttempt = NonNullable<OperationTaskResponse['attempts']>[number]
+
 const auditRecords = computed(() => props.operationTask?.auditRecords ?? [])
 const attempts = computed(() => props.operationTask?.attempts ?? [])
 
@@ -27,6 +30,14 @@ function badgeTone(status?: string | null) {
   }
 
   return 'neutral'
+}
+
+function attemptKey(attempt: OperationAttempt, index: number) {
+  return attempt.attemptId ?? `attempt:${attempt.startedAtUtc ?? attempt.status ?? 'unknown'}:${index}`
+}
+
+function auditRecordKey(record: AuditRecord, index: number) {
+  return record.auditRecordId ?? `audit:${record.occurredAtUtc ?? record.action ?? 'unknown'}:${index}`
 }
 </script>
 
@@ -69,7 +80,7 @@ function badgeTone(status?: string | null) {
       <section class="operation-timeline__section" aria-labelledby="attempts-title">
         <h2 id="attempts-title" class="operation-timeline__section-title">Attempts</h2>
         <ol v-if="attempts.length" class="operation-timeline__list">
-          <li v-for="attempt in attempts" :key="attempt.attemptId" class="operation-timeline__item">
+          <li v-for="(attempt, index) in attempts" :key="attemptKey(attempt, index)" class="operation-timeline__item">
             <div class="operation-timeline__item-topline">
               <strong>{{ attempt.attemptId ?? 'Attempt' }}</strong>
               <UiBadge :tone="badgeTone(attempt.status)">
@@ -87,7 +98,7 @@ function badgeTone(status?: string | null) {
       <section class="operation-timeline__section" aria-labelledby="audit-title">
         <h2 id="audit-title" class="operation-timeline__section-title">Audit Records</h2>
         <ol v-if="auditRecords.length" class="operation-timeline__list">
-          <li v-for="record in auditRecords" :key="record.auditRecordId" class="operation-timeline__item">
+          <li v-for="(record, index) in auditRecords" :key="auditRecordKey(record, index)" class="operation-timeline__item">
             <div class="operation-timeline__item-topline">
               <strong>{{ record.action ?? 'Audit event' }}</strong>
               <span>{{ record.actor ?? 'Unknown actor' }}</span>

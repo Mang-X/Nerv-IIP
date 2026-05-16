@@ -1,9 +1,14 @@
 import { PiniaColada } from '@pinia/colada'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import IndexPage from './index.vue'
+
+const apiState = vi.hoisted(() => ({
+  failListRefetch: false,
+  listFetchCount: 0,
+}))
 
 vi.mock('@nerv-iip/api-client', () => {
   const instance = {
@@ -48,13 +53,21 @@ vi.mock('@nerv-iip/api-client', () => {
       })),
     })),
     listConsoleInstancesQueryOptions: vi.fn(() => ({
-      key: ['console-instances'],
-      query: vi.fn(async () => ({
-        pageNumber: 1,
-        pageSize: 20,
-        totalCount: 1,
-        items: [instance],
-      })),
+      key: [{ _id: 'listConsoleInstances' }],
+      query: vi.fn(async () => {
+        apiState.listFetchCount += 1
+
+        if (apiState.failListRefetch && apiState.listFetchCount > 1) {
+          throw new Error('list refresh failed')
+        }
+
+        return {
+          pageNumber: 1,
+          pageSize: 20,
+          totalCount: 1,
+          items: [instance],
+        }
+      }),
     })),
     restartConsoleInstanceMutationOptions: vi.fn(() => ({
       mutation: vi.fn(async () => ({
@@ -67,8 +80,13 @@ vi.mock('@nerv-iip/api-client', () => {
 })
 
 describe('Console index page', () => {
-  it('renders the instance operation table', async () => {
-    const wrapper = mount(IndexPage, {
+  beforeEach(() => {
+    apiState.failListRefetch = false
+    apiState.listFetchCount = 0
+  })
+
+  function mountPage() {
+    return mount(IndexPage, {
       global: {
         plugins: [
           createPinia(),
@@ -77,16 +95,39 @@ describe('Console index page', () => {
         stubs: {
           RouterLink: {
             props: ['to'],
-            template: '<a><slot /></a>',
+            template: '<a :href="to"><slot /></a>',
           },
         },
       },
     })
+  }
+
+  it('renders the instance operation table', async () => {
+    const wrapper = mountPage()
 
     await flushPromises()
 
     expect(wrapper.text()).toContain('Demo API')
     expect(wrapper.text()).toContain('running')
     expect(wrapper.text()).toContain('Restart')
+  })
+
+  it('keeps restart success visible when list refetch fails after invalidation', async () => {
+    apiState.failListRefetch = true
+
+    const wrapper = mountPage()
+
+    await flushPromises()
+
+    const restartButton = wrapper.findAll('button').find(button => button.text() === 'Restart')
+    expect(restartButton).toBeDefined()
+
+    await restartButton!.trigger('click')
+    await flushPromises()
+
+    const operationLink = wrapper.find('.console-page__operation-link')
+    expect(operationLink.exists()).toBe(true)
+    expect(operationLink.attributes('href')).toBe('/operations/task-1')
+    expect(wrapper.text().match(/list refresh failed/g)).toHaveLength(1)
   })
 })

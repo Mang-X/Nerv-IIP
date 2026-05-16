@@ -8,6 +8,8 @@ const props = defineProps<{
   pending?: boolean
 }>()
 
+type Capability = NonNullable<InstanceDetailResponse['capabilities']>[number]
+
 const metadataEntries = computed(() => Object.entries(props.instance?.metadata ?? {}))
 
 function badgeTone(status?: string | null) {
@@ -26,6 +28,15 @@ function badgeTone(status?: string | null) {
   }
 
   return 'neutral'
+}
+
+function capabilityKey(capability: Capability, index: number) {
+  const code = capability.capabilityCode ?? 'unknown'
+  const version = capability.capabilityVersion ?? 'unversioned'
+
+  return capability.capabilityCode && capability.capabilityVersion
+    ? `capability:${code}:${version}`
+    : `capability:${code}:${version}:${index}`
 }
 </script>
 
@@ -80,8 +91,8 @@ function badgeTone(status?: string | null) {
         <h3 id="capabilities-title" class="detail-panel__section-title">Capabilities</h3>
         <ul v-if="instance.capabilities?.length" class="detail-panel__capabilities">
           <li
-            v-for="capability in instance.capabilities"
-            :key="`${capability.capabilityCode}-${capability.capabilityVersion}`"
+            v-for="(capability, index) in instance.capabilities"
+            :key="capabilityKey(capability, index)"
             class="detail-panel__capability"
           >
             <span class="detail-panel__capability-code">{{ capability.capabilityCode ?? 'unknown' }}</span>

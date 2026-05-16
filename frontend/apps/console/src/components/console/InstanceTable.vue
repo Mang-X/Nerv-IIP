@@ -38,6 +38,10 @@ function instanceLabel(instance: InstanceListItem) {
   return instance.instanceName ?? instance.instanceKey ?? 'Unknown instance'
 }
 
+function instanceRowKey(instance: InstanceListItem, index: number) {
+  return instance.instanceKey ?? `instance:${instance.instanceName ?? instance.applicationKey ?? 'unknown'}:${index}`
+}
+
 function selectInstance(instance: InstanceListItem) {
   if (instance.instanceKey) {
     emit('selectInstance', instance.instanceKey)
@@ -75,8 +79,8 @@ function restartInstance(instance: InstanceListItem) {
         </thead>
         <tbody>
           <tr
-            v-for="instance in instances"
-            :key="instance.instanceKey ?? instance.instanceName"
+            v-for="(instance, index) in instances"
+            :key="instanceRowKey(instance, index)"
             :class="{ 'instance-table__row--selected': instance.instanceKey === selectedInstanceKey }"
           >
             <td>
