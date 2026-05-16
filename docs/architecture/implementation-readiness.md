@@ -130,13 +130,13 @@
 6. Ops 当前会记录 OperationTask、OperationAttempt 和 AuditRecord 的内存态事实。
 7. 以 docs/architecture/second-vertical-slice-ops.md 和 docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md 作为第二阶段验收口径。
 
-### 第三迭代计划范围
+### 第三迭代已落地范围
 
-1. Gateway 补齐控制台 OpenAPI 文档与稳定 operationId。
-2. frontend 工作区创建 pnpm workspace、console 应用、api-client、ui 和 app-shell 初版。
-3. api-client 通过 Hey API 从 Gateway OpenAPI 生成 types、fetch SDK 和 Pinia Colada query/mutation options。
-4. console 首屏展示实例列表、实例详情、restart 动作入口和 OperationTask 状态页。
-5. 以 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 作为第三阶段实施计划与验收口径。
+1. Gateway 已提供控制台 OpenAPI 文档与稳定 operationId。
+2. frontend 工作区已创建 pnpm workspace、console 应用、api-client、ui 和 app-shell 初版。
+3. api-client 已通过 Hey API 从 Gateway OpenAPI 生成 types、fetch SDK 和 Pinia Colada query/mutation options。
+4. console 首屏已展示实例列表、实例详情、restart 动作入口和 OperationTask 状态页。
+5. 以 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 和 scripts/verify-third-slice-console.ps1 作为第三阶段验收口径。
 
 ### 当前初步使用方式
 

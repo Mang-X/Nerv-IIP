@@ -147,6 +147,8 @@ Nerv-IIP/
 
 第二阶段可以用 `scripts/verify-second-slice-ops.ps1` 完成本地低风险动作闭环验证：Gateway 创建实例 restart 运维任务，Ops 记录任务、尝试和审计事实，Connector Host 通过 Ops SDK 拉取 pending task，Docker Connector 执行动作并回传结果，Gateway 可查询任务详情。当前状态适合工程联调、接口走查和后续功能开发；尚不是面向真实用户的可部署产品。
 
+第三阶段控制台纵切可以用 `scripts/verify-third-slice-console.ps1` 验证：Gateway 暴露稳定 OpenAPI，frontend 工作区可生成类型安全 api-client，console 可展示实例列表与详情、创建 restart 任务并查看 OperationTask 状态。
+
 下一阶段重点：
 
 1. 按 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 建立 frontend 工作区骨架与 api-client 生成链路，把实例查询和低风险 restart 操作接入控制台。
