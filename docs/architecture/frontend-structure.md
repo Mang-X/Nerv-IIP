@@ -20,12 +20,14 @@ frontend/
   packages/
     ui/
     app-shell/
-    auth/
-    shared-types/
     api-client/
     layer-base/
     layer-platform/
+    auth/
+    shared-types/
 ```
+
+第三迭代只创建控制台纵切必需包：`api-client`、`ui`、`app-shell`。`layer-base`、`layer-platform`、`auth`、`shared-types` 是已冻结的长期边界，等控制台领域层、登录授权或跨包类型复用真正出现时再创建，避免首批脚手架提前空转。
 
 ## 配置分层
 
@@ -41,6 +43,13 @@ frontend/
 - frontend/apps/console/package.json：控制台应用脚本。
 - frontend/apps/console/vite.config.ts：Vue、Vue Router 官方文件路由插件、alias 和构建配置。
 - frontend/apps/console/tsconfig.json：纳入 typed routes 相关类型。
+
+### 包级配置
+
+- frontend/packages/api-client/package.json：API 生成、类型检查和测试入口。
+- frontend/packages/api-client/openapi-ts.config.ts：Hey API 生成配置，输入来自 Gateway OpenAPI 快照。
+- frontend/packages/ui/package.json：轻量 UI primitives 的类型检查入口；第三迭代先保留本地实现，后续再接入 shadcn-vue registry。
+- frontend/packages/app-shell/package.json：应用壳层组件的类型检查入口。
 
 ## 控制台应用目录职责
 
@@ -69,6 +78,14 @@ frontend/
 3. route meta 描述访问控制、布局、feature flag 和页面标题。
 4. guards 统一放在 src/router/guards。
 5. 不引入单独 middleware runtime。
+
+### Vue Router 插件配置
+
+1. Vite 插件顺序固定为 `VueRouter()` 在前、`Vue()` 在后。
+2. 控制台应用从 `vue-router/auto-routes` 导入生成路由，并在 `src/router/index.ts` 中调用 `createRouter`。
+3. 开发模式启用 `handleHotUpdate(router)`，避免路由文件变化时必须手动刷新。
+4. `typed-router.d.ts` 由官方插件生成并纳入 TypeScript 检查；控制台应用的 tsconfig 必须包含它。
+5. 当页面目录内出现私有 `.vue` 组件目录时，优先通过 `routesFolder.exclude` 排除 `components`、`dialogs`、`drawers`、`fragments`，不重写全局 `filePatterns`。
 
 ### 页面命名建议
 
@@ -120,6 +137,14 @@ frontend/
 
 - frontend/packages/api-client 负责生成 types、sdk、client 以及 Colada 查询和变更函数。
 - 应用层只从稳定导出入口消费，不直接引用 generated 深层路径。
+- `openapi/platform-gateway.v1.json` 是 Gateway OpenAPI 导出快照，不能手动改写。
+- `src/transport` 只处理 baseURL、认证头、错误归一化和请求策略，不承载业务视图逻辑。
+
+### 轮询与刷新
+
+1. 服务端状态刷新由 Pinia Colada 管理。
+2. 需要轮询的任务详情使用 Pinia Colada 官方 auto-refetch 插件和 query option 表达。
+3. 页面组件不直接使用 `setInterval` 拉取服务端状态。
 
 ## 命名规则
 
@@ -144,4 +169,5 @@ frontend/
 
 1. 根级 package.json、pnpm-workspace.yaml、vite.config.ts、tsconfig.base.json。
 2. console 应用的 main.ts、App.vue、vite.config.ts、router/index.ts、guards、layouts/default.vue、pages/index.vue。
-3. packages/ui、packages/app-shell、packages/api-client、packages/layer-base、packages/layer-platform 初版。
+3. packages/ui、packages/app-shell、packages/api-client 初版。
+4. packages/layer-base、packages/layer-platform、packages/auth、packages/shared-types 只在出现真实跨页面或跨应用复用需求时创建。

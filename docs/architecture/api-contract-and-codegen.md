@@ -40,6 +40,16 @@
 2. Gateway 暴露给前端的页面级接口也必须纳入 OpenAPI。
 3. 契约变更需要遵循同主版本向后兼容或显式主版本升级原则。
 
+### Gateway Console OpenAPI
+
+1. 控制台前端只直接消费 PlatformGateway 暴露的 `/api/console/**` 接口，不直接调用 AppHub、Ops、Iam、FileStorage 等领域服务接口。
+2. PlatformGateway 的 OpenAPI 文档通过 FastEndpoints.Swagger 输出，第三迭代起固定本地文档入口为 `/swagger/v1/swagger.json`。
+3. 控制台接口必须提供稳定 `operationId`，供 Hey API 生成可读、可追踪的 query 与 mutation helper。
+4. Gateway Endpoint 仍优先保持属性路由风格；控制台 `operationId` 由 `UseFastEndpoints` 的 Endpoint name generator 集中映射到稳定名称。只有单个 Endpoint 需要复杂 metadata 时，才完整切换为 `Configure()` 并使用 `Description(x => x.WithName(...))`。
+5. `operationId` 使用 lower camelCase，并以业务动作表达意图，例如 `listConsoleInstances`、`getConsoleInstanceDetail`、`restartConsoleInstance`、`getConsoleOperationTask`。
+6. 新增或修改 Gateway 控制台接口时，必须先更新后端 Endpoint 与 OpenAPI 测试，再导出 OpenAPI 快照并重新生成前端 api-client。
+7. OpenAPI 是契约事实来源；导出的 JSON 快照是前端生成输入，不允许手改快照来绕过后端契约。
+
 ### 前端责任
 
 1. 前端通过 Hey API 从 OpenAPI 生成 types、sdk、client 与 Pinia Colada 查询、变更函数。
@@ -50,9 +60,16 @@
 ```text
 frontend/packages/api-client/
   openapi-ts.config.ts
+  openapi/
+    platform-gateway.v1.json
   src/
     generated/
     transport/
+      base-url.ts
+      auth.ts
+      error.ts
+      client-config.ts
+    console.ts
     index.ts
 ```
 
@@ -61,6 +78,12 @@ frontend/packages/api-client/
 - 只放代码生成文件。
 - 推荐包含 client.gen.ts、sdk.gen.ts、types.gen.ts，以及 Colada 查询与变更生成文件。
 - 不允许手改。
+
+### openapi
+
+- 保存由脚本从 Gateway 导出的版本化 OpenAPI 快照。
+- `platform-gateway.v1.json` 对应 PlatformGateway 当前主版本控制台 API。
+- 快照更新必须能追溯到后端 Endpoint、测试和文档变化。
 
 ### transport
 
@@ -79,10 +102,20 @@ frontend/packages/api-client/
 ## 生成链路
 
 1. 后端更新接口并同步 OpenAPI。
-2. 前端运行 Hey API 生成命令。
-3. api-client 更新 generated 与 transport 组合导出。
-4. console 应用与共享 composables 通过稳定入口消费新的 sdk/query/mutation。
-5. 变更涉及 breaking change 时，必须同步更新对应页面、组合函数和文档。
+2. 第三迭代会创建并使用 `scripts/export-gateway-openapi.ps1` 导出 Gateway OpenAPI 快照。
+3. 前端运行 Hey API 生成命令。
+4. api-client 更新 generated 与 transport 组合导出。
+5. console 应用与共享 composables 通过稳定入口消费新的 sdk/query/mutation。
+6. 变更涉及 breaking change 时，必须同步更新对应页面、组合函数和文档。
+
+第三迭代生成配置固定使用：
+
+1. `@hey-api/client-fetch` 生成 fetch client。
+2. `@hey-api/typescript` 生成 TypeScript DTO。
+3. `@hey-api/sdk` 生成按 `operationId` 命名的调用函数。
+4. `@pinia/colada` 生成查询和变更 options。
+
+生成入口固定为 `frontend/packages/api-client/openapi-ts.config.ts`，应用侧只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated` 深层路径导入。
 
 ## 使用规则
 
@@ -90,6 +123,7 @@ frontend/packages/api-client/
 2. 页面优先消费生成的 query/mutation helpers。
 3. 少量页面特有参数整理可以放在 src/api/领域名/adapters.ts 中。
 4. api-client 只做契约、transport 和稳定导出，不放业务视图逻辑。
+5. 需要轮询的服务端状态通过 Pinia Colada query options 和官方 auto-refetch 插件表达，不在组件里手写 `setInterval`。
 
 ## 版本与变更管理
 
