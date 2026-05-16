@@ -46,6 +46,18 @@ importers:
         specifier: 0.97.1
         version: 0.97.1(typescript@6.0.3)
 
+  packages/app-shell:
+    dependencies:
+      vue:
+        specifier: 3.5.34
+        version: 3.5.34(typescript@6.0.3)
+
+  packages/ui:
+    dependencies:
+      vue:
+        specifier: 3.5.34
+        version: 3.5.34(typescript@6.0.3)
+
 packages:
 
   '@asamuzakjp/css-color@5.1.11':
