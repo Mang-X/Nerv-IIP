@@ -90,9 +90,60 @@
           "Api"
         ],
         "operationId": "listConsoleInstances",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageNumber",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
         "responses": {
-          "204": {
-            "description": "No Content"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NervIIPContractsAppHubQueriesInstanceListResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -111,11 +162,34 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
-          "204": {
-            "description": "No Content"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NervIIPContractsAppHubQueriesInstanceDetailResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -276,6 +350,157 @@
             "type": "string"
           }
         }
+      },
+      "NervIIPContractsAppHubQueriesInstanceListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pageNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsAppHubQueriesInstanceListItem"
+            }
+          }
+        }
+      },
+      "NervIIPContractsAppHubQueriesInstanceListItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "applicationKey": {
+            "type": "string"
+          },
+          "applicationName": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "nodeKey": {
+            "type": "string"
+          },
+          "nodeName": {
+            "type": "string"
+          },
+          "instanceKey": {
+            "type": "string"
+          },
+          "instanceName": {
+            "type": "string"
+          },
+          "reportedStatus": {
+            "type": "string"
+          },
+          "healthStatus": {
+            "type": "string"
+          },
+          "lastHeartbeatAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastStateObservedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebEndpointsInstancesListInstancesRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NervIIPContractsAppHubQueriesInstanceDetailResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "applicationKey": {
+            "type": "string"
+          },
+          "applicationName": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "nodeKey": {
+            "type": "string"
+          },
+          "nodeName": {
+            "type": "string"
+          },
+          "instanceKey": {
+            "type": "string"
+          },
+          "instanceName": {
+            "type": "string"
+          },
+          "reportedStatus": {
+            "type": "string"
+          },
+          "healthStatus": {
+            "type": "string"
+          },
+          "lastHeartbeatAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastStateObservedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsAppHubQueriesCapabilitySummary"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPContractsAppHubQueriesCapabilitySummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "capabilityCode": {
+            "type": "string"
+          },
+          "capabilityVersion": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "supportedOperations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebEndpointsInstancesGetInstanceDetailRequest": {
+        "type": "object",
+        "additionalProperties": false
       }
     },
     "securitySchemes": {

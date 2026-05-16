@@ -67,9 +67,9 @@ export const getConsoleOperationTaskQueryOptions = defineQueryOptions<Options<Ge
     }
 }));
 
-export const listConsoleInstancesQueryKey = (options?: Options<ListConsoleInstancesData>) => createQueryKey('listConsoleInstances', options, ['Api']);
+export const listConsoleInstancesQueryKey = (options: Options<ListConsoleInstancesData>) => createQueryKey('listConsoleInstances', options, ['Api']);
 
-export const listConsoleInstancesQueryOptions = defineQueryOptions<Options<ListConsoleInstancesData>, ListConsoleInstancesResponse, Error>((options?: Options<ListConsoleInstancesData>) => ({
+export const listConsoleInstancesQueryOptions = defineQueryOptions<Options<ListConsoleInstancesData>, ListConsoleInstancesResponse, Error>((options: Options<ListConsoleInstancesData>) => ({
     key: listConsoleInstancesQueryKey(options),
     query: async (context) => {
         const { data } = await listConsoleInstances({

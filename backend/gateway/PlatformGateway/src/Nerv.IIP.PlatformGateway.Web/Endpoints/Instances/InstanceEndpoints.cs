@@ -5,19 +5,23 @@ using Nerv.IIP.Contracts.AppHubQueries;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
 
+public sealed class ListInstancesRequest
+{
+    public string OrganizationId { get; set; } = string.Empty;
+    public string EnvironmentId { get; set; } = string.Empty;
+    public int PageNumber { get; set; }
+    public int PageSize { get; set; }
+    public string? Search { get; set; }
+}
+
 [HttpGet("/api/console/v1/instances")]
 [AllowAnonymous]
-public sealed class ListInstancesEndpoint(IAppHubClient appHub, IAppCache cache) : EndpointWithoutRequest
+public sealed class ListInstancesEndpoint(IAppHubClient appHub, IAppCache cache) : Endpoint<ListInstancesRequest, InstanceListResponse>
 {
-    public override async Task HandleAsync(CancellationToken ct)
+    public override async Task HandleAsync(ListInstancesRequest req, CancellationToken ct)
     {
-        var organizationId = Query<string>("organizationId")!;
-        var environmentId = Query<string>("environmentId")!;
-        var pageNumber = Query<int>("pageNumber", isRequired: false);
-        var pageSize = Query<int>("pageSize", isRequired: false);
-        var search = Query<string>("search", isRequired: false);
-        var query = new InstanceListQuery(organizationId, environmentId, pageNumber == 0 ? 1 : pageNumber, pageSize == 0 ? 20 : pageSize, search);
-        var key = NervIipCacheKeys.GatewayInstanceList(organizationId, environmentId, NervIipCacheKeys.HashQuery(query));
+        var query = new InstanceListQuery(req.OrganizationId, req.EnvironmentId, req.PageNumber == 0 ? 1 : req.PageNumber, req.PageSize == 0 ? 20 : req.PageSize, req.Search);
+        var key = NervIipCacheKeys.GatewayInstanceList(req.OrganizationId, req.EnvironmentId, NervIipCacheKeys.HashQuery(query));
 
         try
         {
@@ -31,20 +35,24 @@ public sealed class ListInstancesEndpoint(IAppHubClient appHub, IAppCache cache)
     }
 }
 
+public sealed class GetInstanceDetailRequest
+{
+    public string OrganizationId { get; set; } = string.Empty;
+    public string EnvironmentId { get; set; } = string.Empty;
+    public string InstanceKey { get; set; } = string.Empty;
+}
+
 [HttpGet("/api/console/v1/instances/{instanceKey}")]
 [AllowAnonymous]
-public sealed class GetInstanceDetailEndpoint(IAppHubClient appHub, IAppCache cache) : EndpointWithoutRequest
+public sealed class GetInstanceDetailEndpoint(IAppHubClient appHub, IAppCache cache) : Endpoint<GetInstanceDetailRequest, InstanceDetailResponse>
 {
-    public override async Task HandleAsync(CancellationToken ct)
+    public override async Task HandleAsync(GetInstanceDetailRequest req, CancellationToken ct)
     {
-        var organizationId = Query<string>("organizationId")!;
-        var environmentId = Query<string>("environmentId")!;
-        var instanceKey = Route<string>("instanceKey")!;
-        var key = NervIipCacheKeys.GatewayInstanceDetail(organizationId, environmentId, instanceKey);
+        var key = NervIipCacheKeys.GatewayInstanceDetail(req.OrganizationId, req.EnvironmentId, req.InstanceKey);
 
         try
         {
-            var response = await cache.GetOrCreateAsync(key, () => appHub.GetInstanceAsync(organizationId, environmentId, instanceKey, ct), TimeSpan.FromSeconds(5));
+            var response = await cache.GetOrCreateAsync(key, () => appHub.GetInstanceAsync(req.OrganizationId, req.EnvironmentId, req.InstanceKey, ct), TimeSpan.FromSeconds(5));
             await HttpContext.Response.WriteAsJsonAsync(response, ct);
         }
         catch (HttpRequestException ex)

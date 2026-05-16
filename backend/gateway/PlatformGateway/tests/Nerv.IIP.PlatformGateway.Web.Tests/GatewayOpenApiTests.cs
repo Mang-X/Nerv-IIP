@@ -16,16 +16,50 @@ public sealed class GatewayOpenApiTests
         var paths = document.RootElement.GetProperty("paths");
 
         Assert.True(paths.TryGetProperty("/api/console/v1/instances", out var instances));
-        Assert.True(instances.GetProperty("get").TryGetProperty("operationId", out var listOperation));
+        var list = instances.GetProperty("get");
+        Assert.True(list.TryGetProperty("operationId", out var listOperation));
         Assert.Equal("listConsoleInstances", listOperation.GetString());
+        AssertJsonResponseSchema(list, "200", "NervIIPContractsAppHubQueriesInstanceListResponse");
+        AssertParameterNames(list, "organizationId", "environmentId", "pageNumber", "pageSize", "search");
 
         var detail = paths.GetProperty("/api/console/v1/instances/{instanceKey}");
-        Assert.Equal("getConsoleInstanceDetail", detail.GetProperty("get").GetProperty("operationId").GetString());
+        var detailGet = detail.GetProperty("get");
+        Assert.Equal("getConsoleInstanceDetail", detailGet.GetProperty("operationId").GetString());
+        AssertJsonResponseSchema(detailGet, "200", "NervIIPContractsAppHubQueriesInstanceDetailResponse");
+        AssertParameterNames(detailGet, "organizationId", "environmentId", "instanceKey");
 
         var restart = paths.GetProperty("/api/console/v1/instances/{instanceKey}/operations/restart");
         Assert.Equal("restartConsoleInstance", restart.GetProperty("post").GetProperty("operationId").GetString());
 
         var operationDetail = paths.GetProperty("/api/console/v1/operation-tasks/{operationTaskId}");
         Assert.Equal("getConsoleOperationTask", operationDetail.GetProperty("get").GetProperty("operationId").GetString());
+    }
+
+    private static void AssertJsonResponseSchema(JsonElement operation, string statusCode, string schemaName)
+    {
+        var response = operation
+            .GetProperty("responses")
+            .GetProperty(statusCode)
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString();
+
+        Assert.Equal($"#/components/schemas/{schemaName}", response);
+    }
+
+    private static void AssertParameterNames(JsonElement operation, params string[] names)
+    {
+        var actual = operation
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Select(parameter => parameter.GetProperty("name").GetString())
+            .ToHashSet();
+
+        foreach (var name in names)
+        {
+            Assert.Contains(name, actual);
+        }
     }
 }

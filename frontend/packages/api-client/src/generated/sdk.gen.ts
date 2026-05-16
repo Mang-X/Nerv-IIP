@@ -29,7 +29,7 @@ export const restartConsoleInstance = <ThrowOnError extends boolean = false>(opt
 
 export const getConsoleOperationTask = <ThrowOnError extends boolean = false>(options: Options<GetConsoleOperationTaskData, ThrowOnError>) => (options.client ?? client).get<GetConsoleOperationTaskResponses, unknown, ThrowOnError>({ url: '/api/console/v1/operation-tasks/{operationTaskId}', ...options });
 
-export const listConsoleInstances = <ThrowOnError extends boolean = false>(options?: Options<ListConsoleInstancesData, ThrowOnError>) => (options?.client ?? client).get<ListConsoleInstancesResponses, unknown, ThrowOnError>({ url: '/api/console/v1/instances', ...options });
+export const listConsoleInstances = <ThrowOnError extends boolean = false>(options: Options<ListConsoleInstancesData, ThrowOnError>) => (options.client ?? client).get<ListConsoleInstancesResponses, unknown, ThrowOnError>({ url: '/api/console/v1/instances', ...options });
 
 export const getConsoleInstanceDetail = <ThrowOnError extends boolean = false>(options: Options<GetConsoleInstanceDetailData, ThrowOnError>) => (options.client ?? client).get<GetConsoleInstanceDetailResponses, unknown, ThrowOnError>({ url: '/api/console/v1/instances/{instanceKey}', ...options });
 

@@ -6,14 +6,15 @@ export {
 } from './generated/@pinia/colada.gen'
 
 import type {
-  GetConsoleInstanceDetailResponse,
-  ListConsoleInstancesResponse,
+  NervIipContractsAppHubQueriesInstanceDetailResponse,
+  NervIipContractsAppHubQueriesInstanceListItem,
+  NervIipContractsAppHubQueriesInstanceListResponse,
   NervIipContractsOpsOperationTaskResponse,
   NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest,
 } from './generated/types.gen'
 
-export type InstanceDetailResponse = GetConsoleInstanceDetailResponse
-export type InstanceListItem = never
-export type InstanceListResponse = ListConsoleInstancesResponse
+export type InstanceDetailResponse = NervIipContractsAppHubQueriesInstanceDetailResponse
+export type InstanceListItem = NervIipContractsAppHubQueriesInstanceListItem
+export type InstanceListResponse = NervIipContractsAppHubQueriesInstanceListResponse
 export type OperationTaskResponse = NervIipContractsOpsOperationTaskResponse
 export type RestartInstanceRequest = NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest

@@ -42,6 +42,60 @@ export type NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest =
     idempotencyKey?: string;
 };
 
+export type NervIipContractsAppHubQueriesInstanceListResponse = {
+    pageNumber?: number;
+    pageSize?: number;
+    totalCount?: number;
+    items?: Array<NervIipContractsAppHubQueriesInstanceListItem>;
+};
+
+export type NervIipContractsAppHubQueriesInstanceListItem = {
+    applicationKey?: string;
+    applicationName?: string;
+    version?: string;
+    nodeKey?: string;
+    nodeName?: string;
+    instanceKey?: string;
+    instanceName?: string;
+    reportedStatus?: string;
+    healthStatus?: string;
+    lastHeartbeatAtUtc?: string | null;
+    lastStateObservedAtUtc?: string | null;
+};
+
+export type NervIipPlatformGatewayWebEndpointsInstancesListInstancesRequest = {
+    [key: string]: never;
+};
+
+export type NervIipContractsAppHubQueriesInstanceDetailResponse = {
+    applicationKey?: string;
+    applicationName?: string;
+    version?: string;
+    nodeKey?: string;
+    nodeName?: string;
+    instanceKey?: string;
+    instanceName?: string;
+    reportedStatus?: string;
+    healthStatus?: string;
+    lastHeartbeatAtUtc?: string | null;
+    lastStateObservedAtUtc?: string | null;
+    capabilities?: Array<NervIipContractsAppHubQueriesCapabilitySummary>;
+    metadata?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipContractsAppHubQueriesCapabilitySummary = {
+    capabilityCode?: string;
+    capabilityVersion?: string;
+    category?: string;
+    supportedOperations?: Array<string>;
+};
+
+export type NervIipPlatformGatewayWebEndpointsInstancesGetInstanceDetailRequest = {
+    [key: string]: never;
+};
+
 export type RestartConsoleInstanceData = {
     body: NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest;
     path: {
@@ -81,15 +135,21 @@ export type GetConsoleOperationTaskResponse = GetConsoleOperationTaskResponses[k
 export type ListConsoleInstancesData = {
     body?: never;
     path?: never;
-    query?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        pageNumber: number;
+        pageSize: number;
+        search?: string | null;
+    };
     url: '/api/console/v1/instances';
 };
 
 export type ListConsoleInstancesResponses = {
     /**
-     * No Content
+     * Success
      */
-    204: void;
+    200: NervIipContractsAppHubQueriesInstanceListResponse;
 };
 
 export type ListConsoleInstancesResponse = ListConsoleInstancesResponses[keyof ListConsoleInstancesResponses];
@@ -99,15 +159,18 @@ export type GetConsoleInstanceDetailData = {
     path: {
         instanceKey: string;
     };
-    query?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
     url: '/api/console/v1/instances/{instanceKey}';
 };
 
 export type GetConsoleInstanceDetailResponses = {
     /**
-     * No Content
+     * Success
      */
-    204: void;
+    200: NervIipContractsAppHubQueriesInstanceDetailResponse;
 };
 
 export type GetConsoleInstanceDetailResponse = GetConsoleInstanceDetailResponses[keyof GetConsoleInstanceDetailResponses];
