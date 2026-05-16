@@ -38,7 +38,11 @@ try {
   } -ArgumentList $gatewayProject, $gatewayUrl
 
   Wait-Healthy "$gatewayUrl/health"
-  Invoke-WebRequest -Method Get -Uri "$gatewayUrl/swagger/v1/swagger.json" -OutFile $output
+  $openApiDocument = Invoke-RestMethod -Method Get -Uri "$gatewayUrl/swagger/v1/swagger.json"
+  $openApiDocument.servers = @([pscustomobject]@{ url = "" })
+  $openApiJson = ($openApiDocument | ConvertTo-Json -Depth 100) + [Environment]::NewLine
+  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+  [System.IO.File]::WriteAllText($output, $openApiJson, $utf8NoBom)
   Write-Host "Gateway OpenAPI exported to $output"
 }
 finally {

@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:58204"
+      "url": ""
     }
   ],
   "paths": {
@@ -110,19 +110,19 @@
           {
             "name": "pageNumber",
             "in": "query",
-            "required": true,
             "schema": {
               "type": "integer",
-              "format": "int32"
+              "format": "int32",
+              "nullable": true
             }
           },
           {
             "name": "pageSize",
             "in": "query",
-            "required": true,
             "schema": {
               "type": "integer",
-              "format": "int32"
+              "format": "int32",
+              "nullable": true
             }
           },
           {

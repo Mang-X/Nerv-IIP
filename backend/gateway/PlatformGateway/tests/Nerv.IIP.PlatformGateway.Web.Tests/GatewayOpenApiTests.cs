@@ -21,6 +21,11 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("listConsoleInstances", listOperation.GetString());
         AssertJsonResponseSchema(list, "200", "NervIIPContractsAppHubQueriesInstanceListResponse");
         AssertParameterNames(list, "organizationId", "environmentId", "pageNumber", "pageSize", "search");
+        AssertParameterRequired(list, "organizationId", true);
+        AssertParameterRequired(list, "environmentId", true);
+        AssertParameterRequired(list, "pageNumber", false);
+        AssertParameterRequired(list, "pageSize", false);
+        AssertParameterRequired(list, "search", false);
 
         var detail = paths.GetProperty("/api/console/v1/instances/{instanceKey}");
         var detailGet = detail.GetProperty("get");
@@ -61,5 +66,16 @@ public sealed class GatewayOpenApiTests
         {
             Assert.Contains(name, actual);
         }
+    }
+
+    private static void AssertParameterRequired(JsonElement operation, string name, bool expected)
+    {
+        var parameter = operation
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Single(parameter => parameter.GetProperty("name").GetString() == name);
+
+        var actual = parameter.TryGetProperty("required", out var required) && required.GetBoolean();
+        Assert.Equal(expected, actual);
     }
 }

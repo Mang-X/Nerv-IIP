@@ -9,8 +9,8 @@ public sealed class ListInstancesRequest
 {
     public string OrganizationId { get; set; } = string.Empty;
     public string EnvironmentId { get; set; } = string.Empty;
-    public int PageNumber { get; set; }
-    public int PageSize { get; set; }
+    public int? PageNumber { get; set; }
+    public int? PageSize { get; set; }
     public string? Search { get; set; }
 }
 
@@ -20,7 +20,9 @@ public sealed class ListInstancesEndpoint(IAppHubClient appHub, IAppCache cache)
 {
     public override async Task HandleAsync(ListInstancesRequest req, CancellationToken ct)
     {
-        var query = new InstanceListQuery(req.OrganizationId, req.EnvironmentId, req.PageNumber == 0 ? 1 : req.PageNumber, req.PageSize == 0 ? 20 : req.PageSize, req.Search);
+        var pageNumber = req.PageNumber is > 0 ? req.PageNumber.Value : 1;
+        var pageSize = req.PageSize is > 0 ? req.PageSize.Value : 20;
+        var query = new InstanceListQuery(req.OrganizationId, req.EnvironmentId, pageNumber, pageSize, req.Search);
         var key = NervIipCacheKeys.GatewayInstanceList(req.OrganizationId, req.EnvironmentId, NervIipCacheKeys.HashQuery(query));
 
         try
