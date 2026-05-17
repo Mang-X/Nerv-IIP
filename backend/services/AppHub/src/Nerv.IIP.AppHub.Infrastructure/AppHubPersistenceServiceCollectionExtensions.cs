@@ -17,7 +17,9 @@ public static class AppHubPersistenceServiceCollectionExtensions
                 ?? configuration.GetConnectionString("PostgreSQL")
                 ?? throw new InvalidOperationException("PostgreSQL persistence requires ConnectionStrings:AppHubDb.");
 
-            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
+            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
+                connectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "apphub")));
             services.AddRepositories(typeof(ApplicationDbContext).Assembly);
             services.AddUnitOfWork<ApplicationDbContext>();
             return services;

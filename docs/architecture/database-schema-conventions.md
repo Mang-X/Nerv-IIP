@@ -130,7 +130,9 @@
 
 ## Schema Convention Tests
 
-下一轮持久化 hardening 应补自动化测试，至少检查：
+AppHub/Ops 已通过 `Nerv.IIP.Testing` 中的 schema convention helper 覆盖 business table comment、business column comment、JSON/text 兼容注释、string ID 约束和 service-schema `__EFMigrationsHistory`。后续 IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引建表时必须复用同一类测试。
+
+自动化测试至少检查：
 
 1. 每张 business table 有 table comment。
 2. 每个 business property 有 column comment。
@@ -141,9 +143,5 @@
 
 ## 当前必须补齐的已知差距
 
-1. AppHub 和 Ops 当前已有初始 migrations 与大部分列注释，但业务表尚未统一补表注释。
-2. AppHub `application_instances` 的 `Metadata`、`Capabilities` 序列化字段需要补列注释。
-3. Ops `ParametersJson`、`FailureJson` 已有基础列注释，但还没有达到“格式、生产方、消费方和兼容策略”完整口径。
-4. AppHub/Ops PostgreSQL profile 需要显式配置 service schema 内的 `__EFMigrationsHistory`。
-5. CAP system tables 当前只在 DbContext 中配置表名和主键，后续应至少补表注释或在 catalog 中保持 system-owned 标记。
-6. 尚未添加自动化测试来约束 schema 注释、JSON 注释、string ID 和 migrations history table 规则。
+1. CAP system tables 当前只在 DbContext 中配置表名和主键，后续应至少补表注释或在 catalog 中保持 system-owned 标记。
+2. IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引尚未建表；首次建表前必须先补 catalog 草案和 schema convention tests。

@@ -7,7 +7,7 @@
 | Item | Link |
 |---|---|
 | Nerv-IIP repository | [Mang-X/Nerv-IIP](https://github.com/Mang-X/Nerv-IIP) |
-| Current baseline | 第四阶段真实基础设施门禁已落地并合入，当前状态见 [fourth-vertical-slice-real-infra.md](fourth-vertical-slice-real-infra.md) |
+| Current baseline | 第五阶段 Release-grade Persistence Foundation 已合入；当前第六阶段已完成 schema governance hardening，状态见 [implementation-readiness.md](implementation-readiness.md) 与 [schema-governance design](../superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md)。 |
 
 ## Frontend
 
