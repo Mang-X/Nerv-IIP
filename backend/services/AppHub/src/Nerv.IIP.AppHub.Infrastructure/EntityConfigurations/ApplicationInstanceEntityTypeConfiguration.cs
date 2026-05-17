@@ -10,7 +10,8 @@ public sealed class ApplicationInstanceEntityTypeConfiguration : IEntityTypeConf
 {
     public void Configure(EntityTypeBuilder<ApplicationInstance> builder)
     {
-        builder.ToTable("application_instances");
+        builder.ToTable("application_instances", tableBuilder =>
+            tableBuilder.HasComment("AppHub managed application instance aggregate roots reported by connector hosts."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Application instance aggregate id");
         builder.Property(x => x.OrganizationId).IsRequired().HasMaxLength(100).HasComment("Organization id");
@@ -24,9 +25,11 @@ public sealed class ApplicationInstanceEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.HealthStatus).IsRequired().HasMaxLength(100).HasComment("Health status");
         builder.Property(x => x.Metadata)
             .HasConversion(value => EntityConfigurationJson.SerializeDictionary(value), value => EntityConfigurationJson.DeserializeDictionary(value))
+            .HasComment("JSON dictionary produced by Connector Host registration and state reporting, consumed by AppHub and Gateway readers; additive optional keys are compatible, removing or changing key semantics requires Connector Protocol versioning.")
             .Metadata.SetValueComparer(EntityConfigurationJson.DictionaryComparer);
         builder.Property(x => x.Capabilities)
             .HasConversion(value => EntityConfigurationJson.SerializeCapabilities(value), value => EntityConfigurationJson.DeserializeCapabilities(value))
+            .HasComment("JSON capability descriptors produced by Connector Host discovery, consumed by Gateway and Ops action routing; additive capabilities are compatible, removing or changing action semantics requires Connector Protocol versioning.")
             .Metadata.SetValueComparer(EntityConfigurationJson.CapabilitiesComparer);
         builder.Property(x => x.Deleted).HasConversion(x => x.Value, x => new Deleted(x)).HasComment("Soft delete flag");
         builder.Property(x => x.RowVersion).HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version");
@@ -42,7 +45,8 @@ public sealed class InstanceHeartbeatEntityTypeConfiguration : IEntityTypeConfig
 {
     public void Configure(EntityTypeBuilder<InstanceHeartbeat> builder)
     {
-        builder.ToTable("instance_heartbeat");
+        builder.ToTable("instance_heartbeat", tableBuilder =>
+            tableBuilder.HasComment("AppHub latest heartbeat facts for managed application instances."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Heartbeat id");
         builder.Property(x => x.ApplicationInstanceId).HasConversion(id => id.Id, value => new ApplicationInstanceId(value)).IsRequired().HasComment("Application instance aggregate id");
@@ -57,7 +61,8 @@ public sealed class InstanceStateHistoryEntityTypeConfiguration : IEntityTypeCon
 {
     public void Configure(EntityTypeBuilder<InstanceStateHistory> builder)
     {
-        builder.ToTable("instance_state_history");
+        builder.ToTable("instance_state_history", tableBuilder =>
+            tableBuilder.HasComment("AppHub observed application instance state history for diagnostics and status timelines."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("State history id");
         builder.Property(x => x.ApplicationInstanceId).HasConversion(id => id.Id, value => new ApplicationInstanceId(value)).IsRequired().HasComment("Application instance aggregate id");
@@ -73,7 +78,8 @@ public sealed class InstanceStatusChangeEntityTypeConfiguration : IEntityTypeCon
 {
     public void Configure(EntityTypeBuilder<InstanceStatusChange> builder)
     {
-        builder.ToTable("instance_status_changes");
+        builder.ToTable("instance_status_changes", tableBuilder =>
+            tableBuilder.HasComment("AppHub reported status transition history for managed application instances."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Status change id");
         builder.Property(x => x.ApplicationInstanceId).HasConversion(id => id.Id, value => new ApplicationInstanceId(value)).IsRequired().HasComment("Application instance aggregate id");
@@ -88,7 +94,8 @@ public sealed class RegistrationIdempotencyEntityTypeConfiguration : IEntityType
 {
     public void Configure(EntityTypeBuilder<RegistrationIdempotency> builder)
     {
-        builder.ToTable("registration_idempotency");
+        builder.ToTable("registration_idempotency", tableBuilder =>
+            tableBuilder.HasComment("AppHub registration idempotency records used to deduplicate connector retries."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Registration idempotency id");
         builder.Property(x => x.IdempotencyKey).IsRequired().HasMaxLength(200).HasComment("Idempotency key");

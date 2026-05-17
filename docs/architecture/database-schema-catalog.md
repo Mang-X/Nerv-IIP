@@ -2,7 +2,7 @@
 
 本文档记录当前 Nerv-IIP 已落地和计划落地的数据库 schema。物理结构仍以 EF Core migrations 和 EntityConfigurations 为准；本文档负责解释业务语义、边界、索引意图和可视化上下文。
 
-当前 catalog 覆盖第五阶段已经迁移验证通过的 AppHub 与 Ops。IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引在真正建表前必须补充相同粒度的条目。
+当前 catalog 覆盖第五阶段已经迁移验证通过、并在第六阶段完成 schema governance hardening 的 AppHub 与 Ops。IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引在真正建表前必须补充相同粒度的条目和 convention tests。
 
 ## 读法
 
@@ -22,6 +22,7 @@ Source:
 1. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/ApplicationDbContext.cs`
 2. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/*.cs`
 3. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260517055301_InitialCreate.cs`
+4. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260517074353_SchemaGovernanceMetadata.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
@@ -46,10 +47,7 @@ Status value sources:
 
 Known gaps:
 
-1. 业务表还缺统一 table comment。
-2. `application_instances.Metadata` 与 `application_instances.Capabilities` 需要补充列注释，说明 JSON 格式、生产方和兼容规则。
-3. PostgreSQL profile 需要显式把 `__EFMigrationsHistory` 配置到 `apphub` schema。
-4. CAP system tables 当前只在 catalog 中标记 system-owned，后续可补 table comment 便于数据库工具展示。
+1. CAP system tables 当前只在 catalog 中标记 system-owned，后续可补 table comment 便于数据库工具展示。
 
 ## Ops Schema
 
@@ -62,6 +60,7 @@ Source:
 1. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/ApplicationDbContext.cs`
 2. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/EntityConfigurations/*.cs`
 3. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/20260517055218_InitialCreate.cs`
+4. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/20260517074341_SchemaGovernanceMetadata.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
@@ -81,10 +80,7 @@ Status value sources:
 
 Known gaps:
 
-1. 业务表还缺统一 table comment。
-2. `operation_tasks.ParametersJson` 和 `operation_attempts.FailureJson` 的列注释还需要增强到“JSON 格式、生产方、消费方、兼容策略”完整口径。
-3. PostgreSQL profile 需要显式把 `__EFMigrationsHistory` 配置到 `ops` schema。
-4. CAP system tables 当前只在 catalog 中标记 system-owned，后续可补 table comment 便于数据库工具展示。
+1. CAP system tables 当前只在 catalog 中标记 system-owned，后续可补 table comment 便于数据库工具展示。
 
 ## 后续服务建表前清单
 
@@ -101,8 +97,6 @@ Known gaps:
 
 ## 下一轮 hardening 建议
 
-1. 在 AppHub/Ops EF 配置中补 table comment 和缺失的 JSON 列注释。
-2. 为业务表/业务列注释增加 schema convention tests，避免新表漏注释。
-3. 显式配置 AppHub/Ops 的 `__EFMigrationsHistory` schema，并用测试守住。
-4. 生成或维护简版 ER 图，以 AppHub/Ops 当前 catalog 为输入。
-5. 在新增 IAM 或 FileStorage 迁移前，先补该服务的 catalog 草案，再写实体配置和 migration。
+1. 生成或维护简版 ER 图，以 AppHub/Ops 当前 catalog 和数据库注释为输入。
+2. 在新增 IAM 或 FileStorage 迁移前，先补该服务的 catalog 草案，再写实体配置、schema convention tests 和 migration。
+3. 后续如 CAP system tables 需要进入客户数据字典展示，补充 system table comment 或保持 catalog 的 system-owned 标记为权威说明。

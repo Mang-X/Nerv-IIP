@@ -17,7 +17,9 @@ public static class OpsPersistenceServiceCollectionExtensions
             var connectionString = configuration.GetConnectionString("OpsDb")
                 ?? throw new InvalidOperationException("Connection string 'OpsDb' is required when Ops uses PostgreSQL persistence.");
 
-            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
+            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
+                connectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "ops")));
             services.AddRepositories(typeof(ApplicationDbContext).Assembly);
             services.AddUnitOfWork<ApplicationDbContext>();
             services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();

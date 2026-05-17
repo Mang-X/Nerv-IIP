@@ -8,7 +8,7 @@ public sealed class AuditRecordEntityTypeConfiguration : IEntityTypeConfiguratio
 {
     public void Configure(EntityTypeBuilder<AuditRecord> builder)
     {
-        builder.ToTable("audit_records");
+        builder.ToTable("audit_records", table => table.HasComment("Ops audit records for operation task lifecycle events and user-visible traceability."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id)
             .HasConversion(x => x.Id, x => new AuditRecordId(x))

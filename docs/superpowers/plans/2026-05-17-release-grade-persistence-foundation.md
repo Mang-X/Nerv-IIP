@@ -14,6 +14,8 @@
 
 2026-05-17 本阶段迁移发布底座门禁已通过：
 
+> Historical note: the unchecked task list below is preserved as the original execution plan. The stage is complete; use the Completion Record and git history as the source of truth for status.
+
 AppHub `IGuidStronglyTypedId` 主键已按 NetCorePal 约定改为 EF `UseGuidVersion7ValueGenerator()` 生成；领域构造函数不再手动调用 `Guid.CreateVersion7()`。新增 `Postgres_store_generates_guid_strong_ids_on_add` 覆盖“构造时无 ID，保存时由 EF 生成 ID”的约束。
 
 建表、注释、schema catalog 和可视化元数据的长期规范已补入：

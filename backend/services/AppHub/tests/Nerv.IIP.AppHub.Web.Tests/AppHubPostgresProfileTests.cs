@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.AppHub.Infrastructure;
@@ -29,7 +30,7 @@ public sealed class AppHubPostgresProfileTests
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
             configuration.AddUnitOfWorkBehaviors();
         });
-        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
+        AddPostgreSqlAppHubPersistence(services, connectionString);
         services.AddScoped<AppHubDatabaseMigrationRunner>();
 
         await using var provider = services.BuildServiceProvider();
@@ -39,6 +40,7 @@ public sealed class AppHubPostgresProfileTests
         await db.Database.EnsureDeletedAsync();
         var migrationRunner = scope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>();
         await migrationRunner.MigrateAsync();
+        await AssertMigrationsHistoryTableInSchemaAsync(db, "apphub");
 
         var application = new AppHubApplication("org-id", "env-id", "app-key", "App Name", "1.0.0");
 
@@ -71,9 +73,7 @@ public sealed class AppHubPostgresProfileTests
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
             configuration.AddUnitOfWorkBehaviors();
         });
-        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
-        services.AddRepositories(typeof(ApplicationDbContext).Assembly);
-        services.AddUnitOfWork<ApplicationDbContext>();
+        AddPostgreSqlAppHubPersistence(services, connectionString);
         services.AddScoped<AppHubDatabaseMigrationRunner>();
 
         await using var provider = services.BuildServiceProvider();
@@ -84,6 +84,7 @@ public sealed class AppHubPostgresProfileTests
             await db.Database.EnsureDeletedAsync();
             var migrationRunner = scope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>();
             await migrationRunner.MigrateAsync();
+            await AssertMigrationsHistoryTableInSchemaAsync(db, "apphub");
 
             var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
             await mediator.Send(new RegisterApplicationCommand(AppHubPostgresSamples.Registration("pg-apphub-001")));
@@ -147,5 +148,38 @@ public sealed class AppHubPostgresProfileTests
             new Dictionary<string, string>(),
             new Dictionary<string, decimal>(),
             new Dictionary<string, string>());
+    }
+
+    private static void AddPostgreSqlAppHubPersistence(IServiceCollection services, string connectionString)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Persistence:Provider"] = "PostgreSQL",
+                ["ConnectionStrings:AppHubDb"] = connectionString,
+            })
+            .Build();
+        services.AddAppHubPersistence(configuration);
+    }
+
+    private static async Task AssertMigrationsHistoryTableInSchemaAsync(ApplicationDbContext db, string schema)
+    {
+        await db.Database.OpenConnectionAsync();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = @schema
+                  AND table_name = '__EFMigrationsHistory'
+            )
+            """;
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "schema";
+        parameter.Value = schema;
+        command.Parameters.Add(parameter);
+
+        var exists = (bool?)await command.ExecuteScalarAsync() ?? false;
+        Assert.True(exists, $"Expected EF migrations history table in schema '{schema}'.");
     }
 }

@@ -12,7 +12,8 @@ public sealed class ApplicationEntityTypeConfiguration : IEntityTypeConfiguratio
 {
     public void Configure(EntityTypeBuilder<AppHubApplication> builder)
     {
-        builder.ToTable("applications");
+        builder.ToTable("applications", tableBuilder =>
+            tableBuilder.HasComment("AppHub application catalog aggregate roots scoped by organization and environment."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Application aggregate id");
         builder.Property(x => x.OrganizationId).IsRequired().HasMaxLength(100).HasComment("Organization id");
@@ -30,7 +31,8 @@ public sealed class ApplicationVersionEntityTypeConfiguration : IEntityTypeConfi
 {
     public void Configure(EntityTypeBuilder<ApplicationVersion> builder)
     {
-        builder.ToTable("application_versions");
+        builder.ToTable("application_versions", tableBuilder =>
+            tableBuilder.HasComment("AppHub application versions owned by an application catalog aggregate."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Application version id");
         builder.Property(x => x.ApplicationId).HasConversion(id => id.Id, value => new AppHubApplicationId(value)).IsRequired().HasComment("Application aggregate id");

@@ -8,7 +8,7 @@ public sealed class OperationAttemptEntityTypeConfiguration : IEntityTypeConfigu
 {
     public void Configure(EntityTypeBuilder<OperationAttempt> builder)
     {
-        builder.ToTable("operation_attempts");
+        builder.ToTable("operation_attempts", table => table.HasComment("Ops operation execution attempts created when connector hosts claim operation tasks."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id)
             .HasConversion(x => x.Id, x => new OperationAttemptId(x))
@@ -23,7 +23,7 @@ public sealed class OperationAttemptEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.Status).IsRequired().HasMaxLength(32).HasComment("Attempt status.");
         builder.Property(x => x.StartedAtUtc).HasComment("Attempt start time in UTC.");
         builder.Property(x => x.FinishedAtUtc).HasComment("Attempt finish time in UTC.");
-        builder.Property(x => x.FailureJson).HasComment("Serialized failure reason.");
+        builder.Property(x => x.FailureJson).HasComment("JSON failure details produced by Connector Host execution, consumed by Ops and Gateway diagnostics; additive optional keys are compatible, removing or changing key semantics requires Ops contract versioning.");
 
         builder.HasIndex(x => x.OperationTaskId);
     }

@@ -10,7 +10,8 @@ public sealed class ManagedNodeEntityTypeConfiguration : IEntityTypeConfiguratio
 {
     public void Configure(EntityTypeBuilder<ManagedNode> builder)
     {
-        builder.ToTable("managed_nodes");
+        builder.ToTable("managed_nodes", tableBuilder =>
+            tableBuilder.HasComment("AppHub managed connector host or runtime node catalog entries."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Managed node aggregate id");
         builder.Property(x => x.OrganizationId).IsRequired().HasMaxLength(100).HasComment("Organization id");

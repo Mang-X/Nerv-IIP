@@ -1,12 +1,12 @@
 # 数据库发布检查表与 Runbook
 
-本文档把 ADR 0009 和 schema conventions 落成发布执行口径。它不是当前仓库已经具备完整私有化安装包的声明；当前第五阶段只验证了 AppHub/Ops 可以通过 migrations 从空 PostgreSQL 数据库建表。真正 PoC 或私有化交付前，必须把本文档中的 release gate 补进安装脚本、migration bundle 或专用 migrator。
+本文档把 ADR 0009 和 schema conventions 落成发布执行口径。它不是当前仓库已经具备完整私有化安装包的声明；当前第五阶段验证了 AppHub/Ops 可以通过 migrations 从空 PostgreSQL 数据库建表，第六阶段进一步把 AppHub/Ops 的 schema governance metadata 和 service-schema migrations history 配置固化为门禁。真正 PoC 或私有化交付前，必须把本文档中的 release gate 补进安装脚本、migration bundle 或专用 migrator。
 
 ## 当前支持状态
 
 | Profile | Current status | Release-supported? | Evidence |
 | --- | --- | --- | --- |
-| PostgreSQL | AppHub/Ops 已有初始 migrations，并通过第五阶段本地验证。 | Not yet for customer release. 需要安装脚本、备份恢复演练、seed 清单和诊断输出契约。 | `scripts/verify-fifth-slice-persistence-foundation.ps1` |
+| PostgreSQL | AppHub/Ops 已有初始 migrations 和 schema governance metadata migrations，并通过第五/第六阶段本地验证。 | Not yet for customer release. 需要安装脚本、备份恢复演练、seed 清单和诊断输出契约。 | `scripts/verify-fifth-slice-persistence-foundation.ps1` |
 | GaussDB | Candidate only. | No. | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | DMDB | Candidate only. | No. | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | Other databases | Evaluation only. | No. | 不在 NetCorePal.Template 当前公开 profile 基线内。 |
@@ -33,6 +33,66 @@
 6. 确认备份或快照已完成，并记录备份位置、时间、校验方式和恢复负责人。
 7. 确认本次 release 的 seed 清单、幂等键、默认管理员/凭据处理方式和重复执行语义。
 8. 确认失败停止条件：任一服务 migration 或 seed 失败时，不继续启动新版本业务服务。
+9. 从第五阶段旧库升级到第六阶段及以后时，先执行“迁移历史表 schema 搬迁”前置步骤；否则 EF 会在新的 service schema history table 中看不到已应用的 `InitialCreate`，从而尝试重复建表。
+
+## 第六阶段迁移历史表 schema 搬迁
+
+第五阶段 AppHub/Ops 的 `__EFMigrationsHistory` 使用 provider 默认 schema。第六阶段开始，AppHub/Ops 显式使用 service schema 中的 history table：`apphub.__EFMigrationsHistory` 与 `ops.__EFMigrationsHistory`。
+
+从已有第五阶段数据库升级时，必须在执行 `dotnet-ef database update`、migration bundle 或专用 migrator 之前，把旧 history rows 复制到 service schema。这个步骤只搬迁 EF migration history，不修改业务表。
+
+如果目标库是一次性本地验证库，可以直接删除并重建库；如果目标库保留任何需要延续的数据，必须执行下面的前置 SQL 并保留备份。
+
+AppHub:
+
+```sql
+DO $$
+BEGIN
+    CREATE SCHEMA IF NOT EXISTS apphub;
+    CREATE TABLE IF NOT EXISTS apphub."__EFMigrationsHistory" (
+        "MigrationId" varchar(150) NOT NULL,
+        "ProductVersion" varchar(32) NOT NULL,
+        CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+    );
+
+    IF to_regclass('public."__EFMigrationsHistory"') IS NOT NULL THEN
+        INSERT INTO apphub."__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT "MigrationId", "ProductVersion"
+        FROM public."__EFMigrationsHistory"
+        ON CONFLICT ("MigrationId") DO NOTHING;
+    END IF;
+END $$;
+```
+
+Ops:
+
+```sql
+DO $$
+BEGIN
+    CREATE SCHEMA IF NOT EXISTS ops;
+    CREATE TABLE IF NOT EXISTS ops."__EFMigrationsHistory" (
+        "MigrationId" varchar(150) NOT NULL,
+        "ProductVersion" varchar(32) NOT NULL,
+        CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+    );
+
+    IF to_regclass('public."__EFMigrationsHistory"') IS NOT NULL THEN
+        INSERT INTO ops."__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT "MigrationId", "ProductVersion"
+        FROM public."__EFMigrationsHistory"
+        ON CONFLICT ("MigrationId") DO NOTHING;
+    END IF;
+END $$;
+```
+
+执行后确认：
+
+```sql
+SELECT * FROM apphub."__EFMigrationsHistory" ORDER BY "MigrationId";
+SELECT * FROM ops."__EFMigrationsHistory" ORDER BY "MigrationId";
+```
+
+确认目标 service schema 已包含旧库已应用的 `InitialCreate` migration 后，才可以执行下面的 AppHub/Ops 手动迁移命令。不要在同一个 release 中删除 `public.__EFMigrationsHistory`；等备份、迁移和服务健康验证都完成后，再单独评估清理。
 
 ## 当前 AppHub/Ops 手动迁移命令
 
