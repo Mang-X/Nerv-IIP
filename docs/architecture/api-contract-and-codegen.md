@@ -50,6 +50,18 @@
 6. 新增或修改 Gateway 控制台接口时，必须先更新后端 Endpoint 与 OpenAPI 测试，再导出 OpenAPI 快照并重新生成前端 api-client。
 7. OpenAPI 是契约事实来源；导出的 JSON 快照是前端生成输入，不允许手改快照来绕过后端契约。
 
+### Console Log Query API
+
+1. 控制台日志查看属于 PlatformGateway 页面级 API，不属于前端直连观测后端能力。
+2. 前端通过生成客户端调用 `/api/console/v1/logs/query`、`/api/console/v1/instances/{instanceKey}/logs` 或 `/api/console/v1/operation-tasks/{operationTaskId}/logs`；这些接口的 `operationId` 建议为 `queryConsoleLogs`、`getConsoleInstanceLogs`、`getConsoleOperationLogs`。
+3. Gateway 内部默认接入内置日志归档 profile：先查 `observability` 索引元数据，再通过 File Storage 读取 `.jsonl.gz` chunk；也可以接入 Aspire Dashboard 短期 telemetry API、滚动 JSONL 热文件、后续生产日志后端或客户侧托管平台。OpenAPI DTO 必须保持平台中立，不暴露后端查询语言、内部 API、tenant header、数据源 URL 或凭据。
+4. 查询请求必须包含受控过滤条件：`from`、`to`、`limit`、`cursor`、`level`、`service`、`instanceKey`、`operationTaskId`、`correlationId`、`traceId` 和 `text`。Gateway 负责把这些条件映射为后端查询。
+5. 查询响应建议包含 `items`、`nextCursor`、`partial` 和 `backendStatus`。单条日志建议包含 `timestamp`、`level`、`service`、`message`、`instanceKey`、`operationTaskId`、`correlationId`、`traceId`、`labels`、`fields`、`source`。`source` 只表达 `hotFile`、`archiveChunk`、`dashboard`、`externalBackend` 等平台中立来源，不暴露实际存储路径或对象 key。
+6. 日志接口必须执行 IAM 鉴权、组织与环境隔离、最大时间窗口、最大返回条数、速率限制和敏感字段脱敏。OpenAPI 测试至少覆盖越权过滤、超大窗口拒绝、分页和脱敏。
+7. 实时日志 tail 如果落地，应新增 SSE 或 WebSocket 契约，并继续由 Gateway 代理后端查询；普通页面不得直接打开观测后端连接。
+8. OpenAPI 不暴露内部 `LogChunk`、`LogEntryIndex` 或 File Storage object key；前端只能看到可展示日志条目和分页游标。
+9. `LogChunk` 与 `LogEntryIndex` 只是 Gateway 内部定位数据的索引模型，不属于前端契约；索引字段变化不应造成 Console API breaking change。
+
 ### 前端责任
 
 1. 前端通过 Hey API 从 OpenAPI 生成 types、sdk、client 与 Pinia Colada 查询、变更函数。
@@ -141,3 +153,4 @@ frontend/packages/api-client/
 3. 让多个包各自维护不同版本的相同接口类型。
 4. 让 Gateway 返回未进入 OpenAPI 的隐式接口。
 5. 让 SDK 变成服务发现中心、权限事实源、审计事实源、通知事实源或服务端领域模型副本。
+6. 让前端直接访问 Aspire Dashboard、第三方观测后端或客户侧日志平台。

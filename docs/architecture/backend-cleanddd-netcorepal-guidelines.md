@@ -10,6 +10,8 @@
 - Transactions：https://netcorepal.github.io/netcorepal-cloud-framework/en/transactions/transactions/
 - OpenTelemetry Diagnostics：https://netcorepal.github.io/netcorepal-cloud-framework/en/observability/opentelemetry-diagnostics/
 - NetCorePal.Template 当前公开参数说明：https://www.nuget.org/packages/NetCorePal.Template
+- NetCorePal.Template template.json：https://github.com/netcorepal/netcorepal-cloud-template/blob/main/template/.template.config/template.json
+- NetCorePal.Template CI matrix：https://github.com/netcorepal/netcorepal-cloud-template/blob/main/.github/workflows/template-test.yml
 - 本地 CleanDDD 技能：cleanddd-modeling、cleanddd-dotnet-coding、cleanddd-dotnet-init。
 
 ## 适用范围
@@ -54,6 +56,20 @@ dotnet new netcorepal-web -n Nerv.IIP.Ops -o backend/services/Ops --Framework ne
 4. `--UseAdmin false` 必须显式传入，避免把模板内置 Admin、RBAC 或前端后台与 Nerv-IIP 自有 IAM、console 规划混在一起。
 5. `--IncludeCopilotInstructions false` 保持协作指引由仓库根统一维护，不让每个服务生成一份局部指令。
 6. `--UseAspire false` 是每个平台领域服务的默认值，含义是不让每个服务各自生成局部 AppHost；平台统一 Aspire AppHost 由 ADR 0008 冻结，后续落点在 `infra/aspire`。
+
+## 数据库可替换性与信创口径
+
+2026-05-17 调研结论：netcorepal-cloud-framework 本身围绕 ASP.NET Core、EF Core、UnitOfWork、Repository 和 CAP outbox 组织能力；数据库能力主要由 NetCorePal.Template 生成的 EF Core provider、CAP storage、迁移和测试基础设施承担。当前公开的 NetCorePal.Template 3.2.0 `--Database` 参数包含 `MySql`、`SqlServer`、`PostgreSQL`、`Sqlite`、`GaussDB`、`DMDB`、`MongoDB`，模板源码也为 GaussDB 与 DMDB 提供了 provider 包、NetCorePal CAP storage 包、迁移目录、Aspire/Testcontainers 测试包和 CI 矩阵。
+
+Nerv-IIP 的正式口径：
+
+1. 主推并默认落地 PostgreSQL；所有 scaffold 命令仍显式传入 `--Database PostgreSQL`。
+2. 信创替换应按 database profile 实施。当前优先候选为模板已覆盖的 `GaussDB` 与 `DMDB`；Kingbase、OceanBase 等未进入模板公开参数的数据库，先作为评估项处理。
+3. database profile 必须至少明确 EF Core provider、CAP storage/outbox、连接串格式、迁移策略、日期时间与 JSON 映射、行版本/并发策略、健康检查和自动化测试入口。
+4. 目标是低替换成本，不承诺完全无感。即使业务代码不改，迁移脚本、索引、SQL 方言、事务隔离、CAP outbox 表和测试容器仍需要按 profile 验证。
+5. Domain、Application、Endpoint、SDK 和公开契约不得引用 provider 专有 API，不写 provider 专有 SQL，不依赖 PostgreSQL `jsonb`、array、函数或 schema 语义作为跨层契约。
+6. Provider 选择只允许出现在 Infrastructure、`Program.cs`/DI extension、部署配置、迁移和 profile 测试中；跨服务仍遵守“服务拥有自己的 schema/数据库边界，不共享表”的原则。
+7. 第四阶段先实现 PostgreSQL profile，并在代码形态上保留 `Persistence:Provider` 扩展点；GaussDB/DMDB 的生产支持作为后续信创验证任务，不混入当前真实基础设施纵切。
 
 ## .NET 版本策略
 
@@ -217,15 +233,26 @@ DbContext：
 
 每个领域服务的 `Program.cs` 至少需要确认以下注册存在：
 
-1. DbContext 使用 PostgreSQL provider。
+1. DbContext 默认使用 PostgreSQL profile；provider 选择收敛在 Infrastructure DI extension 中，不向 Domain/Application/Endpoint 泄漏。
 2. Repositories 通过 `AddRepositories(...)` 注册。
 3. UnitOfWork 通过 `AddUnitOfWork<ApplicationDbContext>()` 注册。
 4. MediatR 注册命令、查询、验证、命令锁和 UnitOfWork 行为。
 5. CAP 配置 RabbitMQ，并使用 netcorepal storage 绑定当前 `ApplicationDbContext`。
 6. FastEndpoints、KnownException 处理中间件、ResponseData、OpenAPI 生成正常启用。
 7. OpenTelemetry 接入 ASP.NET Core、HTTP、CAP 和 netcorepal instrumentation。
+8. `ILogger<T>` 作为业务代码唯一日志入口；Program/Host 层可以接入 Serilog provider、OpenTelemetry sink 和 Console sink。
 
 这些注册原则先由模板生成，后续只做与 Nerv-IIP 基线一致的裁剪，避免手写一套与框架管线平行的基础设施。
+
+## 日志规则
+
+1. 业务代码只注入 `ILogger<T>`，不直接依赖 Serilog 静态 API、sink API 或具体日志后端 SDK。
+2. 宿主层默认接入 Serilog，输出结构化 JSON 日志到 Console，并通过 OpenTelemetry/OTLP 交给 Collector；本地开发允许仅 Console 输出。
+3. 所有跨服务请求、Connector Host 心跳、状态同步、任务创建、任务领取、任务结果回传必须带 `correlationId`，并让日志 scope、Activity tag 和响应头保持一致。
+4. 日志字段使用稳定命名：`service.name`、`environment`、`traceId`、`spanId`、`correlationId`、`organizationId`、`environmentId`、`actor`、`operationTaskId`、`instanceKey`。没有上下文时不伪造字段。
+5. 不记录 access token、refresh token、密码、密钥、完整连接串、个人敏感信息、文件内容或大体积 payload；异常日志记录异常类型、错误码、业务 id 和 correlationId。
+6. 日志不是审计。用户动作、运维动作、审批、工具调用和文件授权等可追溯事实必须写入对应领域模型或 Ops `AuditRecord`，日志只用于诊断。
+7. 日志不写业务 PostgreSQL schema；持久化由 OpenTelemetry Collector 转发到部署 profile 的观测后端，日志包和诊断包通过 File Storage/MinIO 作为附件归档。
 
 ## 测试与验收
 
@@ -238,7 +265,7 @@ DbContext：
 Web 集成测试：
 
 1. 使用模板生成的 `MyWebApplicationFactory` 或等价测试工厂。
-2. 使用 Testcontainers 或本地开发编排启动 PostgreSQL、RabbitMQ、Redis 等依赖。
+2. 使用 Testcontainers 或本地开发编排启动当前 profile 所需依赖；默认 profile 为 PostgreSQL、RabbitMQ、Redis。
 3. Endpoint 测试覆盖请求、响应、KnownException、权限上下文和幂等行为。
 
 事件测试：
@@ -267,3 +294,5 @@ dotnet test backend/Nerv.IIP.sln
 8. 在 common 中创建 SharedKernel、Utils、Helpers 一类无边界聚合库。
 9. PlatformGateway 直接引用服务 Domain 或 Infrastructure。
 10. Connector Host 引用平台服务实现项目。
+11. 在 Domain、Application、Endpoint 或 SDK 中写 provider 专有 SQL、引用 provider 专有类型，或把 PostgreSQL `jsonb`、array、schema 等能力当成跨层契约。
+12. 将“模板支持多个数据库”理解成“任何信创数据库都能无验证无感替换”。

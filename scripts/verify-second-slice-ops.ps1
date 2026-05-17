@@ -1,3 +1,7 @@
+param(
+  [switch]$UsePostgres
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 if ($PSVersionTable.PSVersion.Major -ge 7) {
@@ -55,14 +59,25 @@ Set-Location $root
 
 dotnet restore (Join-Path $root "backend/Nerv.IIP.sln")
 dotnet build (Join-Path $root "backend/Nerv.IIP.sln") --no-restore
-dotnet test (Join-Path $root "backend/Nerv.IIP.sln") --no-build
+dotnet test (Join-Path $root "backend/Nerv.IIP.sln") --no-build -m:1
 dotnet restore (Join-Path $root "connector-hosts/Nerv.IIP.ConnectorHost.sln")
 dotnet build (Join-Path $root "connector-hosts/Nerv.IIP.ConnectorHost.sln") --no-restore
-dotnet test (Join-Path $root "connector-hosts/Nerv.IIP.ConnectorHost.sln") --no-build
+dotnet test (Join-Path $root "connector-hosts/Nerv.IIP.ConnectorHost.sln") --no-build -m:1
 
 $appHubUrl = "http://127.0.0.1:58103"
 $gatewayUrl = "http://127.0.0.1:58104"
 $opsUrl = "http://127.0.0.1:58105"
+$postgresPort = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_POSTGRES_PORT)) { "15432" } else { $env:NERV_IIP_POSTGRES_PORT }
+$appHubPostgresConnectionString = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_APPHUB_POSTGRES)) {
+  "Host=localhost;Port=$postgresPort;Database=nerv_iip_apphub;Username=nerv;Password=nerv"
+} else {
+  $env:NERV_IIP_APPHUB_POSTGRES
+}
+$opsPostgresConnectionString = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_OPS_POSTGRES)) {
+  "Host=localhost;Port=$postgresPort;Database=nerv_iip_ops;Username=nerv;Password=nerv"
+} else {
+  $env:NERV_IIP_OPS_POSTGRES
+}
 
 $appHubProject = Join-Path $root "backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Nerv.IIP.AppHub.Web.csproj"
 $gatewayProject = Join-Path $root "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj"
@@ -72,18 +87,34 @@ $connectorHostProject = Join-Path $root "connector-hosts/src/Nerv.IIP.ConnectorH
 $jobs = @()
 try {
   $appHubJob = Start-Job -Name "AppHub" -ScriptBlock {
-    param($project, $url)
+    param($project, $url, $usePostgres, $connectionString)
     $env:ASPNETCORE_URLS = $url
+    if ($usePostgres) {
+      $env:Persistence__Provider = "PostgreSQL"
+      $env:ConnectionStrings__AppHubDb = $connectionString
+      $env:RabbitMQ__HostName = "localhost"
+      $env:RabbitMQ__Port = "5672"
+      $env:RabbitMQ__UserName = "guest"
+      $env:RabbitMQ__Password = "guest"
+    }
     dotnet run --project $project --no-build --no-launch-profile
-  } -ArgumentList $appHubProject, $appHubUrl
+  } -ArgumentList $appHubProject, $appHubUrl, $UsePostgres.IsPresent, $appHubPostgresConnectionString
   $jobs += $appHubJob
   Wait-Healthy $appHubUrl
 
   $opsJob = Start-Job -Name "Ops" -ScriptBlock {
-    param($project, $url)
+    param($project, $url, $usePostgres, $connectionString)
     $env:ASPNETCORE_URLS = $url
+    if ($usePostgres) {
+      $env:Persistence__Provider = "PostgreSQL"
+      $env:ConnectionStrings__OpsDb = $connectionString
+      $env:RabbitMQ__HostName = "localhost"
+      $env:RabbitMQ__Port = "5672"
+      $env:RabbitMQ__UserName = "guest"
+      $env:RabbitMQ__Password = "guest"
+    }
     dotnet run --project $project --no-build --no-launch-profile
-  } -ArgumentList $opsProject, $opsUrl
+  } -ArgumentList $opsProject, $opsUrl, $UsePostgres.IsPresent, $opsPostgresConnectionString
   $jobs += $opsJob
   Wait-Healthy $opsUrl
 

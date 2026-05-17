@@ -9,7 +9,15 @@ public sealed class OperationTaskNotFoundException(string operationTaskId)
 public sealed class InvalidOperationResultException(string message) : OpsStateException(message);
 public sealed class InvalidOperationTaskRequestException(string message) : OpsStateException(message);
 
-public sealed class InMemoryOpsStateStore
+public interface IOpsStateStore
+{
+    OperationTaskResponse Create(CreateOperationTaskRequest request, DateTimeOffset now);
+    OperationTaskResponse Get(string operationTaskId);
+    PendingOperationTasksResponse DispatchPending(string organizationId, string environmentId, string connectorHostId, int take, DateTimeOffset now);
+    OperationTaskResponse RecordResult(OperationResult result);
+}
+
+public sealed class InMemoryOpsStateStore : IOpsStateStore
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, string> _idempotency = new(StringComparer.Ordinal);
