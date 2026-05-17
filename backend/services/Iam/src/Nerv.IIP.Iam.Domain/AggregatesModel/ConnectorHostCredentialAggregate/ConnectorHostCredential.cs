@@ -57,13 +57,19 @@ public class ConnectorHostCredential : Entity<ConnectorHostCredentialId>, IAggre
 
     public void ReplaceCapabilities(IEnumerable<string> capabilityScope)
     {
-        capabilities.Clear();
-        foreach (var capability in capabilityScope.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+        var desiredCapabilities = capabilityScope.Distinct(StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+        capabilities.RemoveAll(x => !desiredCapabilities.Contains(x.CapabilityCode));
+
+        var existingCapabilities = capabilities.Select(x => x.CapabilityCode).ToHashSet(StringComparer.Ordinal);
+        foreach (var capability in desiredCapabilities.Order(StringComparer.Ordinal))
         {
-            capabilities.Add(new ConnectorHostCredentialCapability(
-                new ConnectorHostCredentialCapabilityId($"{Id.Id}:{capability}"),
-                Id,
-                capability));
+            if (!existingCapabilities.Contains(capability))
+            {
+                capabilities.Add(new ConnectorHostCredentialCapability(
+                    new ConnectorHostCredentialCapabilityId($"{Id.Id}:{capability}"),
+                    Id,
+                    capability));
+            }
         }
     }
 }

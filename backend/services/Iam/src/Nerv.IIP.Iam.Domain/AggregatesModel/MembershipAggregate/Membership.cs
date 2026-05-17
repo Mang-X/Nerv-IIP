@@ -41,10 +41,16 @@ public class Membership : Entity<MembershipId>, IAggregateRoot
 
     public void ReplaceRoles(IEnumerable<RoleId> roleIds)
     {
-        roles.Clear();
-        foreach (var roleId in roleIds.Distinct().OrderBy(x => x.Id, StringComparer.Ordinal))
+        var desiredRoleIds = roleIds.Distinct().ToHashSet();
+        roles.RemoveAll(x => !desiredRoleIds.Contains(x.RoleId));
+
+        var existingRoleIds = roles.Select(x => x.RoleId).ToHashSet();
+        foreach (var roleId in desiredRoleIds.OrderBy(x => x.Id, StringComparer.Ordinal))
         {
-            roles.Add(new MembershipRole(new MembershipRoleId($"{Id.Id}:{roleId.Id}"), Id, roleId));
+            if (!existingRoleIds.Contains(roleId))
+            {
+                roles.Add(new MembershipRole(new MembershipRoleId($"{Id.Id}:{roleId.Id}"), Id, roleId));
+            }
         }
     }
 }

@@ -28,10 +28,16 @@ public class Role : Entity<RoleId>, IAggregateRoot
 
     public void ReplacePermissions(IEnumerable<string> permissionCodes)
     {
-        permissions.Clear();
-        foreach (var code in permissionCodes.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+        var desiredCodes = permissionCodes.Distinct(StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+        permissions.RemoveAll(x => !desiredCodes.Contains(x.PermissionCode));
+
+        var existingCodes = permissions.Select(x => x.PermissionCode).ToHashSet(StringComparer.Ordinal);
+        foreach (var code in desiredCodes.Order(StringComparer.Ordinal))
         {
-            permissions.Add(new RolePermission(new RolePermissionId($"{Id.Id}:{code}"), Id, code));
+            if (!existingCodes.Contains(code))
+            {
+                permissions.Add(new RolePermission(new RolePermissionId($"{Id.Id}:{code}"), Id, code));
+            }
         }
     }
 }
