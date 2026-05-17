@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using NetCorePal.Extensions.Domain;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.AppHub.Infrastructure.EntityConfigurations;
 
@@ -11,7 +12,7 @@ public sealed class ApplicationInstanceEntityTypeConfiguration : IEntityTypeConf
     {
         builder.ToTable("application_instances");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasConversion(id => id.Id, value => new ApplicationInstanceId(value)).ValueGeneratedNever().HasComment("Application instance aggregate id");
+        builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Application instance aggregate id");
         builder.Property(x => x.OrganizationId).IsRequired().HasMaxLength(100).HasComment("Organization id");
         builder.Property(x => x.EnvironmentId).IsRequired().HasMaxLength(100).HasComment("Environment id");
         builder.Property(x => x.ApplicationKey).IsRequired().HasMaxLength(160).HasComment("Application protocol key");
@@ -43,7 +44,7 @@ public sealed class InstanceHeartbeatEntityTypeConfiguration : IEntityTypeConfig
     {
         builder.ToTable("instance_heartbeat");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasConversion(id => id.Id, value => new InstanceHeartbeatId(value)).ValueGeneratedNever().HasComment("Heartbeat id");
+        builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Heartbeat id");
         builder.Property(x => x.ApplicationInstanceId).HasConversion(id => id.Id, value => new ApplicationInstanceId(value)).IsRequired().HasComment("Application instance aggregate id");
         builder.Property(x => x.LastHeartbeatAtUtc).IsRequired().HasComment("Last heartbeat time");
         builder.Property(x => x.Reachable).IsRequired().HasComment("Reachability flag");
@@ -58,7 +59,7 @@ public sealed class InstanceStateHistoryEntityTypeConfiguration : IEntityTypeCon
     {
         builder.ToTable("instance_state_history");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasConversion(id => id.Id, value => new InstanceStateHistoryId(value)).ValueGeneratedNever().HasComment("State history id");
+        builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("State history id");
         builder.Property(x => x.ApplicationInstanceId).HasConversion(id => id.Id, value => new ApplicationInstanceId(value)).IsRequired().HasComment("Application instance aggregate id");
         builder.Property(x => x.ObservedAtUtc).IsRequired().HasComment("State observation time");
         builder.Property(x => x.ReportedStatus).IsRequired().HasMaxLength(100).HasComment("Reported status");
@@ -74,7 +75,7 @@ public sealed class InstanceStatusChangeEntityTypeConfiguration : IEntityTypeCon
     {
         builder.ToTable("instance_status_changes");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasConversion(id => id.Id, value => new InstanceStatusChangeId(value)).ValueGeneratedNever().HasComment("Status change id");
+        builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Status change id");
         builder.Property(x => x.ApplicationInstanceId).HasConversion(id => id.Id, value => new ApplicationInstanceId(value)).IsRequired().HasComment("Application instance aggregate id");
         builder.Property(x => x.PreviousStatus).IsRequired().HasMaxLength(100).HasComment("Previous reported status");
         builder.Property(x => x.CurrentStatus).IsRequired().HasMaxLength(100).HasComment("Current reported status");
@@ -89,7 +90,7 @@ public sealed class RegistrationIdempotencyEntityTypeConfiguration : IEntityType
     {
         builder.ToTable("registration_idempotency");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasConversion(id => id.Id, value => new RegistrationIdempotencyId(value)).ValueGeneratedNever().HasComment("Registration idempotency id");
+        builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Registration idempotency id");
         builder.Property(x => x.IdempotencyKey).IsRequired().HasMaxLength(200).HasComment("Idempotency key");
         builder.Property(x => x.RegistrationId).IsRequired().HasMaxLength(100).HasComment("Registration id");
         builder.Property(x => x.InstanceKey).IsRequired().HasMaxLength(160).HasComment("Instance protocol key");

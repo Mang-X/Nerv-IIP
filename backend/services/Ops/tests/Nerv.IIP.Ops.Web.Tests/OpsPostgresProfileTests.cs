@@ -39,7 +39,8 @@ public sealed class OpsPostgresProfileTests
             {
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 await db.Database.EnsureDeletedAsync();
-                await db.Database.EnsureCreatedAsync();
+                var migrationRunner = scope.ServiceProvider.GetRequiredService<OpsDatabaseMigrationRunner>();
+                await migrationRunner.MigrateAsync();
             }
 
             var createdResponse = await client.PostAsJsonAsync("/api/ops/v1/operation-tasks", CreateTask("pg-ops-001"));

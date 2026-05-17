@@ -13,7 +13,6 @@ public class Application : Entity<Nerv.IIP.AppHub.Domain.AggregatesModel.Applica
 
     public Application(string organizationId, string environmentId, string applicationKey, string applicationName, string version)
     {
-        Id = new ApplicationId(Guid.CreateVersion7());
         OrganizationId = organizationId;
         EnvironmentId = environmentId;
         ApplicationKey = applicationKey;
@@ -55,7 +54,6 @@ public class ApplicationVersion : Entity<Nerv.IIP.AppHub.Domain.AggregatesModel.
 
     public ApplicationVersion(string version)
     {
-        Id = new ApplicationVersionId(Guid.CreateVersion7());
         Version = version;
     }
 

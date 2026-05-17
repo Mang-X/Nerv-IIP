@@ -91,6 +91,7 @@ try {
     $env:ASPNETCORE_URLS = $url
     if ($usePostgres) {
       $env:Persistence__Provider = "PostgreSQL"
+      $env:Persistence__AutoMigrate = "true"
       $env:ConnectionStrings__AppHubDb = $connectionString
       $env:RabbitMQ__HostName = "localhost"
       $env:RabbitMQ__Port = "5672"
@@ -107,6 +108,7 @@ try {
     $env:ASPNETCORE_URLS = $url
     if ($usePostgres) {
       $env:Persistence__Provider = "PostgreSQL"
+      $env:Persistence__AutoMigrate = "true"
       $env:ConnectionStrings__OpsDb = $connectionString
       $env:RabbitMQ__HostName = "localhost"
       $env:RabbitMQ__Port = "5672"
