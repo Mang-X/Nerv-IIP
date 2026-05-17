@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "exemptions": [
+    {
+      "path": "scripts/export-gateway-openapi.ps1",
+      "rules": [
+        "MissingGovernanceHeader",
+        "MissingCategory",
+        "MissingHelper",
+        "ForbiddenCommand",
+        "DynamicInvocation",
+        "ForbiddenProcessStart"
+      ]
+    },
+    {
+      "path": "scripts/verify-fifth-slice-persistence-foundation.ps1",
+      "rules": [
+        "MissingGovernanceHeader",
+        "MissingCategory",
+        "MissingHelper",
+        "ForbiddenCommand",
+        "DynamicInvocation",
+        "ForbiddenProcessStart"
+      ]
+    },
+    {
+      "path": "scripts/verify-first-slice.ps1",
+      "rules": [
+        "MissingGovernanceHeader",
+        "MissingCategory",
+        "MissingHelper",
+        "ForbiddenCommand",
+        "DynamicInvocation",
+        "ForbiddenProcessStart"
+      ]
+    },
+    {
+      "path": "scripts/verify-fourth-slice-real-infra.ps1",
+      "rules": [
+        "MissingGovernanceHeader",
+        "MissingCategory",
+        "MissingHelper",
+        "ForbiddenCommand",
+        "DynamicInvocation",
+        "ForbiddenProcessStart"
+      ]
+    },
+    {
+      "path": "scripts/verify-second-slice-ops.ps1",
+      "rules": [
+        "MissingGovernanceHeader",
+        "MissingCategory",
+        "MissingHelper",
+        "ForbiddenCommand",
+        "DynamicInvocation",
+        "ForbiddenProcessStart"
+      ]
+    },
+    {
+      "path": "scripts/verify-third-slice-console.ps1",
+      "rules": [
+        "MissingGovernanceHeader",
+        "MissingCategory",
+        "MissingHelper",
+        "ForbiddenCommand",
+        "DynamicInvocation",
+        "ForbiddenProcessStart"
+      ]
+    }
+  ]
+}

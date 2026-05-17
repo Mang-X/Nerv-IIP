@@ -54,27 +54,27 @@ scripts/
 
 ## Task 2: Add Failing Gate Tests
 
-- [ ] Add fixture scripts for allowed helper usage, missing helper, direct `dotnet`, direct `Start-Job`, and dynamic invocation.
-- [ ] Add a local PowerShell test harness that runs `scripts/check-script-governance.ps1 -Path <fixture>` and asserts pass/fail cases.
-- [ ] Run the harness before implementing the gate to confirm it fails for the expected missing command.
+- [x] Add fixture scripts for allowed helper usage, missing helper, direct `dotnet`, direct `Start-Job`, and dynamic invocation.
+- [x] Add a local PowerShell test harness that runs `scripts/check-script-governance.ps1 -Path <fixture>` and asserts pass/fail cases.
+- [x] Run the harness before implementing the gate to confirm it fails for the expected missing command.
 
 ## Task 3: Implement Shared Helper And Static Gate
 
-- [ ] Add `scripts/lib/ScriptAutomation.ps1` with timeout native command execution, command wrappers, process tree cleanup, scoped environment variables and diagnostic redaction.
-- [ ] Add `scripts/check-script-governance.ps1` using PowerShell parser/AST checks, required governance header, helper dot-source detection and explicit legacy exemptions.
-- [ ] Run fixture tests and `pwsh scripts/check-script-governance.ps1`.
+- [x] Add `scripts/lib/ScriptAutomation.ps1` with timeout native command execution, command wrappers, process tree cleanup, scoped environment variables and diagnostic redaction.
+- [x] Add `scripts/check-script-governance.ps1` using PowerShell parser/AST checks, required governance header, helper dot-source detection and explicit legacy exemptions.
+- [x] Run fixture tests and `pwsh scripts/check-script-governance.ps1`.
 
 ## Task 4: Migrate IAM Verification Script
 
-- [ ] Add `Script-Governance` metadata to `scripts/verify-iam-persistent-auth-foundation.ps1`.
-- [ ] Replace direct `dotnet`, `docker`, `pnpm` or nested `pwsh` calls with helper wrappers.
-- [ ] Ensure background services are started with root PID logging and stopped through process tree cleanup.
-- [ ] Rerun `pwsh scripts/verify-iam-persistent-auth-foundation.ps1`.
+- [x] Add `Script-Governance` metadata to `scripts/verify-iam-persistent-auth-foundation.ps1`.
+- [x] Replace direct `dotnet`, `docker`, `pnpm` or nested `pwsh` calls with helper wrappers.
+- [x] Ensure foreground native commands have timeout/PID/logging through helper; this IAM script does not start background service processes directly.
+- [x] Rerun `pwsh scripts/verify-iam-persistent-auth-foundation.ps1`.
 
 ## Task 5: Final Verification
 
-- [ ] Run script governance tests.
-- [ ] Run script governance gate.
-- [ ] Run migrated IAM verification script.
+- [x] Run script governance tests.
+- [x] Run script governance gate.
+- [x] Run migrated IAM verification script.
 - [ ] Run `git diff --check`.
 - [ ] Commit docs and script governance implementation in focused commits, leaving unrelated `skills-lock.json` untouched.
