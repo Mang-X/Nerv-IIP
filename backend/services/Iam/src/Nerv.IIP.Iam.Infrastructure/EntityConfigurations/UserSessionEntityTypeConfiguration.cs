@@ -1,0 +1,36 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
+
+namespace Nerv.IIP.Iam.Infrastructure.EntityConfigurations;
+
+public sealed class UserSessionEntityTypeConfiguration : IEntityTypeConfiguration<UserSession>
+{
+    public void Configure(EntityTypeBuilder<UserSession> builder)
+    {
+        builder.ToTable("user_sessions", table => table.HasComment("IAM refresh sessions issued to authenticated users."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id)
+            .HasConversion(x => x.Id, x => new UserSessionId(x))
+            .ValueGeneratedNever()
+            .HasMaxLength(64)
+            .HasComment("User session identifier.");
+        builder.Property(x => x.UserId)
+            .HasConversion(x => x.Id, x => new UserId(x))
+            .IsRequired()
+            .HasMaxLength(64)
+            .HasComment("Authenticated user identifier.");
+        builder.Property(x => x.RefreshTokenHash).IsRequired().HasMaxLength(512).HasComment("Refresh token hash used to rotate sessions.");
+        builder.Property(x => x.IssuedAtUtc).HasComment("Session issue time in UTC.");
+        builder.Property(x => x.ExpiresAtUtc).HasComment("Session expiration time in UTC.");
+        builder.Property(x => x.RevokedAtUtc).HasComment("Session revocation time in UTC.");
+        builder.Property(x => x.RevokedReason).HasMaxLength(256).HasComment("Reason the session was revoked.");
+        builder.Property(x => x.PermissionVersion).HasComment("Permission version captured when the session was issued.");
+        builder.Property(x => x.ClientInfo).HasMaxLength(512).HasComment("Client information supplied during session creation.");
+        builder.Property(x => x.IpAddress).HasMaxLength(64).HasComment("Client IP address supplied during session creation.");
+
+        builder.HasIndex(x => x.RefreshTokenHash);
+        builder.HasIndex(x => new { x.UserId, x.RevokedAtUtc });
+    }
+}
