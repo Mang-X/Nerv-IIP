@@ -23,7 +23,7 @@
 17. 数据库 schema、建表注释、schema catalog 和发布 runbook 已补齐第一版，后续持久化服务必须先满足 docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md 和 docs/architecture/database-release-runbook.md。
 18. 第六阶段 Schema Governance & Migration Hardening 用 AppHub/Ops 作为已迁移服务样本，把业务表注释、业务列注释、JSON/text 兼容注释、string ID 约束和 service-schema migrations history 配置固化为测试门禁；IAM 已沿用该门禁，FileStorage 等新增持久化服务开工前必须继续沿用。
 19. 第七阶段 IAM Persistent Auth Foundation 已落地：IAM 保留 InMemory profile，同时具备 PostgreSQL `iam` schema、初始 admin seed、JWT access token、refresh token rotation、session revoke、`/me` 和 Connector Host credential validation 的后端持久化基线。
-20. 脚本自动化治理已冻结到 ADR 0010 和 docs/architecture/script-automation-governance.md；下一阶段开始前，新增或修改脚本必须声明分类、副作用、日志、清理和 helper 使用方式。
+20. 脚本自动化治理已冻结到 ADR 0010 和 docs/architecture/script-automation-governance.md；IAM、第五阶段和第四阶段核心 verify 脚本已迁移到 helper 门禁，Ubuntu WSL 兼容门禁已通过，新增或修改脚本必须声明分类、副作用、日志、清理和 helper 使用方式。
 
 ## 环境前置
 
@@ -201,14 +201,15 @@
 6. 运行 `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1` 可验证 AppHub/Ops 迁移发布底座和后端 SDK/契约回归。
 7. 运行 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` 可验证 IAM PostgreSQL profile、迁移、seed、登录/刷新/退出、`/me`、Connector Host credential validation 和后端回归。
 8. 运行 `pwsh scripts/check-script-governance.ps1` 可验证脚本解析、分类声明、高风险命令 wrapper 和 legacy exemption 是否仍受控。
-9. 运行 AppHub/Ops/IAM schema convention tests 可验证当前已迁移服务的 schema metadata 门禁。
-10. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
-11. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
-12. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
-13. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
-14. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-15. 当前实现用于本地开发和接口联调，不包含生产部署、完整认证授权 UI 或高风险动作审批。
-16. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
+9. 运行 `pwsh scripts/check-script-compatibility.ps1` 可在 macOS/Linux 上记录脚本兼容门禁证据；Windows 本地只能使用 `-AllowWindows -FastOnly` 做 smoke，不作为兼容性声明依据。
+10. 运行 AppHub/Ops/IAM schema convention tests 可验证当前已迁移服务的 schema metadata 门禁。
+11. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
+12. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
+13. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
+14. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
+15. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
+16. 当前实现用于本地开发和接口联调，不包含生产部署、完整认证授权 UI 或高风险动作审批。
+17. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
 
@@ -221,7 +222,7 @@
 7. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
 8. 前端视觉系统和组件皮肤细节；需要先完成 docs/architecture/frontend-design-system-planning.md 中要求的独立设计规格。
 9. Compose 发布产物、安装包和整合安装脚本，口径见 docs/architecture/deployment-baseline.md 与 docs/architecture/database-release-runbook.md。
-10. 既有脚本迁移到 docs/architecture/script-automation-governance.md 的 helper 和门禁；优先顺序是 IAM、第五阶段、第四阶段真实基础设施脚本。
+10. 剩余 legacy 脚本继续迁移到 docs/architecture/script-automation-governance.md 的 helper 和门禁；剩余顺序是 OpenAPI 导出、第三阶段 console、第二阶段 Ops、第一阶段 slice。
 
 ## 开工验收标准
 

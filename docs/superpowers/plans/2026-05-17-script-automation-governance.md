@@ -81,5 +81,7 @@ scripts/
 
 ## Follow-up Backlog
 
-- [ ] Continue migrating legacy `verify` scripts to `scripts/lib/ScriptAutomation.ps1`, prioritizing `verify-fifth-slice-persistence-foundation.ps1` and `verify-fourth-slice-real-infra.ps1`.
-- [ ] Add and run a macOS/Linux compatibility gate: at minimum `pwsh scripts/check-script-governance.ps1`, `pwsh scripts/tests/check-script-governance.Tests.ps1`, `git diff --check`, and the migrated core verify script `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` in a non-Windows environment.
+- [x] Continue migrating legacy `verify` scripts to `scripts/lib/ScriptAutomation.ps1`, prioritizing `verify-fifth-slice-persistence-foundation.ps1` and `verify-fourth-slice-real-infra.ps1`.
+- [x] Add and run a macOS/Linux compatibility gate: at minimum `pwsh scripts/check-script-governance.ps1`, `pwsh scripts/tests/check-script-governance.Tests.ps1`, `git diff --check`, and the migrated core verify script `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` in a non-Windows environment.
+
+Completion note: `scripts/check-script-compatibility.ps1` records compatibility evidence under `artifacts/script-logs/script-compatibility/**/evidence.json`; the full Ubuntu WSL evidence for the final compatibility script was recorded at `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`. The fourth/fifth verify scripts have had their priority baseline exemptions removed. Remaining legacy scripts are tracked as follow-on migration work, not blockers for the next feature stage.

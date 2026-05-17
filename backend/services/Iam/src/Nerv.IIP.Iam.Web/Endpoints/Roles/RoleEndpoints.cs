@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Iam.Infrastructure;
+using Nerv.IIP.Iam.Web.Endpoints;
 using NetCorePal.Extensions.Domain;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Roles;
@@ -15,6 +16,11 @@ public sealed class ListRolesEndpoint(IServiceProvider serviceProvider, IConfigu
     {
         if (IsPostgreSql(configuration))
         {
+            if (!await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.roles.read", ct))
+            {
+                return;
+            }
+
             var dbContext = serviceProvider.GetRequiredService<ApplicationDbContext>();
             var notDeleted = new Deleted(false);
             var roles = await dbContext.Roles
@@ -48,12 +54,17 @@ public sealed class ListRolesEndpoint(IServiceProvider serviceProvider, IConfigu
 
 [HttpPost("/api/iam/v1/roles")]
 [AllowAnonymous]
-public sealed class CreateRoleEndpoint(IConfiguration configuration) : EndpointWithoutRequest
+public sealed class CreateRoleEndpoint(IServiceProvider serviceProvider, IConfiguration configuration) : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
         if (IsPostgreSql(configuration))
         {
+            if (!await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.roles.manage", ct))
+            {
+                return;
+            }
+
             await WriteNotImplementedAsync(HttpContext, "Persisted role creation is not implemented.", ct);
             return;
         }
@@ -76,12 +87,17 @@ public sealed class CreateRoleEndpoint(IConfiguration configuration) : EndpointW
 
 [HttpPatch("/api/iam/v1/roles/{roleId}/permissions")]
 [AllowAnonymous]
-public sealed class PatchRolePermissionsEndpoint(IConfiguration configuration) : EndpointWithoutRequest
+public sealed class PatchRolePermissionsEndpoint(IServiceProvider serviceProvider, IConfiguration configuration) : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
         if (IsPostgreSql(configuration))
         {
+            if (!await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.roles.manage", ct))
+            {
+                return;
+            }
+
             await WriteNotImplementedAsync(HttpContext, "Persisted role permission updates are not implemented.", ct);
             return;
         }

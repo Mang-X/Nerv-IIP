@@ -11,7 +11,7 @@
 5. `verify` 脚本可以使用 disposable database、容器和本地服务，但必须输出目标、清理策略和诊断日志。
 6. `generate` 脚本可以写声明过的生成产物；生成行为不得藏在纯 verify 脚本里。
 7. `release-install` 脚本必须走发布迁移、seed、备份和诊断契约；不得沿用本地验证脚本里的删除数据库、默认密码或隐式 AutoMigrate 习惯。
-8. macOS/Linux 支持必须通过跨平台兼容门禁后才能声明；当前 Windows 本地验证通过不等于非 Windows 环境已完成验证。
+8. macOS/Linux 支持必须通过跨平台兼容门禁后才能声明；当前 IAM core verify 已在 Ubuntu 22.04.3 WSL 环境完成兼容门禁，后续脚本仍需按脚本粒度记录证据。
 
 ## 分类矩阵
 
@@ -104,15 +104,19 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 2. `compat-core-verify`：在 macOS 或 Linux 环境安装 PowerShell 7、.NET 10 SDK、Docker Compose v2 后，运行已经迁移到 helper 的核心验证脚本；首批目标是 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1`。
 3. `compat-release-install`：Linux 私有化安装不直接复用本地 `verify` 脚本。后续 `scripts/install/linux/**` Bash/systemd 入口必须满足同一套分类、副作用、日志、超时、清理和敏感信息脱敏契约。
 
-跨平台验证记录必须包含操作系统、PowerShell 版本、.NET SDK 版本、Docker Compose 版本、执行命令、退出码和诊断日志位置。未跑过 `compat-fast` 和对应核心验证脚本前，只能说“脚本按 `pwsh` 跨平台口径编写”，不能说“已支持 macOS/Linux”。
+仓库提供 `scripts/check-script-compatibility.ps1` 作为本地兼容门禁入口。默认必须在 macOS 或 Linux 上运行；`-AllowWindows -FastOnly` 只用于 Windows 本地 smoke，不可作为兼容性声明依据。脚本会将 OS、PowerShell、.NET SDK、执行命令、退出码和日志位置写入 `artifacts/script-logs/script-compatibility/**/evidence.json`；full 模式还会记录 Docker Compose 版本并运行核心 verify 脚本。
+
+跨平台验证记录必须包含操作系统、PowerShell 版本、.NET SDK 版本、执行命令、退出码和诊断日志位置；`compat-core-verify` 还必须包含 Docker Compose 版本。未跑过 `compat-fast` 和对应核心验证脚本前，只能说“脚本按 `pwsh` 跨平台口径编写”，不能说“已支持 macOS/Linux”。
+
+2026-05-18 的复核兼容证据记录在 `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`：Ubuntu 22.04.3 LTS、PowerShell 7.6.1、.NET SDK 10.0.300、Docker Compose 5.1.3、`isLinux: true`、`fastOnly: false`，并通过 `compat-fast` 和 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1`。在 Codex 生成的 Windows linked worktree 中，WSL Git 需要临时设置 `GIT_DIR`、`GIT_COMMON_DIR`、`GIT_WORK_TREE`，并用 `core.autocrlf=true` 与 `core.filemode=false` 对齐 Windows 工作树，避免兼容门禁把行尾或文件模式差异误报为源码变更。
 
 ## 迁移清单
 
 | 脚本 | 分类 | 当前治理状态 | 迁移要求 |
 | --- | --- | --- | --- |
-| `verify-iam-persistent-auth-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 dotnet/docker/pwsh，输出超时日志和 scoped env 诊断；待补 macOS/Linux `compat-core-verify` 证据。 |
-| `verify-fifth-slice-persistence-foundation.ps1` | `verify` | 优先迁移 | 复用 helper 和 disposable database 声明。 |
-| `verify-fourth-slice-real-infra.ps1` | `verify` | 优先迁移 | 端口、Docker Compose、嵌套第三阶段脚本和数据库重建全部通过 helper。 |
+| `verify-iam-persistent-auth-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 dotnet/docker/pwsh，输出超时日志和 scoped env 诊断；Ubuntu 22.04.3 `compat-core-verify` 已通过，证据路径为 `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`。 |
+| `verify-fifth-slice-persistence-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、dotnet、solution tests 和 scoped PostgreSQL test environment；baseline exemption 已移除。 |
+| `verify-fourth-slice-real-infra.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、PostgreSQL reset、AppHub/Ops profile tests 和嵌套第三阶段脚本；baseline exemption 已移除。 |
 | `verify-third-slice-console.ps1` | `verify` + `generate` | 需拆分或显式声明混合副作用 | OpenAPI 导出和 api-client 生成应由 `generate` 脚本承载，verify 只调用声明过的 generate step。 |
 | `export-gateway-openapi.ps1` | `generate` | 待迁移 | 声明写入 OpenAPI 快照和服务启动副作用。 |
 | `verify-first-slice.ps1` | `verify` | 待迁移 | 管理本地服务进程和端口 preflight。 |

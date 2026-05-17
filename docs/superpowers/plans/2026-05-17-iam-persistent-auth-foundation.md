@@ -16,6 +16,8 @@ This plan starts from commit `c707269 docs: design iam persistent auth foundatio
 
 Known handoff note: `skills-lock.json` is dirty before this plan begins, with no text diff reported in prior audits. Do not stage or modify it unless the user explicitly asks.
 
+Post-merge audit note: implementation landed through `8c6bcde Merge pull request #12 from Mang-X/codex/iam-persistent-auth-foundation`. The original checkbox tracking below was not updated during the branch, so the boxes are stale historical tracking rather than an accurate status signal. A follow-up audit tightened PostgreSQL IAM management endpoints so user/role/session management routes reject anonymous callers before touching persistence; user/role write management remains intentionally unproductized and returns 501 only after permission checks pass.
+
 ## Boundaries
 
 1. Do not implement Gateway-wide bearer authorization or permission policies.

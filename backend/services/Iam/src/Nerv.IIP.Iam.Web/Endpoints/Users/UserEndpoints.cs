@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Iam.Infrastructure;
+using Nerv.IIP.Iam.Web.Endpoints;
 using NetCorePal.Extensions.Domain;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Users;
@@ -15,6 +16,11 @@ public sealed class ListUsersEndpoint(IServiceProvider serviceProvider, IConfigu
     {
         if (IsPostgreSql(configuration))
         {
+            if (!await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.users.read", ct))
+            {
+                return;
+            }
+
             var dbContext = serviceProvider.GetRequiredService<ApplicationDbContext>();
             var notDeleted = new Deleted(false);
             var users = await dbContext.Users
@@ -45,12 +51,17 @@ public sealed class ListUsersEndpoint(IServiceProvider serviceProvider, IConfigu
 
 [HttpPost("/api/iam/v1/users")]
 [AllowAnonymous]
-public sealed class CreateUserEndpoint(IConfiguration configuration) : EndpointWithoutRequest
+public sealed class CreateUserEndpoint(IServiceProvider serviceProvider, IConfiguration configuration) : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
         if (IsPostgreSql(configuration))
         {
+            if (!await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.users.manage", ct))
+            {
+                return;
+            }
+
             await WriteNotImplementedAsync(HttpContext, "Persisted user creation is not implemented.", ct);
             return;
         }
@@ -73,12 +84,17 @@ public sealed class CreateUserEndpoint(IConfiguration configuration) : EndpointW
 
 [HttpPatch("/api/iam/v1/users/{userId}")]
 [AllowAnonymous]
-public sealed class PatchUserEndpoint(IConfiguration configuration) : EndpointWithoutRequest
+public sealed class PatchUserEndpoint(IServiceProvider serviceProvider, IConfiguration configuration) : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
         if (IsPostgreSql(configuration))
         {
+            if (!await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.users.manage", ct))
+            {
+                return;
+            }
+
             await WriteNotImplementedAsync(HttpContext, "Persisted user updates are not implemented.", ct);
             return;
         }
@@ -100,12 +116,17 @@ public sealed class PatchUserEndpoint(IConfiguration configuration) : EndpointWi
 
 [HttpPost("/api/iam/v1/users/{userId}/disable")]
 [AllowAnonymous]
-public sealed class DisableUserEndpoint(IConfiguration configuration) : EndpointWithoutRequest
+public sealed class DisableUserEndpoint(IServiceProvider serviceProvider, IConfiguration configuration) : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
         if (IsPostgreSql(configuration))
         {
+            if (!await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.users.manage", ct))
+            {
+                return;
+            }
+
             await WriteNotImplementedAsync(HttpContext, "Persisted user disable is not implemented.", ct);
             return;
         }

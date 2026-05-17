@@ -37,11 +37,38 @@ function Invoke-GovernanceCase {
     }
 }
 
+function Invoke-GovernanceScriptCase {
+    param(
+        [Parameter(Mandatory)]
+        [string] $RelativePath
+    )
+
+    $emptyBaseline = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-empty-script-governance-baseline-$([System.Guid]::NewGuid().ToString('N')).json"
+    [System.IO.File]::WriteAllText($emptyBaseline, '{"schema":1,"exemptions":[]}', [System.Text.UTF8Encoding]::new($false))
+
+    try {
+        $target = Join-Path $repoRoot $RelativePath
+        $output = & pwsh -NoProfile -ExecutionPolicy Bypass -File $checker -Path $target -BaselinePath $emptyBaseline 2>&1
+        $actualExitCode = $LASTEXITCODE
+
+        if ($actualExitCode -ne 0) {
+            $output | ForEach-Object { Write-Host $_ }
+            throw "Expected $RelativePath to pass without baseline exemptions, got $actualExitCode."
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $emptyBaseline -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-GovernanceCase -Name 'allowed-check.ps1' -ExpectedExitCode 0
 Invoke-GovernanceCase -Name 'missing-helper.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'direct-dotnet.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'direct-start-job.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'dynamic-invocation.ps1' -ExpectedExitCode 1
+
+Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fifth-slice-persistence-foundation.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fourth-slice-real-infra.ps1'
 
 $smokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-script-governance-$([System.Guid]::NewGuid().ToString('N'))"
 try {

@@ -13,29 +13,7 @@
       ]
     },
     {
-      "path": "scripts/verify-fifth-slice-persistence-foundation.ps1",
-      "rules": [
-        "MissingGovernanceHeader",
-        "MissingCategory",
-        "MissingHelper",
-        "ForbiddenCommand",
-        "DynamicInvocation",
-        "ForbiddenProcessStart"
-      ]
-    },
-    {
       "path": "scripts/verify-first-slice.ps1",
-      "rules": [
-        "MissingGovernanceHeader",
-        "MissingCategory",
-        "MissingHelper",
-        "ForbiddenCommand",
-        "DynamicInvocation",
-        "ForbiddenProcessStart"
-      ]
-    },
-    {
-      "path": "scripts/verify-fourth-slice-real-infra.ps1",
       "rules": [
         "MissingGovernanceHeader",
         "MissingCategory",
