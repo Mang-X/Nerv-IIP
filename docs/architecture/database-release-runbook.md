@@ -1,12 +1,12 @@
 # 数据库发布检查表与 Runbook
 
-本文档把 ADR 0009 和 schema conventions 落成发布执行口径。它不是当前仓库已经具备完整私有化安装包的声明；当前第五阶段验证了 AppHub/Ops 可以通过 migrations 从空 PostgreSQL 数据库建表，第六阶段进一步把 AppHub/Ops 的 schema governance metadata 和 service-schema migrations history 配置固化为门禁。真正 PoC 或私有化交付前，必须把本文档中的 release gate 补进安装脚本、migration bundle 或专用 migrator。
+本文档把 ADR 0009 和 schema conventions 落成发布执行口径。它不是当前仓库已经具备完整私有化安装包的声明；当前第五阶段验证了 AppHub/Ops 可以通过 migrations 从空 PostgreSQL 数据库建表，第六阶段进一步把 AppHub/Ops 的 schema governance metadata 和 service-schema migrations history 配置固化为门禁，第七阶段补齐 IAM `iam` schema、初始 migration、seed/auth profile 验证和持久化登录基线。真正 PoC 或私有化交付前，必须把本文档中的 release gate 补进安装脚本、migration bundle 或专用 migrator。
 
 ## 当前支持状态
 
 | Profile | Current status | Release-supported? | Evidence |
 | --- | --- | --- | --- |
-| PostgreSQL | AppHub/Ops 已有初始 migrations 和 schema governance metadata migrations，并通过第五/第六阶段本地验证。 | Not yet for customer release. 需要安装脚本、备份恢复演练、seed 清单和诊断输出契约。 | `scripts/verify-fifth-slice-persistence-foundation.ps1` |
+| PostgreSQL | AppHub/Ops/IAM 已有初始 migrations 和 schema governance metadata/profile 门禁，并通过第五/第六/第七阶段本地验证。 | Not yet for customer release. 需要安装脚本、备份恢复演练、seed 清单和诊断输出契约。 | `scripts/verify-fifth-slice-persistence-foundation.ps1`、`scripts/verify-iam-persistent-auth-foundation.ps1` |
 | GaussDB | Candidate only. | No. | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | DMDB | Candidate only. | No. | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | Other databases | Evaluation only. | No. | 不在 NetCorePal.Template 当前公开 profile 基线内。 |
@@ -29,7 +29,7 @@
 2. 确认目标数据库是预期库，不是开发默认库、共享验证库或误连客户生产库。
 3. 确认 PostgreSQL、RabbitMQ、Redis、对象存储和观测依赖版本满足当前 release 要求。
 4. 确认安装脚本不会直接拼 SQL 写业务表，不会调用 `EnsureCreated()`。
-5. 确认待执行服务清单和顺序。当前 AppHub/Ops 可独立迁移；后续 IAM、FileStorage、Notification、Knowledge、AI Integration、Observability 必须在各自 catalog 和迁移准备完成后加入顺序。
+5. 确认待执行服务清单和顺序。当前 AppHub/Ops/IAM 可独立迁移；后续 FileStorage、Notification、Knowledge、AI Integration、Observability 必须在各自 catalog 和迁移准备完成后加入顺序。
 6. 确认备份或快照已完成，并记录备份位置、时间、校验方式和恢复负责人。
 7. 确认本次 release 的 seed 清单、幂等键、默认管理员/凭据处理方式和重复执行语义。
 8. 确认失败停止条件：任一服务 migration 或 seed 失败时，不继续启动新版本业务服务。
@@ -92,11 +92,11 @@ SELECT * FROM apphub."__EFMigrationsHistory" ORDER BY "MigrationId";
 SELECT * FROM ops."__EFMigrationsHistory" ORDER BY "MigrationId";
 ```
 
-确认目标 service schema 已包含旧库已应用的 `InitialCreate` migration 后，才可以执行下面的 AppHub/Ops 手动迁移命令。不要在同一个 release 中删除 `public.__EFMigrationsHistory`；等备份、迁移和服务健康验证都完成后，再单独评估清理。
+确认目标 service schema 已包含旧库已应用的 `InitialCreate` migration 后，才可以执行下面的 AppHub/Ops/IAM 手动迁移命令。不要在同一个 release 中删除 `public.__EFMigrationsHistory`；等备份、迁移和服务健康验证都完成后，再单独评估清理。
 
-## 当前 AppHub/Ops 手动迁移命令
+## 当前 AppHub/Ops/IAM 手动迁移命令
 
-第五阶段已经提供 migration runner 和 migrations，但尚未提供最终发布用 bundle。当前只允许开发者或 CI 在受控环境中使用以下手动命令；客户交付前必须封装为安装脚本或 migration bundle。
+第五阶段已经为 AppHub/Ops 提供 migration runner 和 migrations，第七阶段已经为 IAM 提供 migration runner 和初始 persistent auth migration，但尚未提供最终发布用 bundle。当前只允许开发者或 CI 在受控环境中使用以下手动命令；客户交付前必须封装为安装脚本或 migration bundle。
 
 AppHub:
 
@@ -124,6 +124,20 @@ dotnet tool run dotnet-ef database update `
   --context Nerv.IIP.Ops.Infrastructure.ApplicationDbContext
 Remove-Item Env:\Persistence__Provider -ErrorAction SilentlyContinue
 Remove-Item Env:\ConnectionStrings__OpsDb -ErrorAction SilentlyContinue
+```
+
+IAM:
+
+```powershell
+dotnet tool restore
+$env:Persistence__Provider = "PostgreSQL"
+$env:ConnectionStrings__IamDb = "<iam-postgres-connection-string>"
+dotnet tool run dotnet-ef database update `
+  --project backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Nerv.IIP.Iam.Infrastructure.csproj `
+  --startup-project backend/services/Iam/src/Nerv.IIP.Iam.Web/Nerv.IIP.Iam.Web.csproj `
+  --context Nerv.IIP.Iam.Infrastructure.ApplicationDbContext
+Remove-Item Env:\Persistence__Provider -ErrorAction SilentlyContinue
+Remove-Item Env:\ConnectionStrings__IamDb -ErrorAction SilentlyContinue
 ```
 
 重跑语义：
@@ -212,16 +226,17 @@ CAP tables 是 system-owned，不是业务表：
 2. 启动服务并通过 health endpoint 验证数据库、RabbitMQ、Redis 和外部依赖。
 3. 对 AppHub 执行最小 registration/heartbeat/state-snapshot smoke test。
 4. 对 Ops 执行最小 operation task create/pending/result smoke test。
-5. 确认 CAP outbox/inbox 无持续增长的异常失败消息。
-6. 确认日志包含 release id、service、profile、migration from/to、duration 和 correlation id。
-7. 归档诊断日志位置，保留到当前 release 验收结束。
+5. 对 IAM 执行默认管理员登录、refresh、logout、`/me` 和 Connector Host credential validation smoke test。
+6. 确认 CAP outbox/inbox 无持续增长的异常失败消息。
+7. 确认日志包含 release id、service、profile、migration from/to、duration 和 correlation id。
+8. 归档诊断日志位置，保留到当前 release 验收结束。
 
 ## Release Gate
 
 面向 PoC 或私有化交付前，至少完成：
 
-1. AppHub/Ops 发布脚本或 migration bundle。
-2. IAM/FileStorage 等新增服务的 schema catalog、migration、seed 和 profile 测试。
+1. AppHub/Ops/IAM 发布脚本或 migration bundle。
+2. FileStorage 等新增服务的 schema catalog、migration、seed 和 profile 测试。
 3. PostgreSQL 备份/恢复演练记录。
 4. seed 清单和初始凭据安全处理方案。
 5. CAP system tables retention 和排障说明。
