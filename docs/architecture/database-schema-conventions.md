@@ -1,6 +1,6 @@
 # 数据库 Schema、建表与注释规范
 
-本文档定义 Nerv-IIP 后端服务的数据库 schema、迁移、建表注释和可视化元数据约定。它补充 ADR 0009 的迁移发布策略，并作为后续 IAM、FileStorage、Notification、Knowledge、AI Integration、Observability 索引等持久化服务的落地规则。
+本文档定义 Nerv-IIP 后端服务的数据库 schema、迁移、建表注释和可视化元数据约定。它补充 ADR 0009 的迁移发布策略，已用于 AppHub/Ops/IAM，并作为后续 FileStorage、Notification、Knowledge、AI Integration、Observability 索引等持久化服务的落地规则。
 
 目标不是提前设计所有表，而是把“以后每次建表必须做到什么程度”说清楚，避免后续功能推进时只留下 EF 模型和迁移，却缺少人能读、工具能展示、部署能审计的结构说明。
 
@@ -130,7 +130,7 @@
 
 ## Schema Convention Tests
 
-AppHub/Ops 已通过 `Nerv.IIP.Testing` 中的 schema convention helper 覆盖 business table comment、business column comment、JSON/text 兼容注释、string ID 约束和 service-schema `__EFMigrationsHistory`。后续 IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引建表时必须复用同一类测试。
+AppHub/Ops/IAM 已通过 `Nerv.IIP.Testing` 中的 schema convention helper 覆盖 business table comment、business column comment、JSON/text 兼容注释（在相关字段存在时）、string ID 约束和 service-schema `__EFMigrationsHistory`。后续 FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引建表时必须复用同一类测试。
 
 自动化测试至少检查：
 
@@ -144,4 +144,4 @@ AppHub/Ops 已通过 `Nerv.IIP.Testing` 中的 schema convention helper 覆盖 b
 ## 当前必须补齐的已知差距
 
 1. CAP system tables 当前只在 DbContext 中配置表名和主键，后续应至少补表注释或在 catalog 中保持 system-owned 标记。
-2. IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引尚未建表；首次建表前必须先补 catalog 草案和 schema convention tests。
+2. FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引尚未建表；首次建表前必须先补 catalog 草案和 schema convention tests。

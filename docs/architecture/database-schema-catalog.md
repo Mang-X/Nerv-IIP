@@ -2,7 +2,7 @@
 
 本文档记录当前 Nerv-IIP 已落地和计划落地的数据库 schema。物理结构仍以 EF Core migrations 和 EntityConfigurations 为准；本文档负责解释业务语义、边界、索引意图和可视化上下文。
 
-当前 catalog 覆盖第五阶段已经迁移验证通过、并在第六阶段完成 schema governance hardening 的 AppHub 与 Ops。IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引在真正建表前必须补充相同粒度的条目和 convention tests。
+当前 catalog 覆盖第五阶段已经迁移验证通过、并在第六阶段完成 schema governance hardening 的 AppHub 与 Ops，以及第七阶段已经落地 IAM Persistent Auth Foundation 的 IAM。FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引在真正建表前必须补充相同粒度的条目和 convention tests。
 
 ## 读法
 
@@ -82,13 +82,47 @@ Known gaps:
 
 1. CAP system tables 当前只在 catalog 中标记 system-owned，后续可补 table comment 便于数据库工具展示。
 
+## IAM Schema
+
+Schema: `iam`
+
+Owner: `backend/services/Iam`
+
+Source:
+
+1. `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/ApplicationDbContext.cs`
+2. `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/IamPersistenceServiceCollectionExtensions.cs`
+3. `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/EntityConfigurations/*.cs`
+4. `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Migrations/20260517102102_InitialIamPersistentAuth.cs`
+
+| Table | Kind | Purpose | Key relationships and indexes |
+| --- | --- | --- | --- |
+| `organizations` | business | IAM 组织范围事实，用于租户与访问 scope 的基础边界。 | `Id` 为 Guid v7 强类型 ID；包含组织名称、状态、软删除和 row version。 |
+| `environments` | business | IAM 环境范围事实，用于把 membership、credential 和后续资源访问限制在组织内环境。 | `OrganizationId + Id` 唯一；`OrganizationId` 是跨表业务引用，不通过跨聚合外键扩大服务耦合。 |
+| `users` | business | 后台用户认证事实，记录 login name、email、password hash、启用状态、security stamp、permission version、登录时间和失败计数。 | `LoginName` 唯一；`Email` 唯一；`Id` 为 Guid v7 强类型 ID。 |
+| `roles` | business | IAM 角色事实，用于把权限码分组后授予 membership。 | `RoleName` 唯一；拥有 `role_permissions`。 |
+| `role_permissions` | business | 角色拥有的权限码集合。 | `RoleId` 指向 `roles`；`RoleId + PermissionCode` 唯一。 |
+| `memberships` | business | 用户在 organization/environment scope 内的成员身份。 | `UserId + OrganizationId + EnvironmentId` 唯一；拥有 `membership_roles`。 |
+| `membership_roles` | business | membership 绑定的角色集合。 | `MembershipId` 指向 `memberships`；`MembershipId + RoleId` 唯一。 |
+| `user_sessions` | business | 用户 refresh session，保存 refresh token hash、issue/expiry/revoke 时间、permission version、client info 和 IP。 | `RefreshTokenHash` 支持 refresh lookup；`UserId + RevokedAtUtc` 支持按用户扫描活动/撤销会话。 |
+| `connector_host_credentials` | business | Connector Host 机器身份凭据，记录 connector host id、organization/environment、secret hash 和有效期。 | `ConnectorHostId` 唯一；拥有 `connector_host_credential_capabilities`。 |
+| `connector_host_credential_capabilities` | business | Connector Host credential 被授予的能力码集合。 | `ConnectorHostCredentialId` 指向 `connector_host_credentials`；`ConnectorHostCredentialId + CapabilityCode` 唯一。 |
+| `seed_manifests` | business | IAM seed 执行清单，用于记录初始 admin、platform admin role、seed permissions、membership 和 local Connector Host credential seed 的版本化幂等执行。 | `SeedName + SeedVersion` 唯一；记录 owner service 与 applied time。 |
+| `__EFMigrationsHistory` | system | EF Core migration history table，记录 IAM 已应用迁移。 | 必须位于 `iam` schema；业务代码不直接读写。 |
+
+Known gaps:
+
+1. Gateway-wide permission enforcement 尚未接线；当前 IAM 已提供持久化认证与 credential validation 基线，但平台入口还未全面强制权限。
+2. 用户/角色写管理端点在本阶段尚未产品化；PostgreSQL profile 下相关 write endpoints 返回 501。
+3. 客户发布 seed input 与 migration bundle 仍属于后续 release work。
+
 ## 后续服务建表前清单
 
 新服务进入建表阶段前，必须先补充本节对应条目，不能等迁移生成后再回忆设计意图。
 
 | Service | Expected schema | Catalog status | Implemented | Validated | Release-supported | Required before first migration |
 | --- | --- | --- | --- | --- | --- | --- |
-| IAM | `iam` | Planned only | No | No | No | 认证边界、用户/组织/角色/权限聚合、seed 策略、密码/凭据存储和审计边界。 |
+| IAM | `iam` | Implemented | Yes | Yes | No | 已有 PostgreSQL `iam` schema、初始 migration、schema convention tests、idempotent seed、登录/refresh/logout/`/me` 和 Connector Host credential validation；客户 release bundle 仍待后续。 |
 | FileStorage | `filestorage` | Planned only | No | No | No | 文件元数据、对象 provider、版本/引用关系、病毒扫描/归档状态、MinIO/key 命名策略。 |
 | Notification | `notification` | Planned only | No | No | No | 通知模板、投递任务、收件人、渠道、重试和用户可见状态。 |
 | Knowledge | `knowledge` | Planned only | No | No | No | 知识源、文档、分片、索引状态、向量/全文索引边界和重建策略；关系库保存索引元数据，外部向量库保存可重建索引。 |
@@ -97,6 +131,6 @@ Known gaps:
 
 ## 下一轮 hardening 建议
 
-1. 生成或维护简版 ER 图，以 AppHub/Ops 当前 catalog 和数据库注释为输入。
-2. 在新增 IAM 或 FileStorage 迁移前，先补该服务的 catalog 草案，再写实体配置、schema convention tests 和 migration。
+1. 生成或维护简版 ER 图，以 AppHub/Ops/IAM 当前 catalog 和数据库注释为输入。
+2. 在新增 FileStorage、Notification、Knowledge、AI Integration 或 Observability 索引迁移前，先补该服务的 catalog 草案，再写实体配置、schema convention tests 和 migration。
 3. 后续如 CAP system tables 需要进入客户数据字典展示，补充 system table comment 或保持 catalog 的 system-owned 标记为权威说明。
