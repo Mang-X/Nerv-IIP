@@ -122,6 +122,7 @@ frontend/packages/api-client/
 4. api-client 更新 generated 与 transport 组合导出。
 5. console 应用与共享 composables 通过稳定入口消费新的 sdk/query/mutation。
 6. 变更涉及 breaking change 时，必须同步更新对应页面、组合函数和文档。
+7. OpenAPI 导出和 api-client 写入属于 `generate` 类脚本副作用，必须按 docs/architecture/script-automation-governance.md 声明写入路径、日志、服务启动和清理策略；纯 `verify` 脚本不得隐式写生成产物。
 
 第三迭代生成配置固定使用：
 
@@ -130,7 +131,7 @@ frontend/packages/api-client/
 3. `@hey-api/sdk` 生成按 `operationId` 命名的调用函数。
 4. `@pinia/colada` 生成查询和变更 options。
 
-生成入口固定为 `frontend/packages/api-client/openapi-ts.config.ts`，应用侧只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated` 深层路径导入。第三阶段总验收入口为 `scripts/verify-third-slice-console.ps1`，该脚本会串起 Gateway OpenAPI 导出、api-client 生成、前端 typecheck/test/build。
+生成入口固定为 `frontend/packages/api-client/openapi-ts.config.ts`，应用侧只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated` 深层路径导入。第三阶段总验收入口为 `scripts/verify-third-slice-console.ps1`，该脚本会串起 Gateway OpenAPI 导出、api-client 生成、前端 typecheck/test/build；在脚本治理迁移中，该入口必须显式声明混合 `verify`/`generate` 副作用，或拆成受控 generate step 与纯验证 step。
 
 ## 使用规则
 

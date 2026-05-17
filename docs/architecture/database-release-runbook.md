@@ -1,6 +1,6 @@
 # 数据库发布检查表与 Runbook
 
-本文档把 ADR 0009 和 schema conventions 落成发布执行口径。它不是当前仓库已经具备完整私有化安装包的声明；当前第五阶段验证了 AppHub/Ops 可以通过 migrations 从空 PostgreSQL 数据库建表，第六阶段进一步把 AppHub/Ops 的 schema governance metadata 和 service-schema migrations history 配置固化为门禁，第七阶段补齐 IAM `iam` schema、初始 migration、seed/auth profile 验证和持久化登录基线。真正 PoC 或私有化交付前，必须把本文档中的 release gate 补进安装脚本、migration bundle 或专用 migrator。
+本文档把 ADR 0009 和 schema conventions 落成发布执行口径。它不是当前仓库已经具备完整私有化安装包的声明；当前第五阶段验证了 AppHub/Ops 可以通过 migrations 从空 PostgreSQL 数据库建表，第六阶段进一步把 AppHub/Ops 的 schema governance metadata 和 service-schema migrations history 配置固化为门禁，第七阶段补齐 IAM `iam` schema、初始 migration、seed/auth profile 验证和持久化登录基线。真正 PoC 或私有化交付前，必须把本文档中的 release gate 补进安装脚本、migration bundle 或专用 migrator；承载这些动作的脚本还必须满足 docs/architecture/script-automation-governance.md。
 
 ## 当前支持状态
 
@@ -34,6 +34,7 @@
 7. 确认本次 release 的 seed 清单、幂等键、默认管理员/凭据处理方式和重复执行语义。
 8. 确认失败停止条件：任一服务 migration 或 seed 失败时，不继续启动新版本业务服务。
 9. 从第五阶段旧库升级到第六阶段及以后时，先执行“迁移历史表 schema 搬迁”前置步骤；否则 EF 会在新的 service schema history table 中看不到已应用的 `InitialCreate`，从而尝试重复建表。
+10. 确认执行脚本分类为 `release-install` 或受控 release migrator，并通过脚本治理门禁；不得用 `verify` 脚本直接处理客户数据环境。
 
 ## 第六阶段迁移历史表 schema 搬迁
 
@@ -242,3 +243,4 @@ CAP tables 是 system-owned，不是业务表：
 5. CAP system tables retention 和排障说明。
 6. 安装脚本诊断输出契约。
 7. `Persistence:AutoMigrate=true` 在 PoC/private/prod profile 下被禁止或 hard fail。
+8. 发布安装脚本通过 ADR 0010 脚本治理门禁，包含超时、结构化日志、进程树清理、作用域环境变量、敏感信息脱敏和诊断包输出。

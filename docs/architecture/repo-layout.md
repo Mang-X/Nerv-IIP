@@ -27,6 +27,7 @@ Nerv-IIP/
   connector-hosts/
   infra/
   scripts/
+    lib/
 ```
 
 ## 顶层目录职责
@@ -78,6 +79,7 @@ Nerv-IIP/
 - 统一放置初始化、环境校验、代码生成、安装、发布辅助脚本。
 - 前后端脚手架脚本都应从这里暴露稳定入口，而不是散落在各自子目录。
 - Windows/Linux 整合安装脚本归 scripts 管理；脚本只编排安装和运维动作，不承载业务规则。
+- scripts/lib 放共享脚本 helper；脚本分类、副作用声明、超时、日志、进程清理和静态门禁按 docs/architecture/script-automation-governance.md 执行。
 
 ## 放置规则
 
@@ -94,5 +96,5 @@ Nerv-IIP/
 ## 非目标
 
 1. 不在此文档中规定每个目录下的所有子目录细节。
-2. 不在此文档中定义 CI 文件名、脚本命名细节与提交规范。
+2. 不在此文档中定义 CI 文件名与提交规范；脚本命名和治理细节见 docs/architecture/script-automation-governance.md。
 3. 不在此文档中决定所有包是否立即创建，只定义未来代码放置的基线。
