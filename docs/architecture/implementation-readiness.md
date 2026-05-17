@@ -1,6 +1,6 @@
 # 实施状态清单
 
-本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
+本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
 ## 当前结论
 
@@ -16,6 +16,7 @@
 10. 第三阶段控制台纵切已经落地，可通过 `scripts/verify-third-slice-console.ps1` 验证 Gateway OpenAPI、Hey API 生成、Vue 控制台 typecheck/test/build。
 11. 前端工作区使用 Vite+ 作为统一工具入口；`pnpm -C frontend check`、`lint`、`fmt` 需要 Node.js `>=22.18.0`，仓库根 `.node-version` 固定为 22.22.3，本机验证版本为 OpenJS.NodeJS.22 v22.22.3。
 12. 技术栈官方文档与源码仓库链接统一维护在 docs/architecture/technology-stack-references.md；新增长期技术选型时必须同步更新，避免同名项目或社区分叉造成歧义。
+13. 第四阶段已经补齐 AppHub/Ops 的 netcorepal/CleanDDD PostgreSQL profile、code-analysis endpoint、`scripts/verify-fourth-slice-real-infra.ps1` 和平台级 `infra/aspire/Nerv.IIP.AppHost`；当前 AppHost build 与完整真实基础设施验证均已通过。
 
 ## 环境前置
 
@@ -27,8 +28,9 @@
 4. 安装 NetCorePal.Template：`dotnet new install NetCorePal.Template`。
 5. 创建服务前运行 `dotnet new netcorepal-web --help` 核对本机模板参数。
 6. 平台领域服务优先使用 netcorepal 的 web 模板作为初始骨架，但命令必须显式指定 `--Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false`，详见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
-7. 后续落地平台级 AppHost、Compose 生成和 Aspire Dashboard 时，需要安装 Aspire CLI；服务模板仍保持 `--UseAspire false`，避免生成服务级局部编排入口。
-8. 第三阶段前端工具链需要 Node.js `>=22.18.0`、pnpm 10.13.1 和 Vite+ 0.1.21。仓库根 `.node-version` 固定为 22.22.3；本机已通过 `winget` 将 OpenJS.NodeJS.22 升级到 22.22.3，避免 Vite+ lint/fmt 路径读取 `vite.config.ts` 时触发 Node `22.17.x` 的 TS config 加载错误。
+7. 2026-05-17 已确认 NetCorePal.Template 3.2.0 支持 `PostgreSQL`、`GaussDB`、`DMDB` 等数据库参数；Nerv-IIP 默认落地 PostgreSQL profile，信创环境按 database profile 验证替换，不承诺无验证的完全无感切换。
+8. 后续落地平台级 AppHost、Compose 生成和 Aspire Dashboard 时，需要安装 Aspire CLI；服务模板仍保持 `--UseAspire false`，避免生成服务级局部编排入口。
+9. 第三阶段前端工具链需要 Node.js `>=22.18.0`、pnpm 10.13.1 和 Vite+ 0.1.21。仓库根 `.node-version` 固定为 22.22.3；本机已通过 `winget` 将 OpenJS.NodeJS.22 升级到 22.22.3，避免 Vite+ lint/fmt 路径读取 `vite.config.ts` 时触发 Node `22.17.x` 的 TS config 加载错误。
 
 ## 包源恢复基线
 
@@ -140,19 +142,32 @@
 3. api-client 已通过 Hey API 从 Gateway OpenAPI 生成 types、fetch SDK 和 Pinia Colada query/mutation options。
 4. console 首屏已展示实例列表、实例详情、restart 动作入口和 OperationTask 状态页。
 5. Vite+ 质量门禁已覆盖 `check`、`lint`、`fmt`、`typecheck`、`test`、`build`。
-6. 以 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 和 scripts/verify-third-slice-console.ps1 作为第三阶段验收口径。
+6. 以 docs/architecture/third-vertical-slice-console.md、docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 和 scripts/verify-third-slice-console.ps1 作为第三阶段验收口径。
+
+### 第四迭代已完成范围
+
+1. AppHub 和 Ops 已作为 netcorepal/CleanDDD 迁移试点，落 Domain aggregate、Application command/query、Infrastructure repository/ApplicationDbContext 和 mediator-driven endpoint。
+2. PostgreSQL 使用服务级 database 与 schema：AppHub 默认连接 `nerv_iip_apphub` 并使用 `apphub` schema，Ops 默认连接 `nerv_iip_ops` 并使用 `ops` schema；provider 选择只留在 Infrastructure/profile/test/deployment 层。
+3. AppHub/Ops 已暴露 `/code-analysis`，用于查看 netcorepal 识别的命令、查询、聚合、事件和处理器流向。
+4. `scripts/verify-fourth-slice-real-infra.ps1` 已作为第四阶段验收入口，默认通过 `infra/docker-compose.dev.yml` 拉起 PostgreSQL、Redis 和 RabbitMQ；本机 PostgreSQL 默认端口为 `15432`，避免撞到本机已有 `5432`。
+5. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，覆盖 AppHub、Ops、Gateway、Connector Host、PostgreSQL、Redis 和 RabbitMQ；AppHost 当前 build 通过，并为 AppHub/Ops 使用独立 database resource。
+6. PlatformGateway、Connector Host、Contracts/SDK 和 frontend console 不强行套完整 netcorepal 三项目模型；IAM 完整授权、FileStorage 上传下载、CAP outbox、通知和审批不进入本阶段实现范围。
+7. `pwsh scripts/verify-fourth-slice-real-infra.ps1` 已在 Docker Desktop 环境下通过，最终输出 `Fourth vertical slice real infrastructure verified.`。
 
 ### 当前初步使用方式
 
 1. 运行 `pwsh scripts/verify-first-slice.ps1` 可验证 backend 与 connector-hosts 的 restore、build、test，以及 AppHub 到 PlatformGateway 的第一条本地纵切。
 2. 运行 `pwsh scripts/verify-second-slice-ops.ps1` 可验证 Gateway、Ops、Connector Host 和 Docker Connector 的低风险 restart 闭环。
 3. 运行 `pwsh scripts/verify-third-slice-console.ps1` 可验证 Gateway OpenAPI 导出、前端 api-client 生成、Vue 控制台 typecheck/test/build。
-4. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁。
-5. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
-6. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
-7. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-8. 当前实现用于本地开发和接口联调，不包含生产部署、真实持久化、完整认证授权 UI 或高风险动作审批。
-9. 当前部署交付仍处于策略冻结阶段；完整平台 AppHost、生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
+4. 运行 `pwsh scripts/verify-third-slice-console.ps1 -UsePostgres` 可在 PostgreSQL profile 下复跑第三阶段链路，前提是本地 PostgreSQL 和 RabbitMQ 已可用；可通过 `NERV_IIP_APPHUB_POSTGRES` 与 `NERV_IIP_OPS_POSTGRES` 分别覆盖服务连接串。
+5. 运行 `pwsh scripts/verify-fourth-slice-real-infra.ps1` 可拉起本地依赖并执行第四阶段真实基础设施门禁；脚本会重建 `nerv_iip_apphub_verify` 和 `nerv_iip_ops_verify` 验证库，避免共享库或旧数据影响结果。
+6. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
+7. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁。
+8. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
+9. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
+10. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
+11. 当前实现用于本地开发和接口联调，不包含生产部署、完整认证授权 UI 或高风险动作审批。
+12. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
 
@@ -164,7 +179,7 @@
 6. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
 7. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
 8. 前端视觉系统和组件皮肤细节。
-9. 平台级 Aspire AppHost、Compose 发布产物、安装包和整合安装脚本，口径见 docs/architecture/deployment-baseline.md。
+9. Compose 发布产物、安装包和整合安装脚本，口径见 docs/architecture/deployment-baseline.md。
 
 ## 开工验收标准
 
@@ -182,4 +197,4 @@
 
 ## 结论
 
-Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环和第三迭代控制台纵切：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui 和 app-shell 的最小工程结构与验证链路已经存在。下一步不再是 scaffold，而是把当前内存态和骨架能力推进到真实持久化、完整 IAM 授权、FileStorage 上传下载、高风险动作审批、通知联动和多目标部署交付。后续任务继续参考 docs/superpowers/plans/2026-05-14-first-vertical-slice.md、docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md、docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 与 docs/architecture/deployment-baseline.md。
+Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环、第三迭代控制台纵切和第四迭代真实基础设施门禁，并开始把 AppHub/Ops 推进到 netcorepal/CleanDDD、PostgreSQL profile、结构化日志、code-analysis 和平台级 Aspire AppHost：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui、app-shell 和 infra/aspire 的最小工程结构与验证链路已经存在。下一步不是继续 scaffold，而是继续推进完整 IAM 授权、FileStorage 上传下载、高风险动作审批、通知联动、数据库迁移发布基线和多目标部署交付。真实持久化先主推 PostgreSQL，同时用 database profile 约束后续 GaussDB/DMDB 等信创替换成本。后续任务继续参考 docs/architecture/third-vertical-slice-console.md、docs/superpowers/plans/2026-05-14-first-vertical-slice.md、docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md、docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md、docs/superpowers/plans/2026-05-17-fourth-vertical-slice-real-infra-foundation.md 与 docs/architecture/deployment-baseline.md。

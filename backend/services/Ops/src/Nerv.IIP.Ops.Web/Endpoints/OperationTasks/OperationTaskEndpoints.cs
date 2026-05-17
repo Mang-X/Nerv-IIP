@@ -1,20 +1,24 @@
 using FastEndpoints;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
+using Nerv.IIP.Ops.Web.Application.Commands;
+using Nerv.IIP.Ops.Web.Application.Queries;
 
 namespace Nerv.IIP.Ops.Web.Endpoints.OperationTasks;
 
 [HttpPost("/api/ops/v1/operation-tasks")]
 [AllowAnonymous]
-public sealed class CreateOperationTaskEndpoint(InMemoryOpsStateStore store) : Endpoint<CreateOperationTaskRequest>
+public sealed class CreateOperationTaskEndpoint(IMediator mediator) : Endpoint<CreateOperationTaskRequest>
 {
     public override async Task HandleAsync(CreateOperationTaskRequest req, CancellationToken ct)
     {
         try
         {
-            await HttpContext.Response.WriteAsJsonAsync(store.Create(req, DateTimeOffset.UtcNow), ct);
+            var task = await mediator.Send(new CreateOperationTaskCommand(req, DateTimeOffset.UtcNow), ct);
+            await HttpContext.Response.WriteAsJsonAsync(task, ct);
         }
         catch (InvalidOperationTaskRequestException ex)
         {
@@ -25,14 +29,15 @@ public sealed class CreateOperationTaskEndpoint(InMemoryOpsStateStore store) : E
 
 [HttpGet("/api/ops/v1/operation-tasks/{operationTaskId}")]
 [AllowAnonymous]
-public sealed class GetOperationTaskEndpoint(InMemoryOpsStateStore store) : EndpointWithoutRequest
+public sealed class GetOperationTaskEndpoint(IMediator mediator) : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
         var operationTaskId = Route<string>("operationTaskId")!;
         try
         {
-            await HttpContext.Response.WriteAsJsonAsync(store.Get(operationTaskId), ct);
+            var task = await mediator.Send(new GetOperationTaskQuery(operationTaskId), ct);
+            await HttpContext.Response.WriteAsJsonAsync(task, ct);
         }
         catch (OperationTaskNotFoundException ex)
         {
@@ -43,7 +48,7 @@ public sealed class GetOperationTaskEndpoint(InMemoryOpsStateStore store) : Endp
 
 [HttpGet("/api/ops/v1/operation-tasks/pending")]
 [AllowAnonymous]
-public sealed class GetPendingOperationTasksEndpoint(InMemoryOpsStateStore store) : EndpointWithoutRequest
+public sealed class GetPendingOperationTasksEndpoint(IMediator mediator) : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -56,20 +61,19 @@ public sealed class GetPendingOperationTasksEndpoint(InMemoryOpsStateStore store
             return;
         }
 
-        await HttpContext.Response.WriteAsJsonAsync(
-            store.DispatchPending(
-                organizationId,
-                environmentId,
-                connectorHostId,
-                Query<int>("take"),
-                DateTimeOffset.UtcNow),
-            ct);
+        var pending = await mediator.Send(new DispatchPendingOperationsCommand(
+            organizationId,
+            environmentId,
+            connectorHostId,
+            Query<int>("take"),
+            DateTimeOffset.UtcNow), ct);
+        await HttpContext.Response.WriteAsJsonAsync(pending, ct);
     }
 }
 
 [HttpPost("/api/ops/v1/operation-results")]
 [AllowAnonymous]
-public sealed class RecordOperationResultEndpoint(InMemoryOpsStateStore store) : Endpoint<OperationResult>
+public sealed class RecordOperationResultEndpoint(IMediator mediator) : Endpoint<OperationResult>
 {
     public override async Task HandleAsync(OperationResult req, CancellationToken ct)
     {
@@ -81,7 +85,8 @@ public sealed class RecordOperationResultEndpoint(InMemoryOpsStateStore store) :
 
         try
         {
-            await HttpContext.Response.WriteAsJsonAsync(store.RecordResult(req), ct);
+            var task = await mediator.Send(new RecordOperationResultCommand(req), ct);
+            await HttpContext.Response.WriteAsJsonAsync(task, ct);
         }
         catch (InvalidOperationResultException ex)
         {

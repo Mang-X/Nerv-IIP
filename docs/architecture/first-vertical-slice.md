@@ -51,7 +51,7 @@ Console or Gateway
 ### 暂不阻塞
 
 1. Windows Service Connector 与 HTTP Connector。
-2. 完整控制台 UI。
+2. 完整控制台登录、权限 guard、审批待办、通知入口和视觉系统。
 3. FileStorage 的完整文件管理后台、预览、转码和复杂保留策略。
 4. AI Integration 与 Knowledge 的代码骨架。
 5. 高风险动作审批和人工确认 UI。
@@ -179,7 +179,7 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 
 ## 当前实现状态
 
-截至 2026-05-15，第一迭代接入查询纵切已经通过 `scripts/verify-first-slice.ps1` 验证，第二迭代低风险动作闭环已经通过 `scripts/verify-second-slice-ops.ps1` 验证。当前可用范围：
+截至 2026-05-17，第一迭代接入查询纵切已经通过 `scripts/verify-first-slice.ps1` 验证，第二迭代低风险动作闭环已经通过 `scripts/verify-second-slice-ops.ps1` 验证，第三迭代控制台纵切已经通过 `scripts/verify-third-slice-console.ps1` 验证。当前可用范围：
 
 1. backend 与 connector-hosts 两套 solution 已创建，并可 restore、build、test。
 2. 平台 HTTP 服务已统一使用 FastEndpoints，路由实现放在各 Web 项目的 `Endpoints/` 目录。
@@ -189,12 +189,13 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 6. Connector Host 可通过 `Nerv.IIP.Sdk.ConnectorProtocol` 完成注册、心跳和状态快照上报。
 7. Ops 可创建 operation task、提供 pending 拉取、接收 operation result，并记录任务、尝试和审计事实。
 8. Connector Host 可通过 `Nerv.IIP.Sdk.Ops` 领取低风险 restart 任务并回传执行结果。
-9. 自动化验证脚本会启动 AppHub、Ops、PlatformGateway 和 Connector Host，并用本地 API 走通接入查询与 restart 动作闭环。
+9. frontend 工作区已具备 console 应用、api-client、ui 和 app-shell 初版，可从 Gateway OpenAPI 生成类型安全客户端。
+10. 自动化验证脚本会启动 AppHub、Ops、PlatformGateway 和 Connector Host，并用本地 API 与控制台构建链路走通接入查询、restart 动作闭环和前端消费验证。
 
 当前限制：
 
 1. IAM、AppHub 与 Ops 的第一、第二阶段事实仍是内存态实现，进程重启后不会持久化。
 2. FileStorage 目前是服务骨架和边界验证，尚未完成真实对象存储上传下载闭环。
 3. Ops 当前只覆盖低风险 restart 纵切，尚未覆盖高风险审批、持久化 outbox、租约和生产级重试。
-4. 控制台 UI 尚未落地，当前初步使用入口以 API 和验证脚本为主。
+4. 控制台 UI 仍未接入真实登录、权限 guard、审批待办和通知入口，当前只能作为本地纵切控制台。
 5. 当前状态适合本地开发、接口联调和架构验证；不能视为生产可用版本。

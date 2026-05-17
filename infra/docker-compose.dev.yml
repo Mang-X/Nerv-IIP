@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: nerv
       POSTGRES_DB: nerv_iip
     ports:
-      - "5432:5432"
+      - "${NERV_IIP_POSTGRES_PORT:-15432}:5432"
 
   redis:
     image: redis:7

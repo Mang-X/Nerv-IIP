@@ -13,7 +13,16 @@ public sealed record InstanceStateHistoryFact(string InstanceKey, DateTimeOffset
 public sealed record RegistrationResult(string RegistrationId, string InstanceKey);
 public sealed record InstanceStatusChanged(string InstanceKey, string PreviousStatus, string CurrentStatus, DateTimeOffset ChangedAtUtc);
 
-public sealed class InMemoryAppHubStateStore
+public interface IAppHubStateStore
+{
+    RegistrationResult Register(ApplicationRegistration registration);
+    void RecordHeartbeat(ApplicationHeartbeat heartbeat);
+    void RecordStateSnapshot(InstanceStateSnapshot snapshot);
+    InstanceListResponse QueryInstances(InstanceListQuery query);
+    InstanceDetailResponse GetInstanceDetail(string organizationId, string environmentId, string instanceKey);
+}
+
+public sealed class InMemoryAppHubStateStore : IAppHubStateStore
 {
     private readonly object _gate = new();
     private readonly ConcurrentDictionary<string, string> _idempotency = new();

@@ -1,13 +1,14 @@
 using FastEndpoints;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
-using Nerv.IIP.AppHub.Domain;
+using Nerv.IIP.AppHub.Web.Application.Commands;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 
 namespace Nerv.IIP.AppHub.Web.Endpoints.Connectors;
 
 [HttpPost("/api/connectors/v1/registrations")]
 [AllowAnonymous]
-public sealed class RegisterApplicationEndpoint(InMemoryAppHubStateStore store) : Endpoint<ApplicationRegistration>
+public sealed class RegisterApplicationEndpoint(IMediator mediator) : Endpoint<ApplicationRegistration>
 {
     public override async Task HandleAsync(ApplicationRegistration req, CancellationToken ct)
     {
@@ -17,13 +18,14 @@ public sealed class RegisterApplicationEndpoint(InMemoryAppHubStateStore store) 
             return;
         }
 
-        await HttpContext.Response.WriteAsJsonAsync(store.Register(req), ct);
+        var result = await mediator.Send(new RegisterApplicationCommand(req), ct);
+        await HttpContext.Response.WriteAsJsonAsync(result, ct);
     }
 }
 
 [HttpPost("/api/connectors/v1/heartbeats")]
 [AllowAnonymous]
-public sealed class RecordHeartbeatEndpoint(InMemoryAppHubStateStore store) : Endpoint<ApplicationHeartbeat>
+public sealed class RecordHeartbeatEndpoint(IMediator mediator) : Endpoint<ApplicationHeartbeat>
 {
     public override async Task HandleAsync(ApplicationHeartbeat req, CancellationToken ct)
     {
@@ -33,15 +35,14 @@ public sealed class RecordHeartbeatEndpoint(InMemoryAppHubStateStore store) : En
             return;
         }
 
-        store.RecordHeartbeat(req);
+        await mediator.Send(new RecordApplicationHeartbeatCommand(req), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
-        await Task.CompletedTask;
     }
 }
 
 [HttpPost("/api/connectors/v1/state-snapshots")]
 [AllowAnonymous]
-public sealed class RecordStateSnapshotEndpoint(InMemoryAppHubStateStore store) : Endpoint<InstanceStateSnapshot>
+public sealed class RecordStateSnapshotEndpoint(IMediator mediator) : Endpoint<InstanceStateSnapshot>
 {
     public override async Task HandleAsync(InstanceStateSnapshot req, CancellationToken ct)
     {
@@ -51,9 +52,8 @@ public sealed class RecordStateSnapshotEndpoint(InMemoryAppHubStateStore store) 
             return;
         }
 
-        store.RecordStateSnapshot(req);
+        await mediator.Send(new RecordInstanceStateSnapshotCommand(req), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
-        await Task.CompletedTask;
     }
 }
 
