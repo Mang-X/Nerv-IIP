@@ -23,6 +23,7 @@
 10. database profile 替换必须覆盖迁移验证。PostgreSQL 是默认 profile；GaussDB、DMDB 等候选 profile 只有在 provider、迁移、CAP storage/outbox 和集成测试通过后才能进入支持矩阵。
 11. 新增或变更业务表时必须同步维护建表注释和 schema catalog。具体规则见 `docs/architecture/database-schema-conventions.md` 与 `docs/architecture/database-schema-catalog.md`。
 12. PoC、私有化和生产发布的数据库执行口径必须满足 `docs/architecture/database-release-runbook.md`；当前第五阶段迁移验证通过不等于完整客户发布 runbook 已完成。
+13. 承载数据库迁移、seed、备份、验证或安装的脚本必须同时满足 ADR 0010 的脚本可信执行治理；本 ADR 只定义数据库发布边界。
 
 ## Rationale
 
@@ -40,6 +41,7 @@
 4. 服务启动路径会更安全，但开发者需要显式运行迁移或使用验证脚本准备数据库。
 5. 引入新的持久化服务时，必须同时补迁移、seed 和 profile 验证计划，不能只提交 DbContext 和实体。
 6. schema 注释和 catalog 维护成为持久化变更的一部分；这会增加少量开发成本，但能支撑 ER 可视化、客户数据字典、部署审计和后续 agent 理解项目结构。
+7. 数据库相关脚本必须显式声明目标库、profile、副作用和清理策略，避免把 disposable verification 习惯带入 PoC、私有化或生产发布。
 
 ## Alternatives Considered
 

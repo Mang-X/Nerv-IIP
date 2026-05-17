@@ -1,6 +1,6 @@
 # 实施状态清单
 
-本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
+本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
 ## 当前结论
 
@@ -21,7 +21,9 @@
 15. 第五阶段 Release-grade Persistence Foundation 已落地：AppHub/Ops 已有初始 migrations，PostgreSQL profile tests 已从 `EnsureCreated()` 改为 `MigrateAsync()`，第五阶段验证脚本已经通过。
 16. 前端 Design System 尚未冻结；除 OpenAPI 生成客户端和质量门禁外，后端基础阶段不得新增控制台页面、视觉组件、组件库迁移或样式体系决策。
 17. 数据库 schema、建表注释、schema catalog 和发布 runbook 已补齐第一版，后续持久化服务必须先满足 docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md 和 docs/architecture/database-release-runbook.md。
-18. 第六阶段 Schema Governance & Migration Hardening 用 AppHub/Ops 作为已迁移服务样本，把业务表注释、业务列注释、JSON/text 兼容注释、string ID 约束和 service-schema migrations history 配置固化为测试门禁；IAM/FileStorage 等新增持久化服务开工前必须沿用该门禁。
+18. 第六阶段 Schema Governance & Migration Hardening 用 AppHub/Ops 作为已迁移服务样本，把业务表注释、业务列注释、JSON/text 兼容注释、string ID 约束和 service-schema migrations history 配置固化为测试门禁；IAM 已沿用该门禁，FileStorage 等新增持久化服务开工前必须继续沿用。
+19. 第七阶段 IAM Persistent Auth Foundation 已落地：IAM 保留 InMemory profile，同时具备 PostgreSQL `iam` schema、初始 admin seed、JWT access token、refresh token rotation、session revoke、`/me` 和 Connector Host credential validation 的后端持久化基线。
+20. 脚本自动化治理已冻结到 ADR 0010 和 docs/architecture/script-automation-governance.md；下一阶段开始前，新增或修改脚本必须声明分类、副作用、日志、清理和 helper 使用方式。
 
 ## 环境前置
 
@@ -177,8 +179,17 @@
 2. AppHub `application_instances.Metadata`、`application_instances.Capabilities` 和 Ops `operation_tasks.ParametersJson`、`operation_attempts.FailureJson` 已补齐 JSON 格式、生产方、消费方和兼容策略注释。
 3. AppHub/Ops PostgreSQL profile 已显式把 `__EFMigrationsHistory` 配置到各自 service schema。
 4. `Nerv.IIP.Testing` 已提供 schema convention helper，覆盖 business table comment、business column comment、JSON/text compatibility、string ID 和 migrations history schema 规则。
-5. AppHub/Ops Web tests 已增加 schema convention tests，后续 IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引建表前必须复用同一门禁。
+5. AppHub/Ops Web tests 已增加 schema convention tests；IAM 已在第七迭代复用同一门禁，后续 FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引建表前必须继续复用。
 6. 客户发布包、安装脚本、备份恢复演练、seed 清单和诊断输出契约仍是后续交付工作，不属于本阶段完成范围。
+
+### 第七迭代已完成范围
+
+1. IAM 保留 InMemory profile，并新增 PostgreSQL profile，默认 schema 为 `iam`。
+2. IAM 已有 `users`、`roles`、`role_permissions`、`memberships`、`user_sessions`、`connector_host_credentials` 和 seed manifest 等首批持久化表。
+3. IAM 登录、refresh token rotation、logout/session revoke、`/me` 和 Connector Host credential validation 已可在 PostgreSQL profile 下运行。
+4. IAM 初始 admin、platform admin role、seed permissions、membership 和 local Connector Host credential seed 具备幂等执行语义。
+5. IAM schema convention tests 与 PostgreSQL profile tests 已作为后续 IAM 持久化变更门禁。
+6. Gateway 全面鉴权、Console 登录 UI、OAuth/OIDC、SSO、MFA、ABAC 和客户发布 bundle 仍属于后续阶段。
 
 ### 当前初步使用方式
 
@@ -188,14 +199,16 @@
 4. 运行 `pwsh scripts/verify-third-slice-console.ps1 -UsePostgres` 可在 PostgreSQL profile 下复跑第三阶段链路，前提是本地 PostgreSQL 和 RabbitMQ 已可用；可通过 `NERV_IIP_APPHUB_POSTGRES` 与 `NERV_IIP_OPS_POSTGRES` 分别覆盖服务连接串。
 5. 运行 `pwsh scripts/verify-fourth-slice-real-infra.ps1` 可拉起本地依赖并执行第四阶段真实基础设施门禁；脚本会重建 `nerv_iip_apphub_verify` 和 `nerv_iip_ops_verify` 验证库，避免共享库或旧数据影响结果。
 6. 运行 `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1` 可验证 AppHub/Ops 迁移发布底座和后端 SDK/契约回归。
-7. 运行 AppHub/Ops schema convention tests 可验证当前已迁移服务的 schema metadata 门禁。
-8. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
-9. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
-10. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
-11. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
-12. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-13. 当前实现用于本地开发和接口联调，不包含生产部署、完整认证授权 UI 或高风险动作审批。
-14. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
+7. 运行 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` 可验证 IAM PostgreSQL profile、迁移、seed、登录/刷新/退出、`/me`、Connector Host credential validation 和后端回归。
+8. 运行 `pwsh scripts/check-script-governance.ps1` 可验证脚本解析、分类声明、高风险命令 wrapper 和 legacy exemption 是否仍受控。
+9. 运行 AppHub/Ops/IAM schema convention tests 可验证当前已迁移服务的 schema metadata 门禁。
+10. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
+11. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
+12. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
+13. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
+14. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
+15. 当前实现用于本地开发和接口联调，不包含生产部署、完整认证授权 UI 或高风险动作审批。
+16. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
 
@@ -208,6 +221,7 @@
 7. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
 8. 前端视觉系统和组件皮肤细节；需要先完成 docs/architecture/frontend-design-system-planning.md 中要求的独立设计规格。
 9. Compose 发布产物、安装包和整合安装脚本，口径见 docs/architecture/deployment-baseline.md 与 docs/architecture/database-release-runbook.md。
+10. 既有脚本迁移到 docs/architecture/script-automation-governance.md 的 helper 和门禁；优先顺序是 IAM、第五阶段、第四阶段真实基础设施脚本。
 
 ## 开工验收标准
 
@@ -225,4 +239,4 @@
 
 ## 结论
 
-Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环、第三迭代控制台纵切、第四迭代真实基础设施门禁、第五迭代迁移发布底座和第六迭代 schema governance hardening：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui、app-shell 和 infra/aspire 的最小工程结构与验证链路已经存在。下一步可以在迁移基线和 schema 门禁之上进入完整 IAM 授权、FileStorage 上传下载、高风险动作审批、通知联动和多目标部署交付。真实持久化先主推 PostgreSQL，同时用 database profile 约束后续 GaussDB/DMDB 等信创替换成本。数据库建表和注释规范、schema catalog、Observability baseline 与数据库发布 runbook 已有第一版，AppHub/Ops table comment、JSON 注释、migrations history schema 配置和 convention tests 已作为后续持久化服务的门禁样本。前端功能实施暂缓，除机械 api-client 生成和质量门禁外，需要先完成 Design System 独立规格。后续任务继续参考 docs/architecture/third-vertical-slice-console.md、docs/architecture/fourth-vertical-slice-real-infra.md、docs/architecture/frontend-design-system-planning.md、docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md、docs/architecture/database-release-runbook.md、docs/architecture/observability-baseline.md、docs/adr/0009-database-migration-release-and-seed-strategy.md、docs/superpowers/specs/2026-05-17-release-grade-persistence-foundation-design.md、docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md、docs/superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md、docs/superpowers/plans/2026-05-17-schema-governance-migration-hardening.md 与 docs/architecture/deployment-baseline.md。
+Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环、第三迭代控制台纵切、第四迭代真实基础设施门禁、第五迭代迁移发布底座、第六迭代 schema governance hardening 和第七迭代 IAM Persistent Auth Foundation：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui、app-shell 和 infra/aspire 的最小工程结构与验证链路已经存在。脚本自动化治理已补入 ADR 和架构说明，后续新增或修改脚本必须进入分类、副作用、helper、日志、进程清理和门禁口径。下一步可以在迁移基线、schema 门禁和 IAM 持久化登录基线之上进入 Gateway-wide auth/permission enforcement、Console 登录 UI、OAuth/OIDC/SSO/MFA/ABAC、FileStorage 上传下载、高风险动作审批、通知联动和多目标部署交付。真实持久化先主推 PostgreSQL，同时用 database profile 约束后续 GaussDB/DMDB 等信创替换成本。数据库建表和注释规范、schema catalog、Observability baseline 与数据库发布 runbook 已有第一版，AppHub/Ops/IAM table comment、JSON/text 注释、migrations history schema 配置和 convention tests 已作为后续持久化服务的门禁样本。前端功能实施暂缓，除机械 api-client 生成和质量门禁外，需要先完成 Design System 独立规格。后续任务继续参考 docs/architecture/third-vertical-slice-console.md、docs/architecture/fourth-vertical-slice-real-infra.md、docs/architecture/frontend-design-system-planning.md、docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md、docs/architecture/database-release-runbook.md、docs/architecture/script-automation-governance.md、docs/architecture/observability-baseline.md、docs/adr/0009-database-migration-release-and-seed-strategy.md、docs/adr/0010-automation-script-trusted-execution-governance.md、docs/superpowers/specs/2026-05-17-release-grade-persistence-foundation-design.md、docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md、docs/superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md、docs/superpowers/plans/2026-05-17-schema-governance-migration-hardening.md、docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md 与 docs/architecture/deployment-baseline.md。

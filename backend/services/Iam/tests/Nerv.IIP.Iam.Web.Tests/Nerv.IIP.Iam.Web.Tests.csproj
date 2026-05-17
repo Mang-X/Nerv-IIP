@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="MediatR" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="xunit" />
@@ -21,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Nerv.IIP.Iam.Web\Nerv.IIP.Iam.Web.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
   </ItemGroup>
 
 </Project>

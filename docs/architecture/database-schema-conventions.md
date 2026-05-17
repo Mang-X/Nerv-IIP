@@ -1,6 +1,6 @@
 # 数据库 Schema、建表与注释规范
 
-本文档定义 Nerv-IIP 后端服务的数据库 schema、迁移、建表注释和可视化元数据约定。它补充 ADR 0009 的迁移发布策略，并作为后续 IAM、FileStorage、Notification、Knowledge、AI Integration、Observability 索引等持久化服务的落地规则。
+本文档定义 Nerv-IIP 后端服务的数据库 schema、迁移、建表注释和可视化元数据约定。它补充 ADR 0009 的迁移发布策略，已用于 AppHub/Ops/IAM，并作为后续 FileStorage、Notification、Knowledge、AI Integration、Observability 索引等持久化服务的落地规则。
 
 目标不是提前设计所有表，而是把“以后每次建表必须做到什么程度”说清楚，避免后续功能推进时只留下 EF 模型和迁移，却缺少人能读、工具能展示、部署能审计的结构说明。
 
@@ -19,7 +19,7 @@
 1. 每个拥有持久化事实的服务拥有自己的 schema、DbContext、EntityConfigurations 和 migrations。
 2. 服务不得跨 schema 建外键，不得通过共享 DbContext 读写其他服务表。
 3. 跨服务引用使用稳定业务标识、IntegrationEvent、查询 API 或后续专用 projection，不用数据库外键表达。
-4. 默认 PostgreSQL profile 下，每个服务使用独立默认 schema，例如 `apphub`、`ops`、后续 `iam`、`filestorage`。
+4. 默认 PostgreSQL profile 下，每个服务使用独立默认 schema，已落地示例包括 `apphub`、`ops`、`iam`；后续示例包括 `filestorage`、`notification`、`knowledge`、`ai` 或 `observability`。
 5. CAP、EF migrations history 和框架自带表仍放在服务 schema 内，归属于该服务的基础设施边界。
 6. PostgreSQL profile 下必须显式配置 EF migrations history table，例如 `MigrationsHistoryTable("__EFMigrationsHistory", "apphub")`，避免历史表落到 provider 默认 schema 后削弱服务边界。
 
@@ -130,7 +130,7 @@
 
 ## Schema Convention Tests
 
-AppHub/Ops 已通过 `Nerv.IIP.Testing` 中的 schema convention helper 覆盖 business table comment、business column comment、JSON/text 兼容注释、string ID 约束和 service-schema `__EFMigrationsHistory`。后续 IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引建表时必须复用同一类测试。
+AppHub/Ops/IAM 已通过 `Nerv.IIP.Testing` 中的 schema convention helper 覆盖 business table comment、business column comment、JSON/text 兼容注释（在相关字段存在时）、string ID 约束和 service-schema `__EFMigrationsHistory`。后续 FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引建表时必须复用同一类测试。
 
 自动化测试至少检查：
 
@@ -144,4 +144,4 @@ AppHub/Ops 已通过 `Nerv.IIP.Testing` 中的 schema convention helper 覆盖 b
 ## 当前必须补齐的已知差距
 
 1. CAP system tables 当前只在 DbContext 中配置表名和主键，后续应至少补表注释或在 catalog 中保持 system-owned 标记。
-2. IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引尚未建表；首次建表前必须先补 catalog 草案和 schema convention tests。
+2. FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引尚未建表；首次建表前必须先补 catalog 草案和 schema convention tests。

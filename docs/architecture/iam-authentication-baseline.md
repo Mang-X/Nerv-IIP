@@ -8,6 +8,10 @@
 - ASP.NET Core Identity：https://learn.microsoft.com/aspnet/core/security/authentication/identity
 - ASP.NET Core Authorization：https://learn.microsoft.com/aspnet/core/security/authorization/introduction
 
+## 当前实现状态
+
+IAM Persistent Auth Foundation 已覆盖后端持久化登录基线：PostgreSQL iam schema、初始 admin seed、JWT access token、refresh token hash + rotation、session revoke、/me 和 Connector Host credential validation。Gateway-wide permission enforcement、Console 登录 UI、OAuth/OIDC、SSO、MFA 和复杂 ABAC 不属于本阶段。
+
 ## 决策
 
 1. Nerv-IIP 不直接采用 NetCorePal.Template 的 Admin 模板作为最终 IAM 实现。
