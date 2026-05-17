@@ -1,8 +1,28 @@
+# Script-Governance:
+#   Category: verify
+#   SideEffects:
+#     - Starts local PostgreSQL, Redis and RabbitMQ from infra/docker-compose.dev.yml
+#     - Recreates disposable AppHub and Ops verification databases
+#     - Runs the third-stage console verification under PostgreSQL profile
+#   Writes:
+#     - artifacts/script-logs/**
+#     - frontend/node_modules/** through the nested third-stage pnpm install
+#     - frontend/**/.nuxt/**, frontend/**/.output/**, frontend/**/dist/** and frontend/**/coverage/** through nested frontend typecheck/test/build steps
+#     - frontend/packages/api-client/openapi/platform-gateway.v1.json through the nested third-stage verification
+#     - frontend/packages/api-client/src/** through the nested third-stage verification
+#   Cleanup:
+#     - Restores scoped environment variables
+#     - Stops managed nested script process if it times out through ScriptAutomation.ps1
+#     - Leaves shared Docker development services running
+#   Requires:
+#     - PowerShell 7
+#     - .NET SDK 10
+#     - Docker Desktop
+#     - Node.js 22.22.3
+#     - pnpm 10.13.1
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-if ($PSVersionTable.PSVersion.Major -ge 7) {
-  $PSNativeCommandUseErrorActionPreference = $true
-}
 
 function Wait-TcpPort {
   param(
@@ -37,31 +57,31 @@ function Invoke-PostgresProfileTest {
   param(
     [string]$Project,
     [string]$Filter,
-    [string]$ConnectionString
+    [string]$ConnectionString,
+    [string]$Name
   )
 
-  $previous = $env:NERV_IIP_TEST_POSTGRES
-  $env:NERV_IIP_TEST_POSTGRES = $ConnectionString
-  try {
-    dotnet test $Project --filter $Filter
-  }
-  finally {
-    $env:NERV_IIP_TEST_POSTGRES = $previous
+  Invoke-WithScopedEnvironment -Variables @{
+    NERV_IIP_TEST_POSTGRES = $ConnectionString
+  } -ScriptBlock {
+    Invoke-DotNet -Arguments @("test", $Project, "--filter", $Filter) -WorkingDirectory $root -TimeoutSeconds 600 -Name $Name | Out-Null
   }
 }
 
 function Reset-PostgresDatabase {
   param(
     [string]$ComposeFile,
-    [string]$DatabaseName
+    [string]$DatabaseName,
+    [string]$Name
   )
 
-  docker compose -f $ComposeFile exec -T postgres psql -U nerv -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DatabaseName WITH (FORCE);"
-  docker compose -f $ComposeFile exec -T postgres psql -U nerv -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE $DatabaseName OWNER nerv;"
+  Invoke-DockerCompose -Arguments @("-f", $ComposeFile, "exec", "-T", "postgres", "psql", "-U", "nerv", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", "DROP DATABASE IF EXISTS $DatabaseName WITH (FORCE);") -WorkingDirectory $root -TimeoutSeconds 120 -Name "$Name-drop" | Out-Null
+  Invoke-DockerCompose -Arguments @("-f", $ComposeFile, "exec", "-T", "postgres", "psql", "-U", "nerv", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", "CREATE DATABASE $DatabaseName OWNER nerv;") -WorkingDirectory $root -TimeoutSeconds 120 -Name "$Name-create" | Out-Null
 }
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
+. (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
 
 $composeFile = Join-Path $root "infra/docker-compose.dev.yml"
 $postgresPort = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_POSTGRES_PORT)) { "15432" } else { $env:NERV_IIP_POSTGRES_PORT }
@@ -73,41 +93,33 @@ $appHubVerifyConnectionString = "Host=localhost;Port=$postgresPort;Database=$app
 $opsVerifyConnectionString = "Host=localhost;Port=$postgresPort;Database=$opsVerifyDatabase;Username=nerv;Password=nerv"
 $appHubTests = Join-Path $root "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj"
 $opsTests = Join-Path $root "backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj"
+$thirdStageScript = Join-Path $root "scripts/verify-third-slice-console.ps1"
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "Docker CLI is required to verify fourth slice real infrastructure."
 }
 
-$env:NERV_IIP_POSTGRES_PORT = $postgresPort
-docker compose -f $composeFile up -d postgres redis rabbitmq
+Invoke-WithScopedEnvironment -Variables @{
+  NERV_IIP_POSTGRES_PORT = $postgresPort
+} -ScriptBlock {
+  Invoke-DockerCompose -Arguments @("-f", $composeFile, "up", "-d", "postgres", "redis", "rabbitmq") -WorkingDirectory $root -TimeoutSeconds 240 -Name "fourth-docker-compose-dependencies" | Out-Null
 
-Wait-TcpPort -HostName "localhost" -Port ([int]$postgresPort) -TimeoutSeconds 90
-Wait-TcpPort -HostName "localhost" -Port 6379 -TimeoutSeconds 60
-Wait-TcpPort -HostName "localhost" -Port 5672 -TimeoutSeconds 60
+  Wait-TcpPort -HostName "localhost" -Port ([int]$postgresPort) -TimeoutSeconds 90
+  Wait-TcpPort -HostName "localhost" -Port 6379 -TimeoutSeconds 60
+  Wait-TcpPort -HostName "localhost" -Port 5672 -TimeoutSeconds 60
 
-Reset-PostgresDatabase -ComposeFile $composeFile -DatabaseName $appHubVerifyDatabase
-Reset-PostgresDatabase -ComposeFile $composeFile -DatabaseName $opsVerifyDatabase
+  Reset-PostgresDatabase -ComposeFile $composeFile -DatabaseName $appHubVerifyDatabase -Name "fourth-apphub-verify-database"
+  Reset-PostgresDatabase -ComposeFile $composeFile -DatabaseName $opsVerifyDatabase -Name "fourth-ops-verify-database"
 
-Invoke-PostgresProfileTest `
-  -Project $appHubTests `
-  -Filter "FullyQualifiedName~AppHubPostgresProfileTests" `
-  -ConnectionString $appHubTestConnectionString
+  Invoke-PostgresProfileTest -Project $appHubTests -Filter "FullyQualifiedName~AppHubPostgresProfileTests" -ConnectionString $appHubTestConnectionString -Name "fourth-apphub-postgres-profile-tests"
+  Invoke-PostgresProfileTest -Project $opsTests -Filter "FullyQualifiedName~OpsPostgresProfileTests" -ConnectionString $opsTestConnectionString -Name "fourth-ops-postgres-profile-tests"
 
-Invoke-PostgresProfileTest `
-  -Project $opsTests `
-  -Filter "FullyQualifiedName~OpsPostgresProfileTests" `
-  -ConnectionString $opsTestConnectionString
-
-$previousAppHubPostgres = $env:NERV_IIP_APPHUB_POSTGRES
-$previousOpsPostgres = $env:NERV_IIP_OPS_POSTGRES
-$env:NERV_IIP_APPHUB_POSTGRES = $appHubVerifyConnectionString
-$env:NERV_IIP_OPS_POSTGRES = $opsVerifyConnectionString
-try {
-  pwsh scripts/verify-third-slice-console.ps1 -UsePostgres
-}
-finally {
-  $env:NERV_IIP_APPHUB_POSTGRES = $previousAppHubPostgres
-  $env:NERV_IIP_OPS_POSTGRES = $previousOpsPostgres
+  Invoke-WithScopedEnvironment -Variables @{
+    NERV_IIP_APPHUB_POSTGRES = $appHubVerifyConnectionString
+    NERV_IIP_OPS_POSTGRES = $opsVerifyConnectionString
+  } -ScriptBlock {
+    Invoke-PwshScript -ScriptPath $thirdStageScript -Arguments @("-UsePostgres") -WorkingDirectory $root -TimeoutSeconds 1200 -Name "fourth-third-stage-console-postgres" | Out-Null
+  }
 }
 
 Write-Host "Fourth vertical slice real infrastructure verified."
