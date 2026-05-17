@@ -7,6 +7,7 @@ using Nerv.IIP.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddFastEndpoints();
+builder.Services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
 builder.Services.AddNervIipCaching(builder.Configuration, "iam");
 builder.Services.AddNervIipObservability(builder.Configuration, "iam");
 builder.Services.AddIamPersistence(builder.Configuration);
