@@ -29,6 +29,8 @@ frontend/
 
 第三迭代只创建控制台纵切必需包：`api-client`、`ui`、`app-shell`。`layer-base`、`layer-platform`、`auth`、`shared-types` 是已冻结的长期边界，等控制台领域层、登录授权或跨包类型复用真正出现时再创建，避免首批脚手架提前空转。
 
+第五阶段开始，前端功能实施暂缓：后端 SDK、迁移发布和部署验证不应被控制台 UI 牵引。Design System 尚未冻结前，`packages/ui`、`packages/app-shell` 和 console 页面只允许进行机械生成、类型修复和质量门禁修复；新的页面、组件皮肤、组件库迁移或 token 体系必须先完成 docs/architecture/frontend-design-system-planning.md 要求的独立规格。
+
 ## 配置分层
 
 ### 根级配置

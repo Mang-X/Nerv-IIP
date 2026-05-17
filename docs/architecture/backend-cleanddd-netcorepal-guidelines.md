@@ -206,6 +206,8 @@ Endpoint：
 
 ## 仓储、DbContext 与 EF 配置
 
+数据库 schema、建表注释、迁移、catalog 和 profile 兼容的完整规范见 `docs/architecture/database-schema-conventions.md`。本节只保留 CleanDDD/netcorepal 落地时每个服务必须遵守的最低代码结构要求。
+
 仓储：
 
 1. 仓储接口命名为 `I{Aggregate}Repository`，实现命名为 `{Aggregate}Repository`。
@@ -224,10 +226,15 @@ DbContext：
 实体配置：
 
 1. 每个持久实体提供 `{Entity}EntityTypeConfiguration`。
-2. 必须配置主键、必填、长度、索引和字段注释。
-3. `IGuidStronglyTypedId` 使用 Guid v7 值生成器。
-4. `IInt64StronglyTypedId` 使用 Snowflake 值生成器。
-5. `RowVersion` 采用框架约定，不自行实现第二套并发字段。
+2. 必须配置表名、表注释、主键、必填、长度、索引、外键/删除行为和字段注释。
+3. 序列化 JSON/text 字段必须说明格式、生产方、消费方和兼容策略，不允许只写“metadata”一类模糊注释。
+4. 每个索引都要能对应唯一约束、列表查询、调度扫描、幂等检查或状态追踪中的一个明确意图。
+5. `IGuidStronglyTypedId` 使用 Guid v7 值生成器。
+6. `IInt64StronglyTypedId` 使用 Snowflake 值生成器。
+7. `IStringStronglyTypedId` 只在业务或协议需要可读 ID 时使用，必须 `ValueGeneratedNever()`、设置长度，并说明生成权威。
+8. `RowVersion` 采用框架约定，不自行实现第二套并发字段。
+9. PostgreSQL profile 必须显式配置服务 schema 内的 `__EFMigrationsHistory`。
+10. 新增、删除或改变业务表时，同步更新 `docs/architecture/database-schema-catalog.md`。
 
 ## Program 与基础注册
 

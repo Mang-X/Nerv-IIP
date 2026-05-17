@@ -7,7 +7,7 @@
 | Item | Link |
 |---|---|
 | Nerv-IIP repository | [Mang-X/Nerv-IIP](https://github.com/Mang-X/Nerv-IIP) |
-| Current third-slice branch | `codex/third-vertical-slice-console` |
+| Current baseline | 第四阶段真实基础设施门禁已落地并合入，当前状态见 [fourth-vertical-slice-real-infra.md](fourth-vertical-slice-real-infra.md) |
 
 ## Frontend
 
@@ -38,12 +38,12 @@
 | ASP.NET Core Authentication/Authorization | Frozen platform security baseline; full UI/login flow is future work. | [Authentication docs](https://learn.microsoft.com/aspnet/core/security/authentication/) / [Authorization docs](https://learn.microsoft.com/aspnet/core/security/authorization/introduction) | [dotnet/aspnetcore](https://github.com/dotnet/aspnetcore) |
 | FastEndpoints | Required endpoint framework for platform HTTP APIs. | [FastEndpoints docs](https://fast-endpoints.com/) | [FastEndpoints/FastEndpoints](https://github.com/FastEndpoints/FastEndpoints) |
 | FastEndpoints.Swagger | Required Gateway OpenAPI generation path. | [FastEndpoints Swagger docs](https://fast-endpoints.com/docs/swagger-support) | [FastEndpoints/FastEndpoints](https://github.com/FastEndpoints/FastEndpoints) |
-| netcorepal-cloud-framework | Frozen backend architectural baseline for future service templates and CleanDDD conventions. | [netcorepal-cloud-framework docs](https://netcorepal.github.io/netcorepal-cloud-framework/) | [netcorepal/netcorepal-cloud-framework](https://github.com/netcorepal/netcorepal-cloud-framework) |
-| Aspire AppHost | Frozen deployment/development orchestration baseline; platform-level AppHost is future work. | [.NET Aspire docs](https://learn.microsoft.com/dotnet/aspire/) | [dotnet/aspire](https://github.com/dotnet/aspire) |
+| netcorepal-cloud-framework | Required backend architectural baseline for platform domain services; AppHub and Ops have adopted the CleanDDD/netcorepal shape in the fourth slice. | [netcorepal-cloud-framework docs](https://netcorepal.github.io/netcorepal-cloud-framework/) | [netcorepal/netcorepal-cloud-framework](https://github.com/netcorepal/netcorepal-cloud-framework) |
+| Aspire AppHost | Required deployment/development orchestration baseline; platform-level AppHost exists at `infra/aspire/Nerv.IIP.AppHost` and currently covers AppHub, Ops, Gateway, Connector Host, PostgreSQL, Redis and RabbitMQ. | [.NET Aspire docs](https://learn.microsoft.com/dotnet/aspire/) | [dotnet/aspire](https://github.com/dotnet/aspire) |
 | .NET Aspire Dashboard | Selected Microsoft-official, self-hostable, open-source short-term observability UI for local development, integration and PoC diagnostics; not a production log persistence backend. | [Aspire Dashboard docs](https://aspire.dev/dashboard/standalone/) | [microsoft/aspire](https://github.com/microsoft/aspire) |
 | PowerShell | Required verification-script runtime. | [PowerShell docs](https://learn.microsoft.com/powershell/) | [PowerShell/PowerShell](https://github.com/PowerShell/PowerShell) |
 | OpenTelemetry | Required observability baseline. | [OpenTelemetry .NET docs](https://opentelemetry.io/docs/languages/dotnet/) | [open-telemetry/opentelemetry-dotnet](https://github.com/open-telemetry/opentelemetry-dotnet) |
-| Serilog | Planned host-level structured logging provider; business code still uses `Microsoft.Extensions.Logging`. | [Serilog docs](https://serilog.net/) | [serilog/serilog](https://github.com/serilog/serilog) |
+| Serilog | Required host-level structured logging provider; business code still uses `Microsoft.Extensions.Logging`. | [Serilog docs](https://serilog.net/) | [serilog/serilog](https://github.com/serilog/serilog) |
 | FusionCache | Required cache abstraction baseline. | [FusionCache docs](https://fusioncache.net/) | [ZiggyCreatures/FusionCache](https://github.com/ZiggyCreatures/FusionCache) |
 | NetCorePal.Template | Required backend service scaffold reference. Current `--Database` choices include PostgreSQL, GaussDB and DMDB; Nerv-IIP defaults to PostgreSQL profile. | [NuGet package](https://www.nuget.org/packages/NetCorePal.Template) | [netcorepal/netcorepal-cloud-template](https://github.com/netcorepal/netcorepal-cloud-template) |
 
@@ -51,10 +51,10 @@
 
 | Technology | Current status | Documentation | Repository |
 |---|---|---|---|
-| PostgreSQL | Frozen primary persistence baseline; fourth-stage work should implement this as the first database profile. | [PostgreSQL docs](https://www.postgresql.org/docs/current/) | [postgres/postgres](https://github.com/postgres/postgres) |
+| PostgreSQL | Required primary persistence baseline; AppHub/Ops PostgreSQL profile is implemented for fourth-stage verification. Production migrations and seed flow are governed by ADR 0009. | [PostgreSQL docs](https://www.postgresql.org/docs/current/) | [postgres/postgres](https://github.com/postgres/postgres) |
 | GaussDB / DMDB | Template-supported domestic database profile candidates for 信创 validation; not the default profile and not production-supported in Nerv-IIP until provider, CAP storage, migrations and tests are verified in this repo. | [NetCorePal.Template package](https://www.nuget.org/packages/NetCorePal.Template) | [netcorepal-cloud-template template.json](https://github.com/netcorepal/netcorepal-cloud-template/blob/main/template/.template.config/template.json) |
-| Redis | Frozen cache/backplane baseline; current slices use local/in-memory paths where appropriate. | [Redis docs](https://redis.io/docs/latest/) | [redis/redis](https://github.com/redis/redis) |
-| RabbitMQ | Frozen messaging baseline for future outbox/event dispatch work. | [RabbitMQ docs](https://www.rabbitmq.com/docs) | [rabbitmq/rabbitmq-server](https://github.com/rabbitmq/rabbitmq-server) |
+| Redis | Required cache/backplane baseline; fourth-stage AppHost and local compose include Redis, while individual service cache behavior remains staged by feature need. | [Redis docs](https://redis.io/docs/latest/) | [redis/redis](https://github.com/redis/redis) |
+| RabbitMQ | Required messaging baseline; fourth-stage AppHost, compose and AppHub/Ops CAP wiring include RabbitMQ, but business integration-event outbox behavior remains follow-up scope. | [RabbitMQ docs](https://www.rabbitmq.com/docs) | [rabbitmq/rabbitmq-server](https://github.com/rabbitmq/rabbitmq-server) |
 | MinIO | Frozen object-storage baseline; revalidate maintenance/licensing posture before production packaging. | [MinIO docs](https://min.io/docs/minio/linux/index.html) | [minio/minio](https://github.com/minio/minio) |
 | Qdrant | Frozen vector-store baseline for future knowledge/RAG work. | [Qdrant docs](https://qdrant.tech/documentation/) | [qdrant/qdrant](https://github.com/qdrant/qdrant) |
 

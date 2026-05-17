@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ManagedNodeAggregate;
 using NetCorePal.Extensions.Domain;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.AppHub.Infrastructure.EntityConfigurations;
 
@@ -11,7 +12,7 @@ public sealed class ManagedNodeEntityTypeConfiguration : IEntityTypeConfiguratio
     {
         builder.ToTable("managed_nodes");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasConversion(id => id.Id, value => new ManagedNodeId(value)).ValueGeneratedNever().HasComment("Managed node aggregate id");
+        builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Managed node aggregate id");
         builder.Property(x => x.OrganizationId).IsRequired().HasMaxLength(100).HasComment("Organization id");
         builder.Property(x => x.EnvironmentId).IsRequired().HasMaxLength(100).HasComment("Environment id");
         builder.Property(x => x.NodeKey).IsRequired().HasMaxLength(160).HasComment("Node protocol key");

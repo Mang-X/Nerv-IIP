@@ -38,6 +38,7 @@ if (usePostgreSql)
 builder.Services.AddOpsPersistence(builder.Configuration);
 if (usePostgreSql)
 {
+    builder.Services.AddScoped<OpsDatabaseMigrationRunner>();
     builder.Services.AddScoped<IOperationTaskApplicationService, EfOperationTaskApplicationService>();
 }
 else
@@ -47,10 +48,10 @@ else
 builder.Services.AddNervIipObservability(builder.Configuration, "ops");
 
 var app = builder.Build();
-if (usePostgreSql)
+if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigrate"))
 {
     using var scope = app.Services.CreateScope();
-    scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.EnsureCreated();
+    await scope.ServiceProvider.GetRequiredService<OpsDatabaseMigrationRunner>().MigrateAsync();
 }
 
 app.UseNervIipCorrelation();

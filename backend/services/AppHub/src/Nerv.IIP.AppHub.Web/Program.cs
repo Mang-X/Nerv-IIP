@@ -37,12 +37,16 @@ if (usePostgreSql)
     });
 }
 builder.Services.AddAppHubPersistence(builder.Configuration);
-
-var app = builder.Build();
 if (usePostgreSql)
 {
+    builder.Services.AddScoped<AppHubDatabaseMigrationRunner>();
+}
+
+var app = builder.Build();
+if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigrate"))
+{
     using var scope = app.Services.CreateScope();
-    scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.EnsureCreated();
+    await scope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>().MigrateAsync();
 }
 
 app.UseNervIipCorrelation();

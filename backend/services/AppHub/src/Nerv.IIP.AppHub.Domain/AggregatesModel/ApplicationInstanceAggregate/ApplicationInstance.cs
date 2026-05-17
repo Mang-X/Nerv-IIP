@@ -26,7 +26,6 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
         IReadOnlyDictionary<string, string> metadata,
         IReadOnlyList<CapabilityDescriptor> capabilities)
     {
-        Id = new ApplicationInstanceId(Guid.CreateVersion7());
         OrganizationId = organizationId;
         EnvironmentId = environmentId;
         ApplicationKey = applicationKey;
@@ -121,7 +120,6 @@ public class InstanceHeartbeat : Entity<InstanceHeartbeatId>
 
     public InstanceHeartbeat(ApplicationInstanceId applicationInstanceId, DateTimeOffset lastHeartbeatAtUtc, bool reachable, int latencyMs)
     {
-        Id = new InstanceHeartbeatId(Guid.CreateVersion7());
         ApplicationInstanceId = applicationInstanceId;
         Record(lastHeartbeatAtUtc, reachable, latencyMs);
     }
@@ -147,7 +145,6 @@ public class InstanceStateHistory : Entity<InstanceStateHistoryId>
 
     public InstanceStateHistory(ApplicationInstanceId applicationInstanceId, DateTimeOffset observedAtUtc, string reportedStatus, string healthStatus, string summary)
     {
-        Id = new InstanceStateHistoryId(Guid.CreateVersion7());
         ApplicationInstanceId = applicationInstanceId;
         ObservedAtUtc = observedAtUtc;
         ReportedStatus = reportedStatus;
@@ -170,7 +167,6 @@ public class InstanceStatusChange : Entity<InstanceStatusChangeId>
 
     public InstanceStatusChange(ApplicationInstanceId applicationInstanceId, string previousStatus, string currentStatus, DateTimeOffset changedAtUtc)
     {
-        Id = new InstanceStatusChangeId(Guid.CreateVersion7());
         ApplicationInstanceId = applicationInstanceId;
         PreviousStatus = previousStatus;
         CurrentStatus = currentStatus;
@@ -191,7 +187,6 @@ public class RegistrationIdempotency : Entity<RegistrationIdempotencyId>, IAggre
 
     public RegistrationIdempotency(string idempotencyKey, string registrationId, string instanceKey)
     {
-        Id = new RegistrationIdempotencyId(Guid.CreateVersion7());
         IdempotencyKey = idempotencyKey;
         RegistrationId = registrationId;
         InstanceKey = instanceKey;

@@ -9,6 +9,7 @@
 3. 生成代码与手写代码必须隔离。
 4. API 契约升级必须能追踪到 ADR、后端接口变更和前端消费更新。
 5. 主平台对外提供的 SDK、OpenAPI、事件和协议遵循主版本对齐、小版本兼容策略。
+6. 任何 JSON/text 序列化字段进入 API、SDK、IntegrationEvent 或外部协议前，必须定义 schema/version/compat 说明；不能只把数据库中的 JSON blob 原样提升为公开契约。
 
 ## Platform SDK 与版本策略
 
@@ -66,6 +67,7 @@
 
 1. 前端通过 Hey API 从 OpenAPI 生成 types、sdk、client 与 Pinia Colada 查询、变更函数。
 2. 页面和 composables 不直接拼接 URL，也不绕过生成客户端手写重复网络层。
+3. 后端 SDK 和 OpenAPI 变更可以触发 `frontend/packages/api-client` 机械生成，但这不授权新增控制台视图。若后端契约暂不被当前控制台使用，应保持生成客户端变更可追溯，并用生成契约测试覆盖。
 
 ## 推荐目录结构
 
@@ -137,6 +139,8 @@ frontend/packages/api-client/
 3. 少量页面特有参数整理可以放在 src/api/领域名/adapters.ts 中。
 4. api-client 只做契约、transport 和稳定导出，不放业务视图逻辑。
 5. 需要轮询的服务端状态通过 Pinia Colada query options 和官方 auto-refetch 插件表达，不在组件里手写 `setInterval`。
+6. Design System 冻结前，不因后端契约变更新增页面、视觉组件、组件库迁移或样式 token；相关规划见 docs/architecture/frontend-design-system-planning.md。
+7. 生成客户端可以承载 JSON/text 契约字段，但字段语义、版本和兼容策略必须在后端契约或服务文档中可追踪。
 
 ## 版本与变更管理
 
@@ -154,3 +158,4 @@ frontend/packages/api-client/
 4. 让 Gateway 返回未进入 OpenAPI 的隐式接口。
 5. 让 SDK 变成服务发现中心、权限事实源、审计事实源、通知事实源或服务端领域模型副本。
 6. 让前端直接访问 Aspire Dashboard、第三方观测后端或客户侧日志平台。
+7. 把后端基础阶段的 OpenAPI/api-client 机械变更扩大成前端页面或 Design System 实施。

@@ -1,6 +1,6 @@
 # 实施状态清单
 
-本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
+本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
 ## 当前结论
 
@@ -17,6 +17,10 @@
 11. 前端工作区使用 Vite+ 作为统一工具入口；`pnpm -C frontend check`、`lint`、`fmt` 需要 Node.js `>=22.18.0`，仓库根 `.node-version` 固定为 22.22.3，本机验证版本为 OpenJS.NodeJS.22 v22.22.3。
 12. 技术栈官方文档与源码仓库链接统一维护在 docs/architecture/technology-stack-references.md；新增长期技术选型时必须同步更新，避免同名项目或社区分叉造成歧义。
 13. 第四阶段已经补齐 AppHub/Ops 的 netcorepal/CleanDDD PostgreSQL profile、code-analysis endpoint、`scripts/verify-fourth-slice-real-infra.ps1` 和平台级 `infra/aspire/Nerv.IIP.AppHost`；当前 AppHost build 与完整真实基础设施验证均已通过。
+14. 第四阶段统一验收口径见 docs/architecture/fourth-vertical-slice-real-infra.md；后续生产级迁移、初始化、seed 和回滚策略按 docs/adr/0009-database-migration-release-and-seed-strategy.md 执行。
+15. 第五阶段 Release-grade Persistence Foundation 已落地：AppHub/Ops 已有初始 migrations，PostgreSQL profile tests 已从 `EnsureCreated()` 改为 `MigrateAsync()`，第五阶段验证脚本已经通过。
+16. 前端 Design System 尚未冻结；除 OpenAPI 生成客户端和质量门禁外，后端基础阶段不得新增控制台页面、视觉组件、组件库迁移或样式体系决策。
+17. 数据库 schema、建表注释、schema catalog 和发布 runbook 已补齐第一版，后续持久化服务必须先满足 docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md 和 docs/architecture/database-release-runbook.md。
 
 ## 环境前置
 
@@ -31,6 +35,8 @@
 7. 2026-05-17 已确认 NetCorePal.Template 3.2.0 支持 `PostgreSQL`、`GaussDB`、`DMDB` 等数据库参数；Nerv-IIP 默认落地 PostgreSQL profile，信创环境按 database profile 验证替换，不承诺无验证的完全无感切换。
 8. 后续落地平台级 AppHost、Compose 生成和 Aspire Dashboard 时，需要安装 Aspire CLI；服务模板仍保持 `--UseAspire false`，避免生成服务级局部编排入口。
 9. 第三阶段前端工具链需要 Node.js `>=22.18.0`、pnpm 10.13.1 和 Vite+ 0.1.21。仓库根 `.node-version` 固定为 22.22.3；本机已通过 `winget` 将 OpenJS.NodeJS.22 升级到 22.22.3，避免 Vite+ lint/fmt 路径读取 `vite.config.ts` 时触发 Node `22.17.x` 的 TS config 加载错误。
+10. 第五阶段起仓库包含本地 `dotnet-tools.json`，用于固定 `dotnet-ef` 版本。首次生成或检查迁移前运行 `dotnet tool restore`，再使用 `dotnet tool run dotnet-ef ...`，避免依赖开发者全局工具。
+11. AppHub/Ops 生成 EF migration 时必须显式进入 PostgreSQL profile：设置 `Persistence__Provider=PostgreSQL` 和对应 `ConnectionStrings__AppHubDb` 或 `ConnectionStrings__OpsDb`，否则 Web startup 默认 InMemory，design-time 无法解析服务 DbContext。
 
 ## 包源恢复基线
 
@@ -154,6 +160,16 @@
 6. PlatformGateway、Connector Host、Contracts/SDK 和 frontend console 不强行套完整 netcorepal 三项目模型；IAM 完整授权、FileStorage 上传下载、CAP outbox、通知和审批不进入本阶段实现范围。
 7. `pwsh scripts/verify-fourth-slice-real-infra.ps1` 已在 Docker Desktop 环境下通过，最终输出 `Fourth vertical slice real infrastructure verified.`。
 
+### 第五迭代已完成范围
+
+1. AppHub 和 Ops 已增加 EF Core 初始迁移，并把 PostgreSQL profile 测试切换到 migration-based schema creation。
+2. AppHub.Web 和 Ops.Web 已移除 PostgreSQL 启动期 `EnsureCreated()`，只允许通过 `Persistence:AutoMigrate=true` 显式执行本地/dev auto-migration。
+3. 已增加 service-owned migration runner，供测试、脚本和后续安装流程复用。
+4. 已增加 `scripts/verify-fifth-slice-persistence-foundation.ps1`，覆盖迁移、后端 solution、connector-host solution 和 SDK/契约回归。
+5. 前端只在后端 OpenAPI 变化时机械生成 api-client 并跑质量门禁；不新增页面、路由、组件皮肤或 Design System 决策。
+6. 前端 Design System 规划记录在 docs/architecture/frontend-design-system-planning.md，后续需要独立 Superpowers spec 后才能实施。
+7. `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1` 已通过，最终输出 `Fifth slice release-grade persistence foundation verified.`。
+
 ### 当前初步使用方式
 
 1. 运行 `pwsh scripts/verify-first-slice.ps1` 可验证 backend 与 connector-hosts 的 restore、build、test，以及 AppHub 到 PlatformGateway 的第一条本地纵切。
@@ -161,13 +177,14 @@
 3. 运行 `pwsh scripts/verify-third-slice-console.ps1` 可验证 Gateway OpenAPI 导出、前端 api-client 生成、Vue 控制台 typecheck/test/build。
 4. 运行 `pwsh scripts/verify-third-slice-console.ps1 -UsePostgres` 可在 PostgreSQL profile 下复跑第三阶段链路，前提是本地 PostgreSQL 和 RabbitMQ 已可用；可通过 `NERV_IIP_APPHUB_POSTGRES` 与 `NERV_IIP_OPS_POSTGRES` 分别覆盖服务连接串。
 5. 运行 `pwsh scripts/verify-fourth-slice-real-infra.ps1` 可拉起本地依赖并执行第四阶段真实基础设施门禁；脚本会重建 `nerv_iip_apphub_verify` 和 `nerv_iip_ops_verify` 验证库，避免共享库或旧数据影响结果。
-6. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
-7. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁。
-8. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
-9. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
-10. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-11. 当前实现用于本地开发和接口联调，不包含生产部署、完整认证授权 UI 或高风险动作审批。
-12. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
+6. 运行 `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1` 可验证 AppHub/Ops 迁移发布底座和后端 SDK/契约回归。
+7. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
+8. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
+9. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
+10. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口。
+11. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
+12. 当前实现用于本地开发和接口联调，不包含生产部署、完整认证授权 UI 或高风险动作审批。
+13. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
 
@@ -178,8 +195,8 @@
 5. Notification 的具体代码骨架、站内通知纵切和外部通道 provider；边界口径应遵守 docs/architecture/notification-baseline.md。
 6. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
 7. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
-8. 前端视觉系统和组件皮肤细节。
-9. Compose 发布产物、安装包和整合安装脚本，口径见 docs/architecture/deployment-baseline.md。
+8. 前端视觉系统和组件皮肤细节；需要先完成 docs/architecture/frontend-design-system-planning.md 中要求的独立设计规格。
+9. Compose 发布产物、安装包和整合安装脚本，口径见 docs/architecture/deployment-baseline.md 与 docs/architecture/database-release-runbook.md。
 
 ## 开工验收标准
 
@@ -197,4 +214,4 @@
 
 ## 结论
 
-Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环、第三迭代控制台纵切和第四迭代真实基础设施门禁，并开始把 AppHub/Ops 推进到 netcorepal/CleanDDD、PostgreSQL profile、结构化日志、code-analysis 和平台级 Aspire AppHost：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui、app-shell 和 infra/aspire 的最小工程结构与验证链路已经存在。下一步不是继续 scaffold，而是继续推进完整 IAM 授权、FileStorage 上传下载、高风险动作审批、通知联动、数据库迁移发布基线和多目标部署交付。真实持久化先主推 PostgreSQL，同时用 database profile 约束后续 GaussDB/DMDB 等信创替换成本。后续任务继续参考 docs/architecture/third-vertical-slice-console.md、docs/superpowers/plans/2026-05-14-first-vertical-slice.md、docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md、docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md、docs/superpowers/plans/2026-05-17-fourth-vertical-slice-real-infra-foundation.md 与 docs/architecture/deployment-baseline.md。
+Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环、第三迭代控制台纵切、第四迭代真实基础设施门禁和第五迭代迁移发布底座，并开始把 AppHub/Ops 推进到 netcorepal/CleanDDD、PostgreSQL profile、结构化日志、code-analysis、平台级 Aspire AppHost 和 migration-based verification：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui、app-shell 和 infra/aspire 的最小工程结构与验证链路已经存在。下一步可以在迁移基线之上进入完整 IAM 授权、FileStorage 上传下载、高风险动作审批、通知联动和多目标部署交付。真实持久化先主推 PostgreSQL，同时用 database profile 约束后续 GaussDB/DMDB 等信创替换成本。数据库建表和注释规范、schema catalog、Observability baseline 与数据库发布 runbook 已有第一版，但 AppHub/Ops table comment、JSON 注释、migrations history schema 配置和 convention tests 仍应作为下一轮 hardening 优先处理。前端功能实施暂缓，除机械 api-client 生成和质量门禁外，需要先完成 Design System 独立规格。后续任务继续参考 docs/architecture/third-vertical-slice-console.md、docs/architecture/fourth-vertical-slice-real-infra.md、docs/architecture/frontend-design-system-planning.md、docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md、docs/architecture/database-release-runbook.md、docs/architecture/observability-baseline.md、docs/adr/0009-database-migration-release-and-seed-strategy.md、docs/superpowers/specs/2026-05-17-release-grade-persistence-foundation-design.md、docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md 与 docs/architecture/deployment-baseline.md。

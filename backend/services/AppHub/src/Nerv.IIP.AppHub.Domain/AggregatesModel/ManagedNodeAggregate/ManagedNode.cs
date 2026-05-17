@@ -12,7 +12,6 @@ public class ManagedNode : Entity<ManagedNodeId>, IAggregateRoot
 
     public ManagedNode(string organizationId, string environmentId, string nodeKey, string nodeName, string deploymentKind)
     {
-        Id = new ManagedNodeId(Guid.CreateVersion7());
         OrganizationId = organizationId;
         EnvironmentId = environmentId;
         NodeKey = nodeKey;
