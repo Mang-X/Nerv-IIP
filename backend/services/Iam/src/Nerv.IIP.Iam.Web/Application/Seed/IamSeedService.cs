@@ -43,6 +43,8 @@ public sealed class IamSeedService(
         var adminRoleId = new RoleId(seed.AdminRoleId);
         var membershipId = new MembershipId($"{seed.AdminUserId}:{seed.OrganizationId}:{seed.EnvironmentId}");
         var credentialId = new ConnectorHostCredentialId(seed.ConnectorHostCredentialId);
+        var manifestId = new SeedManifestId("iam-default-seed:v1");
+        var seedAlreadyApplied = await dbContext.SeedManifests.FindAsync([manifestId], cancellationToken) is not null;
         var now = DateTimeOffset.UtcNow;
 
         if (await dbContext.Organizations.FindAsync([organizationId], cancellationToken) is null)
@@ -88,7 +90,7 @@ public sealed class IamSeedService(
                 1);
             dbContext.Users.Add(user);
         }
-        else if (!passwordService.Verify(user, seed.AdminPassword))
+        else if (!seedAlreadyApplied && !passwordService.Verify(user, seed.AdminPassword))
         {
             user.UpdatePasswordHash(passwordService.Hash(user, seed.AdminPassword));
         }
@@ -126,15 +128,18 @@ public sealed class IamSeedService(
         }
         else
         {
-            credential.ReplaceSecretHash(connectorSecretHash);
+            if (!seedAlreadyApplied && !string.Equals(credential.SecretHash, connectorSecretHash, StringComparison.Ordinal))
+            {
+                credential.ReplaceSecretHash(connectorSecretHash);
+            }
+
             if (!SetEquals(credential.Capabilities.Select(x => x.CapabilityCode), connectorCapabilities))
             {
                 credential.ReplaceCapabilities(connectorCapabilities);
             }
         }
 
-        var manifestId = new SeedManifestId("iam-default-seed:v1");
-        if (await dbContext.SeedManifests.FindAsync([manifestId], cancellationToken) is null)
+        if (!seedAlreadyApplied)
         {
             dbContext.SeedManifests.Add(new SeedManifest(manifestId, "iam-default-seed", "v1", "iam", now));
         }

@@ -15,6 +15,11 @@ public sealed class ListSessionsEndpoint(IServiceProvider serviceProvider, IConf
     {
         if (IsPostgreSql(configuration))
         {
+            if (!await AuthorizeAsync("iam.sessions.read", ct))
+            {
+                return;
+            }
+
             var dbContext = serviceProvider.GetRequiredService<ApplicationDbContext>();
             var sessions = await dbContext.UserSessions
                 .AsNoTracking()
@@ -37,6 +42,25 @@ public sealed class ListSessionsEndpoint(IServiceProvider serviceProvider, IConf
         await HttpContext.Response.WriteAsJsonAsync(store.Sessions, ct);
     }
 
+    private async Task<bool> AuthorizeAsync(string permissionCode, CancellationToken ct)
+    {
+        var auth = serviceProvider.GetRequiredService<IamAuthService>();
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        if (principal is null)
+        {
+            await Send.UnauthorizedAsync(ct);
+            return false;
+        }
+
+        if (await auth.UserHasPermissionAsync(principal.UserId, permissionCode, ct))
+        {
+            return true;
+        }
+
+        HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return false;
+    }
+
     private static bool IsPostgreSql(IConfiguration configuration)
     {
         return string.Equals(configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
@@ -51,6 +75,11 @@ public sealed class RevokeSessionEndpoint(IServiceProvider serviceProvider, ICon
     {
         if (IsPostgreSql(configuration))
         {
+            if (!await AuthorizeAsync("iam.sessions.revoke", ct))
+            {
+                return;
+            }
+
             var auth = serviceProvider.GetRequiredService<IamAuthService>();
             await auth.RevokeSessionAsync(Route<string>("sessionId")!, "admin-revoke", ct);
             HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
@@ -60,6 +89,25 @@ public sealed class RevokeSessionEndpoint(IServiceProvider serviceProvider, ICon
         var store = serviceProvider.GetRequiredService<InMemoryIamStore>();
         store.Logout(Route<string>("sessionId")!);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+
+    private async Task<bool> AuthorizeAsync(string permissionCode, CancellationToken ct)
+    {
+        var auth = serviceProvider.GetRequiredService<IamAuthService>();
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        if (principal is null)
+        {
+            await Send.UnauthorizedAsync(ct);
+            return false;
+        }
+
+        if (await auth.UserHasPermissionAsync(principal.UserId, permissionCode, ct))
+        {
+            return true;
+        }
+
+        HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return false;
     }
 
     private static bool IsPostgreSql(IConfiguration configuration)

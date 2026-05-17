@@ -17,7 +17,15 @@ builder.Services.AddScoped<IamTokenService>();
 builder.Services.AddScoped<IamAuthService>();
 builder.Services.AddScoped<IamSeedService>();
 
-if (string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase)
+var usesPostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
+var autoMigrate = string.Equals(builder.Configuration["Persistence:AutoMigrate"], "true", StringComparison.OrdinalIgnoreCase);
+
+if (usesPostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for IAM in Development. Use an explicit migrator, release script or migration bundle outside Development.");
+}
+
+if (usesPostgreSql
     && !builder.Environment.IsDevelopment()
     && string.IsNullOrWhiteSpace(builder.Configuration["Iam:Jwt:SigningKey"]))
 {
@@ -28,8 +36,7 @@ var app = builder.Build();
 app.UseNervIipCorrelation();
 app.UseFastEndpoints();
 
-if (string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase)
-    && string.Equals(builder.Configuration["Persistence:AutoMigrate"], "true", StringComparison.OrdinalIgnoreCase))
+if (usesPostgreSql && autoMigrate)
 {
     using var scope = app.Services.CreateScope();
     var migrationRunner = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();

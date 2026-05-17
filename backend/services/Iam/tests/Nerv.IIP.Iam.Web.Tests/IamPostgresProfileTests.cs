@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -72,7 +73,16 @@ public sealed class IamPostgresProfileTests
             Assert.False(string.IsNullOrWhiteSpace(auth.RefreshToken));
             Assert.False(string.IsNullOrWhiteSpace(auth.SessionId));
 
+            var anonymousSessions = await client.GetAsync("/api/iam/v1/sessions");
+            Assert.Equal(HttpStatusCode.Unauthorized, anonymousSessions.StatusCode);
+
+            var anonymousRevoke = await client.PostAsync($"/api/iam/v1/sessions/{auth.SessionId}/revoke", null);
+            Assert.Equal(HttpStatusCode.Unauthorized, anonymousRevoke.StatusCode);
+
             client.DefaultRequestHeaders.Authorization = new("Bearer", auth.AccessToken);
+            var sessions = await client.GetAsync("/api/iam/v1/sessions");
+            sessions.EnsureSuccessStatusCode();
+
             var me = await client.GetAsync("/api/iam/v1/me");
             me.EnsureSuccessStatusCode();
             var principal = await me.Content.ReadFromJsonAsync<MeResponse>();
@@ -101,6 +111,21 @@ public sealed class IamPostgresProfileTests
             var meAfterLogout = await client.GetAsync("/api/iam/v1/me");
             Assert.Equal(HttpStatusCode.Unauthorized, meAfterLogout.StatusCode);
 
+            client.DefaultRequestHeaders.Authorization = null;
+            var secondLogin = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+            secondLogin.EnsureSuccessStatusCode();
+            var secondAuth = await secondLogin.Content.ReadFromJsonAsync<AuthResponse>();
+            Assert.NotNull(secondAuth);
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", secondAuth.AccessToken);
+            var adminRevoke = await client.PostAsync($"/api/iam/v1/sessions/{secondAuth.SessionId}/revoke", null);
+            Assert.Equal(HttpStatusCode.NoContent, adminRevoke.StatusCode);
+
+            var meAfterAdminRevoke = await client.GetAsync("/api/iam/v1/me");
+            Assert.Equal(HttpStatusCode.Unauthorized, meAfterAdminRevoke.StatusCode);
+
+            client.DefaultRequestHeaders.Authorization = null;
+
             var connector = await client.PostAsJsonAsync(
                 "/api/iam/v1/connectors/credentials/validate",
                 new { connectorHostId = "connector-host-001", secret = "local-connector-secret" });
@@ -124,6 +149,34 @@ public sealed class IamPostgresProfileTests
                     .ToListAsync();
                 Assert.Single(connectorCredentials);
             }
+        }
+        finally
+        {
+            RestoreEnvironment(environment);
+        }
+    }
+
+    [Fact]
+    public void Postgres_automigrate_is_rejected_outside_development()
+    {
+        var environment = PreserveEnvironment(
+            "Persistence__Provider",
+            "Persistence__AutoMigrate",
+            "ConnectionStrings__IamDb",
+            "Iam__Jwt__SigningKey");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
+            Environment.SetEnvironmentVariable("Persistence__AutoMigrate", "true");
+            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", "Host=localhost;Database=nerv_iip_iam_guard;Username=nerv;Password=nerv");
+            Environment.SetEnvironmentVariable("Iam__Jwt__SigningKey", "production-test-signing-key-that-is-long-enough");
+
+            using var factory = new WebApplicationFactory<Program>()
+                .WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
+
+            var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+            Assert.Contains("Persistence:AutoMigrate=true", exception.Message, StringComparison.Ordinal);
         }
         finally
         {

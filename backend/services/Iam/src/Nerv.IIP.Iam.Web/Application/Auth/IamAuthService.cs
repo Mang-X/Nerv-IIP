@@ -132,6 +132,23 @@ public sealed class IamAuthService(
         return new CurrentPrincipalResponse(user.Id.Id, user.LoginName, user.Email, "user");
     }
 
+    public async Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
+    {
+        var dbContext = GetDbContext();
+        var userIdValue = new UserId(userId);
+
+        return await (
+            from membership in dbContext.Memberships
+            join membershipRole in dbContext.MembershipRoles on membership.Id equals membershipRole.MembershipId
+            join role in dbContext.Roles on membershipRole.RoleId equals role.Id
+            join rolePermission in dbContext.RolePermissions on role.Id equals rolePermission.RoleId
+            where membership.UserId == userIdValue
+                && role.Deleted == NotDeleted
+                && rolePermission.PermissionCode == permissionCode
+            select rolePermission.Id)
+            .AnyAsync(cancellationToken);
+    }
+
     public async Task<ConnectorPrincipalResponse> ValidateConnectorCredentialAsync(
         string connectorHostId,
         string secret,
