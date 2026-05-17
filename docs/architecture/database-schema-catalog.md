@@ -113,7 +113,7 @@ Source:
 Known gaps:
 
 1. Gateway-wide permission enforcement 尚未接线；当前 IAM 已提供持久化认证与 credential validation 基线，但平台入口还未全面强制权限。
-2. 用户/角色写管理端点在本阶段尚未产品化；PostgreSQL profile 下相关 write endpoints 返回 501。
+2. 用户/角色写管理端点在本阶段尚未产品化；PostgreSQL profile 下相关 write endpoints 会先执行 IAM permission 检查，授权通过后返回 501。
 3. 客户发布 seed input 与 migration bundle 仍属于后续 release work。
 
 ## 后续服务建表前清单
