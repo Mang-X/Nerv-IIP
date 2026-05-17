@@ -76,5 +76,10 @@ scripts/
 - [x] Run script governance tests.
 - [x] Run script governance gate.
 - [x] Run migrated IAM verification script.
-- [ ] Run `git diff --check`.
-- [ ] Commit docs and script governance implementation in focused commits, leaving unrelated `skills-lock.json` untouched.
+- [x] Run `git diff --check`.
+- [x] Commit docs and script governance implementation in focused commits, leaving unrelated `skills-lock.json` untouched.
+
+## Follow-up Backlog
+
+- [ ] Continue migrating legacy `verify` scripts to `scripts/lib/ScriptAutomation.ps1`, prioritizing `verify-fifth-slice-persistence-foundation.ps1` and `verify-fourth-slice-real-infra.ps1`.
+- [ ] Add and run a macOS/Linux compatibility gate: at minimum `pwsh scripts/check-script-governance.ps1`, `pwsh scripts/tests/check-script-governance.Tests.ps1`, `git diff --check`, and the migrated core verify script `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` in a non-Windows environment.
