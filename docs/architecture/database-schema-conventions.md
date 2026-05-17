@@ -19,7 +19,7 @@
 1. 每个拥有持久化事实的服务拥有自己的 schema、DbContext、EntityConfigurations 和 migrations。
 2. 服务不得跨 schema 建外键，不得通过共享 DbContext 读写其他服务表。
 3. 跨服务引用使用稳定业务标识、IntegrationEvent、查询 API 或后续专用 projection，不用数据库外键表达。
-4. 默认 PostgreSQL profile 下，每个服务使用独立默认 schema，例如 `apphub`、`ops`、后续 `iam`、`filestorage`。
+4. 默认 PostgreSQL profile 下，每个服务使用独立默认 schema，已落地示例包括 `apphub`、`ops`、`iam`；后续示例包括 `filestorage`、`notification`、`knowledge`、`ai` 或 `observability`。
 5. CAP、EF migrations history 和框架自带表仍放在服务 schema 内，归属于该服务的基础设施边界。
 6. PostgreSQL profile 下必须显式配置 EF migrations history table，例如 `MigrationsHistoryTable("__EFMigrationsHistory", "apphub")`，避免历史表落到 provider 默认 schema 后削弱服务边界。
 
