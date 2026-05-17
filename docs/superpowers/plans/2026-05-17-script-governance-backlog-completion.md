@@ -29,9 +29,10 @@ Known handoff notes:
 5. Migrated the fourth-stage verify script as `71e073e chore: migrate fourth verify script governance`.
 6. Removed the fourth/fifth priority exemptions as `3691f49 chore: remove priority script exemptions`.
 7. Added the compatibility gate as `396f281 chore: add script compatibility gate`.
-8. Ran the full Ubuntu WSL compatibility gate with evidence at `artifacts/script-logs/script-compatibility/20260517-233939-907/evidence.json`: Ubuntu 22.04.3 LTS, PowerShell 7.6.1, .NET SDK 10.0.300, Docker Compose 5.1.3, `fastOnly: false`, IAM persistent auth verify passed.
-9. Re-ran final Windows gates: script governance tests, script governance gate, Windows fast compatibility smoke, fifth verify script, fourth verify script, backend solution tests and `git diff --check`.
-10. Kept pre-existing `skills-lock.json` and generated `artifacts/script-logs/**` evidence out of git.
+8. Ran the full Ubuntu WSL compatibility gate with evidence at `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`: Ubuntu 22.04.3 LTS, PowerShell 7.6.1, .NET SDK 10.0.300, Docker Compose 5.1.3, `fastOnly: false`, IAM persistent auth verify passed.
+9. Aligned the compatibility script with the documented `compat-fast` fallback so `-FastOnly` no longer probes Docker Compose and full mode is classified as `verify`.
+10. Re-ran final Windows gates: script governance tests, script governance gate, Windows fast compatibility smoke, fifth verify script, fourth verify script, backend solution tests and `git diff --check`.
+11. Kept pre-existing `skills-lock.json` and generated `artifacts/script-logs/**` evidence out of git.
 
 ## Boundaries
 
@@ -544,7 +545,7 @@ Create `scripts/check-script-compatibility.ps1`:
 
 ```powershell
 # Script-Governance:
-#   Category: check
+#   Category: verify
 #   SideEffects:
 #     - Runs script governance and compatibility verification commands
 #     - Optionally runs the IAM persistent auth verification script
@@ -652,12 +653,12 @@ function Invoke-RecordedPwshScript {
 
 try {
   Invoke-RecordedNativeCommand -Command "dotnet" -Arguments @("--version") -Name "compat-dotnet-version" -TimeoutSeconds 60 | Out-Null
-  Invoke-RecordedNativeCommand -Command "docker" -Arguments @("compose", "version", "--short") -Name "compat-docker-compose-version" -TimeoutSeconds 60 | Out-Null
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/check-script-governance.ps1") -Name "compat-script-governance" -TimeoutSeconds 120
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/check-script-governance.Tests.ps1") -Name "compat-script-governance-tests" -TimeoutSeconds 180
   Invoke-RecordedNativeCommand -Command "git" -Arguments @("diff", "--check") -Name "compat-git-diff-check" -TimeoutSeconds 120 | Out-Null
 
   if (-not $FastOnly) {
+    Invoke-RecordedNativeCommand -Command "docker" -Arguments @("compose", "version", "--short") -Name "compat-docker-compose-version" -TimeoutSeconds 60 | Out-Null
     Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/verify-iam-persistent-auth-foundation.ps1") -Name "compat-iam-persistent-auth-verify" -TimeoutSeconds 1200
   }
 }
@@ -762,7 +763,7 @@ In `docs/architecture/script-automation-governance.md`, change the migration mat
 In the `跨平台兼容门禁` section of `docs/architecture/script-automation-governance.md`, add this paragraph after the three-step compatibility sequence:
 
 ```markdown
-仓库提供 `scripts/check-script-compatibility.ps1` 作为本地兼容门禁入口。默认必须在 macOS 或 Linux 上运行；`-AllowWindows -FastOnly` 只用于 Windows 本地 smoke，不可作为兼容性声明依据。脚本会将 OS、PowerShell、.NET SDK、Docker Compose、执行命令、退出码和日志位置写入 `artifacts/script-logs/script-compatibility/**/evidence.json`。
+仓库提供 `scripts/check-script-compatibility.ps1` 作为本地兼容门禁入口。默认必须在 macOS 或 Linux 上运行；`-AllowWindows -FastOnly` 只用于 Windows 本地 smoke，不可作为兼容性声明依据。脚本会将 OS、PowerShell、.NET SDK、执行命令、退出码和日志位置写入 `artifacts/script-logs/script-compatibility/**/evidence.json`；full 模式还会记录 Docker Compose 版本并运行核心 verify 脚本。
 ```
 
 - [x] **Step 3: Update implementation readiness**

@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check
+#   Category: verify
 #   SideEffects:
 #     - Runs script governance and compatibility verification commands
 #     - Optionally runs the IAM persistent auth verification script
@@ -11,7 +11,7 @@
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10
-#     - Docker Compose v2 for compatibility evidence runs, including -FastOnly
+#     - Docker Compose v2 when running without -FastOnly
 
 [CmdletBinding()]
 param(
@@ -113,12 +113,12 @@ function Invoke-RecordedPwshScript {
 
 try {
   Invoke-RecordedNativeCommand -Command "dotnet" -Arguments @("--version") -Name "compat-dotnet-version" -TimeoutSeconds 60 | Out-Null
-  Invoke-RecordedNativeCommand -Command "docker" -Arguments @("compose", "version", "--short") -Name "compat-docker-compose-version" -TimeoutSeconds 60 | Out-Null
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/check-script-governance.ps1") -Name "compat-script-governance" -TimeoutSeconds 120
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/check-script-governance.Tests.ps1") -Name "compat-script-governance-tests" -TimeoutSeconds 180
   Invoke-RecordedNativeCommand -Command "git" -Arguments @("diff", "--check") -Name "compat-git-diff-check" -TimeoutSeconds 120 | Out-Null
 
   if (-not $FastOnly) {
+    Invoke-RecordedNativeCommand -Command "docker" -Arguments @("compose", "version", "--short") -Name "compat-docker-compose-version" -TimeoutSeconds 60 | Out-Null
     Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/verify-iam-persistent-auth-foundation.ps1") -Name "compat-iam-persistent-auth-verify" -TimeoutSeconds 1200
   }
 }
