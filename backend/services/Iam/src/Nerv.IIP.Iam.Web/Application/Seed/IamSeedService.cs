@@ -1,4 +1,4 @@
-namespace Nerv.IIP.Iam.Infrastructure;
+namespace Nerv.IIP.Iam.Web.Application.Seed;
 
 public sealed class IamSeedService
 {

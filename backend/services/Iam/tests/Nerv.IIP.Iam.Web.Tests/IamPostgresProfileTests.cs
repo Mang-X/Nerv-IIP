@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Iam.Infrastructure;
+using Nerv.IIP.Iam.Web.Application.Seed;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 

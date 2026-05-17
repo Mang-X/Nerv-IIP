@@ -52,7 +52,7 @@ public sealed class MembershipRoleEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.Id)
             .HasConversion(x => x.Id, x => new MembershipRoleId(x))
             .ValueGeneratedNever()
-            .HasMaxLength(64)
+            .HasMaxLength(160)
             .HasComment("Membership role assignment identifier.");
         builder.Property(x => x.MembershipId)
             .HasConversion(x => x.Id, x => new MembershipId(x))

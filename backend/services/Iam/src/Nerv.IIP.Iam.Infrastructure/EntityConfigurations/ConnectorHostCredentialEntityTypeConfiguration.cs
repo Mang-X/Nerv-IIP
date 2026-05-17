@@ -49,7 +49,7 @@ public sealed class ConnectorHostCredentialCapabilityEntityTypeConfiguration : I
         builder.Property(x => x.Id)
             .HasConversion(x => x.Id, x => new ConnectorHostCredentialCapabilityId(x))
             .ValueGeneratedNever()
-            .HasMaxLength(64)
+            .HasMaxLength(256)
             .HasComment("Connector Host credential capability identifier.");
         builder.Property(x => x.ConnectorHostCredentialId)
             .HasConversion(x => x.Id, x => new ConnectorHostCredentialId(x))

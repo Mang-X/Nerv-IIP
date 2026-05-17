@@ -38,7 +38,7 @@ public sealed class RolePermissionEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.Id)
             .HasConversion(x => x.Id, x => new RolePermissionId(x))
             .ValueGeneratedNever()
-            .HasMaxLength(64)
+            .HasMaxLength(256)
             .HasComment("Role permission identifier.");
         builder.Property(x => x.RoleId)
             .HasConversion(x => x.Id, x => new RoleId(x))
