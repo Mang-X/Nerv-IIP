@@ -18,6 +18,86 @@ describe('getApiBaseUrl', () => {
 })
 
 describe('configureApiClient', () => {
+  it('does not send static headers from a previous configuration when later config omits headers', async () => {
+    const requests: Request[] = []
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      requests.push(request)
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      })
+    })
+
+    configureApiClient({
+      baseUrl: 'https://gateway.example.test',
+      fetch,
+      headers: { 'X-Org': 'org-a' },
+    })
+    configureApiClient({
+      baseUrl: 'https://gateway.example.test',
+      fetch,
+    })
+
+    await client.get({ url: '/secure' })
+
+    expect(requests[0]?.headers.has('X-Org')).toBe(false)
+  })
+
+  it('preserves per-request headers matching a previous static header name', async () => {
+    const requests: Request[] = []
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      requests.push(request)
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      })
+    })
+
+    configureApiClient({
+      baseUrl: 'https://gateway.example.test',
+      fetch,
+      headers: { 'X-Org': 'org-a' },
+    })
+    configureApiClient({
+      baseUrl: 'https://gateway.example.test',
+      fetch,
+    })
+
+    await client.get({
+      headers: { 'X-Org': 'org-b' },
+      url: '/secure',
+    })
+
+    expect(requests[0]?.headers.get('X-Org')).toBe('org-b')
+  })
+
+  it('lets per-request headers override current static headers', async () => {
+    const requests: Request[] = []
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      requests.push(request)
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      })
+    })
+
+    configureApiClient({
+      baseUrl: 'https://gateway.example.test',
+      fetch,
+      headers: { 'X-Org': 'org-a' },
+    })
+
+    await client.get({
+      headers: { 'X-Org': 'org-b' },
+      url: '/secure',
+    })
+
+    expect(requests[0]?.headers.get('X-Org')).toBe('org-b')
+  })
+
   it('injects a bearer token from configured provider', async () => {
     const requests: Request[] = []
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

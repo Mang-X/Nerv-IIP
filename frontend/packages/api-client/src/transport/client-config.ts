@@ -11,6 +11,7 @@ export interface ConfigureApiClientOptions {
 
 let requestInterceptorId: number | undefined
 let responseInterceptorId: number | undefined
+let managedHeaderNames = new Set<string>()
 
 export function configureApiClient(options: ConfigureApiClientOptions = {}): void {
   if (requestInterceptorId !== undefined) {
@@ -23,14 +24,24 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
     responseInterceptorId = undefined
   }
 
+  const configuredHeaders = new Headers(options.headers)
+  const headerConfig: Record<string, string | null> = Object.fromEntries(
+    [...managedHeaderNames].map((headerName) => [headerName, null]),
+  )
+  configuredHeaders.forEach((value, headerName) => {
+    headerConfig[headerName] = value
+  })
+  managedHeaderNames = new Set(configuredHeaders.keys())
+
   client.setConfig({
     baseUrl: options.baseUrl ?? getApiBaseUrl(),
     fetch: options.fetch,
-    headers: options.headers,
+    headers: headerConfig as unknown as HeadersInit,
   })
 
   requestInterceptorId = client.interceptors.request.use((request) => {
     const headers = new Headers(request.headers)
+
     const token = options.accessTokenProvider?.()
 
     if (token) {
