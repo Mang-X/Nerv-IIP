@@ -3,6 +3,7 @@ using FastEndpoints.Swagger;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Observability;
 using Nerv.IIP.PlatformGateway.Web;
+using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
@@ -27,6 +28,10 @@ builder.Services.AddHttpClient<IAppHubClient, HttpAppHubClient>(client =>
 builder.Services.AddHttpClient<IGatewayOpsClient, GatewayOpsClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Ops:BaseUrl"] ?? "http://localhost:5105");
+});
+builder.Services.AddHttpClient<IGatewayAuthorizationClient, HttpGatewayAuthorizationClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5104");
 });
 
 var app = builder.Build();

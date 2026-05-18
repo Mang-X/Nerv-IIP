@@ -2,6 +2,7 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.AppHubQueries;
+using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
 
@@ -16,10 +17,28 @@ public sealed class ListInstancesRequest
 
 [HttpGet("/api/console/v1/instances")]
 [AllowAnonymous]
-public sealed class ListInstancesEndpoint(IAppHubClient appHub, IAppCache cache) : Endpoint<ListInstancesRequest, InstanceListResponse>
+public sealed class ListInstancesEndpoint(
+    IAppHubClient appHub,
+    IAppCache cache,
+    IGatewayAuthorizationClient auth) : Endpoint<ListInstancesRequest, InstanceListResponse>
 {
     public override async Task HandleAsync(ListInstancesRequest req, CancellationToken ct)
     {
+        var principal = await GatewayAuthorization.RequireAsync(
+            HttpContext,
+            auth,
+            new GatewayPermissionRequirement(
+                GatewayPermissions.AppHubInstancesRead,
+                req.OrganizationId,
+                req.EnvironmentId,
+                "application-instance",
+                null),
+            ct);
+        if (principal is null)
+        {
+            return;
+        }
+
         var pageNumber = req.PageNumber is > 0 ? req.PageNumber.Value : 1;
         var pageSize = req.PageSize is > 0 ? req.PageSize.Value : 20;
         var query = new InstanceListQuery(req.OrganizationId, req.EnvironmentId, pageNumber, pageSize, req.Search);
@@ -46,10 +65,28 @@ public sealed class GetInstanceDetailRequest
 
 [HttpGet("/api/console/v1/instances/{instanceKey}")]
 [AllowAnonymous]
-public sealed class GetInstanceDetailEndpoint(IAppHubClient appHub, IAppCache cache) : Endpoint<GetInstanceDetailRequest, InstanceDetailResponse>
+public sealed class GetInstanceDetailEndpoint(
+    IAppHubClient appHub,
+    IAppCache cache,
+    IGatewayAuthorizationClient auth) : Endpoint<GetInstanceDetailRequest, InstanceDetailResponse>
 {
     public override async Task HandleAsync(GetInstanceDetailRequest req, CancellationToken ct)
     {
+        var principal = await GatewayAuthorization.RequireAsync(
+            HttpContext,
+            auth,
+            new GatewayPermissionRequirement(
+                GatewayPermissions.AppHubInstancesRead,
+                req.OrganizationId,
+                req.EnvironmentId,
+                "application-instance",
+                req.InstanceKey),
+            ct);
+        if (principal is null)
+        {
+            return;
+        }
+
         var key = NervIipCacheKeys.GatewayInstanceDetail(req.OrganizationId, req.EnvironmentId, req.InstanceKey);
 
         try

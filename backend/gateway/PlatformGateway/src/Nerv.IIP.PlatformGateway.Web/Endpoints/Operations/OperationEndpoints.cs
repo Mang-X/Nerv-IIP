@@ -1,6 +1,7 @@
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
@@ -9,17 +10,34 @@ public sealed record RestartInstanceRequest(string OrganizationId, string Enviro
 
 [HttpPost("/api/console/v1/instances/{instanceKey}/operations/restart")]
 [AllowAnonymous]
-public sealed class RestartInstanceEndpoint(IGatewayOpsClient opsClient) : Endpoint<RestartInstanceRequest, OperationTaskResponse>
+public sealed class RestartInstanceEndpoint(
+    IGatewayOpsClient opsClient,
+    IGatewayAuthorizationClient auth) : Endpoint<RestartInstanceRequest, OperationTaskResponse>
 {
     public override async Task HandleAsync(RestartInstanceRequest req, CancellationToken ct)
     {
+        var principal = await GatewayAuthorization.RequireAsync(
+            HttpContext,
+            auth,
+            new GatewayPermissionRequirement(
+                GatewayPermissions.OpsTasksCreate,
+                req.OrganizationId,
+                req.EnvironmentId,
+                "application-instance",
+                Route<string>("instanceKey")),
+            ct);
+        if (principal is null)
+        {
+            return;
+        }
+
         var operationRequest = new CreateOperationTaskRequest(
             req.OrganizationId,
             req.EnvironmentId,
             Route<string>("instanceKey")!,
             "lifecycle.restart",
             req.IdempotencyKey,
-            HttpContext.Request.Headers.TryGetValue("X-User-Id", out var userId) ? userId.ToString() : "local-admin",
+            principal.PrincipalId ?? "unknown",
             req.Reason,
             HttpContext.TraceIdentifier,
             new Dictionary<string, string>());
@@ -35,15 +53,39 @@ public sealed class RestartInstanceEndpoint(IGatewayOpsClient opsClient) : Endpo
     }
 }
 
+public sealed class GetConsoleOperationTaskRequest
+{
+    public string OperationTaskId { get; set; } = string.Empty;
+    public string OrganizationId { get; set; } = string.Empty;
+    public string EnvironmentId { get; set; } = string.Empty;
+}
+
 [HttpGet("/api/console/v1/operation-tasks/{operationTaskId}")]
 [AllowAnonymous]
-public sealed class GetConsoleOperationTaskEndpoint(IGatewayOpsClient opsClient) : EndpointWithoutRequest<OperationTaskResponse>
+public sealed class GetConsoleOperationTaskEndpoint(
+    IGatewayOpsClient opsClient,
+    IGatewayAuthorizationClient auth) : Endpoint<GetConsoleOperationTaskRequest, OperationTaskResponse>
 {
-    public override async Task HandleAsync(CancellationToken ct)
+    public override async Task HandleAsync(GetConsoleOperationTaskRequest req, CancellationToken ct)
     {
+        var principal = await GatewayAuthorization.RequireAsync(
+            HttpContext,
+            auth,
+            new GatewayPermissionRequirement(
+                GatewayPermissions.OpsTasksRead,
+                req.OrganizationId,
+                req.EnvironmentId,
+                "operation-task",
+                req.OperationTaskId),
+            ct);
+        if (principal is null)
+        {
+            return;
+        }
+
         try
         {
-            await HttpContext.Response.WriteAsJsonAsync(await opsClient.GetTaskAsync(Route<string>("operationTaskId")!, ct), ct);
+            await HttpContext.Response.WriteAsJsonAsync(await opsClient.GetTaskAsync(req.OperationTaskId, ct), ct);
         }
         catch (HttpRequestException ex)
         {

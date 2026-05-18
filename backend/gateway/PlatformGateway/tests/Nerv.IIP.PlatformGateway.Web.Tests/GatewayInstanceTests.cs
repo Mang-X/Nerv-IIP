@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.PlatformGateway.Web;
+using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
 
@@ -14,13 +15,17 @@ public sealed class GatewayInstanceTests
     public async Task Instance_endpoints_map_query_cache_detail_and_do_not_reference_apphub_implementation()
     {
         var fake = new FakeAppHubClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IAppHubClient>();
                 services.AddSingleton<IAppHubClient>(fake);
+                services.RemoveAll<IGatewayAuthorizationClient>();
+                services.AddSingleton<IGatewayAuthorizationClient>(auth);
             }));
         var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-token");
 
         var list = await client.GetFromJsonAsync<InstanceListResponse>("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageNumber=1&pageSize=20&search=demo");
         var detail = await client.GetFromJsonAsync<InstanceDetailResponse>("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
@@ -30,6 +35,9 @@ public sealed class GatewayInstanceTests
         var refreshed = await client.GetFromJsonAsync<InstanceDetailResponse>("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(new InstanceListQuery("org-001", "env-dev", 1, 20, "demo"), fake.LastQuery);
+        Assert.Equal(GatewayPermissions.AppHubInstancesRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
         Assert.Equal("demo-api-001", detail!.InstanceKey);
         Assert.Equal("running", cached!.ReportedStatus);
         Assert.Equal("stopped", refreshed!.ReportedStatus);
@@ -41,14 +49,19 @@ public sealed class GatewayInstanceTests
     [Fact]
     public async Task Instance_endpoint_returns_diagnostic_failure_when_apphub_is_unavailable()
     {
+        var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IAppHubClient>();
                 services.AddSingleton<IAppHubClient>(new FailingAppHubClient());
+                services.RemoveAll<IGatewayAuthorizationClient>();
+                services.AddSingleton<IGatewayAuthorizationClient>(auth);
             }));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-token");
 
-        var response = await factory.CreateClient().GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageNumber=1&pageSize=20");
+        var response = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageNumber=1&pageSize=20");
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.Contains("AppHub unavailable", await response.Content.ReadAsStringAsync());
