@@ -2,7 +2,7 @@
 
 Nerv-IIP 是一个从 0 到 1 规划的原生 AI 应用管理平台，可面向多类行业和应用场景扩展。核心目标不是先做复杂业务系统，而是先建立一个稳定的控制面与应用管理底座，使平台能够统一管理身份权限、文件存储与对外受控访问能力，并接入、发现、观测、控制和治理真实运行中的应用实例。
 
-当前仓库以文档优先方式启动，并已经从首批架构冻结推进到第一、第二、第三阶段纵切实现、第四阶段真实基础设施门禁、第五阶段迁移发布底座、第六阶段 schema governance hardening 和第七阶段 IAM 持久化认证底座：第一阶段验证 Connector Host 接入、AppHub 状态沉淀与 Gateway 查询，第二阶段验证低风险运维动作创建、派发、执行、结果回传与审计记录，第三阶段验证 Gateway OpenAPI、类型安全前端 API client 与 Vue 控制台工作区，第四阶段把 AppHub/Ops 迁移到 netcorepal/CleanDDD、PostgreSQL profile、结构化日志和平台级 Aspire AppHost，第五阶段把 AppHub/Ops 的 PostgreSQL 路径从 `EnsureCreated()` 推进到 migration-based 验证，第六阶段固化 AppHub/Ops schema metadata 和 convention tests，第七阶段为 IAM 增加 PostgreSQL profile 下的持久化登录、refresh rotation、session revoke 和 Connector Host credential validation 基线。
+当前仓库以文档优先方式启动，并已经从首批架构冻结推进到第一、第二、第三阶段纵切实现、第四阶段真实基础设施门禁、第五阶段迁移发布底座、第六阶段 schema governance hardening、第七阶段 IAM 持久化认证底座和现有 Console API 的 Gateway-wide permission enforcement：第一阶段验证 Connector Host 接入、AppHub 状态沉淀与 Gateway 查询，第二阶段验证低风险运维动作创建、派发、执行、结果回传与审计记录，第三阶段验证 Gateway OpenAPI、类型安全前端 API client 与 Vue 控制台工作区，第四阶段把 AppHub/Ops 迁移到 netcorepal/CleanDDD、PostgreSQL profile、结构化日志和平台级 Aspire AppHost，第五阶段把 AppHub/Ops 的 PostgreSQL 路径从 `EnsureCreated()` 推进到 migration-based 验证，第六阶段固化 AppHub/Ops schema metadata 和 convention tests，第七阶段为 IAM 增加 PostgreSQL profile 下的持久化登录、refresh rotation、session revoke 和 Connector Host credential validation 基线；Gateway 现有 Console 接口现在会把 bearer token 和 permission/context 转发给 IAM internal authorization check。
 
 ## 项目目标
 
@@ -198,7 +198,7 @@ Nerv-IIP/
 
 第六阶段 Schema Governance & Migration Hardening 已完成 AppHub/Ops 的表注释、JSON 兼容注释、migrations history schema 和 schema convention tests 门禁固化；IAM 已在第七阶段沿用同一 helper 与 catalog 口径，FileStorage 等后续持久化服务开工前必须继续沿用。
 
-第七阶段 IAM Persistent Auth Foundation 已落地：IAM 在保留 InMemory profile 的同时新增 PostgreSQL iam schema、EF migrations、schema convention tests、idempotent seed、JWT access token、refresh token rotation、session revoke 和 Connector Host credential validation 的持久化后端基线。
+第七阶段 IAM Persistent Auth Foundation 已落地：IAM 在保留 InMemory profile 的同时新增 PostgreSQL iam schema、EF migrations、schema convention tests、idempotent seed、JWT access token、refresh token rotation、session revoke 和 Connector Host credential validation 的持久化后端基线。现有 PlatformGateway Console API 已接入 IAM-backed permission enforcement，覆盖实例列表、实例详情、restart 运维任务创建和 operation task detail 查询；Gateway 不直接引用 IAM Domain 或 Infrastructure。
 
 脚本自动化治理已冻结到 ADR 0010 和 docs/architecture/script-automation-governance.md。现有验证脚本会按迁移清单逐步接入共享 helper 和静态门禁；新增或修改脚本必须声明分类、副作用、写入路径、清理策略和诊断输出。
 
@@ -215,7 +215,7 @@ pnpm -C frontend build
 
 下一阶段重点：
 
-1. 在 IAM 持久化登录基线之上补齐 Gateway-wide auth/permission enforcement、Console 登录 UI、OAuth/OIDC、SSO、MFA、ABAC 和外部应用授权演进。
+1. 在 IAM 持久化登录和 Gateway 权限门禁基线之上补齐 Console 登录 UI、OAuth/OIDC、SSO、MFA、ABAC 和外部应用授权演进。
 2. 补齐 PostgreSQL profile 的备份、恢复、seed、初始化脚本和后续安装包迁移入口。
 3. 在 FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引等新增持久化服务首个 migration 前复用 AppHub/Ops/IAM 的 schema convention tests、catalog 草案和 service-schema migrations history 配置。
 4. 扩展 Ops 的审批、权限、通知和持久化 outbox，逐步覆盖更高风险动作。

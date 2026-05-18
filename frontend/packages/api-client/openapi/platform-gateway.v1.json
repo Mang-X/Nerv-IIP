@@ -68,6 +68,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -350,6 +366,10 @@
             "type": "string"
           }
         }
+      },
+      "NervIIPPlatformGatewayWebEndpointsOperationsGetConsoleOperationTaskRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NervIIPContractsAppHubQueriesInstanceListResponse": {
         "type": "object",

@@ -64,7 +64,7 @@ docs/architecture/
 - Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj`
 - Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Nerv.IIP.Iam.Web.csproj`
 
-- [ ] **Step 1: Create the contract project**
+- [x] **Step 1: Create the contract project**
 
 Run:
 
@@ -77,7 +77,7 @@ dotnet add backend/services/Iam/src/Nerv.IIP.Iam.Web/Nerv.IIP.Iam.Web.csproj ref
 
 Expected: commands exit `0` and no service Domain or Infrastructure reference is introduced into PlatformGateway.
 
-- [ ] **Step 2: Replace the generated class with authorization DTOs**
+- [x] **Step 2: Replace the generated class with authorization DTOs**
 
 Create `backend/common/Contracts/Nerv.IIP.Contracts.Iam/AuthorizationContracts.cs`:
 
@@ -101,7 +101,7 @@ public sealed record AuthorizationCheckResponse(
 
 Delete the template `Class1.cs` if it exists.
 
-- [ ] **Step 3: Build the contract project**
+- [x] **Step 3: Build the contract project**
 
 Run:
 
@@ -111,7 +111,7 @@ dotnet build backend/common/Contracts/Nerv.IIP.Contracts.Iam/Nerv.IIP.Contracts.
 
 Expected: build exits `0`.
 
-- [ ] **Step 4: Commit the shared contract**
+- [x] **Step 4: Commit the shared contract**
 
 Run:
 
@@ -131,7 +131,7 @@ git commit -m "feat: add iam authorization check contract"
 - Create: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Authorization/AuthorizationCheckEndpoint.cs`
 - Create: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamAuthorizationCheckEndpointTests.cs`
 
-- [ ] **Step 1: Write failing IAM endpoint tests**
+- [x] **Step 1: Write failing IAM endpoint tests**
 
 Create `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamAuthorizationCheckEndpointTests.cs`:
 
@@ -197,7 +197,7 @@ public sealed class IamAuthorizationCheckEndpointTests
 
 If the local seed password is configured differently in tests, use the same test fixture pattern already used by `IamPostgresProfileTests` to set `Iam:Seed:AdminPassword=admin` and seed InMemory.
 
-- [ ] **Step 2: Run the new tests and confirm red state**
+- [x] **Step 2: Run the new tests and confirm red state**
 
 Run:
 
@@ -207,7 +207,7 @@ dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.T
 
 Expected: FAIL because `/internal/iam/v1/authorization/check` does not exist yet.
 
-- [ ] **Step 3: Add organization/environment scoped permission check**
+- [x] **Step 3: Add organization/environment scoped permission check**
 
 In `IamAuthService.cs`, keep the existing `UserHasPermissionAsync(string userId, string permissionCode, ...)` overload for current IAM management endpoints and add:
 
@@ -241,7 +241,7 @@ public async Task<bool> UserHasPermissionAsync(
 
 Add `using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;` and `using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;` if the file does not already compile.
 
-- [ ] **Step 4: Add the internal endpoint**
+- [x] **Step 4: Add the internal endpoint**
 
 Create `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Authorization/AuthorizationCheckEndpoint.cs`:
 
@@ -290,7 +290,7 @@ public sealed class AuthorizationCheckEndpoint(IamAuthService auth) : Endpoint<A
 }
 ```
 
-- [ ] **Step 5: Run IAM authorization tests**
+- [x] **Step 5: Run IAM authorization tests**
 
 Run:
 
@@ -300,7 +300,7 @@ dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.T
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit IAM authorization check endpoint**
+- [x] **Step 6: Commit IAM authorization check endpoint**
 
 Run:
 
@@ -320,7 +320,7 @@ git commit -m "feat: add iam authorization check endpoint"
 - Create: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/Auth/GatewayAuthorizationClient.cs`
 - Create: `backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayAuthorizationTests.cs`
 
-- [ ] **Step 1: Write failing Gateway authorization tests**
+- [x] **Step 1: Write failing Gateway authorization tests**
 
 Create `GatewayAuthorizationTests.cs` with a fake authorization client:
 
@@ -392,7 +392,7 @@ internal sealed class FakeGatewayAuthorizationClient(bool allowed) : IGatewayAut
 }
 ```
 
-- [ ] **Step 2: Run Gateway authorization tests and confirm red state**
+- [x] **Step 2: Run Gateway authorization tests and confirm red state**
 
 Run:
 
@@ -402,7 +402,7 @@ dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.T
 
 Expected: FAIL because Gateway has no `IGatewayAuthorizationClient` or permission helper.
 
-- [ ] **Step 3: Add Gateway authorization models and helper**
+- [x] **Step 3: Add Gateway authorization models and helper**
 
 Create `Application/Auth/GatewayAuthorization.cs`:
 
@@ -474,7 +474,7 @@ public static class GatewayAuthorization
 }
 ```
 
-- [ ] **Step 4: Add the IAM-backed Gateway client**
+- [x] **Step 4: Add the IAM-backed Gateway client**
 
 Create `Application/Auth/GatewayAuthorizationClient.cs`:
 
@@ -530,7 +530,7 @@ builder.Services.AddHttpClient<IGatewayAuthorizationClient, HttpGatewayAuthoriza
 });
 ```
 
-- [ ] **Step 5: Run Gateway authorization tests**
+- [x] **Step 5: Run Gateway authorization tests**
 
 Run:
 
@@ -549,7 +549,7 @@ Expected: tests still fail until endpoints call `GatewayAuthorization.RequireAsy
 - Modify: `backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayInstanceTests.cs`
 - Modify: `backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayOperationTests.cs`
 
-- [ ] **Step 1: Inject authorization client into instance endpoints**
+- [x] **Step 1: Inject authorization client into instance endpoints**
 
 Change constructors to include `IGatewayAuthorizationClient auth` and add the guard at the start of each handler:
 
@@ -572,7 +572,7 @@ if (principal is null)
 
 For list, pass `ResourceId: null`. Keep AppHub calls behind the guard.
 
-- [ ] **Step 2: Inject authorization client into operation endpoints**
+- [x] **Step 2: Inject authorization client into operation endpoints**
 
 For restart:
 
@@ -597,7 +597,7 @@ Use `principal.PrincipalId ?? "unknown"` as `requestedBy` instead of `X-User-Id`
 
 For operation detail, require `GatewayPermissions.OpsTasksRead`. If the current route lacks organization/environment, add `OrganizationId` and `EnvironmentId` query parameters to the request type before authorizing.
 
-- [ ] **Step 3: Update existing Gateway tests to include authorization**
+- [x] **Step 3: Update existing Gateway tests to include authorization**
 
 In existing Gateway tests, register `FakeGatewayAuthorizationClient.Allowed()` and send `Authorization: Bearer test-token` before calling protected endpoints:
 
@@ -610,7 +610,7 @@ services.AddSingleton<IGatewayAuthorizationClient>(FakeGatewayAuthorizationClien
 client.DefaultRequestHeaders.Authorization = new("Bearer", "test-token");
 ```
 
-- [ ] **Step 4: Assert permission mapping and no downstream calls on denied requests**
+- [x] **Step 4: Assert permission mapping and no downstream calls on denied requests**
 
 Add assertions in Gateway tests:
 
@@ -634,7 +634,7 @@ For operation detail:
 Assert.Equal("ops.tasks.read", auth.LastRequirement!.PermissionCode);
 ```
 
-- [ ] **Step 5: Run Gateway tests**
+- [x] **Step 5: Run Gateway tests**
 
 Run:
 
@@ -644,7 +644,7 @@ dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.T
 
 Expected: all Gateway tests pass.
 
-- [ ] **Step 6: Commit Gateway enforcement**
+- [x] **Step 6: Commit Gateway enforcement**
 
 Run:
 
@@ -662,7 +662,7 @@ git commit -m "feat: enforce gateway console permissions"
 - Modify if generated: `frontend/packages/api-client/src/generated/**`
 - Modify if generated: `frontend/apps/console/typed-router.d.ts`
 
-- [ ] **Step 1: Run Gateway OpenAPI tests**
+- [x] **Step 1: Run Gateway OpenAPI tests**
 
 Run:
 
@@ -672,7 +672,7 @@ dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.T
 
 Expected: stable operation IDs remain `listConsoleInstances`, `getConsoleInstanceDetail`, `restartConsoleInstance`, `getConsoleOperationTask`.
 
-- [ ] **Step 2: Run third-stage console verification**
+- [x] **Step 2: Run third-stage console verification**
 
 Run:
 
@@ -682,7 +682,7 @@ pwsh scripts/verify-third-slice-console.ps1
 
 Expected: final output says `Third vertical slice console verified.` Any generated OpenAPI/api-client diff must be inspected and staged only if the Gateway contract actually changed.
 
-- [ ] **Step 3: Commit mechanical OpenAPI/client updates only if present**
+- [x] **Step 3: Commit mechanical OpenAPI/client updates only if present**
 
 If `git status --short frontend/packages/api-client frontend/apps/console/typed-router.d.ts` is clean, skip this step. Otherwise:
 
@@ -701,7 +701,7 @@ git commit -m "chore: regenerate gateway console client"
 - Modify: `docs/architecture/implementation-readiness.md`
 - Modify if needed: `docs/architecture/api-contract-and-codegen.md`
 
-- [ ] **Step 1: Update IAM baseline**
+- [x] **Step 1: Update IAM baseline**
 
 Add to `docs/architecture/iam-authentication-baseline.md` current implementation status:
 
@@ -709,11 +709,11 @@ Add to `docs/architecture/iam-authentication-baseline.md` current implementation
 Gateway-wide permission enforcement now routes existing console APIs through IAM's internal authorization check endpoint. Gateway does not read IAM persistence directly; it forwards the caller bearer token and required permission/context, and IAM validates session, security stamp, permission version, organization, environment and permission code from IAM-owned facts.
 ```
 
-- [ ] **Step 2: Update implementation readiness**
+- [x] **Step 2: Update implementation readiness**
 
 Change the "Gateway 全面鉴权..." sentence under the seventh iteration section from future work to completed scope for existing console endpoints, while keeping Console login UI and OAuth/OIDC/SSO/MFA/ABAC as future work.
 
-- [ ] **Step 3: Run final verification**
+- [x] **Step 3: Run final verification**
 
 Run:
 
@@ -727,7 +727,7 @@ git diff --check
 
 Expected: every command exits `0`. `git diff --check` may print CRLF warnings but must not report whitespace errors.
 
-- [ ] **Step 4: Commit documentation**
+- [x] **Step 4: Commit documentation**
 
 Run:
 

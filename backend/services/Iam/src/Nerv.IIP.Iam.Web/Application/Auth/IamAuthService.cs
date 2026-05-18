@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
@@ -102,13 +104,13 @@ public sealed class IamAuthService(
 
     public async Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext httpContext, CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
         var principal = tokenService.TryReadPrincipal(httpContext);
         if (principal is null)
         {
             return null;
         }
 
+        var dbContext = GetDbContext();
         var now = DateTimeOffset.UtcNow;
         var sessionId = new UserSessionId(principal.SessionId);
         var userId = new UserId(principal.UserId);
@@ -143,6 +145,32 @@ public sealed class IamAuthService(
             join role in dbContext.Roles on membershipRole.RoleId equals role.Id
             join rolePermission in dbContext.RolePermissions on role.Id equals rolePermission.RoleId
             where membership.UserId == userIdValue
+                && role.Deleted == NotDeleted
+                && rolePermission.PermissionCode == permissionCode
+            select rolePermission.Id)
+            .AnyAsync(cancellationToken);
+    }
+
+    public async Task<bool> UserHasPermissionAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        CancellationToken cancellationToken)
+    {
+        var dbContext = GetDbContext();
+        var userIdValue = new UserId(userId);
+        var organizationIdValue = new OrganizationId(organizationId);
+        var environmentIdValue = new IamEnvironmentId(environmentId);
+
+        return await (
+            from membership in dbContext.Memberships
+            join membershipRole in dbContext.MembershipRoles on membership.Id equals membershipRole.MembershipId
+            join role in dbContext.Roles on membershipRole.RoleId equals role.Id
+            join rolePermission in dbContext.RolePermissions on role.Id equals rolePermission.RoleId
+            where membership.UserId == userIdValue
+                && membership.OrganizationId == organizationIdValue
+                && membership.EnvironmentId == environmentIdValue
                 && role.Deleted == NotDeleted
                 && rolePermission.PermissionCode == permissionCode
             select rolePermission.Id)

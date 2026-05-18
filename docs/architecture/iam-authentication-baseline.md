@@ -10,7 +10,9 @@
 
 ## 当前实现状态
 
-IAM Persistent Auth Foundation 已覆盖后端持久化登录基线：PostgreSQL iam schema、初始 admin seed、JWT access token、refresh token hash + rotation、session revoke、/me 和 Connector Host credential validation。PostgreSQL profile 下 IAM 管理端点会先执行 bearer + permission 检查：用户读需要 `iam.users.read`，用户写占位入口需要 `iam.users.manage`，角色读需要 `iam.roles.read`，角色写占位入口需要 `iam.roles.manage`，会话读/撤销分别需要 `iam.sessions.read` 和 `iam.sessions.revoke`。用户/角色写管理仍未产品化，授权通过后返回 501。Gateway-wide permission enforcement、Console 登录 UI、OAuth/OIDC、SSO、MFA 和复杂 ABAC 不属于本阶段。
+IAM Persistent Auth Foundation 已覆盖后端持久化登录基线：PostgreSQL iam schema、初始 admin seed、JWT access token、refresh token hash + rotation、session revoke、/me 和 Connector Host credential validation。PostgreSQL profile 下 IAM 管理端点会先执行 bearer + permission 检查：用户读需要 `iam.users.read`，用户写占位入口需要 `iam.users.manage`，角色读需要 `iam.roles.read`，角色写占位入口需要 `iam.roles.manage`，会话读/撤销分别需要 `iam.sessions.read` 和 `iam.sessions.revoke`。用户/角色写管理仍未产品化，授权通过后返回 501。
+
+Gateway-wide permission enforcement 已覆盖现有 Console API：PlatformGateway 不直接读取 IAM persistence，而是把调用方 bearer token 和所需 permission/context 转发给 IAM 的 internal authorization check endpoint，由 IAM 基于 session、security stamp、permission version、organization、environment 和 permission code 判断是否放行。当前已保护实例列表、实例详情、restart 运维任务创建和 operation task detail 查询。Console 登录 UI、OAuth/OIDC、SSO、MFA 和复杂 ABAC 仍属于后续阶段。
 
 ## 决策
 
