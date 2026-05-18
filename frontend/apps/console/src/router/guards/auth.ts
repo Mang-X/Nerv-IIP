@@ -1,5 +1,6 @@
 import { useAuthStore } from '@/stores/auth'
 import type { Router } from 'vue-router'
+import { sanitizeRedirectPath } from '../redirects'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -27,8 +28,7 @@ export function installAuthGuard(router: Router) {
     }
 
     if (to.meta.guestOnly && auth.isAuthenticated) {
-      const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : '/'
-      return redirect
+      return sanitizeRedirectPath(to.query.redirect)
     }
 
     return true

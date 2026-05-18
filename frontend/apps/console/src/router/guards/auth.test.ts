@@ -51,4 +51,19 @@ describe('auth route guard', () => {
 
     expect(router.currentRoute.value.path).toBe('/')
   })
+
+  it('sanitizes guest redirect targets', async () => {
+    const router = createGuardedRouter()
+    const auth = useAuthStore()
+    auth.$patch({
+      accessToken: 'access-token',
+      principal: {
+        principalId: 'user-admin',
+      },
+    })
+
+    await router.push('/login?redirect=//evil.test/x')
+
+    expect(router.currentRoute.value.path).toBe('/')
+  })
 })

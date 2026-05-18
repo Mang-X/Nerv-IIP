@@ -1,13 +1,38 @@
 <script setup lang="ts">
+import {
+  Avatar,
+  AvatarFallback,
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@nerv-iip/ui'
+import { LogOutIcon } from 'lucide-vue-next'
+import { computed } from 'vue'
+
 interface NavItem {
   href: string
   label: string
 }
 
-defineProps<{
+const props = defineProps<{
   navItems: NavItem[]
   title: string
+  user?: {
+    email?: string
+    loginName: string
+  }
 }>()
+
+const emit = defineEmits<{
+  signOut: []
+}>()
+
+const userInitials = computed(() => props.user?.loginName.slice(0, 2).toUpperCase() ?? 'U')
 </script>
 
 <template>
@@ -25,48 +50,79 @@ defineProps<{
       </nav>
     </aside>
 
-    <main class="app-shell__main">
-      <slot />
-    </main>
+    <div class="app-shell__workspace">
+      <header class="app-shell__topbar">
+        <DropdownMenu v-if="user">
+          <DropdownMenuTrigger as-child>
+            <Button class="app-shell__user-button" variant="ghost">
+              <Avatar class="app-shell__avatar">
+                <AvatarFallback>{{ userInitials }}</AvatarFallback>
+              </Avatar>
+              <span class="app-shell__user-name">{{ user.loginName }}</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>
+              <span>{{ user.loginName }}</span>
+              <span v-if="user.email" class="app-shell__user-email">{{ user.email }}</span>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem @select="emit('signOut')">
+                <LogOutIcon data-icon />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </header>
+
+      <main class="app-shell__main">
+        <slot />
+      </main>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .app-shell {
-  background: #f6f8fb;
-  color: #0f172a;
+  background: var(--background);
+  color: var(--foreground);
   display: grid;
   grid-template-columns: 17rem minmax(0, 1fr);
   min-height: 100vh;
 }
 
 .app-shell__sidebar {
-  background: #111827;
-  border-right: 1px solid #1f2937;
-  color: #f8fafc;
+  background: var(--sidebar);
+  border-right: 1px solid var(--sidebar-border);
+  color: var(--sidebar-foreground);
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
   padding: 1.25rem;
 }
 
+.app-shell__brand,
+.app-shell__nav-link {
+  color: inherit;
+  text-decoration: none;
+}
+
 .app-shell__brand {
   align-items: center;
-  color: inherit;
   display: flex;
   gap: 0.75rem;
   min-width: 0;
-  text-decoration: none;
 }
 
 .app-shell__brand-mark {
   align-items: center;
-  background: #38bdf8;
-  border-radius: 0.5rem;
-  color: #082f49;
+  background: var(--primary);
+  border-radius: var(--radius-sm);
+  color: var(--primary-foreground);
   display: inline-flex;
   flex: 0 0 auto;
-  font-size: 1rem;
   font-weight: 800;
   height: 2.25rem;
   justify-content: center;
@@ -75,7 +131,6 @@ defineProps<{
 }
 
 .app-shell__brand-text {
-  font-size: 1rem;
   font-weight: 800;
   letter-spacing: 0;
   overflow: hidden;
@@ -89,14 +144,13 @@ defineProps<{
 }
 
 .app-shell__nav-link {
-  border-radius: 0.5rem;
-  color: #cbd5e1;
+  border-radius: var(--radius-sm);
+  color: color-mix(in oklab, var(--sidebar-foreground) 78%, transparent);
   display: block;
   font-size: 0.925rem;
   font-weight: 650;
   line-height: 1.35;
   padding: 0.65rem 0.75rem;
-  text-decoration: none;
   transition:
     background-color 150ms ease,
     color 150ms ease;
@@ -104,14 +158,50 @@ defineProps<{
 
 .app-shell__nav-link:hover,
 .app-shell__nav-link:focus-visible {
-  background: #1f2937;
-  color: #ffffff;
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
   outline: none;
+}
+
+.app-shell__workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
+.app-shell__topbar {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  min-height: 4rem;
+  padding: 0.75rem 1.5rem;
+}
+
+.app-shell__user-button {
+  max-width: min(18rem, 100%);
+}
+
+.app-shell__avatar {
+  flex: 0 0 auto;
+}
+
+.app-shell__user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-shell__main {
   min-width: 0;
   padding: 1.5rem;
+}
+
+.app-shell__user-email {
+  color: var(--muted-foreground);
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
 }
 
 @media (max-width: 760px) {
@@ -120,7 +210,7 @@ defineProps<{
   }
 
   .app-shell__sidebar {
-    border-bottom: 1px solid #1f2937;
+    border-bottom: 1px solid var(--sidebar-border);
     border-right: 0;
     gap: 1rem;
     padding: 1rem;
@@ -138,6 +228,7 @@ defineProps<{
     white-space: nowrap;
   }
 
+  .app-shell__topbar,
   .app-shell__main {
     padding: 1rem;
   }

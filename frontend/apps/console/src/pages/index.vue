@@ -5,6 +5,13 @@ import { useConsoleInstances, useRestartOperation } from '@/composables/useConso
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { computed } from 'vue'
 
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: 'Instances',
+  },
+})
+
 const {
   detail,
   detailPending,

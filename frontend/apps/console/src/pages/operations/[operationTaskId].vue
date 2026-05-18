@@ -5,6 +5,13 @@ import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: 'Operation task',
+  },
+})
+
 const route = useRoute('/operations/[operationTaskId]')
 const operationTaskId = computed(() => String(route.params.operationTaskId ?? ''))
 
