@@ -127,6 +127,10 @@ export function useOperationTask(operationTaskId: MaybeRefOrGetter<string>) {
         path: {
           operationTaskId: id,
         },
+        query: {
+          organizationId: ORGANIZATION_ID,
+          environmentId: ENVIRONMENT_ID,
+        },
       } as Parameters<typeof getConsoleOperationTaskQueryOptions>[0]),
       autoRefetch: 1000,
       enabled: id.length > 0,

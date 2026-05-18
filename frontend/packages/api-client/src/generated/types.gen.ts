@@ -42,6 +42,10 @@ export type NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest =
     idempotencyKey?: string;
 };
 
+export type NervIipPlatformGatewayWebEndpointsOperationsGetConsoleOperationTaskRequest = {
+    [key: string]: never;
+};
+
 export type NervIipContractsAppHubQueriesInstanceListResponse = {
     pageNumber?: number;
     pageSize?: number;
@@ -119,7 +123,10 @@ export type GetConsoleOperationTaskData = {
     path: {
         operationTaskId: string;
     };
-    query?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
     url: '/api/console/v1/operation-tasks/{operationTaskId}';
 };
 
