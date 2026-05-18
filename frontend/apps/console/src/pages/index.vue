@@ -74,25 +74,25 @@ async function handleRestart(instanceKey: string) {
 .console-page__notice,
 .console-page__error,
 .console-page__operation-link {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--legacy-color-surface);
+  border: 1px solid var(--legacy-color-border);
   border-radius: 0.5rem;
   margin: 0;
   padding: 0.75rem 0.9rem;
 }
 
 .console-page__notice {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
 }
 
 .console-page__error {
   border-color: #fecaca;
-  color: var(--color-danger);
+  color: var(--legacy-color-danger);
   font-weight: 700;
 }
 
 .console-page__operation-link {
-  color: var(--color-accent);
+  color: var(--legacy-color-accent);
   font-weight: 800;
   text-decoration: none;
 }

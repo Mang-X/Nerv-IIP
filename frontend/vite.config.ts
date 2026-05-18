@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import Vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite-plus'
 
@@ -13,7 +14,7 @@ export default defineConfig({
       'packages/api-client/src/generated/**',
     ],
   },
-  plugins: [Vue()],
+  plugins: [tailwindcss(), Vue()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./apps/console/src', import.meta.url)),
@@ -24,6 +25,7 @@ export default defineConfig({
         new URL('./packages/app-shell/src/index.ts', import.meta.url),
       ),
       '@nerv-iip/ui': fileURLToPath(new URL('./packages/ui/src/index.ts', import.meta.url)),
+      '@nerv-iip/ui/': fileURLToPath(new URL('./packages/ui/src/', import.meta.url)),
     },
   },
   test: {

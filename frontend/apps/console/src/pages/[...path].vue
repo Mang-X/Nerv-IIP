@@ -23,6 +23,6 @@ import DefaultLayout from '@/layouts/DefaultLayout.vue'
 
 .not-found-copy {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
 }
 </style>

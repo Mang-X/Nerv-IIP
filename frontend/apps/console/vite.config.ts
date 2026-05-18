@@ -1,10 +1,12 @@
 import { fileURLToPath, URL } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import Vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 import VueRouter from 'vue-router/vite'
 
 export default defineConfig({
   plugins: [
+    tailwindcss(),
     VueRouter({
       routesFolder: [
         {
@@ -32,6 +34,7 @@ export default defineConfig({
         new URL('../../packages/app-shell/src/index.ts', import.meta.url),
       ),
       '@nerv-iip/ui': fileURLToPath(new URL('../../packages/ui/src/index.ts', import.meta.url)),
+      '@nerv-iip/ui/': fileURLToPath(new URL('../../packages/ui/src/', import.meta.url)),
     },
   },
   server: {

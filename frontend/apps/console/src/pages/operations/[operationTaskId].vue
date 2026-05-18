@@ -28,7 +28,7 @@ const { operationError, operationPending, operationTask } = useOperationTask(ope
 }
 
 .operation-page__back {
-  color: var(--color-accent);
+  color: var(--legacy-color-accent);
   font-weight: 800;
   text-decoration: none;
   width: fit-content;
@@ -40,10 +40,10 @@ const { operationError, operationPending, operationTask } = useOperationTask(ope
 }
 
 .operation-page__error {
-  background: var(--color-surface);
+  background: var(--legacy-color-surface);
   border: 1px solid #fecaca;
   border-radius: 0.5rem;
-  color: var(--color-danger);
+  color: var(--legacy-color-danger);
   font-weight: 700;
   margin: 0;
   padding: 0.75rem 0.9rem;

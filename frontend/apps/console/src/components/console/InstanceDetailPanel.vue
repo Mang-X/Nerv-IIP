@@ -129,8 +129,8 @@ function capabilityKey(capability: Capability, index: number) {
 
 <style scoped>
 .detail-panel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--legacy-color-surface);
+  border: 1px solid var(--legacy-color-border);
   border-radius: 0.5rem;
   box-shadow: 0 10px 30px rgb(15 23 42 / 0.05);
   min-width: 0;
@@ -138,13 +138,13 @@ function capabilityKey(capability: Capability, index: number) {
 }
 
 .detail-panel__header {
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--legacy-color-border);
   margin: 0 -1.15rem 1rem;
   padding: 0 1.15rem 1rem;
 }
 
 .detail-panel__eyebrow {
-  color: var(--color-accent);
+  color: var(--legacy-color-accent);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -173,7 +173,7 @@ function capabilityKey(capability: Capability, index: number) {
 
 .detail-panel__fact dt,
 .detail-panel__metadata-row dt {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -187,7 +187,7 @@ function capabilityKey(capability: Capability, index: number) {
 }
 
 .detail-panel__section {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--legacy-color-border);
   margin-top: 1rem;
   padding-top: 1rem;
 }
@@ -226,7 +226,7 @@ function capabilityKey(capability: Capability, index: number) {
 }
 
 .detail-panel__muted {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
   margin: 0;
 }
 </style>

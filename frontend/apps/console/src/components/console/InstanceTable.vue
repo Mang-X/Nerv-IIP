@@ -134,8 +134,8 @@ function restartInstance(instance: InstanceListItem) {
 
 <style scoped>
 .instance-table {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--legacy-color-surface);
+  border: 1px solid var(--legacy-color-border);
   border-radius: 0.5rem;
   box-shadow: 0 10px 30px rgb(15 23 42 / 0.06);
   min-width: 0;
@@ -144,14 +144,14 @@ function restartInstance(instance: InstanceListItem) {
 
 .instance-table__header {
   align-items: center;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--legacy-color-border);
   display: flex;
   justify-content: space-between;
   padding: 1.15rem 1.25rem;
 }
 
 .instance-table__eyebrow {
-  color: var(--color-accent);
+  color: var(--legacy-color-accent);
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -166,7 +166,7 @@ function restartInstance(instance: InstanceListItem) {
 }
 
 .instance-table__count {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
   font-size: 0.85rem;
   font-weight: 700;
   white-space: nowrap;
@@ -191,7 +191,7 @@ function restartInstance(instance: InstanceListItem) {
 }
 
 .instance-table__table th {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
   font-size: 0.76rem;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -227,12 +227,12 @@ function restartInstance(instance: InstanceListItem) {
 }
 
 .instance-table__secondary {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
   font-size: 0.82rem;
 }
 
 .instance-table__empty {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
   margin: 0;
   padding: 1.25rem;
 }
