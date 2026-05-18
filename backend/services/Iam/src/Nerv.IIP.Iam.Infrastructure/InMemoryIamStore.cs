@@ -92,6 +92,25 @@ public sealed class InMemoryIamStore
         }
     }
 
+    public bool UserHasPermission(string userId, string organizationId, string environmentId, string permissionCode)
+    {
+        lock (_gate)
+        {
+            var membership = _memberships.SingleOrDefault(x =>
+                x.UserId == userId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId);
+            if (membership is null)
+            {
+                return false;
+            }
+
+            return _roles
+                .Where(x => membership.RoleIds.Contains(x.RoleId))
+                .Any(x => x.PermissionCodes.Contains(permissionCode));
+        }
+    }
+
     public IReadOnlyList<UserFact> Users => _users;
     public IReadOnlyList<RoleFact> Roles => _roles;
     public IReadOnlyList<UserSessionFact> Sessions => _sessions;
