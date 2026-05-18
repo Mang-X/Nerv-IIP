@@ -20,13 +20,9 @@ import type {
   NervIipPlatformGatewayWebApplicationAuthConsoleRefreshRequest,
 } from './generated/types.gen'
 
-export type ConsoleAuthResponse =
-  NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse
-export type ConsoleLoginRequest =
-  NervIipPlatformGatewayWebApplicationAuthConsoleLoginRequest
-export type ConsoleLogoutRequest =
-  NervIipPlatformGatewayWebApplicationAuthConsoleLogoutRequest
+export type ConsoleAuthResponse = NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse
+export type ConsoleLoginRequest = NervIipPlatformGatewayWebApplicationAuthConsoleLoginRequest
+export type ConsoleLogoutRequest = NervIipPlatformGatewayWebApplicationAuthConsoleLogoutRequest
 export type ConsolePrincipalResponse =
   NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse
-export type ConsoleRefreshRequest =
-  NervIipPlatformGatewayWebApplicationAuthConsoleRefreshRequest
+export type ConsoleRefreshRequest = NervIipPlatformGatewayWebApplicationAuthConsoleRefreshRequest
