@@ -65,9 +65,19 @@ public sealed class InMemoryIamStore
         lock (_gate)
         {
             var parts = Encoding.UTF8.GetString(Convert.FromBase64String(token)).Split('|');
-            if (parts.Length != 3)
+            if (parts.Length != 4)
             {
                 throw new UnauthorizedAccessException("Invalid access token.");
+            }
+
+            if (!long.TryParse(parts[3], out var expiresAtUnixTimeSeconds))
+            {
+                throw new UnauthorizedAccessException("Invalid access token.");
+            }
+
+            if (DateTimeOffset.FromUnixTimeSeconds(expiresAtUnixTimeSeconds) <= DateTimeOffset.UtcNow)
+            {
+                throw new UnauthorizedAccessException("Access token expired.");
             }
 
             var session = _sessions.SingleOrDefault(x => x.SessionId == parts[0] && x.RevokedAtUtc is null)
@@ -140,10 +150,13 @@ public sealed class InMemoryIamStore
     {
         var sessionId = Guid.NewGuid().ToString("n");
         var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-        var session = new UserSessionFact(sessionId, user.UserId, Hash(refreshToken), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(14), null, user.PermissionVersion);
+        var now = DateTimeOffset.UtcNow;
+        var expiresAtUtc = now.AddMinutes(15);
+        var session = new UserSessionFact(sessionId, user.UserId, Hash(refreshToken), now, now.AddDays(14), null, user.PermissionVersion);
         _sessions.Add(session);
-        var accessToken = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{sessionId}|{user.SecurityStamp}|{user.PermissionVersion}"));
-        return new AuthResult(accessToken, refreshToken, sessionId, DateTimeOffset.UtcNow.AddMinutes(15));
+        var accessToken = Convert.ToBase64String(Encoding.UTF8.GetBytes(
+            $"{sessionId}|{user.SecurityStamp}|{user.PermissionVersion}|{expiresAtUtc.ToUnixTimeSeconds()}"));
+        return new AuthResult(accessToken, refreshToken, sessionId, expiresAtUtc);
     }
 
     private void RevokeSession(string sessionId)

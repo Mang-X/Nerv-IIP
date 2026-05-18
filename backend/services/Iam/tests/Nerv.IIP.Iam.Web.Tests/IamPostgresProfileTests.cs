@@ -89,9 +89,6 @@ public sealed class IamPostgresProfileTests
             Assert.Equal("user-admin", principal!.UserId);
             Assert.Equal("admin", principal.LoginName);
             Assert.Equal("user", principal.PrincipalType);
-            Assert.Equal("user-admin", principal!.UserId);
-            Assert.Equal("admin", principal.LoginName);
-            Assert.Equal("user", principal.PrincipalType);
             Assert.Equal("org-001", principal.OrganizationId);
             Assert.Equal("env-dev", principal.EnvironmentId);
             Assert.Equal(1, principal.PermissionVersion);

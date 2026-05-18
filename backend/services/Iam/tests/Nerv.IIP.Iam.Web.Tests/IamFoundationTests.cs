@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Nerv.IIP.Iam.Infrastructure;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
@@ -56,6 +58,21 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
 
         var me = await _client.GetAsync("/api/iam/v1/me");
         Assert.Equal(HttpStatusCode.Unauthorized, me.StatusCode);
+    }
+
+    [Fact]
+    public void In_memory_access_token_validation_rejects_expired_token_payload()
+    {
+        var store = new InMemoryIamStore();
+        var auth = store.Login("admin", "Admin123!");
+        var user = Assert.Single(store.Users);
+        var expiredAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds();
+        var expiredToken = Convert.ToBase64String(Encoding.UTF8.GetBytes(
+            $"{auth.SessionId}|{user.SecurityStamp}|{user.PermissionVersion}|{expiredAtUtc}"));
+
+        var exception = Assert.Throws<UnauthorizedAccessException>(() => store.ValidateAccessToken(expiredToken));
+
+        Assert.Contains("expired", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
