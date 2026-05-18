@@ -18,7 +18,7 @@ else {
   pwsh scripts/verify-second-slice-ops.ps1
 }
 pwsh scripts/export-gateway-openapi.ps1
-pnpm -C frontend install --frozen-lockfile
+pnpm -C frontend install --frozen-lockfile --config.confirmModulesPurge=false
 pnpm -C frontend generate:api
 pnpm -C frontend typecheck
 pnpm -C frontend test

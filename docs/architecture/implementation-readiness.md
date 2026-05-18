@@ -38,7 +38,7 @@
 6. 平台领域服务优先使用 netcorepal 的 web 模板作为初始骨架，但命令必须显式指定 `--Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false`，详见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
 7. 2026-05-17 已确认 NetCorePal.Template 3.2.0 支持 `PostgreSQL`、`GaussDB`、`DMDB` 等数据库参数；Nerv-IIP 默认落地 PostgreSQL profile，信创环境按 database profile 验证替换，不承诺无验证的完全无感切换。
 8. 后续落地平台级 AppHost、Compose 生成和 Aspire Dashboard 时，需要安装 Aspire CLI；服务模板仍保持 `--UseAspire false`，避免生成服务级局部编排入口。
-9. 第三阶段前端工具链需要 Node.js `>=22.18.0`、pnpm 10.13.1 和 Vite+ 0.1.21。仓库根 `.node-version` 固定为 22.22.3；本机已通过 `winget` 将 OpenJS.NodeJS.22 升级到 22.22.3，避免 Vite+ lint/fmt 路径读取 `vite.config.ts` 时触发 Node `22.17.x` 的 TS config 加载错误。
+9. 第三阶段前端工具链需要 Node.js `>=22.18.0`、pnpm 11.1.2 和 Vite+ 0.1.21。仓库根 `.node-version` 固定为 22.22.3；本机已通过 `winget` 将 OpenJS.NodeJS.22 升级到 22.22.3，避免 Vite+ lint/fmt 路径读取 `vite.config.ts` 时触发 Node `22.17.x` 的 TS config 加载错误。
 10. 第五阶段起仓库包含本地 `dotnet-tools.json`，用于固定 `dotnet-ef` 版本。首次生成或检查迁移前运行 `dotnet tool restore`，再使用 `dotnet tool run dotnet-ef ...`，避免依赖开发者全局工具。
 11. AppHub/Ops 生成 EF migration 时必须显式进入 PostgreSQL profile：设置 `Persistence__Provider=PostgreSQL` 和对应 `ConnectionStrings__AppHubDb` 或 `ConnectionStrings__OpsDb`，否则 Web startup 默认 InMemory，design-time 无法解析服务 DbContext。
 

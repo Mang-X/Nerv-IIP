@@ -14,7 +14,7 @@
 | Technology | Current status | Documentation | Repository |
 |---|---|---|---|
 | Node.js | Required. `.node-version` pins `22.22.3`; Vite+ requires `>=22.18.0` for TS config loading in lint/fmt paths. | [Node.js docs](https://nodejs.org/api/) | [nodejs/node](https://github.com/nodejs/node) |
-| pnpm | Required package manager, pinned by `packageManager` to `pnpm@10.13.1`. | [pnpm docs](https://pnpm.io/) | [pnpm/pnpm](https://github.com/pnpm/pnpm) |
+| pnpm | Required package manager, pinned by `packageManager` to `pnpm@11.1.2`. | [pnpm docs](https://pnpm.io/) | [pnpm/pnpm](https://github.com/pnpm/pnpm) |
 | Vite+ | Required workspace toolchain for check, fmt, lint, test and run tasks. | [Vite+ docs](https://viteplus.dev/) | [voidzero-dev/vite-plus](https://github.com/voidzero-dev/vite-plus) |
 | Vite | Used through Vite+ core override; app-level dev/build config remains Vite-compatible. | [Vite docs](https://vite.dev/guide/) | [vitejs/vite](https://github.com/vitejs/vite) |
 | Vitest | Used through Vite+ test override. | [Vitest docs](https://vitest.dev/guide/) | [vitest-dev/vitest](https://github.com/vitest-dev/vitest) |
