@@ -4,6 +4,7 @@ using Nerv.IIP.Caching;
 using Nerv.IIP.Observability;
 using Nerv.IIP.PlatformGateway.Web;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using Nerv.IIP.PlatformGateway.Web.Endpoints.Auth;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
@@ -33,6 +34,10 @@ builder.Services.AddHttpClient<IGatewayAuthorizationClient, HttpGatewayAuthoriza
 {
     client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5104");
 });
+builder.Services.AddHttpClient<IGatewayIamAuthClient, HttpGatewayIamAuthClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5104");
+});
 
 var app = builder.Build();
 app.UseNervIipCorrelation();
@@ -44,6 +49,10 @@ app.UseFastEndpoints(c =>
         nameof(GetInstanceDetailEndpoint) => "getConsoleInstanceDetail",
         nameof(RestartInstanceEndpoint) => "restartConsoleInstance",
         nameof(GetConsoleOperationTaskEndpoint) => "getConsoleOperationTask",
+        nameof(LoginConsoleUserEndpoint) => "loginConsoleUser",
+        nameof(RefreshConsoleSessionEndpoint) => "refreshConsoleSession",
+        nameof(LogoutConsoleSessionEndpoint) => "logoutConsoleSession",
+        nameof(GetConsolePrincipalEndpoint) => "getConsolePrincipal",
         _ => ctx.EndpointType.Name
     };
 }).UseSwaggerGen();
