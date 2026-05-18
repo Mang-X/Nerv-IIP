@@ -120,9 +120,13 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
         {
             throw ToGatewayException(statusCode);
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
-            throw GatewayAuthException.Unavailable($"iam-unavailable: {ex.Message}");
+            throw GatewayAuthException.Unavailable("iam-unavailable");
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw GatewayAuthException.Unavailable("iam-unavailable");
         }
     }
 

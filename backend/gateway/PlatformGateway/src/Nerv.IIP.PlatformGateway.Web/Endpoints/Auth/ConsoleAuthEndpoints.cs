@@ -93,9 +93,13 @@ internal static class ConsoleAuthEndpointResults
     public static string? ExtractBearerToken(HttpContext context)
     {
         var value = context.Request.Headers.Authorization.ToString();
-        return value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-            ? value["Bearer ".Length..]
-            : null;
+        if (!value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var token = value["Bearer ".Length..].Trim();
+        return string.IsNullOrWhiteSpace(token) ? null : token;
     }
 
     public static Task WriteUnauthorizedAsync(HttpContext context, CancellationToken cancellationToken)

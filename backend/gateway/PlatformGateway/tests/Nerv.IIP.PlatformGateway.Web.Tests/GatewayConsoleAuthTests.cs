@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -105,6 +106,24 @@ public sealed class GatewayConsoleAuthTests
     }
 
     [Fact]
+    public async Task Console_logout_rejects_empty_bearer()
+    {
+        var iam = new FakeGatewayIamAuthClient();
+        await using var factory = CreateFactory(iam);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/console/v1/auth/logout")
+        {
+            Content = JsonContent.Create(new ConsoleLogoutRequest("session-001"))
+        };
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer ");
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(iam.LastLogoutBearerToken);
+        Assert.Null(iam.LastLogoutRequest);
+    }
+
+    [Fact]
     public async Task Console_me_forwards_bearer()
     {
         var iam = new FakeGatewayIamAuthClient();
@@ -125,6 +144,20 @@ public sealed class GatewayConsoleAuthTests
         await using var factory = CreateFactory(iam);
 
         var response = await factory.CreateClient().GetAsync("/api/console/v1/auth/me");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(iam.LastMeBearerToken);
+    }
+
+    [Fact]
+    public async Task Console_me_rejects_empty_bearer()
+    {
+        var iam = new FakeGatewayIamAuthClient();
+        await using var factory = CreateFactory(iam);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/console/v1/auth/me");
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer ");
+
+        var response = await factory.CreateClient().SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Null(iam.LastMeBearerToken);
@@ -165,6 +198,93 @@ public sealed class GatewayConsoleAuthTests
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
         Assert.Equal("iam-invalid-response", exception.Reason);
+    }
+
+    [Fact]
+    public async Task Iam_auth_client_maps_timeout_to_stable_unavailable_reason()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            throw new TaskCanceledException("request timed out with raw infrastructure detail")))
+        {
+            BaseAddress = new Uri("http://iam.local")
+        };
+        var iam = new HttpGatewayIamAuthClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(() =>
+            iam.GetMeAsync("access-token", CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
+        Assert.Equal("iam-unavailable", exception.Reason);
+    }
+
+    [Fact]
+    public async Task Iam_auth_client_maps_http_request_failure_to_stable_unavailable_reason()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            throw new HttpRequestException("raw socket failure detail")))
+        {
+            BaseAddress = new Uri("http://iam.local")
+        };
+        var iam = new HttpGatewayIamAuthClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(() =>
+            iam.GetMeAsync("access-token", CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
+        Assert.Equal("iam-unavailable", exception.Reason);
+    }
+
+    [Fact]
+    public async Task Iam_auth_client_login_posts_credentials_then_loads_principal_with_new_access_token()
+    {
+        var handler = new RecordingHttpMessageHandler(request =>
+        {
+            if (request.RequestUri?.AbsolutePath == "/api/iam/v1/auth/login")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        accessToken = "new-access-token",
+                        refreshToken = "new-refresh-token",
+                        sessionId = "session-001",
+                        expiresAtUtc = DateTimeOffset.Parse("2026-05-18T08:00:00Z")
+                    })
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    userId = "user-admin",
+                    loginName = "admin",
+                    email = "admin@nerv.local",
+                    principalType = "user",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    permissionVersion = 7
+                })
+            };
+        });
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://iam.local")
+        };
+        var iam = new HttpGatewayIamAuthClient(httpClient);
+
+        var response = await iam.LoginAsync(new ConsoleLoginRequest("admin", "secret"), CancellationToken.None);
+
+        Assert.Equal("new-access-token", response.AccessToken);
+        Assert.Equal("new-refresh-token", response.RefreshToken);
+        Assert.Equal(Principal, response.Principal);
+        Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
+        Assert.Equal("/api/iam/v1/auth/login", handler.Requests[0].RequestUri!.AbsolutePath);
+        Assert.Null(handler.Requests[0].Authorization);
+        Assert.Equal(HttpMethod.Get, handler.Requests[1].Method);
+        Assert.Equal("/api/iam/v1/me", handler.Requests[1].RequestUri!.AbsolutePath);
+        Assert.Equal("Bearer", handler.Requests[1].Authorization!.Scheme);
+        Assert.Equal("new-access-token", handler.Requests[1].Authorization!.Parameter);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(FakeGatewayIamAuthClient iam) =>
@@ -234,4 +354,21 @@ public sealed class GatewayConsoleAuthTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(responseFactory(request));
     }
+
+    private sealed class RecordingHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+        : HttpMessageHandler
+    {
+        public List<RecordedRequest> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(new RecordedRequest(request.Method, request.RequestUri!, request.Headers.Authorization));
+            return Task.FromResult(responseFactory(request));
+        }
+    }
+
+    private sealed record RecordedRequest(
+        HttpMethod Method,
+        Uri RequestUri,
+        System.Net.Http.Headers.AuthenticationHeaderValue? Authorization);
 }
