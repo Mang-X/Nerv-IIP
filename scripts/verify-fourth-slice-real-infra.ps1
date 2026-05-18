@@ -19,7 +19,7 @@
 #     - .NET SDK 10
 #     - Docker Desktop
 #     - Node.js 22.22.3
-#     - pnpm 10.13.1
+#     - pnpm 11.1.2
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"

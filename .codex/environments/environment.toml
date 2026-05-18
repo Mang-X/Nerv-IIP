@@ -6,8 +6,7 @@ name = "Nerv-IIP"
 script = '''
 cd "$CODEX_WORKTREE_PATH"
 npx skills experimental_install
-corepack enable
-pnpm -C frontend install --frozen-lockfile
+pnpm -C frontend install --frozen-lockfile --config.confirmModulesPurge=false
 dotnet restore backend/Nerv.IIP.sln
 dotnet restore connector-hosts/Nerv.IIP.ConnectorHost.sln
 '''
@@ -20,7 +19,7 @@ command = "npx skills experimental_install"
 [[actions]]
 name = "安装前端依赖"
 icon = "tool"
-command = "pnpm -C frontend install --frozen-lockfile"
+command = "pnpm -C frontend install --frozen-lockfile --config.confirmModulesPurge=false"
 
 [[actions]]
 name = "后端测试"
