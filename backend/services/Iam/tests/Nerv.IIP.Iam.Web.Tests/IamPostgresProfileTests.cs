@@ -89,6 +89,13 @@ public sealed class IamPostgresProfileTests
             Assert.Equal("user-admin", principal!.UserId);
             Assert.Equal("admin", principal.LoginName);
             Assert.Equal("user", principal.PrincipalType);
+            Assert.Equal("user-admin", principal!.UserId);
+            Assert.Equal("admin", principal.LoginName);
+            Assert.Equal("user", principal.PrincipalType);
+            Assert.Equal("org-001", principal.OrganizationId);
+            Assert.Equal("env-dev", principal.EnvironmentId);
+            Assert.Equal(1, principal.PermissionVersion);
+            Assert.True(auth.ExpiresAtUtc > DateTimeOffset.UtcNow);
 
             var refresh = await client.PostAsJsonAsync("/api/iam/v1/auth/refresh", new { refreshToken = auth.RefreshToken });
             refresh.EnsureSuccessStatusCode();
@@ -197,7 +204,14 @@ public sealed class IamPostgresProfileTests
         }
     }
 
-    private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId);
-    private sealed record MeResponse(string UserId, string LoginName, string Email, string PrincipalType);
+    private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+    private sealed record MeResponse(
+        string UserId,
+        string LoginName,
+        string Email,
+        string PrincipalType,
+        string OrganizationId,
+        string EnvironmentId,
+        int PermissionVersion);
     private sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
 }

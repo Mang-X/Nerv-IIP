@@ -92,6 +92,27 @@ public sealed class InMemoryIamStore
         }
     }
 
+    public CurrentPrincipalSnapshot GetCurrentPrincipal(UserFact user)
+    {
+        lock (_gate)
+        {
+            var membership = _memberships
+                .OrderBy(x => x.OrganizationId, StringComparer.Ordinal)
+                .ThenBy(x => x.EnvironmentId, StringComparer.Ordinal)
+                .FirstOrDefault(x => x.UserId == user.UserId)
+                ?? throw new UnauthorizedAccessException("User has no membership.");
+
+            return new CurrentPrincipalSnapshot(
+                user.UserId,
+                user.LoginName,
+                user.Email,
+                "user",
+                membership.OrganizationId,
+                membership.EnvironmentId,
+                user.PermissionVersion);
+        }
+    }
+
     public bool UserHasPermission(string userId, string organizationId, string environmentId, string permissionCode)
     {
         lock (_gate)
@@ -122,7 +143,7 @@ public sealed class InMemoryIamStore
         var session = new UserSessionFact(sessionId, user.UserId, Hash(refreshToken), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(14), null, user.PermissionVersion);
         _sessions.Add(session);
         var accessToken = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{sessionId}|{user.SecurityStamp}|{user.PermissionVersion}"));
-        return new AuthResult(accessToken, refreshToken, sessionId);
+        return new AuthResult(accessToken, refreshToken, sessionId, DateTimeOffset.UtcNow.AddMinutes(15));
     }
 
     private void RevokeSession(string sessionId)
@@ -147,5 +168,13 @@ public sealed class InMemoryIamStore
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 }
 
-public sealed record AuthResult(string AccessToken, string RefreshToken, string SessionId);
+public sealed record AuthResult(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
 public sealed record ConnectorPrincipal(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
+public sealed record CurrentPrincipalSnapshot(
+    string UserId,
+    string LoginName,
+    string Email,
+    string PrincipalType,
+    string OrganizationId,
+    string EnvironmentId,
+    int PermissionVersion);

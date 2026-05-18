@@ -124,7 +124,15 @@ public sealed class GetMeEndpoint(IServiceProvider serviceProvider, IConfigurati
             return;
         }
 
-        await Send.OkAsync(new { user.UserId, user.LoginName, user.Email, principalType = "user" }, ct);
+        var currentPrincipal = store.GetCurrentPrincipal(user);
+        await Send.OkAsync(new CurrentPrincipalResponse(
+            currentPrincipal.UserId,
+            currentPrincipal.LoginName,
+            currentPrincipal.Email,
+            currentPrincipal.PrincipalType,
+            currentPrincipal.OrganizationId,
+            currentPrincipal.EnvironmentId,
+            currentPrincipal.PermissionVersion), ct);
     }
 }
 
