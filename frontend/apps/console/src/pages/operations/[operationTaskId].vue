@@ -2,6 +2,7 @@
 import OperationTimeline from '@/components/console/OperationTimeline.vue'
 import { useOperationTask } from '@/composables/useConsoleOperations'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import { Alert, AlertDescription } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -22,7 +23,9 @@ const { operationError, operationPending, operationTask } = useOperationTask(ope
   <DefaultLayout>
     <div class="operation-page">
       <RouterLink class="operation-page__back" to="/">Back to instances</RouterLink>
-      <p v-if="operationError" class="operation-page__error">{{ operationError.message }}</p>
+      <Alert v-if="operationError" variant="destructive">
+        <AlertDescription>{{ operationError.message }}</AlertDescription>
+      </Alert>
       <OperationTimeline :operation-task="operationTask" :pending="operationPending" />
     </div>
   </DefaultLayout>
@@ -44,15 +47,5 @@ const { operationError, operationPending, operationTask } = useOperationTask(ope
 .operation-page__back:hover,
 .operation-page__back:focus-visible {
   text-decoration: underline;
-}
-
-.operation-page__error {
-  background: var(--legacy-color-surface);
-  border: 1px solid #fecaca;
-  border-radius: 0.5rem;
-  color: var(--legacy-color-danger);
-  font-weight: 700;
-  margin: 0;
-  padding: 0.75rem 0.9rem;
 }
 </style>

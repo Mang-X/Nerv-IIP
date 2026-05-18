@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UiBadge, UiButton } from '@nerv-iip/ui'
+import { Badge, Button } from '@nerv-iip/ui'
 import type { InstanceListItem } from '@nerv-iip/api-client'
 import { computed } from 'vue'
 
@@ -16,22 +16,16 @@ const emit = defineEmits<{
 
 const hasInstances = computed(() => props.instances.length > 0)
 
-function badgeTone(status?: string | null) {
+function badgeVariant(status?: string | null) {
   const normalized = status?.toLowerCase()
 
-  if (normalized === 'running' || normalized === 'healthy') {
-    return 'success'
-  }
-
-  if (normalized === 'degraded' || normalized === 'pending' || normalized === 'starting') {
-    return 'warning'
-  }
-
-  if (normalized === 'failed' || normalized === 'unhealthy' || normalized === 'stopped') {
-    return 'danger'
-  }
-
-  return 'neutral'
+  return normalized === 'failed' ||
+    normalized === 'unhealthy' ||
+    normalized === 'stopped' ||
+    normalized === 'cancelled' ||
+    normalized === 'canceled'
+    ? 'destructive'
+    : 'secondary'
 }
 
 function instanceLabel(instance: InstanceListItem) {
@@ -105,23 +99,23 @@ function restartInstance(instance: InstanceListItem) {
             <td>{{ instanceLabel(instance) }}</td>
             <td>{{ instance.nodeName ?? instance.nodeKey ?? 'Unassigned' }}</td>
             <td>
-              <UiBadge :tone="badgeTone(instance.reportedStatus)">
+              <Badge :variant="badgeVariant(instance.reportedStatus)">
                 {{ instance.reportedStatus ?? 'unknown' }}
-              </UiBadge>
+              </Badge>
             </td>
             <td>
-              <UiBadge :tone="badgeTone(instance.healthStatus)">
+              <Badge :variant="badgeVariant(instance.healthStatus)">
                 {{ instance.healthStatus ?? 'unknown' }}
-              </UiBadge>
+              </Badge>
             </td>
             <td>
-              <UiButton
+              <Button
                 :disabled="restartPending || !instance.instanceKey"
-                variant="secondary"
+                variant="outline"
                 @click="restartInstance(instance)"
               >
                 Restart
-              </UiButton>
+              </Button>
             </td>
           </tr>
         </tbody>

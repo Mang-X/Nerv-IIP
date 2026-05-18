@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UiBadge } from '@nerv-iip/ui'
+import { Badge } from '@nerv-iip/ui'
 import type { OperationTaskResponse } from '@nerv-iip/api-client'
 import { computed } from 'vue'
 
@@ -14,22 +14,15 @@ type OperationAttempt = NonNullable<OperationTaskResponse['attempts']>[number]
 const auditRecords = computed(() => props.operationTask?.auditRecords ?? [])
 const attempts = computed(() => props.operationTask?.attempts ?? [])
 
-function badgeTone(status?: string | null) {
+function badgeVariant(status?: string | null) {
   const normalized = status?.toLowerCase()
 
-  if (normalized === 'completed' || normalized === 'succeeded' || normalized === 'success') {
-    return 'success'
-  }
-
-  if (normalized === 'queued' || normalized === 'running' || normalized === 'pending') {
-    return 'warning'
-  }
-
-  if (normalized === 'failed' || normalized === 'cancelled') {
-    return 'danger'
-  }
-
-  return 'neutral'
+  return normalized === 'failed' ||
+    normalized === 'cancelled' ||
+    normalized === 'canceled' ||
+    normalized === 'failure'
+    ? 'destructive'
+    : 'secondary'
 }
 
 function attemptKey(attempt: OperationAttempt, index: number) {
@@ -54,9 +47,9 @@ function auditRecordKey(record: AuditRecord, index: number) {
           {{ operationTask?.operationCode ?? 'Task' }}
         </h1>
       </div>
-      <UiBadge :tone="badgeTone(operationTask?.status)">
+      <Badge :variant="badgeVariant(operationTask?.status)">
         {{ operationTask?.status ?? (pending ? 'loading' : 'unknown') }}
-      </UiBadge>
+      </Badge>
     </div>
 
     <p v-if="pending && !operationTask" class="operation-timeline__muted">
@@ -93,9 +86,9 @@ function auditRecordKey(record: AuditRecord, index: number) {
           >
             <div class="operation-timeline__item-topline">
               <strong>{{ attempt.attemptId ?? 'Attempt' }}</strong>
-              <UiBadge :tone="badgeTone(attempt.status)">
+              <Badge :variant="badgeVariant(attempt.status)">
                 {{ attempt.status ?? 'unknown' }}
-              </UiBadge>
+              </Badge>
             </div>
             <span class="operation-timeline__muted">{{
               attempt.startedAtUtc ?? 'No start time'

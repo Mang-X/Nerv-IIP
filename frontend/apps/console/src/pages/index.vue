@@ -3,6 +3,7 @@ import InstanceDetailPanel from '@/components/console/InstanceDetailPanel.vue'
 import InstanceTable from '@/components/console/InstanceTable.vue'
 import { useConsoleInstances, useRestartOperation } from '@/composables/useConsoleOperations'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import { Alert, AlertDescription, Skeleton } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 definePage({
@@ -47,9 +48,16 @@ async function handleRestart(instanceKey: string) {
           @select-instance="selectInstance"
         />
 
-        <p v-if="listPending" class="console-page__notice">Loading instances...</p>
-        <p v-if="listError" class="console-page__error">{{ listError.message }}</p>
-        <p v-if="restartError" class="console-page__error">{{ restartError.message }}</p>
+        <div v-if="listPending" role="status" aria-label="Loading instances">
+          <Skeleton class="h-12 w-full" />
+          <span class="sr-only">Loading instances...</span>
+        </div>
+        <Alert v-if="listError" variant="destructive">
+          <AlertDescription>{{ listError.message }}</AlertDescription>
+        </Alert>
+        <Alert v-if="restartError" variant="destructive">
+          <AlertDescription>{{ restartError.message }}</AlertDescription>
+        </Alert>
         <RouterLink
           v-if="latestOperationPath"
           class="console-page__operation-link"
@@ -78,24 +86,12 @@ async function handleRestart(instanceKey: string) {
   min-width: 0;
 }
 
-.console-page__notice,
-.console-page__error,
 .console-page__operation-link {
   background: var(--legacy-color-surface);
   border: 1px solid var(--legacy-color-border);
   border-radius: 0.5rem;
   margin: 0;
   padding: 0.75rem 0.9rem;
-}
-
-.console-page__notice {
-  color: var(--legacy-color-text-muted);
-}
-
-.console-page__error {
-  border-color: #fecaca;
-  color: var(--legacy-color-danger);
-  font-weight: 700;
 }
 
 .console-page__operation-link {

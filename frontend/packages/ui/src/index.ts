@@ -39,7 +39,3 @@ export {
 export { Avatar, AvatarFallback, AvatarImage } from './components/ui/avatar'
 export { Toaster } from './components/ui/sonner'
 export { Spinner } from './components/ui/spinner'
-
-export { default as UiBadge } from './UiBadge.vue'
-export { default as UiButton } from './UiButton.vue'
-export { default as UiPanel } from './UiPanel.vue'

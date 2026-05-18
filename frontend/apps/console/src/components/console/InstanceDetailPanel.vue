@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UiBadge } from '@nerv-iip/ui'
+import { Badge } from '@nerv-iip/ui'
 import type { InstanceDetailResponse } from '@nerv-iip/api-client'
 import { computed } from 'vue'
 
@@ -12,22 +12,16 @@ type Capability = NonNullable<InstanceDetailResponse['capabilities']>[number]
 
 const metadataEntries = computed(() => Object.entries(props.instance?.metadata ?? {}))
 
-function badgeTone(status?: string | null) {
+function badgeVariant(status?: string | null) {
   const normalized = status?.toLowerCase()
 
-  if (normalized === 'running' || normalized === 'healthy') {
-    return 'success'
-  }
-
-  if (normalized === 'degraded' || normalized === 'pending' || normalized === 'starting') {
-    return 'warning'
-  }
-
-  if (normalized === 'failed' || normalized === 'unhealthy' || normalized === 'stopped') {
-    return 'danger'
-  }
-
-  return 'neutral'
+  return normalized === 'failed' ||
+    normalized === 'unhealthy' ||
+    normalized === 'stopped' ||
+    normalized === 'cancelled' ||
+    normalized === 'canceled'
+    ? 'destructive'
+    : 'secondary'
 }
 
 function capabilityKey(capability: Capability, index: number) {
@@ -64,17 +58,17 @@ function capabilityKey(capability: Capability, index: number) {
         <div class="detail-panel__fact">
           <dt>Status</dt>
           <dd>
-            <UiBadge :tone="badgeTone(instance.reportedStatus)">
+            <Badge :variant="badgeVariant(instance.reportedStatus)">
               {{ instance.reportedStatus ?? 'unknown' }}
-            </UiBadge>
+            </Badge>
           </dd>
         </div>
         <div class="detail-panel__fact">
           <dt>Health</dt>
           <dd>
-            <UiBadge :tone="badgeTone(instance.healthStatus)">
+            <Badge :variant="badgeVariant(instance.healthStatus)">
               {{ instance.healthStatus ?? 'unknown' }}
-            </UiBadge>
+            </Badge>
           </dd>
         </div>
         <div class="detail-panel__fact">

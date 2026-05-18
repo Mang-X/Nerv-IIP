@@ -20,7 +20,7 @@ vi.mock('@nerv-iip/api-client', () => {
     instanceKey: 'demo-api-1',
     instanceName: 'demo-api-1',
     reportedStatus: 'running',
-    healthStatus: 'healthy',
+    healthStatus: 'unhealthy',
     lastHeartbeatAtUtc: '2026-05-16T00:00:00Z',
     lastStateObservedAtUtc: '2026-05-16T00:00:00Z',
   }
@@ -107,6 +107,15 @@ describe('Console index page', () => {
     expect(wrapper.text()).toContain('Demo API')
     expect(wrapper.text()).toContain('running')
     expect(wrapper.text()).toContain('Restart')
+  })
+
+  it('renders destructive status states', async () => {
+    const wrapper = mountPage()
+
+    await flushPromises()
+
+    const destructiveBadges = wrapper.findAll('[data-variant="destructive"]')
+    expect(destructiveBadges.some((badge) => badge.text() === 'unhealthy')).toBe(true)
   })
 
   it('keeps restart success visible when list refetch fails after invalidation', async () => {
