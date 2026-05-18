@@ -2,7 +2,7 @@
 #   Category: verify
 #   SideEffects:
 #     - Starts local PostgreSQL, Redis and RabbitMQ from infra/docker-compose.dev.yml
-#     - Recreates disposable AppHub and Ops verification databases
+#     - Recreates disposable AppHub, IAM and Ops verification databases
 #     - Runs the third-stage console verification under PostgreSQL profile
 #   Writes:
 #     - artifacts/script-logs/**
@@ -88,8 +88,10 @@ $postgresPort = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_POSTGRES_PORT)) {
 $appHubTestConnectionString = "Host=localhost;Port=$postgresPort;Database=nerv_iip_apphub_test;Username=nerv;Password=nerv"
 $opsTestConnectionString = "Host=localhost;Port=$postgresPort;Database=nerv_iip_ops_test;Username=nerv;Password=nerv"
 $appHubVerifyDatabase = "nerv_iip_apphub_verify"
+$iamVerifyDatabase = "nerv_iip_iam_verify"
 $opsVerifyDatabase = "nerv_iip_ops_verify"
 $appHubVerifyConnectionString = "Host=localhost;Port=$postgresPort;Database=$appHubVerifyDatabase;Username=nerv;Password=nerv"
+$iamVerifyConnectionString = "Host=localhost;Port=$postgresPort;Database=$iamVerifyDatabase;Username=nerv;Password=nerv"
 $opsVerifyConnectionString = "Host=localhost;Port=$postgresPort;Database=$opsVerifyDatabase;Username=nerv;Password=nerv"
 $appHubTests = Join-Path $root "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj"
 $opsTests = Join-Path $root "backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj"
@@ -109,6 +111,7 @@ Invoke-WithScopedEnvironment -Variables @{
   Wait-TcpPort -HostName "localhost" -Port 5672 -TimeoutSeconds 60
 
   Reset-PostgresDatabase -ComposeFile $composeFile -DatabaseName $appHubVerifyDatabase -Name "fourth-apphub-verify-database"
+  Reset-PostgresDatabase -ComposeFile $composeFile -DatabaseName $iamVerifyDatabase -Name "fourth-iam-verify-database"
   Reset-PostgresDatabase -ComposeFile $composeFile -DatabaseName $opsVerifyDatabase -Name "fourth-ops-verify-database"
 
   Invoke-PostgresProfileTest -Project $appHubTests -Filter "FullyQualifiedName~AppHubPostgresProfileTests" -ConnectionString $appHubTestConnectionString -Name "fourth-apphub-postgres-profile-tests"
@@ -116,6 +119,7 @@ Invoke-WithScopedEnvironment -Variables @{
 
   Invoke-WithScopedEnvironment -Variables @{
     NERV_IIP_APPHUB_POSTGRES = $appHubVerifyConnectionString
+    NERV_IIP_IAM_POSTGRES = $iamVerifyConnectionString
     NERV_IIP_OPS_POSTGRES = $opsVerifyConnectionString
   } -ScriptBlock {
     Invoke-PwshScript -ScriptPath $thirdStageScript -Arguments @("-UsePostgres") -WorkingDirectory $root -TimeoutSeconds 1200 -Name "fourth-third-stage-console-postgres" | Out-Null
