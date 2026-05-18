@@ -2,6 +2,7 @@ import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import Vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite-plus'
+import VueRouter from 'vue-router/vite'
 
 export default defineConfig({
   fmt: {
@@ -14,7 +15,25 @@ export default defineConfig({
       'packages/api-client/src/generated/**',
     ],
   },
-  plugins: [tailwindcss(), Vue()],
+  plugins: [
+    tailwindcss(),
+    VueRouter({
+      routesFolder: [
+        {
+          src: fileURLToPath(new URL('./apps/console/src/pages', import.meta.url)),
+          exclude: (excluded) =>
+            excluded.concat([
+              '**/components/**/*',
+              '**/dialogs/**/*',
+              '**/drawers/**/*',
+              '**/fragments/**/*',
+            ]),
+        },
+      ],
+      dts: fileURLToPath(new URL('./apps/console/typed-router.d.ts', import.meta.url)),
+    }),
+    Vue(),
+  ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./apps/console/src', import.meta.url)),
@@ -37,6 +56,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    setupFiles: [fileURLToPath(new URL('./apps/console/src/test/setup.ts', import.meta.url))],
   },
   lint: {
     ignorePatterns: [

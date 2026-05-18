@@ -26,7 +26,7 @@
 | Pinia Colada Auto Refetch | Required for OperationTask polling behavior. | [Pinia Colada docs](https://pinia-colada.esm.dev/) | [posva/pinia-colada](https://github.com/posva/pinia-colada) |
 | Hey API OpenAPI TypeScript | Required for generated frontend API client. | [Hey API openapi-ts docs](https://heyapi.dev/openapi-ts/get-started) | [hey-api/openapi-ts](https://github.com/hey-api/openapi-ts) |
 | VueUse | Frozen frontend planning baseline; introduce only when a real composable need appears. | [VueUse docs](https://vueuse.org/guide/) | [vueuse/vueuse](https://github.com/vueuse/vueuse) |
-| shadcn-vue | Frozen UI-system planning baseline; not initialized in the third slice. | [shadcn-vue docs](https://www.shadcn-vue.com/docs/) | [unovue/shadcn-vue](https://github.com/unovue/shadcn-vue) |
+| shadcn-vue | Required UI-system baseline for Console Auth and later console UI work; initialized in `frontend/packages/ui` with `reka-nova` style and stable `@nerv-iip/ui` exports. | [shadcn-vue docs](https://www.shadcn-vue.com/docs/) | [unovue/shadcn-vue](https://github.com/unovue/shadcn-vue) |
 | es-toolkit | Frozen utility-library planning baseline; introduce only when it replaces real local utility complexity. | [es-toolkit docs](https://es-toolkit.dev/) | [toss/es-toolkit](https://github.com/toss/es-toolkit) |
 
 ## Backend And Platform
@@ -35,7 +35,7 @@
 |---|---|---|---|
 | .NET SDK | Required backend target SDK; projects target `net10.0`. | [.NET docs](https://learn.microsoft.com/dotnet/) | [dotnet/sdk](https://github.com/dotnet/sdk) |
 | ASP.NET Core | Required HTTP host/runtime surface for Web projects. | [ASP.NET Core docs](https://learn.microsoft.com/aspnet/core/) | [dotnet/aspnetcore](https://github.com/dotnet/aspnetcore) |
-| ASP.NET Core Authentication/Authorization | Frozen platform security baseline; full UI/login flow is future work. | [Authentication docs](https://learn.microsoft.com/aspnet/core/security/authentication/) / [Authorization docs](https://learn.microsoft.com/aspnet/core/security/authorization/introduction) | [dotnet/aspnetcore](https://github.com/dotnet/aspnetcore) |
+| ASP.NET Core Authentication/Authorization | Required platform security baseline; IAM persistent auth, Gateway permission enforcement and minimal Console login flow exist, while OAuth/OIDC, SSO, MFA and ABAC remain future work. | [Authentication docs](https://learn.microsoft.com/aspnet/core/security/authentication/) / [Authorization docs](https://learn.microsoft.com/aspnet/core/security/authorization/introduction) | [dotnet/aspnetcore](https://github.com/dotnet/aspnetcore) |
 | FastEndpoints | Required endpoint framework for platform HTTP APIs. | [FastEndpoints docs](https://fast-endpoints.com/) | [FastEndpoints/FastEndpoints](https://github.com/FastEndpoints/FastEndpoints) |
 | FastEndpoints.Swagger | Required Gateway OpenAPI generation path. | [FastEndpoints Swagger docs](https://fast-endpoints.com/docs/swagger-support) | [FastEndpoints/FastEndpoints](https://github.com/FastEndpoints/FastEndpoints) |
 | netcorepal-cloud-framework | Required backend architectural baseline for platform domain services; AppHub and Ops have adopted the CleanDDD/netcorepal shape in the fourth slice. | [netcorepal-cloud-framework docs](https://netcorepal.github.io/netcorepal-cloud-framework/) | [netcorepal/netcorepal-cloud-framework](https://github.com/netcorepal/netcorepal-cloud-framework) |

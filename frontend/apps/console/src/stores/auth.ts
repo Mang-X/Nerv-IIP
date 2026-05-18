@@ -88,7 +88,7 @@ export const useAuthStore = defineStore('auth', () => {
     const currentSessionId = sessionId.value
     clearSession('logout')
     if (token) {
-      await logoutConsole(token, { sessionId: currentSessionId }).catch(() => undefined)
+      void logoutConsole(token, { sessionId: currentSessionId }).catch(() => undefined)
     }
   }
 

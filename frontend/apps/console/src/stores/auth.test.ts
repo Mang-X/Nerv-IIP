@@ -121,14 +121,15 @@ describe('auth store', () => {
     expect(localStorage.getItem('nerv-iip.console.auth')).toBeNull()
   })
 
-  it('clears local state even when logout request fails', async () => {
+  it('clears local state without waiting for logout request', async () => {
     api.loginConsole.mockResolvedValue(session)
-    api.logoutConsole.mockRejectedValue(new Error('network'))
     const auth = useAuthStore()
+    api.logoutConsole.mockReturnValue(new Promise(() => undefined))
     await auth.login('admin', 'Admin123!')
 
     await auth.logout()
 
+    expect(api.logoutConsole).toHaveBeenCalledWith('access-token', { sessionId: 'session-001' })
     expect(auth.isAuthenticated).toBe(false)
     expect(localStorage.getItem('nerv-iip.console.auth')).toBeNull()
   })

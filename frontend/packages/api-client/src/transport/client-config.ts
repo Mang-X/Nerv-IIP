@@ -46,8 +46,6 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
 
     if (token) {
       headers.set('Authorization', `Bearer ${token}`)
-    } else {
-      headers.delete('Authorization')
     }
 
     return new Request(request, { headers })

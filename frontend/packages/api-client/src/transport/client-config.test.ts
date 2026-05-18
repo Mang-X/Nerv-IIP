@@ -147,6 +147,31 @@ describe('configureApiClient', () => {
     expect(requests[1]?.headers.has('Authorization')).toBe(false)
   })
 
+  it('preserves an explicit per-request Authorization header when provider returns nothing', async () => {
+    const requests: Request[] = []
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      requests.push(request)
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      })
+    })
+
+    configureApiClient({
+      accessTokenProvider: () => undefined,
+      baseUrl: 'https://gateway.example.test',
+      fetch,
+    })
+
+    await client.post({
+      headers: { Authorization: 'Bearer logout-token' },
+      url: '/secure/logout',
+    })
+
+    expect(requests[0]?.headers.get('Authorization')).toBe('Bearer logout-token')
+  })
+
   it('notifies once when response is 401', async () => {
     const onUnauthorized = vi.fn()
     const fetch = vi.fn(async () => {

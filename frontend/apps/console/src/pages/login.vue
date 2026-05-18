@@ -24,10 +24,13 @@ async function submit(credentials: { loginName: string; password: string }) {
   pending.value = true
   try {
     await auth.login(credentials.loginName, credentials.password)
-    await router.push(redirectPath.value)
+  } catch {
+    return
   } finally {
     pending.value = false
   }
+
+  await router.push(redirectPath.value)
 }
 </script>
 
