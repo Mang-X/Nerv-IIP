@@ -248,6 +248,118 @@
           }
         }
       }
+    },
+    "/api/console/v1/auth/login": {
+      "post": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "loginConsoleUser",
+        "requestBody": {
+          "x-name": "ConsoleLoginRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsoleLoginRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsoleAuthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/console/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "refreshConsoleSession",
+        "requestBody": {
+          "x-name": "ConsoleRefreshRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsoleRefreshRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsoleAuthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/console/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "logoutConsoleSession",
+        "requestBody": {
+          "x-name": "ConsoleLogoutRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsoleLogoutRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/api/console/v1/auth/me": {
+      "get": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "getConsolePrincipal",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsolePrincipalResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -521,6 +633,87 @@
       "NervIIPPlatformGatewayWebEndpointsInstancesGetInstanceDetailRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NervIIPPlatformGatewayWebApplicationAuthConsoleAuthResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "principal": {
+            "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsolePrincipalResponse"
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationAuthConsolePrincipalResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "principalId": {
+            "type": "string"
+          },
+          "principalType": {
+            "type": "string"
+          },
+          "loginName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "permissionVersion": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationAuthConsoleLoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "loginName": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationAuthConsoleRefreshRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "refreshToken": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationAuthConsoleLogoutRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       }
     },
     "securitySchemes": {

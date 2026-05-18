@@ -4,8 +4,8 @@ import { type _JSONValue, defineQueryOptions, type UseMutationOptions } from '@p
 
 import { serializeQueryKeyValue } from '../client';
 import { client } from '../client.gen';
-import { getBuildInfoEndpoint, getConsoleInstanceDetail, getConsoleOperationTask, healthEndpoint, invalidateGatewayCacheEndpoint, listConsoleInstances, type Options, restartConsoleInstance } from '../sdk.gen';
-import type { GetBuildInfoEndpointData, GetBuildInfoEndpointResponse, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponse, GetConsoleOperationTaskData, GetConsoleOperationTaskResponse, HealthEndpointData, HealthEndpointResponse, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponse, ListConsoleInstancesData, ListConsoleInstancesResponse, RestartConsoleInstanceData, RestartConsoleInstanceResponse } from '../types.gen';
+import { getBuildInfoEndpoint, getConsoleInstanceDetail, getConsoleOperationTask, getConsolePrincipal, healthEndpoint, invalidateGatewayCacheEndpoint, listConsoleInstances, loginConsoleUser, logoutConsoleSession, type Options, refreshConsoleSession, restartConsoleInstance } from '../sdk.gen';
+import type { GetBuildInfoEndpointData, GetBuildInfoEndpointResponse, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponse, GetConsoleOperationTaskData, GetConsoleOperationTaskResponse, GetConsolePrincipalData, GetConsolePrincipalResponse, HealthEndpointData, HealthEndpointResponse, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponse, ListConsoleInstancesData, ListConsoleInstancesResponse, LoginConsoleUserData, LoginConsoleUserResponse, LogoutConsoleSessionData, LogoutConsoleSessionResponse, RefreshConsoleSessionData, RefreshConsoleSessionResponse, RestartConsoleInstanceData, RestartConsoleInstanceResponse } from '../types.gen';
 
 export const restartConsoleInstanceMutationOptions = (options?: Partial<Options<RestartConsoleInstanceData>>): UseMutationOptions<RestartConsoleInstanceResponse, Options<RestartConsoleInstanceData>, Error> => ({
     mutation: async (vars) => {
@@ -133,3 +133,50 @@ export const invalidateGatewayCacheEndpointMutationOptions = (options?: Partial<
         return data;
     }
 });
+
+export const loginConsoleUserMutationOptions = (options?: Partial<Options<LoginConsoleUserData>>): UseMutationOptions<LoginConsoleUserResponse, Options<LoginConsoleUserData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await loginConsoleUser({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const refreshConsoleSessionMutationOptions = (options?: Partial<Options<RefreshConsoleSessionData>>): UseMutationOptions<RefreshConsoleSessionResponse, Options<RefreshConsoleSessionData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await refreshConsoleSession({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const logoutConsoleSessionMutationOptions = (options?: Partial<Options<LogoutConsoleSessionData>>): UseMutationOptions<LogoutConsoleSessionResponse, Options<LogoutConsoleSessionData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await logoutConsoleSession({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const getConsolePrincipalQueryKey = (options?: Options<GetConsolePrincipalData>) => createQueryKey('getConsolePrincipal', options, ['Api']);
+
+export const getConsolePrincipalQueryOptions = defineQueryOptions<Options<GetConsolePrincipalData>, GetConsolePrincipalResponse, Error>((options?: Options<GetConsolePrincipalData>) => ({
+    key: getConsolePrincipalQueryKey(options),
+    query: async (context) => {
+        const { data } = await getConsolePrincipal({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
