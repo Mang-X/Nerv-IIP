@@ -33,6 +33,12 @@ export default defineConfig({
       '@nerv-iip/app-shell': fileURLToPath(
         new URL('../../packages/app-shell/src/index.ts', import.meta.url),
       ),
+      '@nerv-iip/ui/components': fileURLToPath(
+        new URL('../../packages/ui/src/components', import.meta.url),
+      ),
+      '@nerv-iip/ui/lib/utils': fileURLToPath(
+        new URL('../../packages/ui/src/lib/utils.ts', import.meta.url),
+      ),
       '@nerv-iip/ui': fileURLToPath(new URL('../../packages/ui/src/index.ts', import.meta.url)),
       '@nerv-iip/ui/': fileURLToPath(new URL('../../packages/ui/src/', import.meta.url)),
     },
