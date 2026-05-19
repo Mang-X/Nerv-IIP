@@ -27,12 +27,20 @@ public sealed class GatewayInstanceTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
-        var list = await client.GetFromJsonAsync<InstanceListResponse>("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageNumber=1&pageSize=20&search=demo");
-        var detail = await client.GetFromJsonAsync<InstanceDetailResponse>("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
+        var listResponse = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageNumber=1&pageSize=20&search=demo");
+        listResponse.EnsureSuccessStatusCode();
+        var list = await ReadResponseDataAsync<InstanceListResponse>(listResponse);
+        var detailResponse = await client.GetAsync("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
+        detailResponse.EnsureSuccessStatusCode();
+        var detail = await ReadResponseDataAsync<InstanceDetailResponse>(detailResponse);
         fake.Detail = fake.Detail! with { ReportedStatus = "stopped" };
-        var cached = await client.GetFromJsonAsync<InstanceDetailResponse>("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
+        var cachedResponse = await client.GetAsync("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
+        cachedResponse.EnsureSuccessStatusCode();
+        var cached = await ReadResponseDataAsync<InstanceDetailResponse>(cachedResponse);
         await client.PostAsync("/internal/gateway/cache/invalidate", null);
-        var refreshed = await client.GetFromJsonAsync<InstanceDetailResponse>("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
+        var refreshedResponse = await client.GetAsync("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
+        refreshedResponse.EnsureSuccessStatusCode();
+        var refreshed = await ReadResponseDataAsync<InstanceDetailResponse>(refreshedResponse);
 
         Assert.Equal(new InstanceListQuery("org-001", "env-dev", 1, 20, "demo"), fake.LastQuery);
         Assert.Equal(GatewayPermissions.AppHubInstancesRead, auth.LastRequirement!.PermissionCode);
@@ -102,5 +110,16 @@ public sealed class GatewayInstanceTests
         }
 
         throw new FileNotFoundException("Gateway project file was not found.");
+    }
+
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
+    {
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>();
+        Assert.NotNull(envelope);
+        Assert.True(envelope.Success, envelope.Message);
+        Assert.NotNull(envelope.Data);
+        return envelope.Data;
     }
 }

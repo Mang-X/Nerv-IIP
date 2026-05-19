@@ -32,6 +32,27 @@ public sealed class FastEndpointsArchitectureTests
         Assert.All(endpointFiles, file => Assert.Contains("FastEndpoints", File.ReadAllText(file)));
     }
 
+    public static TheoryData<string> ResponseDataWebProjects => new()
+    {
+        "backend/services/Iam/src/Nerv.IIP.Iam.Web",
+        "backend/services/AppHub/src/Nerv.IIP.AppHub.Web",
+        "backend/services/Ops/src/Nerv.IIP.Ops.Web",
+        "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web"
+    };
+
+    [Theory]
+    [MemberData(nameof(ResponseDataWebProjects))]
+    public void Platform_web_projects_use_response_data_and_known_exception_middleware(string projectDirectory)
+    {
+        var root = FindRepositoryRoot();
+        var fullProjectDirectory = Path.Combine(root, projectDirectory);
+        var programText = File.ReadAllText(Path.Combine(fullProjectDirectory, "Program.cs"));
+        var sourceFiles = Directory.GetFiles(fullProjectDirectory, "*.cs", SearchOption.AllDirectories);
+
+        Assert.Contains("UseKnownExceptionHandler", programText);
+        Assert.All(sourceFiles, file => Assert.DoesNotContain("WriteAsJsonAsync", File.ReadAllText(file)));
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

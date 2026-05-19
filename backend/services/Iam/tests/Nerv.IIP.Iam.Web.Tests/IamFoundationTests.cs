@@ -20,7 +20,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     {
         var login = await _client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
         login.EnsureSuccessStatusCode();
-        var auth = await login.Content.ReadFromJsonAsync<AuthResponse>();
+        var auth = await ReadResponseDataAsync<AuthResponse>(login);
 
         Assert.NotNull(auth);
         Assert.False(string.IsNullOrWhiteSpace(auth.AccessToken));
@@ -28,7 +28,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
 
         var refresh = await _client.PostAsJsonAsync("/api/iam/v1/auth/refresh", new { refreshToken = auth.RefreshToken });
         refresh.EnsureSuccessStatusCode();
-        var rotated = await refresh.Content.ReadFromJsonAsync<AuthResponse>();
+        var rotated = await ReadResponseDataAsync<AuthResponse>(refresh);
         Assert.NotEqual(auth.RefreshToken, rotated!.RefreshToken);
 
         var oldRefresh = await _client.PostAsJsonAsync("/api/iam/v1/auth/refresh", new { refreshToken = auth.RefreshToken });
@@ -36,14 +36,14 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
 
         var connector = await _client.PostAsJsonAsync("/api/iam/v1/connectors/credentials/validate", new { connectorHostId = "connector-host-001", secret = "local-connector-secret" });
         connector.EnsureSuccessStatusCode();
-        var connectorPrincipal = await connector.Content.ReadFromJsonAsync<ConnectorPrincipalResponse>();
+        var connectorPrincipal = await ReadResponseDataAsync<ConnectorPrincipalResponse>(connector);
         Assert.Equal("connector-host", connectorPrincipal!.PrincipalType);
         Assert.Equal("org-001", connectorPrincipal.OrganizationId);
 
         _client.DefaultRequestHeaders.Authorization = new("Bearer", rotated.AccessToken);
         var meBeforeLogout = await _client.GetAsync("/api/iam/v1/me");
         meBeforeLogout.EnsureSuccessStatusCode();
-        var principal = await meBeforeLogout.Content.ReadFromJsonAsync<MeResponse>();
+        var principal = await ReadResponseDataAsync<MeResponse>(meBeforeLogout);
 
         Assert.Equal("user-admin", principal!.UserId);
         Assert.Equal("admin", principal.LoginName);
@@ -67,7 +67,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             "/api/iam/v1/users",
             new { loginName = "operator", email = "operator@nerv-iip.local", password = "Operator123!" });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
-        var created = await create.Content.ReadFromJsonAsync<UserResponse>();
+        var created = await ReadResponseDataAsync<UserResponse>(create);
 
         Assert.NotNull(created);
         Assert.False(string.IsNullOrWhiteSpace(created.UserId));
@@ -79,7 +79,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             $"/api/iam/v1/users/{created.UserId}",
             new { loginName = "operator-updated", email = "operator.updated@nerv-iip.local", enabled = true });
         patch.EnsureSuccessStatusCode();
-        var updated = await patch.Content.ReadFromJsonAsync<UserResponse>();
+        var updated = await ReadResponseDataAsync<UserResponse>(patch);
 
         Assert.Equal(created.UserId, updated!.UserId);
         Assert.Equal("operator-updated", updated.LoginName);
@@ -89,7 +89,9 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         var disable = await _client.PostAsync($"/api/iam/v1/users/{created.UserId}/disable", null);
         Assert.Equal(HttpStatusCode.NoContent, disable.StatusCode);
 
-        var users = await _client.GetFromJsonAsync<UserResponse[]>("/api/iam/v1/users");
+        var usersResponse = await _client.GetAsync("/api/iam/v1/users");
+        usersResponse.EnsureSuccessStatusCode();
+        var users = await ReadResponseDataAsync<UserResponse[]>(usersResponse);
         var disabled = Assert.Single(users!, user => user.UserId == created.UserId);
         Assert.False(disabled.Enabled);
     }
@@ -120,4 +122,14 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         string EnvironmentId,
         int PermissionVersion);
     private sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
+    {
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>();
+        Assert.NotNull(envelope);
+        Assert.True(envelope.Success, envelope.Message);
+        Assert.NotNull(envelope.Data);
+        return envelope.Data;
+    }
 }

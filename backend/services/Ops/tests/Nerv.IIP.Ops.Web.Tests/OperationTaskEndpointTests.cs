@@ -34,7 +34,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         var created = await client.PostAsJsonAsync("/api/ops/v1/operation-tasks", createRequest);
 
         created.EnsureSuccessStatusCode();
-        var createdTask = await created.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var createdTask = await ReadResponseDataAsync<OperationTaskResponse>(created);
         Assert.NotNull(createdTask);
         Assert.Equal("queued", createdTask.Status);
         Assert.Contains(createdTask.AuditRecords, x => x.Action == "operation.requested");
@@ -43,7 +43,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
             "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
 
         Assert.Equal(HttpStatusCode.OK, pendingResponse.StatusCode);
-        var pending = await pendingResponse.Content.ReadFromJsonAsync<PendingOperationTasksResponse>();
+        var pending = await ReadResponseDataAsync<PendingOperationTasksResponse>(pendingResponse);
         Assert.NotNull(pending);
         var dispatch = Assert.Single(pending.Items);
         Assert.Equal(createdTask.OperationTaskId, dispatch.OperationTaskId);
@@ -52,7 +52,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         var dispatchedResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}");
 
         Assert.Equal(HttpStatusCode.OK, dispatchedResponse.StatusCode);
-        var dispatched = await dispatchedResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var dispatched = await ReadResponseDataAsync<OperationTaskResponse>(dispatchedResponse);
         Assert.NotNull(dispatched);
         Assert.Equal("dispatched", dispatched.Status);
         var startedAttempt = Assert.Single(dispatched.Attempts);
@@ -85,7 +85,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         var completedResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}");
 
         Assert.Equal(HttpStatusCode.OK, completedResponse.StatusCode);
-        var completed = await completedResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var completed = await ReadResponseDataAsync<OperationTaskResponse>(completedResponse);
         Assert.NotNull(completed);
         Assert.Equal("completed", completed.Status);
         var completedAttempt = Assert.Single(completed.Attempts);
@@ -246,7 +246,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
 
         var detailResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}");
         Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
-        var detail = await detailResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var detail = await ReadResponseDataAsync<OperationTaskResponse>(detailResponse);
 
         Assert.NotNull(detail);
         Assert.Equal("dispatched", detail.Status);
@@ -288,8 +288,8 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
 
         Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
-        var first = await firstResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
-        var second = await secondResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var first = await ReadResponseDataAsync<OperationTaskResponse>(firstResponse);
+        var second = await ReadResponseDataAsync<OperationTaskResponse>(secondResponse);
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -349,7 +349,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
 
         var detailResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}");
         Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
-        var detail = await detailResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var detail = await ReadResponseDataAsync<OperationTaskResponse>(detailResponse);
 
         Assert.NotNull(detail);
         Assert.Equal("completed", detail.Status);
@@ -393,7 +393,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         var responses = await Task.WhenAll(claimRequests);
 
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
-        var claims = await Task.WhenAll(responses.Select(x => x.Content.ReadFromJsonAsync<PendingOperationTasksResponse>()));
+        var claims = await Task.WhenAll(responses.Select(x => ReadResponseDataAsync<PendingOperationTasksResponse>(x)));
         var claimedItems = claims
             .SelectMany(x => x?.Items ?? [])
             .ToList();
@@ -408,7 +408,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
 
         var detailResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}");
         Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
-        var detail = await detailResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var detail = await ReadResponseDataAsync<OperationTaskResponse>(detailResponse);
 
         Assert.NotNull(detail);
         Assert.Equal("dispatched", detail.Status);
@@ -436,7 +436,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
                 600));
 
         Assert.Equal(HttpStatusCode.OK, heartbeatResponse.StatusCode);
-        var heartbeated = await heartbeatResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var heartbeated = await ReadResponseDataAsync<OperationTaskResponse>(heartbeatResponse);
         Assert.NotNull(heartbeated);
         var heartbeatedAttempt = Assert.Single(heartbeated.Attempts);
         Assert.Equal(claim.LeaseId, heartbeatedAttempt.LeaseId);
@@ -452,7 +452,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
                 "connector-shutdown"));
 
         Assert.Equal(HttpStatusCode.OK, abandonResponse.StatusCode);
-        var abandoned = await abandonResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var abandoned = await ReadResponseDataAsync<OperationTaskResponse>(abandonResponse);
         Assert.NotNull(abandoned);
         Assert.Equal("queued", abandoned.Status);
         var abandonedAttempt = Assert.Single(abandoned.Attempts);
@@ -552,7 +552,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     {
         var response = await client.PostAsJsonAsync("/api/ops/v1/operation-tasks", CreateRestartRequest(idempotencyKey, organizationId));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var task = await response.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var task = await ReadResponseDataAsync<OperationTaskResponse>(response);
         Assert.NotNull(task);
         return task;
     }
@@ -561,7 +561,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     {
         var response = await client.PostAsJsonAsync("/api/ops/v1/operation-tasks", request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var task = await response.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var task = await ReadResponseDataAsync<OperationTaskResponse>(response);
         Assert.NotNull(task);
         return task;
     }
@@ -572,7 +572,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
             $"/api/ops/v1/operation-tasks/pending?organizationId={organizationId}&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var pending = await response.Content.ReadFromJsonAsync<PendingOperationTasksResponse>();
+        var pending = await ReadResponseDataAsync<PendingOperationTasksResponse>(response);
         Assert.NotNull(pending);
         return Assert.Single(pending.Items);
     }
@@ -584,7 +584,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
             new ClaimOperationTasksRequest(organizationId, "env-dev", "connector-host-001", 1));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var pending = await response.Content.ReadFromJsonAsync<PendingOperationTasksResponse>();
+        var pending = await ReadResponseDataAsync<PendingOperationTasksResponse>(response);
         Assert.NotNull(pending);
         return Assert.Single(pending.Items);
     }
@@ -623,6 +623,17 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
                     .Select(x => new KeyValuePair<string, string?>(x.Key, x.Value?.ToString()))
                     .ToArray()));
         }
+    }
+
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
+    {
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>();
+        Assert.NotNull(envelope);
+        Assert.True(envelope.Success, envelope.Message);
+        Assert.NotNull(envelope.Data);
+        return envelope.Data;
     }
 
     private sealed record LogEntry(

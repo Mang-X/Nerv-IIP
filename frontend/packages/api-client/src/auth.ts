@@ -13,6 +13,8 @@ export {
 } from './generated/sdk.gen'
 
 import type {
+  NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse,
+  NetCorePalExtensionsDtoResponseDataOfConsolePrincipalResponse,
   NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse,
   NervIipPlatformGatewayWebApplicationAuthConsoleLoginRequest,
   NervIipPlatformGatewayWebApplicationAuthConsoleLogoutRequest,
@@ -26,3 +28,6 @@ export type ConsoleLogoutRequest = NervIipPlatformGatewayWebApplicationAuthConso
 export type ConsolePrincipalResponse =
   NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse
 export type ConsoleRefreshRequest = NervIipPlatformGatewayWebApplicationAuthConsoleRefreshRequest
+export type ConsoleAuthEnvelope = NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse
+export type ConsolePrincipalEnvelope =
+  NetCorePalExtensionsDtoResponseDataOfConsolePrincipalResponse

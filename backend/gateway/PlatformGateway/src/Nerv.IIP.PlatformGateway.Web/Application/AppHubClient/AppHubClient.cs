@@ -15,7 +15,7 @@ public sealed class HttpAppHubClient(HttpClient httpClient) : IAppHubClient
     {
         var response = await httpClient.PostAsJsonAsync("/internal/apphub/v1/instances/query", query, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<InstanceListResponse>(cancellationToken: cancellationToken)
+        return await ReadResponseDataAsync<InstanceListResponse>(response, "AppHub returned an empty instance list response.", cancellationToken)
             ?? throw new HttpRequestException("AppHub returned an empty instance list response.");
     }
 
@@ -23,7 +23,24 @@ public sealed class HttpAppHubClient(HttpClient httpClient) : IAppHubClient
     {
         var response = await httpClient.GetAsync($"/internal/apphub/v1/instances/{Uri.EscapeDataString(instanceKey)}?organizationId={Uri.EscapeDataString(organizationId)}&environmentId={Uri.EscapeDataString(environmentId)}", cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<InstanceDetailResponse>(cancellationToken: cancellationToken)
+        return await ReadResponseDataAsync<InstanceDetailResponse>(response, "AppHub returned an empty instance detail response.", cancellationToken)
             ?? throw new HttpRequestException("AppHub returned an empty instance detail response.");
     }
+
+    private static async Task<T?> ReadResponseDataAsync<T>(
+        HttpResponseMessage response,
+        string emptyMessage,
+        CancellationToken cancellationToken)
+    {
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken: cancellationToken)
+            ?? throw new HttpRequestException(emptyMessage);
+        if (!envelope.Success)
+        {
+            throw new HttpRequestException(envelope.Message);
+        }
+
+        return envelope.Data;
+    }
+
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }

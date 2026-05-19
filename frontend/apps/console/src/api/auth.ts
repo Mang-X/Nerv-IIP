@@ -3,7 +3,9 @@ import {
   loginConsoleUser,
   logoutConsoleSession,
   refreshConsoleSession,
+  type ConsoleAuthEnvelope,
   type ConsoleAuthResponse,
+  type ConsolePrincipalEnvelope,
   type ConsoleLoginRequest,
   type ConsoleLogoutRequest,
   type ConsolePrincipalResponse,
@@ -20,11 +22,11 @@ export class ConsoleAuthError extends Error {
 }
 
 function assertData<T>(
-  result: { data?: T; error?: unknown; response?: Response },
+  result: { data?: { data?: T | null; success?: boolean; message?: string | null }; error?: unknown; response?: Response },
   fallback: string,
 ): T {
-  if (result.data) {
-    return result.data
+  if (result.data?.success && result.data.data) {
+    return result.data.data
   }
 
   const status = result.response?.status
@@ -36,14 +38,14 @@ function assertData<T>(
 
 export async function loginConsole(request: ConsoleLoginRequest): Promise<ConsoleAuthResponse> {
   return assertData(
-    await loginConsoleUser({ body: request }),
+    await loginConsoleUser({ body: request }) as { data?: ConsoleAuthEnvelope; response?: Response },
     'Unable to connect to the authentication service.',
   )
 }
 
 export async function refreshConsole(request: ConsoleRefreshRequest): Promise<ConsoleAuthResponse> {
   return assertData(
-    await refreshConsoleSession({ body: request }),
+    await refreshConsoleSession({ body: request }) as { data?: ConsoleAuthEnvelope; response?: Response },
     'Unable to refresh the session.',
   )
 }
@@ -66,7 +68,7 @@ export async function getConsoleMe(accessToken: string): Promise<ConsolePrincipa
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
-    }),
+    }) as { data?: ConsolePrincipalEnvelope; response?: Response },
     'Unable to load the current principal.',
   )
 }

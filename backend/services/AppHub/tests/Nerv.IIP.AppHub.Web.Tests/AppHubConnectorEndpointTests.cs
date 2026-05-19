@@ -41,11 +41,11 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         var query = new InstanceListQuery(scenario.OrganizationId, scenario.EnvironmentId, 1, 20, null);
         using var list = await client.PostAsJsonAsync("/internal/apphub/v1/instances/query", query);
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
-        var listBody = await list.Content.ReadFromJsonAsync<InstanceListResponse>();
+        var listBody = await ReadResponseDataAsync<InstanceListResponse>(list);
 
         using var detailResponse = await client.GetAsync($"/internal/apphub/v1/instances/{scenario.InstanceKey}?organizationId={scenario.OrganizationId}&environmentId={scenario.EnvironmentId}");
         Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
-        var detail = await detailResponse.Content.ReadFromJsonAsync<InstanceDetailResponse>();
+        var detail = await ReadResponseDataAsync<InstanceDetailResponse>(detailResponse);
 
         Assert.NotNull(listBody);
         Assert.Equal(1, listBody.TotalCount);
@@ -102,4 +102,14 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         new(Context(scenario), scenario.InstanceKey, DateTimeOffset.Parse("2026-05-15T00:00:10Z"), "running", "healthy", "demo-api is running", new Dictionary<string, string>(), new Dictionary<string, decimal>(), new Dictionary<string, string> { ["containerId"] = "local-demo-001" });
 
     private sealed record TestScenario(string OrganizationId, string EnvironmentId, string ConnectorHostId, string InstanceKey, string IdempotencyKey);
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
+    {
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>();
+        Assert.NotNull(envelope);
+        Assert.True(envelope.Success, envelope.Message);
+        Assert.NotNull(envelope.Data);
+        return envelope.Data;
+    }
 }

@@ -8,6 +8,8 @@ using Nerv.IIP.PlatformGateway.Web.Endpoints.Auth;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
+using NetCorePal.Extensions.AspNetCore;
+using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services
@@ -42,6 +44,7 @@ builder.Services.AddGatewayAuthentication(builder.Configuration, builder.Environ
 
 var app = builder.Build();
 app.UseNervIipCorrelation();
+app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = HttpStatusCode.BadRequest });
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints(c =>

@@ -5,7 +5,9 @@ using Nerv.IIP.Observability;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Web.Application.Auth;
 using Nerv.IIP.Ops.Web.Application.Commands;
+using NetCorePal.Extensions.AspNetCore;
 using NetCorePal.Extensions.DependencyInjection;
+using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 var usePostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
@@ -13,6 +15,7 @@ builder.Services.AddFastEndpoints();
 builder.Services.AddMediatR(configuration =>
 {
     configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
+    configuration.AddKnownExceptionValidationBehavior();
     if (usePostgreSql)
     {
         configuration.AddUnitOfWorkBehaviors();
@@ -68,6 +71,7 @@ if (usePostgreSql)
 {
     app.UseContext();
 }
+app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = HttpStatusCode.BadRequest });
 app.UseFastEndpoints();
 app.Run();
 

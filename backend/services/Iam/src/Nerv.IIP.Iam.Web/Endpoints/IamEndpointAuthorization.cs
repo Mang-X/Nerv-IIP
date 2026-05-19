@@ -17,9 +17,10 @@ public sealed class IamPermissionAuthorizer(IIamAuthService auth) : IIamPermissi
         var principal = await auth.GetCurrentPrincipalAsync(context, cancellationToken);
         if (principal is null)
         {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(
-                new { title = "Unauthorized", detail = "Unauthorized.", status = StatusCodes.Status401Unauthorized },
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                context,
+                StatusCodes.Status401Unauthorized,
+                "Unauthorized.",
                 cancellationToken);
             return false;
         }
@@ -29,9 +30,10 @@ public sealed class IamPermissionAuthorizer(IIamAuthService auth) : IIamPermissi
             return true;
         }
 
-        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-        await context.Response.WriteAsJsonAsync(
-            new { title = "Forbidden", detail = "Forbidden.", status = StatusCodes.Status403Forbidden },
+        await ResponseDataEndpointResults.WriteErrorAsync(
+            context,
+            StatusCodes.Status403Forbidden,
+            "Forbidden.",
             cancellationToken);
         return false;
     }

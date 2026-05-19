@@ -6,6 +6,9 @@ export {
 } from './generated/@pinia/colada.gen'
 
 import type {
+  NetCorePalExtensionsDtoResponseDataOfInstanceDetailResponse,
+  NetCorePalExtensionsDtoResponseDataOfInstanceListResponse,
+  NetCorePalExtensionsDtoResponseDataOfOperationTaskResponse,
   NervIipContractsAppHubQueriesInstanceDetailResponse,
   NervIipContractsAppHubQueriesInstanceListItem,
   NervIipContractsAppHubQueriesInstanceListResponse,
@@ -19,3 +22,6 @@ export type InstanceListResponse = NervIipContractsAppHubQueriesInstanceListResp
 export type OperationTaskResponse = NervIipContractsOpsOperationTaskResponse
 export type RestartInstanceRequest =
   NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest
+export type InstanceDetailEnvelope = NetCorePalExtensionsDtoResponseDataOfInstanceDetailResponse
+export type InstanceListEnvelope = NetCorePalExtensionsDtoResponseDataOfInstanceListResponse
+export type OperationTaskEnvelope = NetCorePalExtensionsDtoResponseDataOfOperationTaskResponse
