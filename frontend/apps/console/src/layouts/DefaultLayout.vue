@@ -4,8 +4,12 @@ import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import type { RouteLocationRaw } from 'vue-router'
 
-const navItems = [{ label: 'Instances', href: '/' }]
+const navItems = [{ label: 'Instances', to: { name: '/' } }] satisfies {
+  label: string
+  to: RouteLocationRaw
+}[]
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
 const router = useRouter()
