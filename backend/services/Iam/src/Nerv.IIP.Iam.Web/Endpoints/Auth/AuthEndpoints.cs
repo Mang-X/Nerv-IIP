@@ -1,4 +1,3 @@
-using System.Text.Json;
 using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -98,12 +97,7 @@ internal static class IamEndpointResults
             return;
         }
 
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await JsonSerializer.SerializeAsync(
-            context.Response.Body,
-            result.Response!.AsResponseData(),
-            new JsonSerializerOptions(JsonSerializerDefaults.Web),
-            cancellationToken);
+        await ResponseDataEndpointResults.WriteDataAsync(context, StatusCodes.Status200OK, result.Response!, cancellationToken);
     }
 
     public static async Task WriteAuthResultAsync<T>(HttpContext context, Func<Task<T>> action, CancellationToken cancellationToken)
@@ -111,12 +105,7 @@ internal static class IamEndpointResults
         try
         {
             var response = await action();
-            context.Response.ContentType = "application/json; charset=utf-8";
-            await JsonSerializer.SerializeAsync(
-                context.Response.Body,
-                response.AsResponseData(),
-                new JsonSerializerOptions(JsonSerializerDefaults.Web),
-                cancellationToken);
+            await ResponseDataEndpointResults.WriteDataAsync(context, StatusCodes.Status200OK, response, cancellationToken);
         }
         catch (UnauthorizedAccessException ex)
         {
