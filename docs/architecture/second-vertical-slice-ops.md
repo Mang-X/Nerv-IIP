@@ -73,6 +73,8 @@ AppHub 仍然是实例状态事实来源。Ops 只记录动作事实和执行结
 2. Ops 会校验 connectorHostId、secret、organizationId、environmentId 与请求范围一致，避免 Connector Host 跨范围领取或回传任务。
 3. Gateway restart facade 暂时保留本地开发入口，后续接入控制台登录、权限和审批。
 
+该 header-secret 机制不是最终生产认证方案。Connector Host 机器身份终态以 [Connector Host 机器身份认证终态](connector-host-machine-auth.md) 为准：Connector Host 通过 IAM 换发短期 bearer token，Ops pending/result 接口按 bearer token、permission code 和 capability scope 授权。
+
 ## 配置
 
 本地开发默认端口：
