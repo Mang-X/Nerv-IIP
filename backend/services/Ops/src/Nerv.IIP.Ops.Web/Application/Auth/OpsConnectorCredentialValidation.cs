@@ -154,11 +154,15 @@ public sealed class IamOpsConnectorCredentialValidator(HttpClient httpClient, IL
         }
         catch (HttpRequestException ex)
         {
+            // Fail closed: IAM unavailable means reject rather than allow. A future local credential
+            // cache with bounded TTL can be considered if IAM downtime availability becomes a concern.
             logger.LogWarning(ex, "ConnectorCredentialValidationIamUnavailable");
             return OpsConnectorCredentialValidationResult.Rejected("iam-unavailable");
         }
         catch (TaskCanceledException ex)
         {
+            // Fail closed: IAM unavailable means reject rather than allow. A future local credential
+            // cache with bounded TTL can be considered if IAM downtime availability becomes a concern.
             logger.LogWarning(ex, "ConnectorCredentialValidationIamUnavailable");
             return OpsConnectorCredentialValidationResult.Rejected("iam-unavailable");
         }
