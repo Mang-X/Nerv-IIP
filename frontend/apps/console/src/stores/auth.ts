@@ -4,6 +4,8 @@ import { defineStore } from 'pinia'
 import { computed, shallowRef } from 'vue'
 
 const STORAGE_KEY = 'nerv-iip.console.auth'
+const REFRESH_BEFORE_EXPIRY_MS = 60_000
+const MAX_REFRESH_DELAY_MS = 2_147_483_647
 
 interface StoredSession {
   principal?: ConsolePrincipalResponse
@@ -11,10 +13,10 @@ interface StoredSession {
   sessionId: string
 }
 
-type CompleteConsoleAuthResponse = ConsoleAuthResponse & {
+type ValidConsoleAuthResponse = ConsoleAuthResponse & {
   accessToken: string
   expiresAtUtc: string
-  principal: ConsolePrincipalResponse
+  principal?: ConsolePrincipalResponse
   refreshToken: string
   sessionId: string
 }
@@ -27,6 +29,9 @@ export const useAuthStore = defineStore('auth', () => {
   const principal = shallowRef<ConsolePrincipalResponse>()
   const restoreStatus = shallowRef<'idle' | 'restoring' | 'restored' | 'failed'>('idle')
   const authError = shallowRef<string>()
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined
+  let refreshPromise: Promise<void> | undefined
+  let sessionExpiredHandler: ((reason: string) => void) | undefined
 
   const isAuthenticated = computed(() => Boolean(accessToken.value && principal.value))
   const isRestoring = computed(() => restoreStatus.value === 'restoring')
@@ -35,7 +40,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function login(loginName: string, password: string) {
     authError.value = undefined
     try {
-      applySession(await loginConsole({ loginName, password }))
+      await applySession(await loginConsole({ loginName, password }))
     } catch (error) {
       clearSession('login-failed')
       authError.value = error instanceof Error ? error.message : 'Unable to sign in.'
@@ -56,7 +61,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     restoreStatus.value = 'restoring'
     try {
-      applySession(await refreshConsole({ refreshToken: stored.refreshToken }))
+      await applySession(await refreshConsole({ refreshToken: stored.refreshToken }))
       restoreStatus.value = 'restored'
     } catch {
       clearSession('restore-failed')
@@ -65,12 +70,18 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function refreshSession() {
-    if (!refreshToken.value) {
+    if (refreshPromise) {
+      return refreshPromise
+    }
+
+    const currentRefreshToken = refreshToken.value
+    if (!currentRefreshToken) {
       clearSession('missing-refresh-token')
       return
     }
 
-    applySession(await refreshConsole({ refreshToken: refreshToken.value }))
+    refreshPromise = refreshSessionOnce(currentRefreshToken)
+    return refreshPromise
   }
 
   async function loadPrincipal() {
@@ -93,6 +104,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function clearSession(_reason: string) {
+    clearRefreshTimer()
     accessToken.value = undefined
     refreshToken.value = undefined
     sessionId.value = undefined
@@ -101,8 +113,24 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem(STORAGE_KEY)
   }
 
-  function applySession(session: ConsoleAuthResponse) {
-    const completeSession = assertCompleteSession(session)
+  function setSessionExpiredHandler(handler?: (reason: string) => void) {
+    sessionExpiredHandler = handler
+  }
+
+  async function refreshSessionOnce(currentRefreshToken: string) {
+    try {
+      await applySession(await refreshConsole({ refreshToken: currentRefreshToken }))
+    } catch (error) {
+      clearSession('refresh-failed')
+      sessionExpiredHandler?.('refresh-failed')
+      throw error
+    } finally {
+      refreshPromise = undefined
+    }
+  }
+
+  async function applySession(session: ConsoleAuthResponse) {
+    const completeSession = assertValidSession(session)
 
     accessToken.value = completeSession.accessToken
     refreshToken.value = completeSession.refreshToken
@@ -110,6 +138,39 @@ export const useAuthStore = defineStore('auth', () => {
     expiresAtUtc.value = completeSession.expiresAtUtc
     principal.value = completeSession.principal
     persistSession()
+    scheduleRefresh()
+
+    if (!principal.value) {
+      await loadPrincipal()
+    }
+  }
+
+  function scheduleRefresh() {
+    clearRefreshTimer()
+
+    const expiresAtMs = Date.parse(expiresAtUtc.value ?? '')
+    if (!Number.isFinite(expiresAtMs)) {
+      return
+    }
+
+    const refreshInMs = Math.min(
+      Math.max(expiresAtMs - Date.now() - REFRESH_BEFORE_EXPIRY_MS, 0),
+      MAX_REFRESH_DELAY_MS,
+    )
+    refreshTimer = setTimeout(() => {
+      refreshTimer = undefined
+      void refreshSession().catch(() => undefined)
+    }, refreshInMs)
+    unrefTimer(refreshTimer)
+  }
+
+  function clearRefreshTimer() {
+    if (!refreshTimer) {
+      return
+    }
+
+    clearTimeout(refreshTimer)
+    refreshTimer = undefined
   }
 
   function persistSession() {
@@ -165,22 +226,32 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken,
     restoreSession,
     restoreStatus,
+    setSessionExpiredHandler,
     sessionId,
   }
 })
 
-function assertCompleteSession(session: ConsoleAuthResponse): CompleteConsoleAuthResponse {
+function assertValidSession(session: ConsoleAuthResponse): ValidConsoleAuthResponse {
   if (
     isNonEmptyString(session.accessToken) &&
     isNonEmptyString(session.refreshToken) &&
     isNonEmptyString(session.sessionId) &&
     isNonEmptyString(session.expiresAtUtc) &&
-    isRecord(session.principal)
+    (session.principal === undefined || isRecord(session.principal))
   ) {
-    return session as CompleteConsoleAuthResponse
+    return session as ValidConsoleAuthResponse
   }
 
   throw new Error('Authentication service returned an invalid session.')
+}
+
+function unrefTimer(timer: ReturnType<typeof setTimeout>) {
+  if (typeof timer === 'object' && timer !== null && 'unref' in timer) {
+    const unref = timer.unref
+    if (typeof unref === 'function') {
+      unref.call(timer)
+    }
+  }
 }
 
 function isNonEmptyString(value: unknown): value is string {
