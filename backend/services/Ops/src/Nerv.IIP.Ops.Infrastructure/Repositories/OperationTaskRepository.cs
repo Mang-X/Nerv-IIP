@@ -53,6 +53,11 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
                         FROM ops.operation_attempts AS a
                         WHERE a."OperationTaskId" = t."Id"
                           AND a."Status" = 'started'
+                          AND a."LeaseId" IS NOT NULL
+                          AND a."LeasedAtUtc" IS NOT NULL
+                          AND a."LeasedUntilUtc" IS NOT NULL
+                          AND a."AttemptNo" IS NOT NULL
+                          AND a."MaxAttempts" IS NOT NULL
                           AND a."LeasedUntilUtc" <= {now}
                       )
                     )
@@ -62,7 +67,6 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
                 LIMIT {cappedTake}
                 """)
             .Include(x => x.Attempts)
-            .Include(x => x.AuditRecords)
             .ToListAsync(cancellationToken);
     }
 

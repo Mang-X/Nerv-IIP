@@ -80,7 +80,7 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                         .HasColumnType("character varying(256)")
                         .HasComment("Reason recorded when the attempt lease is abandoned or times out.");
 
-                    b.Property<int>("AttemptNo")
+                    b.Property<int?>("AttemptNo")
                         .HasColumnType("integer")
                         .HasComment("One-based attempt number for this operation task.");
 
@@ -99,20 +99,19 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                         .HasComment("Attempt finish time in UTC.");
 
                     b.Property<string>("LeaseId")
-                        .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
-                        .HasComment("Lease identifier returned by Ops claim and required for heartbeat or abandon updates.");
+                        .HasComment("Lease identifier returned by Ops claim and required for heartbeat or abandon updates; null for legacy attempts created before lease claim protocol fields existed.");
 
-                    b.Property<DateTimeOffset>("LeasedAtUtc")
+                    b.Property<DateTimeOffset?>("LeasedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasComment("UTC time when Ops granted this lease.");
 
-                    b.Property<DateTimeOffset>("LeasedUntilUtc")
+                    b.Property<DateTimeOffset?>("LeasedUntilUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasComment("UTC time when the lease expires and becomes eligible for requeue.");
 
-                    b.Property<int>("MaxAttempts")
+                    b.Property<int?>("MaxAttempts")
                         .HasColumnType("integer")
                         .HasComment("Maximum attempts allowed before an expired or abandoned task becomes failed.");
 

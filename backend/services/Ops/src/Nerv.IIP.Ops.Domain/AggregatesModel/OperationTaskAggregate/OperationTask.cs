@@ -100,7 +100,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new InvalidOperationResultException("Operation task is not claimable.");
         }
 
-        var attemptNo = _attempts.Count + 1;
+        var attemptNo = _attempts
+            .Where(x => x.AttemptNo.HasValue)
+            .Select(x => x.AttemptNo!.Value)
+            .DefaultIfEmpty(0)
+            .Max() + 1;
         if (attemptNo > maxAttempts)
         {
             throw new InvalidOperationResultException("Operation task has exhausted its maximum attempts.");
@@ -132,11 +136,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             OperationCode,
             CorrelationId,
             Parameters,
-            attempt.LeaseId,
-            attempt.LeasedAtUtc,
-            attempt.LeasedUntilUtc,
-            attempt.AttemptNo,
-            attempt.MaxAttempts);
+            attempt.LeaseId ?? leaseId,
+            attempt.LeasedAtUtc ?? now,
+            attempt.LeasedUntilUtc ?? now.Add(leaseDuration),
+            attempt.AttemptNo ?? attemptNo,
+            attempt.MaxAttempts ?? maxAttempts);
     }
 
     public void AbandonExpiredLease(AuditRecordId auditRecordId, DateTimeOffset now)
@@ -250,6 +254,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     {
         return _attempts
             .Where(x => string.Equals(x.Status, "started", StringComparison.Ordinal))
+            .Where(x => x.HasClaimLease())
             .OrderByDescending(x => x.AttemptNo)
             .FirstOrDefault();
     }
@@ -313,11 +318,11 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
     public DateTimeOffset StartedAtUtc { get; private set; }
     public DateTimeOffset? FinishedAtUtc { get; private set; }
     public string? FailureJson { get; private set; }
-    public string LeaseId { get; private set; } = string.Empty;
-    public DateTimeOffset LeasedAtUtc { get; private set; }
-    public DateTimeOffset LeasedUntilUtc { get; private set; }
-    public int AttemptNo { get; private set; }
-    public int MaxAttempts { get; private set; }
+    public string? LeaseId { get; private set; }
+    public DateTimeOffset? LeasedAtUtc { get; private set; }
+    public DateTimeOffset? LeasedUntilUtc { get; private set; }
+    public int? AttemptNo { get; private set; }
+    public int? MaxAttempts { get; private set; }
     public string? AbandonReason { get; private set; }
 
     internal void Record(string status, DateTimeOffset finishedAtUtc, FailureReason? failure)
@@ -339,6 +344,15 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
         LeasedUntilUtc = leasedUntilUtc;
     }
 
+    internal bool HasClaimLease()
+    {
+        return !string.IsNullOrWhiteSpace(LeaseId)
+            && LeasedAtUtc.HasValue
+            && LeasedUntilUtc.HasValue
+            && AttemptNo.HasValue
+            && MaxAttempts.HasValue;
+    }
+
     internal OperationAttemptFact ToFact()
     {
         return new OperationAttemptFact(
@@ -349,11 +363,11 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
             StartedAtUtc,
             FinishedAtUtc,
             FailureJson is null ? null : JsonSerializer.Deserialize<FailureReason>(FailureJson, JsonOptions),
-            LeaseId,
-            LeasedAtUtc,
-            LeasedUntilUtc,
-            AttemptNo,
-            MaxAttempts,
+            LeaseId ?? string.Empty,
+            LeasedAtUtc ?? StartedAtUtc,
+            LeasedUntilUtc ?? StartedAtUtc,
+            AttemptNo ?? 0,
+            MaxAttempts ?? 0,
             AbandonReason);
     }
 }

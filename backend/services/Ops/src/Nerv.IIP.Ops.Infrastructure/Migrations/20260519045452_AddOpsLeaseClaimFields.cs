@@ -25,8 +25,7 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                 schema: "ops",
                 table: "operation_attempts",
                 type: "integer",
-                nullable: false,
-                defaultValue: 0,
+                nullable: true,
                 comment: "One-based attempt number for this operation task.");
 
             migrationBuilder.AddColumn<string>(
@@ -35,17 +34,15 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                 table: "operation_attempts",
                 type: "character varying(64)",
                 maxLength: 64,
-                nullable: false,
-                defaultValue: "",
-                comment: "Lease identifier returned by Ops claim and required for heartbeat or abandon updates.");
+                nullable: true,
+                comment: "Lease identifier returned by Ops claim and required for heartbeat or abandon updates; null for legacy attempts created before lease claim protocol fields existed.");
 
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "LeasedAtUtc",
                 schema: "ops",
                 table: "operation_attempts",
                 type: "timestamp with time zone",
-                nullable: false,
-                defaultValue: new DateTimeOffset(new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                nullable: true,
                 comment: "UTC time when Ops granted this lease.");
 
             migrationBuilder.AddColumn<DateTimeOffset>(
@@ -53,8 +50,7 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                 schema: "ops",
                 table: "operation_attempts",
                 type: "timestamp with time zone",
-                nullable: false,
-                defaultValue: new DateTimeOffset(new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                nullable: true,
                 comment: "UTC time when the lease expires and becomes eligible for requeue.");
 
             migrationBuilder.AddColumn<int>(
@@ -62,8 +58,7 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                 schema: "ops",
                 table: "operation_attempts",
                 type: "integer",
-                nullable: false,
-                defaultValue: 0,
+                nullable: true,
                 comment: "Maximum attempts allowed before an expired or abandoned task becomes failed.");
 
             migrationBuilder.CreateIndex(
