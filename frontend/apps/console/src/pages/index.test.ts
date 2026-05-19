@@ -8,6 +8,8 @@ import { listConsoleInstancesQueryOptions } from '@nerv-iip/api-client'
 import IndexPage from './index.vue'
 
 const apiState = vi.hoisted(() => ({
+  detailFetchCount: 0,
+  failDetail: false,
   failListRefetch: false,
   listFetchCount: 0,
 }))
@@ -30,23 +32,31 @@ vi.mock('@nerv-iip/api-client', () => {
   return {
     getConsoleInstanceDetailQueryOptions: vi.fn(() => ({
       key: ['console-instance-detail', instance.instanceKey],
-      query: vi.fn(async () => ({
-        success: true,
-        data: {
-          ...instance,
-          capabilities: [
-            {
-              capabilityCode: 'runtime.restart',
-              capabilityVersion: 'v1',
-              category: 'operations',
-              supportedOperations: ['restart'],
+      query: vi.fn(async () => {
+        apiState.detailFetchCount += 1
+
+        if (apiState.failDetail) {
+          throw new Error('detail fetch failed')
+        }
+
+        return {
+          success: true,
+          data: {
+            ...instance,
+            capabilities: [
+              {
+                capabilityCode: 'runtime.restart',
+                capabilityVersion: 'v1',
+                category: 'operations',
+                supportedOperations: ['restart'],
+              },
+            ],
+            metadata: {
+              region: 'dev',
             },
-          ],
-          metadata: {
-            region: 'dev',
           },
-        },
-      })),
+        }
+      }),
     })),
     getConsoleOperationTaskQueryOptions: vi.fn(() => ({
       key: ['console-operation-task', 'task-1'],
@@ -95,6 +105,8 @@ vi.mock('@nerv-iip/api-client', () => {
 
 describe('Console index page', () => {
   beforeEach(() => {
+    apiState.detailFetchCount = 0
+    apiState.failDetail = false
     apiState.failListRefetch = false
     apiState.listFetchCount = 0
   })
@@ -152,6 +164,28 @@ describe('Console index page', () => {
 
     const destructiveBadges = wrapper.findAll('[data-variant="destructive"]')
     expect(destructiveBadges.some((badge) => badge.text() === 'unhealthy')).toBe(true)
+  })
+
+  it('distinguishes detail load failure from the empty detail state and retries manually', async () => {
+    apiState.failDetail = true
+    const wrapper = mountPage()
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Unable to load instance detail')
+    expect(wrapper.text()).toContain('detail fetch failed')
+    expect(wrapper.text()).not.toContain('Select an instance to inspect its runtime facts.')
+
+    apiState.failDetail = false
+    const retryButton = wrapper.findAll('button').find((button) => button.text() === 'Retry')
+    expect(retryButton).toBeDefined()
+
+    await retryButton!.trigger('click')
+    await flushPromises()
+
+    expect(apiState.detailFetchCount).toBeGreaterThanOrEqual(2)
+    expect(wrapper.text()).toContain('runtime.restart')
+    expect(wrapper.text()).not.toContain('Unable to load instance detail')
   })
 
   it('keeps restart success visible when list refetch fails after invalidation', async () => {
