@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UiBadge } from '@nerv-iip/ui'
+import { Badge } from '@nerv-iip/ui'
 import type { InstanceDetailResponse } from '@nerv-iip/api-client'
 import { computed } from 'vue'
 
@@ -12,22 +12,16 @@ type Capability = NonNullable<InstanceDetailResponse['capabilities']>[number]
 
 const metadataEntries = computed(() => Object.entries(props.instance?.metadata ?? {}))
 
-function badgeTone(status?: string | null) {
+function badgeVariant(status?: string | null) {
   const normalized = status?.toLowerCase()
 
-  if (normalized === 'running' || normalized === 'healthy') {
-    return 'success'
-  }
-
-  if (normalized === 'degraded' || normalized === 'pending' || normalized === 'starting') {
-    return 'warning'
-  }
-
-  if (normalized === 'failed' || normalized === 'unhealthy' || normalized === 'stopped') {
-    return 'danger'
-  }
-
-  return 'neutral'
+  return normalized === 'failed' ||
+    normalized === 'unhealthy' ||
+    normalized === 'stopped' ||
+    normalized === 'cancelled' ||
+    normalized === 'canceled'
+    ? 'destructive'
+    : 'secondary'
 }
 
 function capabilityKey(capability: Capability, index: number) {
@@ -64,17 +58,17 @@ function capabilityKey(capability: Capability, index: number) {
         <div class="detail-panel__fact">
           <dt>Status</dt>
           <dd>
-            <UiBadge :tone="badgeTone(instance.reportedStatus)">
+            <Badge :variant="badgeVariant(instance.reportedStatus)">
               {{ instance.reportedStatus ?? 'unknown' }}
-            </UiBadge>
+            </Badge>
           </dd>
         </div>
         <div class="detail-panel__fact">
           <dt>Health</dt>
           <dd>
-            <UiBadge :tone="badgeTone(instance.healthStatus)">
+            <Badge :variant="badgeVariant(instance.healthStatus)">
               {{ instance.healthStatus ?? 'unknown' }}
-            </UiBadge>
+            </Badge>
           </dd>
         </div>
         <div class="detail-panel__fact">
@@ -129,8 +123,8 @@ function capabilityKey(capability: Capability, index: number) {
 
 <style scoped>
 .detail-panel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--legacy-color-surface);
+  border: 1px solid var(--legacy-color-border);
   border-radius: 0.5rem;
   box-shadow: 0 10px 30px rgb(15 23 42 / 0.05);
   min-width: 0;
@@ -138,13 +132,13 @@ function capabilityKey(capability: Capability, index: number) {
 }
 
 .detail-panel__header {
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--legacy-color-border);
   margin: 0 -1.15rem 1rem;
   padding: 0 1.15rem 1rem;
 }
 
 .detail-panel__eyebrow {
-  color: var(--color-accent);
+  color: var(--legacy-color-accent);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -173,7 +167,7 @@ function capabilityKey(capability: Capability, index: number) {
 
 .detail-panel__fact dt,
 .detail-panel__metadata-row dt {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -187,7 +181,7 @@ function capabilityKey(capability: Capability, index: number) {
 }
 
 .detail-panel__section {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--legacy-color-border);
   margin-top: 1rem;
   padding-top: 1rem;
 }
@@ -226,7 +220,7 @@ function capabilityKey(capability: Capability, index: number) {
 }
 
 .detail-panel__muted {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
   margin: 0;
 }
 </style>

@@ -41,6 +41,11 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
+    public DateTimeOffset GetAccessTokenExpiresAtUtc(DateTimeOffset issuedAtUtc)
+    {
+        return issuedAtUtc.AddMinutes(GetAccessTokenMinutes());
+    }
+
     public AccessTokenPrincipal? TryReadPrincipal(HttpContext httpContext)
     {
         var value = httpContext.Request.Headers.Authorization.ToString();

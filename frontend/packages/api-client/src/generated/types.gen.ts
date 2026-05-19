@@ -100,6 +100,37 @@ export type NervIipPlatformGatewayWebEndpointsInstancesGetInstanceDetailRequest 
     [key: string]: never;
 };
 
+export type NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse = {
+    accessToken?: string;
+    refreshToken?: string;
+    sessionId?: string;
+    expiresAtUtc?: string;
+    principal?: NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse;
+};
+
+export type NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse = {
+    principalId?: string;
+    principalType?: string;
+    loginName?: string;
+    email?: string;
+    organizationId?: string;
+    environmentId?: string;
+    permissionVersion?: number;
+};
+
+export type NervIipPlatformGatewayWebApplicationAuthConsoleLoginRequest = {
+    loginName?: string;
+    password?: string;
+};
+
+export type NervIipPlatformGatewayWebApplicationAuthConsoleRefreshRequest = {
+    refreshToken?: string;
+};
+
+export type NervIipPlatformGatewayWebApplicationAuthConsoleLogoutRequest = {
+    sessionId?: string | null;
+};
+
 export type RestartConsoleInstanceData = {
     body: NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest;
     path: {
@@ -229,3 +260,67 @@ export type InvalidateGatewayCacheEndpointResponses = {
 };
 
 export type InvalidateGatewayCacheEndpointResponse = InvalidateGatewayCacheEndpointResponses[keyof InvalidateGatewayCacheEndpointResponses];
+
+export type LoginConsoleUserData = {
+    body: NervIipPlatformGatewayWebApplicationAuthConsoleLoginRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/auth/login';
+};
+
+export type LoginConsoleUserResponses = {
+    /**
+     * Success
+     */
+    200: NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse;
+};
+
+export type LoginConsoleUserResponse = LoginConsoleUserResponses[keyof LoginConsoleUserResponses];
+
+export type RefreshConsoleSessionData = {
+    body: NervIipPlatformGatewayWebApplicationAuthConsoleRefreshRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/auth/refresh';
+};
+
+export type RefreshConsoleSessionResponses = {
+    /**
+     * Success
+     */
+    200: NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse;
+};
+
+export type RefreshConsoleSessionResponse = RefreshConsoleSessionResponses[keyof RefreshConsoleSessionResponses];
+
+export type LogoutConsoleSessionData = {
+    body: NervIipPlatformGatewayWebApplicationAuthConsoleLogoutRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/auth/logout';
+};
+
+export type LogoutConsoleSessionResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type LogoutConsoleSessionResponse = LogoutConsoleSessionResponses[keyof LogoutConsoleSessionResponses];
+
+export type GetConsolePrincipalData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/auth/me';
+};
+
+export type GetConsolePrincipalResponses = {
+    /**
+     * Success
+     */
+    200: NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse;
+};
+
+export type GetConsolePrincipalResponse = GetConsolePrincipalResponses[keyof GetConsolePrincipalResponses];

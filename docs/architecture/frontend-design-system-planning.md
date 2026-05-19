@@ -1,34 +1,27 @@
 # Frontend Design System Planning
 
-The console has a working third-stage skeleton, but the visual design system is not selected. Backend SDK, persistence, deployment and migration verification must not wait on UI work, and UI work must not start by accident while backend foundations are still settling.
+The fifth-stage backend foundation paused frontend feature work until the console visual system could be selected deliberately. Console Auth + shadcn-vue Baseline now records that selection for the first product slice.
+
+## Selected Baseline
+
+Console Auth + shadcn-vue Baseline selects the official shadcn-vue registry, `reka-nova` style, Vite template, Reka base components, Tailwind CSS v4 and semantic token model. Component source lives in `frontend/packages/ui`, and console apps consume it only through stable `@nerv-iip/ui` exports.
+
+The previous local `UiButton`, `UiPanel` and `UiBadge` primitives were migrated to shadcn-vue components and deleted. They are no longer maintained as a parallel design system.
 
 ## Current Decision
 
-1. Do not start new frontend feature work during the release-grade persistence foundation phase.
-2. Do not add new console pages for migration state, database profile state or SDK verification.
-3. Do not restyle `frontend/packages/ui`, `frontend/packages/app-shell` or console layouts as part of backend foundation work.
-4. Do not select shadcn-vue, UnoCSS, token naming, density, theme strategy or app shell navigation inside a backend implementation task.
-5. API client generation and frontend quality gates are allowed only when backend OpenAPI changes require them.
+1. New console UI work must use the selected shadcn-vue baseline, semantic tokens and `@nerv-iip/ui` export boundary.
+2. Do not introduce a second UI registry, competing token system, unrelated CSS framework or page-specific component skin without a new design-system spec.
+3. Do not add large product workflows as incidental backend work; create a focused frontend/product spec when the workflow changes information architecture, navigation, authorization, or visual density.
+4. API client generation and frontend quality gates remain allowed when backend OpenAPI changes require them.
 
-## Required Future Spec
+## Future Spec Triggers
 
-Before frontend implementation resumes, create a separate Superpowers design spec that decides:
+Create a separate Superpowers design spec before changing any of these decisions:
 
-1. Component library and registry strategy.
-2. Design token model for color, typography, spacing, elevation, radius and state.
-3. Icon policy, including when lucide icons are required.
-4. Layout density for operations-heavy console screens.
-5. Accessibility baseline for keyboard navigation, focus, contrast and reduced motion.
-6. Theme strategy and whether tenant branding is supported in the first product slice.
-7. Migration path from current local primitives to the selected system.
-8. Testing strategy for visual regressions and responsive layout.
-
-## Allowed Backend-Phase Frontend Work
-
-The following work remains allowed because it preserves contract health without making design decisions:
-
-1. Regenerate `frontend/packages/api-client` from Gateway OpenAPI when backend contract tests require it.
-2. Run `pnpm -C frontend check`, `fmt`, `lint`, `typecheck`, `test` and `build` after mechanical generated-client changes.
-3. Fix generated-client or transport failures that directly result from backend contract changes.
-
-Any new page, component, route, visual redesign, navigation change or product workflow requires the future Design System spec first.
+1. Component library or registry strategy beyond shadcn-vue.
+2. Design token model for color, typography, spacing, elevation, radius or state.
+3. Layout density for operations-heavy console screens.
+4. Theme strategy, tenant branding, or dark-mode product commitment.
+5. Accessibility baseline beyond the current keyboard, focus, contrast and responsive checks.
+6. Visual regression testing strategy.

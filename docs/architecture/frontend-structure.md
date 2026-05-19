@@ -27,9 +27,11 @@ frontend/
     shared-types/
 ```
 
-第三迭代只创建控制台纵切必需包：`api-client`、`ui`、`app-shell`。`layer-base`、`layer-platform`、`auth`、`shared-types` 是已冻结的长期边界，等控制台领域层、登录授权或跨包类型复用真正出现时再创建，避免首批脚手架提前空转。
+第三迭代只创建控制台纵切必需包：`api-client`、`ui`、`app-shell`。`layer-base`、`layer-platform`、`auth`、`shared-types` 是已冻结的长期边界，等第二个应用或跨包复用真正出现时再创建，避免首批脚手架提前空转。
 
-第五阶段开始，前端功能实施暂缓：后端 SDK、迁移发布和部署验证不应被控制台 UI 牵引。Design System 尚未冻结前，`packages/ui`、`packages/app-shell` 和 console 页面只允许进行机械生成、类型修复和质量门禁修复；新的页面、组件皮肤、组件库迁移或 token 体系必须先完成 docs/architecture/frontend-design-system-planning.md 要求的独立规格。
+Console Auth + shadcn-vue Baseline 当前采用“app 内 auth”方案：`frontend/apps/console/src/stores/auth.ts` 管理会话状态，`src/api/auth.ts` 包装 Gateway Auth facade，路由守卫位于 app 内。完整 `frontend/packages/auth` 独立包方案留作后续参考；当 Console 之外出现第二个应用、插件宿主或跨包登录复用时再抽取，边界应包含 Gateway auth DTO mapping、storage adapter、refresh orchestration、logout/session revoke 组合、unauthorized handler 和 app-agnostic route helper，不直接耦合某个页面或 app shell。
+
+第五阶段曾暂缓前端功能实施，避免后端 SDK、迁移发布和部署验证被控制台 UI 牵引。Console Auth + shadcn-vue Baseline 已选择 Design System 边界后，新的页面、组件皮肤、组件库迁移或 token 体系必须沿用 docs/architecture/frontend-design-system-planning.md 的 Selected Baseline。
 
 ## 配置分层
 
@@ -50,7 +52,7 @@ frontend/
 
 - frontend/packages/api-client/package.json：API 生成、类型检查和测试入口。
 - frontend/packages/api-client/openapi-ts.config.ts：Hey API 生成配置，输入来自 Gateway OpenAPI 快照。
-- frontend/packages/ui/package.json：轻量 UI primitives 的类型检查入口；第三迭代先保留本地实现，后续再接入 shadcn-vue registry。
+- frontend/packages/ui/package.json：shadcn-vue 组件库入口，负责类型检查、稳定导出和本地 token/utils；Console 应用不直接引用 `components/ui` 深层文件。
 - frontend/packages/app-shell/package.json：应用壳层组件的类型检查入口。
 
 ### 第三阶段工具入口
@@ -158,6 +160,10 @@ pnpm -C frontend build
 - `openapi/platform-gateway.v1.json` 是 Gateway OpenAPI 导出快照，不能手动改写。
 - `src/transport` 只处理 baseURL、认证头、错误归一化和请求策略，不承载业务视图逻辑。
 
+### Console Auth
+
+Console 登录闭环通过 PlatformGateway Console Auth facade 调用 IAM。`stores/auth.ts` 只管理客户端会话状态，`api-client` 继续由 Gateway OpenAPI 生成 SDK 与 Pinia Colada options。路由守卫放在 `src/router/guards/auth.ts`，登录页和登录表单放在 `src/pages/login.vue` 与 `src/components/auth/LoginForm.vue`。
+
 ### 轮询与刷新
 
 1. 服务端状态刷新由 Pinia Colada 管理。
@@ -188,4 +194,4 @@ pnpm -C frontend build
 1. 根级 package.json、pnpm-workspace.yaml、vite.config.ts、tsconfig.base.json。
 2. console 应用的 main.ts、App.vue、vite.config.ts、router/index.ts、guards、layouts/default.vue、pages/index.vue。
 3. packages/ui、packages/app-shell、packages/api-client 初版。
-4. packages/layer-base、packages/layer-platform、packages/auth、packages/shared-types 只在出现真实跨页面或跨应用复用需求时创建。
+4. packages/layer-base、packages/layer-platform、packages/auth、packages/shared-types 只在出现真实跨包或跨应用复用需求时创建；其中 `packages/auth` 的完整独立包方案按上文 Console Auth 留档边界执行。

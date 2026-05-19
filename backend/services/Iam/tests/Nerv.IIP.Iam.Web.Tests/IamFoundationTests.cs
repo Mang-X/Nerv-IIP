@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Nerv.IIP.Iam.Infrastructure;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
@@ -34,11 +36,23 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
 
         var connector = await _client.PostAsJsonAsync("/api/iam/v1/connectors/credentials/validate", new { connectorHostId = "connector-host-001", secret = "local-connector-secret" });
         connector.EnsureSuccessStatusCode();
-        var principal = await connector.Content.ReadFromJsonAsync<ConnectorPrincipalResponse>();
-        Assert.Equal("connector-host", principal!.PrincipalType);
-        Assert.Equal("org-001", principal.OrganizationId);
+        var connectorPrincipal = await connector.Content.ReadFromJsonAsync<ConnectorPrincipalResponse>();
+        Assert.Equal("connector-host", connectorPrincipal!.PrincipalType);
+        Assert.Equal("org-001", connectorPrincipal.OrganizationId);
 
         _client.DefaultRequestHeaders.Authorization = new("Bearer", rotated.AccessToken);
+        var meBeforeLogout = await _client.GetAsync("/api/iam/v1/me");
+        meBeforeLogout.EnsureSuccessStatusCode();
+        var principal = await meBeforeLogout.Content.ReadFromJsonAsync<MeResponse>();
+
+        Assert.Equal("user-admin", principal!.UserId);
+        Assert.Equal("admin", principal.LoginName);
+        Assert.Equal("user", principal.PrincipalType);
+        Assert.Equal("org-001", principal.OrganizationId);
+        Assert.Equal("env-dev", principal.EnvironmentId);
+        Assert.Equal(1, principal.PermissionVersion);
+        Assert.True(rotated.ExpiresAtUtc > DateTimeOffset.UtcNow);
+
         var logout = await _client.PostAsJsonAsync("/api/iam/v1/auth/logout", new { sessionId = rotated.SessionId });
         logout.EnsureSuccessStatusCode();
 
@@ -46,6 +60,29 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Equal(HttpStatusCode.Unauthorized, me.StatusCode);
     }
 
-    private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId);
+    [Fact]
+    public void In_memory_access_token_validation_rejects_expired_token_payload()
+    {
+        var store = new InMemoryIamStore();
+        var auth = store.Login("admin", "Admin123!");
+        var user = Assert.Single(store.Users);
+        var expiredAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds();
+        var expiredToken = Convert.ToBase64String(Encoding.UTF8.GetBytes(
+            $"{auth.SessionId}|{user.SecurityStamp}|{user.PermissionVersion}|{expiredAtUtc}"));
+
+        var exception = Assert.Throws<UnauthorizedAccessException>(() => store.ValidateAccessToken(expiredToken));
+
+        Assert.Contains("expired", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+    private sealed record MeResponse(
+        string UserId,
+        string LoginName,
+        string Email,
+        string PrincipalType,
+        string OrganizationId,
+        string EnvironmentId,
+        int PermissionVersion);
     private sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
 }

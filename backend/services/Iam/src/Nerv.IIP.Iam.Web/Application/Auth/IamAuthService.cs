@@ -131,7 +131,23 @@ public sealed class IamAuthService(
             return null;
         }
 
-        return new CurrentPrincipalResponse(user.Id.Id, user.LoginName, user.Email, "user");
+        var membership = await dbContext.Memberships
+            .Where(x => x.UserId == userId)
+            .OrderBy(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (membership is null)
+        {
+            return null;
+        }
+
+        return new CurrentPrincipalResponse(
+            user.Id.Id,
+            user.LoginName,
+            user.Email,
+            "user",
+            membership.OrganizationId.Id,
+            membership.EnvironmentId.Id,
+            user.PermissionVersion);
     }
 
     public async Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
@@ -213,8 +229,10 @@ public sealed class IamAuthService(
             ipAddress);
 
         dbContext.UserSessions.Add(session);
+        var issuedAtUtc = DateTimeOffset.UtcNow;
         var accessToken = tokenService.CreateAccessToken(user, session);
-        return new AuthResponse(accessToken, refreshToken, session.Id.Id);
+        var expiresAtUtc = tokenService.GetAccessTokenExpiresAtUtc(issuedAtUtc);
+        return new AuthResponse(accessToken, refreshToken, session.Id.Id, expiresAtUtc);
     }
 
     private static UnauthorizedAccessException Unauthorized()

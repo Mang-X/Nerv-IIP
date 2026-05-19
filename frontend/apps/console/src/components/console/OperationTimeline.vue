@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UiBadge } from '@nerv-iip/ui'
+import { Badge } from '@nerv-iip/ui'
 import type { OperationTaskResponse } from '@nerv-iip/api-client'
 import { computed } from 'vue'
 
@@ -14,22 +14,15 @@ type OperationAttempt = NonNullable<OperationTaskResponse['attempts']>[number]
 const auditRecords = computed(() => props.operationTask?.auditRecords ?? [])
 const attempts = computed(() => props.operationTask?.attempts ?? [])
 
-function badgeTone(status?: string | null) {
+function badgeVariant(status?: string | null) {
   const normalized = status?.toLowerCase()
 
-  if (normalized === 'completed' || normalized === 'succeeded' || normalized === 'success') {
-    return 'success'
-  }
-
-  if (normalized === 'queued' || normalized === 'running' || normalized === 'pending') {
-    return 'warning'
-  }
-
-  if (normalized === 'failed' || normalized === 'cancelled') {
-    return 'danger'
-  }
-
-  return 'neutral'
+  return normalized === 'failed' ||
+    normalized === 'cancelled' ||
+    normalized === 'canceled' ||
+    normalized === 'failure'
+    ? 'destructive'
+    : 'secondary'
 }
 
 function attemptKey(attempt: OperationAttempt, index: number) {
@@ -54,9 +47,9 @@ function auditRecordKey(record: AuditRecord, index: number) {
           {{ operationTask?.operationCode ?? 'Task' }}
         </h1>
       </div>
-      <UiBadge :tone="badgeTone(operationTask?.status)">
+      <Badge :variant="badgeVariant(operationTask?.status)">
         {{ operationTask?.status ?? (pending ? 'loading' : 'unknown') }}
-      </UiBadge>
+      </Badge>
     </div>
 
     <p v-if="pending && !operationTask" class="operation-timeline__muted">
@@ -93,9 +86,9 @@ function auditRecordKey(record: AuditRecord, index: number) {
           >
             <div class="operation-timeline__item-topline">
               <strong>{{ attempt.attemptId ?? 'Attempt' }}</strong>
-              <UiBadge :tone="badgeTone(attempt.status)">
+              <Badge :variant="badgeVariant(attempt.status)">
                 {{ attempt.status ?? 'unknown' }}
-              </UiBadge>
+              </Badge>
             </div>
             <span class="operation-timeline__muted">{{
               attempt.startedAtUtc ?? 'No start time'
@@ -141,8 +134,8 @@ function auditRecordKey(record: AuditRecord, index: number) {
 
 <style scoped>
 .operation-timeline {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--legacy-color-surface);
+  border: 1px solid var(--legacy-color-border);
   border-radius: 0.5rem;
   box-shadow: 0 10px 30px rgb(15 23 42 / 0.06);
   padding: 1.2rem;
@@ -150,7 +143,7 @@ function auditRecordKey(record: AuditRecord, index: number) {
 
 .operation-timeline__header {
   align-items: center;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--legacy-color-border);
   display: flex;
   gap: 1rem;
   justify-content: space-between;
@@ -159,7 +152,7 @@ function auditRecordKey(record: AuditRecord, index: number) {
 }
 
 .operation-timeline__eyebrow {
-  color: var(--color-accent);
+  color: var(--legacy-color-accent);
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -190,7 +183,7 @@ function auditRecordKey(record: AuditRecord, index: number) {
 }
 
 .operation-timeline__fact dt {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -203,7 +196,7 @@ function auditRecordKey(record: AuditRecord, index: number) {
 }
 
 .operation-timeline__section {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--legacy-color-border);
   margin-top: 1.1rem;
   padding-top: 1.1rem;
 }
@@ -222,7 +215,7 @@ function auditRecordKey(record: AuditRecord, index: number) {
 }
 
 .operation-timeline__item {
-  border-left: 3px solid var(--color-accent);
+  border-left: 3px solid var(--legacy-color-accent);
   display: grid;
   gap: 0.3rem;
   padding: 0.15rem 0 0.15rem 0.8rem;
@@ -236,13 +229,13 @@ function auditRecordKey(record: AuditRecord, index: number) {
 }
 
 .operation-timeline__muted {
-  color: var(--color-text-muted);
+  color: var(--legacy-color-text-muted);
   margin: 0;
   overflow-wrap: anywhere;
 }
 
 .operation-timeline__failure {
-  color: var(--color-danger);
+  color: var(--legacy-color-danger);
   font-weight: 800;
 }
 

@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskResponses, HealthEndpointData, HealthEndpointResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponses, ListConsoleInstancesData, ListConsoleInstancesResponses, RestartConsoleInstanceData, RestartConsoleInstanceResponses } from './types.gen';
+import type { GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalResponses, HealthEndpointData, HealthEndpointResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponses, ListConsoleInstancesData, ListConsoleInstancesResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, RestartConsoleInstanceData, RestartConsoleInstanceResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -38,3 +38,32 @@ export const healthEndpoint = <ThrowOnError extends boolean = false>(options?: O
 export const getBuildInfoEndpoint = <ThrowOnError extends boolean = false>(options?: Options<GetBuildInfoEndpointData, ThrowOnError>) => (options?.client ?? client).get<GetBuildInfoEndpointResponses, unknown, ThrowOnError>({ url: '/internal/gateway/v1/build-info', ...options });
 
 export const invalidateGatewayCacheEndpoint = <ThrowOnError extends boolean = false>(options?: Options<InvalidateGatewayCacheEndpointData, ThrowOnError>) => (options?.client ?? client).post<InvalidateGatewayCacheEndpointResponses, unknown, ThrowOnError>({ url: '/internal/gateway/cache/invalidate', ...options });
+
+export const loginConsoleUser = <ThrowOnError extends boolean = false>(options: Options<LoginConsoleUserData, ThrowOnError>) => (options.client ?? client).post<LoginConsoleUserResponses, unknown, ThrowOnError>({
+    url: '/api/console/v1/auth/login',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const refreshConsoleSession = <ThrowOnError extends boolean = false>(options: Options<RefreshConsoleSessionData, ThrowOnError>) => (options.client ?? client).post<RefreshConsoleSessionResponses, unknown, ThrowOnError>({
+    url: '/api/console/v1/auth/refresh',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const logoutConsoleSession = <ThrowOnError extends boolean = false>(options: Options<LogoutConsoleSessionData, ThrowOnError>) => (options.client ?? client).post<LogoutConsoleSessionResponses, unknown, ThrowOnError>({
+    url: '/api/console/v1/auth/logout',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getConsolePrincipal = <ThrowOnError extends boolean = false>(options?: Options<GetConsolePrincipalData, ThrowOnError>) => (options?.client ?? client).get<GetConsolePrincipalResponses, unknown, ThrowOnError>({ url: '/api/console/v1/auth/me', ...options });

@@ -38,6 +38,18 @@ public sealed class GatewayOpenApiTests
 
         var operationDetail = paths.GetProperty("/api/console/v1/operation-tasks/{operationTaskId}");
         Assert.Equal("getConsoleOperationTask", operationDetail.GetProperty("get").GetProperty("operationId").GetString());
+
+        var login = paths.GetProperty("/api/console/v1/auth/login");
+        Assert.Equal("loginConsoleUser", login.GetProperty("post").GetProperty("operationId").GetString());
+
+        var refresh = paths.GetProperty("/api/console/v1/auth/refresh");
+        Assert.Equal("refreshConsoleSession", refresh.GetProperty("post").GetProperty("operationId").GetString());
+
+        var logout = paths.GetProperty("/api/console/v1/auth/logout");
+        Assert.Equal("logoutConsoleSession", logout.GetProperty("post").GetProperty("operationId").GetString());
+
+        var me = paths.GetProperty("/api/console/v1/auth/me");
+        Assert.Equal("getConsolePrincipal", me.GetProperty("get").GetProperty("operationId").GetString());
     }
 
     private static void AssertJsonResponseSchema(JsonElement operation, string statusCode, string schemaName)
