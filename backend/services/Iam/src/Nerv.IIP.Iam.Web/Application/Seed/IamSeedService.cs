@@ -72,19 +72,11 @@ public sealed class IamSeedService(
         var user = await dbContext.Users.FindAsync([adminUserId], cancellationToken);
         if (user is null)
         {
-            var passwordUser = new User(
-                adminUserId,
-                seed.AdminLoginName,
-                seed.AdminEmail,
-                string.Empty,
-                true,
-                Guid.NewGuid().ToString("n"),
-                1);
             user = new User(
                 adminUserId,
                 seed.AdminLoginName,
                 seed.AdminEmail,
-                passwordService.Hash(passwordUser, seed.AdminPassword),
+                passwordService.Hash(seed.AdminPassword),
                 true,
                 Guid.NewGuid().ToString("n"),
                 1);
@@ -92,7 +84,7 @@ public sealed class IamSeedService(
         }
         else if (!seedAlreadyApplied && !passwordService.Verify(user, seed.AdminPassword))
         {
-            user.UpdatePasswordHash(passwordService.Hash(user, seed.AdminPassword));
+            user.UpdatePasswordHash(passwordService.Hash(seed.AdminPassword));
         }
 
         var membership = await dbContext.Memberships

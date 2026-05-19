@@ -1,20 +1,18 @@
 using Microsoft.AspNetCore.Identity;
-using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
-
 namespace Nerv.IIP.Iam.Web.Application.Auth;
 
 public sealed class IamPasswordService
 {
-    private readonly PasswordHasher<User> _passwordHasher = new();
+    private readonly PasswordHasher<object> _passwordHasher = new();
 
-    public string Hash(User user, string password)
+    public string Hash(string password)
     {
-        return _passwordHasher.HashPassword(user, password);
+        return _passwordHasher.HashPassword(new object(), password);
     }
 
-    public bool Verify(User user, string password)
+    public bool Verify(Domain.AggregatesModel.UserAggregate.User user, string password)
     {
-        var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, password);
+        var result = _passwordHasher.VerifyHashedPassword(new object(), user.PasswordHash, password);
         return result is PasswordVerificationResult.Success or PasswordVerificationResult.SuccessRehashNeeded;
     }
 }
