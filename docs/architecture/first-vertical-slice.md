@@ -186,7 +186,7 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 3. IAM、FileStorage、AppHub、Ops 和 PlatformGateway 都有最小 Web 服务入口、health 和 build info。
 4. AppHub 可接收 Connector Host registration、heartbeat、state snapshot。
 5. PlatformGateway 可查询 AppHub 的实例列表与实例详情。
-6. Connector Host 可通过 `Nerv.IIP.Sdk.ConnectorProtocol` 完成注册、心跳和状态快照上报。
+6. Connector Host 可通过 `Nerv.IIP.Sdk.ConnectorProtocol` 完成注册、心跳和状态快照上报；Docker Connector 通过 Docker CLI 发现本地真实容器，测试 fake 与生产路径隔离。
 7. Ops 可创建 operation task、通过 claim/lease 领取任务、接收 operation result，并记录任务、尝试和审计事实。
 8. Connector Host 可通过 `Nerv.IIP.Sdk.Ops` 领取低风险 restart 任务并回传执行结果。
 9. frontend 工作区已具备 console 应用、api-client、ui 和 app-shell 初版，可从 Gateway OpenAPI 生成类型安全客户端。
