@@ -1,5 +1,7 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
+const string LocalJwtSigningKey = "aspire-local-development-signing-key-that-is-long-enough";
+
 var postgres = builder.AddPostgres("postgres")
     .WithDataVolume("nerv-iip-postgres");
 var appHubDatabase = postgres.AddDatabase("apphub-db", "nerv_iip_apphub");
@@ -40,7 +42,7 @@ var iam = builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam")
     .WithEnvironment("Iam__Seed__Enabled", "true")
     .WithEnvironment("Iam__Seed__AdminPassword", "Admin123!")
     .WithEnvironment("Iam__Seed__ConnectorHostSecret", "local-connector-secret")
-    .WithEnvironment("Iam__Jwt__SigningKey", "aspire-local-development-signing-key-that-is-long-enough")
+    .WithEnvironment("Iam__Jwt__SigningKey", LocalJwtSigningKey)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithReference(iamDatabase, "IamDb")
@@ -76,6 +78,7 @@ var fileStorage = builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-st
 var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
+    .WithEnvironment("Iam__Jwt__SigningKey", LocalJwtSigningKey)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
