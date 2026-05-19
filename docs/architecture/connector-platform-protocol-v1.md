@@ -22,6 +22,8 @@
 10. Connector Host 或外部客户端调用平台公开接口时，其身份凭证、组织环境范围和能力授权由 IAM 统一管理；本协议只定义业务载荷和公共上下文字段，不复制 IAM 的授权模型。
 11. 主平台、Connector Host 和各类 Connector 在同一主版本内允许独立发布和升级；互操作性由 platformVersion、sdkVersion、protocolVersion、capabilityVersion、公开 API 版本和权限范围共同保证。
 
+Connector Host 机器身份认证、短期 access token、capability scope 到 permission code 的映射和旧版 header-secret 迁移路径见 [Connector Host 机器身份认证终态](connector-host-machine-auth.md)。
+
 ## 首批公开接口
 
 ### AppHub.Web
