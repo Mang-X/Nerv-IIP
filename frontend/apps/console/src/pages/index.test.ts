@@ -8,6 +8,7 @@ import { listConsoleInstancesQueryOptions } from '@nerv-iip/api-client'
 import IndexPage from './index.vue'
 
 const apiState = vi.hoisted(() => ({
+  detailFailures: [] as string[],
   detailFetchCount: 0,
   failDetail: false,
   failListRefetch: false,
@@ -34,6 +35,11 @@ vi.mock('@nerv-iip/api-client', () => {
       key: ['console-instance-detail', instance.instanceKey],
       query: vi.fn(async () => {
         apiState.detailFetchCount += 1
+
+        const nextDetailFailure = apiState.detailFailures.shift()
+        if (nextDetailFailure) {
+          throw new Error(nextDetailFailure)
+        }
 
         if (apiState.failDetail) {
           throw new Error('detail fetch failed')
@@ -105,6 +111,7 @@ vi.mock('@nerv-iip/api-client', () => {
 
 describe('Console index page', () => {
   beforeEach(() => {
+    apiState.detailFailures = []
     apiState.detailFetchCount = 0
     apiState.failDetail = false
     apiState.failListRefetch = false
@@ -186,6 +193,26 @@ describe('Console index page', () => {
     expect(apiState.detailFetchCount).toBeGreaterThanOrEqual(2)
     expect(wrapper.text()).toContain('runtime.restart')
     expect(wrapper.text()).not.toContain('Unable to load instance detail')
+  })
+
+  it('keeps the detail error state visible when a manual retry also fails', async () => {
+    apiState.detailFailures = ['detail fetch failed', 'detail retry still failed']
+    const wrapper = mountPage()
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('detail fetch failed')
+
+    const retryButton = wrapper.findAll('button').find((button) => button.text() === 'Retry')
+    expect(retryButton).toBeDefined()
+
+    await retryButton!.trigger('click')
+    await flushPromises()
+
+    expect(apiState.detailFetchCount).toBeGreaterThanOrEqual(2)
+    expect(wrapper.text()).toContain('Unable to load instance detail')
+    expect(wrapper.text()).toContain('detail retry still failed')
+    expect(wrapper.text()).not.toContain('Select an instance to inspect its runtime facts.')
   })
 
   it('keeps restart success visible when list refetch fails after invalidation', async () => {

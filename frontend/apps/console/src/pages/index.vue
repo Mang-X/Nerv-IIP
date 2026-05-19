@@ -36,6 +36,14 @@ const latestOperationPath = computed(() => {
 async function handleRestart(instanceKey: string) {
   await restartInstance(instanceKey)
 }
+
+async function handleRefreshDetail() {
+  try {
+    await refreshDetail()
+  } catch {
+    // The query error state renders the failure message.
+  }
+}
 </script>
 
 <template>
@@ -78,7 +86,7 @@ async function handleRestart(instanceKey: string) {
           size="sm"
           type="button"
           variant="outline"
-          @click="refreshDetail"
+          @click="handleRefreshDetail"
         >
           Retry
         </Button>
