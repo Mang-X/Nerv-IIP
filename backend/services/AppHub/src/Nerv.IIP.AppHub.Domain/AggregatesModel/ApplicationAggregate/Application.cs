@@ -35,6 +35,11 @@ public class Application : Entity<Nerv.IIP.AppHub.Domain.AggregatesModel.Applica
         AddVersion(version);
     }
 
+    public void Deactivate()
+    {
+        Deleted = new Deleted(true);
+    }
+
     private void AddVersion(string version)
     {
         if (Versions.Any(x => x.Version == version))
