@@ -3,6 +3,7 @@ using NetCorePal.Extensions.Domain;
 namespace Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate
 {
     public record ApplicationRegisteredDomainEvent(string OrganizationId, string EnvironmentId, string ApplicationKey, string Version) : IDomainEvent;
+    public record ApplicationDeactivatedDomainEvent(string OrganizationId, string EnvironmentId, string ApplicationKey) : IDomainEvent;
 }
 
 namespace Nerv.IIP.AppHub.Domain.AggregatesModel.ManagedNodeAggregate
