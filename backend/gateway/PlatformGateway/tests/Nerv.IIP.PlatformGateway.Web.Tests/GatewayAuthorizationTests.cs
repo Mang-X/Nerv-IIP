@@ -78,7 +78,7 @@ public sealed class GatewayAuthorizationTests
         public Task<InstanceListResponse> QueryInstancesAsync(InstanceListQuery query, CancellationToken cancellationToken)
         {
             QueryCallCount++;
-            return Task.FromResult(new InstanceListResponse(query.PageNumber, query.PageSize, 0, []));
+            return Task.FromResult(new InstanceListResponse(query.PageIndex, query.PageSize, 0, []));
         }
 
         public Task<InstanceDetailResponse> GetInstanceAsync(string organizationId, string environmentId, string instanceKey, CancellationToken cancellationToken)

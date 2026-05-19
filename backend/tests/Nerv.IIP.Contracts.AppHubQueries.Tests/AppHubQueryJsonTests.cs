@@ -8,6 +8,30 @@ public sealed class AppHubQueryJsonTests
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public void InstanceListQuery_round_trips_with_unified_pagination_fields()
+    {
+        var source = new InstanceListQuery(
+            "org-001",
+            "env-dev",
+            2,
+            10,
+            "instanceName",
+            "desc",
+            "demo");
+
+        var json = JsonSerializer.Serialize(source, JsonOptions);
+        var result = JsonSerializer.Deserialize<InstanceListQuery>(json, JsonOptions);
+
+        Assert.Contains("\"pageIndex\":2", json);
+        Assert.Contains("\"filterSearch\":\"demo\"", json);
+        Assert.NotNull(result);
+        Assert.Equal(2, result.PageIndex);
+        Assert.Equal("instanceName", result.SortBy);
+        Assert.Equal("desc", result.SortOrder);
+        Assert.Equal("demo", result.FilterSearch);
+    }
+
+    [Fact]
     public void InstanceDetailResponse_round_trips_with_web_json_options()
     {
         var source = new InstanceDetailResponse(

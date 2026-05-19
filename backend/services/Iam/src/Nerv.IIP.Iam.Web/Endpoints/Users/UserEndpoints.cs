@@ -1,6 +1,7 @@
 using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Nerv.IIP.Iam.Web.Application;
 using Nerv.IIP.Iam.Web.Application.Commands.Users;
 using Nerv.IIP.Iam.Web.Application.Queries.Users;
 using Nerv.IIP.Iam.Web.Application.Users;
@@ -10,20 +11,33 @@ namespace Nerv.IIP.Iam.Web.Endpoints.Users;
 
 public sealed record CreateUserRequest(string LoginName, string Email, string Password);
 public sealed record UpdateUserRequest(string LoginName, string Email, bool Enabled);
+public sealed record ListUsersRequest(
+    int? PageIndex,
+    int? PageSize,
+    string? SortBy,
+    string? SortOrder,
+    string? FilterSearch,
+    bool? FilterEnabled);
 
 [HttpGet("/api/iam/v1/users")]
 [AllowAnonymous]
 public sealed class ListUsersEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
-    : EndpointWithoutRequest
+    : Endpoint<ListUsersRequest, PagedListResponse<UserResponse>>
 {
-    public override async Task HandleAsync(CancellationToken ct)
+    public override async Task HandleAsync(ListUsersRequest req, CancellationToken ct)
     {
         if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.read", ct))
         {
             return;
         }
 
-        var users = await mediator.Send(new ListUsersQuery(), ct);
+        var users = await mediator.Send(new ListUsersQuery(IamListQueryOptions.Create(
+            req.PageIndex,
+            req.PageSize,
+            req.SortBy,
+            req.SortOrder,
+            req.FilterSearch,
+            filterEnabled: req.FilterEnabled)), ct);
         await HttpContext.Response.WriteAsJsonAsync(users, ct);
     }
 }

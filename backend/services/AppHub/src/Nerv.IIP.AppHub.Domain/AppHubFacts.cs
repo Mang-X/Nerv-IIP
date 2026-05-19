@@ -99,18 +99,19 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
                 .Where(x =>
                 {
                     var app = Applications.Single(a => a.OrganizationId == x.OrganizationId && a.EnvironmentId == x.EnvironmentId && a.ApplicationKey == x.ApplicationKey);
-                    return string.IsNullOrWhiteSpace(query.Search) || app.ApplicationName.Contains(query.Search, StringComparison.OrdinalIgnoreCase) || x.InstanceName.Contains(query.Search, StringComparison.OrdinalIgnoreCase);
+                    return string.IsNullOrWhiteSpace(query.FilterSearch)
+                        || app.ApplicationName.Contains(query.FilterSearch, StringComparison.OrdinalIgnoreCase)
+                        || x.InstanceName.Contains(query.FilterSearch, StringComparison.OrdinalIgnoreCase);
                 })
-                .OrderBy(x => Applications.Single(a => a.OrganizationId == x.OrganizationId && a.EnvironmentId == x.EnvironmentId && a.ApplicationKey == x.ApplicationKey).ApplicationName)
-                .ThenBy(x => x.InstanceName)
+                .Select(ToListItem)
+                .ApplyInstanceListSort(query)
                 .ToList();
 
             var items = filtered
-                .Skip((Math.Max(query.PageNumber, 1) - 1) * Math.Max(query.PageSize, 1))
+                .Skip((Math.Max(query.PageIndex, 1) - 1) * Math.Max(query.PageSize, 1))
                 .Take(Math.Max(query.PageSize, 1))
-                .Select(ToListItem)
                 .ToList();
-            return new InstanceListResponse(query.PageNumber, query.PageSize, filtered.Count, items);
+            return new InstanceListResponse(query.PageIndex, query.PageSize, filtered.Count, items);
         }
     }
 
@@ -156,5 +157,28 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
         }
 
         list[list.IndexOf(current)] = value;
+    }
+}
+
+public static class InstanceListSorting
+{
+    public static IEnumerable<InstanceListItem> ApplyInstanceListSort(this IEnumerable<InstanceListItem> items, InstanceListQuery query)
+    {
+        var descending = string.Equals(query.SortOrder, "desc", StringComparison.OrdinalIgnoreCase);
+        return (query.SortBy?.ToLowerInvariant(), descending) switch
+        {
+            ("instancekey", true) => items.OrderByDescending(x => x.InstanceKey, StringComparer.Ordinal),
+            ("instancekey", false) => items.OrderBy(x => x.InstanceKey, StringComparer.Ordinal),
+            ("instancename", true) => items.OrderByDescending(x => x.InstanceName, StringComparer.Ordinal),
+            ("instancename", false) => items.OrderBy(x => x.InstanceName, StringComparer.Ordinal),
+            ("reportedstatus", true) => items.OrderByDescending(x => x.ReportedStatus, StringComparer.Ordinal),
+            ("reportedstatus", false) => items.OrderBy(x => x.ReportedStatus, StringComparer.Ordinal),
+            ("healthstatus", true) => items.OrderByDescending(x => x.HealthStatus, StringComparer.Ordinal),
+            ("healthstatus", false) => items.OrderBy(x => x.HealthStatus, StringComparer.Ordinal),
+            ("lastheartbeatatutc", true) => items.OrderByDescending(x => x.LastHeartbeatAtUtc),
+            ("lastheartbeatatutc", false) => items.OrderBy(x => x.LastHeartbeatAtUtc),
+            ("applicationname", true) => items.OrderByDescending(x => x.ApplicationName, StringComparer.Ordinal).ThenBy(x => x.InstanceName, StringComparer.Ordinal),
+            _ => items.OrderBy(x => x.ApplicationName, StringComparer.Ordinal).ThenBy(x => x.InstanceName, StringComparer.Ordinal)
+        };
     }
 }

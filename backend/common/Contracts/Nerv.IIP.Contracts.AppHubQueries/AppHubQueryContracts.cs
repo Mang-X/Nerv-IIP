@@ -3,12 +3,14 @@ namespace Nerv.IIP.Contracts.AppHubQueries;
 public sealed record InstanceListQuery(
     string OrganizationId,
     string EnvironmentId,
-    int PageNumber,
+    int PageIndex,
     int PageSize,
-    string? Search);
+    string? SortBy,
+    string? SortOrder,
+    string? FilterSearch);
 
 public sealed record InstanceListResponse(
-    int PageNumber,
+    int PageIndex,
     int PageSize,
     int TotalCount,
     IReadOnlyList<InstanceListItem> Items);

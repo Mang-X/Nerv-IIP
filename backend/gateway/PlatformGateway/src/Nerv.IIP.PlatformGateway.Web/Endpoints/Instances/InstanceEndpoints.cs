@@ -10,9 +10,11 @@ public sealed class ListInstancesRequest
 {
     public string OrganizationId { get; set; } = string.Empty;
     public string EnvironmentId { get; set; } = string.Empty;
-    public int? PageNumber { get; set; }
+    public int? PageIndex { get; set; }
     public int? PageSize { get; set; }
-    public string? Search { get; set; }
+    public string? SortBy { get; set; }
+    public string? SortOrder { get; set; }
+    public string? FilterSearch { get; set; }
 }
 
 [HttpGet("/api/console/v1/instances")]
@@ -39,9 +41,16 @@ public sealed class ListInstancesEndpoint(
             return;
         }
 
-        var pageNumber = req.PageNumber is > 0 ? req.PageNumber.Value : 1;
+        var pageIndex = req.PageIndex is > 0 ? req.PageIndex.Value : 1;
         var pageSize = req.PageSize is > 0 ? req.PageSize.Value : 20;
-        var query = new InstanceListQuery(req.OrganizationId, req.EnvironmentId, pageNumber, pageSize, req.Search);
+        var query = new InstanceListQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            pageIndex,
+            pageSize,
+            req.SortBy,
+            req.SortOrder,
+            req.FilterSearch);
         var key = NervIipCacheKeys.GatewayInstanceList(req.OrganizationId, req.EnvironmentId, NervIipCacheKeys.HashQuery(query));
 
         try

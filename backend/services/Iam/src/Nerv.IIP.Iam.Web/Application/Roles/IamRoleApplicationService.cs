@@ -13,7 +13,7 @@ public sealed record RoleMutationResult(bool IsImplemented, RoleMutationResponse
 
 public interface IIamRoleApplicationService
 {
-    Task<IReadOnlyList<RoleResponse>> ListRolesAsync(CancellationToken cancellationToken);
+    Task<PagedListResponse<RoleResponse>> ListRolesAsync(IamListQueryOptions options, CancellationToken cancellationToken);
 
     Task<RoleMutationResult> CreateRoleAsync(CancellationToken cancellationToken);
 
@@ -22,11 +22,16 @@ public interface IIamRoleApplicationService
 
 public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : IIamRoleApplicationService
 {
-    public Task<IReadOnlyList<RoleResponse>> ListRolesAsync(CancellationToken cancellationToken)
+    public Task<PagedListResponse<RoleResponse>> ListRolesAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
-        IReadOnlyList<RoleResponse> roles = store.Roles
+        var roles = store.Roles
+            .Where(role => string.IsNullOrWhiteSpace(options.FilterSearch)
+                || role.RoleId.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
+                || role.RoleName.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
+                || role.PermissionCodes.Any(code => code.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)))
             .Select(x => new RoleResponse(x.RoleId, x.RoleName, x.PermissionCodes.OrderBy(code => code).ToArray()))
-            .ToArray();
+            .ApplyRoleSort(options)
+            .ToPagedResponse(options);
         return Task.FromResult(roles);
     }
 
@@ -43,10 +48,14 @@ public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : 
 
 public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository repository) : IIamRoleApplicationService
 {
-    public async Task<IReadOnlyList<RoleResponse>> ListRolesAsync(CancellationToken cancellationToken)
+    public async Task<PagedListResponse<RoleResponse>> ListRolesAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
         var roles = await repository.ListNotDeletedAsync(cancellationToken);
         return roles
+            .Where(role => string.IsNullOrWhiteSpace(options.FilterSearch)
+                || role.Id.Id.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
+                || role.RoleName.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
+                || role.Permissions.Any(permission => permission.PermissionCode.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)))
             .Select(x => new RoleResponse(
                 x.Id.Id,
                 x.RoleName,
@@ -54,7 +63,8 @@ public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository reposito
                     .Select(p => p.PermissionCode)
                     .OrderBy(code => code)
                     .ToArray()))
-            .ToArray();
+            .ApplyRoleSort(options)
+            .ToPagedResponse(options);
     }
 
     public Task<RoleMutationResult> CreateRoleAsync(CancellationToken cancellationToken)
@@ -65,5 +75,19 @@ public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository reposito
     public Task<RoleMutationResult> PatchRolePermissionsAsync(string roleId, CancellationToken cancellationToken)
     {
         return Task.FromResult(RoleMutationResult.NotImplemented("Persisted role permission updates are not implemented."));
+    }
+}
+
+internal static class RoleListSorting
+{
+    public static IEnumerable<RoleResponse> ApplyRoleSort(this IEnumerable<RoleResponse> roles, IamListQueryOptions options)
+    {
+        return (options.SortBy?.ToLowerInvariant(), options.IsDescending) switch
+        {
+            ("roleid", true) => roles.OrderByDescending(x => x.RoleId, StringComparer.Ordinal),
+            ("roleid", false) => roles.OrderBy(x => x.RoleId, StringComparer.Ordinal),
+            ("rolename", true) => roles.OrderByDescending(x => x.RoleName, StringComparer.Ordinal),
+            _ => roles.OrderBy(x => x.RoleName, StringComparer.Ordinal)
+        };
     }
 }

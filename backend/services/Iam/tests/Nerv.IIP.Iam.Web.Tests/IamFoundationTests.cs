@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Nerv.IIP.Iam.Infrastructure;
@@ -89,9 +90,38 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         var disable = await _client.PostAsync($"/api/iam/v1/users/{created.UserId}/disable", null);
         Assert.Equal(HttpStatusCode.NoContent, disable.StatusCode);
 
-        var users = await _client.GetFromJsonAsync<UserResponse[]>("/api/iam/v1/users");
-        var disabled = Assert.Single(users!, user => user.UserId == created.UserId);
+        var users = await GetPagedUsersAsync("/api/iam/v1/users?pageIndex=1&pageSize=50");
+        var disabled = Assert.Single(users!.Items, user => user.UserId == created.UserId);
         Assert.False(disabled.Enabled);
+    }
+
+    [Fact]
+    public async Task User_list_supports_page_filter_and_sort_parameters()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        await CreateUserAsync($"alpha-{suffix}", $"alpha-{suffix}@nerv-iip.local");
+        await CreateUserAsync($"beta-{suffix}", $"beta-{suffix}@nerv-iip.local");
+        await CreateUserAsync($"gamma-{suffix}", $"gamma-{suffix}@nerv-iip.local");
+
+        var users = await GetPagedUsersAsync(
+            $"/api/iam/v1/users?pageIndex=2&pageSize=1&sortBy=loginName&sortOrder=desc&filterSearch={suffix}");
+
+        Assert.NotNull(users);
+        Assert.Equal(3, users.TotalCount);
+        Assert.Equal(2, users.PageIndex);
+        Assert.Equal(1, users.PageSize);
+        var user = Assert.Single(users.Items);
+        Assert.Equal($"beta-{suffix}", user.LoginName);
+    }
+
+    [Fact]
+    public async Task Role_and_session_lists_return_paged_envelopes()
+    {
+        var login = await _client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+        login.EnsureSuccessStatusCode();
+
+        await AssertPagedEnvelopeAsync("/api/iam/v1/roles?pageIndex=1&pageSize=10&sortBy=roleName&sortOrder=asc&filterSearch=admin");
+        await AssertPagedEnvelopeAsync("/api/iam/v1/sessions?pageIndex=1&pageSize=10&sortBy=issuedAtUtc&sortOrder=desc&filterSearch=user-admin&filterRevoked=false");
     }
 
     [Fact]
@@ -110,6 +140,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+    private sealed record PagedListResponse<T>(int TotalCount, int PageIndex, int PageSize, IReadOnlyList<T> Items);
     private sealed record UserResponse(string UserId, string LoginName, string Email, bool Enabled);
     private sealed record MeResponse(
         string UserId,
@@ -120,4 +151,34 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         string EnvironmentId,
         int PermissionVersion);
     private sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
+
+    private async Task CreateUserAsync(string loginName, string email)
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/iam/v1/users",
+            new { loginName, email, password = "Operator123!" });
+        response.EnsureSuccessStatusCode();
+    }
+
+    private async Task<PagedListResponse<UserResponse>> GetPagedUsersAsync(string requestUri)
+    {
+        var json = await _client.GetStringAsync(requestUri);
+        AssertPagedEnvelope(json);
+        return JsonSerializer.Deserialize<PagedListResponse<UserResponse>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+    }
+
+    private async Task AssertPagedEnvelopeAsync(string requestUri)
+    {
+        AssertPagedEnvelope(await _client.GetStringAsync(requestUri));
+    }
+
+    private static void AssertPagedEnvelope(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
+        Assert.True(document.RootElement.TryGetProperty("totalCount", out _));
+        Assert.True(document.RootElement.TryGetProperty("pageIndex", out _));
+        Assert.True(document.RootElement.TryGetProperty("pageSize", out _));
+        Assert.True(document.RootElement.TryGetProperty("items", out _));
+    }
 }

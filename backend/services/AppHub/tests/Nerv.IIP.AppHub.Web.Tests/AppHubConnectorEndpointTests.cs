@@ -38,7 +38,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         using var snapshot = await client.PostAsJsonAsync("/api/connectors/v1/state-snapshots", CreateSnapshot(scenario));
         Assert.Equal(HttpStatusCode.NoContent, snapshot.StatusCode);
 
-        var query = new InstanceListQuery(scenario.OrganizationId, scenario.EnvironmentId, 1, 20, null);
+        var query = new InstanceListQuery(scenario.OrganizationId, scenario.EnvironmentId, 1, 20, "instanceName", "asc", null);
         using var list = await client.PostAsJsonAsync("/internal/apphub/v1/instances/query", query);
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         var listBody = await list.Content.ReadFromJsonAsync<InstanceListResponse>();
@@ -48,6 +48,8 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         var detail = await detailResponse.Content.ReadFromJsonAsync<InstanceDetailResponse>();
 
         Assert.NotNull(listBody);
+        Assert.Equal(1, listBody.PageIndex);
+        Assert.Equal(20, listBody.PageSize);
         Assert.Equal(1, listBody.TotalCount);
         var item = Assert.Single(listBody.Items);
         Assert.Equal("demo-api", item.ApplicationKey);

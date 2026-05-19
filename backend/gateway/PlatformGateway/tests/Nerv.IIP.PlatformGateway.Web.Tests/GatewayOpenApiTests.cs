@@ -20,12 +20,14 @@ public sealed class GatewayOpenApiTests
         Assert.True(list.TryGetProperty("operationId", out var listOperation));
         Assert.Equal("listConsoleInstances", listOperation.GetString());
         AssertJsonResponseSchema(list, "200", "NervIIPContractsAppHubQueriesInstanceListResponse");
-        AssertParameterNames(list, "organizationId", "environmentId", "pageNumber", "pageSize", "search");
+        AssertParameterNames(list, "organizationId", "environmentId", "pageIndex", "pageSize", "sortBy", "sortOrder", "filterSearch");
         AssertParameterRequired(list, "organizationId", true);
         AssertParameterRequired(list, "environmentId", true);
-        AssertParameterRequired(list, "pageNumber", false);
+        AssertParameterRequired(list, "pageIndex", false);
         AssertParameterRequired(list, "pageSize", false);
-        AssertParameterRequired(list, "search", false);
+        AssertParameterRequired(list, "sortBy", false);
+        AssertParameterRequired(list, "sortOrder", false);
+        AssertParameterRequired(list, "filterSearch", false);
 
         var detail = paths.GetProperty("/api/console/v1/instances/{instanceKey}");
         var detailGet = detail.GetProperty("get");
