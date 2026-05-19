@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+
+definePage({
+  meta: {
+    requiresAuth: true,
+  },
+})
 </script>
 
 <template>
