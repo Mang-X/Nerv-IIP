@@ -130,7 +130,7 @@
 4. FileStorage 文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和 MinIO/object storage 适配的最小服务骨架。
 5. AppHub registrations、heartbeats、state-snapshots 三个接口。
 6. PlatformGateway 实例列表与实例详情查询接口。
-7. Connector Host 通过 Nerv.IIP.Sdk.ConnectorProtocol 到 AppHub 的客户端与 Docker Connector 空壳。
+7. Connector Host 通过 Nerv.IIP.Sdk.ConnectorProtocol 到 AppHub 的客户端与 Docker CLI-backed Docker Connector。
 8. 统一 OpenTelemetry 接线、health、build info、基础 structured logging。
 9. 统一 FusionCache 接线、Redis L2/backplane、缓存键命名和首批读侧缓存策略。
 10. 以 docs/architecture/first-vertical-slice.md 作为首批纵切验收口径。
@@ -142,7 +142,7 @@
 2. Ops.Web 已提供 operation task 创建、详情查询、claim/heartbeat/abandon 和 operation result 回传接口。
 3. PlatformGateway 已提供实例 restart facade 与 operation task detail facade。
 4. Connector Host 已提供 operation loop，可领取低风险任务、调用 Connector 执行，并回传结果。
-5. Docker Connector 已支持 `lifecycle.restart` 执行抽象。
+5. Docker Connector 已支持通过 Docker CLI 执行真实 `lifecycle.restart`，并对 not found、timeout、daemon unavailable、permission denied 和 runtime failure 做失败分类。
 6. Ops 当前会记录 OperationTask、OperationAttempt 和 AuditRecord 的内存态事实。
 7. 以 docs/architecture/second-vertical-slice-ops.md 和 docs/superpowers/plans/2026-05-15-second-vertical-slice-low-risk-ops.md 作为第二阶段验收口径。
 

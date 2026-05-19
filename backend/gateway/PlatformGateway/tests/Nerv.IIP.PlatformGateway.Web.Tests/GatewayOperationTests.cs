@@ -24,7 +24,7 @@ public sealed class GatewayOperationTests
         var response = await client.PostAsJsonAsync("/api/console/v1/instances/docker-container-local-demo-001/operations/restart", new RestartInstanceRequest("org-001", "env-dev", "smoke restart", "idem-gateway-restart-001"));
 
         response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        var body = await ReadResponseDataAsync<OperationTaskResponse>(response);
         Assert.NotNull(body);
         Assert.Equal("docker-container-local-demo-001", body.InstanceKey);
         Assert.Equal("lifecycle.restart", body.OperationCode);
@@ -60,7 +60,9 @@ public sealed class GatewayOperationTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetFromJsonAsync<OperationTaskResponse>("/api/console/v1/operation-tasks/op-000001?organizationId=org-001&environmentId=env-dev");
+        var httpResponse = await client.GetAsync("/api/console/v1/operation-tasks/op-000001?organizationId=org-001&environmentId=env-dev");
+        httpResponse.EnsureSuccessStatusCode();
+        var response = await ReadResponseDataAsync<OperationTaskResponse>(httpResponse);
 
         Assert.NotNull(response);
         Assert.Equal("op-000001", response.OperationTaskId);
@@ -125,5 +127,16 @@ public sealed class GatewayOperationTests
             LastOperationTaskId = operationTaskId;
             return Task.FromResult(new OperationTaskResponse(operationTaskId, "org-001", "env-dev", "docker-container-local-demo-001", "lifecycle.restart", "completed", "local-admin", DateTimeOffset.UtcNow, "attempt-000001", [], []));
         }
+    }
+
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
+    {
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>();
+        Assert.NotNull(envelope);
+        Assert.True(envelope.Success, envelope.Message);
+        Assert.NotNull(envelope.Data);
+        return envelope.Data;
     }
 }

@@ -45,11 +45,13 @@ public sealed class OpsPostgresProfileTests
 
             var createdResponse = await client.PostAsJsonAsync("/api/ops/v1/operation-tasks", CreateTask("pg-ops-001"));
             createdResponse.EnsureSuccessStatusCode();
-            var created = await createdResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+            var created = await ReadResponseDataAsync<OperationTaskResponse>(createdResponse);
             Assert.NotNull(created);
 
-            var pendingResponse = await client.GetFromJsonAsync<PendingOperationTasksResponse>(
+            var pendingHttpResponse = await client.GetAsync(
                 "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+            pendingHttpResponse.EnsureSuccessStatusCode();
+            var pendingResponse = await ReadResponseDataAsync<PendingOperationTasksResponse>(pendingHttpResponse);
             Assert.NotNull(pendingResponse);
             var pending = Assert.Single(pendingResponse.Items);
 
@@ -116,5 +118,16 @@ public sealed class OpsPostgresProfileTests
             "succeeded",
             null,
             new Dictionary<string, string> { ["exitCode"] = "0" });
+    }
+
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
+    {
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>();
+        Assert.NotNull(envelope);
+        Assert.True(envelope.Success, envelope.Message);
+        Assert.NotNull(envelope.Data);
+        return envelope.Data;
     }
 }

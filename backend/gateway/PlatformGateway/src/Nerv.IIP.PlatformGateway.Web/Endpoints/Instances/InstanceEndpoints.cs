@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
 
@@ -22,7 +23,7 @@ public sealed class ListInstancesRequest
 public sealed class ListInstancesEndpoint(
     IAppHubClient appHub,
     IAppCache cache,
-    IGatewayAuthorizationClient auth) : Endpoint<ListInstancesRequest, InstanceListResponse>
+    IGatewayAuthorizationClient auth) : Endpoint<ListInstancesRequest, ResponseData<InstanceListResponse>>
 {
     public override async Task HandleAsync(ListInstancesRequest req, CancellationToken ct)
     {
@@ -56,7 +57,7 @@ public sealed class ListInstancesEndpoint(
         try
         {
             var response = await cache.GetOrCreateAsync(key, () => appHub.QueryInstancesAsync(query, ct), TimeSpan.FromSeconds(5));
-            await HttpContext.Response.WriteAsJsonAsync(response, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (HttpRequestException ex)
         {
@@ -77,7 +78,7 @@ public sealed class GetInstanceDetailRequest
 public sealed class GetInstanceDetailEndpoint(
     IAppHubClient appHub,
     IAppCache cache,
-    IGatewayAuthorizationClient auth) : Endpoint<GetInstanceDetailRequest, InstanceDetailResponse>
+    IGatewayAuthorizationClient auth) : Endpoint<GetInstanceDetailRequest, ResponseData<InstanceDetailResponse>>
 {
     public override async Task HandleAsync(GetInstanceDetailRequest req, CancellationToken ct)
     {
@@ -101,7 +102,7 @@ public sealed class GetInstanceDetailEndpoint(
         try
         {
             var response = await cache.GetOrCreateAsync(key, () => appHub.GetInstanceAsync(req.OrganizationId, req.EnvironmentId, req.InstanceKey, ct), TimeSpan.FromSeconds(5));
-            await HttpContext.Response.WriteAsJsonAsync(response, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (HttpRequestException ex)
         {
@@ -114,7 +115,10 @@ internal static class GatewayEndpointResults
 {
     public static async Task WriteBadGatewayAsync(HttpContext context, Exception exception, CancellationToken cancellationToken)
     {
-        context.Response.StatusCode = StatusCodes.Status502BadGateway;
-        await context.Response.WriteAsJsonAsync(new { title = "Bad Gateway", detail = $"AppHub unavailable: {exception.Message}", status = StatusCodes.Status502BadGateway }, cancellationToken);
+        await ResponseDataEndpointResults.WriteErrorAsync(
+            context,
+            StatusCodes.Status502BadGateway,
+            $"AppHub unavailable: {exception.Message}",
+            cancellationToken);
     }
 }

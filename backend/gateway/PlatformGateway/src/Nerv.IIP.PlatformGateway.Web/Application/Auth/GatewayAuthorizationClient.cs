@@ -33,9 +33,12 @@ public sealed class HttpGatewayAuthorizationClient(HttpClient httpClient) : IGat
         }
 
         response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<AuthorizationCheckResponse>(cancellationToken);
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<AuthorizationCheckResponse>>(cancellationToken);
+        var body = envelope?.Data;
         return body is not null && body.Allowed
             ? GatewayAuthorizationResult.Allowed(body.PrincipalId!, body.PrincipalType!, body.LoginName!)
             : GatewayAuthorizationResult.Forbidden(body?.DenialReason ?? "forbidden");
     }
+
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
 
@@ -12,7 +13,7 @@ public sealed record RestartInstanceRequest(string OrganizationId, string Enviro
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class RestartInstanceEndpoint(
     IGatewayOpsClient opsClient,
-    IGatewayAuthorizationClient auth) : Endpoint<RestartInstanceRequest, OperationTaskResponse>
+    IGatewayAuthorizationClient auth) : Endpoint<RestartInstanceRequest, ResponseData<OperationTaskResponse>>
 {
     public override async Task HandleAsync(RestartInstanceRequest req, CancellationToken ct)
     {
@@ -44,7 +45,8 @@ public sealed class RestartInstanceEndpoint(
 
         try
         {
-            await HttpContext.Response.WriteAsJsonAsync(await opsClient.CreateTaskAsync(operationRequest, ct), ct);
+            var response = await opsClient.CreateTaskAsync(operationRequest, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (HttpRequestException ex)
         {
@@ -64,7 +66,7 @@ public sealed class GetConsoleOperationTaskRequest
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class GetConsoleOperationTaskEndpoint(
     IGatewayOpsClient opsClient,
-    IGatewayAuthorizationClient auth) : Endpoint<GetConsoleOperationTaskRequest, OperationTaskResponse>
+    IGatewayAuthorizationClient auth) : Endpoint<GetConsoleOperationTaskRequest, ResponseData<OperationTaskResponse>>
 {
     public override async Task HandleAsync(GetConsoleOperationTaskRequest req, CancellationToken ct)
     {
@@ -85,7 +87,8 @@ public sealed class GetConsoleOperationTaskEndpoint(
 
         try
         {
-            await HttpContext.Response.WriteAsJsonAsync(await opsClient.GetTaskAsync(req.OperationTaskId, ct), ct);
+            var response = await opsClient.GetTaskAsync(req.OperationTaskId, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (HttpRequestException ex)
         {
@@ -98,7 +101,10 @@ internal static class GatewayOpsEndpointResults
 {
     public static async Task WriteBadGatewayAsync(HttpContext context, Exception exception, CancellationToken cancellationToken)
     {
-        context.Response.StatusCode = StatusCodes.Status502BadGateway;
-        await context.Response.WriteAsJsonAsync(new { title = "Bad Gateway", detail = $"Ops unavailable: {exception.Message}", status = StatusCodes.Status502BadGateway }, cancellationToken);
+        await ResponseDataEndpointResults.WriteErrorAsync(
+            context,
+            StatusCodes.Status502BadGateway,
+            $"Ops unavailable: {exception.Message}",
+            cancellationToken);
     }
 }

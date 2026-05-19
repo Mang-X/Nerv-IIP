@@ -1,14 +1,16 @@
 using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Nerv.IIP.AppHub.Domain;
 using Nerv.IIP.AppHub.Web.Application.Commands;
 using Nerv.IIP.Contracts.ConnectorProtocol;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.AppHub.Web.Endpoints.Connectors;
 
 [HttpPost("/api/connectors/v1/registrations")]
 [AllowAnonymous]
-public sealed class RegisterApplicationEndpoint(IMediator mediator) : Endpoint<ApplicationRegistration>
+public sealed class RegisterApplicationEndpoint(IMediator mediator) : Endpoint<ApplicationRegistration, ResponseData<RegistrationResult>>
 {
     public override async Task HandleAsync(ApplicationRegistration req, CancellationToken ct)
     {
@@ -19,7 +21,7 @@ public sealed class RegisterApplicationEndpoint(IMediator mediator) : Endpoint<A
         }
 
         var result = await mediator.Send(new RegisterApplicationCommand(req), ct);
-        await HttpContext.Response.WriteAsJsonAsync(result, ct);
+        await Send.OkAsync(result.AsResponseData(), ct);
     }
 }
 
@@ -69,7 +71,10 @@ internal static class ConnectorEndpointResults
 
     public static async Task WriteUnauthorizedAsync(HttpContext context, CancellationToken cancellationToken)
     {
-        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        await context.Response.WriteAsJsonAsync(new { title = "Unauthorized", detail = "Invalid Connector Host credential.", status = StatusCodes.Status401Unauthorized }, cancellationToken);
+        await ResponseDataEndpointResults.WriteErrorAsync(
+            context,
+            StatusCodes.Status401Unauthorized,
+            "Invalid Connector Host credential.",
+            cancellationToken);
     }
 }

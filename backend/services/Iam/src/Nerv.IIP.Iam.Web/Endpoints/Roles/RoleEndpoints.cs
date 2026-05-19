@@ -41,7 +41,7 @@ public sealed class ListRolesEndpoint(
 [AllowAnonymous]
 public sealed class CreateRoleEndpoint(
     IIamPermissionAuthorizer authorizer,
-    IIamRoleApplicationService roles) : EndpointWithoutRequest
+    IIamRoleApplicationService roles) : EndpointWithoutRequest<ResponseData<RoleMutationResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -57,8 +57,7 @@ public sealed class CreateRoleEndpoint(
             return;
         }
 
-        HttpContext.Response.StatusCode = StatusCodes.Status201Created;
-        await HttpContext.Response.WriteAsJsonAsync(result.Response, ct);
+        await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status201Created, result.Response!, ct);
     }
 }
 
@@ -66,7 +65,7 @@ public sealed class CreateRoleEndpoint(
 [AllowAnonymous]
 public sealed class PatchRolePermissionsEndpoint(
     IIamPermissionAuthorizer authorizer,
-    IIamRoleApplicationService roles) : EndpointWithoutRequest
+    IIamRoleApplicationService roles) : EndpointWithoutRequest<ResponseData<RoleMutationResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -85,7 +84,7 @@ public sealed class PatchRolePermissionsEndpoint(
             return;
         }
 
-        await HttpContext.Response.WriteAsJsonAsync(result.Response, ct);
+        await Send.OkAsync(result.Response!.AsResponseData(), ct);
     }
 }
 
@@ -93,7 +92,6 @@ internal static class RoleEndpointResults
 {
     public static async Task WriteNotImplementedAsync(HttpContext context, string detail, CancellationToken cancellationToken)
     {
-        context.Response.StatusCode = StatusCodes.Status501NotImplemented;
-        await context.Response.WriteAsJsonAsync(new { title = "Not Implemented", detail, status = StatusCodes.Status501NotImplemented }, cancellationToken);
+        await ResponseDataEndpointResults.WriteErrorAsync(context, StatusCodes.Status501NotImplemented, detail, cancellationToken);
     }
 }

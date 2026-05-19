@@ -32,6 +32,55 @@ public sealed class FastEndpointsArchitectureTests
         Assert.All(endpointFiles, file => Assert.Contains("FastEndpoints", File.ReadAllText(file)));
     }
 
+    public static TheoryData<string> ResponseDataWebProjects => new()
+    {
+        "backend/services/Iam/src/Nerv.IIP.Iam.Web",
+        "backend/services/AppHub/src/Nerv.IIP.AppHub.Web",
+        "backend/services/Ops/src/Nerv.IIP.Ops.Web",
+        "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web"
+    };
+
+    [Theory]
+    [MemberData(nameof(ResponseDataWebProjects))]
+    public void Platform_web_projects_use_response_data_and_known_exception_middleware(string projectDirectory)
+    {
+        var root = FindRepositoryRoot();
+        var fullProjectDirectory = Path.Combine(root, projectDirectory);
+        var programText = File.ReadAllText(Path.Combine(fullProjectDirectory, "Program.cs"));
+        var sourceFiles = Directory.GetFiles(fullProjectDirectory, "*.cs", SearchOption.AllDirectories);
+
+        Assert.Contains("UseKnownExceptionHandler", programText);
+        Assert.All(sourceFiles, file => Assert.DoesNotContain("WriteAsJsonAsync", File.ReadAllText(file)));
+    }
+
+    [Fact]
+    public void Aspire_apphost_covers_platform_services_and_real_infrastructure()
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var projectText = File.ReadAllText(Path.Combine(appHostDirectory, "Nerv.IIP.AppHost.csproj"));
+        var composeText = File.ReadAllText(Path.Combine(root, "infra", "docker-compose.dev.yml"));
+        var collectorConfig = Path.Combine(root, "infra", "otel", "otel-collector.dev.yaml");
+
+        Assert.Contains("Projects.Nerv_IIP_Iam_Web", programText);
+        Assert.Contains("Projects.Nerv_IIP_FileStorage_Web", programText);
+        Assert.Contains("AddContainer(\"minio\"", programText);
+        Assert.Contains("AddContainer(\"otel-collector\"", programText);
+        Assert.Contains("otel-collector.dev.yaml", programText);
+        Assert.Contains("OTEL_EXPORTER_OTLP_ENDPOINT", programText);
+        Assert.Contains("AddViteApp(\"console\"", programText);
+        Assert.Contains("WithPnpm", programText);
+
+        Assert.Contains("Nerv.IIP.Iam.Web.csproj", projectText);
+        Assert.Contains("Nerv.IIP.FileStorage.Web.csproj", projectText);
+        Assert.Contains("Aspire.Hosting.JavaScript", projectText);
+
+        Assert.True(File.Exists(collectorConfig), "OpenTelemetry Collector dev config must be present.");
+        Assert.Contains("--config=/etc/otelcol/config.yaml", composeText);
+        Assert.Contains("./otel/otel-collector.dev.yaml:/etc/otelcol/config.yaml:ro", composeText);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

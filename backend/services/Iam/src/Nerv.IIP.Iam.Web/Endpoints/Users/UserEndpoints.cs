@@ -46,7 +46,7 @@ public sealed class ListUsersEndpoint(IIamPermissionAuthorizer authorizer, IMedi
 [HttpPost("/api/iam/v1/users")]
 [AllowAnonymous]
 public sealed class CreateUserEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
-    : EndpointWithoutRequest
+    : EndpointWithoutRequest<ResponseData<UserResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -58,15 +58,14 @@ public sealed class CreateUserEndpoint(IIamPermissionAuthorizer authorizer, IMed
         var req = await HttpContext.Request.ReadFromJsonAsync<CreateUserRequest>(ct)
             ?? throw new BadHttpRequestException("Request body is required.");
         var response = await mediator.Send(new CreateUserCommand(req.LoginName, req.Email, req.Password), ct);
-        HttpContext.Response.StatusCode = StatusCodes.Status201Created;
-        await HttpContext.Response.WriteAsJsonAsync(response, ct);
+        await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status201Created, response, ct);
     }
 }
 
 [HttpPatch("/api/iam/v1/users/{userId}")]
 [AllowAnonymous]
 public sealed class PatchUserEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
-    : EndpointWithoutRequest
+    : EndpointWithoutRequest<ResponseData<UserResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -79,7 +78,7 @@ public sealed class PatchUserEndpoint(IIamPermissionAuthorizer authorizer, IMedi
             ?? throw new BadHttpRequestException("Request body is required.");
         var userId = Route<string>("userId") ?? string.Empty;
         var response = await mediator.Send(new UpdateUserCommand(userId, req.LoginName, req.Email, req.Enabled), ct);
-        await HttpContext.Response.WriteAsJsonAsync(response, ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
 

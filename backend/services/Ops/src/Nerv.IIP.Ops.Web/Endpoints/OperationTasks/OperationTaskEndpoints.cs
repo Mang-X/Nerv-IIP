@@ -7,19 +7,21 @@ using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Web.Application.Auth;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using Nerv.IIP.Ops.Web.Application.Queries;
+using Nerv.IIP.Ops.Web.Endpoints;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Ops.Web.Endpoints.OperationTasks;
 
 [HttpPost("/api/ops/v1/operation-tasks")]
 [AllowAnonymous]
-public sealed class CreateOperationTaskEndpoint(IMediator mediator) : Endpoint<CreateOperationTaskRequest>
+public sealed class CreateOperationTaskEndpoint(IMediator mediator) : Endpoint<CreateOperationTaskRequest, ResponseData<OperationTaskResponse>>
 {
     public override async Task HandleAsync(CreateOperationTaskRequest req, CancellationToken ct)
     {
         try
         {
             var task = await mediator.Send(new CreateOperationTaskCommand(req, DateTimeOffset.UtcNow), ct);
-            await HttpContext.Response.WriteAsJsonAsync(task, ct);
+            await Send.OkAsync(task.AsResponseData(), ct);
         }
         catch (InvalidOperationTaskRequestException ex)
         {
@@ -30,7 +32,7 @@ public sealed class CreateOperationTaskEndpoint(IMediator mediator) : Endpoint<C
 
 [HttpGet("/api/ops/v1/operation-tasks/{operationTaskId}")]
 [AllowAnonymous]
-public sealed class GetOperationTaskEndpoint(IMediator mediator) : EndpointWithoutRequest
+public sealed class GetOperationTaskEndpoint(IMediator mediator) : EndpointWithoutRequest<ResponseData<OperationTaskResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -38,7 +40,7 @@ public sealed class GetOperationTaskEndpoint(IMediator mediator) : EndpointWitho
         try
         {
             var task = await mediator.Send(new GetOperationTaskQuery(operationTaskId), ct);
-            await HttpContext.Response.WriteAsJsonAsync(task, ct);
+            await Send.OkAsync(task.AsResponseData(), ct);
         }
         catch (OperationTaskNotFoundException ex)
         {
@@ -52,7 +54,7 @@ public sealed class GetOperationTaskEndpoint(IMediator mediator) : EndpointWitho
 public sealed class GetPendingOperationTasksEndpoint(
     IMediator mediator,
     IOpsConnectorCredentialValidator connectorCredentialValidator,
-    ILogger<GetPendingOperationTasksEndpoint> logger) : EndpointWithoutRequest
+    ILogger<GetPendingOperationTasksEndpoint> logger) : EndpointWithoutRequest<ResponseData<PendingOperationTasksResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -81,7 +83,7 @@ public sealed class GetPendingOperationTasksEndpoint(
             300,
             3,
             DateTimeOffset.UtcNow), ct);
-        await HttpContext.Response.WriteAsJsonAsync(pending, ct);
+        await Send.OkAsync(pending.AsResponseData(), ct);
     }
 }
 
@@ -90,7 +92,7 @@ public sealed class GetPendingOperationTasksEndpoint(
 public sealed class ClaimOperationTasksEndpoint(
     IMediator mediator,
     IOpsConnectorCredentialValidator connectorCredentialValidator,
-    ILogger<ClaimOperationTasksEndpoint> logger) : Endpoint<ClaimOperationTasksRequest>
+    ILogger<ClaimOperationTasksEndpoint> logger) : Endpoint<ClaimOperationTasksRequest, ResponseData<PendingOperationTasksResponse>>
 {
     public override async Task HandleAsync(ClaimOperationTasksRequest req, CancellationToken ct)
     {
@@ -116,7 +118,7 @@ public sealed class ClaimOperationTasksEndpoint(
             req.LeaseDurationSeconds,
             req.MaxAttempts,
             DateTimeOffset.UtcNow), ct);
-        await HttpContext.Response.WriteAsJsonAsync(pending, ct);
+        await Send.OkAsync(pending.AsResponseData(), ct);
     }
 }
 
@@ -125,7 +127,7 @@ public sealed class ClaimOperationTasksEndpoint(
 public sealed class AbandonOperationTaskLeaseEndpoint(
     IMediator mediator,
     IOpsConnectorCredentialValidator connectorCredentialValidator,
-    ILogger<AbandonOperationTaskLeaseEndpoint> logger) : Endpoint<AbandonOperationTaskLeaseRequest>
+    ILogger<AbandonOperationTaskLeaseEndpoint> logger) : Endpoint<AbandonOperationTaskLeaseRequest, ResponseData<OperationTaskResponse>>
 {
     public override async Task HandleAsync(AbandonOperationTaskLeaseRequest req, CancellationToken ct)
     {
@@ -147,7 +149,7 @@ public sealed class AbandonOperationTaskLeaseEndpoint(
         {
             var operationTaskId = Route<string>("operationTaskId")!;
             var task = await mediator.Send(new AbandonOperationTaskLeaseCommand(operationTaskId, req, DateTimeOffset.UtcNow), ct);
-            await HttpContext.Response.WriteAsJsonAsync(task, ct);
+            await Send.OkAsync(task.AsResponseData(), ct);
         }
         catch (InvalidOperationResultException ex)
         {
@@ -165,7 +167,7 @@ public sealed class AbandonOperationTaskLeaseEndpoint(
 public sealed class HeartbeatOperationTaskLeaseEndpoint(
     IMediator mediator,
     IOpsConnectorCredentialValidator connectorCredentialValidator,
-    ILogger<HeartbeatOperationTaskLeaseEndpoint> logger) : Endpoint<HeartbeatOperationTaskLeaseRequest>
+    ILogger<HeartbeatOperationTaskLeaseEndpoint> logger) : Endpoint<HeartbeatOperationTaskLeaseRequest, ResponseData<OperationTaskResponse>>
 {
     public override async Task HandleAsync(HeartbeatOperationTaskLeaseRequest req, CancellationToken ct)
     {
@@ -187,7 +189,7 @@ public sealed class HeartbeatOperationTaskLeaseEndpoint(
         {
             var operationTaskId = Route<string>("operationTaskId")!;
             var task = await mediator.Send(new HeartbeatOperationTaskLeaseCommand(operationTaskId, req, DateTimeOffset.UtcNow), ct);
-            await HttpContext.Response.WriteAsJsonAsync(task, ct);
+            await Send.OkAsync(task.AsResponseData(), ct);
         }
         catch (InvalidOperationResultException ex)
         {
@@ -205,7 +207,7 @@ public sealed class HeartbeatOperationTaskLeaseEndpoint(
 public sealed class RecordOperationResultEndpoint(
     IMediator mediator,
     IOpsConnectorCredentialValidator connectorCredentialValidator,
-    ILogger<RecordOperationResultEndpoint> logger) : Endpoint<OperationResult>
+    ILogger<RecordOperationResultEndpoint> logger) : Endpoint<OperationResult, ResponseData<OperationTaskResponse>>
 {
     public override async Task HandleAsync(OperationResult req, CancellationToken ct)
     {
@@ -226,7 +228,7 @@ public sealed class RecordOperationResultEndpoint(
         try
         {
             var task = await mediator.Send(new RecordOperationResultCommand(req), ct);
-            await HttpContext.Response.WriteAsJsonAsync(task, ct);
+            await Send.OkAsync(task.AsResponseData(), ct);
         }
         catch (InvalidOperationResultException ex)
         {
@@ -243,14 +245,12 @@ internal static class OpsEndpointResults
 {
     public static async Task WriteNotFoundAsync(HttpContext context, string detail, CancellationToken cancellationToken)
     {
-        context.Response.StatusCode = StatusCodes.Status404NotFound;
-        await context.Response.WriteAsJsonAsync(new { title = "Not Found", detail, status = StatusCodes.Status404NotFound }, cancellationToken);
+        await ResponseDataEndpointResults.WriteErrorAsync(context, StatusCodes.Status404NotFound, detail, cancellationToken);
     }
 
     public static async Task WriteBadRequestAsync(HttpContext context, string detail, CancellationToken cancellationToken)
     {
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
-        await context.Response.WriteAsJsonAsync(new { title = "Bad Request", detail, status = StatusCodes.Status400BadRequest }, cancellationToken);
+        await ResponseDataEndpointResults.WriteErrorAsync(context, StatusCodes.Status400BadRequest, detail, cancellationToken);
     }
 }
 
@@ -345,8 +345,11 @@ internal static class OpsConnectorEndpointResults
 
     public static async Task WriteUnauthorizedAsync(HttpContext context, CancellationToken cancellationToken)
     {
-        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        await context.Response.WriteAsJsonAsync(new { title = "Unauthorized", detail = "Invalid Connector Host credential.", status = StatusCodes.Status401Unauthorized }, cancellationToken);
+        await ResponseDataEndpointResults.WriteErrorAsync(
+            context,
+            StatusCodes.Status401Unauthorized,
+            "Invalid Connector Host credential.",
+            cancellationToken);
     }
 
     private static void LogCredentialRejected(

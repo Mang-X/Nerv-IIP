@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalResponses, HealthEndpointData, HealthEndpointResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponses, ListConsoleInstancesData, ListConsoleInstancesResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, RestartConsoleInstanceData, RestartConsoleInstanceResponses } from './types.gen';
+import type { GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailErrors, GetConsoleInstanceDetailResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskErrors, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalErrors, GetConsolePrincipalResponses, HealthEndpointData, HealthEndpointResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponses, ListConsoleInstancesData, ListConsoleInstancesErrors, ListConsoleInstancesResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionErrors, LogoutConsoleSessionResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, RestartConsoleInstanceData, RestartConsoleInstanceErrors, RestartConsoleInstanceResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -18,7 +18,8 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
     meta?: Record<string, unknown>;
 };
 
-export const restartConsoleInstance = <ThrowOnError extends boolean = false>(options: Options<RestartConsoleInstanceData, ThrowOnError>) => (options.client ?? client).post<RestartConsoleInstanceResponses, unknown, ThrowOnError>({
+export const restartConsoleInstance = <ThrowOnError extends boolean = false>(options: Options<RestartConsoleInstanceData, ThrowOnError>) => (options.client ?? client).post<RestartConsoleInstanceResponses, RestartConsoleInstanceErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/console/v1/instances/{instanceKey}/operations/restart',
     ...options,
     headers: {
@@ -27,11 +28,23 @@ export const restartConsoleInstance = <ThrowOnError extends boolean = false>(opt
     }
 });
 
-export const getConsoleOperationTask = <ThrowOnError extends boolean = false>(options: Options<GetConsoleOperationTaskData, ThrowOnError>) => (options.client ?? client).get<GetConsoleOperationTaskResponses, unknown, ThrowOnError>({ url: '/api/console/v1/operation-tasks/{operationTaskId}', ...options });
+export const getConsoleOperationTask = <ThrowOnError extends boolean = false>(options: Options<GetConsoleOperationTaskData, ThrowOnError>) => (options.client ?? client).get<GetConsoleOperationTaskResponses, GetConsoleOperationTaskErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/operation-tasks/{operationTaskId}',
+    ...options
+});
 
-export const listConsoleInstances = <ThrowOnError extends boolean = false>(options: Options<ListConsoleInstancesData, ThrowOnError>) => (options.client ?? client).get<ListConsoleInstancesResponses, unknown, ThrowOnError>({ url: '/api/console/v1/instances', ...options });
+export const listConsoleInstances = <ThrowOnError extends boolean = false>(options: Options<ListConsoleInstancesData, ThrowOnError>) => (options.client ?? client).get<ListConsoleInstancesResponses, ListConsoleInstancesErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/instances',
+    ...options
+});
 
-export const getConsoleInstanceDetail = <ThrowOnError extends boolean = false>(options: Options<GetConsoleInstanceDetailData, ThrowOnError>) => (options.client ?? client).get<GetConsoleInstanceDetailResponses, unknown, ThrowOnError>({ url: '/api/console/v1/instances/{instanceKey}', ...options });
+export const getConsoleInstanceDetail = <ThrowOnError extends boolean = false>(options: Options<GetConsoleInstanceDetailData, ThrowOnError>) => (options.client ?? client).get<GetConsoleInstanceDetailResponses, GetConsoleInstanceDetailErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/instances/{instanceKey}',
+    ...options
+});
 
 export const healthEndpoint = <ThrowOnError extends boolean = false>(options?: Options<HealthEndpointData, ThrowOnError>) => (options?.client ?? client).get<HealthEndpointResponses, unknown, ThrowOnError>({ url: '/health', ...options });
 
@@ -57,7 +70,8 @@ export const refreshConsoleSession = <ThrowOnError extends boolean = false>(opti
     }
 });
 
-export const logoutConsoleSession = <ThrowOnError extends boolean = false>(options: Options<LogoutConsoleSessionData, ThrowOnError>) => (options.client ?? client).post<LogoutConsoleSessionResponses, unknown, ThrowOnError>({
+export const logoutConsoleSession = <ThrowOnError extends boolean = false>(options: Options<LogoutConsoleSessionData, ThrowOnError>) => (options.client ?? client).post<LogoutConsoleSessionResponses, LogoutConsoleSessionErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/console/v1/auth/logout',
     ...options,
     headers: {
@@ -66,4 +80,8 @@ export const logoutConsoleSession = <ThrowOnError extends boolean = false>(optio
     }
 });
 
-export const getConsolePrincipal = <ThrowOnError extends boolean = false>(options?: Options<GetConsolePrincipalData, ThrowOnError>) => (options?.client ?? client).get<GetConsolePrincipalResponses, unknown, ThrowOnError>({ url: '/api/console/v1/auth/me', ...options });
+export const getConsolePrincipal = <ThrowOnError extends boolean = false>(options?: Options<GetConsolePrincipalData, ThrowOnError>) => (options?.client ?? client).get<GetConsolePrincipalResponses, GetConsolePrincipalErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/auth/me',
+    ...options
+});
