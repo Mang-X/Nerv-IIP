@@ -142,6 +142,70 @@ public sealed class InMemoryIamStore
         }
     }
 
+    public UserFact CreateUser(string loginName, string email, string password)
+    {
+        lock (_gate)
+        {
+            EnsureUserIsUnique(null, loginName, email);
+
+            var user = new UserFact(
+                $"user-{Guid.NewGuid():N}",
+                loginName,
+                email,
+                Hash(password),
+                true,
+                Guid.NewGuid().ToString("n"),
+                1);
+            _users.Add(user);
+            return user;
+        }
+    }
+
+    public UserFact UpdateUser(string userId, string loginName, string email, bool enabled)
+    {
+        lock (_gate)
+        {
+            EnsureUserIsUnique(userId, loginName, email);
+
+            var index = _users.FindIndex(x => x.UserId == userId);
+            if (index < 0)
+            {
+                throw new InvalidOperationException($"User '{userId}' was not found.");
+            }
+
+            var current = _users[index];
+            var updated = current with
+            {
+                LoginName = loginName,
+                Email = email,
+                Enabled = enabled,
+                SecurityStamp = current.Enabled == enabled ? current.SecurityStamp : Guid.NewGuid().ToString("n"),
+                PermissionVersion = current.Enabled == enabled ? current.PermissionVersion : current.PermissionVersion + 1
+            };
+            _users[index] = updated;
+            return updated;
+        }
+    }
+
+    public void DisableUser(string userId)
+    {
+        lock (_gate)
+        {
+            var user = _users.SingleOrDefault(x => x.UserId == userId);
+            if (user is null || !user.Enabled)
+            {
+                return;
+            }
+
+            _users[_users.IndexOf(user)] = user with
+            {
+                Enabled = false,
+                SecurityStamp = Guid.NewGuid().ToString("n"),
+                PermissionVersion = user.PermissionVersion + 1
+            };
+        }
+    }
+
     public IReadOnlyList<UserFact> Users => _users;
     public IReadOnlyList<RoleFact> Roles => _roles;
     public IReadOnlyList<UserSessionFact> Sessions => _sessions;
@@ -176,6 +240,19 @@ public sealed class InMemoryIamStore
         _users.Add(new UserFact("user-admin", "admin", "admin@nerv-iip.local", Hash("Admin123!"), true, Guid.NewGuid().ToString("n"), 1));
         _memberships.Add(new MembershipFact("user-admin", "org-001", "env-dev", new HashSet<string> { "role-platform-admin" }));
         _connectorHostCredentials.Add(new ConnectorHostCredentialFact("connector-host-001", "org-001", "env-dev", new HashSet<string>(NervIipSeedPermissions.All.Where(x => x.StartsWith("connectors.", StringComparison.Ordinal))), Hash("local-connector-secret"), DateTimeOffset.UtcNow.AddDays(-1), null));
+    }
+
+    private void EnsureUserIsUnique(string? currentUserId, string loginName, string email)
+    {
+        if (_users.Any(x => x.UserId != currentUserId && string.Equals(x.LoginName, loginName, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Login name '{loginName}' is already used.");
+        }
+
+        if (_users.Any(x => x.UserId != currentUserId && string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Email '{email}' is already used.");
+        }
     }
 
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();

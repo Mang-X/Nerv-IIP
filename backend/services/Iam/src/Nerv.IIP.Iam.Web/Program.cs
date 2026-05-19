@@ -4,10 +4,19 @@ using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Seed;
 using Nerv.IIP.Observability;
+using NetCorePal.Extensions.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
+var usesPostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
 builder.Services.AddFastEndpoints();
-builder.Services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+builder.Services.AddMediatR(configuration =>
+{
+    configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
+    if (usesPostgreSql)
+    {
+        configuration.AddUnitOfWorkBehaviors();
+    }
+});
 builder.Services.AddNervIipCaching(builder.Configuration, "iam");
 builder.Services.AddNervIipObservability(builder.Configuration, "iam");
 builder.Services.AddIamPersistence(builder.Configuration);
@@ -17,7 +26,6 @@ builder.Services.AddScoped<IamTokenService>();
 builder.Services.AddScoped<IamAuthService>();
 builder.Services.AddScoped<IamSeedService>();
 
-var usesPostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
 var autoMigrate = string.Equals(builder.Configuration["Persistence:AutoMigrate"], "true", StringComparison.OrdinalIgnoreCase);
 
 if (usesPostgreSql && autoMigrate && !builder.Environment.IsDevelopment())

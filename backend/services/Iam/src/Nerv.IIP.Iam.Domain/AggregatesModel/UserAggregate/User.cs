@@ -55,7 +55,27 @@ public class User : Entity<UserId>, IAggregateRoot
 
     public void Disable()
     {
+        if (!Enabled)
+        {
+            return;
+        }
+
         Enabled = false;
+        RotateSecurityStamp();
+        PermissionVersion++;
+    }
+
+    public void UpdateProfile(string loginName, string email, bool enabled)
+    {
+        LoginName = loginName;
+        Email = email;
+
+        if (Enabled == enabled)
+        {
+            return;
+        }
+
+        Enabled = enabled;
         RotateSecurityStamp();
         PermissionVersion++;
     }

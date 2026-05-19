@@ -61,6 +61,40 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
+    public async Task In_memory_user_management_creates_updates_and_disables_users()
+    {
+        var create = await _client.PostAsJsonAsync(
+            "/api/iam/v1/users",
+            new { loginName = "operator", email = "operator@nerv-iip.local", password = "Operator123!" });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var created = await create.Content.ReadFromJsonAsync<UserResponse>();
+
+        Assert.NotNull(created);
+        Assert.False(string.IsNullOrWhiteSpace(created.UserId));
+        Assert.Equal("operator", created.LoginName);
+        Assert.Equal("operator@nerv-iip.local", created.Email);
+        Assert.True(created.Enabled);
+
+        var patch = await _client.PatchAsJsonAsync(
+            $"/api/iam/v1/users/{created.UserId}",
+            new { loginName = "operator-updated", email = "operator.updated@nerv-iip.local", enabled = true });
+        patch.EnsureSuccessStatusCode();
+        var updated = await patch.Content.ReadFromJsonAsync<UserResponse>();
+
+        Assert.Equal(created.UserId, updated!.UserId);
+        Assert.Equal("operator-updated", updated.LoginName);
+        Assert.Equal("operator.updated@nerv-iip.local", updated.Email);
+        Assert.True(updated.Enabled);
+
+        var disable = await _client.PostAsync($"/api/iam/v1/users/{created.UserId}/disable", null);
+        Assert.Equal(HttpStatusCode.NoContent, disable.StatusCode);
+
+        var users = await _client.GetFromJsonAsync<UserResponse[]>("/api/iam/v1/users");
+        var disabled = Assert.Single(users!, user => user.UserId == created.UserId);
+        Assert.False(disabled.Enabled);
+    }
+
+    [Fact]
     public void In_memory_access_token_validation_rejects_expired_token_payload()
     {
         var store = new InMemoryIamStore();
@@ -76,6 +110,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+    private sealed record UserResponse(string UserId, string LoginName, string Email, bool Enabled);
     private sealed record MeResponse(
         string UserId,
         string LoginName,
