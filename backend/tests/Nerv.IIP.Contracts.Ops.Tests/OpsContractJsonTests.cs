@@ -20,7 +20,18 @@ public sealed class OpsContractJsonTests
             "local-admin",
             DateTimeOffset.Parse("2026-05-15T00:00:00Z"),
             "attempt-000001",
-            [new OperationAttemptSummary("attempt-000001", "completed", DateTimeOffset.Parse("2026-05-15T00:00:01Z"), DateTimeOffset.Parse("2026-05-15T00:00:02Z"), null)],
+            [new OperationAttemptSummary(
+                "attempt-000001",
+                "completed",
+                DateTimeOffset.Parse("2026-05-15T00:00:01Z"),
+                DateTimeOffset.Parse("2026-05-15T00:00:02Z"),
+                null,
+                "lease-000001",
+                DateTimeOffset.Parse("2026-05-15T00:00:01Z"),
+                DateTimeOffset.Parse("2026-05-15T00:05:01Z"),
+                1,
+                3,
+                null)],
             [new AuditRecordSummary("audit-000001", "op-000001", "operation.completed", "connector-host-001", DateTimeOffset.Parse("2026-05-15T00:00:02Z"), "corr-ops-001")]);
 
         var json = JsonSerializer.Serialize(source, JsonOptions);
@@ -35,6 +46,10 @@ public sealed class OpsContractJsonTests
         Assert.Equal(JsonValueKind.Array, attempts.ValueKind);
         Assert.True(attempts[0].TryGetProperty("failureCode", out var failureCode));
         Assert.Equal(JsonValueKind.Null, failureCode.ValueKind);
+        Assert.True(attempts[0].TryGetProperty("leaseId", out var leaseId));
+        Assert.Equal("lease-000001", leaseId.GetString());
+        Assert.True(attempts[0].TryGetProperty("attemptNo", out var attemptNo));
+        Assert.Equal(1, attemptNo.GetInt32());
         Assert.True(root.TryGetProperty("auditRecords", out var auditRecords));
         Assert.Equal(JsonValueKind.Array, auditRecords.ValueKind);
 

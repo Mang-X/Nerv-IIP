@@ -92,7 +92,21 @@ public sealed class OperationLoopTests
 
     private static OperationTaskDispatchItem CreateTask(string operationTaskId, string instanceKey, string operationCode)
     {
-        return new OperationTaskDispatchItem(operationTaskId, $"attempt-{operationTaskId}", "org-001", "env-dev", "connector-host-001", instanceKey, operationCode, $"corr-{operationTaskId}", new Dictionary<string, string>());
+        return new OperationTaskDispatchItem(
+            operationTaskId,
+            $"attempt-{operationTaskId}",
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            instanceKey,
+            operationCode,
+            $"corr-{operationTaskId}",
+            new Dictionary<string, string>(),
+            $"lease-{operationTaskId}",
+            DateTimeOffset.Parse("2026-05-19T00:00:00Z"),
+            DateTimeOffset.Parse("2026-05-19T00:05:00Z"),
+            1,
+            3);
     }
 
     private sealed class SuccessfulRestartExecutor : IConnectorOperationExecutor
@@ -130,14 +144,22 @@ public sealed class OperationLoopTests
         public Task<OperationTaskResponse> GetOperationTaskAsync(string operationTaskId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PendingOperationTasksResponse> GetPendingOperationTasksAsync(string organizationId, string environmentId, string connectorHostId, int take, CancellationToken cancellationToken = default)
         {
+            return ClaimOperationTasksAsync(new ClaimOperationTasksRequest(organizationId, environmentId, connectorHostId, take), cancellationToken);
+        }
+
+        public Task<PendingOperationTasksResponse> ClaimOperationTasksAsync(ClaimOperationTasksRequest request, CancellationToken cancellationToken = default)
+        {
             PendingCalls++;
             return Task.FromResult(new PendingOperationTasksResponse(pendingTasks.Select(task => task with
             {
-                OrganizationId = organizationId,
-                EnvironmentId = environmentId,
-                ConnectorHostId = connectorHostId
+                OrganizationId = request.OrganizationId,
+                EnvironmentId = request.EnvironmentId,
+                ConnectorHostId = request.ConnectorHostId
             }).ToList()));
         }
+
+        public Task<OperationTaskResponse> AbandonOperationTaskLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<OperationTaskResponse> HeartbeatOperationTaskLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task SendOperationResultAsync(OperationResult result, CancellationToken cancellationToken = default)
         {
