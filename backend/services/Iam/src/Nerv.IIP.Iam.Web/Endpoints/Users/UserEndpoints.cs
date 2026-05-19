@@ -13,13 +13,12 @@ public sealed record UpdateUserRequest(string LoginName, string Email, bool Enab
 
 [HttpGet("/api/iam/v1/users")]
 [AllowAnonymous]
-public sealed class ListUsersEndpoint(IServiceProvider serviceProvider, IConfiguration configuration, IMediator mediator)
+public sealed class ListUsersEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
     : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
-        if (IsPostgreSql(configuration)
-            && !await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.users.read", ct))
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.read", ct))
         {
             return;
         }
@@ -27,22 +26,16 @@ public sealed class ListUsersEndpoint(IServiceProvider serviceProvider, IConfigu
         var users = await mediator.Send(new ListUsersQuery(), ct);
         await HttpContext.Response.WriteAsJsonAsync(users, ct);
     }
-
-    private static bool IsPostgreSql(IConfiguration configuration)
-    {
-        return string.Equals(configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
-    }
 }
 
 [HttpPost("/api/iam/v1/users")]
 [AllowAnonymous]
-public sealed class CreateUserEndpoint(IServiceProvider serviceProvider, IConfiguration configuration, IMediator mediator)
+public sealed class CreateUserEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
     : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
-        if (IsPostgreSql(configuration)
-            && !await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.users.manage", ct))
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.manage", ct))
         {
             return;
         }
@@ -53,22 +46,16 @@ public sealed class CreateUserEndpoint(IServiceProvider serviceProvider, IConfig
         HttpContext.Response.StatusCode = StatusCodes.Status201Created;
         await HttpContext.Response.WriteAsJsonAsync(response, ct);
     }
-
-    private static bool IsPostgreSql(IConfiguration configuration)
-    {
-        return string.Equals(configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
-    }
 }
 
 [HttpPatch("/api/iam/v1/users/{userId}")]
 [AllowAnonymous]
-public sealed class PatchUserEndpoint(IServiceProvider serviceProvider, IConfiguration configuration, IMediator mediator)
+public sealed class PatchUserEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
     : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
-        if (IsPostgreSql(configuration)
-            && !await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.users.manage", ct))
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.manage", ct))
         {
             return;
         }
@@ -79,22 +66,16 @@ public sealed class PatchUserEndpoint(IServiceProvider serviceProvider, IConfigu
         var response = await mediator.Send(new UpdateUserCommand(userId, req.LoginName, req.Email, req.Enabled), ct);
         await HttpContext.Response.WriteAsJsonAsync(response, ct);
     }
-
-    private static bool IsPostgreSql(IConfiguration configuration)
-    {
-        return string.Equals(configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
-    }
 }
 
 [HttpPost("/api/iam/v1/users/{userId}/disable")]
 [AllowAnonymous]
-public sealed class DisableUserEndpoint(IServiceProvider serviceProvider, IConfiguration configuration, IMediator mediator)
+public sealed class DisableUserEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
     : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
-        if (IsPostgreSql(configuration)
-            && !await IamEndpointAuthorization.RequirePermissionAsync(serviceProvider, HttpContext, "iam.users.manage", ct))
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.manage", ct))
         {
             return;
         }
@@ -102,10 +83,5 @@ public sealed class DisableUserEndpoint(IServiceProvider serviceProvider, IConfi
         var userId = Route<string>("userId") ?? string.Empty;
         await mediator.Send(new DisableUserCommand(userId), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
-    }
-
-    private static bool IsPostgreSql(IConfiguration configuration)
-    {
-        return string.Equals(configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
     }
 }

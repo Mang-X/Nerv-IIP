@@ -9,10 +9,11 @@ using NetCorePal.Extensions.Domain;
 
 namespace Nerv.IIP.Iam.Web.Application.Auth;
 
-public sealed class IamAuthService(
-    IServiceProvider serviceProvider,
+public sealed class PostgreSqlIamAuthService(
+    ApplicationDbContext dbContext,
     IamPasswordService passwordService,
     IamTokenService tokenService)
+    : IIamAuthService
 {
     private static readonly Deleted NotDeleted = new(false);
 
@@ -23,7 +24,6 @@ public sealed class IamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
         var user = await dbContext.Users
             .SingleOrDefaultAsync(x => x.LoginName == loginName && x.Deleted == NotDeleted, cancellationToken);
         if (user is null || !user.Enabled)
@@ -50,7 +50,6 @@ public sealed class IamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
         var now = DateTimeOffset.UtcNow;
         var refreshTokenHash = tokenService.HashSecret(refreshToken);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
@@ -91,7 +90,6 @@ public sealed class IamAuthService(
 
     public async Task RevokeSessionAsync(string sessionId, string reason, CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
         var session = await dbContext.UserSessions.FindAsync([new UserSessionId(sessionId)], cancellationToken);
         if (session is null)
         {
@@ -110,7 +108,6 @@ public sealed class IamAuthService(
             return null;
         }
 
-        var dbContext = GetDbContext();
         var now = DateTimeOffset.UtcNow;
         var sessionId = new UserSessionId(principal.SessionId);
         var userId = new UserId(principal.UserId);
@@ -152,7 +149,6 @@ public sealed class IamAuthService(
 
     public async Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
         var userIdValue = new UserId(userId);
 
         return await (
@@ -174,7 +170,6 @@ public sealed class IamAuthService(
         string permissionCode,
         CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
         var userIdValue = new UserId(userId);
         var organizationIdValue = new OrganizationId(organizationId);
         var environmentIdValue = new IamEnvironmentId(environmentId);
@@ -198,7 +193,6 @@ public sealed class IamAuthService(
         string secret,
         CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
         var secretHash = tokenService.HashSecret(secret);
         var credential = await dbContext.ConnectorHostCredentials
             .SingleOrDefaultAsync(x => x.ConnectorHostId == connectorHostId && x.SecretHash == secretHash, cancellationToken);
@@ -238,10 +232,5 @@ public sealed class IamAuthService(
     private static UnauthorizedAccessException Unauthorized()
     {
         return new UnauthorizedAccessException("Unauthorized.");
-    }
-
-    private ApplicationDbContext GetDbContext()
-    {
-        return serviceProvider.GetRequiredService<ApplicationDbContext>();
     }
 }

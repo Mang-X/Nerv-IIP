@@ -14,3 +14,37 @@ public sealed record CurrentPrincipalResponse(
     string EnvironmentId,
     int PermissionVersion);
 public sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
+
+public interface IIamAuthService
+{
+    Task<AuthResponse> LoginAsync(
+        string loginName,
+        string password,
+        string? clientInfo,
+        string? ipAddress,
+        CancellationToken cancellationToken);
+
+    Task<AuthResponse> RefreshAsync(
+        string refreshToken,
+        string? clientInfo,
+        string? ipAddress,
+        CancellationToken cancellationToken);
+
+    Task RevokeSessionAsync(string sessionId, string reason, CancellationToken cancellationToken);
+
+    Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext httpContext, CancellationToken cancellationToken);
+
+    Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken);
+
+    Task<bool> UserHasPermissionAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        CancellationToken cancellationToken);
+
+    Task<ConnectorPrincipalResponse> ValidateConnectorCredentialAsync(
+        string connectorHostId,
+        string secret,
+        CancellationToken cancellationToken);
+}
