@@ -12,7 +12,12 @@ public sealed class IamPasswordService
 
     public bool Verify(Domain.AggregatesModel.UserAggregate.User user, string password)
     {
-        var result = _passwordHasher.VerifyHashedPassword(new object(), user.PasswordHash, password);
+        return VerifyHash(user.PasswordHash, password);
+    }
+
+    public bool VerifyHash(string passwordHash, string password)
+    {
+        var result = _passwordHasher.VerifyHashedPassword(new object(), passwordHash, password);
         return result is PasswordVerificationResult.Success or PasswordVerificationResult.SuccessRehashNeeded;
     }
 }

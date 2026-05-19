@@ -64,6 +64,16 @@ public sealed class IamPostgresProfileTests
 
             var client = factory.CreateClient();
 
+            var failedLogin = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "wrong-password" });
+            Assert.Equal(HttpStatusCode.Unauthorized, failedLogin.StatusCode);
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var admin = await db.Users.SingleAsync(x => x.LoginName == "admin");
+                Assert.Equal(1, admin.FailedLoginCount);
+            }
+
             var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
             login.EnsureSuccessStatusCode();
             var auth = await login.Content.ReadFromJsonAsync<AuthResponse>();
@@ -147,6 +157,7 @@ public sealed class IamPostgresProfileTests
                 var adminUsers = await db.Users.Where(x => x.LoginName == "admin").ToListAsync();
                 var admin = Assert.Single(adminUsers);
                 Assert.DoesNotContain("Admin123!", admin.PasswordHash, StringComparison.Ordinal);
+                Assert.Equal(0, admin.FailedLoginCount);
 
                 var connectorCredentials = await db.ConnectorHostCredentials
                     .Where(x => x.ConnectorHostId == "connector-host-001")
