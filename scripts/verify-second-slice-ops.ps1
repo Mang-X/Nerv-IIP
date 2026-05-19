@@ -1,3 +1,19 @@
+# Script-Governance:
+#   Category: verify
+#   SideEffects:
+#     - Builds and tests backend and connector host solutions
+#     - Starts local AppHub, Ops, IAM, Platform Gateway and Connector Host verification jobs
+#     - Creates, starts, restarts and removes a disposable Docker demo container
+#     - Exercises console restart operation APIs
+#   Writes:
+#     - Docker image/container cache for alpine:3.20
+#   Cleanup:
+#     - Removes disposable Docker demo container
+#     - Stops verification PowerShell jobs
+#   Requires:
+#     - PowerShell 7
+#     - .NET SDK 10
+#     - Docker Desktop
 param(
   [switch]$UsePostgres
 )

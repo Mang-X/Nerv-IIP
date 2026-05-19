@@ -1,8 +1,20 @@
+# Script-Governance:
+#   Category: verify
+#   SideEffects:
+#     - Runs dotnet restore/build/test for backend/Nerv.IIP.sln
+#     - Runs dotnet restore/build/test for connector-hosts/Nerv.IIP.ConnectorHost.sln
+#     - Starts local AppHub and Platform Gateway verification services
+#     - Exercises connector registration, heartbeat, state snapshot and console read APIs
+#   Writes:
+#     - artifacts/script-logs/**
+#   Cleanup:
+#     - Stops managed AppHub and Platform Gateway process trees
+#   Requires:
+#     - PowerShell 7
+#     - .NET SDK 10
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-if ($PSVersionTable.PSVersion.Major -ge 7) {
-  $PSNativeCommandUseErrorActionPreference = $true
-}
 
 function Wait-Healthy {
   param([string]$Uri)
@@ -23,36 +35,35 @@ function Wait-Healthy {
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
+. (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
 
-dotnet restore backend/Nerv.IIP.sln
-dotnet build backend/Nerv.IIP.sln --no-restore
-dotnet test backend/Nerv.IIP.sln --no-build
-dotnet restore connector-hosts/Nerv.IIP.ConnectorHost.sln
-dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln --no-restore
-dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln --no-build
+Invoke-DotNet -Arguments @("restore", "backend/Nerv.IIP.sln") -WorkingDirectory $root -TimeoutSeconds 600 -Name "first-backend-restore" | Out-Null
+Invoke-DotNet -Arguments @("build", "backend/Nerv.IIP.sln", "--no-restore") -WorkingDirectory $root -TimeoutSeconds 600 -Name "first-backend-build" | Out-Null
+Invoke-DotNet -Arguments @("test", "backend/Nerv.IIP.sln", "--no-build") -WorkingDirectory $root -TimeoutSeconds 900 -Name "first-backend-test" | Out-Null
+Invoke-DotNet -Arguments @("restore", "connector-hosts/Nerv.IIP.ConnectorHost.sln") -WorkingDirectory $root -TimeoutSeconds 600 -Name "first-connector-host-restore" | Out-Null
+Invoke-DotNet -Arguments @("build", "connector-hosts/Nerv.IIP.ConnectorHost.sln", "--no-restore") -WorkingDirectory $root -TimeoutSeconds 600 -Name "first-connector-host-build" | Out-Null
+Invoke-DotNet -Arguments @("test", "connector-hosts/Nerv.IIP.ConnectorHost.sln", "--no-build") -WorkingDirectory $root -TimeoutSeconds 900 -Name "first-connector-host-test" | Out-Null
 
 $appHubUrl = "http://127.0.0.1:58103"
 $gatewayUrl = "http://127.0.0.1:58104"
 $appHubProject = Join-Path $root "backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Nerv.IIP.AppHub.Web.csproj"
 $gatewayProject = Join-Path $root "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj"
 
-$appHubJob = $null
-$gatewayJob = $null
+$appHubProcess = $null
+$gatewayProcess = $null
 try {
-  $appHubJob = Start-Job -ScriptBlock {
-    param($project, $url)
-    $env:ASPNETCORE_URLS = $url
-    dotnet run --project $project --no-build --no-launch-profile
-  } -ArgumentList $appHubProject, $appHubUrl
+  Use-ScopedEnvironmentVariable -Name "ASPNETCORE_URLS" -Value $appHubUrl -ScriptBlock {
+    $script:appHubProcess = Start-ManagedBackgroundProcess -Command "dotnet" -Arguments @("run", "--project", $appHubProject, "--no-build", "--no-launch-profile") -WorkingDirectory $root -Name "first-apphub-service"
+  }
 
   Wait-Healthy "$appHubUrl/health"
 
-  $gatewayJob = Start-Job -ScriptBlock {
-    param($project, $url, $appHub)
-    $env:ASPNETCORE_URLS = $url
-    $env:AppHub__BaseUrl = $appHub
-    dotnet run --project $project --no-build --no-launch-profile
-  } -ArgumentList $gatewayProject, $gatewayUrl, $appHubUrl
+  Invoke-WithScopedEnvironment -Variables @{
+    ASPNETCORE_URLS = $gatewayUrl
+    AppHub__BaseUrl = $appHubUrl
+  } -ScriptBlock {
+    $script:gatewayProcess = Start-ManagedBackgroundProcess -Command "dotnet" -Arguments @("run", "--project", $gatewayProject, "--no-build", "--no-launch-profile") -WorkingDirectory $root -Name "first-platform-gateway-service"
+  }
 
   Wait-Healthy "$gatewayUrl/health"
 
@@ -124,6 +135,6 @@ try {
   Write-Host "First vertical slice verified with correlationId corr-first-slice."
 }
 finally {
-  if ($gatewayJob) { Stop-Job $gatewayJob -ErrorAction SilentlyContinue; Remove-Job $gatewayJob -Force -ErrorAction SilentlyContinue }
-  if ($appHubJob) { Stop-Job $appHubJob -ErrorAction SilentlyContinue; Remove-Job $appHubJob -Force -ErrorAction SilentlyContinue }
+  if ($gatewayProcess) { $gatewayProcess.Stop.Invoke("verify-first-slice cleanup") | Out-Null }
+  if ($appHubProcess) { $appHubProcess.Stop.Invoke("verify-first-slice cleanup") | Out-Null }
 }
