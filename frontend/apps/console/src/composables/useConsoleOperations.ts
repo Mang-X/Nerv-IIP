@@ -8,13 +8,54 @@ import {
   type OperationTaskResponse,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
+import { useAuthStore } from '@/stores/auth'
+import { storeToRefs } from 'pinia'
 import { computed, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
 
-const ORGANIZATION_ID = 'org-001'
-const ENVIRONMENT_ID = 'env-dev'
 const PAGE_NUMBER = 1
 const PAGE_SIZE = 20
 const ignoreBackgroundError = (_error: unknown) => {}
+
+interface ConsoleContext {
+  environmentId: string
+  organizationId: string
+}
+
+const EMPTY_CONSOLE_CONTEXT: ConsoleContext = {
+  environmentId: '',
+  organizationId: '',
+}
+
+function useConsoleContext() {
+  const auth = useAuthStore()
+  const { principal } = storeToRefs(auth)
+
+  return computed<ConsoleContext | undefined>(() => {
+    const organizationId = principal.value?.organizationId
+    const environmentId = principal.value?.environmentId
+
+    if (!isNonEmptyString(organizationId) || !isNonEmptyString(environmentId)) {
+      return undefined
+    }
+
+    return {
+      environmentId,
+      organizationId,
+    }
+  })
+}
+
+function getRequiredConsoleContext(context: ConsoleContext | undefined) {
+  if (!context) {
+    throw new Error('Console organization and environment context is unavailable.')
+  }
+
+  return context
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
 
 function isListConsoleInstancesEntry(entry: UseQueryEntry) {
   const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
@@ -31,17 +72,18 @@ function isListConsoleInstancesEntry(entry: UseQueryEntry) {
 
 export function useConsoleInstances() {
   const selectedInstanceKey = shallowRef<string>()
+  const consoleContext = useConsoleContext()
 
-  const listQuery = useQuery(() =>
-    listConsoleInstancesQueryOptions({
+  const listQuery = useQuery(() => ({
+    ...listConsoleInstancesQueryOptions({
       query: {
-        organizationId: ORGANIZATION_ID,
-        environmentId: ENVIRONMENT_ID,
+        ...toConsoleQueryContext(consoleContext.value),
         pageNumber: PAGE_NUMBER,
         pageSize: PAGE_SIZE,
       },
     } as Parameters<typeof listConsoleInstancesQueryOptions>[0]),
-  )
+    enabled: Boolean(consoleContext.value),
+  }))
 
   const instances = computed<InstanceListItem[]>(() => listQuery.data.value?.items ?? [])
   const effectiveInstanceKey = computed(
@@ -54,11 +96,10 @@ export function useConsoleInstances() {
         instanceKey: effectiveInstanceKey.value,
       },
       query: {
-        organizationId: ORGANIZATION_ID,
-        environmentId: ENVIRONMENT_ID,
+        ...toConsoleQueryContext(consoleContext.value),
       },
     } as Parameters<typeof getConsoleInstanceDetailQueryOptions>[0]),
-    enabled: effectiveInstanceKey.value.length > 0,
+    enabled: Boolean(consoleContext.value) && effectiveInstanceKey.value.length > 0,
   }))
 
   function selectInstance(instanceKey: string) {
@@ -81,6 +122,7 @@ export function useConsoleInstances() {
 
 export function useRestartOperation() {
   const latestOperationTask = shallowRef<OperationTaskResponse>()
+  const consoleContext = useConsoleContext()
   const queryCache = useQueryCache()
 
   const restartMutation = useMutation({
@@ -94,10 +136,11 @@ export function useRestartOperation() {
   })
 
   async function restartInstance(instanceKey: string) {
+    const context = getRequiredConsoleContext(consoleContext.value)
+
     const task = await restartMutation.mutateAsync({
       body: {
-        organizationId: ORGANIZATION_ID,
-        environmentId: ENVIRONMENT_ID,
+        ...context,
         reason: 'Console restart requested',
         idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${instanceKey}`,
       },
@@ -119,6 +162,8 @@ export function useRestartOperation() {
 }
 
 export function useOperationTask(operationTaskId: MaybeRefOrGetter<string>) {
+  const consoleContext = useConsoleContext()
+
   const taskQuery = useQuery(() => {
     const id = toValue(operationTaskId)
 
@@ -128,12 +173,11 @@ export function useOperationTask(operationTaskId: MaybeRefOrGetter<string>) {
           operationTaskId: id,
         },
         query: {
-          organizationId: ORGANIZATION_ID,
-          environmentId: ENVIRONMENT_ID,
+          ...toConsoleQueryContext(consoleContext.value),
         },
       } as Parameters<typeof getConsoleOperationTaskQueryOptions>[0]),
       autoRefetch: 1000,
-      enabled: id.length > 0,
+      enabled: Boolean(consoleContext.value) && id.length > 0,
       staleTime: 1000,
     }
   })
@@ -144,4 +188,8 @@ export function useOperationTask(operationTaskId: MaybeRefOrGetter<string>) {
     operationTask: taskQuery.data,
     refreshOperation: taskQuery.refetch,
   }
+}
+
+function toConsoleQueryContext(context: ConsoleContext | undefined) {
+  return context ?? EMPTY_CONSOLE_CONTEXT
 }
