@@ -3,6 +3,7 @@ using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Observability;
 using Nerv.IIP.Ops.Infrastructure;
+using Nerv.IIP.Ops.Web.Application.Auth;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using NetCorePal.Extensions.DependencyInjection;
 
@@ -36,6 +37,14 @@ if (usePostgreSql)
     });
 }
 builder.Services.AddOpsPersistence(builder.Configuration);
+builder.Services.Configure<OpsConnectorCredentialOptions>(
+    builder.Configuration.GetSection(OpsConnectorCredentialOptions.SectionName));
+builder.Services.AddSingleton<ConfiguredOpsConnectorCredentialValidator>();
+builder.Services.AddHttpClient<IamOpsConnectorCredentialValidator>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5104");
+});
+builder.Services.AddScoped<IOpsConnectorCredentialValidator, OpsConnectorCredentialValidator>();
 if (usePostgreSql)
 {
     builder.Services.AddScoped<OpsDatabaseMigrationRunner>();

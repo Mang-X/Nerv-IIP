@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
+using Nerv.IIP.Ops.Web.Application.Auth;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using Nerv.IIP.Ops.Web.Application.Queries;
 
@@ -48,14 +49,25 @@ public sealed class GetOperationTaskEndpoint(IMediator mediator) : EndpointWitho
 
 [HttpGet("/api/ops/v1/operation-tasks/pending")]
 [AllowAnonymous]
-public sealed class GetPendingOperationTasksEndpoint(IMediator mediator) : EndpointWithoutRequest
+public sealed class GetPendingOperationTasksEndpoint(
+    IMediator mediator,
+    IOpsConnectorCredentialValidator connectorCredentialValidator,
+    ILogger<GetPendingOperationTasksEndpoint> logger) : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
         var connectorHostId = Query<string>("connectorHostId")!;
         var organizationId = Query<string>("organizationId")!;
         var environmentId = Query<string>("environmentId")!;
-        if (!OpsConnectorEndpointResults.ConnectorHostAuthorized(HttpContext, connectorHostId, organizationId, environmentId))
+        if (!await OpsConnectorEndpointResults.ConnectorHostAuthorizedAsync(
+                HttpContext,
+                connectorCredentialValidator,
+                logger,
+                connectorHostId,
+                organizationId,
+                environmentId,
+                "ops.tasks.read",
+                ct))
         {
             await OpsConnectorEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
             return;
@@ -73,11 +85,22 @@ public sealed class GetPendingOperationTasksEndpoint(IMediator mediator) : Endpo
 
 [HttpPost("/api/ops/v1/operation-results")]
 [AllowAnonymous]
-public sealed class RecordOperationResultEndpoint(IMediator mediator) : Endpoint<OperationResult>
+public sealed class RecordOperationResultEndpoint(
+    IMediator mediator,
+    IOpsConnectorCredentialValidator connectorCredentialValidator,
+    ILogger<RecordOperationResultEndpoint> logger) : Endpoint<OperationResult>
 {
     public override async Task HandleAsync(OperationResult req, CancellationToken ct)
     {
-        if (!OpsConnectorEndpointResults.ConnectorHostAuthorized(HttpContext, req.Context.ConnectorHostId, req.Context.OrganizationId, req.Context.EnvironmentId))
+        if (!await OpsConnectorEndpointResults.ConnectorHostAuthorizedAsync(
+                HttpContext,
+                connectorCredentialValidator,
+                logger,
+                req.Context.ConnectorHostId,
+                req.Context.OrganizationId,
+                req.Context.EnvironmentId,
+                "ops.results.write",
+                ct))
         {
             await OpsConnectorEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
             return;
@@ -116,21 +139,116 @@ internal static class OpsEndpointResults
 
 internal static class OpsConnectorEndpointResults
 {
-    public static bool ConnectorHostAuthorized(HttpContext context, string connectorHostId, string organizationId, string environmentId)
+    public static async Task<bool> ConnectorHostAuthorizedAsync(
+        HttpContext context,
+        IOpsConnectorCredentialValidator connectorCredentialValidator,
+        ILogger logger,
+        string connectorHostId,
+        string organizationId,
+        string environmentId,
+        string requiredPermission,
+        CancellationToken cancellationToken)
     {
-        return context.Request.Headers.TryGetValue("X-Connector-Host-Id", out var hostId)
-            && context.Request.Headers.TryGetValue("X-Connector-Secret", out var secret)
-            && context.Request.Headers.TryGetValue("X-Organization-Id", out var headerOrganizationId)
-            && context.Request.Headers.TryGetValue("X-Environment-Id", out var headerEnvironmentId)
-            && hostId == connectorHostId
-            && secret == "local-connector-secret"
-            && headerOrganizationId == organizationId
-            && headerEnvironmentId == environmentId;
+        var headerHostId = context.Request.Headers["X-Connector-Host-Id"].ToString();
+        var secret = context.Request.Headers["X-Connector-Secret"].ToString();
+        var headerOrganizationId = context.Request.Headers["X-Organization-Id"].ToString();
+        var headerEnvironmentId = context.Request.Headers["X-Environment-Id"].ToString();
+
+        if (string.IsNullOrWhiteSpace(headerHostId)
+            || string.IsNullOrWhiteSpace(secret)
+            || string.IsNullOrWhiteSpace(headerOrganizationId)
+            || string.IsNullOrWhiteSpace(headerEnvironmentId))
+        {
+            LogCredentialRejected(
+                logger,
+                context,
+                connectorHostId,
+                organizationId,
+                environmentId,
+                requiredPermission,
+                "missing-connector-headers");
+            return false;
+        }
+
+        if (!string.Equals(headerHostId, connectorHostId, StringComparison.Ordinal)
+            || !string.Equals(headerOrganizationId, organizationId, StringComparison.Ordinal)
+            || !string.Equals(headerEnvironmentId, environmentId, StringComparison.Ordinal))
+        {
+            LogCredentialRejected(
+                logger,
+                context,
+                connectorHostId,
+                organizationId,
+                environmentId,
+                requiredPermission,
+                "connector-scope-mismatch");
+            return false;
+        }
+
+        var result = await connectorCredentialValidator.ValidateAsync(
+            new OpsConnectorCredentialValidationRequest(
+                connectorHostId,
+                secret,
+                organizationId,
+                environmentId,
+                requiredPermission),
+            cancellationToken);
+        if (!result.IsAuthorized)
+        {
+            LogCredentialRejected(
+                logger,
+                context,
+                connectorHostId,
+                organizationId,
+                environmentId,
+                requiredPermission,
+                result.Reason);
+            return false;
+        }
+
+        var principalMatchesScope = string.Equals(result.PrincipalType, "connector-host", StringComparison.Ordinal)
+            && string.Equals(result.ConnectorHostId, connectorHostId, StringComparison.Ordinal)
+            && string.Equals(result.OrganizationId, organizationId, StringComparison.Ordinal)
+            && string.Equals(result.EnvironmentId, environmentId, StringComparison.Ordinal);
+        if (!principalMatchesScope)
+        {
+            LogCredentialRejected(
+                logger,
+                context,
+                connectorHostId,
+                organizationId,
+                environmentId,
+                requiredPermission,
+                "connector-principal-scope-mismatch");
+            return false;
+        }
+
+        return true;
     }
 
     public static async Task WriteUnauthorizedAsync(HttpContext context, CancellationToken cancellationToken)
     {
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         await context.Response.WriteAsJsonAsync(new { title = "Unauthorized", detail = "Invalid Connector Host credential.", status = StatusCodes.Status401Unauthorized }, cancellationToken);
+    }
+
+    private static void LogCredentialRejected(
+        ILogger logger,
+        HttpContext context,
+        string connectorHostId,
+        string organizationId,
+        string environmentId,
+        string requiredPermission,
+        string reason)
+    {
+        logger.LogWarning(
+            "ConnectorCredentialRejected ConnectorHostId={ConnectorHostId} OrganizationId={OrganizationId} EnvironmentId={EnvironmentId} RequiredPermission={RequiredPermission} Reason={Reason} Path={Path} CorrelationId={CorrelationId}",
+            connectorHostId,
+            organizationId,
+            environmentId,
+            requiredPermission,
+            reason,
+            context.Request.Path.ToString(),
+            context.TraceIdentifier);
     }
 }
