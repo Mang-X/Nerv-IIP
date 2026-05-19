@@ -86,17 +86,44 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             JsonSerializer.Serialize(request.Parameters, JsonOptions));
     }
 
-    public OperationTaskDispatchItem Dispatch(OperationAttemptId attemptId, AuditRecordId auditRecordId, string connectorHostId, DateTimeOffset now)
+    public OperationTaskDispatchItem Claim(
+        OperationAttemptId attemptId,
+        AuditRecordId auditRecordId,
+        string leaseId,
+        string connectorHostId,
+        DateTimeOffset now,
+        TimeSpan leaseDuration,
+        int maxAttempts)
     {
         if (!string.Equals(Status, "queued", StringComparison.Ordinal))
         {
-            throw new InvalidOperationResultException("Operation task is not pending dispatch.");
+            throw new InvalidOperationResultException("Operation task is not claimable.");
         }
 
-        var attempt = new OperationAttempt(attemptId, Id, connectorHostId, "started", now);
+        var attemptNo = _attempts
+            .Where(x => x.AttemptNo.HasValue)
+            .Select(x => x.AttemptNo!.Value)
+            .DefaultIfEmpty(0)
+            .Max() + 1;
+        if (attemptNo > maxAttempts)
+        {
+            throw new InvalidOperationResultException("Operation task has exhausted its maximum attempts.");
+        }
+
+        var attempt = new OperationAttempt(
+            attemptId,
+            Id,
+            connectorHostId,
+            "started",
+            now,
+            leaseId,
+            now,
+            now.Add(leaseDuration),
+            attemptNo,
+            maxAttempts);
         _attempts.Add(attempt);
         Status = "dispatched";
-        AddAudit(auditRecordId, "operation.dispatched", connectorHostId, now, CorrelationId);
+        AddAudit(auditRecordId, "operation.claimed", connectorHostId, now, CorrelationId);
         this.AddDomainEvent(new OperationTaskDispatchedDomainEvent(this, attempt));
 
         return new OperationTaskDispatchItem(
@@ -108,7 +135,47 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             InstanceKey,
             OperationCode,
             CorrelationId,
-            Parameters);
+            Parameters,
+            attempt.LeaseId ?? leaseId,
+            attempt.LeasedAtUtc ?? now,
+            attempt.LeasedUntilUtc ?? now.Add(leaseDuration),
+            attempt.AttemptNo ?? attemptNo,
+            attempt.MaxAttempts ?? maxAttempts);
+    }
+
+    public void AbandonExpiredLease(AuditRecordId auditRecordId, DateTimeOffset now)
+    {
+        var attempt = GetActiveAttempt();
+        if (attempt is null || attempt.LeasedUntilUtc > now)
+        {
+            return;
+        }
+
+        attempt.Abandon(now, "lease-timeout");
+        Status = attempt.AttemptNo >= attempt.MaxAttempts ? "failed" : "queued";
+        AddAudit(auditRecordId, "operation.lease-timeout", attempt.ConnectorHostId, now, CorrelationId);
+    }
+
+    public OperationTaskResponse AbandonLease(string leaseId, string connectorHostId, string abandonReason, AuditRecordId auditRecordId, DateTimeOffset now)
+    {
+        var attempt = GetMatchingActiveLease(leaseId, connectorHostId);
+        attempt.Abandon(now, abandonReason);
+        Status = attempt.AttemptNo >= attempt.MaxAttempts ? "failed" : "queued";
+        AddAudit(auditRecordId, "operation.abandoned", connectorHostId, now, CorrelationId);
+        return ToResponse();
+    }
+
+    public OperationTaskResponse HeartbeatLease(string leaseId, string connectorHostId, DateTimeOffset now, TimeSpan leaseDuration, AuditRecordId auditRecordId)
+    {
+        var attempt = GetMatchingActiveLease(leaseId, connectorHostId);
+        if (attempt.LeasedUntilUtc <= now)
+        {
+            throw new InvalidOperationResultException("Operation task lease has expired.");
+        }
+
+        attempt.Heartbeat(now.Add(leaseDuration));
+        AddAudit(auditRecordId, "operation.heartbeat", connectorHostId, now, CorrelationId);
+        return ToResponse();
     }
 
     public OperationTaskResponse RecordResult(OperationResult result, AuditRecordId auditRecordId)
@@ -183,6 +250,28 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         }
     }
 
+    private OperationAttempt? GetActiveAttempt()
+    {
+        return _attempts
+            .Where(x => string.Equals(x.Status, "started", StringComparison.Ordinal))
+            .Where(x => x.HasClaimLease())
+            .OrderByDescending(x => x.AttemptNo)
+            .FirstOrDefault();
+    }
+
+    private OperationAttempt GetMatchingActiveLease(string leaseId, string connectorHostId)
+    {
+        var attempt = GetActiveAttempt()
+            ?? throw new InvalidOperationResultException("Operation task does not have an active lease.");
+        if (!string.Equals(attempt.LeaseId, leaseId, StringComparison.Ordinal)
+            || !string.Equals(attempt.ConnectorHostId, connectorHostId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationResultException("Operation task lease does not match the active attempt.");
+        }
+
+        return attempt;
+    }
+
     private void AddAudit(AuditRecordId auditRecordId, string action, string actor, DateTimeOffset occurredAtUtc, string correlationId)
     {
         _auditRecords.Add(new AuditRecord(auditRecordId, Id, action, actor, occurredAtUtc, correlationId));
@@ -199,13 +288,28 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
         OperationTaskId = new OperationTaskId(string.Empty);
     }
 
-    internal OperationAttempt(OperationAttemptId id, OperationTaskId operationTaskId, string connectorHostId, string status, DateTimeOffset startedAtUtc)
+    internal OperationAttempt(
+        OperationAttemptId id,
+        OperationTaskId operationTaskId,
+        string connectorHostId,
+        string status,
+        DateTimeOffset startedAtUtc,
+        string leaseId,
+        DateTimeOffset leasedAtUtc,
+        DateTimeOffset leasedUntilUtc,
+        int attemptNo,
+        int maxAttempts)
     {
         Id = id;
         OperationTaskId = operationTaskId;
         ConnectorHostId = connectorHostId;
         Status = status;
         StartedAtUtc = startedAtUtc;
+        LeaseId = leaseId;
+        LeasedAtUtc = leasedAtUtc;
+        LeasedUntilUtc = leasedUntilUtc;
+        AttemptNo = attemptNo;
+        MaxAttempts = maxAttempts;
     }
 
     public OperationTaskId OperationTaskId { get; private set; }
@@ -214,12 +318,39 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
     public DateTimeOffset StartedAtUtc { get; private set; }
     public DateTimeOffset? FinishedAtUtc { get; private set; }
     public string? FailureJson { get; private set; }
+    public string? LeaseId { get; private set; }
+    public DateTimeOffset? LeasedAtUtc { get; private set; }
+    public DateTimeOffset? LeasedUntilUtc { get; private set; }
+    public int? AttemptNo { get; private set; }
+    public int? MaxAttempts { get; private set; }
+    public string? AbandonReason { get; private set; }
 
     internal void Record(string status, DateTimeOffset finishedAtUtc, FailureReason? failure)
     {
         Status = status;
         FinishedAtUtc = finishedAtUtc;
         FailureJson = failure is null ? null : JsonSerializer.Serialize(failure, JsonOptions);
+    }
+
+    internal void Abandon(DateTimeOffset abandonedAtUtc, string abandonReason)
+    {
+        Status = "abandoned";
+        FinishedAtUtc = abandonedAtUtc;
+        AbandonReason = abandonReason;
+    }
+
+    internal void Heartbeat(DateTimeOffset leasedUntilUtc)
+    {
+        LeasedUntilUtc = leasedUntilUtc;
+    }
+
+    internal bool HasClaimLease()
+    {
+        return !string.IsNullOrWhiteSpace(LeaseId)
+            && LeasedAtUtc.HasValue
+            && LeasedUntilUtc.HasValue
+            && AttemptNo.HasValue
+            && MaxAttempts.HasValue;
     }
 
     internal OperationAttemptFact ToFact()
@@ -231,7 +362,13 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
             Status,
             StartedAtUtc,
             FinishedAtUtc,
-            FailureJson is null ? null : JsonSerializer.Deserialize<FailureReason>(FailureJson, JsonOptions));
+            FailureJson is null ? null : JsonSerializer.Deserialize<FailureReason>(FailureJson, JsonOptions),
+            LeaseId ?? string.Empty,
+            LeasedAtUtc ?? StartedAtUtc,
+            LeasedUntilUtc ?? StartedAtUtc,
+            AttemptNo ?? 0,
+            MaxAttempts ?? 0,
+            AbandonReason);
     }
 }
 

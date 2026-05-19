@@ -10,7 +10,9 @@ public interface IOperationTaskApplicationService
 {
     Task<OperationTaskResponse> CreateAsync(CreateOperationTaskRequest request, DateTimeOffset now, CancellationToken cancellationToken);
     Task<OperationTaskResponse> GetAsync(string operationTaskId, CancellationToken cancellationToken);
-    Task<PendingOperationTasksResponse> DispatchPendingAsync(string organizationId, string environmentId, string connectorHostId, int take, DateTimeOffset now, CancellationToken cancellationToken);
+    Task<PendingOperationTasksResponse> ClaimPendingAsync(ClaimOperationTasksRequest request, DateTimeOffset now, CancellationToken cancellationToken);
+    Task<OperationTaskResponse> AbandonLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken);
+    Task<OperationTaskResponse> HeartbeatLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken);
     Task<OperationTaskResponse> RecordResultAsync(OperationResult result, CancellationToken cancellationToken);
 }
 
@@ -26,9 +28,19 @@ public sealed class InMemoryOperationTaskApplicationService(IOpsStateStore store
         return Task.FromResult(store.Get(operationTaskId));
     }
 
-    public Task<PendingOperationTasksResponse> DispatchPendingAsync(string organizationId, string environmentId, string connectorHostId, int take, DateTimeOffset now, CancellationToken cancellationToken)
+    public Task<PendingOperationTasksResponse> ClaimPendingAsync(ClaimOperationTasksRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        return Task.FromResult(store.DispatchPending(organizationId, environmentId, connectorHostId, take, now));
+        return Task.FromResult(store.ClaimPending(request, now));
+    }
+
+    public Task<OperationTaskResponse> AbandonLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(store.AbandonLease(operationTaskId, request, now));
+    }
+
+    public Task<OperationTaskResponse> HeartbeatLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(store.HeartbeatLease(operationTaskId, request, now));
     }
 
     public Task<OperationTaskResponse> RecordResultAsync(OperationResult result, CancellationToken cancellationToken)
@@ -61,25 +73,61 @@ public sealed class EfOperationTaskApplicationService(IOperationTaskRepository r
         return task.ToResponse();
     }
 
-    public async Task<PendingOperationTasksResponse> DispatchPendingAsync(string organizationId, string environmentId, string connectorHostId, int take, DateTimeOffset now, CancellationToken cancellationToken)
+    public async Task<PendingOperationTasksResponse> ClaimPendingAsync(ClaimOperationTasksRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var pendingTasks = await repository.GetPendingAsync(organizationId, environmentId, take, cancellationToken);
-        var attemptCount = await repository.CountAttemptsAsync(cancellationToken);
-        var auditCount = await repository.CountAuditRecordsAsync(cancellationToken);
+        var pendingTasks = await repository.GetClaimableAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            Math.Clamp(request.Take, 1, 50),
+            now,
+            cancellationToken);
         var items = new List<OperationTaskDispatchItem>();
+        var leaseDuration = TimeSpan.FromSeconds(Math.Clamp(request.LeaseDurationSeconds, 30, 3600));
+        var maxAttempts = Math.Clamp(request.MaxAttempts, 1, 10);
 
         foreach (var task in pendingTasks)
         {
-            attemptCount++;
-            auditCount++;
-            items.Add(task.Dispatch(
-                new OperationAttemptId($"attempt-{attemptCount:000000}"),
-                new AuditRecordId($"audit-{auditCount:000000}"),
-                connectorHostId,
-                now));
+            task.AbandonExpiredLease(await repository.NextAuditRecordIdAsync(cancellationToken), now);
+            if (!string.Equals(task.Status, "queued", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            items.Add(task.Claim(
+                await repository.NextAttemptIdAsync(cancellationToken),
+                await repository.NextAuditRecordIdAsync(cancellationToken),
+                Guid.NewGuid().ToString("N"),
+                request.ConnectorHostId,
+                now,
+                leaseDuration,
+                maxAttempts));
         }
 
         return new PendingOperationTasksResponse(items);
+    }
+
+    public async Task<OperationTaskResponse> AbandonLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var task = await repository.GetByIdAsync(operationTaskId, cancellationToken)
+            ?? throw new OperationTaskNotFoundException(operationTaskId);
+        return task.AbandonLease(
+            request.LeaseId,
+            request.ConnectorHostId,
+            request.AbandonReason,
+            await repository.NextAuditRecordIdAsync(cancellationToken),
+            now);
+    }
+
+    public async Task<OperationTaskResponse> HeartbeatLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var task = await repository.GetByIdAsync(operationTaskId, cancellationToken)
+            ?? throw new OperationTaskNotFoundException(operationTaskId);
+        return task.HeartbeatLease(
+            request.LeaseId,
+            request.ConnectorHostId,
+            now,
+            TimeSpan.FromSeconds(Math.Clamp(request.LeaseDurationSeconds, 30, 3600)),
+            await repository.NextAuditRecordIdAsync(cancellationToken));
     }
 
     public async Task<OperationTaskResponse> RecordResultAsync(OperationResult result, CancellationToken cancellationToken)

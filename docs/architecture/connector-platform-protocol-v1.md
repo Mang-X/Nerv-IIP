@@ -6,7 +6,7 @@
 
 1. 为 AppHub、PlatformGateway、Connector Host 和 Docker Connector 提供同一份协议边界。
 2. 避免注册、心跳、状态同步在平台与 Connector Host 两侧各自长成不同模型。
-3. 通过 Ops pending 拉取模型冻结第二阶段低风险动作的最小下发、领取和结果回传接口。
+3. 通过 Ops claim/lease 拉取模型冻结第二阶段低风险动作的最小下发、领取、续期、放弃和结果回传接口。
 
 ## 契约事实来源与独立升级
 
@@ -51,10 +51,16 @@
 2. GET /api/ops/v1/operation-tasks/{operationTaskId}
 作用：查询 OperationTask、OperationAttempt 与 AuditRecord 明细。
 
-3. GET /api/ops/v1/operation-tasks/pending
-作用：Connector Host 按 organizationId、environmentId 和 connectorHostId 拉取待执行任务。
+3. POST /api/ops/v1/operation-tasks/claims
+作用：Connector Host 按 organizationId、environmentId 和 connectorHostId 原子领取待执行任务，并获得 leaseId、leasedAtUtc、leasedUntilUtc、attemptNo 和 maxAttempts。GET /api/ops/v1/operation-tasks/pending 仅作为第二阶段兼容入口，语义等同于默认 5 分钟 lease 的 claim。
 
-4. POST /api/ops/v1/operation-results
+4. POST /api/ops/v1/operation-tasks/{operationTaskId}/lease/heartbeat
+作用：Connector Host 使用当前 leaseId 续期 leasedUntilUtc；leaseId、connectorHostId、organizationId 和 environmentId 必须匹配当前 active attempt。
+
+5. POST /api/ops/v1/operation-tasks/{operationTaskId}/lease/abandon
+作用：Connector Host 使用当前 leaseId 主动放弃任务，写入 abandonReason；未耗尽 maxAttempts 时任务回到 queued，耗尽后转 failed。
+
+6. POST /api/ops/v1/operation-results
 作用：接收 Connector Host 回传的执行结果，写入 OperationTask、OperationAttempt 与 AuditRecord；实例最终状态仍以后续状态同步驱动 AppHub 更新。
 
 ## 最小契约对象
@@ -174,6 +180,29 @@
 - auditRecords
 - attempts
 
+### OperationAttempt / Lease
+
+最小字段建议：
+
+- attemptId
+- leaseId
+- connectorHostId
+- status: started | completed | failed | abandoned
+- leasedAtUtc
+- leasedUntilUtc
+- attemptNo
+- maxAttempts
+- abandonReason
+- startedAtUtc
+- finishedAtUtc
+- failure: FailureReason?
+
+约束：
+
+1. claim 必须是原子操作；同一 OperationTask 在同一时刻只能有一个 status=started 的 active lease。
+2. leaseId 是 heartbeat、abandon 和后续诊断的幂等令牌；不匹配当前 active lease 的更新必须拒绝。
+3. leasedUntilUtc 到期后，下一次 claim 会先把过期 attempt 标记为 abandoned，abandonReason 固定为 lease-timeout；attemptNo 小于 maxAttempts 时任务回到 queued，否则任务转 failed。
+
 ### FailureReason
 
 最小字段建议：
@@ -201,7 +230,9 @@
 ### Ops 发布
 
 - OperationRequested
-- OperationStarted
+- OperationClaimed
+- OperationLeaseHeartbeat
+- OperationLeaseAbandoned
 - OperationCompleted
 - OperationFailed
 - AuditRecorded
@@ -209,7 +240,7 @@
 ## 幂等与跟踪约束
 
 1. 注册和动作任务创建必须显式携带 idempotencyKey。
-2. 动作结果通过 operationTaskId、attemptId、organizationId、environmentId 和 connectorHostId 关联任务范围。
+2. 动作结果通过 operationTaskId、attemptId、organizationId、environmentId 和 connectorHostId 关联任务范围；lease 续期或放弃还必须携带 leaseId。
 3. 心跳、状态同步、任务创建和结果回传至少需要 correlationId 与 occurredAtUtc，用于日志关联和重复消息判定。
 4. 平台日志与追踪统一使用 correlationId 和 W3C trace context 贯通，不在首批实现中自造第二套链路追踪协议。
 
@@ -218,12 +249,12 @@
 1. 立即实现 AppHub 的 registrations、heartbeats、state-snapshots 三个写接口。
 2. 立即实现 PlatformGateway 的实例列表与实例详情两个查询接口。
 3. 立即实现 Connector Host 通过 Nerv.IIP.Sdk.ConnectorProtocol 到 AppHub 的注册、心跳、状态同步客户端。
-4. 立即实现 Ops 的 operation-tasks、operation-results、pending 拉取和任务详情接口。
-5. 立即实现 Connector Host 通过 Nerv.IIP.Sdk.Ops 领取 pending task、执行低风险 restart 并回传结果。
+4. 立即实现 Ops 的 operation-tasks、operation-results、claim/heartbeat/abandon 和任务详情接口。
+5. 立即实现 Connector Host 通过 Nerv.IIP.Sdk.Ops claim task、执行低风险 restart 并回传结果。
 
 ## 非目标
 
-1. 不在本文档中定义全部命令下发传输形态；当前只冻结第二阶段采用的 HTTP pending 拉取模型。
+1. 不在本文档中定义全部命令下发传输形态；当前只冻结第二阶段采用的 HTTP claim/lease 拉取模型。
 2. 不在本文档中定义全部动作参数 schema 与错误码表。
 3. 不在本文档中定义 Windows Service Connector 与 HTTP Connector 的特有扩展字段。
 4. 不在本文档中定义外部客户端注册、授权授予、令牌签发或 consent 页面细节，这些属于 IAM 边界。

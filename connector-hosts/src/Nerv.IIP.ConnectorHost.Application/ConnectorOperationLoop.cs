@@ -20,7 +20,13 @@ public sealed class ConnectorOperationLoop(
             return;
         }
 
-        var pending = await opsClient.GetPendingOperationTasksAsync(runtimeContext.OrganizationId, runtimeContext.EnvironmentId, runtimeContext.ConnectorHostId, 10, cancellationToken);
+        var pending = await opsClient.ClaimOperationTasksAsync(
+            new ClaimOperationTasksRequest(
+                runtimeContext.OrganizationId,
+                runtimeContext.EnvironmentId,
+                runtimeContext.ConnectorHostId,
+                10),
+            cancellationToken);
         foreach (var task in pending.Items)
         {
             var startedAt = DateTimeOffset.UtcNow;

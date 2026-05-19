@@ -23,7 +23,13 @@ public sealed record OperationAttemptFact(
     string Status,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? FinishedAtUtc,
-    FailureReason? Failure);
+    FailureReason? Failure,
+    string LeaseId,
+    DateTimeOffset LeasedAtUtc,
+    DateTimeOffset LeasedUntilUtc,
+    int AttemptNo,
+    int MaxAttempts,
+    string? AbandonReason);
 
 public sealed record AuditRecordFact(
     string AuditRecordId,
@@ -46,7 +52,13 @@ public static class OperationTaskMapper
                 x.Status,
                 x.StartedAtUtc,
                 x.FinishedAtUtc,
-                x.Failure?.Code))
+                x.Failure?.Code,
+                x.LeaseId,
+                x.LeasedAtUtc,
+                x.LeasedUntilUtc,
+                x.AttemptNo,
+                x.MaxAttempts,
+                x.AbandonReason))
             .ToList();
 
         var auditSummaries = auditRecords

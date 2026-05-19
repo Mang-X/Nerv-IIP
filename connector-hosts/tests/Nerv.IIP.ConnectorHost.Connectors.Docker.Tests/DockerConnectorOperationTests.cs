@@ -44,6 +44,11 @@ public sealed class DockerConnectorOperationTests
             instanceKey,
             "lifecycle.restart",
             "corr-docker-operation-test",
-            new Dictionary<string, string>());
+            new Dictionary<string, string>(),
+            "lease-000001",
+            DateTimeOffset.Parse("2026-05-19T00:00:00Z"),
+            DateTimeOffset.Parse("2026-05-19T00:05:00Z"),
+            1,
+            3);
     }
 }
