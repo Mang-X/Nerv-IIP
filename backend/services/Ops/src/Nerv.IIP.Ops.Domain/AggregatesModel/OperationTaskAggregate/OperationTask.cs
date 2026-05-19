@@ -197,6 +197,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         Status = status;
         AddAudit(auditRecordId, auditAction, result.Context.ConnectorHostId, result.FinishedAtUtc, result.Context.CorrelationId);
         this.AddDomainEvent(new OperationResultRecordedDomainEvent(this, attempt));
+        this.AddDomainEvent(completed
+            ? new OperationTaskCompletedDomainEvent(this, attempt, result)
+            : new OperationTaskFailedDomainEvent(this, attempt, result));
         return ToResponse();
     }
 
