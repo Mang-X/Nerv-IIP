@@ -1,4 +1,5 @@
 .agents/skills/
+.codex-review
 bin/
 obj/
 TestResults/
