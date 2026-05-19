@@ -27,7 +27,7 @@ public sealed class GatewayInstanceTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
-        var listResponse = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageNumber=1&pageSize=20&search=demo");
+        var listResponse = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageIndex=1&pageSize=20&sortBy=instanceName&sortOrder=asc&filterSearch=demo");
         listResponse.EnsureSuccessStatusCode();
         var list = await ReadResponseDataAsync<InstanceListResponse>(listResponse);
         var detailResponse = await client.GetAsync("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
@@ -42,7 +42,10 @@ public sealed class GatewayInstanceTests
         refreshedResponse.EnsureSuccessStatusCode();
         var refreshed = await ReadResponseDataAsync<InstanceDetailResponse>(refreshedResponse);
 
-        Assert.Equal(new InstanceListQuery("org-001", "env-dev", 1, 20, "demo"), fake.LastQuery);
+        Assert.Equal(new InstanceListQuery("org-001", "env-dev", 1, 20, "instanceName", "asc", "demo"), fake.LastQuery);
+        Assert.Equal(1, list!.PageIndex);
+        Assert.Equal(20, list.PageSize);
+        Assert.Equal(1, list.TotalCount);
         Assert.Equal(GatewayPermissions.AppHubInstancesRead, auth.LastRequirement!.PermissionCode);
         Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
         Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
@@ -69,7 +72,7 @@ public sealed class GatewayInstanceTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageNumber=1&pageSize=20");
+        var response = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageIndex=1&pageSize=20");
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.Contains("AppHub unavailable", await response.Content.ReadAsStringAsync());
@@ -83,7 +86,7 @@ public sealed class GatewayInstanceTests
         public Task<InstanceListResponse> QueryInstancesAsync(InstanceListQuery query, CancellationToken cancellationToken)
         {
             LastQuery = query;
-            return Task.FromResult(new InstanceListResponse(query.PageNumber, query.PageSize, 1, [new InstanceListItem("demo-api", "Demo API", "1.0.0", "node-001", "local-docker", "demo-api-001", "demo-api", "running", "healthy", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)]));
+            return Task.FromResult(new InstanceListResponse(query.PageIndex, query.PageSize, 1, [new InstanceListItem("demo-api", "Demo API", "1.0.0", "node-001", "local-docker", "demo-api-001", "demo-api", "running", "healthy", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)]));
         }
 
         public Task<InstanceDetailResponse> GetInstanceAsync(string organizationId, string environmentId, string instanceKey, CancellationToken cancellationToken) => Task.FromResult(Detail!);

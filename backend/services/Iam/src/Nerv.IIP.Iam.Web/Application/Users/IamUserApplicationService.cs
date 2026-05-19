@@ -2,6 +2,7 @@ using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
+using Nerv.IIP.Iam.Web.Application;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using NetCorePal.Extensions.Primitives;
 
@@ -9,7 +10,7 @@ namespace Nerv.IIP.Iam.Web.Application.Users;
 
 public interface IIamUserApplicationService
 {
-    Task<IReadOnlyList<UserResponse>> ListUsersAsync(CancellationToken cancellationToken);
+    Task<PagedListResponse<UserResponse>> ListUsersAsync(IamListQueryOptions options, CancellationToken cancellationToken);
 
     Task<UserResponse> CreateUserAsync(string loginName, string email, string password, CancellationToken cancellationToken);
 
@@ -25,12 +26,17 @@ public interface IIamUserApplicationService
 
 public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : IIamUserApplicationService
 {
-    public Task<IReadOnlyList<UserResponse>> ListUsersAsync(CancellationToken cancellationToken)
+    public Task<PagedListResponse<UserResponse>> ListUsersAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
-        IReadOnlyList<UserResponse> users = store.Users
-            .OrderBy(x => x.LoginName, StringComparer.Ordinal)
+        var users = store.Users
+            .Where(user => options.FilterEnabled is null || user.Enabled == options.FilterEnabled)
+            .Where(user => string.IsNullOrWhiteSpace(options.FilterSearch)
+                || user.UserId.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
+                || user.LoginName.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
+                || user.Email.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase))
             .Select(ToResponse)
-            .ToArray();
+            .ApplyUserSort(options)
+            .ToPagedResponse(options);
         return Task.FromResult(users);
     }
 
@@ -65,10 +71,18 @@ public sealed class PostgreSqlIamUserApplicationService(
     IUserRepository repository,
     IamPasswordService passwordService) : IIamUserApplicationService
 {
-    public async Task<IReadOnlyList<UserResponse>> ListUsersAsync(CancellationToken cancellationToken)
+    public async Task<PagedListResponse<UserResponse>> ListUsersAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
         var users = await repository.ListNotDeletedAsync(cancellationToken);
-        return users.Select(ToResponse).ToArray();
+        return users
+            .Where(user => options.FilterEnabled is null || user.Enabled == options.FilterEnabled)
+            .Where(user => string.IsNullOrWhiteSpace(options.FilterSearch)
+                || user.Id.Id.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
+                || user.LoginName.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
+                || user.Email.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase))
+            .Select(ToResponse)
+            .ApplyUserSort(options)
+            .ToPagedResponse(options);
     }
 
     public async Task<UserResponse> CreateUserAsync(
@@ -137,5 +151,23 @@ public sealed class PostgreSqlIamUserApplicationService(
     private static UserResponse ToResponse(User user)
     {
         return new UserResponse(user.Id.Id, user.LoginName, user.Email, user.Enabled);
+    }
+}
+
+internal static class UserListSorting
+{
+    public static IEnumerable<UserResponse> ApplyUserSort(this IEnumerable<UserResponse> users, IamListQueryOptions options)
+    {
+        return (options.SortBy?.ToLowerInvariant(), options.IsDescending) switch
+        {
+            ("userid", true) => users.OrderByDescending(x => x.UserId, StringComparer.Ordinal),
+            ("userid", false) => users.OrderBy(x => x.UserId, StringComparer.Ordinal),
+            ("email", true) => users.OrderByDescending(x => x.Email, StringComparer.Ordinal),
+            ("email", false) => users.OrderBy(x => x.Email, StringComparer.Ordinal),
+            ("enabled", true) => users.OrderByDescending(x => x.Enabled).ThenBy(x => x.LoginName, StringComparer.Ordinal),
+            ("enabled", false) => users.OrderBy(x => x.Enabled).ThenBy(x => x.LoginName, StringComparer.Ordinal),
+            ("loginname", true) => users.OrderByDescending(x => x.LoginName, StringComparer.Ordinal),
+            _ => users.OrderBy(x => x.LoginName, StringComparer.Ordinal)
+        };
     }
 }
