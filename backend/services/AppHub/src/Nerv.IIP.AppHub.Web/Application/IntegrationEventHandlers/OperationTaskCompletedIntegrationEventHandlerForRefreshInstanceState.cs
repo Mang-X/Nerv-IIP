@@ -14,3 +14,13 @@ public sealed class OperationTaskCompletedIntegrationEventHandlerForRefreshInsta
         await sender.Send(new RefreshInstanceStateAfterOperationCommand(integrationEvent), cancellationToken);
     }
 }
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Ops.OperationTaskFailedIntegrationEvent", "apphub.refresh-instance-state")]
+public sealed class OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(ISender sender)
+    : IIntegrationEventHandler<OperationTaskFailedIntegrationEvent>
+{
+    public async Task HandleAsync(OperationTaskFailedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        await sender.Send(new RefreshInstanceStateAfterFailedOperationCommand(integrationEvent), cancellationToken);
+    }
+}

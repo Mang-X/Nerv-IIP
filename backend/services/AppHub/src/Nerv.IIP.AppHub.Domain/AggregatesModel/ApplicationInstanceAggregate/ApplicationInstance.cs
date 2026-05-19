@@ -138,6 +138,44 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
             ["ops.lastCompletedOperationCode"] = operationCode,
             ["ops.lastCompletedOperationCorrelationId"] = correlationId
         };
+        this.AddDomainEvent(new InstanceStateSnapshotRecordedDomainEvent(InstanceKey, finishedAtUtc, ReportedStatus, HealthStatus));
+
+        return true;
+    }
+
+    public bool RecordOperationTaskFailedRefresh(
+        string idempotencyKey,
+        string operationTaskId,
+        string operationCode,
+        DateTimeOffset finishedAtUtc,
+        string correlationId,
+        string? failureCode)
+    {
+        var processedKey = GetFailedOperationMetadataKey(idempotencyKey);
+        if (Metadata.ContainsKey(processedKey))
+        {
+            return false;
+        }
+
+        var failureSummary = string.IsNullOrWhiteSpace(failureCode)
+            ? $"Operation task {operationTaskId} failed: {operationCode}"
+            : $"Operation task {operationTaskId} failed: {operationCode} ({failureCode})";
+        StateHistory.Add(new InstanceStateHistory(
+            Id,
+            finishedAtUtc,
+            ReportedStatus,
+            HealthStatus,
+            failureSummary));
+        Metadata = new Dictionary<string, string>(Metadata)
+        {
+            [processedKey] = finishedAtUtc.ToString("O"),
+            ["ops.lastFailedOperationIdempotencyKey"] = idempotencyKey,
+            ["ops.lastFailedOperationTaskId"] = operationTaskId,
+            ["ops.lastFailedOperationCode"] = operationCode,
+            ["ops.lastFailedOperationCorrelationId"] = correlationId,
+            ["ops.lastFailedOperationFailureCode"] = failureCode ?? string.Empty
+        };
+        this.AddDomainEvent(new InstanceStateSnapshotRecordedDomainEvent(InstanceKey, finishedAtUtc, ReportedStatus, HealthStatus));
 
         return true;
     }
@@ -145,6 +183,11 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
     private static string GetCompletedOperationMetadataKey(string idempotencyKey)
     {
         return $"ops.completed.{idempotencyKey}";
+    }
+
+    private static string GetFailedOperationMetadataKey(string idempotencyKey)
+    {
+        return $"ops.failed.{idempotencyKey}";
     }
 }
 

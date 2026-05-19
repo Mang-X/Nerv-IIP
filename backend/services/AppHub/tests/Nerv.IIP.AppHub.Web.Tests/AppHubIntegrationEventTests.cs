@@ -102,5 +102,69 @@ public sealed class AppHubIntegrationEventTests
         Assert.Equal(2, instance.StateHistory.Count);
         Assert.Equal("ops:operation-task-completed:op-001:attempt-001", instance.Metadata["ops.lastCompletedOperationIdempotencyKey"]);
         Assert.True(instance.Metadata.ContainsKey("ops.completed.ops:operation-task-completed:op-001:attempt-001"));
+        Assert.IsType<InstanceStateSnapshotRecordedDomainEvent>(instance.GetDomainEvents().Last());
+    }
+
+    [Fact]
+    public void Cap_retry_duplicate_operation_failed_event_refreshes_instance_state_once()
+    {
+        var instance = new ApplicationInstance(
+            "org-001",
+            "env-dev",
+            "demo-api",
+            "1.0.0",
+            "node-001",
+            "docker-container-local-demo-001",
+            "demo-api",
+            new Dictionary<string, string>(),
+            [new CapabilityDescriptor("lifecycle.restart", "1.0", "lifecycle", ["restart"], new Dictionary<string, string>())]);
+        instance.RecordStateSnapshot(
+            DateTimeOffset.Parse("2026-05-15T00:00:00Z"),
+            "running",
+            "healthy",
+            "initial state",
+            new Dictionary<string, string>());
+        var integrationEvent = new OperationTaskFailedIntegrationEvent(
+            "evt-ops-failed-001",
+            "ops.OperationTaskFailed",
+            1,
+            DateTimeOffset.Parse("2026-05-15T00:00:03Z"),
+            "ops",
+            "corr-ops-002",
+            "op-002",
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "ops:operation-task-failed:op-002:attempt-001",
+            new OperationTaskFailedPayload(
+                "op-002",
+                "attempt-001",
+                "docker-container-local-demo-001",
+                "lifecycle.restart",
+                DateTimeOffset.Parse("2026-05-15T00:00:03Z"),
+                "docker-daemon-unavailable"));
+
+        var first = instance.RecordOperationTaskFailedRefresh(
+            integrationEvent.IdempotencyKey,
+            integrationEvent.Payload.OperationTaskId,
+            integrationEvent.Payload.OperationCode,
+            integrationEvent.Payload.FinishedAtUtc,
+            integrationEvent.CorrelationId,
+            integrationEvent.Payload.FailureCode);
+        var duplicate = instance.RecordOperationTaskFailedRefresh(
+            integrationEvent.IdempotencyKey,
+            integrationEvent.Payload.OperationTaskId,
+            integrationEvent.Payload.OperationCode,
+            integrationEvent.Payload.FinishedAtUtc,
+            integrationEvent.CorrelationId,
+            integrationEvent.Payload.FailureCode);
+
+        Assert.True(first);
+        Assert.False(duplicate);
+        Assert.Equal(2, instance.StateHistory.Count);
+        Assert.Equal("ops:operation-task-failed:op-002:attempt-001", instance.Metadata["ops.lastFailedOperationIdempotencyKey"]);
+        Assert.Equal("docker-daemon-unavailable", instance.Metadata["ops.lastFailedOperationFailureCode"]);
+        Assert.True(instance.Metadata.ContainsKey("ops.failed.ops:operation-task-failed:op-002:attempt-001"));
+        Assert.IsType<InstanceStateSnapshotRecordedDomainEvent>(instance.GetDomainEvents().Last());
     }
 }
