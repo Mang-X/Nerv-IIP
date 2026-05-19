@@ -7,10 +7,8 @@
 - [IAM 认证与授权基线](iam-authentication-baseline.md)
 - [平台上下文地图](context-map.md)
 - [Connector Host 机器身份认证终态](connector-host-machine-auth.md)
-- [Notification 通知能力基线](notification-baseline.md)
-- [知识源生命周期说明](knowledge-source-lifecycle.md)
-- [AI 边界与治理说明](ai-boundaries.md)
-- [Observability 观测与日志索引基线](observability-baseline.md)
+
+后续 Notification、Knowledge、AI Integration 与 Observability baseline 文档创建后，应反向链接本文档，并在对应服务实现时标明权限 seed 与 enforcement 状态。
 
 ## 命名规则
 
