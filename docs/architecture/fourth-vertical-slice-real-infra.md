@@ -18,8 +18,8 @@
 4. AppHub/Ops PostgreSQL profile 已通过集成测试证明核心事实可持久化。
 5. AppHub/Ops 已暴露 `/code-analysis`，用于查看 netcorepal 识别的命令、查询、聚合、事件和处理器流向。
 6. `scripts/verify-second-slice-ops.ps1` 和 `scripts/verify-third-slice-console.ps1` 支持 `-UsePostgres`。
-7. `scripts/verify-fourth-slice-real-infra.ps1` 会拉起 PostgreSQL、Redis、RabbitMQ，重建验证库并复跑第三阶段控制台纵切。
-8. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，当前覆盖 AppHub、Ops、PlatformGateway、Connector Host、PostgreSQL、Redis 和 RabbitMQ。
+7. `scripts/verify-fourth-slice-real-infra.ps1` 会拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector，重建验证库并复跑第三阶段控制台纵切。
+8. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，当前覆盖 AppHub、IAM、Ops、FileStorage、PlatformGateway、Connector Host、frontend console、PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector。
 
 ## 验证命令
 
@@ -54,8 +54,8 @@ pnpm -C frontend build
 2. CAP/RabbitMQ 当前是基础包、连接和资源拓扑已接线；业务集成事件 outbox、消费者幂等和发布订阅验收尚未进入本阶段完成定义。
 3. IAM 仍是内存态认证授权骨架，控制台登录、权限 guard、Connector Host 正式授权链路尚未完成。
 4. FileStorage 仍是边界骨架，真实上传下载、MinIO provider、下载授权和清理任务尚未完成。
-5. AppHost 尚未覆盖 Iam、FileStorage、Notification、Knowledge、AI Integration、MinIO、Qdrant、OpenTelemetry Collector 和 frontend console。
-6. Docker Compose 仍是本地依赖兜底入口；完整 Compose 产物、安装包和 Windows/Linux 整合安装脚本尚未落地。
+5. AppHost 尚未覆盖 Notification、Knowledge、AI Integration 和 Qdrant。
+6. Docker Compose 仍是本地依赖兜底入口，并与 AppHost 的 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector 本地依赖保持对齐；完整 Compose 产物、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ## 后续承接
 
