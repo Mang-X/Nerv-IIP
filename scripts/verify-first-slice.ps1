@@ -1,6 +1,8 @@
 # Script-Governance:
 #   Category: verify
 #   SideEffects:
+#     - Runs dotnet restore/build/test for backend/Nerv.IIP.sln
+#     - Runs dotnet restore/build/test for connector-hosts/Nerv.IIP.ConnectorHost.sln
 #     - Starts local AppHub and Platform Gateway verification services
 #     - Exercises connector registration, heartbeat, state snapshot and console read APIs
 #   Writes:
