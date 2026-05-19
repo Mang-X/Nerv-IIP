@@ -125,6 +125,22 @@ describe('console operation composables', () => {
     })
   })
 
+  it('exposes a restart error instead of rejecting when principal context is unavailable', async () => {
+    useAuthStore().$patch({
+      principal: undefined,
+    })
+    const { restartError, restartInstance } = useRestartOperation()
+
+    await expect(restartInstance('instance-1')).resolves.toBeUndefined()
+
+    expect(restartError.value?.message).toBe(
+      'Console organization and environment context is unavailable.',
+    )
+    expect(
+      vi.mocked(restartConsoleInstanceMutationOptions).mock.results[0]?.value.mutation,
+    ).not.toHaveBeenCalled()
+  })
+
   it('loads operation tasks with the logged-in principal context', () => {
     useOperationTask('task-1')
 
@@ -137,5 +153,26 @@ describe('console operation composables', () => {
         environmentId: 'env-prod',
       },
     })
+  })
+
+  it('does not construct console instance queries when principal context is unavailable', () => {
+    useAuthStore().$patch({
+      principal: undefined,
+    })
+
+    useConsoleInstances()
+
+    expect(listConsoleInstancesQueryOptions).not.toHaveBeenCalled()
+    expect(getConsoleInstanceDetailQueryOptions).not.toHaveBeenCalled()
+  })
+
+  it('does not construct operation task queries when principal context is unavailable', () => {
+    useAuthStore().$patch({
+      principal: undefined,
+    })
+
+    useOperationTask('task-1')
+
+    expect(getConsoleOperationTaskQueryOptions).not.toHaveBeenCalled()
   })
 })
