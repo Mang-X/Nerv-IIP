@@ -38,9 +38,12 @@ builder.Services.AddHttpClient<IGatewayIamAuthClient, HttpGatewayIamAuthClient>(
 {
     client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5104");
 });
+builder.Services.AddGatewayAuthentication(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 app.UseNervIipCorrelation();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseFastEndpoints(c =>
 {
     c.Endpoints.NameGenerator = ctx => ctx.EndpointType.Name switch

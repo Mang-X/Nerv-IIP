@@ -1,5 +1,6 @@
 using System.Net;
 using FastEndpoints;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 
@@ -40,12 +41,12 @@ public sealed class RefreshConsoleSessionEndpoint(IGatewayIamAuthClient iam) : E
 }
 
 [HttpPost("/api/console/v1/auth/logout")]
-[AllowAnonymous]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class LogoutConsoleSessionEndpoint(IGatewayIamAuthClient iam) : Endpoint<ConsoleLogoutRequest>
 {
     public override async Task HandleAsync(ConsoleLogoutRequest req, CancellationToken ct)
     {
-        var bearerToken = ConsoleAuthEndpointResults.ExtractBearerToken(HttpContext);
+        var bearerToken = await HttpContext.GetTokenAsync("access_token");
         if (bearerToken is null)
         {
             await ConsoleAuthEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
@@ -65,12 +66,12 @@ public sealed class LogoutConsoleSessionEndpoint(IGatewayIamAuthClient iam) : En
 }
 
 [HttpGet("/api/console/v1/auth/me")]
-[AllowAnonymous]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class GetConsolePrincipalEndpoint(IGatewayIamAuthClient iam) : EndpointWithoutRequest<ConsolePrincipalResponse>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
-        var bearerToken = ConsoleAuthEndpointResults.ExtractBearerToken(HttpContext);
+        var bearerToken = await HttpContext.GetTokenAsync("access_token");
         if (bearerToken is null)
         {
             await ConsoleAuthEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
@@ -90,18 +91,6 @@ public sealed class GetConsolePrincipalEndpoint(IGatewayIamAuthClient iam) : End
 
 internal static class ConsoleAuthEndpointResults
 {
-    public static string? ExtractBearerToken(HttpContext context)
-    {
-        var value = context.Request.Headers.Authorization.ToString();
-        if (!value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var token = value["Bearer ".Length..].Trim();
-        return string.IsNullOrWhiteSpace(token) ? null : token;
-    }
-
     public static Task WriteUnauthorizedAsync(HttpContext context, CancellationToken cancellationToken)
     {
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;

@@ -20,6 +20,24 @@ public sealed class GatewayAuthorizationTests
         var response = await factory.CreateClient().GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("Bearer", response.Headers.WwwAuthenticate.Single().Scheme);
+        Assert.Null(auth.LastRequirement);
+        Assert.Equal(0, appHub.QueryCallCount);
+    }
+
+    [Fact]
+    public async Task Console_instances_reject_invalid_bearer_before_permission_check()
+    {
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        var appHub = new FakeAppHubClient();
+        await using var factory = CreateFactory(auth, appHub);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "abc.def.ghi");
+
+        var response = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("Bearer", response.Headers.WwwAuthenticate.Single().Scheme);
         Assert.Null(auth.LastRequirement);
         Assert.Equal(0, appHub.QueryCallCount);
     }
@@ -31,7 +49,7 @@ public sealed class GatewayAuthorizationTests
         var appHub = new FakeAppHubClient();
         await using var factory = CreateFactory(auth, appHub);
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", "token-without-permission");
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev");
 
