@@ -1,6 +1,7 @@
 import { useAuthStore } from '@/stores/auth'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { routes } from 'vue-router/auto-routes'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { installAuthGuard } from './auth'
 
@@ -29,6 +30,19 @@ describe('auth route guard', () => {
 
     expect(router.currentRoute.value.path).toBe('/login')
     expect(router.currentRoute.value.query.redirect).toBe('/')
+  })
+
+  it('redirects unauthenticated users from unknown console routes to login', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes,
+    })
+    installAuthGuard(router)
+
+    await router.push('/any-unknown-path?from=test')
+
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(router.currentRoute.value.query.redirect).toBe('/any-unknown-path?from=test')
   })
 
   it('redirects authenticated users away from login', async () => {
