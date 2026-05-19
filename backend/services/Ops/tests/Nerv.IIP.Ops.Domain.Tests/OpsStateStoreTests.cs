@@ -1,5 +1,6 @@
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Ops.Domain;
 
 namespace Nerv.IIP.Ops.Domain.Tests;
 

@@ -34,11 +34,16 @@ public sealed class ApplicationAggregateTests
     public void Deactivate_marks_application_as_deleted_idempotently()
     {
         var application = new Application("org-001", "env-dev", "demo-api", "Demo API", "1.0.0");
+        var initialDomainEventCount = application.GetDomainEvents().Count;
 
         application.Deactivate();
         application.Deactivate();
 
         Assert.True(application.Deleted.Value);
-        Assert.Single(application.Versions);
+        var deactivatedEvent = Assert.IsType<ApplicationDeactivatedDomainEvent>(application.GetDomainEvents().Last());
+        Assert.Equal("org-001", deactivatedEvent.OrganizationId);
+        Assert.Equal("env-dev", deactivatedEvent.EnvironmentId);
+        Assert.Equal("demo-api", deactivatedEvent.ApplicationKey);
+        Assert.Equal(initialDomainEventCount + 1, application.GetDomainEvents().Count);
     }
 }

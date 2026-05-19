@@ -37,7 +37,13 @@ public class Application : Entity<Nerv.IIP.AppHub.Domain.AggregatesModel.Applica
 
     public void Deactivate()
     {
+        if (Deleted.Value)
+        {
+            return;
+        }
+
         Deleted = new Deleted(true);
+        this.AddDomainEvent(new ApplicationDeactivatedDomainEvent(OrganizationId, EnvironmentId, ApplicationKey));
     }
 
     private void AddVersion(string version)
