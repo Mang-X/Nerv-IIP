@@ -1,3 +1,15 @@
+# Script-Governance:
+#   Category: generate
+#   SideEffects:
+#     - Builds and starts a local Platform Gateway instance for OpenAPI discovery
+#     - Fetches the gateway Swagger document
+#   Writes:
+#     - frontend/packages/api-client/openapi/platform-gateway.v1.json
+#   Cleanup:
+#     - Stops the Platform Gateway PowerShell job
+#   Requires:
+#     - PowerShell 7
+#     - .NET SDK 10
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 if ($PSVersionTable.PSVersion.Major -ge 7) {
