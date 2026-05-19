@@ -3,7 +3,7 @@ import InstanceDetailPanel from '@/components/console/InstanceDetailPanel.vue'
 import InstanceTable from '@/components/console/InstanceTable.vue'
 import { useConsoleInstances, useRestartOperation } from '@/composables/useConsoleOperations'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import { Alert, AlertDescription, Skeleton } from '@nerv-iip/ui'
+import { Alert, AlertDescription, AlertTitle, Button, Skeleton } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 definePage({
@@ -15,11 +15,13 @@ definePage({
 
 const {
   detail,
+  detailError,
   detailPending,
   effectiveInstanceKey,
   instances,
   listError,
   listPending,
+  refreshDetail,
   selectInstance,
 } = useConsoleInstances()
 
@@ -33,6 +35,14 @@ const latestOperationPath = computed(() => {
 
 async function handleRestart(instanceKey: string) {
   await restartInstance(instanceKey)
+}
+
+async function handleRefreshDetail() {
+  try {
+    await refreshDetail()
+  } catch {
+    // The query error state renders the failure message.
+  }
 }
 </script>
 
@@ -67,7 +77,21 @@ async function handleRestart(instanceKey: string) {
         </RouterLink>
       </div>
 
-      <InstanceDetailPanel :instance="detail" :pending="detailPending" />
+      <Alert v-if="detailError" class="console-page__detail-error" variant="destructive">
+        <AlertTitle>Unable to load instance detail</AlertTitle>
+        <AlertDescription>{{ detailError.message }}</AlertDescription>
+        <Button
+          class="console-page__detail-retry"
+          :disabled="detailPending"
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="handleRefreshDetail"
+        >
+          Retry
+        </Button>
+      </Alert>
+      <InstanceDetailPanel v-else :instance="detail" :pending="detailPending" />
     </div>
   </DefaultLayout>
 </template>
@@ -103,6 +127,16 @@ async function handleRestart(instanceKey: string) {
 .console-page__operation-link:hover,
 .console-page__operation-link:focus-visible {
   text-decoration: underline;
+}
+
+.console-page__detail-error {
+  align-content: start;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.console-page__detail-retry {
+  justify-self: start;
 }
 
 @media (max-width: 1080px) {
