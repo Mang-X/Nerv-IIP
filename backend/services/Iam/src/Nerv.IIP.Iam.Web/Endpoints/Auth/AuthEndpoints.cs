@@ -1,4 +1,5 @@
 using FastEndpoints;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Application.Auth;
 
@@ -6,13 +7,13 @@ namespace Nerv.IIP.Iam.Web.Endpoints.Auth;
 
 [HttpPost("/api/iam/v1/auth/login")]
 [AllowAnonymous]
-public sealed class LoginEndpoint(IIamAuthService auth) : Endpoint<LoginRequest>
+public sealed class LoginEndpoint(IMediator mediator) : Endpoint<LoginRequest>
 {
     public override async Task HandleAsync(LoginRequest req, CancellationToken ct)
     {
-        await IamEndpointResults.WriteAuthResultAsync(
+        await IamEndpointResults.WriteAuthCommandResultAsync(
             HttpContext,
-            () => auth.LoginAsync(req.LoginName, req.Password, UserAgent(), RemoteIp(), ct),
+            () => mediator.Send(new LoginCommand(req.LoginName, req.Password, UserAgent(), RemoteIp()), ct),
             ct);
     }
 
@@ -22,13 +23,13 @@ public sealed class LoginEndpoint(IIamAuthService auth) : Endpoint<LoginRequest>
 
 [HttpPost("/api/iam/v1/auth/refresh")]
 [AllowAnonymous]
-public sealed class RefreshEndpoint(IIamAuthService auth) : Endpoint<RefreshRequest>
+public sealed class RefreshEndpoint(IMediator mediator) : Endpoint<RefreshRequest>
 {
     public override async Task HandleAsync(RefreshRequest req, CancellationToken ct)
     {
-        await IamEndpointResults.WriteAuthResultAsync(
+        await IamEndpointResults.WriteAuthCommandResultAsync(
             HttpContext,
-            () => auth.RefreshAsync(req.RefreshToken, UserAgent(), RemoteIp(), ct),
+            () => mediator.Send(new RefreshCommand(req.RefreshToken, UserAgent(), RemoteIp()), ct),
             ct);
     }
 
@@ -38,11 +39,11 @@ public sealed class RefreshEndpoint(IIamAuthService auth) : Endpoint<RefreshRequ
 
 [HttpPost("/api/iam/v1/auth/logout")]
 [AllowAnonymous]
-public sealed class LogoutEndpoint(IIamAuthService auth) : Endpoint<LogoutRequest>
+public sealed class LogoutEndpoint(IMediator mediator) : Endpoint<LogoutRequest>
 {
     public override async Task HandleAsync(LogoutRequest req, CancellationToken ct)
     {
-        await auth.RevokeSessionAsync(req.SessionId ?? string.Empty, "logout", ct);
+        await mediator.Send(new LogoutCommand(req.SessionId ?? string.Empty), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 }
@@ -79,6 +80,24 @@ public sealed class GetMeEndpoint(IIamAuthService auth) : EndpointWithoutRequest
 
 internal static class IamEndpointResults
 {
+    public static async Task WriteAuthCommandResultAsync<T>(
+        HttpContext context,
+        Func<Task<AuthCommandResult<T>>> action,
+        CancellationToken cancellationToken)
+    {
+        var result = await action();
+        if (!result.IsAuthorized)
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(
+                new { title = "Unauthorized", detail = result.Detail, status = StatusCodes.Status401Unauthorized },
+                cancellationToken);
+            return;
+        }
+
+        await context.Response.WriteAsJsonAsync(result.Response, cancellationToken);
+    }
+
     public static async Task WriteAuthResultAsync<T>(HttpContext context, Func<Task<T>> action, CancellationToken cancellationToken)
     {
         try

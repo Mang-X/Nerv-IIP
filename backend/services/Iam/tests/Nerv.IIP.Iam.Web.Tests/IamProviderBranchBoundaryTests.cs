@@ -28,6 +28,38 @@ public sealed class IamProviderBranchBoundaryTests
         Assert.Empty(violations);
     }
 
+    [Fact]
+    public void Auth_roles_and_sessions_application_services_do_not_use_ef_core_or_manual_transactions()
+    {
+        var applicationDirectories = new[]
+        {
+            $"Application{Path.DirectorySeparatorChar}Auth",
+            $"Application{Path.DirectorySeparatorChar}Roles",
+            $"Application{Path.DirectorySeparatorChar}Sessions"
+        };
+
+        var violations = SourceFiles("src/Nerv.IIP.Iam.Web/Application")
+            .Where(file => applicationDirectories.Any(directory => file.Contains(directory, StringComparison.Ordinal)))
+            .SelectMany(file => ForbiddenPostgresApplicationTokens
+                .Where(token => File.ReadAllText(file).Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{Relative(file)} contains '{token}'"))
+            .ToArray();
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void Role_endpoints_do_not_use_exceptions_as_not_implemented_control_flow()
+    {
+        var violations = SourceFiles("src/Nerv.IIP.Iam.Web/Endpoints/Roles")
+            .SelectMany(file => ForbiddenNotImplementedControlFlowTokens
+                .Where(token => File.ReadAllText(file).Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{Relative(file)} contains '{token}'"))
+            .ToArray();
+
+        Assert.Empty(violations);
+    }
+
     private static readonly string[] ForbiddenEndpointTokens =
     [
         "Persistence:Provider",
@@ -43,6 +75,21 @@ public sealed class IamProviderBranchBoundaryTests
         "GetService<IUserRepository>",
         "GetRequiredService<InMemoryIamStore>",
         "InMemoryIamStore"
+    ];
+
+    private static readonly string[] ForbiddenPostgresApplicationTokens =
+    [
+        "ApplicationDbContext",
+        "Microsoft.EntityFrameworkCore",
+        "SaveChangesAsync",
+        "BeginTransaction",
+        "ExecuteUpdateAsync",
+        ".Database"
+    ];
+
+    private static readonly string[] ForbiddenNotImplementedControlFlowTokens =
+    [
+        "NotImplementedException"
     ];
 
     private static IEnumerable<string> SourceFiles(string relativeDirectory)

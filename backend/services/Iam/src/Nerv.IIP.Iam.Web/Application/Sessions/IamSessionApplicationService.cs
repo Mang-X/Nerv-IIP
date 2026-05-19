@@ -1,5 +1,5 @@
-using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Iam.Infrastructure;
+using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application.Auth;
 
 namespace Nerv.IIP.Iam.Web.Application.Sessions;
@@ -43,14 +43,13 @@ public sealed class InMemoryIamSessionApplicationService(InMemoryIamStore store)
 }
 
 public sealed class PostgreSqlIamSessionApplicationService(
-    ApplicationDbContext dbContext,
+    IUserSessionRepository repository,
     IIamAuthService auth) : IIamSessionApplicationService
 {
     public async Task<IReadOnlyList<SessionResponse>> ListSessionsAsync(CancellationToken cancellationToken)
     {
-        return await dbContext.UserSessions
-            .AsNoTracking()
-            .OrderByDescending(x => x.IssuedAtUtc)
+        var sessions = await repository.ListAsync(cancellationToken);
+        return sessions
             .Select(x => new SessionResponse(
                 x.Id.Id,
                 x.UserId.Id,
@@ -58,7 +57,7 @@ public sealed class PostgreSqlIamSessionApplicationService(
                 x.ExpiresAtUtc,
                 x.RevokedAtUtc,
                 x.PermissionVersion))
-            .ToListAsync(cancellationToken);
+            .ToArray();
     }
 
     public async Task RevokeSessionAsync(string sessionId, CancellationToken cancellationToken)

@@ -1,19 +1,23 @@
-using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Iam.Infrastructure;
-using NetCorePal.Extensions.Domain;
+using Nerv.IIP.Iam.Infrastructure.Repositories;
 
 namespace Nerv.IIP.Iam.Web.Application.Roles;
 
 public sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
 public sealed record RoleMutationResponse(string RoleId);
+public sealed record RoleMutationResult(bool IsImplemented, RoleMutationResponse? Response, string? Detail)
+{
+    public static RoleMutationResult Implemented(RoleMutationResponse response) => new(true, response, null);
+    public static RoleMutationResult NotImplemented(string detail) => new(false, null, detail);
+}
 
 public interface IIamRoleApplicationService
 {
     Task<IReadOnlyList<RoleResponse>> ListRolesAsync(CancellationToken cancellationToken);
 
-    Task<RoleMutationResponse> CreateRoleAsync(CancellationToken cancellationToken);
+    Task<RoleMutationResult> CreateRoleAsync(CancellationToken cancellationToken);
 
-    Task<RoleMutationResponse> PatchRolePermissionsAsync(string roleId, CancellationToken cancellationToken);
+    Task<RoleMutationResult> PatchRolePermissionsAsync(string roleId, CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : IIamRoleApplicationService
@@ -26,27 +30,23 @@ public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : 
         return Task.FromResult(roles);
     }
 
-    public Task<RoleMutationResponse> CreateRoleAsync(CancellationToken cancellationToken)
+    public Task<RoleMutationResult> CreateRoleAsync(CancellationToken cancellationToken)
     {
-        return Task.FromResult(new RoleMutationResponse("role-placeholder"));
+        return Task.FromResult(RoleMutationResult.Implemented(new RoleMutationResponse("role-placeholder")));
     }
 
-    public Task<RoleMutationResponse> PatchRolePermissionsAsync(string roleId, CancellationToken cancellationToken)
+    public Task<RoleMutationResult> PatchRolePermissionsAsync(string roleId, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new RoleMutationResponse(roleId));
+        return Task.FromResult(RoleMutationResult.Implemented(new RoleMutationResponse(roleId)));
     }
 }
 
-public sealed class PostgreSqlIamRoleApplicationService(ApplicationDbContext dbContext) : IIamRoleApplicationService
+public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository repository) : IIamRoleApplicationService
 {
-    private static readonly Deleted NotDeleted = new(false);
-
     public async Task<IReadOnlyList<RoleResponse>> ListRolesAsync(CancellationToken cancellationToken)
     {
-        return await dbContext.Roles
-            .AsNoTracking()
-            .Where(x => x.Deleted == NotDeleted)
-            .OrderBy(x => x.RoleName)
+        var roles = await repository.ListNotDeletedAsync(cancellationToken);
+        return roles
             .Select(x => new RoleResponse(
                 x.Id.Id,
                 x.RoleName,
@@ -54,16 +54,16 @@ public sealed class PostgreSqlIamRoleApplicationService(ApplicationDbContext dbC
                     .Select(p => p.PermissionCode)
                     .OrderBy(code => code)
                     .ToArray()))
-            .ToListAsync(cancellationToken);
+            .ToArray();
     }
 
-    public Task<RoleMutationResponse> CreateRoleAsync(CancellationToken cancellationToken)
+    public Task<RoleMutationResult> CreateRoleAsync(CancellationToken cancellationToken)
     {
-        throw new NotImplementedException("Persisted role creation is not implemented.");
+        return Task.FromResult(RoleMutationResult.NotImplemented("Persisted role creation is not implemented."));
     }
 
-    public Task<RoleMutationResponse> PatchRolePermissionsAsync(string roleId, CancellationToken cancellationToken)
+    public Task<RoleMutationResult> PatchRolePermissionsAsync(string roleId, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException("Persisted role permission updates are not implemented.");
+        return Task.FromResult(RoleMutationResult.NotImplemented("Persisted role permission updates are not implemented."));
     }
 }

@@ -1,4 +1,5 @@
 using FastEndpoints;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.Iam.Web.Application.Sessions;
@@ -26,7 +27,7 @@ public sealed class ListSessionsEndpoint(
 [AllowAnonymous]
 public sealed class RevokeSessionEndpoint(
     IIamPermissionAuthorizer authorizer,
-    IIamSessionApplicationService sessions) : EndpointWithoutRequest
+    IMediator mediator) : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -35,7 +36,7 @@ public sealed class RevokeSessionEndpoint(
             return;
         }
 
-        await sessions.RevokeSessionAsync(Route<string>("sessionId")!, ct);
+        await mediator.Send(new RevokeSessionCommand(Route<string>("sessionId")!), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 }

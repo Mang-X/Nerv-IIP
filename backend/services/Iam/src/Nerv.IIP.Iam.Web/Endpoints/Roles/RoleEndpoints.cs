@@ -35,22 +35,15 @@ public sealed class CreateRoleEndpoint(
             return;
         }
 
-        try
+        var result = await roles.CreateRoleAsync(ct);
+        if (!result.IsImplemented)
         {
-            var response = await roles.CreateRoleAsync(ct);
-            HttpContext.Response.StatusCode = StatusCodes.Status201Created;
-            await HttpContext.Response.WriteAsJsonAsync(response, ct);
+            await RoleEndpointResults.WriteNotImplementedAsync(HttpContext, result.Detail ?? "Role creation is not implemented.", ct);
+            return;
         }
-        catch (NotImplementedException ex)
-        {
-            await WriteNotImplementedAsync(HttpContext, ex.Message, ct);
-        }
-    }
 
-    private static async Task WriteNotImplementedAsync(HttpContext context, string detail, CancellationToken cancellationToken)
-    {
-        context.Response.StatusCode = StatusCodes.Status501NotImplemented;
-        await context.Response.WriteAsJsonAsync(new { title = "Not Implemented", detail, status = StatusCodes.Status501NotImplemented }, cancellationToken);
+        HttpContext.Response.StatusCode = StatusCodes.Status201Created;
+        await HttpContext.Response.WriteAsJsonAsync(result.Response, ct);
     }
 }
 
@@ -67,18 +60,23 @@ public sealed class PatchRolePermissionsEndpoint(
             return;
         }
 
-        try
+        var result = await roles.PatchRolePermissionsAsync(Route<string>("roleId")!, ct);
+        if (!result.IsImplemented)
         {
-            var response = await roles.PatchRolePermissionsAsync(Route<string>("roleId")!, ct);
-            await HttpContext.Response.WriteAsJsonAsync(response, ct);
+            await RoleEndpointResults.WriteNotImplementedAsync(
+                HttpContext,
+                result.Detail ?? "Role permission updates are not implemented.",
+                ct);
+            return;
         }
-        catch (NotImplementedException ex)
-        {
-            await WriteNotImplementedAsync(HttpContext, ex.Message, ct);
-        }
-    }
 
-    private static async Task WriteNotImplementedAsync(HttpContext context, string detail, CancellationToken cancellationToken)
+        await HttpContext.Response.WriteAsJsonAsync(result.Response, ct);
+    }
+}
+
+internal static class RoleEndpointResults
+{
+    public static async Task WriteNotImplementedAsync(HttpContext context, string detail, CancellationToken cancellationToken)
     {
         context.Response.StatusCode = StatusCodes.Status501NotImplemented;
         await context.Response.WriteAsJsonAsync(new { title = "Not Implemented", detail, status = StatusCodes.Status501NotImplemented }, cancellationToken);
