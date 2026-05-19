@@ -125,6 +125,7 @@ export function useConsoleInstances() {
     instances,
     listError: listQuery.error,
     listPending: listQuery.isLoading,
+    refreshDetail: detailQuery.refetch,
     refreshInstances: listQuery.refetch,
     selectInstance,
     selectedInstanceKey,
