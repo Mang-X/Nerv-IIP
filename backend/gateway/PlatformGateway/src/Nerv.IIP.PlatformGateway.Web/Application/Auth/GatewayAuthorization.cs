@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Authentication;
+
 namespace Nerv.IIP.PlatformGateway.Web.Application.Auth;
 
 public sealed record GatewayPermissionRequirement(
@@ -40,16 +42,24 @@ public static class GatewayAuthorization
 {
     public const string PrincipalItemKey = "Nerv.IIP.PlatformGateway.Principal";
 
-    public static async Task<GatewayAuthorizationResult?> RequireAsync(
+    public static async Task<GatewayAuthorizationResult?> RequirePermissionAsync(
         HttpContext context,
         IGatewayAuthorizationClient client,
         GatewayPermissionRequirement requirement,
         CancellationToken cancellationToken)
     {
-        var bearerToken = context.Request.Headers.Authorization.ToString();
-        if (string.IsNullOrWhiteSpace(bearerToken)
-            || !bearerToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        var logger = context.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Nerv.IIP.PlatformGateway.Authorization");
+        var bearerToken = await context.GetTokenAsync("access_token");
+        if (string.IsNullOrWhiteSpace(bearerToken))
         {
+            logger.LogWarning(
+                "GatewayPermissionCheckMissingAccessToken PermissionCode={PermissionCode} OrganizationId={OrganizationId} EnvironmentId={EnvironmentId} Path={Path}",
+                requirement.PermissionCode,
+                requirement.OrganizationId,
+                requirement.EnvironmentId,
+                context.Request.Path.ToString());
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(
                 new { title = "Unauthorized", detail = "Unauthorized.", status = StatusCodes.Status401Unauthorized },
@@ -57,9 +67,20 @@ public static class GatewayAuthorization
             return null;
         }
 
-        var result = await client.CheckAsync(bearerToken["Bearer ".Length..], requirement, cancellationToken);
+        var result = await client.CheckAsync(bearerToken, requirement, cancellationToken);
         if (!result.IsAllowed)
         {
+            logger.LogWarning(
+                "GatewayPermissionDenied PrincipalId={PrincipalId} PrincipalType={PrincipalType} PermissionCode={PermissionCode} OrganizationId={OrganizationId} EnvironmentId={EnvironmentId} ResourceType={ResourceType} ResourceId={ResourceId} Reason={Reason} Path={Path}",
+                result.PrincipalId,
+                result.PrincipalType,
+                requirement.PermissionCode,
+                requirement.OrganizationId,
+                requirement.EnvironmentId,
+                requirement.ResourceType,
+                requirement.ResourceId,
+                result.DenialReason,
+                context.Request.Path.ToString());
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             await context.Response.WriteAsJsonAsync(
                 new { title = "Forbidden", detail = "Forbidden.", status = StatusCodes.Status403Forbidden },

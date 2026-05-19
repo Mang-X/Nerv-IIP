@@ -9,14 +9,14 @@ namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
 public sealed record RestartInstanceRequest(string OrganizationId, string EnvironmentId, string Reason, string IdempotencyKey);
 
 [HttpPost("/api/console/v1/instances/{instanceKey}/operations/restart")]
-[AllowAnonymous]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class RestartInstanceEndpoint(
     IGatewayOpsClient opsClient,
     IGatewayAuthorizationClient auth) : Endpoint<RestartInstanceRequest, OperationTaskResponse>
 {
     public override async Task HandleAsync(RestartInstanceRequest req, CancellationToken ct)
     {
-        var principal = await GatewayAuthorization.RequireAsync(
+        var principal = await GatewayAuthorization.RequirePermissionAsync(
             HttpContext,
             auth,
             new GatewayPermissionRequirement(
@@ -61,14 +61,14 @@ public sealed class GetConsoleOperationTaskRequest
 }
 
 [HttpGet("/api/console/v1/operation-tasks/{operationTaskId}")]
-[AllowAnonymous]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class GetConsoleOperationTaskEndpoint(
     IGatewayOpsClient opsClient,
     IGatewayAuthorizationClient auth) : Endpoint<GetConsoleOperationTaskRequest, OperationTaskResponse>
 {
     public override async Task HandleAsync(GetConsoleOperationTaskRequest req, CancellationToken ct)
     {
-        var principal = await GatewayAuthorization.RequireAsync(
+        var principal = await GatewayAuthorization.RequirePermissionAsync(
             HttpContext,
             auth,
             new GatewayPermissionRequirement(
