@@ -9,8 +9,7 @@
     "paths": {
       "@nerv-iip/api-client": ["packages/api-client/src/index.ts"],
       "@nerv-iip/app-shell": ["packages/app-shell/src/index.ts"],
-      "@nerv-iip/ui": ["packages/ui/src/index.ts"],
-      "@nerv-iip/ui/*": ["packages/ui/src/*"]
+      "@nerv-iip/ui": ["packages/ui/src/index.ts"]
     },
     "strict": true,
     "jsx": "preserve",
