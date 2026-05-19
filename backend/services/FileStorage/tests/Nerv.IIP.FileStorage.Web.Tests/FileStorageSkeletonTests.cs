@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
+// Placeholder coverage for the current FileStorage service shape; replace with
+// behavior-focused tests once the FileStorage implementation lands.
 public sealed class FileStorageSkeletonTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     [Fact]
