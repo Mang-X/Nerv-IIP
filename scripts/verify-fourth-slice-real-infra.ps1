@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Starts local PostgreSQL, Redis and RabbitMQ from infra/docker-compose.dev.yml
+#     - Starts local PostgreSQL, Redis, RabbitMQ, MinIO and OpenTelemetry Collector from infra/docker-compose.dev.yml
 #     - Recreates disposable AppHub, IAM and Ops verification databases
 #     - Runs the third-stage console verification under PostgreSQL profile
 #   Writes:
@@ -104,11 +104,13 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 Invoke-WithScopedEnvironment -Variables @{
   NERV_IIP_POSTGRES_PORT = $postgresPort
 } -ScriptBlock {
-  Invoke-DockerCompose -Arguments @("-f", $composeFile, "up", "-d", "postgres", "redis", "rabbitmq") -WorkingDirectory $root -TimeoutSeconds 240 -Name "fourth-docker-compose-dependencies" | Out-Null
+  Invoke-DockerCompose -Arguments @("-f", $composeFile, "up", "-d", "postgres", "redis", "rabbitmq", "minio", "otel-collector") -WorkingDirectory $root -TimeoutSeconds 240 -Name "fourth-docker-compose-dependencies" | Out-Null
 
   Wait-TcpPort -HostName "localhost" -Port ([int]$postgresPort) -TimeoutSeconds 90
   Wait-TcpPort -HostName "localhost" -Port 6379 -TimeoutSeconds 60
   Wait-TcpPort -HostName "localhost" -Port 5672 -TimeoutSeconds 60
+  Wait-TcpPort -HostName "localhost" -Port 9000 -TimeoutSeconds 60
+  Wait-TcpPort -HostName "localhost" -Port 4318 -TimeoutSeconds 60
 
   Reset-PostgresDatabase -ComposeFile $composeFile -DatabaseName $appHubVerifyDatabase -Name "fourth-apphub-verify-database"
   Reset-PostgresDatabase -ComposeFile $composeFile -DatabaseName $iamVerifyDatabase -Name "fourth-iam-verify-database"

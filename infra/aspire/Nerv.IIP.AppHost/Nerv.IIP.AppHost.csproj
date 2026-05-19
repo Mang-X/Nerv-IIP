@@ -11,12 +11,15 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.AppHost" Version="13.3.3" />
+    <PackageReference Include="Aspire.Hosting.JavaScript" Version="13.3.3" />
     <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.3.3" />
     <PackageReference Include="Aspire.Hosting.RabbitMQ" Version="13.3.3" />
     <PackageReference Include="Aspire.Hosting.Redis" Version="13.3.3" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\backend\services\Iam\src\Nerv.IIP.Iam.Web\Nerv.IIP.Iam.Web.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\..\backend\services\FileStorage\src\Nerv.IIP.FileStorage.Web\Nerv.IIP.FileStorage.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\services\AppHub\src\Nerv.IIP.AppHub.Web\Nerv.IIP.AppHub.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\services\Ops\src\Nerv.IIP.Ops.Web\Nerv.IIP.Ops.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\gateway\PlatformGateway\src\Nerv.IIP.PlatformGateway.Web\Nerv.IIP.PlatformGateway.Web.csproj" IsAspireProjectResource="true" />
