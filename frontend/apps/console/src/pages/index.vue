@@ -5,6 +5,7 @@ import { useConsoleInstances, useRestartOperation } from '@/composables/useConso
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { Alert, AlertDescription, AlertTitle, Button, Skeleton } from '@nerv-iip/ui'
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -26,6 +27,7 @@ const {
 } = useConsoleInstances()
 
 const { latestOperationTask, restartError, restartInstance, restartPending } = useRestartOperation()
+const router = useRouter()
 
 const latestOperationPath = computed(() => {
   const operationTaskId = latestOperationTask.value?.operationTaskId
@@ -34,7 +36,12 @@ const latestOperationPath = computed(() => {
 })
 
 async function handleRestart(instanceKey: string) {
-  await restartInstance(instanceKey)
+  const task = await restartInstance(instanceKey)
+  const operationTaskId = task?.operationTaskId
+
+  if (operationTaskId) {
+    await router.push(`/operations/${operationTaskId}`)
+  }
 }
 
 async function handleRefreshDetail() {
