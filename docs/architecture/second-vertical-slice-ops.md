@@ -28,7 +28,7 @@ AppHub 仍然是实例状态事实来源。Ops 只记录动作事实和执行结
 3. Ops.Web 提供任务创建、任务详情、claim/heartbeat/abandon 和 result 回传接口。
 4. PlatformGateway 提供 restart facade 和 operation task detail facade。
 5. Connector Host 增加 operation loop，按组织、环境和 connectorHostId claim task lease。
-6. Docker Connector 支持 `lifecycle.restart` 执行抽象，并在测试中用 fake process runner 验证命令构造。
+6. Docker Connector 通过 Docker CLI 发现真实容器并执行 `lifecycle.restart`；单元测试只在测试项目内使用 `IDockerCli` fake，生产路径不注入内存容器描述符。
 7. 本地验证脚本 `scripts/verify-second-slice-ops.ps1` 会启动 AppHub、Ops、PlatformGateway 和 Connector Host，走通一次 restart 闭环。
 
 ## 公开接口
@@ -87,7 +87,8 @@ AppHub 仍然是实例状态事实来源。Ops 只记录动作事实和执行结
 
 1. PlatformGateway 使用 `Ops:BaseUrl` 调用 Ops。
 2. Connector Host 使用 `Platform:OpsBaseUrl` 调用 Ops。
-3. Connector Host 使用 `Platform:ConnectorHostId` 和 `Platform:ConnectorSecret` 作为本地 Connector Host 凭证。
+3. Connector Host 使用 `ConnectorHost:ConnectorHostId`、`ConnectorHost:ConnectorSecret`、`ConnectorHost:OrganizationId` 和 `ConnectorHost:EnvironmentId` 作为本地 Connector Host 凭证与范围。
+4. Docker Connector 运行环境必须安装 Docker CLI，并能访问本机 Docker daemon；`scripts/verify-second-slice-ops.ps1` 会创建临时 `nerv-iip-local-demo-001` 容器用于真实 restart 验证。
 
 ## 可靠性边界
 
@@ -109,7 +110,7 @@ pwsh scripts/verify-second-slice-ops.ps1
 1. backend 与 connector-hosts 关键项目 build/test。
 2. AppHub 注册、心跳和状态快照。
 3. Gateway restart facade 创建 Ops task。
-4. Connector Host task claim、Docker restart 执行与 result 回传。
+4. Connector Host task claim、真实 Docker container restart 执行与 result 回传。
 5. Gateway task detail 查询。
 6. Gateway 和 Connector Host 不直接引用 Ops、AppHub 的 Domain 或 Infrastructure 项目。
 

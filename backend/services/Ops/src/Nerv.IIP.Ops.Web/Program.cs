@@ -6,6 +6,8 @@ using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Web.Application.Auth;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using NetCorePal.Extensions.AspNetCore;
+using Nerv.IIP.Ops.Web.Application.IntegrationEvents;
+using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DependencyInjection;
 using System.Net;
 
@@ -38,6 +40,11 @@ if (usePostgreSql)
             rabbitMqOptions.Password = builder.Configuration["RabbitMQ:Password"] ?? "guest";
         });
     });
+}
+else
+{
+    builder.Services.AddIntegrationEvents(typeof(Program));
+    builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
 builder.Services.AddOpsPersistence(builder.Configuration);
 builder.Services.Configure<OpsConnectorCredentialOptions>(

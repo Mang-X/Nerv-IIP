@@ -11,7 +11,7 @@ import {
   XIcon,
 } from 'lucide-vue-next'
 import { Toaster as Sonner } from 'vue-sonner'
-import { cn } from '@nerv-iip/ui/lib/utils'
+import { cn } from '../../../lib/utils'
 
 const props = defineProps<ToasterProps>()
 const delegatedProps = reactiveOmit(props, 'class', 'style', 'toastOptions')

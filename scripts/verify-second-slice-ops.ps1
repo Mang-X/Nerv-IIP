@@ -55,8 +55,46 @@ function Write-JobDiagnostics {
   }
 }
 
+function Assert-DockerAvailable {
+  try {
+    docker version --format "{{.Server.Version}}" | Out-Null
+  }
+  catch {
+    throw "Docker CLI and a reachable Docker daemon are required because Connector Host now discovers and restarts real containers."
+  }
+}
+
+function Start-DockerDemoContainer {
+  param(
+    [string]$Name,
+    [string]$Image
+  )
+
+  try {
+    docker container rm --force $Name *> $null
+  }
+  catch {
+  }
+
+  docker pull $Image | Out-Null
+  docker container create --name $Name $Image sleep 300 | Out-Null
+  docker container start $Name | Out-Null
+}
+
+function Remove-DockerDemoContainer {
+  param([string]$Name)
+
+  try {
+    docker container rm --force $Name *> $null
+  }
+  catch {
+  }
+}
+
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
+
+Assert-DockerAvailable
 
 dotnet restore (Join-Path $root "backend/Nerv.IIP.sln")
 dotnet build (Join-Path $root "backend/Nerv.IIP.sln") --no-restore
@@ -91,9 +129,16 @@ $iamProject = Join-Path $root "backend/services/Iam/src/Nerv.IIP.Iam.Web/Nerv.II
 $gatewayProject = Join-Path $root "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj"
 $opsProject = Join-Path $root "backend/services/Ops/src/Nerv.IIP.Ops.Web/Nerv.IIP.Ops.Web.csproj"
 $connectorHostProject = Join-Path $root "connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Nerv.IIP.ConnectorHost.Host.csproj"
+$dockerDemoImage = "alpine:3.20"
+$dockerDemoContainerName = "nerv-iip-local-demo-001"
+$dockerDemoInstanceKey = "docker-container-$dockerDemoContainerName"
 
 $jobs = @()
+$dockerDemoStarted = $false
 try {
+  Start-DockerDemoContainer -Name $dockerDemoContainerName -Image $dockerDemoImage
+  $dockerDemoStarted = $true
+
   $appHubJob = Start-Job -Name "AppHub" -ScriptBlock {
     param($project, $url, $usePostgres, $connectionString)
     $env:ASPNETCORE_URLS = $url
@@ -166,6 +211,10 @@ try {
     $env:Platform__AppHubBaseUrl = $appHub
     $env:Platform__OpsBaseUrl = $ops
     $env:ConnectorHost__CycleSeconds = "1"
+    $env:ConnectorHost__ConnectorHostId = "connector-host-001"
+    $env:ConnectorHost__ConnectorSecret = "local-connector-secret"
+    $env:ConnectorHost__OrganizationId = "org-001"
+    $env:ConnectorHost__EnvironmentId = "env-dev"
     dotnet run --project $project --no-build --no-launch-profile
   } -ArgumentList $connectorHostProject, $appHubUrl, $opsUrl
   $jobs += $connectorHostJob
@@ -197,7 +246,7 @@ try {
   }
   $created = Invoke-RestMethod `
     -Method Post `
-    -Uri "$gatewayUrl/api/console/v1/instances/docker-container-local-demo-001/operations/restart" `
+    -Uri "$gatewayUrl/api/console/v1/instances/$dockerDemoInstanceKey/operations/restart" `
     -Headers $gatewayHeaders `
     -Body ($restartBody | ConvertTo-Json -Depth 10) `
     -ContentType "application/json"
@@ -226,6 +275,10 @@ catch {
   throw
 }
 finally {
+  if ($dockerDemoStarted) {
+    Remove-DockerDemoContainer -Name $dockerDemoContainerName
+  }
+
   foreach ($job in $jobs) {
     if ($null -eq $job) { continue }
     Stop-Job $job -ErrorAction SilentlyContinue

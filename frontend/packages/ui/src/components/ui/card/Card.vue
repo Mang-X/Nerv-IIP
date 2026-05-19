@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { cn } from '@nerv-iip/ui/lib/utils'
+import { cn } from '../../../lib/utils'
 
 const props = withDefaults(
   defineProps<{
