@@ -19,7 +19,7 @@ public sealed class GatewayOperationTests
         var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = CreateFactory(fake, auth);
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-token");
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync("/api/console/v1/instances/docker-container-local-demo-001/operations/restart", new RestartInstanceRequest("org-001", "env-dev", "smoke restart", "idem-gateway-restart-001"));
 
@@ -43,7 +43,7 @@ public sealed class GatewayOperationTests
         var fake = new FakeGatewayOpsClient { CreateFailure = new HttpRequestException("Ops down") };
         await using var factory = CreateFactory(fake);
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-token");
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync("/api/console/v1/instances/docker-container-local-demo-001/operations/restart", new RestartInstanceRequest("org-001", "env-dev", "smoke restart", "idem-gateway-restart-001"));
 
@@ -58,7 +58,7 @@ public sealed class GatewayOperationTests
         var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = CreateFactory(fake, auth);
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-token");
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetFromJsonAsync<OperationTaskResponse>("/api/console/v1/operation-tasks/op-000001?organizationId=org-001&environmentId=env-dev");
 
@@ -75,7 +75,7 @@ public sealed class GatewayOperationTests
         var fake = new FakeGatewayOpsClient { GetFailure = new HttpRequestException("Ops down") };
         await using var factory = CreateFactory(fake);
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-token");
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/console/v1/operation-tasks/op-000001?organizationId=org-001&environmentId=env-dev");
 

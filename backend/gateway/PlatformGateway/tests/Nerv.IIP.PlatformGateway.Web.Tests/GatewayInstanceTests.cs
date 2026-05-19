@@ -25,7 +25,7 @@ public sealed class GatewayInstanceTests
                 services.AddSingleton<IGatewayAuthorizationClient>(auth);
             }));
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-token");
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
         var list = await client.GetFromJsonAsync<InstanceListResponse>("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageNumber=1&pageSize=20&search=demo");
         var detail = await client.GetFromJsonAsync<InstanceDetailResponse>("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
@@ -59,7 +59,7 @@ public sealed class GatewayInstanceTests
                 services.AddSingleton<IGatewayAuthorizationClient>(auth);
             }));
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-token");
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
         var response = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageNumber=1&pageSize=20");
 
