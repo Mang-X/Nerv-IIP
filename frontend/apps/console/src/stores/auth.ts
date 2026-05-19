@@ -32,6 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
   let refreshTimer: ReturnType<typeof setTimeout> | undefined
   let refreshPromise: Promise<void> | undefined
   let sessionExpiredHandler: ((reason: string) => void) | undefined
+  let sessionEpoch = 0
 
   const isAuthenticated = computed(() => Boolean(accessToken.value && principal.value))
   const isRestoring = computed(() => restoreStatus.value === 'restoring')
@@ -60,11 +61,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     restoreStatus.value = 'restoring'
+    const restoreEpoch = sessionEpoch
     try {
-      await applySession(await refreshConsole({ refreshToken: stored.refreshToken }))
+      const restoredSession = await refreshConsole({ refreshToken: stored.refreshToken })
+      if (sessionEpoch !== restoreEpoch) {
+        restoreStatus.value = 'failed'
+        return
+      }
+
+      await applySession(restoredSession)
       restoreStatus.value = 'restored'
     } catch {
-      clearSession('restore-failed')
+      if (sessionEpoch === restoreEpoch) {
+        clearSession('restore-failed')
+      }
       restoreStatus.value = 'failed'
     }
   }
@@ -90,7 +100,14 @@ export const useAuthStore = defineStore('auth', () => {
       return
     }
 
-    principal.value = await getConsoleMe(accessToken.value)
+    const currentAccessToken = accessToken.value
+    const loadEpoch = sessionEpoch
+    const loadedPrincipal = await getConsoleMe(currentAccessToken)
+    if (sessionEpoch !== loadEpoch || accessToken.value !== currentAccessToken) {
+      return
+    }
+
+    principal.value = loadedPrincipal
     persistSession()
   }
 
@@ -104,6 +121,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function clearSession(_reason: string) {
+    sessionEpoch += 1
     clearRefreshTimer()
     accessToken.value = undefined
     refreshToken.value = undefined
@@ -118,11 +136,21 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function refreshSessionOnce(currentRefreshToken: string) {
+    const refreshEpoch = sessionEpoch
+    let responseWasCurrent = false
     try {
-      await applySession(await refreshConsole({ refreshToken: currentRefreshToken }))
+      const refreshedSession = await refreshConsole({ refreshToken: currentRefreshToken })
+      if (!isRefreshStillCurrent(refreshEpoch, currentRefreshToken)) {
+        return
+      }
+
+      responseWasCurrent = true
+      await applySession(refreshedSession)
     } catch (error) {
-      clearSession('refresh-failed')
-      sessionExpiredHandler?.('refresh-failed')
+      if (responseWasCurrent || isRefreshStillCurrent(refreshEpoch, currentRefreshToken)) {
+        clearSession('refresh-failed')
+        sessionExpiredHandler?.('refresh-failed')
+      }
       throw error
     } finally {
       refreshPromise = undefined
@@ -132,6 +160,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function applySession(session: ConsoleAuthResponse) {
     const completeSession = assertValidSession(session)
 
+    sessionEpoch += 1
     accessToken.value = completeSession.accessToken
     refreshToken.value = completeSession.refreshToken
     sessionId.value = completeSession.sessionId
@@ -143,6 +172,10 @@ export const useAuthStore = defineStore('auth', () => {
     if (!principal.value) {
       await loadPrincipal()
     }
+  }
+
+  function isRefreshStillCurrent(refreshEpoch: number, originalRefreshToken: string) {
+    return sessionEpoch === refreshEpoch && refreshToken.value === originalRefreshToken
   }
 
   function scheduleRefresh() {

@@ -199,6 +199,35 @@ describe('auth store', () => {
     expect(auth.accessToken).toBe('refreshed-access-token')
   })
 
+  it('does not restore the session when logout happens during an inflight refresh', async () => {
+    api.loginConsole.mockResolvedValue(session)
+    api.logoutConsole.mockResolvedValue(undefined)
+    let resolveRefresh: (value: typeof session) => void = () => undefined
+    api.refreshConsole.mockReturnValue(
+      new Promise<typeof session>((resolve) => {
+        resolveRefresh = resolve
+      }),
+    )
+    const auth = useAuthStore()
+    await auth.login('admin', 'Admin123!')
+
+    const refresh = auth.refreshSession()
+    await auth.logout()
+
+    resolveRefresh({
+      ...session,
+      accessToken: 'refreshed-access-token',
+      refreshToken: 'refreshed-refresh-token',
+    })
+    await refresh
+
+    expect(auth.isAuthenticated).toBe(false)
+    expect(auth.accessToken).toBeUndefined()
+    expect(auth.refreshToken).toBeUndefined()
+    expect(auth.principal).toBeUndefined()
+    expect(localStorage.getItem('nerv-iip.console.auth')).toBeNull()
+  })
+
   it('clears the session and notifies the session-expired handler when refresh fails', async () => {
     api.loginConsole.mockResolvedValue(session)
     api.refreshConsole.mockRejectedValue(new Error('expired'))
