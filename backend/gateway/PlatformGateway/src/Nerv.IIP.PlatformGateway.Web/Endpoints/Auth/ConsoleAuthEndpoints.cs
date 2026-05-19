@@ -3,18 +3,20 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Auth;
 
 [HttpPost("/api/console/v1/auth/login")]
 [AllowAnonymous]
-public sealed class LoginConsoleUserEndpoint(IGatewayIamAuthClient iam) : Endpoint<ConsoleLoginRequest, ConsoleAuthResponse>
+public sealed class LoginConsoleUserEndpoint(IGatewayIamAuthClient iam) : Endpoint<ConsoleLoginRequest, ResponseData<ConsoleAuthResponse>>
 {
     public override async Task HandleAsync(ConsoleLoginRequest req, CancellationToken ct)
     {
         try
         {
-            await Send.OkAsync(await iam.LoginAsync(req, ct), ct);
+            var response = await iam.LoginAsync(req, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (GatewayAuthException ex)
         {
@@ -25,13 +27,14 @@ public sealed class LoginConsoleUserEndpoint(IGatewayIamAuthClient iam) : Endpoi
 
 [HttpPost("/api/console/v1/auth/refresh")]
 [AllowAnonymous]
-public sealed class RefreshConsoleSessionEndpoint(IGatewayIamAuthClient iam) : Endpoint<ConsoleRefreshRequest, ConsoleAuthResponse>
+public sealed class RefreshConsoleSessionEndpoint(IGatewayIamAuthClient iam) : Endpoint<ConsoleRefreshRequest, ResponseData<ConsoleAuthResponse>>
 {
     public override async Task HandleAsync(ConsoleRefreshRequest req, CancellationToken ct)
     {
         try
         {
-            await Send.OkAsync(await iam.RefreshAsync(req, ct), ct);
+            var response = await iam.RefreshAsync(req, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (GatewayAuthException ex)
         {
@@ -67,7 +70,7 @@ public sealed class LogoutConsoleSessionEndpoint(IGatewayIamAuthClient iam) : En
 
 [HttpGet("/api/console/v1/auth/me")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
-public sealed class GetConsolePrincipalEndpoint(IGatewayIamAuthClient iam) : EndpointWithoutRequest<ConsolePrincipalResponse>
+public sealed class GetConsolePrincipalEndpoint(IGatewayIamAuthClient iam) : EndpointWithoutRequest<ResponseData<ConsolePrincipalResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -80,7 +83,8 @@ public sealed class GetConsolePrincipalEndpoint(IGatewayIamAuthClient iam) : End
 
         try
         {
-            await Send.OkAsync(await iam.GetMeAsync(bearerToken, ct), ct);
+            var response = await iam.GetMeAsync(bearerToken, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (GatewayAuthException ex)
         {
@@ -93,26 +97,17 @@ internal static class ConsoleAuthEndpointResults
 {
     public static Task WriteUnauthorizedAsync(HttpContext context, CancellationToken cancellationToken)
     {
-        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        return context.Response.WriteAsJsonAsync(
-            new { title = "Unauthorized", detail = "Unauthorized.", status = StatusCodes.Status401Unauthorized },
+        return ResponseDataEndpointResults.WriteErrorAsync(
+            context,
+            StatusCodes.Status401Unauthorized,
+            "Unauthorized.",
             cancellationToken);
     }
 
     public static Task WriteProblemAsync(HttpContext context, GatewayAuthException exception, CancellationToken cancellationToken)
     {
         var status = (int)exception.StatusCode;
-        context.Response.StatusCode = status;
-        return context.Response.WriteAsJsonAsync(
-            new { title = TitleFor(exception.StatusCode), detail = exception.Reason, status },
-            cancellationToken);
+        return ResponseDataEndpointResults.WriteErrorAsync(context, status, exception.Reason, cancellationToken);
     }
 
-    private static string TitleFor(HttpStatusCode statusCode) => statusCode switch
-    {
-        HttpStatusCode.Unauthorized => "Unauthorized",
-        HttpStatusCode.ServiceUnavailable => "Service Unavailable",
-        HttpStatusCode.BadGateway => "Bad Gateway",
-        _ => "Gateway Error"
-    };
 }

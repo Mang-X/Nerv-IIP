@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.Iam.Web.Application.Sessions;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Sessions;
 
@@ -10,7 +11,7 @@ namespace Nerv.IIP.Iam.Web.Endpoints.Sessions;
 [AllowAnonymous]
 public sealed class ListSessionsEndpoint(
     IIamPermissionAuthorizer authorizer,
-    IIamSessionApplicationService sessions) : EndpointWithoutRequest
+    IIamSessionApplicationService sessions) : EndpointWithoutRequest<ResponseData<IReadOnlyList<SessionResponse>>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -19,7 +20,8 @@ public sealed class ListSessionsEndpoint(
             return;
         }
 
-        await HttpContext.Response.WriteAsJsonAsync(await sessions.ListSessionsAsync(ct), ct);
+        var response = await sessions.ListSessionsAsync(ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
 

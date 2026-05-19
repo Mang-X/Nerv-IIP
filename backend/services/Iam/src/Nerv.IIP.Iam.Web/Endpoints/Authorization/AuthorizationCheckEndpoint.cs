@@ -2,22 +2,20 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Authorization;
 
 [HttpPost("/internal/iam/v1/authorization/check")]
 [AllowAnonymous]
-public sealed class AuthorizationCheckEndpoint(IIamAuthService auth) : Endpoint<AuthorizationCheckRequest, AuthorizationCheckResponse>
+public sealed class AuthorizationCheckEndpoint(IIamAuthService auth) : Endpoint<AuthorizationCheckRequest, ResponseData<AuthorizationCheckResponse>>
 {
     public override async Task HandleAsync(AuthorizationCheckRequest req, CancellationToken ct)
     {
         var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
         if (principal is null)
         {
-            HttpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await HttpContext.Response.WriteAsJsonAsync(
-                new AuthorizationCheckResponse(false, null, null, null, "unauthorized"),
-                ct);
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status401Unauthorized, "unauthorized", ct);
             return;
         }
 
@@ -30,15 +28,12 @@ public sealed class AuthorizationCheckEndpoint(IIamAuthService auth) : Endpoint<
 
         if (!allowed)
         {
-            HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await HttpContext.Response.WriteAsJsonAsync(
-                new AuthorizationCheckResponse(false, principal.UserId, principal.PrincipalType, principal.LoginName, "forbidden"),
-                ct);
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status403Forbidden, "forbidden", ct);
             return;
         }
 
-        await HttpContext.Response.WriteAsJsonAsync(
-            new AuthorizationCheckResponse(true, principal.UserId, principal.PrincipalType, principal.LoginName, null),
+        await Send.OkAsync(
+            new AuthorizationCheckResponse(true, principal.UserId, principal.PrincipalType, principal.LoginName, null).AsResponseData(),
             ct);
     }
 }

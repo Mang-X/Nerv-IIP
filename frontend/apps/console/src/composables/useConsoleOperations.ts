@@ -1,11 +1,14 @@
 import {
   getConsoleInstanceDetailQueryOptions,
   getConsoleOperationTaskQueryOptions,
+  type InstanceDetailEnvelope,
   listConsoleInstancesQueryOptions,
+  type InstanceListEnvelope,
   restartConsoleInstanceMutationOptions,
   type InstanceDetailResponse,
   type InstanceListItem,
   type InstanceListResponse,
+  type OperationTaskEnvelope,
   type OperationTaskResponse,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
@@ -75,7 +78,7 @@ export function useConsoleInstances() {
     const context = consoleContext.value
 
     if (!context) {
-      return disabledConsoleQueryOptions<InstanceListResponse>('listConsoleInstances')
+      return disabledConsoleQueryOptions<InstanceListEnvelope>('listConsoleInstances')
     }
 
     return listConsoleInstancesQueryOptions({
@@ -87,7 +90,7 @@ export function useConsoleInstances() {
     } as Parameters<typeof listConsoleInstancesQueryOptions>[0])
   })
 
-  const instances = computed<InstanceListItem[]>(() => listQuery.data.value?.items ?? [])
+  const instances = computed<InstanceListItem[]>(() => unwrapResponseData(listQuery.data.value)?.items ?? [])
   const effectiveInstanceKey = computed(
     () => selectedInstanceKey.value ?? instances.value[0]?.instanceKey ?? '',
   )
@@ -97,7 +100,7 @@ export function useConsoleInstances() {
     const instanceKey = effectiveInstanceKey.value
 
     if (!context || instanceKey.length === 0) {
-      return disabledConsoleQueryOptions<InstanceDetailResponse>('getConsoleInstanceDetail')
+      return disabledConsoleQueryOptions<InstanceDetailEnvelope>('getConsoleInstanceDetail')
     }
 
     return getConsoleInstanceDetailQueryOptions({
@@ -115,7 +118,7 @@ export function useConsoleInstances() {
   }
 
   return {
-    detail: computed<InstanceDetailResponse | undefined>(() => detailQuery.data.value),
+    detail: computed<InstanceDetailResponse | undefined>(() => unwrapResponseData(detailQuery.data.value)),
     detailError: detailQuery.error,
     detailPending: detailQuery.isLoading,
     effectiveInstanceKey,
@@ -136,8 +139,8 @@ export function useRestartOperation() {
 
   const restartMutation = useMutation({
     ...restartConsoleInstanceMutationOptions(),
-    onSuccess(task) {
-      latestOperationTask.value = task
+    onSuccess(taskEnvelope) {
+      latestOperationTask.value = unwrapResponseData(taskEnvelope)
       void queryCache
         .invalidateQueries({ predicate: isListConsoleInstancesEntry })
         .catch(ignoreBackgroundError)
@@ -168,8 +171,9 @@ export function useRestartOperation() {
         },
       } as Parameters<typeof restartMutation.mutateAsync>[0])
 
-      latestOperationTask.value = task
-      return task
+      const taskData = unwrapResponseData(task)
+      latestOperationTask.value = taskData
+      return taskData
     } catch (error) {
       restartContextError.value =
         error instanceof Error ? error : new Error('Unable to restart the instance.')
@@ -193,7 +197,7 @@ export function useOperationTask(operationTaskId: MaybeRefOrGetter<string>) {
     const context = consoleContext.value
 
     if (!context || id.length === 0) {
-      return disabledConsoleQueryOptions<OperationTaskResponse>('getConsoleOperationTask')
+      return disabledConsoleQueryOptions<OperationTaskEnvelope>('getConsoleOperationTask')
     }
 
     return {
@@ -213,7 +217,7 @@ export function useOperationTask(operationTaskId: MaybeRefOrGetter<string>) {
   return {
     operationError: taskQuery.error,
     operationPending: taskQuery.isLoading,
-    operationTask: taskQuery.data,
+    operationTask: computed<OperationTaskResponse | undefined>(() => unwrapResponseData(taskQuery.data.value)),
     refreshOperation: taskQuery.refetch,
   }
 }
@@ -226,4 +230,14 @@ function disabledConsoleQueryOptions<TData>(id: string) {
     },
     enabled: false,
   }
+}
+
+function unwrapResponseData<T>(
+  envelope: { data?: T | null; success?: boolean } | undefined,
+): T | undefined {
+  if (!envelope?.success) {
+    return undefined
+  }
+
+  return envelope.data ?? undefined
 }

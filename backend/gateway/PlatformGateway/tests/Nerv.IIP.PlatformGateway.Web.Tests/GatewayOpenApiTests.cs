@@ -63,7 +63,13 @@ public sealed class GatewayOpenApiTests
             .GetProperty("$ref")
             .GetString();
 
-        Assert.Equal($"#/components/schemas/{schemaName}", response);
+        var responseTypeName = schemaName
+            .Replace("NervIIPContractsAppHubQueries", string.Empty)
+            .Replace("NervIIPContractsOps", string.Empty)
+            .Replace("NervIIPPlatformGatewayWebApplicationAuth", string.Empty);
+
+        Assert.StartsWith("#/components/schemas/NetCorePalExtensionsDtoResponseDataOf", response);
+        Assert.Contains(responseTypeName, response);
     }
 
     private static void AssertParameterNames(JsonElement operation, params string[] names)

@@ -57,13 +57,11 @@ public static class GatewayAuthentication
                         {
                             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                             context.Response.Headers.WWWAuthenticate = "Bearer";
-                            await context.Response.WriteAsJsonAsync(
-                                new
-                                {
-                                    title = "Unauthorized",
-                                    detail = "Unauthorized.",
-                                    status = StatusCodes.Status401Unauthorized
-                                });
+                            await ResponseDataEndpointResults.WriteErrorAsync(
+                                context.HttpContext,
+                                StatusCodes.Status401Unauthorized,
+                                "Unauthorized.",
+                                context.HttpContext.RequestAborted);
                         }
                     },
                     OnForbidden = async context =>
@@ -78,13 +76,11 @@ public static class GatewayAuthentication
                         if (!context.Response.HasStarted)
                         {
                             context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                            await context.Response.WriteAsJsonAsync(
-                                new
-                                {
-                                    title = "Forbidden",
-                                    detail = "Forbidden.",
-                                    status = StatusCodes.Status403Forbidden
-                                });
+                            await ResponseDataEndpointResults.WriteErrorAsync(
+                                context.HttpContext,
+                                StatusCodes.Status403Forbidden,
+                                "Forbidden.",
+                                context.HttpContext.RequestAborted);
                         }
                     }
                 };

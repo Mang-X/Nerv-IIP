@@ -33,8 +33,8 @@ try {
 
   $gatewayJob = Start-Job -ScriptBlock {
     param($project, $url)
-    $env:ASPNETCORE_URLS = $url
-    dotnet run --project $project --no-build --no-launch-profile
+    $env:ASPNETCORE_ENVIRONMENT = "Development"
+    dotnet run --project $project --no-build --no-launch-profile --urls $url
   } -ArgumentList $gatewayProject, $gatewayUrl
 
   Wait-Healthy "$gatewayUrl/health"

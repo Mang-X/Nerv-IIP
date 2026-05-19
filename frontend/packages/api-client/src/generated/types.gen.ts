@@ -4,6 +4,10 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfOperationTaskResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsOpsOperationTaskResponse | null;
+};
+
 export type NervIipContractsOpsOperationTaskResponse = {
     operationTaskId?: string;
     organizationId?: string;
@@ -24,6 +28,12 @@ export type NervIipContractsOpsOperationAttemptSummary = {
     startedAtUtc?: string;
     finishedAtUtc?: string | null;
     failureCode?: string | null;
+    leaseId?: string;
+    leasedAtUtc?: string;
+    leasedUntilUtc?: string;
+    attemptNo?: number;
+    maxAttempts?: number;
+    abandonReason?: string | null;
 };
 
 export type NervIipContractsOpsAuditRecordSummary = {
@@ -35,6 +45,13 @@ export type NervIipContractsOpsAuditRecordSummary = {
     correlationId?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseData = {
+    success?: boolean;
+    message?: string;
+    code?: number;
+    errorData?: Array<unknown>;
+};
+
 export type NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest = {
     organizationId?: string;
     environmentId?: string;
@@ -44,6 +61,10 @@ export type NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest =
 
 export type NervIipPlatformGatewayWebEndpointsOperationsGetConsoleOperationTaskRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfInstanceListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsAppHubQueriesInstanceListResponse | null;
 };
 
 export type NervIipContractsAppHubQueriesInstanceListResponse = {
@@ -69,6 +90,10 @@ export type NervIipContractsAppHubQueriesInstanceListItem = {
 
 export type NervIipPlatformGatewayWebEndpointsInstancesListInstancesRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfInstanceDetailResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsAppHubQueriesInstanceDetailResponse | null;
 };
 
 export type NervIipContractsAppHubQueriesInstanceDetailResponse = {
@@ -98,6 +123,14 @@ export type NervIipContractsAppHubQueriesCapabilitySummary = {
 
 export type NervIipPlatformGatewayWebEndpointsInstancesGetInstanceDetailRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfObject = NetCorePalExtensionsDtoResponseData & {
+    data?: unknown;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse | null;
 };
 
 export type NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse = {
@@ -131,6 +164,10 @@ export type NervIipPlatformGatewayWebApplicationAuthConsoleLogoutRequest = {
     sessionId?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfConsolePrincipalResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse | null;
+};
+
 export type RestartConsoleInstanceData = {
     body: NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest;
     path: {
@@ -140,11 +177,22 @@ export type RestartConsoleInstanceData = {
     url: '/api/console/v1/instances/{instanceKey}/operations/restart';
 };
 
+export type RestartConsoleInstanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
 export type RestartConsoleInstanceResponses = {
     /**
      * Success
      */
-    200: NervIipContractsOpsOperationTaskResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfOperationTaskResponse;
 };
 
 export type RestartConsoleInstanceResponse = RestartConsoleInstanceResponses[keyof RestartConsoleInstanceResponses];
@@ -161,11 +209,22 @@ export type GetConsoleOperationTaskData = {
     url: '/api/console/v1/operation-tasks/{operationTaskId}';
 };
 
+export type GetConsoleOperationTaskErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
 export type GetConsoleOperationTaskResponses = {
     /**
      * Success
      */
-    200: NervIipContractsOpsOperationTaskResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfOperationTaskResponse;
 };
 
 export type GetConsoleOperationTaskResponse = GetConsoleOperationTaskResponses[keyof GetConsoleOperationTaskResponses];
@@ -183,11 +242,22 @@ export type ListConsoleInstancesData = {
     url: '/api/console/v1/instances';
 };
 
+export type ListConsoleInstancesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
 export type ListConsoleInstancesResponses = {
     /**
      * Success
      */
-    200: NervIipContractsAppHubQueriesInstanceListResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfInstanceListResponse;
 };
 
 export type ListConsoleInstancesResponse = ListConsoleInstancesResponses[keyof ListConsoleInstancesResponses];
@@ -204,11 +274,22 @@ export type GetConsoleInstanceDetailData = {
     url: '/api/console/v1/instances/{instanceKey}';
 };
 
+export type GetConsoleInstanceDetailErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
 export type GetConsoleInstanceDetailResponses = {
     /**
      * Success
      */
-    200: NervIipContractsAppHubQueriesInstanceDetailResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfInstanceDetailResponse;
 };
 
 export type GetConsoleInstanceDetailResponse = GetConsoleInstanceDetailResponses[keyof GetConsoleInstanceDetailResponses];
@@ -238,9 +319,9 @@ export type GetBuildInfoEndpointData = {
 
 export type GetBuildInfoEndpointResponses = {
     /**
-     * No Content
+     * Success
      */
-    204: void;
+    200: NetCorePalExtensionsDtoResponseDataOfObject;
 };
 
 export type GetBuildInfoEndpointResponse = GetBuildInfoEndpointResponses[keyof GetBuildInfoEndpointResponses];
@@ -272,7 +353,7 @@ export type LoginConsoleUserResponses = {
     /**
      * Success
      */
-    200: NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse;
 };
 
 export type LoginConsoleUserResponse = LoginConsoleUserResponses[keyof LoginConsoleUserResponses];
@@ -288,7 +369,7 @@ export type RefreshConsoleSessionResponses = {
     /**
      * Success
      */
-    200: NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse;
 };
 
 export type RefreshConsoleSessionResponse = RefreshConsoleSessionResponses[keyof RefreshConsoleSessionResponses];
@@ -298,6 +379,17 @@ export type LogoutConsoleSessionData = {
     path?: never;
     query?: never;
     url: '/api/console/v1/auth/logout';
+};
+
+export type LogoutConsoleSessionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
 };
 
 export type LogoutConsoleSessionResponses = {
@@ -316,11 +408,22 @@ export type GetConsolePrincipalData = {
     url: '/api/console/v1/auth/me';
 };
 
+export type GetConsolePrincipalErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
 export type GetConsolePrincipalResponses = {
     /**
      * Success
      */
-    200: NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfConsolePrincipalResponse;
 };
 
 export type GetConsolePrincipalResponse = GetConsolePrincipalResponses[keyof GetConsolePrincipalResponses];

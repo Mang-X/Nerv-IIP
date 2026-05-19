@@ -31,27 +31,33 @@ vi.mock('@nerv-iip/api-client', () => {
     getConsoleInstanceDetailQueryOptions: vi.fn(() => ({
       key: ['console-instance-detail', instance.instanceKey],
       query: vi.fn(async () => ({
-        ...instance,
-        capabilities: [
-          {
-            capabilityCode: 'runtime.restart',
-            capabilityVersion: 'v1',
-            category: 'operations',
-            supportedOperations: ['restart'],
+        success: true,
+        data: {
+          ...instance,
+          capabilities: [
+            {
+              capabilityCode: 'runtime.restart',
+              capabilityVersion: 'v1',
+              category: 'operations',
+              supportedOperations: ['restart'],
+            },
+          ],
+          metadata: {
+            region: 'dev',
           },
-        ],
-        metadata: {
-          region: 'dev',
         },
       })),
     })),
     getConsoleOperationTaskQueryOptions: vi.fn(() => ({
       key: ['console-operation-task', 'task-1'],
       query: vi.fn(async () => ({
-        operationTaskId: 'task-1',
-        operationCode: 'restart',
-        status: 'queued',
-        auditRecords: [],
+        success: true,
+        data: {
+          operationTaskId: 'task-1',
+          operationCode: 'restart',
+          status: 'queued',
+          auditRecords: [],
+        },
       })),
     })),
     listConsoleInstancesQueryOptions: vi.fn(() => ({
@@ -64,18 +70,24 @@ vi.mock('@nerv-iip/api-client', () => {
         }
 
         return {
-          pageNumber: 1,
-          pageSize: 20,
-          totalCount: 1,
-          items: [instance],
+          success: true,
+          data: {
+            pageNumber: 1,
+            pageSize: 20,
+            totalCount: 1,
+            items: [instance],
+          },
         }
       }),
     })),
     restartConsoleInstanceMutationOptions: vi.fn(() => ({
       mutation: vi.fn(async () => ({
-        operationTaskId: 'task-1',
-        operationCode: 'restart',
-        status: 'queued',
+        success: true,
+        data: {
+          operationTaskId: 'task-1',
+          operationCode: 'restart',
+          status: 'queued',
+        },
       })),
     })),
   }

@@ -29,7 +29,7 @@ public sealed class GatewayConsoleAuthTests
         var response = await factory.CreateClient().PostAsJsonAsync(
             "/api/console/v1/auth/login",
             new ConsoleLoginRequest("admin", "secret"));
-        var body = await response.Content.ReadFromJsonAsync<ConsoleAuthResponse>();
+        var body = await ReadResponseDataAsync<ConsoleAuthResponse>(response);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(new ConsoleLoginRequest("admin", "secret"), iam.LastLoginRequest);
@@ -65,7 +65,7 @@ public sealed class GatewayConsoleAuthTests
         var response = await factory.CreateClient().PostAsJsonAsync(
             "/api/console/v1/auth/refresh",
             new ConsoleRefreshRequest("refresh-token"));
-        var body = await response.Content.ReadFromJsonAsync<ConsoleAuthResponse>();
+        var body = await ReadResponseDataAsync<ConsoleAuthResponse>(response);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(new ConsoleRefreshRequest("refresh-token"), iam.LastRefreshRequest);
@@ -148,7 +148,9 @@ public sealed class GatewayConsoleAuthTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
-        var body = await client.GetFromJsonAsync<ConsolePrincipalResponse>("/api/console/v1/auth/me");
+        var response = await client.GetAsync("/api/console/v1/auth/me");
+        response.EnsureSuccessStatusCode();
+        var body = await ReadResponseDataAsync<ConsolePrincipalResponse>(response);
 
         Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, iam.LastMeBearerToken);
         Assert.Equal(Principal, body);
@@ -274,19 +276,19 @@ public sealed class GatewayConsoleAuthTests
             {
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = JsonContent.Create(new
+                    Content = JsonContent.Create(Envelope(new
                     {
                         accessToken = "new-access-token",
                         refreshToken = "new-refresh-token",
                         sessionId = "session-001",
                         expiresAtUtc = DateTimeOffset.Parse("2026-05-18T08:00:00Z")
-                    })
+                    }))
                 };
             }
 
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new
+                Content = JsonContent.Create(Envelope(new
                 {
                     userId = "user-admin",
                     loginName = "admin",
@@ -295,7 +297,7 @@ public sealed class GatewayConsoleAuthTests
                     organizationId = "org-001",
                     environmentId = "env-dev",
                     permissionVersion = 7
-                })
+                }))
             };
         });
         using var httpClient = new HttpClient(handler)
@@ -402,4 +404,24 @@ public sealed class GatewayConsoleAuthTests
         HttpMethod Method,
         Uri RequestUri,
         System.Net.Http.Headers.AuthenticationHeaderValue? Authorization);
+
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private static object Envelope<T>(T data) => new
+    {
+        data,
+        success = true,
+        message = string.Empty,
+        code = 0,
+        errorData = Array.Empty<object>()
+    };
+
+    private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
+    {
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>();
+        Assert.NotNull(envelope);
+        Assert.True(envelope.Success, envelope.Message);
+        Assert.NotNull(envelope.Data);
+        return envelope.Data;
+    }
 }

@@ -30,8 +30,11 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   restartConsoleInstanceMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async () => ({
-      operationTaskId: 'task-1',
-      status: 'queued',
+      success: true,
+      data: {
+        operationTaskId: 'task-1',
+        status: 'queued',
+      },
     })),
   })),
 }))
@@ -51,11 +54,14 @@ vi.mock('@pinia/colada', () => ({
 
     return {
       data: shallowRef({
-        items: [
-          {
-            instanceKey: 'instance-1',
-          },
-        ],
+        success: true,
+        data: {
+          items: [
+            {
+              instanceKey: 'instance-1',
+            },
+          ],
+        },
       }),
       error: shallowRef(),
       isLoading: shallowRef(false),

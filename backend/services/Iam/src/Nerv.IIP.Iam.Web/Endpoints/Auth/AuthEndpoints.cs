@@ -2,12 +2,13 @@ using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Auth;
 
 [HttpPost("/api/iam/v1/auth/login")]
 [AllowAnonymous]
-public sealed class LoginEndpoint(IMediator mediator) : Endpoint<LoginRequest>
+public sealed class LoginEndpoint(IMediator mediator) : Endpoint<LoginRequest, ResponseData<AuthResponse>>
 {
     public override async Task HandleAsync(LoginRequest req, CancellationToken ct)
     {
@@ -23,7 +24,7 @@ public sealed class LoginEndpoint(IMediator mediator) : Endpoint<LoginRequest>
 
 [HttpPost("/api/iam/v1/auth/refresh")]
 [AllowAnonymous]
-public sealed class RefreshEndpoint(IMediator mediator) : Endpoint<RefreshRequest>
+public sealed class RefreshEndpoint(IMediator mediator) : Endpoint<RefreshRequest, ResponseData<AuthResponse>>
 {
     public override async Task HandleAsync(RefreshRequest req, CancellationToken ct)
     {
@@ -50,7 +51,7 @@ public sealed class LogoutEndpoint(IMediator mediator) : Endpoint<LogoutRequest>
 
 [HttpPost("/api/iam/v1/connectors/credentials/validate")]
 [AllowAnonymous]
-public sealed class ValidateConnectorCredentialEndpoint(IIamAuthService auth) : Endpoint<ValidateConnectorCredentialRequest>
+public sealed class ValidateConnectorCredentialEndpoint(IIamAuthService auth) : Endpoint<ValidateConnectorCredentialRequest, ResponseData<ConnectorPrincipalResponse>>
 {
     public override async Task HandleAsync(ValidateConnectorCredentialRequest req, CancellationToken ct)
     {
@@ -63,18 +64,18 @@ public sealed class ValidateConnectorCredentialEndpoint(IIamAuthService auth) : 
 
 [HttpGet("/api/iam/v1/me")]
 [AllowAnonymous]
-public sealed class GetMeEndpoint(IIamAuthService auth) : EndpointWithoutRequest
+public sealed class GetMeEndpoint(IIamAuthService auth) : EndpointWithoutRequest<ResponseData<CurrentPrincipalResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
         var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
         if (principal is null)
         {
-            await Send.UnauthorizedAsync(ct);
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized.", ct);
             return;
         }
 
-        await Send.OkAsync(principal, ct);
+        await Send.OkAsync(principal.AsResponseData(), ct);
     }
 }
 
@@ -88,26 +89,27 @@ internal static class IamEndpointResults
         var result = await action();
         if (!result.IsAuthorized)
         {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(
-                new { title = "Unauthorized", detail = result.Detail, status = StatusCodes.Status401Unauthorized },
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                context,
+                StatusCodes.Status401Unauthorized,
+                result.Detail ?? "Unauthorized.",
                 cancellationToken);
             return;
         }
 
-        await context.Response.WriteAsJsonAsync(result.Response, cancellationToken);
+        await ResponseDataEndpointResults.WriteDataAsync(context, StatusCodes.Status200OK, result.Response!, cancellationToken);
     }
 
     public static async Task WriteAuthResultAsync<T>(HttpContext context, Func<Task<T>> action, CancellationToken cancellationToken)
     {
         try
         {
-            await context.Response.WriteAsJsonAsync(await action(), cancellationToken);
+            var response = await action();
+            await ResponseDataEndpointResults.WriteDataAsync(context, StatusCodes.Status200OK, response, cancellationToken);
         }
         catch (UnauthorizedAccessException ex)
         {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { title = "Unauthorized", detail = ex.Message, status = StatusCodes.Status401Unauthorized }, cancellationToken);
+            await ResponseDataEndpointResults.WriteErrorAsync(context, StatusCodes.Status401Unauthorized, ex.Message, cancellationToken);
         }
     }
 

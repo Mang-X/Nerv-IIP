@@ -46,12 +46,23 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NervIIPContractsOpsOperationTaskResponse"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfOperationTaskResponse"
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
           }
-        }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
       }
     },
     "/api/console/v1/operation-tasks/{operationTaskId}": {
@@ -92,12 +103,23 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NervIIPContractsOpsOperationTaskResponse"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfOperationTaskResponse"
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
           }
-        }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
       }
     },
     "/api/console/v1/instances": {
@@ -156,12 +178,23 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NervIIPContractsAppHubQueriesInstanceListResponse"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfInstanceListResponse"
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
           }
-        }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
       }
     },
     "/api/console/v1/instances/{instanceKey}": {
@@ -202,12 +235,23 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NervIIPContractsAppHubQueriesInstanceDetailResponse"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfInstanceDetailResponse"
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
           }
-        }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
       }
     },
     "/health": {
@@ -230,8 +274,15 @@
         ],
         "operationId": "GetBuildInfoEndpoint",
         "responses": {
-          "204": {
-            "description": "No Content"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfObject"
+                }
+              }
+            }
           }
         }
       }
@@ -274,7 +325,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsoleAuthResponse"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse"
                 }
               }
             }
@@ -307,7 +358,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsoleAuthResponse"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse"
                 }
               }
             }
@@ -337,8 +388,19 @@
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
           }
-        }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
       }
     },
     "/api/console/v1/auth/me": {
@@ -353,17 +415,49 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsolePrincipalResponse"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfConsolePrincipalResponse"
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
           }
-        }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
       }
     }
   },
   "components": {
     "schemas": {
+      "NetCorePalExtensionsDtoResponseDataOfOperationTaskResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsOpsOperationTaskResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
       "NervIIPContractsOpsOperationTaskResponse": {
         "type": "object",
         "additionalProperties": false,
@@ -433,6 +527,29 @@
           "failureCode": {
             "type": "string",
             "nullable": true
+          },
+          "leaseId": {
+            "type": "string"
+          },
+          "leasedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "leasedUntilUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "attemptNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "abandonReason": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -461,6 +578,26 @@
           }
         }
       },
+      "NetCorePalExtensionsDtoResponseData": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errorData": {
+            "type": "array",
+            "items": {}
+          }
+        }
+      },
       "NervIIPPlatformGatewayWebEndpointsOperationsRestartInstanceRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -482,6 +619,27 @@
       "NervIIPPlatformGatewayWebEndpointsOperationsGetConsoleOperationTaskRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfInstanceListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsAppHubQueriesInstanceListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
       },
       "NervIIPContractsAppHubQueriesInstanceListResponse": {
         "type": "object",
@@ -553,6 +711,27 @@
       "NervIIPPlatformGatewayWebEndpointsInstancesListInstancesRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfInstanceDetailResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsAppHubQueriesInstanceDetailResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
       },
       "NervIIPContractsAppHubQueriesInstanceDetailResponse": {
         "type": "object",
@@ -634,6 +813,43 @@
         "type": "object",
         "additionalProperties": false
       },
+      "NetCorePalExtensionsDtoResponseDataOfObject": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true
+              }
+            }
+          }
+        ]
+      },
+      "NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsoleAuthResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
       "NervIIPPlatformGatewayWebApplicationAuthConsoleAuthResponse": {
         "type": "object",
         "additionalProperties": false,
@@ -714,6 +930,27 @@
             "nullable": true
           }
         }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfConsolePrincipalResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsolePrincipalResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
       }
     },
     "securitySchemes": {

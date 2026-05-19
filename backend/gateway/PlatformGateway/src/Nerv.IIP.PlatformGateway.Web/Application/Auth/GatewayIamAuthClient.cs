@@ -73,8 +73,18 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
         using var response = await SendAsync(contentFactory, method, requestUri, bearerToken, cancellationToken);
         try
         {
-            var body = await response.Content.ReadFromJsonAsync<T>(cancellationToken);
-            return body ?? throw GatewayAuthException.BadGateway("iam-empty-response");
+            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+            if (envelope is null)
+            {
+                throw GatewayAuthException.BadGateway("iam-empty-response");
+            }
+
+            if (!envelope.Success)
+            {
+                throw GatewayAuthException.BadGateway(envelope.Message);
+            }
+
+            return envelope.Data ?? throw GatewayAuthException.BadGateway("iam-empty-response");
         }
         catch (JsonException)
         {
@@ -159,4 +169,6 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
         string OrganizationId,
         string EnvironmentId,
         int PermissionVersion);
+
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }
