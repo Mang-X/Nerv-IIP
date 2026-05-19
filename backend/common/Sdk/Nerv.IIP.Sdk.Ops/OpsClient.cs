@@ -10,6 +10,9 @@ public interface IOpsClient
     Task<OperationTaskResponse> CreateOperationTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken = default);
     Task<OperationTaskResponse> GetOperationTaskAsync(string operationTaskId, CancellationToken cancellationToken = default);
     Task<PendingOperationTasksResponse> GetPendingOperationTasksAsync(string organizationId, string environmentId, string connectorHostId, int take, CancellationToken cancellationToken = default);
+    Task<PendingOperationTasksResponse> ClaimOperationTasksAsync(ClaimOperationTasksRequest request, CancellationToken cancellationToken = default);
+    Task<OperationTaskResponse> AbandonOperationTaskLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest request, CancellationToken cancellationToken = default);
+    Task<OperationTaskResponse> HeartbeatOperationTaskLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, CancellationToken cancellationToken = default);
     Task SendOperationResultAsync(OperationResult result, CancellationToken cancellationToken = default);
 }
 
@@ -38,6 +41,36 @@ public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<PendingOperationTasksResponse>(cancellationToken: cancellationToken)
             ?? throw new InvalidOperationException("Ops returned an empty pending operation tasks response.");
+    }
+
+    public async Task<PendingOperationTasksResponse> ClaimOperationTasksAsync(ClaimOperationTasksRequest claim, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/ops/v1/operation-tasks/claims") { Content = JsonContent.Create(claim) };
+        ApplyCredential(request);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PendingOperationTasksResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("Ops returned an empty claim response.");
+    }
+
+    public async Task<OperationTaskResponse> AbandonOperationTaskLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest abandon, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/ops/v1/operation-tasks/{Uri.EscapeDataString(operationTaskId)}/lease/abandon") { Content = JsonContent.Create(abandon) };
+        ApplyCredential(request);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<OperationTaskResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("Ops returned an empty abandon response.");
+    }
+
+    public async Task<OperationTaskResponse> HeartbeatOperationTaskLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest heartbeat, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/ops/v1/operation-tasks/{Uri.EscapeDataString(operationTaskId)}/lease/heartbeat") { Content = JsonContent.Create(heartbeat) };
+        ApplyCredential(request);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<OperationTaskResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("Ops returned an empty heartbeat response.");
     }
 
     public async Task SendOperationResultAsync(OperationResult result, CancellationToken cancellationToken = default)

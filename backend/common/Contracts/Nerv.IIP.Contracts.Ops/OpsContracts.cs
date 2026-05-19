@@ -29,7 +29,13 @@ public sealed record OperationAttemptSummary(
     string Status,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? FinishedAtUtc,
-    string? FailureCode);
+    string? FailureCode,
+    string LeaseId,
+    DateTimeOffset LeasedAtUtc,
+    DateTimeOffset LeasedUntilUtc,
+    int AttemptNo,
+    int MaxAttempts,
+    string? AbandonReason);
 
 public sealed record AuditRecordSummary(
     string AuditRecordId,
@@ -41,6 +47,28 @@ public sealed record AuditRecordSummary(
 
 public sealed record PendingOperationTasksResponse(IReadOnlyList<OperationTaskDispatchItem> Items);
 
+public sealed record ClaimOperationTasksRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    int Take,
+    int LeaseDurationSeconds = 300,
+    int MaxAttempts = 3);
+
+public sealed record AbandonOperationTaskLeaseRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string LeaseId,
+    string AbandonReason);
+
+public sealed record HeartbeatOperationTaskLeaseRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string LeaseId,
+    int LeaseDurationSeconds = 300);
+
 public sealed record OperationTaskDispatchItem(
     string OperationTaskId,
     string AttemptId,
@@ -50,4 +78,9 @@ public sealed record OperationTaskDispatchItem(
     string InstanceKey,
     string OperationCode,
     string CorrelationId,
-    IReadOnlyDictionary<string, string> Parameters);
+    IReadOnlyDictionary<string, string> Parameters,
+    string LeaseId,
+    DateTimeOffset LeasedAtUtc,
+    DateTimeOffset LeasedUntilUtc,
+    int AttemptNo,
+    int MaxAttempts);

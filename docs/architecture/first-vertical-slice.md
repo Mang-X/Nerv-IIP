@@ -55,7 +55,7 @@ Console or Gateway
 3. FileStorage 的完整文件管理后台、预览、转码和复杂保留策略。
 4. AI Integration 与 Knowledge 的代码骨架。
 5. 高风险动作审批和人工确认 UI。
-6. Ops 持久化、领取租约、并发执行限制和持久化 outbox。
+6. Ops 持久化 outbox、生产级失败重试和审批联动。
 
 ## 服务责任切分
 
@@ -187,7 +187,7 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 4. AppHub 可接收 Connector Host registration、heartbeat、state snapshot。
 5. PlatformGateway 可查询 AppHub 的实例列表与实例详情。
 6. Connector Host 可通过 `Nerv.IIP.Sdk.ConnectorProtocol` 完成注册、心跳和状态快照上报。
-7. Ops 可创建 operation task、提供 pending 拉取、接收 operation result，并记录任务、尝试和审计事实。
+7. Ops 可创建 operation task、通过 claim/lease 领取任务、接收 operation result，并记录任务、尝试和审计事实。
 8. Connector Host 可通过 `Nerv.IIP.Sdk.Ops` 领取低风险 restart 任务并回传执行结果。
 9. frontend 工作区已具备 console 应用、api-client、ui 和 app-shell 初版，可从 Gateway OpenAPI 生成类型安全客户端。
 10. 自动化验证脚本会启动 AppHub、Ops、PlatformGateway 和 Connector Host，并用本地 API 与控制台构建链路走通接入查询、restart 动作闭环和前端消费验证。
@@ -196,6 +196,6 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 
 1. IAM、AppHub 与 Ops 的第一、第二阶段事实仍是内存态实现，进程重启后不会持久化。
 2. FileStorage 目前是服务骨架和边界验证，尚未完成真实对象存储上传下载闭环。
-3. Ops 当前只覆盖低风险 restart 纵切，尚未覆盖高风险审批、持久化 outbox、租约和生产级重试。
+3. Ops 当前只覆盖低风险 restart 纵切，尚未覆盖高风险审批、持久化 outbox 和生产级重试。
 4. 控制台 UI 仍未接入真实登录、权限 guard、审批待办和通知入口，当前只能作为本地纵切控制台。
 5. 当前状态适合本地开发、接口联调和架构验证；不能视为生产可用版本。

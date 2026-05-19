@@ -9,11 +9,10 @@ public interface IOperationTaskRepository : IRepository<OperationTask, Operation
 {
     Task<OperationTask?> GetByIdAsync(string operationTaskId, CancellationToken cancellationToken = default);
     Task<OperationTask?> GetByIdempotencyScopeAsync(string idempotencyScope, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<OperationTask>> GetPendingAsync(string organizationId, string environmentId, int take, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OperationTask>> GetClaimableAsync(string organizationId, string environmentId, int take, DateTimeOffset now, CancellationToken cancellationToken = default);
     Task<OperationTaskId> NextTaskIdAsync(CancellationToken cancellationToken = default);
+    Task<OperationAttemptId> NextAttemptIdAsync(CancellationToken cancellationToken = default);
     Task<AuditRecordId> NextAuditRecordIdAsync(CancellationToken cancellationToken = default);
-    Task<int> CountAttemptsAsync(CancellationToken cancellationToken = default);
-    Task<int> CountAuditRecordsAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class OperationTaskRepository(ApplicationDbContext context)
@@ -36,17 +35,34 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
             .SingleOrDefaultAsync(x => x.IdempotencyScope == idempotencyScope, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<OperationTask>> GetPendingAsync(string organizationId, string environmentId, int take, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<OperationTask>> GetClaimableAsync(string organizationId, string environmentId, int take, DateTimeOffset now, CancellationToken cancellationToken = default)
     {
+        var cappedTake = Math.Clamp(take, 1, 50);
         return await DbContext.OperationTasks
+            .FromSqlInterpolated($"""
+                SELECT t.*
+                FROM ops.operation_tasks AS t
+                WHERE t."OrganizationId" = {organizationId}
+                  AND t."EnvironmentId" = {environmentId}
+                  AND (
+                    t."Status" = 'queued'
+                    OR (
+                      t."Status" = 'dispatched'
+                      AND EXISTS (
+                        SELECT 1
+                        FROM ops.operation_attempts AS a
+                        WHERE a."OperationTaskId" = t."Id"
+                          AND a."Status" = 'started'
+                          AND a."LeasedUntilUtc" <= {now}
+                      )
+                    )
+                  )
+                ORDER BY t."RequestedAtUtc", t."Id"
+                FOR UPDATE SKIP LOCKED
+                LIMIT {cappedTake}
+                """)
             .Include(x => x.Attempts)
             .Include(x => x.AuditRecords)
-            .Where(x => x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.Status == "queued")
-            .OrderBy(x => x.RequestedAtUtc)
-            .ThenBy(x => x.Id)
-            .Take(Math.Clamp(take, 1, 50))
             .ToListAsync(cancellationToken);
     }
 
@@ -56,19 +72,13 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
         return new OperationTaskId($"op-{count + 1:000000}");
     }
 
-    public async Task<AuditRecordId> NextAuditRecordIdAsync(CancellationToken cancellationToken = default)
+    public Task<OperationAttemptId> NextAttemptIdAsync(CancellationToken cancellationToken = default)
     {
-        var count = await DbContext.AuditRecords.CountAsync(cancellationToken);
-        return new AuditRecordId($"audit-{count + 1:000000}");
+        return Task.FromResult(new OperationAttemptId($"attempt-{Guid.NewGuid():N}"));
     }
 
-    public async Task<int> CountAttemptsAsync(CancellationToken cancellationToken = default)
+    public Task<AuditRecordId> NextAuditRecordIdAsync(CancellationToken cancellationToken = default)
     {
-        return await DbContext.OperationAttempts.CountAsync(cancellationToken);
-    }
-
-    public async Task<int> CountAuditRecordsAsync(CancellationToken cancellationToken = default)
-    {
-        return await DbContext.AuditRecords.CountAsync(cancellationToken);
+        return Task.FromResult(new AuditRecordId($"audit-{Guid.NewGuid():N}"));
     }
 }

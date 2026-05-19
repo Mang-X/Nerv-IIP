@@ -69,7 +69,7 @@ public sealed class OpsPostgresProfileTests
                 Assert.Equal("completed", task.Status);
                 Assert.Equal(pending.AttemptId, task.CurrentAttemptId);
                 Assert.Contains(task.AuditRecords, x => x.Action == "operation.requested");
-                Assert.Contains(task.AuditRecords, x => x.Action == "operation.dispatched");
+                Assert.Contains(task.AuditRecords, x => x.Action == "operation.claimed");
                 Assert.Contains(task.AuditRecords, x => x.Action == "operation.completed");
             }
         }
