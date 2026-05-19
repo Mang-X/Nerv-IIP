@@ -56,6 +56,7 @@ public static class GatewayAuthentication
                         if (!context.Response.HasStarted)
                         {
                             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                            context.Response.Headers.WWWAuthenticate = "Bearer";
                             await context.Response.WriteAsJsonAsync(
                                 new
                                 {

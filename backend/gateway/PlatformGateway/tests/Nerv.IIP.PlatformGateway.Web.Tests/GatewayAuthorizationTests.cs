@@ -20,6 +20,7 @@ public sealed class GatewayAuthorizationTests
         var response = await factory.CreateClient().GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("Bearer", response.Headers.WwwAuthenticate.Single().Scheme);
         Assert.Null(auth.LastRequirement);
         Assert.Equal(0, appHub.QueryCallCount);
     }
@@ -36,6 +37,7 @@ public sealed class GatewayAuthorizationTests
         var response = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("Bearer", response.Headers.WwwAuthenticate.Single().Scheme);
         Assert.Null(auth.LastRequirement);
         Assert.Equal(0, appHub.QueryCallCount);
     }
