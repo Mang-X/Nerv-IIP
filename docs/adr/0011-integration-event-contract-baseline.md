@@ -24,10 +24,10 @@ Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 Rabbi
 9. `actor` 表示导致事件发生的主体，至少包含主体类型和 ID；系统自动动作使用系统 actor，不伪造人工用户。
 10. `idempotencyKey` 用于发布方和消费者共同识别业务幂等语义。默认值为 `eventType:eventVersion:eventId`；当业务需要以命令、外部回调或操作任务为幂等边界时，发布方必须提供稳定业务键。
 11. `payload` 只承载事件事实，不重复 envelope 字段；payload 字段必须可 JSON 序列化，并避免包含 access token、refresh token、密码、密钥、完整连接串、文件正文、大体积日志正文或不必要的个人敏感信息。
-12. 集成事件 schema 的代码事实来源固定在 `backend/common/Contracts/` 下的版本化 Contracts 项目中，例如 `Nerv.IIP.Contracts.Iam`、`Nerv.IIP.Contracts.AppHub`、`Nerv.IIP.Contracts.Ops` 或后续 `Nerv.IIP.Contracts.IntegrationEvents`。服务内部 Domain event、EF entity、Infrastructure model、queue message adapter 和测试 fixture 都不得成为公开 schema 的事实来源。
+12. 集成事件 schema 的代码事实来源固定在 `backend/common/Contracts/` 下的版本化 Contracts 项目中，例如 `Nerv.IIP.Contracts.Iam`、当前已存在的 `Nerv.IIP.Contracts.AppHubQueries`、`Nerv.IIP.Contracts.Ops` 或后续 `Nerv.IIP.Contracts.IntegrationEvents`。服务内部 Domain event、EF entity、Infrastructure model、queue message adapter 和测试 fixture 都不得成为公开 schema 的事实来源。
 13. Contracts 项目应定义 envelope、payload DTO、事件类型常量、版本常量和 JSON 序列化测试；发布方与消费者通过 Contracts 或 Platform SDK 消费同一契约，不复制 DTO。
-14. Topic/routing key 命名采用小写点分格式：`nerv-iip.<environment>.<source-service>.<bounded-context>.<event-name>.v<event-version>`。例如 `nerv-iip.prod.iam.identity.organization-created.v1`。
-15. `<environment>` 表示部署环境类别或实例环境标识，由部署 profile 统一注入；不得把客户名称、数据库名、连接串片段或内部主机名放入 routing key。
+14. Topic/routing key 命名采用小写点分格式：`nerv-iip.<deployment-env>.<source-service>.<bounded-context>.<event-name>.v<event-version>`。例如 `nerv-iip.prod.iam.identity.organization-created.v1`。
+15. `<deployment-env>` 表示部署环境类别或实例环境标识，由部署 profile 统一注入；它不是 envelope 中的 `environmentId`，不得把客户名称、数据库名、连接串片段或内部主机名放入 routing key。
 16. `<event-name>` 使用 kebab-case 的过去式事实名。routing key 中的版本必须与 envelope 的 `eventVersion` 一致。
 17. 消费者订阅应尽量按 source service、bounded context、event name 和 version 精确绑定；需要通配订阅时必须在消费者文档或测试中说明过滤规则，避免误消费其它租户、环境或版本的事件。
 18. 发布方默认使用 CAP outbox 或等价可靠发布机制，outbox 记录必须与产生事件的领域事实处于同一事务边界。不得在事务提交前直接把跨服务事件发送到 RabbitMQ。
