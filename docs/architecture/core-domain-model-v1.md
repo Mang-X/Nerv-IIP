@@ -195,8 +195,9 @@
 ### 首批事件建议
 
 - OperationRequested
-- OperationDispatched
-- OperationStarted
+- OperationClaimed
+- OperationLeaseHeartbeat
+- OperationLeaseAbandoned
 - OperationCompleted
 - OperationFailed
 - AuditRecorded

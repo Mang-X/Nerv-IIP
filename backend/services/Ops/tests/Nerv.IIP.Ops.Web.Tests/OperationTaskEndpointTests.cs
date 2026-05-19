@@ -91,7 +91,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         var completedAttempt = Assert.Single(completed.Attempts);
         Assert.Equal(dispatch.AttemptId, completedAttempt.AttemptId);
         Assert.Equal("completed", completedAttempt.Status);
-        Assert.Contains(completed.AuditRecords, x => x.Action == "operation.dispatched");
+        Assert.Contains(completed.AuditRecords, x => x.Action == "operation.claimed");
         Assert.Contains(completed.AuditRecords, x => x.Action == "operation.completed");
     }
 
@@ -377,6 +377,95 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         Assert.Equal("queued", envTwo.Status);
     }
 
+    [Fact]
+    public async Task Claim_operation_tasks_prevents_concurrent_duplicate_leases()
+    {
+        var organizationId = "org-claim-concurrent";
+        var client = CreateAuthorizedClient(organizationId, "env-dev");
+        var createdTask = await CreateRestartTaskAsync(client, "idem-claim-concurrent-001", organizationId);
+
+        var claimRequests = Enumerable.Range(0, 8)
+            .Select(_ => client.PostAsJsonAsync(
+                "/api/ops/v1/operation-tasks/claims",
+                new ClaimOperationTasksRequest(organizationId, "env-dev", "connector-host-001", 1)))
+            .ToArray();
+
+        var responses = await Task.WhenAll(claimRequests);
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        var claims = await Task.WhenAll(responses.Select(x => x.Content.ReadFromJsonAsync<PendingOperationTasksResponse>()));
+        var claimedItems = claims
+            .SelectMany(x => x?.Items ?? [])
+            .ToList();
+
+        var claim = Assert.Single(claimedItems);
+        Assert.Equal(createdTask.OperationTaskId, claim.OperationTaskId);
+        Assert.Equal("connector-host-001", claim.ConnectorHostId);
+        Assert.False(string.IsNullOrWhiteSpace(claim.LeaseId));
+        Assert.Equal(1, claim.AttemptNo);
+        Assert.True(claim.MaxAttempts >= claim.AttemptNo);
+        Assert.True(claim.LeasedUntilUtc > claim.LeasedAtUtc);
+
+        var detailResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        var detail = await detailResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+
+        Assert.NotNull(detail);
+        Assert.Equal("dispatched", detail.Status);
+        var attempt = Assert.Single(detail.Attempts);
+        Assert.Equal(claim.AttemptId, attempt.AttemptId);
+        Assert.Equal(claim.LeaseId, attempt.LeaseId);
+        Assert.Null(attempt.AbandonReason);
+    }
+
+    [Fact]
+    public async Task Heartbeat_and_abandon_update_active_lease_idempotently()
+    {
+        var organizationId = "org-lease-updates";
+        var client = CreateAuthorizedClient(organizationId, "env-dev");
+        var createdTask = await CreateRestartTaskAsync(client, "idem-lease-updates-001", organizationId);
+        var claim = await ClaimSingleAsync(client, organizationId);
+
+        var heartbeatResponse = await client.PostAsJsonAsync(
+            $"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}/lease/heartbeat",
+            new HeartbeatOperationTaskLeaseRequest(
+                organizationId,
+                "env-dev",
+                "connector-host-001",
+                claim.LeaseId,
+                600));
+
+        Assert.Equal(HttpStatusCode.OK, heartbeatResponse.StatusCode);
+        var heartbeated = await heartbeatResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        Assert.NotNull(heartbeated);
+        var heartbeatedAttempt = Assert.Single(heartbeated.Attempts);
+        Assert.Equal(claim.LeaseId, heartbeatedAttempt.LeaseId);
+        Assert.True(heartbeatedAttempt.LeasedUntilUtc > claim.LeasedUntilUtc);
+
+        var abandonResponse = await client.PostAsJsonAsync(
+            $"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}/lease/abandon",
+            new AbandonOperationTaskLeaseRequest(
+                organizationId,
+                "env-dev",
+                "connector-host-001",
+                claim.LeaseId,
+                "connector-shutdown"));
+
+        Assert.Equal(HttpStatusCode.OK, abandonResponse.StatusCode);
+        var abandoned = await abandonResponse.Content.ReadFromJsonAsync<OperationTaskResponse>();
+        Assert.NotNull(abandoned);
+        Assert.Equal("queued", abandoned.Status);
+        var abandonedAttempt = Assert.Single(abandoned.Attempts);
+        Assert.Equal("abandoned", abandonedAttempt.Status);
+        Assert.Equal("connector-shutdown", abandonedAttempt.AbandonReason);
+
+        var nextClaim = await ClaimSingleAsync(client, organizationId);
+
+        Assert.Equal(createdTask.OperationTaskId, nextClaim.OperationTaskId);
+        Assert.NotEqual(claim.LeaseId, nextClaim.LeaseId);
+        Assert.Equal(2, nextClaim.AttemptNo);
+    }
+
     private HttpClient CreateAuthorizedClient(string organizationId = "org-001", string environmentId = "env-dev")
     {
         var client = factory.CreateClient();
@@ -481,6 +570,18 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     {
         var response = await client.GetAsync(
             $"/api/ops/v1/operation-tasks/pending?organizationId={organizationId}&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var pending = await response.Content.ReadFromJsonAsync<PendingOperationTasksResponse>();
+        Assert.NotNull(pending);
+        return Assert.Single(pending.Items);
+    }
+
+    private static async Task<OperationTaskDispatchItem> ClaimSingleAsync(HttpClient client, string organizationId)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/ops/v1/operation-tasks/claims",
+            new ClaimOperationTasksRequest(organizationId, "env-dev", "connector-host-001", 1));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var pending = await response.Content.ReadFromJsonAsync<PendingOperationTasksResponse>();
