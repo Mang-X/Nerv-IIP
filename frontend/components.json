@@ -14,11 +14,11 @@
   "rtl": false,
   "pointer": false,
   "aliases": {
-    "components": "@nerv-iip/ui/components",
-    "utils": "@nerv-iip/ui/lib/utils",
-    "ui": "@nerv-iip/ui/components/ui",
-    "lib": "@nerv-iip/ui/lib",
-    "composables": "@nerv-iip/ui/composables"
+    "components": "packages/ui/src/components",
+    "utils": "packages/ui/src/lib/utils",
+    "ui": "packages/ui/src/components/ui",
+    "lib": "packages/ui/src/lib",
+    "composables": "packages/ui/src/composables"
   },
   "menuColor": "default",
   "menuAccent": "subtle",
