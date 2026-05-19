@@ -3,6 +3,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useAuthStore } from '@/stores/auth'
+import { listConsoleInstancesQueryOptions } from '@nerv-iip/api-client'
 import IndexPage from './index.vue'
 
 const apiState = vi.hoisted(() => ({
@@ -86,9 +88,23 @@ describe('Console index page', () => {
   })
 
   function mountPage() {
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+
+    auth.$patch({
+      accessToken: 'access-token',
+      principal: {
+        principalId: 'user-admin',
+        principalType: 'user',
+        loginName: 'admin',
+        organizationId: 'org-page-test',
+        environmentId: 'env-page-test',
+      },
+    })
+
     return mount(IndexPage, {
       global: {
-        plugins: [createPinia(), [PiniaColada, { queryOptions: { gcTime: 300_000 } }]],
+        plugins: [pinia, [PiniaColada, { queryOptions: { gcTime: 300_000 } }]],
         stubs: {
           RouterLink: {
             props: ['to'],
@@ -107,6 +123,14 @@ describe('Console index page', () => {
     expect(wrapper.text()).toContain('Demo API')
     expect(wrapper.text()).toContain('running')
     expect(wrapper.text()).toContain('Restart')
+    expect(listConsoleInstancesQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-page-test',
+        environmentId: 'env-page-test',
+        pageNumber: 1,
+        pageSize: 20,
+      },
+    })
   })
 
   it('renders destructive status states', async () => {
