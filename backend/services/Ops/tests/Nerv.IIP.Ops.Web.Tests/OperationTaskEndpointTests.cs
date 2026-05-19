@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 
@@ -125,6 +128,87 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
 
         Assert.Equal(HttpStatusCode.Unauthorized, resultResponse.StatusCode);
         Assert.Equal("application/json", resultResponse.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task Development_fake_connector_credential_uses_configured_secret()
+    {
+        await using var configuredFactory = CreateFactoryWithConnectorCredential("rotated-test-secret");
+        var client = configuredFactory.CreateClient();
+        AddConnectorHeaders(client, "rotated-test-secret");
+
+        var response = await client.GetAsync(
+            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Development_fake_connector_credential_rejects_expired_or_revoked_secret()
+    {
+        await using var expiredFactory = CreateFactoryWithConnectorCredential(
+            "expired-test-secret",
+            new KeyValuePair<string, string?>("ConnectorHostCredential:ValidToUtc", "2000-01-01T00:00:00Z"));
+        var expiredClient = expiredFactory.CreateClient();
+        AddConnectorHeaders(expiredClient, "expired-test-secret");
+
+        var expiredResponse = await expiredClient.GetAsync(
+            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, expiredResponse.StatusCode);
+
+        await using var revokedFactory = CreateFactoryWithConnectorCredential(
+            "revoked-test-secret",
+            new KeyValuePair<string, string?>("ConnectorHostCredential:Revoked", "true"));
+        var revokedClient = revokedFactory.CreateClient();
+        AddConnectorHeaders(revokedClient, "revoked-test-secret");
+
+        var revokedResponse = await revokedClient.GetAsync(
+            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, revokedResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Production_does_not_accept_development_fake_connector_credential()
+    {
+        await using var productionFactory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Iam:BaseUrl"] = "http://127.0.0.1:1"
+                    }));
+            });
+        var client = productionFactory.CreateClient();
+        AddConnectorHeaders(client, "local-connector-secret");
+
+        var response = await client.GetAsync(
+            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Connector_auth_failure_writes_structured_audit_log()
+    {
+        var loggerProvider = new RecordingLoggerProvider();
+        await using var loggingFactory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder => builder.ConfigureLogging(logging => logging.AddProvider(loggerProvider)));
+        var client = loggingFactory.CreateClient();
+
+        var response = await client.GetAsync(
+            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var auditLog = Assert.Single(loggerProvider.Entries, x => x.Message.Contains("ConnectorCredentialRejected", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, auditLog.Level);
+        Assert.Contains(auditLog.State, x => x.Key == "ConnectorHostId" && x.Value == "connector-host-001");
+        Assert.Contains(auditLog.State, x => x.Key == "OrganizationId" && x.Value == "org-001");
+        Assert.Contains(auditLog.State, x => x.Key == "EnvironmentId" && x.Value == "env-dev");
+        Assert.Contains(auditLog.State, x => x.Key == "Reason" && !string.IsNullOrWhiteSpace(x.Value));
     }
 
     [Fact]
@@ -296,11 +380,39 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     private HttpClient CreateAuthorizedClient(string organizationId = "org-001", string environmentId = "env-dev")
     {
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Connector-Host-Id", "connector-host-001");
-        client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
+        AddConnectorHeaders(client, "local-connector-secret", organizationId, environmentId);
+        return client;
+    }
+
+    private static WebApplicationFactory<Program> CreateFactoryWithConnectorCredential(
+        string secret,
+        params KeyValuePair<string, string?>[] overrides)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["ConnectorHostCredential:Secret"] = secret
+        };
+        foreach (var item in overrides)
+        {
+            settings[item.Key] = item.Value;
+        }
+
+        return new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(settings)));
+    }
+
+    private static void AddConnectorHeaders(
+        HttpClient client,
+        string secret,
+        string organizationId = "org-001",
+        string environmentId = "env-dev",
+        string connectorHostId = "connector-host-001")
+    {
+        client.DefaultRequestHeaders.Add("X-Connector-Host-Id", connectorHostId);
+        client.DefaultRequestHeaders.Add("X-Connector-Secret", secret);
         client.DefaultRequestHeaders.Add("X-Organization-Id", organizationId);
         client.DefaultRequestHeaders.Add("X-Environment-Id", environmentId);
-        return client;
     }
 
     private static CreateOperationTaskRequest CreateRestartRequest(string idempotencyKey, string organizationId = "org-001", string environmentId = "env-dev")
@@ -375,4 +487,46 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         Assert.NotNull(pending);
         return Assert.Single(pending.Items);
     }
+
+    private sealed class RecordingLoggerProvider : ILoggerProvider
+    {
+        private readonly List<LogEntry> entries = [];
+        public IReadOnlyList<LogEntry> Entries => entries;
+
+        public ILogger CreateLogger(string categoryName) => new RecordingLogger(entries);
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class RecordingLogger(List<LogEntry> entries) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var structuredState = state as IEnumerable<KeyValuePair<string, object?>>
+                ?? [];
+            entries.Add(new LogEntry(
+                logLevel,
+                eventId,
+                formatter(state, exception),
+                structuredState
+                    .Where(x => x.Key != "{OriginalFormat}")
+                    .Select(x => new KeyValuePair<string, string?>(x.Key, x.Value?.ToString()))
+                    .ToArray()));
+        }
+    }
+
+    private sealed record LogEntry(
+        LogLevel Level,
+        EventId EventId,
+        string Message,
+        IReadOnlyList<KeyValuePair<string, string?>> State);
 }
