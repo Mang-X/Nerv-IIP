@@ -18,7 +18,7 @@
 ```text
 Connector Host
   -> IAM credential token endpoint
-     with connectorHostId, credentialId or key id, secret proof, organizationId, environmentId
+     with connectorHostId, credentialId, secret proof, organizationId, environmentId
   <- short-lived access token
 Connector Host
   -> AppHub / Ops / PlatformGateway
@@ -27,7 +27,7 @@ Connector Host
      principalType + permission code + organization/environment/resource context
 ```
 
-Credential validation 是 token exchange 的前置校验，不是业务接口认证方式。IAM 校验 secret hash、凭证有效期、撤销状态、organizationId、environmentId、connectorHostId 和 capability scope 后，才签发 access token。业务服务不得重复实现机器 secret 校验；它们只校验 bearer token，并把所需 permission/context 交给 IAM 授权判断。
+Credential validation 是 token exchange 的前置校验，不是业务接口认证方式。`credentialId` 是 `ConnectorHostCredential` 的稳定标识；若后续支持同一 credential 下多把轮换密钥，`keyId` 只能作为 secret key 的子标识，用于选择待验证密钥，不能替代 `credentialId` 成为 token 主体或审计主体。IAM 校验 secret hash、凭证有效期、撤销状态、organizationId、environmentId、connectorHostId 和 capability scope 后，才签发 access token。业务服务不得重复实现机器 secret 校验；它们只校验 bearer token，并把所需 permission/context 交给 IAM 授权判断。
 
 首批可以继续保留 `POST /api/iam/v1/connectors/credentials/validate` 作为内部校验能力或兼容入口，但面向 Connector Host SDK 的稳定入口应表达为“获取机器 access token”，而不是“验证后由客户端自己拼 header”。
 
@@ -45,8 +45,10 @@ access token 建议携带以下最小 claims：
 4. `organizationId`
 5. `environmentId`
 6. `permissionVersion` 或等价的 credential authorization version。
-7. `issuedAtUtc`
-8. `correlationId` 或 trace context 透传字段。
+7. `iat`：标准 JWT issued-at 时间。
+8. `jti`：标准 JWT token id，用于审计、诊断和撤销关联。
+
+`X-Correlation-Id` header 与 W3C trace context 由请求链路透传，不写入 access token。access token 不承载单次请求的 correlation/trace 字段，避免把一次调用上下文固化到可复用 token 中。
 
 token 可以携带 capability scope 或 permission 摘要用于诊断和 SDK 上下文，但服务端执行类接口不能只相信 token 中的静态 scope。最终授权仍由 IAM 基于凭证、授权授予、permission version、组织环境和资源上下文判断。
 
