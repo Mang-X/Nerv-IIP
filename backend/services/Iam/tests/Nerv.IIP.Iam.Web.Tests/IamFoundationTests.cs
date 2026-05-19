@@ -115,6 +115,28 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
+    public async Task User_list_clamps_paging_and_handles_empty_or_unknown_sort()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        await CreateUserAsync($"delta-{suffix}", $"delta-{suffix}@nerv-iip.local");
+
+        var empty = await GetPagedUsersAsync($"/api/iam/v1/users?filterSearch=missing-{suffix}");
+        Assert.Equal(0, empty.TotalCount);
+        Assert.Empty(empty.Items);
+
+        var clampedPage = await GetPagedUsersAsync($"/api/iam/v1/users?pageIndex=0&pageSize=500&filterSearch={suffix}&sortBy=unknown");
+        Assert.Equal(1, clampedPage.PageIndex);
+        Assert.Equal(200, clampedPage.PageSize);
+        Assert.Equal(1, clampedPage.TotalCount);
+        Assert.Equal($"delta-{suffix}", Assert.Single(clampedPage.Items).LoginName);
+
+        var negativePage = await GetPagedUsersAsync($"/api/iam/v1/users?pageIndex=-1&pageSize=-5&filterSearch={suffix}");
+        Assert.Equal(1, negativePage.PageIndex);
+        Assert.Equal(20, negativePage.PageSize);
+        Assert.Equal(1, negativePage.TotalCount);
+    }
+
+    [Fact]
     public async Task Role_and_session_lists_return_paged_envelopes()
     {
         var login = await _client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
@@ -140,7 +162,8 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
-    private sealed record PagedListResponse<T>(int TotalCount, int PageIndex, int PageSize, IReadOnlyList<T> Items);
+    private sealed record ResponseDataEnvelope<T>(bool Success, string? Message, int Code, T Data);
+    private sealed record PagedListResponse<T>(int PageIndex, int PageSize, int TotalCount, IReadOnlyList<T> Items);
     private sealed record UserResponse(string UserId, string LoginName, string Email, bool Enabled);
     private sealed record MeResponse(
         string UserId,
@@ -164,7 +187,9 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     {
         var json = await _client.GetStringAsync(requestUri);
         AssertPagedEnvelope(json);
-        return JsonSerializer.Deserialize<PagedListResponse<UserResponse>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        return JsonSerializer.Deserialize<ResponseDataEnvelope<PagedListResponse<UserResponse>>>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))!.Data;
     }
 
     private async Task AssertPagedEnvelopeAsync(string requestUri)
@@ -176,9 +201,12 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     {
         using var document = JsonDocument.Parse(json);
         Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
-        Assert.True(document.RootElement.TryGetProperty("totalCount", out _));
-        Assert.True(document.RootElement.TryGetProperty("pageIndex", out _));
-        Assert.True(document.RootElement.TryGetProperty("pageSize", out _));
-        Assert.True(document.RootElement.TryGetProperty("items", out _));
+        Assert.True(document.RootElement.TryGetProperty("success", out var success));
+        Assert.True(success.GetBoolean());
+        Assert.True(document.RootElement.TryGetProperty("data", out var data));
+        Assert.True(data.TryGetProperty("pageIndex", out _));
+        Assert.True(data.TryGetProperty("pageSize", out _));
+        Assert.True(data.TryGetProperty("totalCount", out _));
+        Assert.True(data.TryGetProperty("items", out _));
     }
 }

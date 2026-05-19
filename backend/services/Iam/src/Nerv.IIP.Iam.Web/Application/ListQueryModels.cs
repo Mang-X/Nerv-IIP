@@ -45,9 +45,9 @@ public sealed record IamListQueryOptions(
 }
 
 public sealed record PagedListResponse<T>(
-    int TotalCount,
     int PageIndex,
     int PageSize,
+    int TotalCount,
     IReadOnlyList<T> Items);
 
 public static class IamListPaging
@@ -62,6 +62,6 @@ public static class IamListPaging
             .Take(options.PageSize)
             .ToArray();
 
-        return new PagedListResponse<T>(rows.Length, options.PageIndex, options.PageSize, items);
+        return new PagedListResponse<T>(options.PageIndex, options.PageSize, rows.Length, items);
     }
 }

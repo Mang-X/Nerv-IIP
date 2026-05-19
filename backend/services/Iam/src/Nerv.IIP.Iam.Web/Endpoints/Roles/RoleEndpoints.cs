@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Application;
 using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.Iam.Web.Application.Roles;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Roles;
 
@@ -17,7 +18,7 @@ public sealed record ListRolesRequest(
 [AllowAnonymous]
 public sealed class ListRolesEndpoint(
     IIamPermissionAuthorizer authorizer,
-    IIamRoleApplicationService roles) : Endpoint<ListRolesRequest, PagedListResponse<RoleResponse>>
+    IIamRoleApplicationService roles) : Endpoint<ListRolesRequest, ResponseData<PagedListResponse<RoleResponse>>>
 {
     public override async Task HandleAsync(ListRolesRequest req, CancellationToken ct)
     {
@@ -32,7 +33,7 @@ public sealed class ListRolesEndpoint(
             req.SortBy,
             req.SortOrder,
             req.FilterSearch), ct);
-        await HttpContext.Response.WriteAsJsonAsync(response, ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
 

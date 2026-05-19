@@ -6,6 +6,7 @@ using Nerv.IIP.Iam.Web.Application.Commands.Users;
 using Nerv.IIP.Iam.Web.Application.Queries.Users;
 using Nerv.IIP.Iam.Web.Application.Users;
 using Nerv.IIP.Iam.Web.Endpoints;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Users;
 
@@ -22,7 +23,7 @@ public sealed record ListUsersRequest(
 [HttpGet("/api/iam/v1/users")]
 [AllowAnonymous]
 public sealed class ListUsersEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
-    : Endpoint<ListUsersRequest, PagedListResponse<UserResponse>>
+    : Endpoint<ListUsersRequest, ResponseData<PagedListResponse<UserResponse>>>
 {
     public override async Task HandleAsync(ListUsersRequest req, CancellationToken ct)
     {
@@ -38,7 +39,7 @@ public sealed class ListUsersEndpoint(IIamPermissionAuthorizer authorizer, IMedi
             req.SortOrder,
             req.FilterSearch,
             filterEnabled: req.FilterEnabled)), ct);
-        await HttpContext.Response.WriteAsJsonAsync(users, ct);
+        await Send.OkAsync(users.AsResponseData(), ct);
     }
 }
 

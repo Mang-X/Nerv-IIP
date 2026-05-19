@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Application;
 using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.Iam.Web.Application.Sessions;
+using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Sessions;
 
@@ -19,7 +20,7 @@ public sealed record ListSessionsRequest(
 [AllowAnonymous]
 public sealed class ListSessionsEndpoint(
     IIamPermissionAuthorizer authorizer,
-    IIamSessionApplicationService sessions) : Endpoint<ListSessionsRequest, PagedListResponse<SessionResponse>>
+    IIamSessionApplicationService sessions) : Endpoint<ListSessionsRequest, ResponseData<PagedListResponse<SessionResponse>>>
 {
     public override async Task HandleAsync(ListSessionsRequest req, CancellationToken ct)
     {
@@ -35,7 +36,7 @@ public sealed class ListSessionsEndpoint(
             req.SortOrder,
             req.FilterSearch,
             filterRevoked: req.FilterRevoked), ct);
-        await HttpContext.Response.WriteAsJsonAsync(response, ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
 
