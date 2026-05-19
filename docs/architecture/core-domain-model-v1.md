@@ -1,6 +1,6 @@
 # 一阶领域模型 V1
 
-本文档定义 IAM、File Storage、AppHub、Ops、Notification 在首批纵切和后续平台闭环中的一阶领域模型。目标不是一次性穷尽所有聚合，而是先明确谁拥有什么事实、谁发布什么事件、谁负责任务闭环。
+本文档定义 IAM、File Storage、AppHub、Ops、Notification、Knowledge、AI Integration 在首批纵切和后续平台闭环中的一阶领域模型。目标不是一次性穷尽所有聚合，而是先明确谁拥有什么事实、谁发布什么事件、谁负责任务闭环。
 
 ## 建模原则
 
@@ -257,6 +257,158 @@
 5. 通知投递按最终一致性处理，外部通道失败不能回滚原业务事务。
 6. Notification 可以保存 sourceEventId、resourceRef、correlationId 和展示摘要，但不复制 AppHub、Ops、Knowledge 或 AI Integration 的领域模型。
 
+## Knowledge 一阶模型
+
+### 目标职责
+
+- 拥有知识源、来源文档、分块、嵌入任务、索引状态、检索策略和引用回显事实。
+- 为 AI Integration、Gateway 和平台服务提供统一检索能力，并在返回结果前执行组织、环境与权限过滤。
+- 不拥有模型调用治理、MCP 工具执行编排或文件底层存储事实。
+
+### 首批聚合建议
+
+- KnowledgeSource
+- SourceDocument
+- EmbeddingJob
+- RetrievalPolicy
+
+### 首批实体和值对象建议
+
+- Chunk
+- CitationRecord
+- SourceLocator
+- DocumentFingerprint
+- ChunkFingerprint
+- RetrievalScope
+
+### 首批主表建议
+
+- knowledge_sources
+- knowledge_source_documents
+- knowledge_chunks
+- knowledge_embedding_jobs
+- knowledge_retrieval_policies
+- knowledge_citation_records
+- knowledge_index_state_history
+
+### 首批事件建议
+
+- KnowledgeSourceCreated
+- KnowledgeSourceActivated
+- KnowledgeSourcePaused
+- KnowledgeSourceArchived
+- SourceDocumentDiscovered
+- SourceDocumentIndexed
+- SourceDocumentFailed
+- SourceDocumentMarkedStale
+- SourceDocumentDeleted
+- EmbeddingJobCreated
+- EmbeddingJobStarted
+- EmbeddingJobCompleted
+- EmbeddingJobFailed
+- RetrievalPolicyChanged
+- CitationRecordCreated
+- KnowledgeIngestionFailed
+
+### 核心模型说明
+
+1. KnowledgeSource 是知识来源生命周期聚合，保存组织、环境、来源类型、权限范围、同步策略和当前状态。
+2. SourceDocument 归属于 KnowledgeSource，表示一个可处理来源文档，保存来源标识、fileId 或外部来源引用、版本指纹、解析状态、索引状态和引用元数据。
+3. Chunk 是 SourceDocument 下的分块实体，保存分块文本或摘要、位置、内容指纹、权限标签、索引引用和可重建元数据。
+4. EmbeddingJob 承载首次导入、增量同步、重建索引、删除同步和失败重试生命周期；状态至少覆盖 Pending、Running、PartiallySucceeded、Succeeded、Failed、Cancelled。
+5. RetrievalPolicy 保存检索范围、权限过滤口径、召回参数、rerank 开关和引用返回要求；它是 Knowledge 的检索治理事实，不属于 AI Integration 的 prompt 或工具治理。
+6. CitationRecord 保存检索结果可回溯引用，至少能关联 KnowledgeSource、SourceDocument、Chunk、来源位置、权限上下文和可展示摘要。
+
+### 关键边界
+
+1. Knowledge 只通过 File Storage 的 fileId、FileReference、受控下载授权或 Platform SDK 使用文件，不保存对象存储 key、预签名 URL 或底层存储凭证作为长期事实。
+2. 原始文件、派生附件、扫描状态、保留策略和物理删除归 File Storage；知识源状态、解析、分块、嵌入、索引和引用回显归 Knowledge。
+3. File Storage 文件归档、隔离或删除后，Knowledge 应通过集成事件或同步检查将相关 SourceDocument 标记为 Stale、Deleted 或不可检索，而不是直接改写 File Storage 状态。
+4. Knowledge 可以把可重建索引写入 Qdrant 或等价向量库，但关系库必须保留可解释的索引元数据、任务状态和引用事实。
+5. AI Integration、Gateway 和平台服务只能通过 Knowledge 检索接口消费片段和引用，不绕过 Knowledge 权限过滤直接查询向量库、File Storage 或对象存储。
+6. 检索返回必须携带 CitationRecord 或等价引用结构，不能只返回脱离来源的纯文本片段。
+
+## AI Integration 一阶模型
+
+### 目标职责
+
+- 拥有模型提供方配置、模型画像、MCP/Skill 工具定义、工具授权、AI 执行记录、审批与人工确认、prompt 模板版本和策略快照事实。
+- 作为模型调用、工具执行和高风险 AI 动作的人机治理边界，消费 IAM 的身份与授权事实，并通过 Notification 暴露待办或结果通知。
+- 不托管模型，不维护知识索引，不接管 Ops、AppHub、Knowledge 或 Notification 的领域事实。
+
+### 首批聚合建议
+
+- ModelProviderConfig
+- ModelProfile
+- ToolDefinition
+- ToolAuthorizationGrant
+- AiExecutionRecord
+- ApprovalRequest
+- PromptTemplate
+
+### 首批实体和值对象建议
+
+- HumanConfirmation
+- PromptVersion
+- PolicySnapshot
+- ToolRiskPolicy
+- ModelCredentialRef
+- ExecutionContextSnapshot
+
+### 首批主表建议
+
+- ai_model_provider_configs
+- ai_model_profiles
+- ai_tool_definitions
+- ai_tool_authorization_grants
+- ai_execution_records
+- ai_approval_requests
+- ai_human_confirmations
+- ai_prompt_templates
+- ai_prompt_versions
+- ai_policy_snapshots
+
+### 首批事件建议
+
+- ModelProviderConfigRegistered
+- ModelProviderConfigDisabled
+- ModelProfilePublished
+- ToolDefinitionRegistered
+- ToolDefinitionDeprecated
+- ToolAuthorizationGranted
+- ToolAuthorizationRevoked
+- AiExecutionRequested
+- AiExecutionStarted
+- AiExecutionCompleted
+- AiExecutionFailed
+- AiExecutionBlockedByPolicy
+- AiApprovalRequested
+- AiApprovalResolved
+- HumanConfirmationRequested
+- HumanConfirmationResolved
+- PromptVersionPublished
+- PolicySnapshotCaptured
+
+### 核心模型说明
+
+1. ModelProviderConfig 保存模型提供方、凭证引用、组织环境范围、启用状态和治理参数；敏感凭证只保存引用，不进入领域表明文。
+2. ModelProfile 表示可被选择的模型能力画像，保存模型用途、能力标签、上下文限制、成本口径、默认参数和启用范围。
+3. ToolDefinition 表示 MCP Server、Skill 或平台服务能力暴露出来的受治理工具，保存工具类型、输入输出契约、风险等级、目标服务和审计要求。
+4. ToolAuthorizationGrant 表示某个主体、外部客户端、角色或组织环境范围可使用哪些工具；授权判断必须消费 IAM 的身份、权限、组织、环境和外部授权事实。
+5. AiExecutionRecord 记录一次模型调用、工具调用或组合执行的请求上下文、模型画像、工具引用、结果摘要、token 或成本口径、失败分类、correlationId 和审计元数据。
+6. ApprovalRequest 表示 AI Integration 自身的工具执行审批挂点；HumanConfirmation 表示执行前、执行中或结果采纳前的人工确认动作。
+7. PromptTemplate 拥有 PromptVersion；PromptVersion 发布时应捕获 PolicySnapshot，保证后续执行可以解释当时的 prompt、工具授权、模型画像和风险策略。
+
+### 关键边界
+
+1. AI Integration 通过 IAM 获取身份、组织、环境、角色、权限和外部授权事实，但不维护平行权限模型。
+2. 工具授权、模型选择策略和 prompt 版本归 AI Integration；用户、角色、会话、外部客户端和基础授权授予仍归 IAM。
+3. 需要用户处理的审批、确认和执行失败应发布 AiApprovalRequested、HumanConfirmationRequested、AiExecutionFailed 或明确通知意图，由 Notification 解析接收人、偏好、去重和投递。
+4. Notification 可以保存待办和展示摘要，但不复制 ToolAuthorizationGrant、AiExecutionRecord、PromptVersion 或 PolicySnapshot。
+5. AI Integration 调用 Knowledge 时只消费检索片段和 CitationRecord，不创建或维护私有向量索引。
+6. AI Integration 调用 Ops 或 AppHub 工具时只负责工具治理、授权、审批和执行记录；动作任务事实仍归 Ops，应用实例事实仍归 AppHub。
+7. 高风险工具执行必须先形成 ApprovalRequest 或 HumanConfirmation，并在 AiExecutionRecord 中保留决策结果和策略快照。
+
 ## 首批纵切映射
 
 ### 应用注册链路
@@ -301,3 +453,5 @@
 5. IAM 首批先服务于组织、环境、权限上下文、用户会话、Connector Host 凭证和外部授权事实基线，不先扩展复杂委派、临时授权或完整第三方应用市场模型。
 6. File Storage 拥有文件元数据、对象存储定位、上传下载授权和保留策略；Knowledge、Ops、AppHub 只通过 fileId 或 FileReference 引用文件，不直接保存对象存储 key 作为业务事实。
 7. Notification 是主平台通用能力，拥有通知与待办事实；业务服务只表达事实或通知意图，不各自实现通知表或外部通道投递。
+8. Knowledge 拥有知识源、来源文档、分块、嵌入任务、检索策略和引用回显事实；AI Integration、Gateway 和平台服务只通过 Knowledge 检索接口消费知识。
+9. AI Integration 拥有模型接入、工具治理、AI 执行记录、审批确认、prompt 版本和策略快照事实；IAM 与 Notification 分别只提供身份授权事实和通知待办投递能力。
