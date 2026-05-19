@@ -13,10 +13,12 @@ import {
 } from '@nerv-iip/ui'
 import { LogOutIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
+import type { RouteLocationRaw } from 'vue-router'
 
 interface NavItem {
-  href: string
   label: string
+  to: RouteLocationRaw
 }
 
 const props = defineProps<{
@@ -38,15 +40,15 @@ const userInitials = computed(() => props.user?.loginName.slice(0, 2).toUpperCas
 <template>
   <div class="app-shell">
     <aside class="app-shell__sidebar">
-      <a class="app-shell__brand" href="/">
+      <RouterLink class="app-shell__brand" :to="{ path: '/' }">
         <span class="app-shell__brand-mark">N</span>
         <span class="app-shell__brand-text">{{ title }}</span>
-      </a>
+      </RouterLink>
 
       <nav class="app-shell__nav" aria-label="Primary navigation">
-        <a v-for="item in navItems" :key="item.href" class="app-shell__nav-link" :href="item.href">
+        <RouterLink v-for="item in navItems" :key="item.label" class="app-shell__nav-link" :to="item.to">
           {{ item.label }}
-        </a>
+        </RouterLink>
       </nav>
     </aside>
 
