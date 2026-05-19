@@ -31,12 +31,18 @@ public sealed class UserRepository(ApplicationDbContext context)
 
     public async Task<User?> GetByLoginNameAsync(string loginName, CancellationToken cancellationToken = default)
     {
-        return await DbContext.Users.SingleOrDefaultAsync(x => x.LoginName == loginName && x.Deleted == NotDeleted, cancellationToken);
+        var normalizedLoginName = loginName.ToLower();
+        return await DbContext.Users.SingleOrDefaultAsync(
+            x => x.LoginName.ToLower() == normalizedLoginName && x.Deleted == NotDeleted,
+            cancellationToken);
     }
 
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
-        return await DbContext.Users.SingleOrDefaultAsync(x => x.Email == email && x.Deleted == NotDeleted, cancellationToken);
+        var normalizedEmail = email.ToLower();
+        return await DbContext.Users.SingleOrDefaultAsync(
+            x => x.Email.ToLower() == normalizedEmail && x.Deleted == NotDeleted,
+            cancellationToken);
     }
 
     public async Task<IReadOnlyList<User>> ListNotDeletedAsync(CancellationToken cancellationToken = default)
