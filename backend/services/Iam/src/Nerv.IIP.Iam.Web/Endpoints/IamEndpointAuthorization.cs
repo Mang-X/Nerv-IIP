@@ -1,17 +1,19 @@
-using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Iam.Web.Application.Auth;
 
 namespace Nerv.IIP.Iam.Web.Endpoints;
 
-internal static class IamEndpointAuthorization
+public interface IIamPermissionAuthorizer
 {
-    public static async Task<bool> RequirePermissionAsync(
-        IServiceProvider serviceProvider,
+    Task<bool> RequirePermissionAsync(HttpContext context, string permissionCode, CancellationToken cancellationToken);
+}
+
+public sealed class IamPermissionAuthorizer(IIamAuthService auth) : IIamPermissionAuthorizer
+{
+    public async Task<bool> RequirePermissionAsync(
         HttpContext context,
         string permissionCode,
         CancellationToken cancellationToken)
     {
-        var auth = serviceProvider.GetRequiredService<IamAuthService>();
         var principal = await auth.GetCurrentPrincipalAsync(context, cancellationToken);
         if (principal is null)
         {
@@ -32,5 +34,13 @@ internal static class IamEndpointAuthorization
             new { title = "Forbidden", detail = "Forbidden.", status = StatusCodes.Status403Forbidden },
             cancellationToken);
         return false;
+    }
+}
+
+public sealed class InMemoryIamPermissionAuthorizer : IIamPermissionAuthorizer
+{
+    public Task<bool> RequirePermissionAsync(HttpContext context, string permissionCode, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(true);
     }
 }

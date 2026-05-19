@@ -1,21 +1,23 @@
-using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
+using Nerv.IIP.Iam.Infrastructure.Repositories;
 using NetCorePal.Extensions.Domain;
 
 namespace Nerv.IIP.Iam.Web.Application.Auth;
 
-public sealed class IamAuthService(
-    IServiceProvider serviceProvider,
+public sealed class PostgreSqlIamAuthService(
+    IUserRepository userRepository,
+    IUserSessionRepository userSessionRepository,
+    IMembershipRepository membershipRepository,
+    IConnectorHostCredentialRepository connectorHostCredentialRepository,
     IamPasswordService passwordService,
     IamTokenService tokenService)
+    : IIamAuthService
 {
-    private static readonly Deleted NotDeleted = new(false);
-
     public async Task<AuthResponse> LoginAsync(
         string loginName,
         string password,
@@ -23,9 +25,7 @@ public sealed class IamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
-        var user = await dbContext.Users
-            .SingleOrDefaultAsync(x => x.LoginName == loginName && x.Deleted == NotDeleted, cancellationToken);
+        var user = await userRepository.GetByLoginNameAsync(loginName, cancellationToken);
         if (user is null || !user.Enabled)
         {
             throw Unauthorized();
@@ -34,14 +34,12 @@ public sealed class IamAuthService(
         if (!passwordService.Verify(user, password))
         {
             user.RecordFailedLogin();
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await userRepository.PersistFailedLoginAsync(user, cancellationToken);
             throw Unauthorized();
         }
 
         user.RecordSuccessfulLogin(DateTimeOffset.UtcNow);
-        var response = CreateSessionResponse(dbContext, user, clientInfo, ipAddress);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return response;
+        return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken);
     }
 
     public async Task<AuthResponse> RefreshAsync(
@@ -50,56 +48,33 @@ public sealed class IamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
         var now = DateTimeOffset.UtcNow;
         var refreshTokenHash = tokenService.HashSecret(refreshToken);
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var session = await dbContext.UserSessions
-            .AsNoTracking()
-            .SingleOrDefaultAsync(
-                x => x.RefreshTokenHash == refreshTokenHash && x.RevokedAtUtc == null && x.ExpiresAtUtc > now,
-                cancellationToken);
+        var session = await userSessionRepository.GetActiveByRefreshTokenHashAsync(refreshTokenHash, now, cancellationToken);
         if (session is null)
         {
             throw Unauthorized();
         }
 
-        var user = await dbContext.Users
-            .SingleOrDefaultAsync(x => x.Id == session.UserId && x.Deleted == NotDeleted, cancellationToken);
+        var user = await userRepository.GetByIdAsync(session.UserId, cancellationToken);
         if (user is null || !user.Enabled)
         {
             throw Unauthorized();
         }
 
-        var revokedRows = await dbContext.UserSessions
-            .Where(x => x.Id == session.Id && x.RevokedAtUtc == null && x.ExpiresAtUtc > now)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(x => x.RevokedAtUtc, now)
-                    .SetProperty(x => x.RevokedReason, "refresh-rotated"),
-                cancellationToken);
-        if (revokedRows != 1)
-        {
-            throw Unauthorized();
-        }
-
-        var response = CreateSessionResponse(dbContext, user, clientInfo, ipAddress);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return response;
+        session.Revoke(now, "refresh-rotated");
+        return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken);
     }
 
     public async Task RevokeSessionAsync(string sessionId, string reason, CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
-        var session = await dbContext.UserSessions.FindAsync([new UserSessionId(sessionId)], cancellationToken);
+        var session = await userSessionRepository.GetByIdAsync(new UserSessionId(sessionId), cancellationToken);
         if (session is null)
         {
             return;
         }
 
         session.Revoke(DateTimeOffset.UtcNow, reason);
-        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext httpContext, CancellationToken cancellationToken)
@@ -110,19 +85,16 @@ public sealed class IamAuthService(
             return null;
         }
 
-        var dbContext = GetDbContext();
         var now = DateTimeOffset.UtcNow;
         var sessionId = new UserSessionId(principal.SessionId);
         var userId = new UserId(principal.UserId);
-        var session = await dbContext.UserSessions
-            .SingleOrDefaultAsync(x => x.Id == sessionId && x.UserId == userId, cancellationToken);
+        var session = await userSessionRepository.GetByPrincipalAsync(sessionId, userId, cancellationToken);
         if (session is null || !session.CanRefresh(now) || session.PermissionVersion != principal.PermissionVersion)
         {
             return null;
         }
 
-        var user = await dbContext.Users
-            .SingleOrDefaultAsync(x => x.Id == userId && x.Deleted == NotDeleted, cancellationToken);
+        var user = await userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null
             || !user.Enabled
             || !string.Equals(user.SecurityStamp, principal.SecurityStamp, StringComparison.Ordinal)
@@ -131,10 +103,7 @@ public sealed class IamAuthService(
             return null;
         }
 
-        var membership = await dbContext.Memberships
-            .Where(x => x.UserId == userId)
-            .OrderBy(x => x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+        var membership = await membershipRepository.GetFirstByUserIdAsync(userId, cancellationToken);
         if (membership is null)
         {
             return null;
@@ -152,19 +121,7 @@ public sealed class IamAuthService(
 
     public async Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
-        var userIdValue = new UserId(userId);
-
-        return await (
-            from membership in dbContext.Memberships
-            join membershipRole in dbContext.MembershipRoles on membership.Id equals membershipRole.MembershipId
-            join role in dbContext.Roles on membershipRole.RoleId equals role.Id
-            join rolePermission in dbContext.RolePermissions on role.Id equals rolePermission.RoleId
-            where membership.UserId == userIdValue
-                && role.Deleted == NotDeleted
-                && rolePermission.PermissionCode == permissionCode
-            select rolePermission.Id)
-            .AnyAsync(cancellationToken);
+        return await membershipRepository.UserHasPermissionAsync(new UserId(userId), permissionCode, cancellationToken);
     }
 
     public async Task<bool> UserHasPermissionAsync(
@@ -174,23 +131,16 @@ public sealed class IamAuthService(
         string permissionCode,
         CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
         var userIdValue = new UserId(userId);
         var organizationIdValue = new OrganizationId(organizationId);
         var environmentIdValue = new IamEnvironmentId(environmentId);
 
-        return await (
-            from membership in dbContext.Memberships
-            join membershipRole in dbContext.MembershipRoles on membership.Id equals membershipRole.MembershipId
-            join role in dbContext.Roles on membershipRole.RoleId equals role.Id
-            join rolePermission in dbContext.RolePermissions on role.Id equals rolePermission.RoleId
-            where membership.UserId == userIdValue
-                && membership.OrganizationId == organizationIdValue
-                && membership.EnvironmentId == environmentIdValue
-                && role.Deleted == NotDeleted
-                && rolePermission.PermissionCode == permissionCode
-            select rolePermission.Id)
-            .AnyAsync(cancellationToken);
+        return await membershipRepository.UserHasPermissionAsync(
+            userIdValue,
+            organizationIdValue,
+            environmentIdValue,
+            permissionCode,
+            cancellationToken);
     }
 
     public async Task<ConnectorPrincipalResponse> ValidateConnectorCredentialAsync(
@@ -198,10 +148,11 @@ public sealed class IamAuthService(
         string secret,
         CancellationToken cancellationToken)
     {
-        var dbContext = GetDbContext();
         var secretHash = tokenService.HashSecret(secret);
-        var credential = await dbContext.ConnectorHostCredentials
-            .SingleOrDefaultAsync(x => x.ConnectorHostId == connectorHostId && x.SecretHash == secretHash, cancellationToken);
+        var credential = await connectorHostCredentialRepository.GetByConnectorHostAndSecretHashAsync(
+            connectorHostId,
+            secretHash,
+            cancellationToken);
         if (credential is null || !credential.IsValidAt(DateTimeOffset.UtcNow))
         {
             throw Unauthorized();
@@ -214,7 +165,11 @@ public sealed class IamAuthService(
             credential.ConnectorHostId);
     }
 
-    private AuthResponse CreateSessionResponse(ApplicationDbContext dbContext, User user, string? clientInfo, string? ipAddress)
+    private async Task<AuthResponse> CreateSessionResponseAsync(
+        User user,
+        string? clientInfo,
+        string? ipAddress,
+        CancellationToken cancellationToken)
     {
         var refreshToken = tokenService.CreateRefreshToken();
         var now = DateTimeOffset.UtcNow;
@@ -228,7 +183,7 @@ public sealed class IamAuthService(
             clientInfo,
             ipAddress);
 
-        dbContext.UserSessions.Add(session);
+        await userSessionRepository.AddAsync(session, cancellationToken);
         var issuedAtUtc = DateTimeOffset.UtcNow;
         var accessToken = tokenService.CreateAccessToken(user, session);
         var expiresAtUtc = tokenService.GetAccessTokenExpiresAtUtc(issuedAtUtc);
@@ -238,10 +193,5 @@ public sealed class IamAuthService(
     private static UnauthorizedAccessException Unauthorized()
     {
         return new UnauthorizedAccessException("Unauthorized.");
-    }
-
-    private ApplicationDbContext GetDbContext()
-    {
-        return serviceProvider.GetRequiredService<ApplicationDbContext>();
     }
 }

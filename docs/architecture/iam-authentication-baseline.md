@@ -12,9 +12,11 @@
 
 IAM Persistent Auth Foundation 已覆盖后端持久化登录基线：PostgreSQL iam schema、初始 admin seed、JWT access token、refresh token hash + rotation、session revoke、/me 和 Connector Host credential validation。PostgreSQL profile 下 IAM 管理端点会先执行 bearer + permission 检查：用户读需要 `iam.users.read`，用户写占位入口需要 `iam.users.manage`，角色读需要 `iam.roles.read`，角色写占位入口需要 `iam.roles.manage`，会话读/撤销分别需要 `iam.sessions.read` 和 `iam.sessions.revoke`。用户/角色写管理仍未产品化，授权通过后返回 501。
 
-Gateway-wide permission enforcement 已覆盖现有 Console API：PlatformGateway 不直接读取 IAM persistence，而是把调用方 bearer token 和所需 permission/context 转发给 IAM 的 internal authorization check endpoint，由 IAM 基于 session、security stamp、permission version、organization、environment 和 permission code 判断是否放行。当前已保护实例列表、实例详情、restart 运维任务创建和 operation task detail 查询。OAuth/OIDC、SSO、MFA 和复杂 ABAC 仍属于后续阶段。
+Gateway-wide permission enforcement 已覆盖现有 Console API：PlatformGateway 通过 ASP.NET Core JWT bearer authentication middleware 验证控制台 access token，不直接读取 IAM persistence；通过标准 authorization policy 进入受保护 endpoint 后，再把认证结果中的 bearer token 和所需 permission/context 转发给 IAM 的 internal authorization check endpoint，由 IAM 基于 session、security stamp、permission version、organization、environment 和 permission code 判断是否放行。当前已保护实例列表、实例详情、restart 运维任务创建和 operation task detail 查询。OAuth/OIDC、SSO、MFA 和复杂 ABAC 仍属于后续阶段。
 
 Console login UI now consumes IAM through PlatformGateway Console Auth facade. The browser keeps a single Gateway API base URL; Gateway forwards login, refresh, logout and current-principal requests to IAM without owning identity facts.
+
+Ops connector endpoints remain on the existing `X-Connector-*` header credential validator as a transitional boundary until the Connector Host standard authentication pipeline from #17 is present in code. That boundary is intentionally kept separate from the Gateway console JWT pipeline to avoid a parallel rewrite of connector machine identity in this phase.
 
 ## 决策
 
@@ -71,6 +73,8 @@ ExternalClient 和 ConnectorHostCredential 不与后台用户登录混用。
 3. 两者都必须绑定 organizationId、environmentId、资源范围、能力范围和有效期。
 4. Connector Host 调 AppHub 的注册、心跳、状态同步接口必须经过 IAM 授权，不能长期使用匿名入口。
 5. Sdk.Auth 只能封装 token 获取、刷新、凭证注入和认证错误归一化，不保存 IAM 授权事实，也不在客户端做最终授权判断。
+
+Connector Host 机器身份认证终态见 [Connector Host 机器身份认证终态](connector-host-machine-auth.md)：ConnectorHostCredential validation 只作为换发短期 access token 的前置校验，AppHub、Ops 和 Gateway 生产入口统一使用 bearer token，旧版 header-secret 只保留迁移窗口。
 
 ## Token 与 Claims
 

@@ -16,7 +16,7 @@ public sealed class ListInstancesRequest
 }
 
 [HttpGet("/api/console/v1/instances")]
-[AllowAnonymous]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class ListInstancesEndpoint(
     IAppHubClient appHub,
     IAppCache cache,
@@ -24,7 +24,7 @@ public sealed class ListInstancesEndpoint(
 {
     public override async Task HandleAsync(ListInstancesRequest req, CancellationToken ct)
     {
-        var principal = await GatewayAuthorization.RequireAsync(
+        var principal = await GatewayAuthorization.RequirePermissionAsync(
             HttpContext,
             auth,
             new GatewayPermissionRequirement(
@@ -64,7 +64,7 @@ public sealed class GetInstanceDetailRequest
 }
 
 [HttpGet("/api/console/v1/instances/{instanceKey}")]
-[AllowAnonymous]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class GetInstanceDetailEndpoint(
     IAppHubClient appHub,
     IAppCache cache,
@@ -72,7 +72,7 @@ public sealed class GetInstanceDetailEndpoint(
 {
     public override async Task HandleAsync(GetInstanceDetailRequest req, CancellationToken ct)
     {
-        var principal = await GatewayAuthorization.RequireAsync(
+        var principal = await GatewayAuthorization.RequirePermissionAsync(
             HttpContext,
             auth,
             new GatewayPermissionRequirement(

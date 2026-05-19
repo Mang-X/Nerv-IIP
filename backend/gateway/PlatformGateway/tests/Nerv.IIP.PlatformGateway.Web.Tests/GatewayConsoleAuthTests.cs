@@ -79,14 +79,14 @@ public sealed class GatewayConsoleAuthTests
         var iam = new FakeGatewayIamAuthClient();
         await using var factory = CreateFactory(iam);
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", "access-token");
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
         var response = await client.PostAsJsonAsync(
             "/api/console/v1/auth/logout",
             new ConsoleLogoutRequest("session-001"));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Equal("access-token", iam.LastLogoutBearerToken);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, iam.LastLogoutBearerToken);
         Assert.Equal(new ConsoleLogoutRequest("session-001"), iam.LastLogoutRequest);
     }
 
@@ -97,6 +97,23 @@ public sealed class GatewayConsoleAuthTests
         await using var factory = CreateFactory(iam);
 
         var response = await factory.CreateClient().PostAsJsonAsync(
+            "/api/console/v1/auth/logout",
+            new ConsoleLogoutRequest("session-001"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(iam.LastLogoutBearerToken);
+        Assert.Null(iam.LastLogoutRequest);
+    }
+
+    [Fact]
+    public async Task Console_logout_rejects_invalid_bearer_before_iam_call()
+    {
+        var iam = new FakeGatewayIamAuthClient();
+        await using var factory = CreateFactory(iam);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "abc.def.ghi");
+
+        var response = await client.PostAsJsonAsync(
             "/api/console/v1/auth/logout",
             new ConsoleLogoutRequest("session-001"));
 
@@ -129,11 +146,11 @@ public sealed class GatewayConsoleAuthTests
         var iam = new FakeGatewayIamAuthClient();
         await using var factory = CreateFactory(iam);
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", "access-token");
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
         var body = await client.GetFromJsonAsync<ConsolePrincipalResponse>("/api/console/v1/auth/me");
 
-        Assert.Equal("access-token", iam.LastMeBearerToken);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, iam.LastMeBearerToken);
         Assert.Equal(Principal, body);
     }
 
@@ -144,6 +161,20 @@ public sealed class GatewayConsoleAuthTests
         await using var factory = CreateFactory(iam);
 
         var response = await factory.CreateClient().GetAsync("/api/console/v1/auth/me");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(iam.LastMeBearerToken);
+    }
+
+    [Fact]
+    public async Task Console_me_rejects_invalid_bearer_before_iam_call()
+    {
+        var iam = new FakeGatewayIamAuthClient();
+        await using var factory = CreateFactory(iam);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "abc.def.ghi");
+
+        var response = await client.GetAsync("/api/console/v1/auth/me");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Null(iam.LastMeBearerToken);

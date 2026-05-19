@@ -2,7 +2,11 @@ using FastEndpoints;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Iam.Web.Application.Roles;
 using Nerv.IIP.Iam.Web.Application.Seed;
+using Nerv.IIP.Iam.Web.Application.Sessions;
+using Nerv.IIP.Iam.Web.Application.Users;
+using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.Observability;
 using NetCorePal.Extensions.DependencyInjection;
 
@@ -23,7 +27,22 @@ builder.Services.AddIamPersistence(builder.Configuration);
 builder.Services.Configure<IamSeedOptions>(builder.Configuration.GetSection("Iam:Seed"));
 builder.Services.AddScoped<IamPasswordService>();
 builder.Services.AddScoped<IamTokenService>();
-builder.Services.AddScoped<IamAuthService>();
+if (usesPostgreSql)
+{
+    builder.Services.AddScoped<IIamAuthService, PostgreSqlIamAuthService>();
+    builder.Services.AddScoped<IIamPermissionAuthorizer, IamPermissionAuthorizer>();
+    builder.Services.AddScoped<IIamUserApplicationService, PostgreSqlIamUserApplicationService>();
+    builder.Services.AddScoped<IIamRoleApplicationService, PostgreSqlIamRoleApplicationService>();
+    builder.Services.AddScoped<IIamSessionApplicationService, PostgreSqlIamSessionApplicationService>();
+}
+else
+{
+    builder.Services.AddScoped<IIamAuthService, InMemoryIamAuthService>();
+    builder.Services.AddScoped<IIamPermissionAuthorizer, InMemoryIamPermissionAuthorizer>();
+    builder.Services.AddScoped<IIamUserApplicationService, InMemoryIamUserApplicationService>();
+    builder.Services.AddScoped<IIamRoleApplicationService, InMemoryIamRoleApplicationService>();
+    builder.Services.AddScoped<IIamSessionApplicationService, InMemoryIamSessionApplicationService>();
+}
 builder.Services.AddScoped<IamSeedService>();
 
 var autoMigrate = string.Equals(builder.Configuration["Persistence:AutoMigrate"], "true", StringComparison.OrdinalIgnoreCase);

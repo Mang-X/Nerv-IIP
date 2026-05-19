@@ -8,6 +8,8 @@ public sealed record DispatchPendingOperationsCommand(
     string EnvironmentId,
     string ConnectorHostId,
     int Take,
+    int LeaseDurationSeconds,
+    int MaxAttempts,
     DateTimeOffset Now) : ICommand<PendingOperationTasksResponse>;
 
 public sealed class DispatchPendingOperationsCommandHandler(IOperationTaskApplicationService operationTasks)
@@ -15,11 +17,14 @@ public sealed class DispatchPendingOperationsCommandHandler(IOperationTaskApplic
 {
     public async Task<PendingOperationTasksResponse> Handle(DispatchPendingOperationsCommand request, CancellationToken cancellationToken)
     {
-        return await operationTasks.DispatchPendingAsync(
+        return await operationTasks.ClaimPendingAsync(
+            new ClaimOperationTasksRequest(
             request.OrganizationId,
             request.EnvironmentId,
             request.ConnectorHostId,
-            request.Take,
+                request.Take,
+                request.LeaseDurationSeconds,
+                request.MaxAttempts),
             request.Now,
             cancellationToken);
     }
