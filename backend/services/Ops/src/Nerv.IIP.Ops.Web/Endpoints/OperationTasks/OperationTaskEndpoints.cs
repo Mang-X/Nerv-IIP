@@ -242,13 +242,12 @@ internal static class OpsConnectorEndpointResults
         string reason)
     {
         logger.LogWarning(
-            "ConnectorCredentialRejected ConnectorHostId={ConnectorHostId} OrganizationId={OrganizationId} EnvironmentId={EnvironmentId} RequiredPermission={RequiredPermission} Reason={Reason} Path={Path} CorrelationId={CorrelationId}",
+            "ConnectorCredentialRejected ConnectorHostId={ConnectorHostId} OrganizationId={OrganizationId} EnvironmentId={EnvironmentId} RequiredPermission={RequiredPermission} Reason={Reason} Path={Path}",
             connectorHostId,
             organizationId,
             environmentId,
             requiredPermission,
             reason,
-            context.Request.Path.ToString(),
-            context.TraceIdentifier);
+            context.Request.Path.ToString());
     }
 }

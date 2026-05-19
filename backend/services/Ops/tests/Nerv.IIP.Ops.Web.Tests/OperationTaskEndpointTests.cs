@@ -148,7 +148,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     {
         await using var expiredFactory = CreateFactoryWithConnectorCredential(
             "expired-test-secret",
-            new KeyValuePair<string, string?>("ConnectorHostCredential:ValidToUtc", "2026-05-18T00:00:00Z"));
+            new KeyValuePair<string, string?>("ConnectorHostCredential:ValidToUtc", "2000-01-01T00:00:00Z"));
         var expiredClient = expiredFactory.CreateClient();
         AddConnectorHeaders(expiredClient, "expired-test-secret");
 
