@@ -59,9 +59,7 @@ public sealed class OperationLoopTests
     public async Task Operation_loop_reports_docker_not_found_for_missing_docker_container()
     {
         var ops = new RecordingOpsClient([CreateTask("op-000001", "docker-container-missing", "lifecycle.restart")]);
-        var docker = new DockerConnector([
-            new DockerContainerDescriptor("local-demo-001", "nerv/demo-api:1.0.0", "demo-api", "running")
-        ]);
+        var docker = new DockerConnector(new EmptyDockerCli());
         var loop = new ConnectorOperationLoop([docker], ops, ConnectorHostRuntimeContext.DefaultLocal);
 
         await loop.RunCycleAsync(CancellationToken.None);
@@ -107,6 +105,19 @@ public sealed class OperationLoopTests
             DateTimeOffset.Parse("2026-05-19T00:05:00Z"),
             1,
             3);
+    }
+
+    private sealed class EmptyDockerCli : IDockerCli
+    {
+        public Task<IReadOnlyList<DockerCliContainer>> ListContainersAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<DockerCliContainer>>([]);
+        }
+
+        public Task<DockerCliCommandResult> RestartContainerAsync(string containerName, int gracePeriodSeconds, TimeSpan commandTimeout, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class SuccessfulRestartExecutor : IConnectorOperationExecutor
