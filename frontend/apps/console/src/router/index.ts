@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { handleHotUpdate, routes } from 'vue-router/auto-routes'
+import { installDocumentTitleSync } from './document-title'
 import { installAuthGuard } from './guards/auth'
 
 export const router = createRouter({
@@ -8,6 +9,7 @@ export const router = createRouter({
 })
 
 installAuthGuard(router)
+installDocumentTitleSync(router)
 
 if (import.meta.hot) {
   handleHotUpdate(router)
