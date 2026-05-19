@@ -13,7 +13,9 @@ public interface IOpsStateStore
 {
     OperationTaskResponse Create(CreateOperationTaskRequest request, DateTimeOffset now);
     OperationTaskResponse Get(string operationTaskId);
-    PendingOperationTasksResponse DispatchPending(string organizationId, string environmentId, string connectorHostId, int take, DateTimeOffset now);
+    PendingOperationTasksResponse ClaimPending(ClaimOperationTasksRequest request, DateTimeOffset now);
+    OperationTaskResponse AbandonLease(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now);
+    OperationTaskResponse HeartbeatLease(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now);
     OperationTaskResponse RecordResult(OperationResult result);
 }
 
@@ -69,19 +71,15 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    public PendingOperationTasksResponse DispatchPending(
-        string organizationId,
-        string environmentId,
-        string connectorHostId,
-        int take,
-        DateTimeOffset now)
+    public PendingOperationTasksResponse ClaimPending(ClaimOperationTasksRequest request, DateTimeOffset now)
     {
         lock (_gate)
         {
-            var cappedTake = Math.Clamp(take, 1, 50);
+            var cappedTake = Math.Clamp(request.Take, 1, 50);
+            RequeueExpiredLeasesUnlocked(request.OrganizationId, request.EnvironmentId, now);
             var pendingTasks = _tasks
-                .Where(x => x.OrganizationId == organizationId
-                    && x.EnvironmentId == environmentId
+                .Where(x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
                     && string.Equals(x.Status, "queued", StringComparison.Ordinal))
                 .OrderBy(x => x.RequestedAtUtc)
                 .ThenBy(x => x.OperationTaskId)
@@ -92,31 +90,91 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
             foreach (var task in pendingTasks)
             {
                 var attemptId = $"attempt-{_attempts.Count + 1:000000}";
+                var attemptNo = _attempts.Count(x => x.OperationTaskId == task.OperationTaskId) + 1;
+                var maxAttempts = Math.Clamp(request.MaxAttempts, 1, 10);
+                if (attemptNo > maxAttempts)
+                {
+                    ReplaceTask(task with { Status = "failed" });
+                    continue;
+                }
+
+                var leaseDuration = TimeSpan.FromSeconds(Math.Clamp(request.LeaseDurationSeconds, 30, 3600));
+                var leasedUntilUtc = now.Add(leaseDuration);
+                var leaseId = Guid.NewGuid().ToString("N");
                 _attempts.Add(new OperationAttemptFact(
                     attemptId,
                     task.OperationTaskId,
-                    connectorHostId,
+                    request.ConnectorHostId,
                     "started",
                     now,
                     null,
+                    null,
+                    leaseId,
+                    now,
+                    leasedUntilUtc,
+                    attemptNo,
+                    maxAttempts,
                     null));
 
                 ReplaceTask(task with { Status = "dispatched" });
-                AddAudit(task.OperationTaskId, "operation.dispatched", connectorHostId, now, task.CorrelationId);
+                AddAudit(task.OperationTaskId, "operation.claimed", request.ConnectorHostId, now, task.CorrelationId);
 
                 items.Add(new OperationTaskDispatchItem(
                     task.OperationTaskId,
                     attemptId,
                     task.OrganizationId,
                     task.EnvironmentId,
-                    connectorHostId,
+                    request.ConnectorHostId,
                     task.InstanceKey,
                     task.OperationCode,
                     task.CorrelationId,
-                    task.Parameters));
+                    task.Parameters,
+                    leaseId,
+                    now,
+                    leasedUntilUtc,
+                    attemptNo,
+                    maxAttempts));
             }
 
             return new PendingOperationTasksResponse(items);
+        }
+    }
+
+    public OperationTaskResponse AbandonLease(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            var task = FindTask(operationTaskId);
+            var attempt = GetMatchingActiveLease(task, request.LeaseId, request.ConnectorHostId);
+            ReplaceAttempt(attempt with
+            {
+                Status = "abandoned",
+                FinishedAtUtc = now,
+                AbandonReason = request.AbandonReason
+            });
+            ReplaceTask(task with { Status = attempt.AttemptNo >= attempt.MaxAttempts ? "failed" : "queued" });
+            AddAudit(task.OperationTaskId, "operation.abandoned", request.ConnectorHostId, now, task.CorrelationId);
+            return GetUnlocked(operationTaskId);
+        }
+    }
+
+    public OperationTaskResponse HeartbeatLease(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            var task = FindTask(operationTaskId);
+            var attempt = GetMatchingActiveLease(task, request.LeaseId, request.ConnectorHostId);
+            if (attempt.LeasedUntilUtc <= now)
+            {
+                throw new InvalidOperationResultException("Operation task lease has expired.");
+            }
+
+            ReplaceAttempt(attempt with
+            {
+                LeasedUntilUtc = now.Add(TimeSpan.FromSeconds(Math.Clamp(request.LeaseDurationSeconds, 30, 3600)))
+            });
+            AddAudit(task.OperationTaskId, "operation.heartbeat", request.ConnectorHostId, now, task.CorrelationId);
+            return GetUnlocked(operationTaskId);
         }
     }
 
@@ -176,6 +234,54 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         {
             throw new InvalidOperationResultException("Operation result context does not match the operation task attempt.");
         }
+    }
+
+    private void RequeueExpiredLeasesUnlocked(string organizationId, string environmentId, DateTimeOffset now)
+    {
+        var expiredTasks = _tasks
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && string.Equals(x.Status, "dispatched", StringComparison.Ordinal))
+            .ToList();
+
+        foreach (var task in expiredTasks)
+        {
+            var attempt = _attempts
+                .Where(x => x.OperationTaskId == task.OperationTaskId
+                    && string.Equals(x.Status, "started", StringComparison.Ordinal))
+                .OrderByDescending(x => x.AttemptNo)
+                .FirstOrDefault();
+            if (attempt is null || attempt.LeasedUntilUtc > now)
+            {
+                continue;
+            }
+
+            ReplaceAttempt(attempt with
+            {
+                Status = "abandoned",
+                FinishedAtUtc = now,
+                AbandonReason = "lease-timeout"
+            });
+            ReplaceTask(task with { Status = attempt.AttemptNo >= attempt.MaxAttempts ? "failed" : "queued" });
+            AddAudit(task.OperationTaskId, "operation.lease-timeout", attempt.ConnectorHostId, now, task.CorrelationId);
+        }
+    }
+
+    private OperationAttemptFact GetMatchingActiveLease(OperationTaskFact task, string leaseId, string connectorHostId)
+    {
+        var attempt = _attempts
+            .Where(x => x.OperationTaskId == task.OperationTaskId
+                && string.Equals(x.Status, "started", StringComparison.Ordinal))
+            .OrderByDescending(x => x.AttemptNo)
+            .FirstOrDefault()
+            ?? throw new InvalidOperationResultException("Operation task does not have an active lease.");
+        if (!string.Equals(attempt.LeaseId, leaseId, StringComparison.Ordinal)
+            || !string.Equals(attempt.ConnectorHostId, connectorHostId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationResultException("Operation task lease does not match the active attempt.");
+        }
+
+        return attempt;
     }
 
     private static string GetIdempotencyScope(string organizationId, string environmentId, string idempotencyKey)

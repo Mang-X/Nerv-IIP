@@ -138,8 +138,8 @@
 
 ### 第二迭代已落地范围
 
-1. `Nerv.IIP.Contracts.Ops` 与 `Nerv.IIP.Sdk.Ops` 已落地，用于运维任务、pending 拉取、任务详情和结果回传。
-2. Ops.Web 已提供 operation task 创建、详情查询、pending 拉取和 operation result 回传接口。
+1. `Nerv.IIP.Contracts.Ops` 与 `Nerv.IIP.Sdk.Ops` 已落地，用于运维任务、claim/lease、任务详情和结果回传。
+2. Ops.Web 已提供 operation task 创建、详情查询、claim/heartbeat/abandon 和 operation result 回传接口。
 3. PlatformGateway 已提供实例 restart facade 与 operation task detail facade。
 4. Connector Host 已提供 operation loop，可领取低风险任务、调用 Connector 执行，并回传结果。
 5. Docker Connector 已支持 `lifecycle.restart` 执行抽象。
@@ -216,7 +216,7 @@
 
 ### 可以并行但不阻塞开工的事项
 
-1. Ops 任务持久化、领取租约、并发执行限制、失败重试和持久化 outbox。
+1. Ops 持久化 outbox、复杂失败重试、审批联动和生产级调度策略。
 2. 高风险动作审批、人工确认 UI、权限 scope 和通知联动。
 3. Sdk.Observability 的完整实现和诊断附件链路。
 4. AI Integration 与 Knowledge 的具体代码骨架。

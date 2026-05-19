@@ -15,6 +15,7 @@ const pinia = createPinia()
 app.use(pinia)
 
 const auth = useAuthStore()
+auth.setSessionExpiredHandler(() => handleUnauthorized(auth, router))
 configureApiClient({
   accessTokenProvider: () => auth.accessToken,
   onUnauthorized: () => handleUnauthorized(auth, router),

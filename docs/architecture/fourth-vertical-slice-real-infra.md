@@ -64,6 +64,6 @@ pnpm -C frontend build
 1. IAM 登录与 Gateway/Console 权限 guard。
 2. FileStorage 上传下载闭环与 MinIO provider。
 3. 数据库迁移发布基线、初始化脚本和部署硬化。
-4. Ops 审批、租约、重试、outbox 和通知联动。
+4. Ops 审批、复杂重试、outbox 和通知联动。
 
 这些方向可以并行设计，但实施计划应保持单纵切可验收，避免一次性打开过多服务边界。

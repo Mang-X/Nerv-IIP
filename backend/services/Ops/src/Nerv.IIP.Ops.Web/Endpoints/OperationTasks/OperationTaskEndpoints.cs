@@ -78,8 +78,125 @@ public sealed class GetPendingOperationTasksEndpoint(
             environmentId,
             connectorHostId,
             Query<int>("take"),
+            300,
+            3,
             DateTimeOffset.UtcNow), ct);
         await HttpContext.Response.WriteAsJsonAsync(pending, ct);
+    }
+}
+
+[HttpPost("/api/ops/v1/operation-tasks/claims")]
+[AllowAnonymous]
+public sealed class ClaimOperationTasksEndpoint(
+    IMediator mediator,
+    IOpsConnectorCredentialValidator connectorCredentialValidator,
+    ILogger<ClaimOperationTasksEndpoint> logger) : Endpoint<ClaimOperationTasksRequest>
+{
+    public override async Task HandleAsync(ClaimOperationTasksRequest req, CancellationToken ct)
+    {
+        if (!await OpsConnectorEndpointResults.ConnectorHostAuthorizedAsync(
+                HttpContext,
+                connectorCredentialValidator,
+                logger,
+                req.ConnectorHostId,
+                req.OrganizationId,
+                req.EnvironmentId,
+                "ops.tasks.claim",
+                ct))
+        {
+            await OpsConnectorEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
+            return;
+        }
+
+        var pending = await mediator.Send(new DispatchPendingOperationsCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ConnectorHostId,
+            req.Take,
+            req.LeaseDurationSeconds,
+            req.MaxAttempts,
+            DateTimeOffset.UtcNow), ct);
+        await HttpContext.Response.WriteAsJsonAsync(pending, ct);
+    }
+}
+
+[HttpPost("/api/ops/v1/operation-tasks/{operationTaskId}/lease/abandon")]
+[AllowAnonymous]
+public sealed class AbandonOperationTaskLeaseEndpoint(
+    IMediator mediator,
+    IOpsConnectorCredentialValidator connectorCredentialValidator,
+    ILogger<AbandonOperationTaskLeaseEndpoint> logger) : Endpoint<AbandonOperationTaskLeaseRequest>
+{
+    public override async Task HandleAsync(AbandonOperationTaskLeaseRequest req, CancellationToken ct)
+    {
+        if (!await OpsConnectorEndpointResults.ConnectorHostAuthorizedAsync(
+                HttpContext,
+                connectorCredentialValidator,
+                logger,
+                req.ConnectorHostId,
+                req.OrganizationId,
+                req.EnvironmentId,
+                "ops.tasks.claim",
+                ct))
+        {
+            await OpsConnectorEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
+            return;
+        }
+
+        try
+        {
+            var operationTaskId = Route<string>("operationTaskId")!;
+            var task = await mediator.Send(new AbandonOperationTaskLeaseCommand(operationTaskId, req, DateTimeOffset.UtcNow), ct);
+            await HttpContext.Response.WriteAsJsonAsync(task, ct);
+        }
+        catch (InvalidOperationResultException ex)
+        {
+            await OpsEndpointResults.WriteBadRequestAsync(HttpContext, ex.Message, ct);
+        }
+        catch (OperationTaskNotFoundException ex)
+        {
+            await OpsEndpointResults.WriteBadRequestAsync(HttpContext, ex.Message, ct);
+        }
+    }
+}
+
+[HttpPost("/api/ops/v1/operation-tasks/{operationTaskId}/lease/heartbeat")]
+[AllowAnonymous]
+public sealed class HeartbeatOperationTaskLeaseEndpoint(
+    IMediator mediator,
+    IOpsConnectorCredentialValidator connectorCredentialValidator,
+    ILogger<HeartbeatOperationTaskLeaseEndpoint> logger) : Endpoint<HeartbeatOperationTaskLeaseRequest>
+{
+    public override async Task HandleAsync(HeartbeatOperationTaskLeaseRequest req, CancellationToken ct)
+    {
+        if (!await OpsConnectorEndpointResults.ConnectorHostAuthorizedAsync(
+                HttpContext,
+                connectorCredentialValidator,
+                logger,
+                req.ConnectorHostId,
+                req.OrganizationId,
+                req.EnvironmentId,
+                "ops.tasks.claim",
+                ct))
+        {
+            await OpsConnectorEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
+            return;
+        }
+
+        try
+        {
+            var operationTaskId = Route<string>("operationTaskId")!;
+            var task = await mediator.Send(new HeartbeatOperationTaskLeaseCommand(operationTaskId, req, DateTimeOffset.UtcNow), ct);
+            await HttpContext.Response.WriteAsJsonAsync(task, ct);
+        }
+        catch (InvalidOperationResultException ex)
+        {
+            await OpsEndpointResults.WriteBadRequestAsync(HttpContext, ex.Message, ct);
+        }
+        catch (OperationTaskNotFoundException ex)
+        {
+            await OpsEndpointResults.WriteBadRequestAsync(HttpContext, ex.Message, ct);
+        }
     }
 }
 
