@@ -5,8 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.AppHub.Web.Application.Commands;
+using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.AppHub.Web.Application.Queries;
 using Nerv.IIP.Contracts.ConnectorProtocol;
+using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DependencyInjection;
 using AppHubApplication = Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate.Application;
 
@@ -31,6 +33,8 @@ public sealed class AppHubPostgresProfileTests
             configuration.AddUnitOfWorkBehaviors();
         });
         AddPostgreSqlAppHubPersistence(services, connectionString);
+        services.AddIntegrationEvents(typeof(Program));
+        services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
         services.AddScoped<AppHubDatabaseMigrationRunner>();
 
         await using var provider = services.BuildServiceProvider();
@@ -74,6 +78,8 @@ public sealed class AppHubPostgresProfileTests
             configuration.AddUnitOfWorkBehaviors();
         });
         AddPostgreSqlAppHubPersistence(services, connectionString);
+        services.AddIntegrationEvents(typeof(Program));
+        services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
         services.AddScoped<AppHubDatabaseMigrationRunner>();
 
         await using var provider = services.BuildServiceProvider();

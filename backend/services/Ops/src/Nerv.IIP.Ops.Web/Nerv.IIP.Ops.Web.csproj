@@ -19,6 +19,7 @@
     <PackageReference Include="NetCorePal.Extensions.Primitives" />
     <ProjectReference Include="..\Nerv.IIP.Ops.Domain\Nerv.IIP.Ops.Domain.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Ops.Infrastructure\Nerv.IIP.Ops.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
     <ProjectReference Include="..\..\..\..\common\Observability\Nerv.IIP.Observability\Nerv.IIP.Observability.csproj" />
   </ItemGroup>
 

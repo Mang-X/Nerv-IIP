@@ -110,6 +110,42 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
         Metadata = new Dictionary<string, string>(metadata);
         this.AddDomainEvent(new InstanceStateSnapshotRecordedDomainEvent(InstanceKey, observedAtUtc, reportedStatus, healthStatus));
     }
+
+    public bool RecordOperationTaskCompletedRefresh(
+        string idempotencyKey,
+        string operationTaskId,
+        string operationCode,
+        DateTimeOffset finishedAtUtc,
+        string correlationId)
+    {
+        var processedKey = GetCompletedOperationMetadataKey(idempotencyKey);
+        if (Metadata.ContainsKey(processedKey))
+        {
+            return false;
+        }
+
+        StateHistory.Add(new InstanceStateHistory(
+            Id,
+            finishedAtUtc,
+            ReportedStatus,
+            HealthStatus,
+            $"Operation task {operationTaskId} completed: {operationCode}"));
+        Metadata = new Dictionary<string, string>(Metadata)
+        {
+            [processedKey] = finishedAtUtc.ToString("O"),
+            ["ops.lastCompletedOperationIdempotencyKey"] = idempotencyKey,
+            ["ops.lastCompletedOperationTaskId"] = operationTaskId,
+            ["ops.lastCompletedOperationCode"] = operationCode,
+            ["ops.lastCompletedOperationCorrelationId"] = correlationId
+        };
+
+        return true;
+    }
+
+    private static string GetCompletedOperationMetadataKey(string idempotencyKey)
+    {
+        return $"ops.completed.{idempotencyKey}";
+    }
 }
 
 public class InstanceHeartbeat : Entity<InstanceHeartbeatId>
