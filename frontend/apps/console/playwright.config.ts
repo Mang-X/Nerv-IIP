@@ -6,6 +6,7 @@ const baseURL = `http://127.0.0.1:${port}`
 
 export default defineConfig({
   testDir: './e2e',
+  forbidOnly: !!process.env.CI,
   fullyParallel: true,
   reporter: 'list',
   use: {
@@ -14,9 +15,9 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: `pnpm run dev -- --port ${port}`,
+    command: `vp dev --host 127.0.0.1 --port ${port}`,
     url: baseURL,
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
   projects: [

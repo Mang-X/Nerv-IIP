@@ -112,7 +112,7 @@ test('restarting an instance opens the operation detail timeline', async ({ page
 
 test('a 401 API response clears the stored session and redirects to login', async ({ page }) => {
   await seedStoredSession(page)
-  await page.route('**/api/console/v1/instances?**', async (route) => {
+  await page.route('**/api/console/v1/instances*', async (route) => {
     await route.fulfill({
       status: 401,
       contentType: 'application/json',
