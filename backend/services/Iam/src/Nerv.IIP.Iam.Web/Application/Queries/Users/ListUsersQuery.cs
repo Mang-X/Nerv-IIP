@@ -23,7 +23,7 @@ public sealed class ListUsersQueryHandler(IServiceProvider services)
                 .ToArray();
         }
 
-        var users = await services.GetRequiredService<IUserRepository>().ListActiveAsync(cancellationToken);
+        var users = await services.GetRequiredService<IUserRepository>().ListNotDeletedAsync(cancellationToken);
         return users.Select(ToResponse).ToArray();
     }
 

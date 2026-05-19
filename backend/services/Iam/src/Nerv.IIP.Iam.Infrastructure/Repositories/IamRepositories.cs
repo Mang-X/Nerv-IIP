@@ -16,7 +16,7 @@ public interface IUserRepository : IRepository<User, UserId>
     Task<User?> GetByIdAsync(UserId userId, CancellationToken cancellationToken = default);
     Task<User?> GetByLoginNameAsync(string loginName, CancellationToken cancellationToken = default);
     Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<User>> ListActiveAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<User>> ListNotDeletedAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class UserRepository(ApplicationDbContext context)
@@ -39,7 +39,7 @@ public sealed class UserRepository(ApplicationDbContext context)
         return await DbContext.Users.SingleOrDefaultAsync(x => x.Email == email && x.Deleted == NotDeleted, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<User>> ListActiveAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<User>> ListNotDeletedAsync(CancellationToken cancellationToken = default)
     {
         return await DbContext.Users
             .AsNoTracking()

@@ -36,19 +36,11 @@ public sealed class CreateUserCommandHandler(IServiceProvider services, IamPassw
         }
 
         var userId = new UserId($"user-{Guid.CreateVersion7():N}");
-        var passwordUser = new User(
-            userId,
-            request.LoginName,
-            request.Email,
-            string.Empty,
-            true,
-            Guid.NewGuid().ToString("n"),
-            1);
         var user = new User(
             userId,
             request.LoginName,
             request.Email,
-            passwordService.Hash(passwordUser, request.Password),
+            passwordService.Hash(request.Password),
             true,
             Guid.NewGuid().ToString("n"),
             1);
