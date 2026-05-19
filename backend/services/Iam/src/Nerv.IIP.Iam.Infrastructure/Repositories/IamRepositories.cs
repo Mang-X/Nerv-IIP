@@ -18,6 +18,7 @@ public interface IUserRepository : IRepository<User, UserId>
     Task<User?> GetByLoginNameAsync(string loginName, CancellationToken cancellationToken = default);
     Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<User>> ListNotDeletedAsync(CancellationToken cancellationToken = default);
+    Task PersistFailedLoginAsync(User user, CancellationToken cancellationToken = default);
 }
 
 public sealed class UserRepository(ApplicationDbContext context)
@@ -53,6 +54,12 @@ public sealed class UserRepository(ApplicationDbContext context)
             .Where(x => x.Deleted == NotDeleted)
             .OrderBy(x => x.LoginName)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task PersistFailedLoginAsync(User user, CancellationToken cancellationToken = default)
+    {
+        DbContext.Users.Update(user);
+        await DbContext.SaveChangesAsync(cancellationToken);
     }
 }
 

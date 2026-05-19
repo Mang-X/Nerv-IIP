@@ -34,6 +34,7 @@ public sealed class PostgreSqlIamAuthService(
         if (!passwordService.Verify(user, password))
         {
             user.RecordFailedLogin();
+            await userRepository.PersistFailedLoginAsync(user, cancellationToken);
             throw Unauthorized();
         }
 
