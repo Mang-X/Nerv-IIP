@@ -11,6 +11,16 @@ const apiState = vi.hoisted(() => ({
   failListRefetch: false,
   listFetchCount: 0,
 }))
+const routerState = vi.hoisted(() => ({
+  push: vi.fn(),
+}))
+
+vi.mock('vue-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('vue-router')>()),
+  useRouter: () => ({
+    push: routerState.push,
+  }),
+}))
 
 vi.mock('@nerv-iip/api-client', () => {
   const instance = {
@@ -97,6 +107,7 @@ describe('Console index page', () => {
   beforeEach(() => {
     apiState.failListRefetch = false
     apiState.listFetchCount = 0
+    routerState.push.mockReset()
   })
 
   function mountPage() {
@@ -170,6 +181,7 @@ describe('Console index page', () => {
     const operationLink = wrapper.find('.console-page__operation-link')
     expect(operationLink.exists()).toBe(true)
     expect(operationLink.attributes('href')).toBe('/operations/task-1')
+    expect(routerState.push).toHaveBeenCalledWith('/operations/task-1')
     expect(wrapper.text().match(/list refresh failed/g)).toHaveLength(1)
   })
 })
