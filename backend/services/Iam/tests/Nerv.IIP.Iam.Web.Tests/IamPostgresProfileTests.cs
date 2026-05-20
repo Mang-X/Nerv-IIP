@@ -315,6 +315,11 @@ public sealed class IamPostgresProfileTests
             Assert.Equal(HttpStatusCode.Created, createRole.StatusCode);
             var role = await ReadResponseDataAsync<RoleResponse>(createRole);
 
+            var duplicateRole = await client.PostAsJsonAsync(
+                "/api/iam/v1/roles",
+                new { roleName = "ops operator", permissionCodes = Array.Empty<string>() });
+            Assert.Equal(HttpStatusCode.BadRequest, duplicateRole.StatusCode);
+
             var patchRole = await client.PatchAsJsonAsync(
                 $"/api/iam/v1/roles/{role!.RoleId}/permissions",
                 new { permissionCodes = new[] { "iam.users.read", "ops.tasks.read" } });
@@ -326,10 +331,36 @@ public sealed class IamPostgresProfileTests
             Assert.Equal(HttpStatusCode.Created, createUser.StatusCode);
             var user = await ReadResponseDataAsync<UserResponse>(createUser);
 
+            var oldUserLogin = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName = "reset-pg-user", password = "OldPassword123!" });
+            oldUserLogin.EnsureSuccessStatusCode();
+            var oldAuth = await ReadResponseDataAsync<AuthResponse>(oldUserLogin);
+
             var reset = await client.PostAsJsonAsync(
                 $"/api/iam/v1/users/{user!.UserId}/reset-password",
                 new { newPassword = "NewPassword123!" });
             Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", oldAuth!.AccessToken);
+            var staleMe = await client.GetAsync("/api/iam/v1/me");
+            Assert.Equal(HttpStatusCode.Unauthorized, staleMe.StatusCode);
+
+            var staleRefresh = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/refresh",
+                new { refreshToken = oldAuth.RefreshToken });
+            Assert.Equal(HttpStatusCode.Unauthorized, staleRefresh.StatusCode);
+
+            client.DefaultRequestHeaders.Authorization = null;
+            var oldPasswordLogin = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName = "reset-pg-user", password = "OldPassword123!" });
+            Assert.Equal(HttpStatusCode.Unauthorized, oldPasswordLogin.StatusCode);
+
+            var newPasswordLogin = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName = "reset-pg-user", password = "NewPassword123!" });
+            newPasswordLogin.EnsureSuccessStatusCode();
 
             using (var scope = factory.Services.CreateScope())
             {

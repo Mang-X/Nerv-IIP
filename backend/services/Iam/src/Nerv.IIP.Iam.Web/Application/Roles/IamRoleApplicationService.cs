@@ -8,7 +8,7 @@ using NetCorePal.Extensions.Primitives;
 namespace Nerv.IIP.Iam.Web.Application.Roles;
 
 public sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
-public sealed record CreateRoleRequest(string RoleName, IReadOnlyList<string> PermissionCodes);
+public sealed record CreateRoleRequest(string? RoleName, IReadOnlyList<string> PermissionCodes);
 public sealed record PatchRolePermissionsRequest(IReadOnlyList<string> PermissionCodes);
 
 public interface IIamRoleApplicationService
@@ -16,7 +16,7 @@ public interface IIamRoleApplicationService
     Task<PagedListResponse<RoleResponse>> ListRolesAsync(IamListQueryOptions options, CancellationToken cancellationToken);
 
     Task<RoleResponse> CreateRoleAsync(
-        string roleName,
+        string? roleName,
         IReadOnlyList<string> permissionCodes,
         CancellationToken cancellationToken);
 
@@ -42,11 +42,11 @@ public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : 
     }
 
     public Task<RoleResponse> CreateRoleAsync(
-        string roleName,
+        string? roleName,
         IReadOnlyList<string> permissionCodes,
         CancellationToken cancellationToken)
     {
-        var trimmedRoleName = NormalizeRoleName(roleName);
+        var trimmedRoleName = RoleNameValidation.NormalizeRoleName(roleName);
         if (store.RoleNameExists(trimmedRoleName))
         {
             throw new KnownException($"Role name '{trimmedRoleName}' is already used.");
@@ -80,16 +80,6 @@ public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : 
             role.PermissionCodes.OrderBy(code => code, StringComparer.Ordinal).ToArray());
     }
 
-    private static string NormalizeRoleName(string roleName)
-    {
-        var trimmedRoleName = roleName.Trim();
-        if (string.IsNullOrWhiteSpace(trimmedRoleName))
-        {
-            throw new KnownException("Role name is required.");
-        }
-
-        return trimmedRoleName;
-    }
 }
 
 public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository repository) : IIamRoleApplicationService
@@ -108,11 +98,11 @@ public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository reposito
     }
 
     public async Task<RoleResponse> CreateRoleAsync(
-        string roleName,
+        string? roleName,
         IReadOnlyList<string> permissionCodes,
         CancellationToken cancellationToken)
     {
-        var trimmedRoleName = NormalizeRoleName(roleName);
+        var trimmedRoleName = RoleNameValidation.NormalizeRoleName(roleName);
         var seededCodes = IamPermissionCatalog.EnsureSeeded(permissionCodes ?? []);
         if (await repository.GetByNameAsync(trimmedRoleName, cancellationToken) is not null)
         {
@@ -147,16 +137,6 @@ public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository reposito
             role.Permissions.Select(x => x.PermissionCode).OrderBy(code => code, StringComparer.Ordinal).ToArray());
     }
 
-    private static string NormalizeRoleName(string roleName)
-    {
-        var trimmedRoleName = roleName.Trim();
-        if (string.IsNullOrWhiteSpace(trimmedRoleName))
-        {
-            throw new KnownException("Role name is required.");
-        }
-
-        return trimmedRoleName;
-    }
 }
 
 internal static class RoleListSorting
@@ -170,5 +150,24 @@ internal static class RoleListSorting
             ("rolename", true) => roles.OrderByDescending(x => x.RoleName, StringComparer.Ordinal),
             _ => roles.OrderBy(x => x.RoleName, StringComparer.Ordinal)
         };
+    }
+}
+
+internal static class RoleNameValidation
+{
+    public static string NormalizeRoleName(string? roleName)
+    {
+        if (string.IsNullOrWhiteSpace(roleName))
+        {
+            throw new KnownException("Role name is required.");
+        }
+
+        var trimmedRoleName = roleName.Trim();
+        if (trimmedRoleName.Length > 128)
+        {
+            throw new KnownException("Role name must be 128 characters or fewer.");
+        }
+
+        return trimmedRoleName;
     }
 }

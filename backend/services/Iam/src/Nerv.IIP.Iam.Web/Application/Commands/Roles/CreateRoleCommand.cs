@@ -3,7 +3,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Iam.Web.Application.Commands.Roles;
 
-public sealed record CreateRoleCommand(string RoleName, IReadOnlyList<string> PermissionCodes) : ICommand<RoleResponse>;
+public sealed record CreateRoleCommand(string? RoleName, IReadOnlyList<string> PermissionCodes) : ICommand<RoleResponse>;
 
 public sealed class CreateRoleCommandHandler(IIamRoleApplicationService roles)
     : ICommandHandler<CreateRoleCommand, RoleResponse>

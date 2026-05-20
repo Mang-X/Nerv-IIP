@@ -17,10 +17,14 @@ public sealed class RoleEntityTypeConfiguration : IEntityTypeConfiguration<Role>
             .HasMaxLength(64)
             .HasComment("Role identifier.");
         builder.Property(x => x.RoleName).IsRequired().HasMaxLength(128).HasComment("Unique role name.");
+        builder.Property(x => x.NormalizedRoleName)
+            .IsRequired()
+            .HasMaxLength(128)
+            .HasComment("Case-insensitive normalized role name.");
         builder.Property(x => x.Deleted).HasConversion(x => x.Value, x => new Deleted(x)).HasComment("Soft delete flag.");
         builder.Property(x => x.RowVersion).HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version.");
 
-        builder.HasIndex(x => x.RoleName).IsUnique();
+        builder.HasIndex(x => x.NormalizedRoleName).IsUnique();
         builder.HasMany(x => x.Permissions)
             .WithOne()
             .HasForeignKey(x => x.RoleId)

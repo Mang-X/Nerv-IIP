@@ -143,6 +143,30 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
+    public async Task In_memory_role_management_rejects_missing_blank_and_long_role_names()
+    {
+        var missing = await _client.PostAsJsonAsync(
+            "/api/iam/v1/roles",
+            new { permissionCodes = Array.Empty<string>() });
+        Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
+
+        var nullName = await _client.PostAsJsonAsync(
+            "/api/iam/v1/roles",
+            new { roleName = (string?)null, permissionCodes = Array.Empty<string>() });
+        Assert.Equal(HttpStatusCode.BadRequest, nullName.StatusCode);
+
+        var blank = await _client.PostAsJsonAsync(
+            "/api/iam/v1/roles",
+            new { roleName = "   ", permissionCodes = Array.Empty<string>() });
+        Assert.Equal(HttpStatusCode.BadRequest, blank.StatusCode);
+
+        var tooLong = await _client.PostAsJsonAsync(
+            "/api/iam/v1/roles",
+            new { roleName = new string('x', 129), permissionCodes = Array.Empty<string>() });
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+    }
+
+    [Fact]
     public async Task Admin_reset_password_changes_login_secret_and_revokes_sessions()
     {
         var create = await _client.PostAsJsonAsync(

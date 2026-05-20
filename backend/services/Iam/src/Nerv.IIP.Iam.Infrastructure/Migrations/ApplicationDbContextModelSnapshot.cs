@@ -267,6 +267,12 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasComment("Unique role name.");
 
+                    b.Property<string>("NormalizedRoleName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("Case-insensitive normalized role name.");
+
                     b.Property<int>("RowVersion")
                         .IsConcurrencyToken()
                         .HasColumnType("integer")
@@ -274,7 +280,7 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RoleName")
+                    b.HasIndex("NormalizedRoleName")
                         .IsUnique();
 
                     b.ToTable("roles", "iam", t =>

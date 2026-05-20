@@ -84,11 +84,11 @@ public sealed class RoleRepository(ApplicationDbContext context)
 
     public async Task<Role?> GetByNameAsync(string roleName, CancellationToken cancellationToken = default)
     {
-        var normalizedRoleName = roleName.ToLower();
+        var normalizedRoleName = Role.NormalizeName(roleName);
         return await DbContext.Roles
             .Include(x => x.Permissions)
             .SingleOrDefaultAsync(
-                x => x.RoleName.ToLower() == normalizedRoleName && x.Deleted == NotDeleted,
+                x => x.NormalizedRoleName == normalizedRoleName && x.Deleted == NotDeleted,
                 cancellationToken);
     }
 
