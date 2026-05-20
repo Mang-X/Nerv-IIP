@@ -98,7 +98,7 @@ vi.mock('@nerv-iip/api-client', () => {
         return {
           success: true,
           data: {
-            pageNumber: 1,
+            pageIndex: 1,
             pageSize: 20,
             totalCount: 1,
             items: [instance],
@@ -169,7 +169,7 @@ describe('Console index page', () => {
       query: {
         organizationId: 'org-page-test',
         environmentId: 'env-page-test',
-        pageNumber: 1,
+        pageIndex: 1,
         pageSize: 20,
       },
     })

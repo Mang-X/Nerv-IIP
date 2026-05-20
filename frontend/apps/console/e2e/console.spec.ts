@@ -176,7 +176,7 @@ async function routeConsoleApi(route: Route) {
     return fulfillJson(
       route,
       envelope({
-        pageNumber: 1,
+        pageIndex: 1,
         pageSize: 20,
         totalCount: 1,
         items: [instance],
