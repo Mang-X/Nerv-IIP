@@ -1,6 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
@@ -80,6 +86,26 @@ public sealed class GatewayConsoleIamAdminTests
         Assert.Equal("user-001", body.Items.Single().UserId);
     }
 
+    [Fact]
+    public async Task Current_principal_permission_stores_authorization_result_in_http_context_items()
+    {
+        var auth = new DistinctGatewayAuthorizationClient();
+        var iam = new FakeGatewayIamAuthClient();
+        var context = CreateAuthenticatedHttpContext(GatewayTestTokens.ValidAccessToken());
+
+        var authorized = await GatewayAuthorization.RequireCurrentPrincipalPermissionAsync(
+            context,
+            iam,
+            auth,
+            "iam.users.read",
+            CancellationToken.None);
+
+        Assert.NotNull(authorized);
+        var item = Assert.IsType<GatewayAuthorizationResult>(context.Items[GatewayAuthorization.PrincipalItemKey]);
+        Assert.Equal("auth-principal", item.PrincipalId);
+        Assert.Equal("auth-login", item.LoginName);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         FakeGatewayAuthorizationClient auth,
         FakeGatewayIamAuthClient iam,
@@ -93,6 +119,64 @@ public sealed class GatewayConsoleIamAdminTests
             services.RemoveAll<IGatewayIamAdminClient>();
             services.AddSingleton<IGatewayIamAdminClient>(admin);
         }));
+
+    private static DefaultHttpContext CreateAuthenticatedHttpContext(string bearerToken)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services
+            .AddAuthentication(TestAuthHandler.SchemeName)
+            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+        services.Configure<TestAuthOptions>(options => options.BearerToken = bearerToken);
+
+        return new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider()
+        };
+    }
+
+    private sealed class TestAuthOptions
+    {
+        public string BearerToken { get; set; } = string.Empty;
+    }
+
+    private sealed class TestAuthHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder,
+        IOptions<TestAuthOptions> testOptions)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    {
+        public const string SchemeName = "Test";
+
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        {
+            var properties = new AuthenticationProperties();
+            properties.StoreTokens(
+            [
+                new AuthenticationToken
+                {
+                    Name = "access_token",
+                    Value = testOptions.Value.BearerToken
+                }
+            ]);
+
+            var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "user-admin")], SchemeName);
+            var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), properties, SchemeName);
+            return Task.FromResult(AuthenticateResult.Success(ticket));
+        }
+    }
+
+    private sealed class DistinctGatewayAuthorizationClient : IGatewayAuthorizationClient
+    {
+        public Task<GatewayAuthorizationResult> CheckAsync(
+            string bearerToken,
+            GatewayPermissionRequirement requirement,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(GatewayAuthorizationResult.Allowed("auth-principal", "user", "auth-login"));
+        }
+    }
 
     private sealed class FakeGatewayIamAuthClient : IGatewayIamAuthClient
     {

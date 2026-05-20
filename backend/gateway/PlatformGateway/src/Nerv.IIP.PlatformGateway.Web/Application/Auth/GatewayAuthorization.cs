@@ -152,7 +152,7 @@ public static class GatewayAuthorization
             return null;
         }
 
-        context.Items[PrincipalItemKey] = principal;
+        context.Items[PrincipalItemKey] = result;
         return (bearerToken, principal);
     }
 }
