@@ -4,6 +4,7 @@ import type { ListConsoleInstancesData } from './generated/types.gen'
 import {
   createConsoleIamRoleMutationOptions,
   createConsoleIamUserMutationOptions,
+  disableConsoleIamUserMutationOptions,
   listConsoleIamPermissionsQueryOptions,
   listConsoleIamRolesQueryOptions,
   listConsoleIamSessionsQueryOptions,
@@ -40,6 +41,7 @@ describe('generated API client contract', () => {
     expect(listConsoleIamUsersQueryOptions).toBeTypeOf('function')
     expect(createConsoleIamUserMutationOptions).toBeTypeOf('function')
     expect(updateConsoleIamUserMutationOptions).toBeTypeOf('function')
+    expect(disableConsoleIamUserMutationOptions).toBeTypeOf('function')
     expect(resetConsoleIamUserPasswordMutationOptions).toBeTypeOf('function')
     expect(listConsoleIamRolesQueryOptions).toBeTypeOf('function')
     expect(createConsoleIamRoleMutationOptions).toBeTypeOf('function')
