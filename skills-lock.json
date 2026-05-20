@@ -47,7 +47,7 @@
       "source": "MangMax/doc-steward",
       "sourceType": "github",
       "skillPath": "skills/documentation/SKILL.md",
-      "computedHash": "002cf9f2fd3465a445a797777ae6470146d25d9b6e0afd66a4edbfe09ba4d2a5"
+      "computedHash": "4606d147a5ec9f2be0cb22a10b06aa8d782b57096d9a15a95bf031697aba279e"
     },
     "draw-ui": {
       "source": "oil-oil/draw-ui",
