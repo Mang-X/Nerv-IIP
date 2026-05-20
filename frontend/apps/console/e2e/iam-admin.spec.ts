@@ -212,10 +212,13 @@ if (isVitest) {
     await expectNonPrimaryBadge(page.getByText('Active').first())
 
     await page.goto('/iam/users')
+    await expectPrimaryActionButtonIsBlue(page.getByRole('button', { name: 'Create user' }))
+    await expectFocusedControlUsesBlueRing(page.getByRole('searchbox', { name: 'Search users' }))
     await page.getByRole('button', { name: 'Create user' }).click()
     await expect(page.getByRole('dialog', { name: 'Create user' })).toBeVisible()
 
     await page.goto('/iam/roles')
+    await expectPrimaryActionButtonIsBlue(page.getByRole('button', { name: 'Create role' }))
     await page.getByRole('button', { name: 'Create role' }).click()
     await expect(page.getByRole('dialog', { name: 'Create role' })).toBeVisible()
 
@@ -544,8 +547,49 @@ async function expectNonPrimaryBadge(badge: Locator) {
   expect(colorData.background).not.toBe('rgb(0, 72, 184)')
 }
 
+async function expectPrimaryActionButtonIsBlue(button: Locator) {
+  const colorData = await button.evaluate((element) => {
+    const style = window.getComputedStyle(element)
+    return {
+      background: style.backgroundColor,
+      borderColor: style.borderColor,
+      color: style.color,
+    }
+  })
+
+  expect(
+    isBlueRgb(colorData.background) || isBlueRgb(colorData.borderColor),
+    JSON.stringify(colorData),
+  ).toBe(true)
+  expect(
+    isTransparent(colorData.borderColor) || isBlueRgb(colorData.borderColor),
+    JSON.stringify(colorData),
+  ).toBe(true)
+  expect(isLightRgb(colorData.color), JSON.stringify(colorData)).toBe(true)
+}
+
+async function expectFocusedControlUsesBlueRing(control: Locator) {
+  await control.focus()
+  await expect(control).toBeFocused()
+
+  const focusData = await control.evaluate((element) => {
+    const style = window.getComputedStyle(element)
+    return {
+      borderColor: style.borderColor,
+      boxShadow: style.boxShadow,
+      outlineColor: style.outlineColor,
+    }
+  })
+
+  expect(
+    isBlueRgb(focusData.borderColor) ||
+      isBlueRgb(focusData.boxShadow) ||
+      isBlueRgb(focusData.outlineColor),
+  ).toBe(true)
+}
+
 function isBlueRgb(value: string) {
-  const channels = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(value)
+  const channels = /rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(value)
   if (!channels) {
     return value.includes('oklch') || value.includes('color')
   }
@@ -554,6 +598,22 @@ function isBlueRgb(value: string) {
   const green = Number(channels[2])
   const blue = Number(channels[3])
   return blue > red && blue >= green
+}
+
+function isLightRgb(value: string) {
+  const channels = /rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(value)
+  if (!channels) {
+    return value.includes('oklch') || value.includes('color')
+  }
+
+  const red = Number(channels[1])
+  const green = Number(channels[2])
+  const blue = Number(channels[3])
+  return red >= 240 && green >= 240 && blue >= 240
+}
+
+function isTransparent(value: string) {
+  return value === 'transparent' || value === 'rgba(0, 0, 0, 0)' || value.endsWith('/ 0)')
 }
 
 function envelope<T>(data: T) {
