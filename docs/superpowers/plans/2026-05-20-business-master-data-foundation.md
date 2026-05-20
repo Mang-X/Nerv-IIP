@@ -366,6 +366,7 @@ git commit -m "feat: persist business master data"
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListDepartmentsQuery.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListTeamsQuery.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListPersonnelSkillsQuery.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListWorkCalendarsQuery.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListResourcesQuery.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/MasterData/MasterDataEndpoints.cs`
 - Create: `backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataEndpointTests.cs`
@@ -390,6 +391,7 @@ Cover these routes and permissions:
 | `GET /api/business/v1/master-data/personnel-skills` | `business.masterdata.resources.read` |
 | `POST /api/business/v1/master-data/work-centers` | `business.masterdata.resources.manage` |
 | `POST /api/business/v1/master-data/work-calendars` | `business.masterdata.resources.manage` |
+| `GET /api/business/v1/master-data/work-calendars` | `business.masterdata.resources.read` |
 | `POST /api/business/v1/master-data/device-assets` | `business.masterdata.resources.manage` |
 | `GET /api/business/v1/master-data/resources` | `business.masterdata.resources.read` |
 
@@ -413,7 +415,7 @@ public static class BusinessPermissionCodes
 
 - [ ] **Step 3: Implement commands and queries**
 
-Requests must include `organizationId` and `environmentId`. List queries must support `keyword`, `status`, `page`, `pageSize`; partner and resource lists also support `partnerType` or `resourceType`. Department lists support `parentDepartmentCode`, team lists support `departmentCode`, and personnel skill lists support `userId`, `skillCode` and `validOn`.
+Requests must include `organizationId` and `environmentId`. List queries must support `keyword`, `status`, `page`, `pageSize`; partner and resource lists also support `partnerType` or `resourceType`. Department lists support `parentDepartmentCode`, team lists support `departmentCode`, personnel skill lists support `userId`, `skillCode` and `validOn`, and work calendar lists support `keyword` and `status`.
 
 - [ ] **Step 4: Seed permissions in IAM**
 
@@ -428,7 +430,7 @@ dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterD
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore --filter FullyQualifiedName~IamFoundationTests
 ```
 
-Expected: PASS. OpenAPI test confirms the fourteen operation IDs are stable and all endpoints require authorization.
+Expected: PASS. OpenAPI test confirms the fifteen operation IDs are stable and all endpoints require authorization.
 
 - [ ] **Step 6: Commit API surface**
 

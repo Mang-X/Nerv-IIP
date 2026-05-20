@@ -302,6 +302,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | ListDepartmentsQuery | keyword, status, page | DepartmentListItemResponse。 |
 | ListTeamsQuery | departmentId, keyword, status, page | TeamListItemResponse。 |
 | ListPersonnelSkillsQuery | userId, skillCode, validOn, page | PersonnelSkillResponse。 |
+| ListWorkCalendarsQuery | keyword, status, page | WorkCalendarListItemResponse。 |
 | ListResourcesQuery | resourceType, keyword, status, page | BusinessResourceResponse。 |
 | ListEngineeringDocumentsQuery | documentType, keyword, status, page | EngineeringDocumentResponse。 |
 | ListEngineeringBomsQuery | engineeringItemId, status, page | EngineeringBomVersionResponse。 |
@@ -332,6 +333,8 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 
 ### API Endpoints
 
+本表是业务平台公开 API 的规范摘要，覆盖本 spec 中列出的命令与查询入口；各 implementation plan 内的路由表负责冻结对应切片执行时的文件、测试、权限 seed 和 OpenAPI 细节。
+
 | 路径/方法 | 命令/查询 | 认证/鉴权 | 幂等/一致性说明 |
 | --- | --- | --- | --- |
 | `POST /api/business/v1/master-data/skus` | CreateSkuCommand | `business.masterdata.products.manage` | code 唯一。 |
@@ -346,6 +349,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `GET /api/business/v1/master-data/personnel-skills` | ListPersonnelSkillsQuery | `business.masterdata.resources.read` | 只读分页查询。 |
 | `POST /api/business/v1/master-data/work-centers` | CreateWorkCenterCommand | `business.masterdata.resources.manage` | code 唯一。 |
 | `POST /api/business/v1/master-data/work-calendars` | CreateWorkCalendarCommand | `business.masterdata.resources.manage` | code 唯一。 |
+| `GET /api/business/v1/master-data/work-calendars` | ListWorkCalendarsQuery | `business.masterdata.resources.read` | 只读分页查询。 |
 | `POST /api/business/v1/master-data/device-assets` | RegisterDeviceAssetCommand | `business.masterdata.resources.manage` | code 唯一；不保存控制密钥。 |
 | `GET /api/business/v1/master-data/resources` | ListResourcesQuery | `business.masterdata.resources.read` | 聚合资源查询。 |
 | `POST /api/business/v1/engineering/documents` | RegisterEngineeringDocumentCommand | `business.engineering.documents.manage` | fileId+version。 |
@@ -409,6 +413,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `POST /api/business/v1/mes/schedules/run` | RunRuleScheduleCommand | `business.mes.schedules.manage` | scheduleVersion。 |
 | `GET /api/business/v1/mes/schedules/gantt` | GetScheduleGanttQuery | `business.mes.schedules.read` | 只读甘特数据。 |
 | `POST /api/business/v1/iiot/tags` | CreateTelemetryTagCommand | `business.iiot.tags.manage` | device+tag key。 |
+| `GET /api/business/v1/iiot/tags` | ListTelemetryTagsQuery | `business.iiot.telemetry.read` | 只读分页查询。 |
 | `POST /api/business/v1/iiot/samples` | RecordTelemetrySampleCommand | `business.iiot.telemetry.write` | tagId+sourceSequence。 |
 | `POST /api/business/v1/iiot/alarms` | RaiseAlarmCommand | `business.iiot.alarms.write` | externalAlarmId。 |
 | `POST /api/business/v1/iiot/alarms/{alarmId}/clear` | ClearAlarmCommand | `business.iiot.alarms.write` | alarmId。 |
@@ -422,6 +427,8 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `POST /api/business/v1/maintenance/inspections` | RecordMaintenanceInspectionCommand | `business.maintenance.plans.manage` | planId+occurredAtUtc。 |
 
 ## Integration Events
+
+所有集成事件遵循 [ADR 0011](../../adr/0011-integration-event-contract-baseline.md) 定义的 envelope 格式，`messageId`、`eventType`、`schemaVersion`、`occurredAtUtc` 和 `payload` 必填；下表只列业务 payload 的关键附加字段。
 
 | 事件 | 发布方 | 主要 payload | 消费方 |
 | --- | --- | --- | --- |
