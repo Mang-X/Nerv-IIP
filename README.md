@@ -34,6 +34,9 @@ Nerv-IIP 是一个从 0 到 1 规划的原生 AI 应用管理平台，可面向�
 - 代码仓库：[Mang-X/Nerv-IIP](https://github.com/Mang-X/Nerv-IIP)
 - 当前开发分支：`codex/console-auth-shadcn-baseline` 已完成 IAM Persistent Auth Foundation、Gateway-wide permission enforcement、pnpm 11.1.2 基线和 Console Auth + shadcn-vue 设计规格的衔接说明。
 - 架构总览：[docs/architecture/context-map.md](docs/architecture/context-map.md)
+- 业务平台领域架构：[docs/architecture/business-platform-domain-architecture.md](docs/architecture/business-platform-domain-architecture.md)
+- 业务平台完整规格：[docs/superpowers/specs/2026-05-20-business-platform-domain-design.md](docs/superpowers/specs/2026-05-20-business-platform-domain-design.md)
+- 业务平台实施计划入口：[docs/superpowers/plans/2026-05-20-business-main-platform-integration-readiness.md](docs/superpowers/plans/2026-05-20-business-main-platform-integration-readiness.md)
 - 仓库结构：[docs/architecture/repo-layout.md](docs/architecture/repo-layout.md)
 - 实施状态：[docs/architecture/implementation-readiness.md](docs/architecture/implementation-readiness.md)
 - 前端结构：[docs/architecture/frontend-structure.md](docs/architecture/frontend-structure.md)
@@ -131,39 +134,50 @@ Nerv-IIP/
 8. docs/adr/0008-multi-target-deployment-and-aspire-apphost.md
 9. docs/adr/0009-database-migration-release-and-seed-strategy.md
 10. docs/adr/0010-automation-script-trusted-execution-governance.md
+11. docs/adr/0011-integration-event-contract-baseline.md
+12. docs/adr/0012-business-platform-domain-layering.md
 
 ### 架构说明
 
 1. docs/architecture/repo-layout.md
 2. docs/architecture/context-map.md
-3. docs/architecture/glossary.md
-4. docs/architecture/caching-baseline.md
-5. docs/architecture/iam-authentication-baseline.md
-6. docs/architecture/platform-sdk-baseline.md
-7. docs/architecture/file-storage-baseline.md
-8. docs/architecture/notification-baseline.md
-9. docs/architecture/backend-cleanddd-netcorepal-guidelines.md
-10. docs/architecture/core-domain-model-v1.md
-11. docs/architecture/connector-platform-protocol-v1.md
-12. docs/architecture/first-vertical-slice.md
-13. docs/architecture/second-vertical-slice-ops.md
-14. docs/architecture/third-vertical-slice-console.md
-15. docs/architecture/frontend-structure.md
-16. docs/architecture/api-contract-and-codegen.md
-17. docs/architecture/ai-boundaries.md
-18. docs/architecture/knowledge-source-lifecycle.md
-19. docs/architecture/backend-bootstrap-plan.md
-20. docs/architecture/implementation-readiness.md
-21. docs/architecture/deployment-baseline.md
-22. docs/architecture/technology-stack-references.md
-23. docs/architecture/fourth-vertical-slice-real-infra.md
-24. docs/architecture/frontend-design-system-planning.md
-25. docs/architecture/database-schema-conventions.md
-26. docs/architecture/database-schema-catalog.md
-27. docs/architecture/database-release-runbook.md
-28. docs/architecture/script-automation-governance.md
-29. docs/architecture/observability-baseline.md
-30. docs/architecture/connector-host-machine-auth.md
+3. docs/architecture/business-platform-domain-architecture.md
+4. docs/architecture/glossary.md
+5. docs/architecture/caching-baseline.md
+6. docs/architecture/iam-authentication-baseline.md
+7. docs/architecture/platform-sdk-baseline.md
+8. docs/architecture/file-storage-baseline.md
+9. docs/architecture/notification-baseline.md
+10. docs/architecture/backend-cleanddd-netcorepal-guidelines.md
+11. docs/architecture/core-domain-model-v1.md
+12. docs/architecture/connector-platform-protocol-v1.md
+13. docs/architecture/first-vertical-slice.md
+14. docs/architecture/second-vertical-slice-ops.md
+15. docs/architecture/third-vertical-slice-console.md
+16. docs/architecture/frontend-structure.md
+17. docs/architecture/api-contract-and-codegen.md
+18. docs/architecture/ai-boundaries.md
+19. docs/architecture/knowledge-source-lifecycle.md
+20. docs/architecture/backend-bootstrap-plan.md
+21. docs/architecture/implementation-readiness.md
+22. docs/architecture/deployment-baseline.md
+23. docs/architecture/technology-stack-references.md
+24. docs/architecture/fourth-vertical-slice-real-infra.md
+25. docs/architecture/frontend-design-system-planning.md
+26. docs/architecture/database-schema-conventions.md
+27. docs/architecture/database-schema-catalog.md
+28. docs/architecture/database-release-runbook.md
+29. docs/architecture/script-automation-governance.md
+30. docs/architecture/observability-baseline.md
+31. docs/architecture/connector-host-machine-auth.md
+
+### 规格设计
+
+1. docs/superpowers/specs/2026-05-17-iam-persistent-auth-foundation-design.md
+2. docs/superpowers/specs/2026-05-17-release-grade-persistence-foundation-design.md
+3. docs/superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md
+4. docs/superpowers/specs/2026-05-18-console-auth-shadcn-design.md
+5. docs/superpowers/specs/2026-05-20-business-platform-domain-design.md
 
 ### 实施计划
 
@@ -174,6 +188,16 @@ Nerv-IIP/
 5. docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md
 6. docs/superpowers/plans/2026-05-17-schema-governance-migration-hardening.md
 7. docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md
+8. docs/superpowers/plans/2026-05-20-business-main-platform-integration-readiness.md
+9. docs/superpowers/plans/2026-05-20-business-master-data-foundation.md
+10. docs/superpowers/plans/2026-05-20-business-product-engineering-mvp.md
+11. docs/superpowers/plans/2026-05-20-business-common-capability-foundation.md
+12. docs/superpowers/plans/2026-05-20-business-demand-planning-mvp.md
+13. docs/superpowers/plans/2026-05-20-business-erp-procurement-sales-finance-mvp.md
+14. docs/superpowers/plans/2026-05-20-business-wms-execution-mvp.md
+15. docs/superpowers/plans/2026-05-20-business-mes-execution-mvp.md
+16. docs/superpowers/plans/2026-05-20-business-iiot-maintenance-mvp.md
+17. docs/superpowers/plans/2026-05-20-business-full-chain-acceptance.md
 
 ## 里程碑
 

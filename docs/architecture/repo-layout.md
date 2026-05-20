@@ -21,6 +21,7 @@ Nerv-IIP/
     packages/
   backend/
     services/
+      Business/
     gateway/
     common/
     tests/
@@ -46,7 +47,7 @@ Nerv-IIP/
 
 ### backend
 
-- services：平台领域服务，如 IAM、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge。
+- services：平台领域服务，如 IAM、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge；业务平台扩展服务在单仓过渡阶段只能放在 `services/Business/{Context}` 下。
 - gateway：PlatformGateway 与前端聚合接口。
 - common：窄共享库，如 Contracts、Sdk、Caching、Observability、Testing。
 - tests：后端测试项目与测试宿主。
@@ -60,6 +61,8 @@ Nerv-IIP/
 - Contracts 只在确有跨进程共享契约需求时才按需拆出；Sdk 只放公开客户端能力，不放服务端领域模型或 Infrastructure 实现。
 - backend/tests 只放跨服务测试宿主与集成测试；服务自身测试优先放在各自目录下的 tests。
 - 示例：backend/services/AppHub/src/Nerv.IIP.AppHub.Web、backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web、backend/services/AppHub/src/Nerv.IIP.AppHub.Domain、backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure。
+- 业务平台扩展服务示例：backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web、backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain、backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web。
+- 主平台服务不得引用 backend/services/Business 下的 Web、Domain、Infrastructure 项目；业务服务只能通过 Platform SDK、公开 Contracts、OpenAPI、IntegrationEvent 和 IAM 授权上下文消费主平台能力。
 
 ### connector-hosts
 
@@ -92,6 +95,7 @@ Nerv-IIP/
 7. 主平台代码不得引用 connector-hosts 下的项目；Connector Host 也不得引用 backend/services 或 backend/gateway 下的服务实现项目。
 8. backend/common/Sdk 下的项目不得引用 backend/services 或 backend/gateway 下的 Web、Domain、Infrastructure 项目。
 9. 每个平台服务不得各自创建长期维护的 Aspire AppHost；统一平台编排入口归 infra/aspire。
+10. 业务平台扩展不得把 PDM/PLM、MPS/MRP、MES、WMS、ERP、IIoT 或 CMMS 领域规则写入 PlatformGateway、IAM、AppHub、Ops 或主平台 console。
 
 ## 非目标
 
