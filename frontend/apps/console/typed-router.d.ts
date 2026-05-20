@@ -52,6 +52,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/iam/sessions/': RouteRecordInfo<
+      '/iam/sessions/',
+      '/iam/sessions',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/iam/users/': RouteRecordInfo<
       '/iam/users/',
       '/iam/users',
@@ -101,6 +108,12 @@ declare module 'vue-router/auto-routes' {
     'apps/console/src/pages/iam/roles/index.vue': {
       routes:
         | '/iam/roles/'
+      views:
+        | never
+    }
+    'apps/console/src/pages/iam/sessions/index.vue': {
+      routes:
+        | '/iam/sessions/'
       views:
         | never
     }
