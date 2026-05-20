@@ -15,6 +15,30 @@ The previous local `UiButton`, `UiPanel` and `UiBadge` primitives were migrated 
 3. Do not add large product workflows as incidental backend work; create a focused frontend/product spec when the workflow changes information architecture, navigation, authorization, or visual density.
 4. API client generation and frontend quality gates remain allowed when backend OpenAPI changes require them.
 
+## Phase 8 Current Baseline
+
+Phase 8 establishes the IAM admin console baseline as a blue Calm Control Plane: restrained surfaces, blue primary actions, quiet neutral structure and high-density operational affordances. The baseline remains Tailwind CSS v4, shadcn-vue `reka-nova`, Reka primitives, lucide icons and source-owned components in `frontend/packages/ui`.
+
+The shared UI package now owns the table, dialog, alert-dialog, checkbox, select, pagination and empty state primitives needed for IAM administration screens. Console app code should treat these as product infrastructure rather than page-local snippets.
+
+## Token Contract
+
+The console CSS token contract lives in `frontend/apps/console/src/assets/main.css`. Phase 8 pins semantic shadcn tokens to blue control-plane values for `--primary`, `--ring`, `--accent`, sidebar active states and chart accents while preserving the legacy token block used by existing console screens.
+
+Tailwind v4 `@theme inline` remains required so semantic utilities such as `bg-primary`, `text-muted-foreground`, `border-border` and `ring-ring` resolve from the same contract. Token changes should update the Vitest contract in `frontend/packages/ui/src/design-system.contract.test.ts` before changing the CSS.
+
+## Component Governance
+
+shadcn-vue components are managed through the CLI and reviewed after generation. Generated files may be adjusted for this workspace's package-local import paths, but teams should not hand-roll parallel versions of registry components or fork visual variants inside console pages.
+
+The `@nerv-iip/ui` barrel is the public boundary for console applications. New shadcn primitives should be exported there before application code consumes them, keeping registry churn and import path changes inside the UI package.
+
+## IAM Admin Patterns
+
+IAM administration screens should compose dense, task-focused views from the shared primitives: tables for users, roles and permissions; dialogs for create/edit flows; alert dialogs for destructive confirmations; selects and checkboxes for scoped choices; pagination for server-backed lists; and empty states for filtered or first-run conditions.
+
+Console app code must import these controls from `@nerv-iip/ui`, not from `frontend/packages/ui/src/components` or direct shadcn paths. Page-specific styling should use semantic tokens and layout classes only, leaving component color, typography, radius and focus behavior governed by the shared baseline.
+
 ## Future Spec Triggers
 
 Create a separate Superpowers design spec before changing any of these decisions:
