@@ -96,6 +96,89 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
+    public async Task In_memory_role_management_creates_role_updates_permissions_and_lists_catalog()
+    {
+        var catalogResponse = await _client.GetAsync("/api/iam/v1/permissions");
+        catalogResponse.EnsureSuccessStatusCode();
+        var catalog = await ReadResponseDataAsync<PermissionCatalogResponse>(catalogResponse);
+        Assert.Contains(catalog!.Items, item => item.Code == "iam.roles.manage" && item.Domain == "iam");
+
+        var create = await _client.PostAsJsonAsync(
+            "/api/iam/v1/roles",
+            new { roleName = "Operator", permissionCodes = new[] { "apphub.instances.read", "ops.tasks.read" } });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var created = await ReadResponseDataAsync<RoleResponse>(create);
+
+        Assert.StartsWith("role-", created!.RoleId, StringComparison.Ordinal);
+        Assert.Equal("Operator", created.RoleName);
+        Assert.Equal(["apphub.instances.read", "ops.tasks.read"], created.PermissionCodes.Order().ToArray());
+
+        var patch = await _client.PatchAsJsonAsync(
+            $"/api/iam/v1/roles/{created.RoleId}/permissions",
+            new { permissionCodes = new[] { "iam.users.read" } });
+        patch.EnsureSuccessStatusCode();
+        var updated = await ReadResponseDataAsync<RoleResponse>(patch);
+
+        Assert.Equal(created.RoleId, updated!.RoleId);
+        Assert.Equal(["iam.users.read"], updated.PermissionCodes);
+    }
+
+    [Fact]
+    public async Task In_memory_role_management_rejects_unknown_permissions_and_duplicate_names()
+    {
+        var create = await _client.PostAsJsonAsync(
+            "/api/iam/v1/roles",
+            new { roleName = "Auditor", permissionCodes = new[] { "iam.users.read" } });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+
+        var duplicate = await _client.PostAsJsonAsync(
+            "/api/iam/v1/roles",
+            new { roleName = "auditor", permissionCodes = Array.Empty<string>() });
+        Assert.Equal(HttpStatusCode.BadRequest, duplicate.StatusCode);
+
+        var unknown = await _client.PostAsJsonAsync(
+            "/api/iam/v1/roles",
+            new { roleName = "BadRole", permissionCodes = new[] { "iam.unknown" } });
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_reset_password_changes_login_secret_and_revokes_sessions()
+    {
+        var create = await _client.PostAsJsonAsync(
+            "/api/iam/v1/users",
+            new { loginName = "reset-user", email = "reset-user@nerv-iip.local", password = "OldPassword123!" });
+        create.EnsureSuccessStatusCode();
+        var user = await ReadResponseDataAsync<UserResponse>(create);
+
+        var login = await _client.PostAsJsonAsync(
+            "/api/iam/v1/auth/login",
+            new { loginName = "reset-user", password = "OldPassword123!" });
+        login.EnsureSuccessStatusCode();
+        var session = await ReadResponseDataAsync<AuthResponse>(login);
+
+        var reset = await _client.PostAsJsonAsync(
+            $"/api/iam/v1/users/{user!.UserId}/reset-password",
+            new { newPassword = "NewPassword123!" });
+        Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+
+        _client.DefaultRequestHeaders.Authorization = new("Bearer", session!.AccessToken);
+        var staleMe = await _client.GetAsync("/api/iam/v1/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, staleMe.StatusCode);
+        _client.DefaultRequestHeaders.Authorization = null;
+
+        var oldLogin = await _client.PostAsJsonAsync(
+            "/api/iam/v1/auth/login",
+            new { loginName = "reset-user", password = "OldPassword123!" });
+        Assert.Equal(HttpStatusCode.Unauthorized, oldLogin.StatusCode);
+
+        var newLogin = await _client.PostAsJsonAsync(
+            "/api/iam/v1/auth/login",
+            new { loginName = "reset-user", password = "NewPassword123!" });
+        newLogin.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task User_list_supports_page_filter_and_sort_parameters()
     {
         var suffix = Guid.NewGuid().ToString("N");
@@ -165,6 +248,9 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
     private sealed record PagedListResponse<T>(int PageIndex, int PageSize, int TotalCount, IReadOnlyList<T> Items);
     private sealed record UserResponse(string UserId, string LoginName, string Email, bool Enabled);
+    private sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
+    private sealed record PermissionCatalogResponse(IReadOnlyList<PermissionCatalogItemResponse> Items);
+    private sealed record PermissionCatalogItemResponse(string Code, string Domain, string Description, bool Seeded);
     private sealed record MeResponse(
         string UserId,
         string LoginName,

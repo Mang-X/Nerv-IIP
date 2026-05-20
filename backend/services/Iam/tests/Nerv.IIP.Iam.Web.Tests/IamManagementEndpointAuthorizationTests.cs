@@ -10,9 +10,11 @@ public sealed class IamManagementEndpointAuthorizationTests
     [InlineData("POST", "/api/iam/v1/users")]
     [InlineData("PATCH", "/api/iam/v1/users/user-admin")]
     [InlineData("POST", "/api/iam/v1/users/user-admin/disable")]
+    [InlineData("POST", "/api/iam/v1/users/user-admin/reset-password")]
     [InlineData("GET", "/api/iam/v1/roles")]
     [InlineData("POST", "/api/iam/v1/roles")]
     [InlineData("PATCH", "/api/iam/v1/roles/role-platform-admin/permissions")]
+    [InlineData("GET", "/api/iam/v1/permissions")]
     public async Task Postgres_management_endpoints_reject_anonymous_callers_before_touching_persistence(string method, string path)
     {
         var environment = PreserveEnvironment(

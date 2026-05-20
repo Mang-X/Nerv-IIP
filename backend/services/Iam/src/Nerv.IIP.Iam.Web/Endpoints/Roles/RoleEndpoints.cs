@@ -1,6 +1,7 @@
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Application;
+using Nerv.IIP.Iam.Web.Application.Permissions;
 using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.Iam.Web.Application.Roles;
 using NetCorePal.Extensions.Dto;
@@ -41,7 +42,7 @@ public sealed class ListRolesEndpoint(
 [AllowAnonymous]
 public sealed class CreateRoleEndpoint(
     IIamPermissionAuthorizer authorizer,
-    IIamRoleApplicationService roles) : EndpointWithoutRequest<ResponseData<RoleMutationResponse>>
+    IIamRoleApplicationService roles) : EndpointWithoutRequest<ResponseData<RoleResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -50,14 +51,10 @@ public sealed class CreateRoleEndpoint(
             return;
         }
 
-        var result = await roles.CreateRoleAsync(ct);
-        if (!result.IsImplemented)
-        {
-            await RoleEndpointResults.WriteNotImplementedAsync(HttpContext, result.Detail ?? "Role creation is not implemented.", ct);
-            return;
-        }
-
-        await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status201Created, result.Response!, ct);
+        var req = await HttpContext.Request.ReadFromJsonAsync<CreateRoleRequest>(ct)
+            ?? throw new BadHttpRequestException("Request body is required.");
+        var response = await roles.CreateRoleAsync(req.RoleName, req.PermissionCodes, ct);
+        await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status201Created, response, ct);
     }
 }
 
@@ -65,7 +62,7 @@ public sealed class CreateRoleEndpoint(
 [AllowAnonymous]
 public sealed class PatchRolePermissionsEndpoint(
     IIamPermissionAuthorizer authorizer,
-    IIamRoleApplicationService roles) : EndpointWithoutRequest<ResponseData<RoleMutationResponse>>
+    IIamRoleApplicationService roles) : EndpointWithoutRequest<ResponseData<RoleResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -74,24 +71,25 @@ public sealed class PatchRolePermissionsEndpoint(
             return;
         }
 
-        var result = await roles.PatchRolePermissionsAsync(Route<string>("roleId")!, ct);
-        if (!result.IsImplemented)
-        {
-            await RoleEndpointResults.WriteNotImplementedAsync(
-                HttpContext,
-                result.Detail ?? "Role permission updates are not implemented.",
-                ct);
-            return;
-        }
-
-        await Send.OkAsync(result.Response!.AsResponseData(), ct);
+        var req = await HttpContext.Request.ReadFromJsonAsync<PatchRolePermissionsRequest>(ct)
+            ?? throw new BadHttpRequestException("Request body is required.");
+        var response = await roles.PatchRolePermissionsAsync(Route<string>("roleId")!, req.PermissionCodes, ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
 
-internal static class RoleEndpointResults
+[HttpGet("/api/iam/v1/permissions")]
+[AllowAnonymous]
+public sealed class ListPermissionCatalogEndpoint(IIamPermissionAuthorizer authorizer)
+    : EndpointWithoutRequest<ResponseData<PermissionCatalogResponse>>
 {
-    public static async Task WriteNotImplementedAsync(HttpContext context, string detail, CancellationToken cancellationToken)
+    public override async Task HandleAsync(CancellationToken ct)
     {
-        await ResponseDataEndpointResults.WriteErrorAsync(context, StatusCodes.Status501NotImplemented, detail, cancellationToken);
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.roles.read", ct))
+        {
+            return;
+        }
+
+        await Send.OkAsync(IamPermissionCatalog.List().AsResponseData(), ct);
     }
 }

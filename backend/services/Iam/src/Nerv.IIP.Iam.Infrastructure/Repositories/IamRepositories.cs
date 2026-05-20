@@ -65,6 +65,8 @@ public sealed class UserRepository(ApplicationDbContext context)
 
 public interface IRoleRepository : IRepository<Role, RoleId>
 {
+    Task<Role?> GetByIdAsync(RoleId roleId, CancellationToken cancellationToken = default);
+    Task<Role?> GetByNameAsync(string roleName, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Role>> ListNotDeletedAsync(CancellationToken cancellationToken = default);
 }
 
@@ -72,6 +74,23 @@ public sealed class RoleRepository(ApplicationDbContext context)
     : RepositoryBase<Role, RoleId, ApplicationDbContext>(context), IRoleRepository
 {
     private static readonly Deleted NotDeleted = new(false);
+
+    public async Task<Role?> GetByIdAsync(RoleId roleId, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Roles
+            .Include(x => x.Permissions)
+            .SingleOrDefaultAsync(x => x.Id == roleId && x.Deleted == NotDeleted, cancellationToken);
+    }
+
+    public async Task<Role?> GetByNameAsync(string roleName, CancellationToken cancellationToken = default)
+    {
+        var normalizedRoleName = roleName.ToLower();
+        return await DbContext.Roles
+            .Include(x => x.Permissions)
+            .SingleOrDefaultAsync(
+                x => x.RoleName.ToLower() == normalizedRoleName && x.Deleted == NotDeleted,
+                cancellationToken);
+    }
 
     public async Task<IReadOnlyList<Role>> ListNotDeletedAsync(CancellationToken cancellationToken = default)
     {
@@ -160,6 +179,10 @@ public interface IUserSessionRepository : IRepository<UserSession, UserSessionId
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<UserSession>> ListAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<UserSession>> ListActiveByUserIdAsync(
+        UserId userId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class UserSessionRepository(ApplicationDbContext context)
@@ -194,6 +217,17 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
     {
         return await DbContext.UserSessions
             .AsNoTracking()
+            .OrderByDescending(x => x.IssuedAtUtc)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<UserSession>> ListActiveByUserIdAsync(
+        UserId userId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        return await DbContext.UserSessions
+            .Where(x => x.UserId == userId && x.RevokedAtUtc == null && x.ExpiresAtUtc > now)
             .OrderByDescending(x => x.IssuedAtUtc)
             .ToListAsync(cancellationToken);
     }

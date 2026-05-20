@@ -22,6 +22,8 @@ public interface IIamUserApplicationService
         CancellationToken cancellationToken);
 
     Task DisableUserAsync(string userId, CancellationToken cancellationToken);
+
+    Task ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : IIamUserApplicationService
@@ -61,6 +63,25 @@ public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : 
         return Task.CompletedTask;
     }
 
+    public Task ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(newPassword))
+        {
+            throw new KnownException("New password is required.");
+        }
+
+        try
+        {
+            store.ResetPassword(userId, newPassword);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new KnownException($"User '{userId}' was not found.");
+        }
+
+        return Task.CompletedTask;
+    }
+
     private static UserResponse ToResponse(UserFact user)
     {
         return new UserResponse(user.UserId, user.LoginName, user.Email, user.Enabled);
@@ -69,6 +90,7 @@ public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : 
 
 public sealed class PostgreSqlIamUserApplicationService(
     IUserRepository repository,
+    IUserSessionRepository userSessionRepository,
     IamPasswordService passwordService) : IIamUserApplicationService
 {
     public async Task<PagedListResponse<UserResponse>> ListUsersAsync(IamListQueryOptions options, CancellationToken cancellationToken)
@@ -146,6 +168,26 @@ public sealed class PostgreSqlIamUserApplicationService(
         var user = await repository.GetByIdAsync(new UserId(userId), cancellationToken)
             ?? throw new KnownException($"User '{userId}' was not found.");
         user.Disable();
+    }
+
+    public async Task ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(newPassword))
+        {
+            throw new KnownException("New password is required.");
+        }
+
+        var typedUserId = new UserId(userId);
+        var user = await repository.GetByIdAsync(typedUserId, cancellationToken)
+            ?? throw new KnownException($"User '{userId}' was not found.");
+        user.UpdatePasswordHash(passwordService.Hash(newPassword));
+
+        var now = DateTimeOffset.UtcNow;
+        var sessions = await userSessionRepository.ListActiveByUserIdAsync(typedUserId, now, cancellationToken);
+        foreach (var session in sessions)
+        {
+            session.Revoke(now, "admin-password-reset");
+        }
     }
 
     private static UserResponse ToResponse(User user)

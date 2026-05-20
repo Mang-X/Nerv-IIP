@@ -260,6 +260,99 @@ public sealed class IamPostgresProfileTests
     }
 
     [Fact]
+    public async Task Postgres_profile_persists_role_mutation_permission_catalog_and_password_reset()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            return;
+        }
+
+        var environment = PreserveEnvironment(
+            "Persistence__Provider",
+            "ConnectionStrings__IamDb",
+            "Iam__Seed__Enabled",
+            "Iam__Seed__AdminPassword",
+            "Iam__Seed__ConnectorHostSecret");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
+            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString);
+            Environment.SetEnvironmentVariable("Iam__Seed__Enabled", "true");
+            Environment.SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!");
+            Environment.SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+
+            await using var factory = new WebApplicationFactory<Program>();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                await db.Database.EnsureDeletedAsync();
+
+                var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
+                await migrations.MigrateAsync();
+
+                var seed = scope.ServiceProvider.GetRequiredService<IamSeedService>();
+                await seed.SeedAsync(CancellationToken.None);
+            }
+
+            var client = factory.CreateClient();
+
+            var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+            login.EnsureSuccessStatusCode();
+            var auth = await ReadResponseDataAsync<AuthResponse>(login);
+            client.DefaultRequestHeaders.Authorization = new("Bearer", auth!.AccessToken);
+
+            var catalogResponse = await client.GetAsync("/api/iam/v1/permissions");
+            catalogResponse.EnsureSuccessStatusCode();
+            var catalog = await ReadResponseDataAsync<PermissionCatalogResponse>(catalogResponse);
+            Assert.Contains(catalog!.Items, item => item.Code == "iam.roles.manage" && item.Seeded);
+
+            var createRole = await client.PostAsJsonAsync(
+                "/api/iam/v1/roles",
+                new { roleName = "Ops Operator", permissionCodes = new[] { "iam.roles.read", "ops.tasks.read" } });
+            Assert.Equal(HttpStatusCode.Created, createRole.StatusCode);
+            var role = await ReadResponseDataAsync<RoleResponse>(createRole);
+
+            var patchRole = await client.PatchAsJsonAsync(
+                $"/api/iam/v1/roles/{role!.RoleId}/permissions",
+                new { permissionCodes = new[] { "iam.users.read", "ops.tasks.read" } });
+            patchRole.EnsureSuccessStatusCode();
+
+            var createUser = await client.PostAsJsonAsync(
+                "/api/iam/v1/users",
+                new { loginName = "reset-pg-user", email = "reset-pg-user@nerv-iip.local", password = "OldPassword123!" });
+            Assert.Equal(HttpStatusCode.Created, createUser.StatusCode);
+            var user = await ReadResponseDataAsync<UserResponse>(createUser);
+
+            var reset = await client.PostAsJsonAsync(
+                $"/api/iam/v1/users/{user!.UserId}/reset-password",
+                new { newPassword = "NewPassword123!" });
+            Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var persistedRole = await db.Roles
+                    .Include(x => x.Permissions)
+                    .SingleAsync(x => x.Id.Id == role.RoleId);
+                Assert.Equal(
+                    ["iam.users.read", "ops.tasks.read"],
+                    persistedRole.Permissions.Select(x => x.PermissionCode).Order().ToArray());
+
+                var resetUser = await db.Users.SingleAsync(x => x.Id.Id == user.UserId);
+                Assert.DoesNotContain("OldPassword123!", resetUser.PasswordHash, StringComparison.Ordinal);
+                Assert.DoesNotContain("NewPassword123!", resetUser.PasswordHash, StringComparison.Ordinal);
+            }
+        }
+        finally
+        {
+            RestoreEnvironment(environment);
+        }
+    }
+
+    [Fact]
     public void Postgres_automigrate_is_rejected_outside_development()
     {
         var environment = PreserveEnvironment(
@@ -300,8 +393,21 @@ public sealed class IamPostgresProfileTests
         }
     }
 
+    private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
+    {
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>();
+        Assert.NotNull(envelope);
+        Assert.True(envelope.Success, envelope.Message);
+        Assert.NotNull(envelope.Data);
+        return envelope.Data;
+    }
+
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
     private sealed record UserResponse(string UserId, string LoginName, string Email, bool Enabled);
+    private sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
+    private sealed record PermissionCatalogResponse(IReadOnlyList<PermissionCatalogItemResponse> Items);
+    private sealed record PermissionCatalogItemResponse(string Code, string Domain, string Description, bool Seeded);
     private sealed record MeResponse(
         string UserId,
         string LoginName,

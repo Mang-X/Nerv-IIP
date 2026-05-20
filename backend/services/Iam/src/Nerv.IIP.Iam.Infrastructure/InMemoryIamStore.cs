@@ -161,6 +161,37 @@ public sealed class InMemoryIamStore
         }
     }
 
+    public RoleFact CreateRole(string roleName, IEnumerable<string> permissionCodes)
+    {
+        lock (_gate)
+        {
+            EnsureRoleNameIsUnique(null, roleName);
+
+            var role = new RoleFact(
+                $"role-{Guid.CreateVersion7():N}",
+                roleName,
+                permissionCodes.ToHashSet(StringComparer.Ordinal));
+            _roles.Add(role);
+            return role;
+        }
+    }
+
+    public RoleFact ReplaceRolePermissions(string roleId, IEnumerable<string> permissionCodes)
+    {
+        lock (_gate)
+        {
+            var role = _roles.SingleOrDefault(x => x.RoleId == roleId);
+            if (role is null)
+            {
+                throw new InvalidOperationException($"Role '{roleId}' was not found.");
+            }
+
+            var updated = role with { PermissionCodes = permissionCodes.ToHashSet(StringComparer.Ordinal) };
+            _roles[_roles.IndexOf(role)] = updated;
+            return updated;
+        }
+    }
+
     public UserFact UpdateUser(string userId, string loginName, string email, bool enabled)
     {
         lock (_gate)
@@ -203,6 +234,35 @@ public sealed class InMemoryIamStore
                 SecurityStamp = Guid.NewGuid().ToString("n"),
                 PermissionVersion = user.PermissionVersion + 1
             };
+        }
+    }
+
+    public void ResetPassword(string userId, string newPassword)
+    {
+        lock (_gate)
+        {
+            var user = _users.SingleOrDefault(x => x.UserId == userId);
+            if (user is null)
+            {
+                throw new InvalidOperationException($"User '{userId}' was not found.");
+            }
+
+            _users[_users.IndexOf(user)] = user with
+            {
+                PasswordHash = Hash(newPassword),
+                SecurityStamp = Guid.NewGuid().ToString("n"),
+                PermissionVersion = user.PermissionVersion + 1
+            };
+
+            var now = DateTimeOffset.UtcNow;
+            for (var i = 0; i < _sessions.Count; i++)
+            {
+                var session = _sessions[i];
+                if (session.UserId == userId && session.RevokedAtUtc is null && session.ExpiresAtUtc > now)
+                {
+                    _sessions[i] = session with { RevokedAtUtc = now };
+                }
+            }
         }
     }
 
@@ -252,6 +312,22 @@ public sealed class InMemoryIamStore
         if (_users.Any(x => x.UserId != currentUserId && string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidOperationException($"Email '{email}' is already used.");
+        }
+    }
+
+    public bool RoleNameExists(string roleName)
+    {
+        lock (_gate)
+        {
+            return _roles.Any(x => string.Equals(x.RoleName, roleName, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private void EnsureRoleNameIsUnique(string? currentRoleId, string roleName)
+    {
+        if (_roles.Any(x => x.RoleId != currentRoleId && string.Equals(x.RoleName, roleName, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Role name '{roleName}' is already used.");
         }
     }
 
