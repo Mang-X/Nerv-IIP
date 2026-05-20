@@ -85,9 +85,9 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
       />
     </Field>
 
-    <div class="flex items-center justify-between gap-3 text-sm">
+    <div class="flex items-start justify-between gap-3 text-sm">
       <span class="text-muted-foreground">{{ selectedCount }} selected</span>
-      <div class="flex flex-wrap justify-end gap-1.5">
+      <div class="flex max-h-20 flex-wrap justify-end gap-1.5 overflow-y-auto">
         <PermissionCodeBadge
           v-for="code in selectedCodes"
           :key="code"
@@ -100,35 +100,40 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
       No permissions match the current search.
     </div>
 
-    <section
-      v-for="group in permissionGroups"
-      :key="group.domain"
-      class="grid gap-2 rounded-lg border p-3"
+    <div
+      data-testid="role-permission-editor-scroll"
+      class="grid max-h-[min(45vh,28rem)] gap-3 overflow-y-auto pr-1"
     >
-      <h3 class="text-sm font-medium text-foreground">
-        {{ group.domain }}
-      </h3>
-      <div class="grid gap-2">
-        <label
-          v-for="permission in group.permissions"
-          :key="permission.code"
-          class="flex items-start gap-3 rounded-md p-2 hover:bg-muted/50"
-          :for="`iam-permission-${permission.code}`"
-        >
-          <Checkbox
-            :id="`iam-permission-${permission.code}`"
-            :checked="isSelected(permission.code ?? '')"
-            class="mt-0.5"
-            @update:checked="setSelected(permission.code ?? '', $event)"
-          />
-          <span class="grid gap-1">
-            <span class="font-mono text-sm">{{ permission.code }}</span>
-            <span v-if="permission.description" class="text-sm text-muted-foreground">
-              {{ permission.description }}
+      <section
+        v-for="group in permissionGroups"
+        :key="group.domain"
+        class="grid gap-2 rounded-lg border p-3"
+      >
+        <h3 class="text-sm font-medium text-foreground">
+          {{ group.domain }}
+        </h3>
+        <div class="grid gap-2">
+          <label
+            v-for="permission in group.permissions"
+            :key="permission.code"
+            class="flex items-start gap-3 rounded-md p-2 hover:bg-muted/50"
+            :for="`iam-permission-${permission.code}`"
+          >
+            <Checkbox
+              :id="`iam-permission-${permission.code}`"
+              :checked="isSelected(permission.code ?? '')"
+              class="mt-0.5"
+              @update:checked="setSelected(permission.code ?? '', $event)"
+            />
+            <span class="grid gap-1">
+              <span class="font-mono text-sm">{{ permission.code }}</span>
+              <span v-if="permission.description" class="text-sm text-muted-foreground">
+                {{ permission.description }}
+              </span>
             </span>
-          </span>
-        </label>
-      </div>
-    </section>
+          </label>
+        </div>
+      </section>
+    </div>
   </FieldGroup>
 </template>

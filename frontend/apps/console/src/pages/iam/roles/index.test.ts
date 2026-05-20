@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
+import RolePermissionEditor from '@/components/iam/RolePermissionEditor.vue'
 import RolesTable from '@/components/iam/RolesTable.vue'
 import RolesPage from './index.vue'
 
@@ -111,5 +112,81 @@ describe('IAM roles page', () => {
     expect(document.body.textContent).toContain(
       'Removing IAM management permissions from this role can block future role edits.',
     )
+  })
+
+  it('keeps create role form state when createRole fails', async () => {
+    iamState.createRole.mockRejectedValueOnce(new Error('Create failed'))
+
+    const wrapper = mount(RolesPage, {
+      global: {
+        stubs: {
+          DefaultLayout: {
+            template: '<main><slot /></main>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    const roleName = document.body.querySelector<HTMLInputElement>('#iam-create-role-name')
+    roleName!.value = 'Operations Auditor'
+    roleName!.dispatchEvent(new Event('input', { bubbles: true }))
+
+    wrapper.findComponent(RolePermissionEditor).vm.$emit('update:modelValue', ['iam.users.read'])
+    await flushPromises()
+
+    document.body.querySelector('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    await flushPromises()
+
+    expect(iamState.createRole).toHaveBeenCalledWith({
+      body: {
+        permissionCodes: ['iam.users.read'],
+        roleName: 'Operations Auditor',
+      },
+    })
+    expect(document.body.textContent).toContain('Create role')
+    expect(document.body.querySelector<HTMLInputElement>('#iam-create-role-name')?.value)
+      .toBe('Operations Auditor')
+    expect(document.body.textContent).toContain('1 selected')
+  })
+
+  it('bounds permission dialogs and editor lists with scrollable containers', async () => {
+    const wrapper = mount(RolesPage, {
+      global: {
+        stubs: {
+          DefaultLayout: {
+            template: '<main><slot /></main>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    expect(document.body.querySelector('[data-testid="role-create-dialog-content"]')?.className)
+      .toContain('overflow-y-auto')
+    expect(document.body.querySelector('[data-testid="role-create-dialog-content"]')?.className)
+      .toContain('max-h-')
+    expect(document.body.querySelector('[data-testid="role-permission-editor-scroll"]')?.className)
+      .toContain('overflow-y-auto')
+
+    wrapper.findComponent(RolesTable).vm.$emit('editPermissions', {
+      roleId: 'role-platform-admin',
+      roleName: 'Platform Administrator',
+      permissionCodes: ['iam.roles.update', 'iam.users.read'],
+    })
+    await flushPromises()
+
+    expect(document.body.querySelector('[data-testid="role-edit-dialog-content"]')?.className)
+      .toContain('overflow-y-auto')
+    expect(document.body.querySelector('[data-testid="role-edit-dialog-content"]')?.className)
+      .toContain('max-h-')
   })
 })

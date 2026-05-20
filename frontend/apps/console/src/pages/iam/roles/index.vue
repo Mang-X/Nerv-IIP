@@ -67,12 +67,17 @@ function openEditPermissions(role: ConsoleIamRoleResponse) {
 }
 
 async function handleCreate(payload: { roleName: string, permissionCodes: string[] }) {
-  await roles.createRole({
-    body: payload,
-  })
-  createDialogOpen.value = false
-  await roles.refreshRoles()
-  toast.success('Role created')
+  try {
+    await roles.createRole({
+      body: payload,
+    })
+    createDialogOpen.value = false
+    await roles.refreshRoles()
+    toast.success('Role created')
+  }
+  catch {
+    // Keep the dialog open so the user can retry without losing input.
+  }
 }
 
 async function savePermissions() {
@@ -128,7 +133,10 @@ async function savePermissions() {
       />
 
       <Dialog v-model:open="editOpen">
-        <DialogContent class="sm:max-w-3xl">
+        <DialogContent
+          data-testid="role-edit-dialog-content"
+          class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl"
+        >
           <DialogHeader>
             <DialogTitle>Edit role permissions</DialogTitle>
             <DialogDescription>

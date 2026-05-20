@@ -62,8 +62,6 @@ function handleSubmit() {
     permissionCodes: [...permissionCodes.value].sort(),
     roleName: roleName.value.trim(),
   })
-  open.value = false
-  resetForm()
 }
 
 watch(open, (isOpen) => {
@@ -75,7 +73,10 @@ watch(open, (isOpen) => {
 
 <template>
   <Dialog v-model:open="open">
-    <DialogContent class="sm:max-w-3xl">
+    <DialogContent
+      data-testid="role-create-dialog-content"
+      class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl"
+    >
       <DialogHeader>
         <DialogTitle>Create role</DialogTitle>
         <DialogDescription>
