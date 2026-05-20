@@ -58,12 +58,12 @@ Endpoint 只声明需要的权限码与上下文；业务不变式仍由 Domain 
 
 | 权限码 | 服务域 | 建议 principalType | 建议 scope | 当前状态 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| `iam.users.read` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查 | 查看用户。 |
-| `iam.users.manage` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查 | 创建、禁用、重置用户；当前写入口授权后仍可能返回未实现。 |
-| `iam.roles.read` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查 | 查看角色与权限。 |
-| `iam.roles.manage` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查 | 创建角色、调整角色权限；当前写入口授权后仍可能返回未实现。 |
-| `iam.sessions.read` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查 | 查看会话。 |
-| `iam.sessions.revoke` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查 | 撤销会话。 |
+| `iam.users.read` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查；Gateway Console facade 已 enforcement | 查看用户。 |
+| `iam.users.manage` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查；Gateway Console facade 已 enforcement | 创建、编辑、禁用、重置用户。 |
+| `iam.roles.read` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查；Gateway Console facade 已 enforcement | 查看角色与权限。 |
+| `iam.roles.manage` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查；Gateway Console facade 已 enforcement | 创建角色、调整角色权限。 |
+| `iam.sessions.read` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查；Gateway Console facade 已 enforcement | 查看会话。 |
+| `iam.sessions.revoke` | IAM | `user` | organization | 已 seed；IAM 管理端点已检查；Gateway Console facade 已 enforcement | 撤销会话。 |
 | `connectors.registrations.write` | Connectors/AppHub | `connector-host` | environment + capability | 已 seed | Connector Host 注册或更新应用实例事实。 |
 | `connectors.heartbeats.write` | Connectors/AppHub | `connector-host` | environment + resource + capability | 已 seed | Connector Host 上报心跳。 |
 | `connectors.state-snapshots.write` | Connectors/AppHub | `connector-host` | environment + resource + capability | 已 seed | Connector Host 上报实例状态快照。 |
@@ -76,6 +76,24 @@ Endpoint 只声明需要的权限码与上下文；业务不变式仍由 Domain 
 | `ops.tasks.read` | Ops | `user` / `connector-host` / `external-client` / `internal-service` | environment + resource | 已 seed；Gateway 已 enforcement | 查看运维任务。 |
 | `ops.results.write` | Ops | `connector-host` | environment + resource + capability | 已 seed | Connector Host 回传动作结果。 |
 | `ops.audit.read` | Ops | `user` / `internal-service` | organization / environment + resource | 已 seed | 查看审计记录。 |
+
+## Console IAM Admin Facade 权限映射
+
+PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会用当前 bearer token 调 IAM current-principal/authorization path 校验组织、环境和权限码。浏览器只访问 Gateway，不直连 IAM。
+
+| Console facade route | operationId | 权限码 |
+| --- | --- | --- |
+| `GET /api/console/v1/iam/users` | `listConsoleIamUsers` | `iam.users.read` |
+| `POST /api/console/v1/iam/users` | `createConsoleIamUser` | `iam.users.manage` |
+| `PATCH /api/console/v1/iam/users/{userId}` | `updateConsoleIamUser` | `iam.users.manage` |
+| `POST /api/console/v1/iam/users/{userId}/disable` | `disableConsoleIamUser` | `iam.users.manage` |
+| `POST /api/console/v1/iam/users/{userId}/reset-password` | `resetConsoleIamUserPassword` | `iam.users.manage` |
+| `GET /api/console/v1/iam/roles` | `listConsoleIamRoles` | `iam.roles.read` |
+| `POST /api/console/v1/iam/roles` | `createConsoleIamRole` | `iam.roles.manage` |
+| `PATCH /api/console/v1/iam/roles/{roleId}/permissions` | `updateConsoleIamRolePermissions` | `iam.roles.manage` |
+| `GET /api/console/v1/iam/permissions` | `listConsoleIamPermissions` | `iam.roles.read` |
+| `GET /api/console/v1/iam/sessions` | `listConsoleIamSessions` | `iam.sessions.read` |
+| `POST /api/console/v1/iam/sessions/{sessionId}/revoke` | `revokeConsoleIamSession` | `iam.sessions.revoke` |
 
 ## 待落地服务权限命名
 

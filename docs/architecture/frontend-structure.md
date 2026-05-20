@@ -31,7 +31,7 @@ frontend/
 
 Console Auth + shadcn-vue Baseline 当前采用“app 内 auth”方案：`frontend/apps/console/src/stores/auth.ts` 管理会话状态，`src/api/auth.ts` 包装 Gateway Auth facade，路由守卫位于 app 内。完整 `frontend/packages/auth` 独立包方案留作后续参考；当 Console 之外出现第二个应用、插件宿主或跨包登录复用时再抽取，边界应包含 Gateway auth DTO mapping、storage adapter、refresh orchestration、logout/session revoke 组合、unauthorized handler 和 app-agnostic route helper，不直接耦合某个页面或 app shell。
 
-第五阶段曾暂缓前端功能实施，避免后端 SDK、迁移发布和部署验证被控制台 UI 牵引。Console Auth + shadcn-vue Baseline 已选择 Design System 边界后，新的页面、组件皮肤、组件库迁移或 token 体系必须沿用 docs/architecture/frontend-design-system-planning.md 的 Selected Baseline。
+第五阶段曾暂缓前端功能实施，避免后端 SDK、迁移发布和部署验证被控制台 UI 牵引。Phase 8 已把 Console Design System 基线推进到 Calm Control Plane 蓝色主题：`frontend/apps/console/src/assets/main.css` 中的 shadcn semantic tokens 负责蓝色主动作、focus ring、sidebar selected state 和 chart orientation；旧 `--legacy-color-*` 只作为兼容 token 保留。新的页面、组件皮肤、组件库迁移或 token 体系必须沿用 docs/architecture/frontend-design-system-planning.md 的 Selected Baseline。
 
 ## 配置分层
 
@@ -163,6 +163,18 @@ pnpm -C frontend build
 ### Console Auth
 
 Console 登录闭环通过 PlatformGateway Console Auth facade 调用 IAM。`stores/auth.ts` 只管理客户端会话状态，`api-client` 继续由 Gateway OpenAPI 生成 SDK 与 Pinia Colada options。路由守卫放在 `src/router/guards/auth.ts`，登录页和登录表单放在 `src/pages/login.vue` 与 `src/components/auth/LoginForm.vue`。
+
+### Console IAM Admin
+
+Phase 8 已交付 IAM Admin 控制台路由：
+
+| 路由 | 页面 | 主要组件 | 权限语义 |
+| --- | --- | --- | --- |
+| `/iam/users` | `src/pages/iam/users/index.vue` | `UsersTable`、`UserCreateDialog`、`UserEditDialog`、`UserResetPasswordDialog` | 用户列表、创建、编辑、禁用、重置密码。 |
+| `/iam/roles` | `src/pages/iam/roles/index.vue` | `RolesTable`、`RoleCreateDialog`、`RolePermissionEditor` | 角色列表、创建、权限编辑和权限 catalog 展示。 |
+| `/iam/sessions` | `src/pages/iam/sessions/index.vue` | `SessionsTable`、`RevokeSessionDialog` | 会话列表、当前会话标识和会话撤销。 |
+
+IAM Admin 的服务端状态统一放在 `src/composables/useIamAdmin.ts`，并拆为 `useIamUsers()`、`useIamRoles()` 和 `useIamSessions()`。这些 composable 只消费 `@nerv-iip/api-client` 的稳定 Gateway facade exports，包括 generated Pinia Colada query/mutation options 与 Console IAM 类型别名；页面和组件不得直接调用 IAM 服务 URL、不得深 import `frontend/packages/api-client/src/generated/*`，也不得绕过 PlatformGateway 直连领域服务。
 
 ### 轮询与刷新
 
