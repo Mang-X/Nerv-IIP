@@ -6,22 +6,26 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 
-interface ConsoleNavItem {
-  children?: ConsoleNavItem[]
+interface ConsoleNavLinkItem {
   label: string
-  to?: RouteLocationRaw
+  to: RouteLocationRaw
 }
 
-const namedRoute = (name: string) => ({ name }) as unknown as RouteLocationRaw
+interface ConsoleNavGroupItem {
+  children: ConsoleNavLinkItem[]
+  label: string
+}
+
+type ConsoleNavItem = ConsoleNavLinkItem | ConsoleNavGroupItem
 
 const navItems = [
-  { label: 'Instances', to: namedRoute('/') },
+  { label: 'Instances', to: { name: '/' } },
   {
     label: 'IAM',
     children: [
-      { label: 'Users', to: namedRoute('/iam/users/') },
-      { label: 'Roles', to: namedRoute('/iam/roles/') },
-      { label: 'Sessions', to: namedRoute('/iam/sessions/') },
+      { label: 'Users', to: { path: '/iam/users' } },
+      { label: 'Roles', to: { path: '/iam/roles' } },
+      { label: 'Sessions', to: { path: '/iam/sessions' } },
     ],
   },
 ] satisfies ConsoleNavItem[]

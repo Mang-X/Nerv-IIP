@@ -51,8 +51,6 @@ describe('AppShell', () => {
       history: createMemoryHistory(),
       routes: [
         { component: { template: '<div />' }, name: '/', path: '/' },
-        { component: { template: '<div />' }, name: '/iam/users/', path: '/iam/users' },
-        { component: { template: '<div />' }, name: '/iam/roles/', path: '/iam/roles' },
       ],
     })
 
@@ -68,8 +66,8 @@ describe('AppShell', () => {
           {
             label: 'IAM',
             children: [
-              { label: 'Users', to: { name: '/iam/users/' } },
-              { label: 'Roles', to: { name: '/iam/roles/' } },
+              { label: 'Users', to: { path: '/iam/users' } },
+              { label: 'Roles', to: { path: '/iam/roles' } },
             ],
           },
         ],
@@ -79,7 +77,7 @@ describe('AppShell', () => {
 
     expect(wrapper.text()).toContain('IAM')
     expect(wrapper.findAllComponents(RouterLink).map((link) => link.props('to'))).toContainEqual({
-      name: '/iam/users/',
+      path: '/iam/users',
     })
   })
 })

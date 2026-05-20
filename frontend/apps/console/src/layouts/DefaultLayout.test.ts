@@ -42,9 +42,9 @@ describe('DefaultLayout', () => {
       {
         label: 'IAM',
         children: [
-          { label: 'Users', to: { name: '/iam/users/' } },
-          { label: 'Roles', to: { name: '/iam/roles/' } },
-          { label: 'Sessions', to: { name: '/iam/sessions/' } },
+          { label: 'Users', to: { path: '/iam/users' } },
+          { label: 'Roles', to: { path: '/iam/roles' } },
+          { label: 'Sessions', to: { path: '/iam/sessions' } },
         ],
       },
     ])

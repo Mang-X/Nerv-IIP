@@ -4,6 +4,7 @@ export class ConsoleIamError extends Error {
     readonly status?: number,
   ) {
     super(message)
+    this.name = 'ConsoleIamError'
   }
 }
 
