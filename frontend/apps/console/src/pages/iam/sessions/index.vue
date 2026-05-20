@@ -21,8 +21,13 @@ const auth = useAuthStore()
 const sessions = useIamSessions()
 
 const search = shallowRef('')
+const status = shallowRef<'' | 'active' | 'revoked'>('')
 const revokeOpen = shallowRef(false)
 const selectedSession = shallowRef<ConsoleIamSessionResponse>()
+const statusOptions = [
+  { label: 'Active', value: 'active' },
+  { label: 'Revoked', value: 'revoked' },
+]
 
 const currentSessionId = computed(() => unref(auth.sessionId))
 
@@ -36,10 +41,23 @@ const tablePending = computed(() =>
   || sessions.revokeSessionPending.value,
 )
 
-watch(search, (nextSearch) => {
+watch([search, status], ([nextSearch, nextStatus]) => {
   sessions.filters.filterSearch = nextSearch.trim() || undefined
+  sessions.filters.filterRevoked = statusToRevokedFilter(nextStatus)
   sessions.filters.pageIndex = 1
 }, { immediate: true })
+
+function statusToRevokedFilter(nextStatus: '' | 'active' | 'revoked') {
+  if (nextStatus === 'active') {
+    return false
+  }
+
+  if (nextStatus === 'revoked') {
+    return true
+  }
+
+  return undefined
+}
 
 function openRevokeDialog(session: ConsoleIamSessionResponse) {
   selectedSession.value = session
@@ -68,9 +86,12 @@ async function confirmRevoke(sessionId: string) {
 
       <IamListToolbar
         v-model:search="search"
+        v-model:status="status"
         action-label="Refresh"
         search-label="Search sessions"
         search-placeholder="Search sessions"
+        show-status-filter
+        :status-options="statusOptions"
         @action="refreshSessions"
       />
 

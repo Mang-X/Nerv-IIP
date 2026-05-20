@@ -45,6 +45,10 @@ function formatDate(value?: string | null) {
 function sessionLabel(session: ConsoleIamSessionResponse) {
   return session.sessionId || 'session'
 }
+
+function canRevoke(session: ConsoleIamSessionResponse) {
+  return Boolean(session.sessionId) && !session.revokedAtUtc
+}
 </script>
 
 <template>
@@ -109,7 +113,7 @@ function sessionLabel(session: ConsoleIamSessionResponse) {
               type="button"
               variant="destructive"
               :aria-label="`Revoke session ${sessionLabel(session)}`"
-              :disabled="Boolean(session.revokedAtUtc)"
+              :disabled="!canRevoke(session)"
               @click="emit('revoke', session)"
             >
               Revoke

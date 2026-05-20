@@ -3,15 +3,25 @@ import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, Select
 import { SearchIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
+export interface IamListToolbarStatusOption {
+  label: string
+  value: string
+}
+
 const props = withDefaults(defineProps<{
   actionLabel: string
   searchLabel?: string
   searchPlaceholder?: string
   showStatusFilter?: boolean
+  statusOptions?: IamListToolbarStatusOption[]
 }>(), {
   searchLabel: 'Search',
   searchPlaceholder: 'Search',
   showStatusFilter: false,
+  statusOptions: () => [
+    { label: 'Enabled', value: 'enabled' },
+    { label: 'Disabled', value: 'disabled' },
+  ],
 })
 
 const emit = defineEmits<{
@@ -19,12 +29,12 @@ const emit = defineEmits<{
 }>()
 
 const search = defineModel<string>('search', { default: '' })
-const status = defineModel<'' | 'enabled' | 'disabled'>('status', { default: '' })
+const status = defineModel<string>('status', { default: '' })
 
 const selectedStatus = computed({
   get: () => status.value || 'all',
   set: (value: string) => {
-    status.value = value === 'all' ? '' : value as 'enabled' | 'disabled'
+    status.value = value === 'all' ? '' : value
   },
 })
 </script>
@@ -51,11 +61,12 @@ const selectedStatus = computed({
           <SelectItem value="all">
             All statuses
           </SelectItem>
-          <SelectItem value="enabled">
-            Enabled
-          </SelectItem>
-          <SelectItem value="disabled">
-            Disabled
+          <SelectItem
+            v-for="option in props.statusOptions"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
           </SelectItem>
         </SelectContent>
       </Select>

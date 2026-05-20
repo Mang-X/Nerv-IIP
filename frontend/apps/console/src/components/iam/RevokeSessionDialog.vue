@@ -56,7 +56,7 @@ function confirmRevoke() {
           :disabled="props.pending || !props.session?.sessionId"
           @click="confirmRevoke"
         >
-          Revoke session
+          {{ props.pending ? 'Revoking...' : 'Revoke session' }}
         </Button>
       </AlertDialogFooter>
     </AlertDialogContent>
