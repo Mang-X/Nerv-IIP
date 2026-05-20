@@ -19,7 +19,7 @@ const props = withDefaults(defineProps<{
   >
     <slot />
     <DialogClose v-if="showCloseButton" as-child>
-      <Button variant="outline">
+      <Button type="button" variant="outline">
         Close
       </Button>
     </DialogClose>
