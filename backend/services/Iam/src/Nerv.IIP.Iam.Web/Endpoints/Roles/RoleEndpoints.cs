@@ -1,6 +1,8 @@
 using FastEndpoints;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Application;
+using Nerv.IIP.Iam.Web.Application.Commands.Roles;
 using Nerv.IIP.Iam.Web.Application.Permissions;
 using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.Iam.Web.Application.Roles;
@@ -42,7 +44,7 @@ public sealed class ListRolesEndpoint(
 [AllowAnonymous]
 public sealed class CreateRoleEndpoint(
     IIamPermissionAuthorizer authorizer,
-    IIamRoleApplicationService roles) : EndpointWithoutRequest<ResponseData<RoleResponse>>
+    IMediator mediator) : EndpointWithoutRequest<ResponseData<RoleResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -53,7 +55,7 @@ public sealed class CreateRoleEndpoint(
 
         var req = await HttpContext.Request.ReadFromJsonAsync<CreateRoleRequest>(ct)
             ?? throw new BadHttpRequestException("Request body is required.");
-        var response = await roles.CreateRoleAsync(req.RoleName, req.PermissionCodes, ct);
+        var response = await mediator.Send(new CreateRoleCommand(req.RoleName, req.PermissionCodes), ct);
         await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status201Created, response, ct);
     }
 }
@@ -62,7 +64,7 @@ public sealed class CreateRoleEndpoint(
 [AllowAnonymous]
 public sealed class PatchRolePermissionsEndpoint(
     IIamPermissionAuthorizer authorizer,
-    IIamRoleApplicationService roles) : EndpointWithoutRequest<ResponseData<RoleResponse>>
+    IMediator mediator) : EndpointWithoutRequest<ResponseData<RoleResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -73,7 +75,9 @@ public sealed class PatchRolePermissionsEndpoint(
 
         var req = await HttpContext.Request.ReadFromJsonAsync<PatchRolePermissionsRequest>(ct)
             ?? throw new BadHttpRequestException("Request body is required.");
-        var response = await roles.PatchRolePermissionsAsync(Route<string>("roleId")!, req.PermissionCodes, ct);
+        var response = await mediator.Send(
+            new PatchRolePermissionsCommand(Route<string>("roleId")!, req.PermissionCodes),
+            ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }

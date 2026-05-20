@@ -1,10 +1,20 @@
 using System.Net;
+using MediatR;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Nerv.IIP.Iam.Web.Application.Roles;
+using Nerv.IIP.Iam.Web.Endpoints.Roles;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
 public sealed class IamManagementEndpointAuthorizationTests
 {
+    [Fact]
+    public void Role_mutation_endpoints_route_writes_through_mediator()
+    {
+        AssertRoleMutationEndpointUsesMediator<CreateRoleEndpoint>();
+        AssertRoleMutationEndpointUsesMediator<PatchRolePermissionsEndpoint>();
+    }
+
     [Theory]
     [InlineData("GET", "/api/iam/v1/users")]
     [InlineData("POST", "/api/iam/v1/users")]
@@ -53,5 +63,18 @@ public sealed class IamManagementEndpointAuthorizationTests
         {
             Environment.SetEnvironmentVariable(name, value);
         }
+    }
+
+    private static void AssertRoleMutationEndpointUsesMediator<TEndpoint>()
+    {
+        var parameterTypes = typeof(TEndpoint)
+            .GetConstructors()
+            .Single()
+            .GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+
+        Assert.Contains(typeof(IMediator), parameterTypes);
+        Assert.DoesNotContain(typeof(IIamRoleApplicationService), parameterTypes);
     }
 }
