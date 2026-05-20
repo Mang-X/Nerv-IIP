@@ -12,9 +12,9 @@ const selectedCodes = defineModel<string[]>({ default: [] })
 const search = shallowRef('')
 
 const sortedPermissions = computed(() =>
-  props.permissions
-    .filter(permission => Boolean(permission.code))
-    .toSorted((left, right) => {
+  [...props.permissions]
+    .filter((permission) => Boolean(permission.code))
+    .sort((left, right) => {
       const domainCompare = (left.domain ?? '').localeCompare(right.domain ?? '')
       if (domainCompare !== 0) {
         return domainCompare
@@ -31,11 +31,9 @@ const filteredPermissions = computed(() => {
   }
 
   return sortedPermissions.value.filter((permission) => {
-    return [
-      permission.code,
-      permission.domain,
-      permission.description,
-    ].some(value => value?.toLowerCase().includes(query))
+    return [permission.code, permission.domain, permission.description].some((value) =>
+      value?.toLowerCase().includes(query),
+    )
   })
 })
 
@@ -64,8 +62,7 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
 
   if (checked === true) {
     nextCodes.add(code)
-  }
-  else {
+  } else {
     nextCodes.delete(code)
   }
 
@@ -88,15 +85,14 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
     <div class="flex items-start justify-between gap-3 text-sm">
       <span class="text-muted-foreground">{{ selectedCount }} selected</span>
       <div class="flex max-h-20 flex-wrap justify-end gap-1.5 overflow-y-auto">
-        <PermissionCodeBadge
-          v-for="code in selectedCodes"
-          :key="code"
-          :code="code"
-        />
+        <PermissionCodeBadge v-for="code in selectedCodes" :key="code" :code="code" />
       </div>
     </div>
 
-    <div v-if="permissionGroups.length === 0" class="rounded-lg border p-4 text-sm text-muted-foreground">
+    <div
+      v-if="permissionGroups.length === 0"
+      class="rounded-lg border p-4 text-sm text-muted-foreground"
+    >
       No permissions match the current search.
     </div>
 
@@ -117,13 +113,12 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
             v-for="permission in group.permissions"
             :key="permission.code"
             class="flex items-start gap-3 rounded-md p-2 hover:bg-muted/50"
-            :for="`iam-permission-${permission.code}`"
           >
             <Checkbox
               :id="`iam-permission-${permission.code}`"
-              :checked="isSelected(permission.code ?? '')"
+              :model-value="isSelected(permission.code ?? '')"
               class="mt-0.5"
-              @update:checked="setSelected(permission.code ?? '', $event)"
+              @update:model-value="setSelected(permission.code ?? '', $event)"
             />
             <span class="grid gap-1">
               <span class="font-mono text-sm">{{ permission.code }}</span>

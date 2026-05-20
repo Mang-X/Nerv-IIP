@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, shallowRef } from 'vue'
 
 import IamListToolbar from '@/components/iam/IamListToolbar.vue'
 import SessionsPage from './index.vue'
@@ -93,6 +93,28 @@ describe('IAM sessions page', () => {
     expect(wrapper.find('[style*="--legacy-color"]').exists()).toBe(false)
   })
 
+  it('renders active session state without the blue primary badge variant', async () => {
+    const wrapper = mount(SessionsPage, {
+      global: {
+        stubs: {
+          DefaultLayout: {
+            template: '<main><slot /></main>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const activeBadge = wrapper
+      .findAll('[data-slot="badge"]')
+      .find((badge) => badge.text() === 'Active')
+
+    expect(activeBadge?.attributes('data-variant')).toBe('outline')
+    expect(activeBadge?.classes()).toContain('border-emerald-200')
+    expect(activeBadge?.classes()).toContain('text-emerald-700')
+  })
+
   it('maps session status filters to revoked filters', async () => {
     const wrapper = mount(SessionsPage, {
       global: {
@@ -162,8 +184,9 @@ describe('IAM sessions page', () => {
     await wrapper.get('button[aria-label="Revoke session session-1"]').trigger('click')
     await flushPromises()
 
-    const confirmButton = [...document.body.querySelectorAll('button')]
-      .find(button => button.textContent?.trim() === 'Revoke session')
+    const confirmButton = [...document.body.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Revoke session',
+    )
     confirmButton?.click()
     await flushPromises()
 
@@ -189,7 +212,8 @@ describe('IAM sessions page', () => {
 
     await flushPromises()
 
-    expect(wrapper.get('button[aria-label="Revoke session session-revoked"]').attributes('disabled'))
-      .toBeDefined()
+    expect(
+      wrapper.get('button[aria-label="Revoke session session-revoked"]').attributes('disabled'),
+    ).toBeDefined()
   })
 })

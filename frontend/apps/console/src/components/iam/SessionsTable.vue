@@ -13,13 +13,16 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 
-const props = withDefaults(defineProps<{
-  currentSessionId?: string
-  pending?: boolean
-  sessions: ConsoleIamSessionResponse[]
-}>(), {
-  pending: false,
-})
+const props = withDefaults(
+  defineProps<{
+    currentSessionId?: string
+    pending?: boolean
+    sessions: ConsoleIamSessionResponse[]
+  }>(),
+  {
+    pending: false,
+  },
+)
 
 const emit = defineEmits<{
   revoke: [session: ConsoleIamSessionResponse]
@@ -62,9 +65,7 @@ function canRevoke(session: ConsoleIamSessionResponse) {
           <TableHead>Expires at</TableHead>
           <TableHead>State</TableHead>
           <TableHead>Permission version</TableHead>
-          <TableHead class="w-28 text-right">
-            Actions
-          </TableHead>
+          <TableHead class="w-28 text-right"> Actions </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -84,7 +85,11 @@ function canRevoke(session: ConsoleIamSessionResponse) {
           No sessions match the current filters.
         </TableEmpty>
 
-        <TableRow v-for="session in props.sessions" v-else :key="session.sessionId ?? session.userId">
+        <TableRow
+          v-for="session in props.sessions"
+          v-else
+          :key="session.sessionId ?? session.userId"
+        >
           <TableCell class="font-mono text-xs">
             <div class="flex flex-col gap-1">
               <span>{{ session.sessionId || '-' }}</span>
@@ -102,7 +107,14 @@ function canRevoke(session: ConsoleIamSessionResponse) {
           <TableCell>{{ formatDate(session.issuedAtUtc) }}</TableCell>
           <TableCell>{{ formatDate(session.expiresAtUtc) }}</TableCell>
           <TableCell>
-            <Badge :variant="session.revokedAtUtc ? 'secondary' : 'default'">
+            <Badge
+              :variant="session.revokedAtUtc ? 'secondary' : 'outline'"
+              :class="
+                session.revokedAtUtc
+                  ? undefined
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              "
+            >
               {{ sessionState(session) }}
             </Badge>
           </TableCell>

@@ -214,6 +214,12 @@ const userInitials = computed(() => props.user?.loginName.slice(0, 2).toUpperCas
   outline: none;
 }
 
+.app-shell__nav-link.router-link-active,
+.app-shell__nav-link.router-link-exact-active {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+
 .app-shell__workspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

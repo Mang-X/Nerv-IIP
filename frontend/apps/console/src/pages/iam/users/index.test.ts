@@ -2,7 +2,6 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
-import IamListToolbar from '@/components/iam/IamListToolbar.vue'
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
 import UserEditDialog from '@/components/iam/UserEditDialog.vue'
 import UserResetPasswordDialog from '@/components/iam/UserResetPasswordDialog.vue'
@@ -98,6 +97,28 @@ describe('IAM users page', () => {
     expect(wrapper.text()).toContain('admin@nerv-iip.local')
     expect(wrapper.text()).toContain('Create user')
     expect(wrapper.find('[style*="--legacy-color"]').exists()).toBe(false)
+  })
+
+  it('renders enabled status without the blue primary badge variant', async () => {
+    const wrapper = mount(UsersPage, {
+      global: {
+        stubs: {
+          DefaultLayout: {
+            template: '<main><slot /></main>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const enabledBadge = wrapper
+      .findAll('[data-slot="badge"]')
+      .find((badge) => badge.text() === 'Enabled')
+
+    expect(enabledBadge?.attributes('data-variant')).toBe('outline')
+    expect(enabledBadge?.classes()).toContain('border-emerald-200')
+    expect(enabledBadge?.classes()).toContain('text-emerald-700')
   })
 
   it('labels search and row actions for assistive technology', async () => {

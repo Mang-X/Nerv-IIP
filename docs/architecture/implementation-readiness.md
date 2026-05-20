@@ -203,7 +203,22 @@
 4. PlatformGateway 已实现 Console IAM Admin facade：用户、角色、权限 catalog 和会话 endpoints 均先执行 IAM-backed permission enforcement，再把原 bearer token 转发给 IAM。
 5. Gateway OpenAPI 已固定 11 个 Console IAM operation IDs，并已再生成 `frontend/packages/api-client` 的 types、fetch SDK 和 Pinia Colada options。
 6. Console 已提供 `/iam/users`、`/iam/roles`、`/iam/sessions` 三个受保护页面，页面逻辑集中在 `frontend/apps/console/src/composables/useIamAdmin.ts`，只消费 generated Gateway api-client 稳定导出。
-7. IAM admin 单元测试、Gateway facade 测试、frontend page/composable 测试和 Playwright E2E 覆盖了登录后进入 Users、Roles、Sessions 的基础路径。
+7. IAM admin 单元测试、Gateway facade 测试、frontend page/composable 测试和 Playwright E2E 覆盖了登录后进入 Users、Roles、Sessions 的基础路径，并补齐用户创建、编辑、禁用、重置密码、角色创建、角色权限更新、会话 revoke 和 403 permission-denied safe state。
+8. 2026-05-20 浏览器验证补充：`frontend/apps/console/e2e/iam-admin.spec.ts` 使用 mock `/api/console/v1/auth/*` 与 `/api/console/v1/iam/*` 响应，在 desktop `1366x900/1366x1200` 与 mobile `390x844` 下访问 `/iam/users`、`/iam/roles`、`/iam/sessions`，检查无横向溢出、可见文本无明显重叠、当前导航蓝色、Enabled/Active success badge 不使用 blue primary、Create user/Create role/Revoke session 对话框具备可访问标题。
+
+### Phase 8 Task 9 验证记录
+
+1. `pnpm -C frontend --filter @nerv-iip/console e2e -- iam-admin.spec.ts` 在未设置 Playwright 浏览器路径时失败，原因为 managed browser 缺失：`C:\Users\hp\AppData\Local\ms-playwright\chromium_headless_shell-1223\chrome-headless-shell-win64\chrome-headless-shell.exe` 不存在；这是本机 Playwright browser install 环境阻塞。
+2. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=C:\Program Files\Forguncy 12\WebSite\Resources\HtmlRenderHelper\.local-chromium\Win64-970485\chrome-win\chrome.exe pnpm -C frontend --filter @nerv-iip/console e2e -- iam-admin.spec.ts` 通过，3/3 Playwright tests passed。
+3. `dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj` 通过，34 passed；一次并行验证曾遇到 `Nerv.IIP.Observability.dll` 被其它 dotnet 进程占用，单独重跑通过。
+4. `dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj` 通过，30 passed。
+5. `pnpm -C frontend test` 通过，19 files passed、2 skipped，76 tests passed、2 skipped；IAM users/sessions/roles focused test 通过，17/17 passed。
+6. `pnpm -C frontend typecheck` 通过；`pnpm -C frontend build` 通过。
+7. `dotnet test backend/Nerv.IIP.sln --no-restore` 通过；`dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln --no-restore` 通过，Connector Host Docker integration test 按环境条件 skip。
+8. `pnpm -C frontend lint` 通过，剩余 1 个范围外 warning：`apps/console/src/composables/useConsoleOperations.ts` unused `InstanceListResponse` import。
+9. `pnpm -C frontend check` 与 `pnpm -C frontend fmt` 仍被既有范围外格式问题阻塞；本次触碰的 7 个前端文件已单独运行 `pnpm -C frontend exec vp check ...` 并通过。Playwright 失败产物 `frontend/apps/console/test-results/` 仅为测试 artifact，提交前清理。
+10. `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` 因本机 Docker Desktop Linux engine 不可用阻塞：无法连接 `npipe:////./pipe/dockerDesktopLinuxEngine`，无法拉取 `postgres:17`。
+11. `pwsh scripts/verify-third-slice-console.ps1` 因其调用 `verify-second-slice-ops.ps1`，同样被 Docker daemon 不可达阻塞；脚本明确要求 Docker CLI 和可达 Docker daemon 用于真实容器发现与 restart。
 
 ### 当前初步使用方式
 

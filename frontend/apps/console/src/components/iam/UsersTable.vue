@@ -18,12 +18,15 @@ import {
 } from '@nerv-iip/ui'
 import { MoreHorizontalIcon } from 'lucide-vue-next'
 
-const props = withDefaults(defineProps<{
-  pending?: boolean
-  users: ConsoleIamUserResponse[]
-}>(), {
-  pending: false,
-})
+const props = withDefaults(
+  defineProps<{
+    pending?: boolean
+    users: ConsoleIamUserResponse[]
+  }>(),
+  {
+    pending: false,
+  },
+)
 
 const emit = defineEmits<{
   disable: [user: ConsoleIamUserResponse]
@@ -41,9 +44,7 @@ const emit = defineEmits<{
           <TableHead>Email</TableHead>
           <TableHead>User ID</TableHead>
           <TableHead>Status</TableHead>
-          <TableHead class="w-16 text-right">
-            Actions
-          </TableHead>
+          <TableHead class="w-16 text-right"> Actions </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -70,7 +71,14 @@ const emit = defineEmits<{
             {{ user.userId || '-' }}
           </TableCell>
           <TableCell>
-            <Badge :variant="user.enabled === false ? 'secondary' : 'default'">
+            <Badge
+              :variant="user.enabled === false ? 'secondary' : 'outline'"
+              :class="
+                user.enabled === false
+                  ? undefined
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              "
+            >
               {{ user.enabled === false ? 'Disabled' : 'Enabled' }}
             </Badge>
           </TableCell>
@@ -87,9 +95,7 @@ const emit = defineEmits<{
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem @select="emit('edit', user)">
-                  Edit
-                </DropdownMenuItem>
+                <DropdownMenuItem @select="emit('edit', user)"> Edit </DropdownMenuItem>
                 <DropdownMenuItem @select="emit('resetPassword', user)">
                   Reset password
                 </DropdownMenuItem>
