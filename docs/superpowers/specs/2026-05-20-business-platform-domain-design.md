@@ -82,6 +82,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | BP-MD-002 | 维护客户、供应商、承运商 | 采购员、销售员 | 业务伙伴 | 创建/修改/查看 | 编码唯一；结算信息受权限保护 | CRM/SRM-lite 前置。 |
 | BP-MD-003 | 维护工作中心、工作日历、班次和资源费率 | 计划员、生产计划员 | 工作中心/日历 | 创建/修改/查看 | 工作中心编码唯一 | MRP/MES/成本依赖。 |
 | BP-MD-004 | 维护设备资产和工作中心归属 | 业务管理员、运维人员 | 设备资产 | 创建/修改/查看 | 不保存 PLC/DCS 密钥；实时状态来自 Telemetry | CMMS/IIoT 前置。 |
+| BP-MD-005 | 维护业务部门、班组、人员技能和资质 | 业务管理员、生产计划员 | Department/Team/PersonnelSkill | 创建/修改/查看 | 引用 IAM userId；不复制 IAM 用户事实 | 排班、派工、审批和技能校验前置。 |
 | BP-ENG-001 | 上传或引用 CAD/图纸/设计包 | 产品工程师 | EngineeringDocument | 创建/查看 | 文件通过 File Storage；不保存对象 key | CAD 是外部来源。 |
 | BP-ENG-002 | 建立工程物料和 EBOM 版本 | 产品工程师 | EngineeringItem/EBOM | 创建/修改/查看 | 子件 SKU 或工程物料必须存在 | PDM-lite。 |
 | BP-ENG-003 | 建立 MBOM 和工艺路线版本 | 产品工程师、生产计划员 | MBOM/Routing | 创建/修改/发布 | 工作中心必须存在；版本发布后不可直接改 | PLM-lite。 |
@@ -124,6 +125,9 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | --- | --- | --- |
 | SKU | 物料基础事实；组织+环境内编码唯一 | 输入 SKU 编码、名称、单位；输出 skuId。 |
 | BusinessPartner | 客户、供应商、承运商主数据 | 输入伙伴类型、结算属性；输出 partnerId。 |
+| Department | 业务部门和组织内业务归属 | 输入部门编码、名称、上级部门；输出 departmentId。 |
+| Team | 班组和部门归属 | 输入班组编码、部门、班次偏好；输出 teamId。 |
+| PersonnelSkill | 人员技能、资质和有效期 | 输入 IAM userId、技能代码、等级、有效期；输出 personnelSkillId。 |
 | WorkCenter | 产能、日历、费率和排产资源 | 输入班次、产能、费率；输出可排产时段。 |
 | DeviceAsset | 设备资产主数据和工作中心归属 | 输入设备编码、位置、型号；输出 deviceAssetId。 |
 | EngineeringDocument | CAD/图纸/工艺文件引用 | 输入 fileId、版本、用途；输出 documentId。 |
@@ -180,6 +184,9 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | --- | --- | --- |
 | Sku | 物料主数据 | 编码唯一；停用后不能被新单据引用。 |
 | BusinessPartner | 客户/供应商/承运商主数据 | 同类型编码唯一；结算属性受权限保护。 |
+| Department | 业务部门 | 组织+环境内编码唯一；停用后不能被新班组引用。 |
+| Team | 班组 | 组织+环境内编码唯一；必须归属有效部门。 |
+| PersonnelSkill | 人员技能资质 | userId+skillCode+effectiveFrom 唯一；过期资质不能用于新派工。 |
 | WorkCenter | 工作中心、日历和费率 | 产能不能为负；日历不能重叠。 |
 | DeviceAsset | 设备资产主数据 | 设备编码唯一；不保存采集密钥。 |
 | EngineeringDocument | 工程文件引用 | 只保存 fileId/FileReference；不保存对象 key。 |
@@ -231,6 +238,12 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | 名称 | 作用聚合 | 输入 | 触发行为/事件 | 幂等性 |
 | --- | --- | --- | --- | --- |
 | CreateSkuCommand | Sku | code, name, unit, category | SkuCreatedDomainEvent | code 唯一。 |
+| CreateBusinessPartnerCommand | BusinessPartner | partnerType, code, name, settlementProfile | BusinessPartnerCreatedDomainEvent | partnerType+code 唯一。 |
+| CreateDepartmentCommand | Department | code, name, parentDepartmentId | DepartmentCreatedDomainEvent | code 唯一。 |
+| CreateTeamCommand | Team | code, name, departmentId, shiftPattern | TeamCreatedDomainEvent | code 唯一。 |
+| AssignPersonnelSkillCommand | PersonnelSkill | userId, skillCode, level, effectiveFrom, effectiveTo | PersonnelSkillAssignedDomainEvent | userId+skillCode+effectiveFrom。 |
+| CreateWorkCenterCommand | WorkCenter | code, name, capacityMinutesPerDay, calendarCode | WorkCenterCreatedDomainEvent | code 唯一。 |
+| CreateWorkCalendarCommand | WorkCalendar | code, name, workingTimes | WorkCalendarCreatedDomainEvent | code 唯一。 |
 | RegisterDeviceAssetCommand | DeviceAsset | code, model, location, workCenterId | DeviceAssetRegisteredDomainEvent | code 唯一。 |
 | RegisterEngineeringDocumentCommand | EngineeringDocument | fileId, documentType, version | EngineeringDocumentRegisteredDomainEvent | fileId+version。 |
 | ReleaseEngineeringBomCommand | EngineeringBom | engineeringItemId, lines, effectiveDate | EngineeringBomReleasedDomainEvent | item+version。 |
@@ -240,50 +253,80 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | CreateDemandSourceCommand | DemandSource | sourceType, sourceRef, skuId, quantity, dueDate | DemandSourceCreatedDomainEvent | sourceType+sourceRef。 |
 | RunMrpCommand | MrpRun | planningHorizon, demandScope, versionRefs | MrpRunCompletedDomainEvent | runId。 |
 | AcceptPlanningSuggestionCommand | PlanningSuggestion | suggestionId, targetType | PlanningSuggestionAcceptedDomainEvent | suggestionId。 |
+| CreateStockLocationCommand | StockLocation | warehouseCode, locationCode, capacity | StockLocationCreatedDomainEvent | warehouse+location code 唯一。 |
 | PostStockMovementCommand | StockMovement | movementType, skuId, quantity, locations, batch, documentRef, idempotencyKey | StockMovementPostedDomainEvent | idempotencyKey 必填。 |
+| CreateStockCountTaskCommand | StockCountTask | countNo, warehouseCode, scope | StockCountTaskCreatedDomainEvent | countNo。 |
+| CreateInspectionPlanCommand | InspectionPlan | sourceType, sourceId, skuId, inspectionType | InspectionPlanCreatedDomainEvent | sourceType+sourceId。 |
 | StartApprovalChainCommand | ApprovalChain | documentType, documentId, applicantId, templateId | ApprovalChainStartedDomainEvent | documentType+documentId。 |
 | ResolveApprovalStepCommand | ApprovalChain | chainId, approverId, result, comment | ApprovalApproved/RejectedDomainEvent | chainId+step+approver。 |
 | RecordInspectionResultCommand | InspectionPlan | planId, measuredValues, result, attachmentFileIds | InspectionPassed/RejectedDomainEvent | planId+sequence。 |
+| CreateBarcodeTemplateCommand | BarcodeRule | templateCode, ruleExpression, labelLayout | BarcodeTemplateCreatedDomainEvent | templateCode。 |
+| CreateLabelPrintBatchCommand | LabelPrintBatch | templateCode, sourceDocumentRef, labels | LabelPrintBatchCreatedDomainEvent | sourceDocumentRef+templateCode。 |
+| RecordBarcodeScanCommand | ScanRecord | barcodeValue, sourceDeviceId, idempotencyKey | BarcodeScannedDomainEvent | sourceDeviceId+idempotencyKey。 |
 | CreatePurchaseRequisitionFromSuggestionCommand | PurchaseRequisition | suggestionId, requesterId | PurchaseRequisitionCreatedDomainEvent | suggestionId。 |
 | CreateRequestForQuotationCommand | RequestForQuotation | purchaseRequisitionId, supplierIds, lines, validUntil | RequestForQuotationCreatedDomainEvent | purchaseRequisitionId+round。 |
 | CreateSupplierQuotationCommand | SupplierQuotation | rfqId, supplierId, lines, validUntil | SupplierQuotationReceivedDomainEvent | rfqId+supplierId。 |
 | CreatePurchaseOrderCommand | PurchaseOrder | supplierId, lines, paymentTerms | PurchaseOrderCreatedDomainEvent | orderNo。 |
 | RecordPurchaseReceiptCommand | PurchaseReceipt | purchaseOrderId, receiptLines | PurchaseReceiptRecordedDomainEvent | receiptNo。 |
+| CreateOpportunityCommand | Opportunity | customerId, title, expectedAmount | OpportunityOpenedDomainEvent | opportunityNo。 |
+| CreateQuotationCommand | Quotation | opportunityId, customerId, lines | QuotationCreatedDomainEvent | quotationNo。 |
 | CreateSalesOrderCommand | SalesOrder | customerId, lines, deliveryDate | SalesOrderCreatedDomainEvent | salesOrderNo。 |
 | ReleaseDeliveryOrderCommand | DeliveryOrder | salesOrderId, deliveryLines | DeliveryOrderReleasedDomainEvent | deliveryNo。 |
+| CreateJournalVoucherCommand | JournalVoucher | description, debitLines, creditLines | JournalVoucherPostedDomainEvent | voucherNo；借贷平衡。 |
+| CreateInboundOrderCommand | InboundOrder | sourceType, sourceId, lines | InboundOrderCreatedDomainEvent | sourceType+sourceId。 |
 | CompleteInboundOrderCommand | InboundOrder | inboundOrderId, putawayLines, idempotencyKey | InboundOrderCompletedDomainEvent | idempotencyKey 必填。 |
+| CreateOutboundOrderCommand | OutboundOrder | sourceType, sourceId, lines | OutboundOrderCreatedDomainEvent | sourceType+sourceId。 |
 | CompleteOutboundOrderCommand | OutboundOrder | outboundOrderId, pickedLines, packReview, idempotencyKey | OutboundOrderCompletedDomainEvent | idempotencyKey 必填。 |
 | DispatchWcsTaskCommand | WcsTask | warehouseTaskId, adapterType, payload | WcsTaskDispatchedDomainEvent | warehouseTaskId+adapterType。 |
 | CompleteWcsTaskCommand | WcsTask | externalTaskId, result, occurredAtUtc | WcsTaskCompleted/FailedDomainEvent | externalTaskId。 |
+| FailWcsTaskCommand | WcsTask | externalTaskId, failureCode, diagnosticMessage, occurredAtUtc | WcsTaskFailedDomainEvent | externalTaskId。 |
 | CreateWorkOrderFromSuggestionCommand | WorkOrder | suggestionId, quantity, mbomVersionId, routingVersionId | WorkOrderCreatedDomainEvent | suggestionId。 |
 | ReleaseWorkOrderCommand | WorkOrder | workOrderId, approvalRef | WorkOrderReleasedDomainEvent | workOrderId。 |
 | ReportOperationCommand | OperationTask | operationTaskId, goodQty, defectQty, reason, laborMinutes, idempotencyKey | OperationReportedDomainEvent | idempotencyKey。 |
+| RunRuleScheduleCommand | ScheduleResult | workOrderScope, calendarScope, ruleSet | ScheduleResultCreatedDomainEvent | scheduleVersion。 |
 | CreateTelemetryTagCommand | TelemetryTag | deviceAssetId, tagKey, valueType, unit, samplingPolicy | TelemetryTagCreatedDomainEvent | deviceAssetId+tagKey。 |
 | RecordTelemetrySampleCommand | TelemetryTag | tagId, value, occurredAtUtc, sourceSequence | TelemetrySampleRecordedDomainEvent | tagId+sourceSequence。 |
 | RaiseAlarmCommand | AlarmEvent | deviceAssetId, alarmCode, severity, occurredAtUtc, externalAlarmId | AlarmRaisedDomainEvent | externalAlarmId。 |
+| ClearAlarmCommand | AlarmEvent | alarmId, clearedAtUtc, operatorId | AlarmClearedDomainEvent | alarmId。 |
 | CreateMaintenanceWorkOrderCommand | MaintenanceWorkOrder | deviceAssetId, faultCode, priority, sourceAlarmId | MaintenanceWorkOrderOpenedDomainEvent | sourceAlarmId 或 requestNo。 |
 | CompleteMaintenanceWorkOrderCommand | MaintenanceWorkOrder | workOrderId, result, downtimeMinutes, sparePartLines | MaintenanceWorkOrderCompletedDomainEvent | workOrderId。 |
+| CreateMaintenancePlanCommand | MaintenancePlan | deviceAssetId, planCode, interval, nextDueDate | MaintenancePlanCreatedDomainEvent | planCode。 |
+| RecordMaintenanceInspectionCommand | MaintenanceInspection | planId, operatorId, result, occurredAtUtc | MaintenanceInspectionRecordedDomainEvent | planId+occurredAtUtc。 |
 
 ### Queries
 
 | 名称 | 过滤/排序/分页 | 输出 DTO |
 | --- | --- | --- |
 | ListSkusQuery | keyword, category, status, page | SkuListItemResponse。 |
+| ListBusinessPartnersQuery | partnerType, keyword, status, page | BusinessPartnerListItemResponse。 |
+| ListDepartmentsQuery | keyword, status, page | DepartmentListItemResponse。 |
+| ListTeamsQuery | departmentId, keyword, status, page | TeamListItemResponse。 |
+| ListPersonnelSkillsQuery | userId, skillCode, validOn, page | PersonnelSkillResponse。 |
+| ListResourcesQuery | resourceType, keyword, status, page | BusinessResourceResponse。 |
+| ListEngineeringDocumentsQuery | documentType, keyword, status, page | EngineeringDocumentResponse。 |
 | ListEngineeringBomsQuery | engineeringItemId, status, page | EngineeringBomVersionResponse。 |
 | GetEngineeringChangeQuery | changeId | EngineeringChangeDetailResponse。 |
+| ListDemandSourcesQuery | sourceType, skuId, from, to, page | DemandSourceResponse。 |
 | ListMrpRunsQuery | from, to, status, page | MrpRunListItemResponse。 |
 | GetMrpPeggingQuery | runId, skuId, demandSourceId | MrpPeggingResponse。 |
 | ListPlanningSuggestionsQuery | runId, suggestionType, status, page | PlanningSuggestionResponse。 |
 | ListStockBalancesQuery | skuId, locationId, batch, page | StockBalanceResponse。 |
+| ListInspectionRecordsQuery | sourceType, sourceId, result, page | InspectionRecordResponse。 |
+| GetApprovalChainQuery | chainId | ApprovalChainDetailResponse。 |
 | ListPurchaseOrdersQuery | supplierId, status, from, to, page | PurchaseOrderListItemResponse。 |
 | ListSalesOrdersQuery | customerId, status, from, to, page | SalesOrderListItemResponse。 |
+| ListReceivablesQuery | customerId, status, period, page | AccountReceivableResponse。 |
+| ListPayablesQuery | supplierId, status, period, page | AccountPayableResponse。 |
 | ListInboundOrdersQuery | status, sourceType, page | InboundOrderListItemResponse。 |
 | ListOutboundOrdersQuery | status, sourceType, page | OutboundOrderListItemResponse。 |
+| ListWorkOrdersQuery | skuId, status, from, to, page | WorkOrderListItemResponse。 |
+| ListProductionReportsQuery | workOrderId, operationTaskId, from, to, page | ProductionReportResponse。 |
 | GetScheduleGanttQuery | scheduleVersion, workCenterId, from, to | ScheduleGanttResponse。 |
 | ListTelemetryTagsQuery | deviceAssetId, keyword, page | TelemetryTagResponse。 |
 | QueryDeviceStateTimelineQuery | deviceAssetId, from, to, resolution | DeviceStateTimelineResponse。 |
 | ListAlarmEventsQuery | deviceAssetId, severity, status, from, to, page | AlarmEventResponse。 |
 | ListMaintenanceWorkOrdersQuery | deviceAssetId, status, priority, page | MaintenanceWorkOrderResponse。 |
+| ListMaintenancePlansQuery | deviceAssetId, status, page | MaintenancePlanResponse。 |
 | GetInventoryReportQuery | skuScope, locationScope, asOfDate, page | InventoryReportResponse。 |
 | GetFinanceSummaryQuery | period, partnerScope | FinanceSummaryResponse。 |
 
@@ -292,26 +335,91 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | 路径/方法 | 命令/查询 | 认证/鉴权 | 幂等/一致性说明 |
 | --- | --- | --- | --- |
 | `POST /api/business/v1/master-data/skus` | CreateSkuCommand | `business.masterdata.products.manage` | code 唯一。 |
+| `GET /api/business/v1/master-data/skus` | ListSkusQuery | `business.masterdata.products.read` | 只读分页查询。 |
+| `POST /api/business/v1/master-data/partners` | CreateBusinessPartnerCommand | `business.masterdata.partners.manage` | type+code 唯一。 |
+| `GET /api/business/v1/master-data/partners` | ListBusinessPartnersQuery | `business.masterdata.partners.read` | 只读分页查询。 |
+| `POST /api/business/v1/master-data/departments` | CreateDepartmentCommand | `business.masterdata.resources.manage` | code 唯一；不复制 IAM 组织事实。 |
+| `GET /api/business/v1/master-data/departments` | ListDepartmentsQuery | `business.masterdata.resources.read` | 只读分页查询。 |
+| `POST /api/business/v1/master-data/teams` | CreateTeamCommand | `business.masterdata.resources.manage` | code 唯一；departmentId 必须有效。 |
+| `GET /api/business/v1/master-data/teams` | ListTeamsQuery | `business.masterdata.resources.read` | 只读分页查询。 |
+| `POST /api/business/v1/master-data/personnel-skills` | AssignPersonnelSkillCommand | `business.masterdata.resources.manage` | userId+skillCode+effectiveFrom。 |
+| `GET /api/business/v1/master-data/personnel-skills` | ListPersonnelSkillsQuery | `business.masterdata.resources.read` | 只读分页查询。 |
+| `POST /api/business/v1/master-data/work-centers` | CreateWorkCenterCommand | `business.masterdata.resources.manage` | code 唯一。 |
+| `POST /api/business/v1/master-data/work-calendars` | CreateWorkCalendarCommand | `business.masterdata.resources.manage` | code 唯一。 |
+| `POST /api/business/v1/master-data/device-assets` | RegisterDeviceAssetCommand | `business.masterdata.resources.manage` | code 唯一；不保存控制密钥。 |
+| `GET /api/business/v1/master-data/resources` | ListResourcesQuery | `business.masterdata.resources.read` | 聚合资源查询。 |
 | `POST /api/business/v1/engineering/documents` | RegisterEngineeringDocumentCommand | `business.engineering.documents.manage` | fileId+version。 |
+| `GET /api/business/v1/engineering/documents` | ListEngineeringDocumentsQuery | `business.engineering.documents.read` | 只读分页查询。 |
 | `POST /api/business/v1/engineering/eboms/{ebomId}/release` | ReleaseEngineeringBomCommand | `business.engineering.boms.manage` | item+version。 |
+| `POST /api/business/v1/engineering/mboms/{mbomId}/release` | ReleaseManufacturingBomCommand | `business.engineering.boms.manage` | sku+version。 |
+| `POST /api/business/v1/engineering/routings/{routingId}/release` | ReleaseRoutingCommand | `business.engineering.boms.manage` | sku+version。 |
+| `GET /api/business/v1/engineering/eboms` | ListEngineeringBomsQuery | `business.engineering.boms.read` | 只读分页查询。 |
 | `POST /api/business/v1/engineering/changes/{changeId}/release` | ReleaseEngineeringChangeCommand | `business.engineering.changes.manage` | changeId。 |
+| `GET /api/business/v1/engineering/changes/{changeId}` | GetEngineeringChangeQuery | `business.engineering.changes.read` | 只读详情。 |
+| `POST /api/business/v1/planning/demands` | CreateDemandSourceCommand | `business.planning.demands.manage` | sourceType+sourceRef 幂等。 |
+| `GET /api/business/v1/planning/demands` | ListDemandSourcesQuery | `business.planning.demands.read` | 只读分页查询。 |
 | `POST /api/business/v1/planning/mrp-runs` | RunMrpCommand | `business.planning.mrp.run` | runId。 |
+| `GET /api/business/v1/planning/mrp-runs` | ListMrpRunsQuery | `business.planning.mrp.read` | 只读分页查询。 |
 | `GET /api/business/v1/planning/mrp-runs/{runId}/pegging` | GetMrpPeggingQuery | `business.planning.mrp.read` | 只读。 |
+| `GET /api/business/v1/planning/suggestions` | ListPlanningSuggestionsQuery | `business.planning.mrp.read` | 只读分页查询。 |
 | `POST /api/business/v1/planning/suggestions/{suggestionId}/accept` | AcceptPlanningSuggestionCommand | `business.planning.suggestions.manage` | suggestionId。 |
+| `POST /api/business/v1/inventory/locations` | CreateStockLocationCommand | `business.inventory.locations.manage` | warehouse+location code 唯一。 |
+| `GET /api/business/v1/inventory/balances` | ListStockBalancesQuery | `business.inventory.ledger.read` | 只读库存余额。 |
 | `POST /api/business/v1/inventory/movements` | PostStockMovementCommand | `business.inventory.movements.create` | `Idempotency-Key` 必填。 |
+| `POST /api/business/v1/inventory/counts` | CreateStockCountTaskCommand | `business.inventory.counts.manage` | countNo 唯一。 |
+| `GET /api/business/v1/inventory/reports` | GetInventoryReportQuery | `business.inventory.ledger.read` | asOfDate 只读报表。 |
+| `POST /api/business/v1/quality/inspection-plans` | CreateInspectionPlanCommand | `business.quality.inspections.manage` | source document 幂等。 |
+| `POST /api/business/v1/quality/inspection-plans/{planId}/records` | RecordInspectionResultCommand | `business.quality.inspections.manage` | planId+sequence。 |
+| `GET /api/business/v1/quality/inspection-records` | ListInspectionRecordsQuery | `business.quality.inspections.read` | 只读分页查询。 |
+| `POST /api/business/v1/barcodes/templates` | CreateBarcodeTemplateCommand | `business.barcodes.templates.manage` | template code 唯一。 |
+| `POST /api/business/v1/barcodes/print-batches` | CreateLabelPrintBatchCommand | `business.barcodes.print` | print batch 幂等。 |
+| `POST /api/business/v1/barcodes/scans` | RecordBarcodeScanCommand | `business.barcodes.scans.write` | device+idempotencyKey。 |
+| `POST /api/business/v1/approvals/chains` | StartApprovalChainCommand | `business.approvals.manage` | documentType+documentId。 |
+| `POST /api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve` | ResolveApprovalStepCommand | `business.approvals.manage` | chainId+step+approver。 |
+| `GET /api/business/v1/approvals/chains/{chainId}` | GetApprovalChainQuery | `business.approvals.read` | 只读详情。 |
 | `POST /api/business/v1/erp/purchase-requisitions/from-suggestion` | CreatePurchaseRequisitionFromSuggestionCommand | `business.erp.procurement.manage` | suggestionId。 |
+| `POST /api/business/v1/erp/rfqs` | CreateRequestForQuotationCommand | `business.erp.procurement.manage` | requisition+round。 |
 | `POST /api/business/v1/erp/supplier-quotations` | CreateSupplierQuotationCommand | `business.erp.procurement.manage` | rfqId+supplierId。 |
+| `POST /api/business/v1/erp/purchase-orders` | CreatePurchaseOrderCommand | `business.erp.procurement.manage` | orderNo。 |
+| `POST /api/business/v1/erp/purchase-receipts` | RecordPurchaseReceiptCommand | `business.erp.procurement.manage` | receiptNo。 |
+| `GET /api/business/v1/erp/purchase-orders` | ListPurchaseOrdersQuery | `business.erp.procurement.read` | 只读分页查询。 |
+| `POST /api/business/v1/erp/opportunities` | CreateOpportunityCommand | `business.erp.sales.manage` | opportunityNo。 |
+| `POST /api/business/v1/erp/quotations` | CreateQuotationCommand | `business.erp.sales.manage` | quotationNo。 |
 | `POST /api/business/v1/erp/sales-orders` | CreateSalesOrderCommand | `business.erp.sales.manage` | salesOrderNo。 |
+| `POST /api/business/v1/erp/delivery-orders` | ReleaseDeliveryOrderCommand | `business.erp.sales.manage` | deliveryNo。 |
+| `GET /api/business/v1/erp/sales-orders` | ListSalesOrdersQuery | `business.erp.sales.read` | 只读分页查询。 |
+| `POST /api/business/v1/erp/finance/vouchers` | CreateJournalVoucherCommand | `business.erp.finance.manage` | 借贷平衡。 |
+| `GET /api/business/v1/erp/finance/summary` | GetFinanceSummaryQuery | `business.erp.finance.read` | 只读汇总。 |
+| `GET /api/business/v1/erp/finance/receivables` | ListReceivablesQuery | `business.erp.finance.read` | 只读分页查询。 |
+| `GET /api/business/v1/erp/finance/payables` | ListPayablesQuery | `business.erp.finance.read` | 只读分页查询。 |
+| `POST /api/business/v1/wms/inbound-orders` | CreateInboundOrderCommand | `business.wms.receipts.manage` | sourceType+sourceId 幂等。 |
 | `POST /api/business/v1/wms/inbound-orders/{inboundOrderId}/complete` | CompleteInboundOrderCommand | `business.wms.receipts.manage` | `Idempotency-Key` 必填。 |
+| `GET /api/business/v1/wms/inbound-orders` | ListInboundOrdersQuery | `business.wms.receipts.read` | 只读分页查询。 |
+| `POST /api/business/v1/wms/outbound-orders` | CreateOutboundOrderCommand | `business.wms.shipments.manage` | sourceType+sourceId 幂等。 |
 | `POST /api/business/v1/wms/outbound-orders/{outboundOrderId}/complete` | CompleteOutboundOrderCommand | `business.wms.shipments.manage` | `Idempotency-Key` 必填。 |
+| `GET /api/business/v1/wms/outbound-orders` | ListOutboundOrdersQuery | `business.wms.shipments.read` | 只读分页查询。 |
 | `POST /api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch` | DispatchWcsTaskCommand | `business.wms.automation.manage` | warehouseTaskId+adapter。 |
+| `POST /api/business/v1/wms/wcs-tasks/{externalTaskId}/complete` | CompleteWcsTaskCommand | `business.wms.automation.manage` | externalTaskId。 |
+| `POST /api/business/v1/wms/wcs-tasks/{externalTaskId}/fail` | FailWcsTaskCommand | `business.wms.automation.manage` | externalTaskId。 |
 | `POST /api/business/v1/mes/work-orders/from-suggestion` | CreateWorkOrderFromSuggestionCommand | `business.mes.work-orders.manage` | suggestionId。 |
+| `POST /api/business/v1/mes/work-orders/{workOrderId}/release` | ReleaseWorkOrderCommand | `business.mes.work-orders.manage` | workOrderId。 |
+| `GET /api/business/v1/mes/work-orders` | ListWorkOrdersQuery | `business.mes.work-orders.read` | 只读分页查询。 |
 | `POST /api/business/v1/mes/operation-tasks/{operationTaskId}/reports` | ReportOperationCommand | `business.mes.reporting.write` | `Idempotency-Key` 必填。 |
+| `GET /api/business/v1/mes/reports` | ListProductionReportsQuery | `business.mes.reporting.read` | 只读分页查询。 |
+| `POST /api/business/v1/mes/schedules/run` | RunRuleScheduleCommand | `business.mes.schedules.manage` | scheduleVersion。 |
+| `GET /api/business/v1/mes/schedules/gantt` | GetScheduleGanttQuery | `business.mes.schedules.read` | 只读甘特数据。 |
 | `POST /api/business/v1/iiot/tags` | CreateTelemetryTagCommand | `business.iiot.tags.manage` | device+tag key。 |
 | `POST /api/business/v1/iiot/samples` | RecordTelemetrySampleCommand | `business.iiot.telemetry.write` | tagId+sourceSequence。 |
 | `POST /api/business/v1/iiot/alarms` | RaiseAlarmCommand | `business.iiot.alarms.write` | externalAlarmId。 |
+| `POST /api/business/v1/iiot/alarms/{alarmId}/clear` | ClearAlarmCommand | `business.iiot.alarms.write` | alarmId。 |
+| `GET /api/business/v1/iiot/alarms` | ListAlarmEventsQuery | `business.iiot.alarms.read` | 只读分页查询。 |
+| `GET /api/business/v1/iiot/devices/{deviceAssetId}/timeline` | QueryDeviceStateTimelineQuery | `business.iiot.telemetry.read` | 只读时间线。 |
 | `POST /api/business/v1/maintenance/work-orders` | CreateMaintenanceWorkOrderCommand | `business.maintenance.work-orders.manage` | sourceAlarmId 或 requestNo。 |
 | `POST /api/business/v1/maintenance/work-orders/{workOrderId}/complete` | CompleteMaintenanceWorkOrderCommand | `business.maintenance.work-orders.manage` | workOrderId。 |
+| `GET /api/business/v1/maintenance/work-orders` | ListMaintenanceWorkOrdersQuery | `business.maintenance.work-orders.read` | 只读分页查询。 |
+| `POST /api/business/v1/maintenance/plans` | CreateMaintenancePlanCommand | `business.maintenance.plans.manage` | plan code 唯一。 |
+| `GET /api/business/v1/maintenance/plans` | ListMaintenancePlansQuery | `business.maintenance.plans.read` | 只读分页查询。 |
+| `POST /api/business/v1/maintenance/inspections` | RecordMaintenanceInspectionCommand | `business.maintenance.plans.manage` | planId+occurredAtUtc。 |
 
 ## Integration Events
 
@@ -453,21 +561,32 @@ Acceptance:
 2. 报工数量不破坏工序不变式。
 3. 完工入库请求能创建 WMS 入库单。
 
-### Slice 8. IndustrialTelemetry + Maintenance MVP
+### Slice 8. IndustrialTelemetry MVP
 
 Scope:
 
 1. tag 映射、采集点、设备状态快照、报警事件、时序摘要。
-2. 维修工单、保养计划、点检记录、停机原因。
 
 Acceptance:
 
 1. Connector Host 可写入受控工业数据事实。
-2. 报警可触发维修工单。
-3. 设备不可用/恢复事件可被 MES/Planning 消费。
-4. 不实现 PLC/DCS 控制和 SCADA 画面。
+2. 设备状态和报警事件可被 Maintenance、MES、Planning 和 Notification 消费。
+3. 不实现 PLC/DCS 控制和 SCADA 画面。
 
-### Slice 9. Full-Chain Acceptance
+### Slice 9. Maintenance MVP
+
+Scope:
+
+1. 维修工单、保养计划、点检记录、停机原因。
+2. 报警到维修工单的异步消费。
+
+Acceptance:
+
+1. 报警可触发维修工单。
+2. 设备不可用/恢复事件可被 MES/Planning 消费。
+3. Maintenance 不拥有设备资产主数据和库存余额。
+
+### Slice 10. Full-Chain Acceptance
 
 Scope:
 
@@ -497,7 +616,7 @@ Acceptance:
 4. Endpoint 测试覆盖认证、鉴权、OpenAPI operationId、响应包装和错误模型。
 5. IntegrationEvent 测试覆盖 envelope 必填字段、payload JSON 稳定性、版本不匹配拒绝、重复消费幂等。
 6. PostgreSQL profile 测试覆盖 migration、schema convention、唯一约束、索引意图和 JSON/text 注释。
-7. 全链路测试覆盖 Slice 9 七条链路，重点断言库存余额、MRP pegging、工程版本引用、财务候选事实和设备维护影响。
+7. 全链路测试覆盖 Slice 10 七条链路，重点断言库存余额、MRP pegging、工程版本引用、财务候选事实和设备维护影响。
 
 ## Open Questions
 
@@ -522,7 +641,8 @@ Acceptance:
 5. [business-erp-procurement-sales-finance-mvp](../plans/2026-05-20-business-erp-procurement-sales-finance-mvp.md)
 6. [business-wms-execution-mvp](../plans/2026-05-20-business-wms-execution-mvp.md)
 7. [business-mes-execution-mvp](../plans/2026-05-20-business-mes-execution-mvp.md)
-8. [business-iiot-maintenance-mvp](../plans/2026-05-20-business-iiot-maintenance-mvp.md)
-9. [business-full-chain-acceptance](../plans/2026-05-20-business-full-chain-acceptance.md)
+8. [business-industrial-telemetry-mvp](../plans/2026-05-20-business-industrial-telemetry-mvp.md)
+9. [business-maintenance-mvp](../plans/2026-05-20-business-maintenance-mvp.md)
+10. [business-full-chain-acceptance](../plans/2026-05-20-business-full-chain-acceptance.md)
 
 每个 implementation plan 必须列出具体文件、测试、迁移、OpenAPI、权限 seed、schema catalog 和验证命令。

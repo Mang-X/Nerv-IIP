@@ -196,8 +196,9 @@ Nerv-IIP/
 13. docs/superpowers/plans/2026-05-20-business-erp-procurement-sales-finance-mvp.md
 14. docs/superpowers/plans/2026-05-20-business-wms-execution-mvp.md
 15. docs/superpowers/plans/2026-05-20-business-mes-execution-mvp.md
-16. docs/superpowers/plans/2026-05-20-business-iiot-maintenance-mvp.md
-17. docs/superpowers/plans/2026-05-20-business-full-chain-acceptance.md
+16. docs/superpowers/plans/2026-05-20-business-industrial-telemetry-mvp.md
+17. docs/superpowers/plans/2026-05-20-business-maintenance-mvp.md
+18. docs/superpowers/plans/2026-05-20-business-full-chain-acceptance.md
 
 ## 里程碑
 

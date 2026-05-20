@@ -52,7 +52,7 @@ GitHub issues #72 到 #77 给出了第一版业务域输入，覆盖共享基础
 14. IndustrialTelemetry 只拥有工业数据采集后的平台侧事实，不控制 PLC/DCS，不替代 SCADA，也不绕过 Connector Host 直连现场。
 15. Maintenance 是维修、保养、点检和停机原因事实源。MES 可以消费停机和可用性结果，DemandPlanning 可以消费产能影响，但不直接改维修事实。
 16. 跨业务服务状态传播默认使用 ADR 0011 定义的 IntegrationEvent envelope、版本策略、幂等、DLQ 和 replay 规则。强一致入口可以使用同步 API，但不得通过共享数据库表或跨 schema 外键协作。
-17. 首批实施顺序固定为：MasterData → ProductEngineering → Inventory/Quality/Approval/Barcode 基础能力 → DemandPlanning → ERP Procurement/Sales/Finance MVP → WMS → MES → IndustrialTelemetry/Maintenance → full-chain acceptance。
+17. 首批实施顺序固定为：MasterData → ProductEngineering → Inventory/Quality/Approval/Barcode 基础能力 → DemandPlanning → ERP Procurement/Sales/Finance MVP → WMS → MES → IndustrialTelemetry → Maintenance → full-chain acceptance。
 18. 每个业务服务沿用 `docs/architecture/backend-cleanddd-netcorepal-guidelines.md`、数据库 schema 规范、OpenAPI 规范和权限矩阵。新增权限码先登记到授权矩阵，再进入 IAM seed、端点鉴权和测试。
 
 ## Rationale

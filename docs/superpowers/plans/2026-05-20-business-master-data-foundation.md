@@ -34,6 +34,9 @@ backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/
   MasterDataFacts.cs
   AggregatesModel/SkuAggregate/Sku.cs
   AggregatesModel/BusinessPartnerAggregate/BusinessPartner.cs
+  AggregatesModel/DepartmentAggregate/Department.cs
+  AggregatesModel/TeamAggregate/Team.cs
+  AggregatesModel/PersonnelSkillAggregate/PersonnelSkill.cs
   AggregatesModel/WorkCenterAggregate/WorkCenter.cs
   AggregatesModel/WorkCalendarAggregate/WorkCalendar.cs
   AggregatesModel/DeviceAssetAggregate/DeviceAsset.cs
@@ -126,6 +129,9 @@ git commit -m "feat: scaffold business master data service"
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/MasterDataFacts.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/SkuAggregate/Sku.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/BusinessPartnerAggregate/BusinessPartner.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/DepartmentAggregate/Department.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/TeamAggregate/Team.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/PersonnelSkillAggregate/PersonnelSkill.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/WorkCenterAggregate/WorkCenter.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/WorkCalendarAggregate/WorkCalendar.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/DeviceAssetAggregate/DeviceAsset.cs`
@@ -138,8 +144,11 @@ Create `MasterDataAggregateTests.cs` with these tests:
 
 ```csharp
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 
@@ -190,6 +199,20 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Department_team_and_personnel_skill_reference_business_scope_without_copying_iam_user_facts()
+    {
+        var department = Department.Create("org-001", "env-dev", "D-PROD", "Production", null);
+        var team = Team.Create("org-001", "env-dev", "T-DAY-A", "Day Shift A", department.Code, "day-shift");
+        var skill = PersonnelSkill.Assign("org-001", "env-dev", "user-001", "welding", "level-2", DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow.AddYears(1)));
+
+        Assert.Equal("D-PROD", department.Code);
+        Assert.Equal("D-PROD", team.DepartmentCode);
+        Assert.Equal("user-001", skill.UserId);
+        Assert.Equal("welding", skill.SkillCode);
+        Assert.True(skill.IsValidOn(DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30))));
+    }
+
+    [Fact]
     public void Device_asset_belongs_to_work_center_without_holding_control_secrets()
     {
         var asset = DeviceAsset.Register("org-001", "env-dev", "DEV-CNC-01", "CNC-500", "line-1", "WC-CNC-01");
@@ -224,6 +247,8 @@ public static class MasterDataFacts
 
 Each aggregate must expose `OrganizationId`, `EnvironmentId`, `Code`, `Disabled`, `CreatedAtUtc`, `UpdatedAtUtc` and domain methods matching the tests. Use `ArgumentException` for blank text, `ArgumentOutOfRangeException` for non-positive capacity and `InvalidOperationException` for state transitions that would mutate a disabled aggregate.
 
+`PersonnelSkill` exposes `OrganizationId`, `EnvironmentId`, `UserId`, `SkillCode`, `Level`, `EffectiveFrom`, `EffectiveTo`, `Disabled`, `CreatedAtUtc`, `UpdatedAtUtc` and `IsValidOn(DateOnly date)`. It stores only IAM `userId` references and does not copy login name, email, roles or membership facts from IAM.
+
 - [ ] **Step 3: Run domain tests**
 
 Run:
@@ -250,6 +275,9 @@ git commit -m "feat: add business master data aggregates"
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/ApplicationDbContext.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/SkuEntityTypeConfiguration.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/BusinessPartnerEntityTypeConfiguration.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/DepartmentEntityTypeConfiguration.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/TeamEntityTypeConfiguration.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/PersonnelSkillEntityTypeConfiguration.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/WorkCenterEntityTypeConfiguration.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/WorkCalendarEntityTypeConfiguration.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/DeviceAssetEntityTypeConfiguration.cs`
@@ -278,6 +306,9 @@ Configure these tables and unique indexes:
 | --- | --- | --- |
 | `skus` | organizationId + environmentId + code | category + disabled |
 | `business_partners` | organizationId + environmentId + partnerType + code | partnerType + disabled |
+| `departments` | organizationId + environmentId + code | parentDepartmentCode + disabled |
+| `teams` | organizationId + environmentId + code | departmentCode + disabled |
+| `personnel_skills` | organizationId + environmentId + userId + skillCode + effectiveFrom | userId + disabled; skillCode + disabled |
 | `work_centers` | organizationId + environmentId + code | disabled |
 | `work_calendars` | organizationId + environmentId + code | disabled |
 | `device_assets` | organizationId + environmentId + code | workCenterCode + disabled |
@@ -292,7 +323,7 @@ Run:
 dotnet ef migrations add InitialBusinessMasterData --project backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/Nerv.IIP.Business.MasterData.Infrastructure.csproj --startup-project backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj --output-dir Migrations
 ```
 
-Expected: migration creates the `business_masterdata` schema, five business tables, indexes and the service schema migrations history configuration.
+Expected: migration creates the `business_masterdata` schema, eight business tables, indexes and the service schema migrations history configuration.
 
 - [ ] **Step 4: Update schema catalog**
 
@@ -324,11 +355,17 @@ git commit -m "feat: persist business master data"
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Auth/BusinessPermissionCodes.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateSkuCommand.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateBusinessPartnerCommand.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateDepartmentCommand.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateTeamCommand.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/AssignPersonnelSkillCommand.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateWorkCenterCommand.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateWorkCalendarCommand.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/RegisterDeviceAssetCommand.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListSkusQuery.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListBusinessPartnersQuery.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListDepartmentsQuery.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListTeamsQuery.cs`
+- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListPersonnelSkillsQuery.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListResourcesQuery.cs`
 - Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/MasterData/MasterDataEndpoints.cs`
 - Create: `backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataEndpointTests.cs`
@@ -345,6 +382,12 @@ Cover these routes and permissions:
 | `GET /api/business/v1/master-data/skus` | `business.masterdata.products.read` |
 | `POST /api/business/v1/master-data/partners` | `business.masterdata.partners.manage` |
 | `GET /api/business/v1/master-data/partners` | `business.masterdata.partners.read` |
+| `POST /api/business/v1/master-data/departments` | `business.masterdata.resources.manage` |
+| `GET /api/business/v1/master-data/departments` | `business.masterdata.resources.read` |
+| `POST /api/business/v1/master-data/teams` | `business.masterdata.resources.manage` |
+| `GET /api/business/v1/master-data/teams` | `business.masterdata.resources.read` |
+| `POST /api/business/v1/master-data/personnel-skills` | `business.masterdata.resources.manage` |
+| `GET /api/business/v1/master-data/personnel-skills` | `business.masterdata.resources.read` |
 | `POST /api/business/v1/master-data/work-centers` | `business.masterdata.resources.manage` |
 | `POST /api/business/v1/master-data/work-calendars` | `business.masterdata.resources.manage` |
 | `POST /api/business/v1/master-data/device-assets` | `business.masterdata.resources.manage` |
@@ -370,7 +413,7 @@ public static class BusinessPermissionCodes
 
 - [ ] **Step 3: Implement commands and queries**
 
-Requests must include `organizationId` and `environmentId`. List queries must support `keyword`, `status`, `page`, `pageSize`; partner and resource lists also support `partnerType` or `resourceType`.
+Requests must include `organizationId` and `environmentId`. List queries must support `keyword`, `status`, `page`, `pageSize`; partner and resource lists also support `partnerType` or `resourceType`. Department lists support `parentDepartmentCode`, team lists support `departmentCode`, and personnel skill lists support `userId`, `skillCode` and `validOn`.
 
 - [ ] **Step 4: Seed permissions in IAM**
 
@@ -385,7 +428,7 @@ dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterD
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore --filter FullyQualifiedName~IamFoundationTests
 ```
 
-Expected: PASS. OpenAPI test confirms the eight operation IDs are stable and all endpoints require authorization.
+Expected: PASS. OpenAPI test confirms the fourteen operation IDs are stable and all endpoints require authorization.
 
 - [ ] **Step 6: Commit API surface**
 
@@ -442,7 +485,7 @@ git commit -m "docs: record business master data readiness"
 
 ## Self-Review Checklist
 
-1. Every MasterData requirement from BP-MD-001 through BP-MD-004 has a domain aggregate, endpoint test, migration and schema catalog entry.
+1. Every MasterData requirement from BP-MD-001 through BP-MD-005 has a domain aggregate, endpoint test, migration and schema catalog entry.
 2. The service does not reference IAM Infrastructure or any Business service outside MasterData.
 3. Permission strings match `docs/architecture/authorization-matrix.md`.
 4. `business_masterdata` is the only default schema used by the service.

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add end-to-end acceptance coverage for the seven critical Business Platform chains after Slice 1 through Slice 8 are implemented.
+**Goal:** Add end-to-end acceptance coverage for the seven critical Business Platform chains after Slice 1 through Slice 9 are implemented.
 
 **Architecture:** Acceptance tests live outside individual services under `backend/tests/Nerv.IIP.Business.Acceptance.Tests`. They exercise public HTTP APIs and integration-event-visible outcomes only. The tests must not read service databases directly except for optional diagnostic assertions behind explicit helpers.
 
@@ -20,7 +20,8 @@
 5. `scripts/verify-business-erp-procurement-sales-finance-mvp.ps1`
 6. `scripts/verify-business-wms-execution-mvp.ps1`
 7. `scripts/verify-business-mes-execution-mvp.ps1`
-8. `scripts/verify-business-iiot-maintenance-mvp.ps1`
+8. `scripts/verify-business-industrial-telemetry-mvp.ps1`
+9. `scripts/verify-business-maintenance-mvp.ps1`
 
 Each prerequisite script must pass before this plan starts.
 

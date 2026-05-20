@@ -274,11 +274,15 @@ ADR 0012、本架构文档、业务 spec、README/repo layout/权限矩阵入口
 
 建立工单、工序任务、报工、规则排产、完工入库请求和生产日报。
 
-### Slice 8. IndustrialTelemetry + Maintenance MVP
+### Slice 8. IndustrialTelemetry MVP
 
-建立 tag 映射、设备状态、报警事件、时序摘要、维修工单、保养计划、点检和停机原因。
+建立 tag 映射、设备状态、报警事件和时序摘要。
 
-### Slice 9. Full-Chain Acceptance
+### Slice 9. Maintenance MVP
+
+建立维修工单、保养计划、点检和停机原因，并消费 IndustrialTelemetry 报警事件。
+
+### Slice 10. Full-Chain Acceptance
 
 验证工程到制造、计划到采购/生产、采购到库存到应付、订单到交付到应收、生产执行到成本、设备到维护到产能、仓储自动化 adapter 七条链路。
 
