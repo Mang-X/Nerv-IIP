@@ -48,7 +48,7 @@ function submit() {
 
 <template>
   <Card class="w-full">
-    <form @submit.prevent="submit">
+    <form class="flex flex-col gap-4" @submit.prevent="submit">
       <CardHeader>
         <CardTitle>Sign in</CardTitle>
         <CardDescription>Use your Console account to continue.</CardDescription>

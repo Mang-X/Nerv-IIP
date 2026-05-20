@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text;
+using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.IdentityModel.Tokens;
 using Nerv.IIP.Iam.Infrastructure;
 
 namespace Nerv.IIP.Iam.Web.Tests;
@@ -59,6 +61,31 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
 
         var me = await _client.GetAsync("/api/iam/v1/me");
         Assert.Equal(HttpStatusCode.Unauthorized, me.StatusCode);
+    }
+
+    [Fact]
+    public async Task Console_smoke_login_returns_gateway_compatible_jwt_access_token()
+    {
+        var login = await _client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+        login.EnsureSuccessStatusCode();
+        var auth = await ReadResponseDataAsync<AuthResponse>(login);
+
+        var tokenHandler = new JwtSecurityTokenHandler { MapInboundClaims = false };
+        var principal = tokenHandler.ValidateToken(
+            auth!.AccessToken,
+            CreateGatewayTokenValidationParameters(),
+            out var securityToken);
+
+        var jwt = Assert.IsType<JwtSecurityToken>(securityToken);
+        Assert.Equal("nerv-iip-iam", jwt.Issuer);
+        Assert.Contains(jwt.Audiences, audience => audience == "nerv-iip-api");
+        Assert.Equal("user-admin", principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value);
+        Assert.Equal(auth.SessionId, principal.FindFirst("sessionId")?.Value);
+
+        _client.DefaultRequestHeaders.Authorization = new("Bearer", auth.AccessToken);
+        var me = await _client.GetAsync("/api/iam/v1/me");
+
+        me.EnsureSuccessStatusCode();
     }
 
     [Fact]
@@ -284,6 +311,19 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         string EnvironmentId,
         int PermissionVersion);
     private sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
+
+    private static TokenValidationParameters CreateGatewayTokenValidationParameters() => new()
+    {
+        ValidateIssuer = true,
+        ValidIssuer = "nerv-iip-iam",
+        ValidateAudience = true,
+        ValidAudience = "nerv-iip-api",
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes("nerv-iip-iam-development-signing-key-local-only-0001")),
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromMinutes(1)
+    };
 
     private async Task CreateUserAsync(string loginName, string email)
     {

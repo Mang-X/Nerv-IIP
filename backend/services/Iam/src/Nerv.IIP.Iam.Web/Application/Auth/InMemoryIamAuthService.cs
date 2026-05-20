@@ -3,7 +3,7 @@ using Nerv.IIP.Iam.Infrastructure;
 
 namespace Nerv.IIP.Iam.Web.Application.Auth;
 
-public sealed class InMemoryIamAuthService(InMemoryIamStore store) : IIamAuthService
+public sealed class InMemoryIamAuthService(InMemoryIamStore store, IamTokenService tokenService) : IIamAuthService
 {
     public Task<AuthResponse> LoginAsync(
         string loginName,
@@ -96,7 +96,17 @@ public sealed class InMemoryIamAuthService(InMemoryIamStore store) : IIamAuthSer
 
         try
         {
-            return store.ValidateAccessToken(value["Bearer ".Length..]);
+            var principal = tokenService.TryReadPrincipal(value["Bearer ".Length..]);
+            if (principal is null)
+            {
+                return null;
+            }
+
+            return store.ValidateAccessTokenPrincipal(
+                principal.SessionId,
+                principal.UserId,
+                principal.SecurityStamp,
+                principal.PermissionVersion);
         }
         catch (UnauthorizedAccessException)
         {
@@ -108,8 +118,13 @@ public sealed class InMemoryIamAuthService(InMemoryIamStore store) : IIamAuthSer
         }
     }
 
-    private static AuthResponse ToResponse(AuthResult result)
+    private AuthResponse ToResponse(AuthResult result)
     {
-        return new AuthResponse(result.AccessToken, result.RefreshToken, result.SessionId, result.ExpiresAtUtc);
+        var accessToken = tokenService.CreateAccessToken(
+            result.UserId,
+            result.SessionId,
+            result.SecurityStamp,
+            result.PermissionVersion);
+        return new AuthResponse(accessToken, result.RefreshToken, result.SessionId, result.ExpiresAtUtc);
     }
 }
