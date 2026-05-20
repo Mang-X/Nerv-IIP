@@ -18,6 +18,7 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
     VueRouter({
+      root: fileURLToPath(new URL('.', import.meta.url)),
       routesFolder: [
         {
           src: fileURLToPath(new URL('./apps/console/src/pages', import.meta.url)),
