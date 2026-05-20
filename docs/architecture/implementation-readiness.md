@@ -208,8 +208,8 @@
 
 ### Phase 8 Task 9 验证记录
 
-1. `pnpm -C frontend --filter @nerv-iip/console e2e -- iam-admin.spec.ts` 在未设置 Playwright 浏览器路径时失败，原因为 managed browser 缺失：`C:\Users\hp\AppData\Local\ms-playwright\chromium_headless_shell-1223\chrome-headless-shell-win64\chrome-headless-shell.exe` 不存在；这是本机 Playwright browser install 环境阻塞。
-2. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=C:\Program Files\Forguncy 12\WebSite\Resources\HtmlRenderHelper\.local-chromium\Win64-970485\chrome-win\chrome.exe pnpm -C frontend --filter @nerv-iip/console e2e -- iam-admin.spec.ts` 通过，3/3 Playwright tests passed。
+1. `pnpm -C frontend --filter @nerv-iip/console e2e -- iam-admin.spec.ts` 在未设置 Playwright 浏览器路径时失败，原因为 Playwright managed browser executable 缺失；这是本机 Playwright browser install 环境阻塞。
+2. 设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指向本机可用 Chromium 后运行 `pnpm -C frontend --filter @nerv-iip/console e2e -- iam-admin.spec.ts` 通过，3/3 Playwright tests passed。
 3. `dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj` 通过，34 passed；一次并行验证曾遇到 `Nerv.IIP.Observability.dll` 被其它 dotnet 进程占用，单独重跑通过。
 4. `dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj` 通过，30 passed。
 5. `pnpm -C frontend test` 通过，19 files passed、2 skipped，76 tests passed、2 skipped；IAM users/sessions/roles focused test 通过，17/17 passed。

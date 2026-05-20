@@ -60,7 +60,7 @@ const selectedStatus = computed({
         />
         <Input
           v-model="search"
-          class="iam-list-toolbar__search pl-8"
+          class="pl-8"
           :aria-label="props.searchLabel"
           :placeholder="props.searchPlaceholder"
           type="search"
@@ -84,34 +84,8 @@ const selectedStatus = computed({
       </Select>
     </div>
 
-    <Button type="button" class="iam-list-toolbar__primary-action" @click="emit('action')">
+    <Button type="button" @click="emit('action')">
       {{ props.actionLabel }}
     </Button>
   </div>
 </template>
-
-<style scoped>
-.iam-list-toolbar__primary-action {
-  background: #0048b8;
-  border-color: #0048b8;
-  color: #fff;
-}
-
-.iam-list-toolbar__search:focus-visible {
-  border-color: #2f6fd6;
-  box-shadow: 0 0 0 3px rgb(47 111 214 / 35%);
-}
-
-@supports (color: oklch(0.49 0.17 255)) {
-  .iam-list-toolbar__primary-action {
-    background: var(--primary);
-    border-color: var(--primary);
-    color: var(--primary-foreground);
-  }
-
-  .iam-list-toolbar__search:focus-visible {
-    border-color: var(--ring);
-    box-shadow: 0 0 0 3px rgb(47 111 214 / 35%);
-  }
-}
-</style>

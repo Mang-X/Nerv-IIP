@@ -530,7 +530,7 @@ async function expectSelectedNavigationIsBlue(page: Page) {
   })
 
   expect(activeLinkColors.className).toContain('router-link-active')
-  expect(isBlueRgb(activeLinkColors.color)).toBe(true)
+  expect(isBlueColor(activeLinkColors.color)).toBe(true)
 }
 
 async function expectNonPrimaryBadge(badge: Locator) {
@@ -553,19 +553,31 @@ async function expectPrimaryActionButtonIsBlue(button: Locator) {
     return {
       background: style.backgroundColor,
       borderColor: style.borderColor,
+      className: element.className,
       color: style.color,
+      primary: style.getPropertyValue('--primary'),
+      primaryForeground: style.getPropertyValue('--primary-foreground'),
     }
   })
 
+  expect(colorData.className).toContain('bg-primary')
+  expect(colorData.className).toContain('text-primary-foreground')
   expect(
-    isBlueRgb(colorData.background) || isBlueRgb(colorData.borderColor),
+    isBlueColor(colorData.background) ||
+      isBlueColor(colorData.borderColor) ||
+      isBlueColor(colorData.primary),
     JSON.stringify(colorData),
   ).toBe(true)
   expect(
-    isTransparent(colorData.borderColor) || isBlueRgb(colorData.borderColor),
+    isTransparent(colorData.borderColor) ||
+      isBlueColor(colorData.borderColor) ||
+      isBlueColor(colorData.primary),
     JSON.stringify(colorData),
   ).toBe(true)
-  expect(isLightRgb(colorData.color), JSON.stringify(colorData)).toBe(true)
+  expect(
+    isLightColor(colorData.color) || isLightColor(colorData.primaryForeground),
+    JSON.stringify(colorData),
+  ).toBe(true)
 }
 
 async function expectFocusedControlUsesBlueRing(control: Locator) {
@@ -577,43 +589,166 @@ async function expectFocusedControlUsesBlueRing(control: Locator) {
     return {
       borderColor: style.borderColor,
       boxShadow: style.boxShadow,
+      className: element.className,
       outlineColor: style.outlineColor,
+      ring: style.getPropertyValue('--ring'),
     }
   })
 
+  expect(focusData.className).toContain('focus-visible:border-ring')
+  expect(focusData.className).toContain('focus-visible:ring-ring/50')
   expect(
-    isBlueRgb(focusData.borderColor) ||
-      isBlueRgb(focusData.boxShadow) ||
-      isBlueRgb(focusData.outlineColor),
+    isBlueColor(focusData.borderColor) ||
+      isBlueColor(focusData.boxShadow) ||
+      isBlueColor(focusData.outlineColor) ||
+      isBlueColor(focusData.ring),
+    JSON.stringify(focusData),
   ).toBe(true)
 }
 
-function isBlueRgb(value: string) {
-  const channels = /rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(value)
-  if (!channels) {
-    return value.includes('oklch') || value.includes('color')
-  }
+function isBlueColor(value: string) {
+  return parseColors(value).some((color) => {
+    if (color.kind === 'rgb') {
+      return color.alpha > 0 && color.blue > color.red && color.blue >= color.green
+    }
 
-  const red = Number(channels[1])
-  const green = Number(channels[2])
-  const blue = Number(channels[3])
-  return blue > red && blue >= green
+    return (
+      color.alpha > 0 &&
+      color.lightness >= 0.2 &&
+      color.lightness <= 0.98 &&
+      color.chroma >= 0.025 &&
+      isBlueHue(color.hue)
+    )
+  })
 }
 
-function isLightRgb(value: string) {
-  const channels = /rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(value)
-  if (!channels) {
-    return value.includes('oklch') || value.includes('color')
+function isLightColor(value: string) {
+  return parseColors(value).some((color) => {
+    if (color.kind === 'rgb') {
+      return color.alpha > 0 && color.red >= 240 && color.green >= 240 && color.blue >= 240
+    }
+
+    return color.alpha > 0 && color.lightness >= 0.9 && color.chroma <= 0.04
+  })
+}
+
+type ParsedColor =
+  | {
+      alpha: number
+      blue: number
+      green: number
+      kind: 'rgb'
+      red: number
+    }
+  | {
+      alpha: number
+      chroma: number
+      hue: number
+      kind: 'oklch'
+      lightness: number
+    }
+
+function parseColors(value: string): ParsedColor[] {
+  return [...parseRgbColors(value), ...parseOklchColors(value)]
+}
+
+function parseRgbColors(value: string): ParsedColor[] {
+  const rgbPattern =
+    /rgba?\(\s*([+-]?(?:\d+|\d*\.\d+)%?)\s*(?:,|\s)\s*([+-]?(?:\d+|\d*\.\d+)%?)\s*(?:,|\s)\s*([+-]?(?:\d+|\d*\.\d+)%?)(?:\s*(?:,|\/)\s*([+-]?(?:\d+|\d*\.\d+)%?))?\s*\)/gi
+  const colors: ParsedColor[] = []
+
+  for (const match of value.matchAll(rgbPattern)) {
+    const red = parseRgbChannel(match[1])
+    const green = parseRgbChannel(match[2])
+    const blue = parseRgbChannel(match[3])
+    const alpha = parseAlpha(match[4])
+
+    if (red === undefined || green === undefined || blue === undefined || alpha === undefined) {
+      continue
+    }
+
+    colors.push({ kind: 'rgb', red, green, blue, alpha })
   }
 
-  const red = Number(channels[1])
-  const green = Number(channels[2])
-  const blue = Number(channels[3])
-  return red >= 240 && green >= 240 && blue >= 240
+  return colors
+}
+
+function parseOklchColors(value: string): ParsedColor[] {
+  const oklchPattern =
+    /oklch\(\s*([+-]?(?:\d+|\d*\.\d+)%?)\s+([+-]?(?:\d+|\d*\.\d+))\s+([+-]?(?:\d+|\d*\.\d+)(?:deg)?)(?:\s*\/\s*([+-]?(?:\d+|\d*\.\d+)%?))?\s*\)/gi
+  const colors: ParsedColor[] = []
+
+  for (const match of value.matchAll(oklchPattern)) {
+    const lightness = parseLightness(match[1])
+    const chroma = Number(match[2])
+    const hue = normalizeHue(Number(match[3].replace('deg', '')))
+    const alpha = parseAlpha(match[4])
+
+    if (
+      lightness === undefined ||
+      !Number.isFinite(chroma) ||
+      !Number.isFinite(hue) ||
+      alpha === undefined
+    ) {
+      continue
+    }
+
+    colors.push({ kind: 'oklch', lightness, chroma, hue, alpha })
+  }
+
+  return colors
+}
+
+function parseRgbChannel(value: string) {
+  const parsed = parseCssNumber(value)
+  if (parsed === undefined) {
+    return undefined
+  }
+
+  if (value.endsWith('%')) {
+    return Math.min(Math.max((parsed / 100) * 255, 0), 255)
+  }
+
+  return Math.min(Math.max(parsed, 0), 255)
+}
+
+function parseLightness(value: string) {
+  const parsed = parseCssNumber(value)
+  if (parsed === undefined) {
+    return undefined
+  }
+
+  return value.endsWith('%') ? parsed / 100 : parsed
+}
+
+function parseAlpha(value: string | undefined) {
+  if (value === undefined) {
+    return 1
+  }
+
+  const parsed = parseCssNumber(value)
+  if (parsed === undefined) {
+    return undefined
+  }
+
+  return value.endsWith('%') ? parsed / 100 : parsed
+}
+
+function parseCssNumber(value: string) {
+  const parsed = Number(value.replace('%', ''))
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function normalizeHue(hue: number) {
+  return ((hue % 360) + 360) % 360
+}
+
+function isBlueHue(hue: number) {
+  return hue >= 200 && hue <= 285
 }
 
 function isTransparent(value: string) {
-  return value === 'transparent' || value === 'rgba(0, 0, 0, 0)' || value.endsWith('/ 0)')
+  return parseColors(value).some((color) => color.alpha === 0) || value === 'transparent'
 }
 
 function envelope<T>(data: T) {
