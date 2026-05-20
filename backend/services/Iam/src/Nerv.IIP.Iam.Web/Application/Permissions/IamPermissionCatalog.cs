@@ -38,7 +38,7 @@ public static class IamPermissionCatalog
             .Select(code => new PermissionCatalogItemResponse(
                 code,
                 GetDomain(code),
-                Descriptions[code],
+                Descriptions.GetValueOrDefault(code, code),
                 true))
             .ToArray();
         return new PermissionCatalogResponse(items);

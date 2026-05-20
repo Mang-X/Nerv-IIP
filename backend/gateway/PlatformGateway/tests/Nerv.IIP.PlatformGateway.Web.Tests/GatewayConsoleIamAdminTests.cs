@@ -88,6 +88,50 @@ public sealed class GatewayConsoleIamAdminTests
     }
 
     [Fact]
+    public async Task Console_iam_create_user_forwards_bearer_token_after_manage_permission_check()
+    {
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        var iam = new FakeGatewayIamAuthClient();
+        var admin = new FakeGatewayIamAdminClient();
+        await using var factory = CreateFactory(auth, iam, admin);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
+        var request = new ConsoleCreateIamUserRequest("operator", "operator@nerv.local", "P@ssw0rd!");
+
+        var response = await client.PostAsJsonAsync("/api/console/v1/iam/users", request);
+        var body = await ReadResponseDataAsync<ConsoleIamUserResponse>(response);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal("iam.users.manage", auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, admin.LastBearerToken);
+        Assert.Equal(request, admin.LastCreateUserRequest);
+        Assert.Equal("user-created", body.UserId);
+        Assert.Equal(request.LoginName, body.LoginName);
+        Assert.Equal(request.Email, body.Email);
+    }
+
+    [Fact]
+    public async Task Console_iam_revoke_session_returns_forbidden_when_revoke_permission_check_denies()
+    {
+        var auth = FakeGatewayAuthorizationClient.Forbidden();
+        var iam = new FakeGatewayIamAuthClient();
+        var admin = new FakeGatewayIamAdminClient();
+        await using var factory = CreateFactory(auth, iam, admin);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsync("/api/console/v1/iam/sessions/session-001/revoke", null);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("iam.sessions.revoke", auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal(0, admin.RevokeSessionCallCount);
+    }
+
+    [Fact]
     public async Task Current_principal_permission_stores_authorization_result_in_http_context_items()
     {
         var auth = new DistinctGatewayAuthorizationClient();
@@ -202,8 +246,10 @@ public sealed class GatewayConsoleIamAdminTests
     private sealed class FakeGatewayIamAdminClient : IGatewayIamAdminClient
     {
         public int ListUsersCallCount { get; private set; }
+        public int RevokeSessionCallCount { get; private set; }
         public string? LastBearerToken { get; private set; }
         public ConsoleIamListRequest? LastListUsersRequest { get; private set; }
+        public ConsoleCreateIamUserRequest? LastCreateUserRequest { get; private set; }
 
         public Task<PagedListResponse<ConsoleIamUserResponse>> ListUsersAsync(
             string bearerToken,
@@ -223,8 +269,12 @@ public sealed class GatewayConsoleIamAdminTests
         public Task<ConsoleIamUserResponse> CreateUserAsync(
             string bearerToken,
             ConsoleCreateIamUserRequest request,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken)
+        {
+            LastBearerToken = bearerToken;
+            LastCreateUserRequest = request;
+            return Task.FromResult(new ConsoleIamUserResponse("user-created", request.LoginName, request.Email, true));
+        }
 
         public Task<ConsoleIamUserResponse> UpdateUserAsync(
             string bearerToken,
@@ -273,8 +323,12 @@ public sealed class GatewayConsoleIamAdminTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task RevokeSessionAsync(string bearerToken, string sessionId, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+        public Task RevokeSessionAsync(string bearerToken, string sessionId, CancellationToken cancellationToken)
+        {
+            RevokeSessionCallCount++;
+            LastBearerToken = bearerToken;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
