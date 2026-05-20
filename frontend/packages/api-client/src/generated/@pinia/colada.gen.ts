@@ -4,8 +4,8 @@ import { type _JSONValue, defineQueryOptions, type UseMutationOptions } from '@p
 
 import { serializeQueryKeyValue } from '../client';
 import { client } from '../client.gen';
-import { getBuildInfoEndpoint, getConsoleInstanceDetail, getConsoleOperationTask, getConsolePrincipal, healthEndpoint, invalidateGatewayCacheEndpoint, listConsoleInstances, loginConsoleUser, logoutConsoleSession, type Options, refreshConsoleSession, restartConsoleInstance } from '../sdk.gen';
-import type { GetBuildInfoEndpointData, GetBuildInfoEndpointResponse, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponse, GetConsoleOperationTaskData, GetConsoleOperationTaskResponse, GetConsolePrincipalData, GetConsolePrincipalResponse, HealthEndpointData, HealthEndpointResponse, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponse, ListConsoleInstancesData, ListConsoleInstancesResponse, LoginConsoleUserData, LoginConsoleUserResponse, LogoutConsoleSessionData, LogoutConsoleSessionResponse, RefreshConsoleSessionData, RefreshConsoleSessionResponse, RestartConsoleInstanceData, RestartConsoleInstanceResponse } from '../types.gen';
+import { createConsoleIamRole, createConsoleIamUser, disableConsoleIamUser, getBuildInfoEndpoint, getConsoleInstanceDetail, getConsoleOperationTask, getConsolePrincipal, healthEndpoint, invalidateGatewayCacheEndpoint, listConsoleIamPermissions, listConsoleIamRoles, listConsoleIamSessions, listConsoleIamUsers, listConsoleInstances, loginConsoleUser, logoutConsoleSession, type Options, refreshConsoleSession, resetConsoleIamUserPassword, restartConsoleInstance, revokeConsoleIamSession, updateConsoleIamRolePermissions, updateConsoleIamUser } from '../sdk.gen';
+import type { CreateConsoleIamRoleData, CreateConsoleIamRoleResponse, CreateConsoleIamUserData, CreateConsoleIamUserResponse, DisableConsoleIamUserData, DisableConsoleIamUserResponse, GetBuildInfoEndpointData, GetBuildInfoEndpointResponse, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponse, GetConsoleOperationTaskData, GetConsoleOperationTaskResponse, GetConsolePrincipalData, GetConsolePrincipalResponse, HealthEndpointData, HealthEndpointResponse, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponse, ListConsoleIamPermissionsData, ListConsoleIamPermissionsResponse, ListConsoleIamRolesData, ListConsoleIamRolesResponse, ListConsoleIamSessionsData, ListConsoleIamSessionsResponse, ListConsoleIamUsersData, ListConsoleIamUsersResponse, ListConsoleInstancesData, ListConsoleInstancesResponse, LoginConsoleUserData, LoginConsoleUserResponse, LogoutConsoleSessionData, LogoutConsoleSessionResponse, RefreshConsoleSessionData, RefreshConsoleSessionResponse, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordResponse, RestartConsoleInstanceData, RestartConsoleInstanceResponse, RevokeConsoleIamSessionData, RevokeConsoleIamSessionResponse, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsResponse, UpdateConsoleIamUserData, UpdateConsoleIamUserResponse } from '../types.gen';
 
 export const restartConsoleInstanceMutationOptions = (options?: Partial<Options<RestartConsoleInstanceData>>): UseMutationOptions<RestartConsoleInstanceResponse, Options<RestartConsoleInstanceData>, Error> => ({
     mutation: async (vars) => {
@@ -94,6 +94,139 @@ export const getConsoleInstanceDetailQueryOptions = defineQueryOptions<Options<G
         return data;
     }
 }));
+
+export const listConsoleIamUsersQueryKey = (options?: Options<ListConsoleIamUsersData>) => createQueryKey('listConsoleIamUsers', options, ['Console IAM', 'Api']);
+
+export const listConsoleIamUsersQueryOptions = defineQueryOptions<Options<ListConsoleIamUsersData>, ListConsoleIamUsersResponse, Error>((options?: Options<ListConsoleIamUsersData>) => ({
+    key: listConsoleIamUsersQueryKey(options),
+    query: async (context) => {
+        const { data } = await listConsoleIamUsers({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const createConsoleIamUserMutationOptions = (options?: Partial<Options<CreateConsoleIamUserData>>): UseMutationOptions<CreateConsoleIamUserResponse, Options<CreateConsoleIamUserData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await createConsoleIamUser({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const updateConsoleIamUserMutationOptions = (options?: Partial<Options<UpdateConsoleIamUserData>>): UseMutationOptions<UpdateConsoleIamUserResponse, Options<UpdateConsoleIamUserData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await updateConsoleIamUser({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const disableConsoleIamUserMutationOptions = (options?: Partial<Options<DisableConsoleIamUserData>>): UseMutationOptions<DisableConsoleIamUserResponse, Options<DisableConsoleIamUserData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await disableConsoleIamUser({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const resetConsoleIamUserPasswordMutationOptions = (options?: Partial<Options<ResetConsoleIamUserPasswordData>>): UseMutationOptions<ResetConsoleIamUserPasswordResponse, Options<ResetConsoleIamUserPasswordData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await resetConsoleIamUserPassword({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const listConsoleIamRolesQueryKey = (options?: Options<ListConsoleIamRolesData>) => createQueryKey('listConsoleIamRoles', options, ['Console IAM', 'Api']);
+
+export const listConsoleIamRolesQueryOptions = defineQueryOptions<Options<ListConsoleIamRolesData>, ListConsoleIamRolesResponse, Error>((options?: Options<ListConsoleIamRolesData>) => ({
+    key: listConsoleIamRolesQueryKey(options),
+    query: async (context) => {
+        const { data } = await listConsoleIamRoles({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const createConsoleIamRoleMutationOptions = (options?: Partial<Options<CreateConsoleIamRoleData>>): UseMutationOptions<CreateConsoleIamRoleResponse, Options<CreateConsoleIamRoleData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await createConsoleIamRole({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const updateConsoleIamRolePermissionsMutationOptions = (options?: Partial<Options<UpdateConsoleIamRolePermissionsData>>): UseMutationOptions<UpdateConsoleIamRolePermissionsResponse, Options<UpdateConsoleIamRolePermissionsData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await updateConsoleIamRolePermissions({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const listConsoleIamPermissionsQueryKey = (options?: Options<ListConsoleIamPermissionsData>) => createQueryKey('listConsoleIamPermissions', options, ['Console IAM', 'Api']);
+
+export const listConsoleIamPermissionsQueryOptions = defineQueryOptions<Options<ListConsoleIamPermissionsData>, ListConsoleIamPermissionsResponse, Error>((options?: Options<ListConsoleIamPermissionsData>) => ({
+    key: listConsoleIamPermissionsQueryKey(options),
+    query: async (context) => {
+        const { data } = await listConsoleIamPermissions({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const listConsoleIamSessionsQueryKey = (options?: Options<ListConsoleIamSessionsData>) => createQueryKey('listConsoleIamSessions', options, ['Console IAM', 'Api']);
+
+export const listConsoleIamSessionsQueryOptions = defineQueryOptions<Options<ListConsoleIamSessionsData>, ListConsoleIamSessionsResponse, Error>((options?: Options<ListConsoleIamSessionsData>) => ({
+    key: listConsoleIamSessionsQueryKey(options),
+    query: async (context) => {
+        const { data } = await listConsoleIamSessions({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const revokeConsoleIamSessionMutationOptions = (options?: Partial<Options<RevokeConsoleIamSessionData>>): UseMutationOptions<RevokeConsoleIamSessionResponse, Options<RevokeConsoleIamSessionData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await revokeConsoleIamSession({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
 
 export const healthEndpointQueryKey = (options?: Options<HealthEndpointData>) => createQueryKey('healthEndpoint', options, ['Health']);
 

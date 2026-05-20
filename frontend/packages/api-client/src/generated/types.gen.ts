@@ -68,7 +68,7 @@ export type NetCorePalExtensionsDtoResponseDataOfInstanceListResponse = NetCoreP
 };
 
 export type NervIipContractsAppHubQueriesInstanceListResponse = {
-    pageNumber?: number;
+    pageIndex?: number;
     pageSize?: number;
     totalCount?: number;
     items?: Array<NervIipContractsAppHubQueriesInstanceListItem>;
@@ -123,6 +123,113 @@ export type NervIipContractsAppHubQueriesCapabilitySummary = {
 
 export type NervIipPlatformGatewayWebEndpointsInstancesGetInstanceDetailRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamUserResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationIamAdminPagedListResponseOfConsoleIamUserResponse | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminPagedListResponseOfConsoleIamUserResponse = {
+    pageIndex?: number;
+    pageSize?: number;
+    totalCount?: number;
+    items?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserResponse>;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserResponse = {
+    userId?: string;
+    loginName?: string;
+    email?: string;
+    enabled?: boolean;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfConsoleIamUserResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserResponse | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleCreateIamUserRequest = {
+    loginName?: string;
+    email?: string;
+    password?: string;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleUpdateIamUserRequest = {
+    loginName?: string;
+    email?: string;
+    enabled?: boolean;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleResetIamUserPasswordRequest = {
+    newPassword?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamRoleResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationIamAdminPagedListResponseOfConsoleIamRoleResponse | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminPagedListResponseOfConsoleIamRoleResponse = {
+    pageIndex?: number;
+    pageSize?: number;
+    totalCount?: number;
+    items?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamRoleResponse>;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamRoleResponse = {
+    roleId?: string;
+    roleName?: string;
+    permissionCodes?: Array<string>;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfConsoleIamRoleResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationIamAdminConsoleIamRoleResponse | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleCreateIamRoleRequest = {
+    roleName?: string;
+    permissionCodes?: Array<string>;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleUpdateIamRolePermissionsRequest = {
+    permissionCodes?: Array<string>;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfConsoleIamPermissionCatalogResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationIamAdminConsoleIamPermissionCatalogResponse | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamPermissionCatalogResponse = {
+    items?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamPermissionResponse>;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamPermissionResponse = {
+    code?: string;
+    domain?: string;
+    description?: string;
+    seeded?: boolean;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamSessionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationIamAdminPagedListResponseOfConsoleIamSessionResponse | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminPagedListResponseOfConsoleIamSessionResponse = {
+    pageIndex?: number;
+    pageSize?: number;
+    totalCount?: number;
+    items?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamSessionResponse>;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamSessionResponse = {
+    sessionId?: string;
+    userId?: string;
+    issuedAtUtc?: string;
+    expiresAtUtc?: string;
+    revokedAtUtc?: string | null;
+    permissionVersion?: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfObject = NetCorePalExtensionsDtoResponseData & {
@@ -235,9 +342,11 @@ export type ListConsoleInstancesData = {
     query: {
         organizationId: string;
         environmentId: string;
-        pageNumber?: number | null;
+        pageIndex?: number | null;
         pageSize?: number | null;
-        search?: string | null;
+        sortBy?: string | null;
+        sortOrder?: string | null;
+        filterSearch?: string | null;
     };
     url: '/api/console/v1/instances';
 };
@@ -293,6 +402,337 @@ export type GetConsoleInstanceDetailResponses = {
 };
 
 export type GetConsoleInstanceDetailResponse = GetConsoleInstanceDetailResponses[keyof GetConsoleInstanceDetailResponses];
+
+export type ListConsoleIamUsersData = {
+    body?: never;
+    path?: never;
+    query?: {
+        pageIndex?: number | null;
+        pageSize?: number | null;
+        sortBy?: string | null;
+        sortOrder?: string | null;
+        filterSearch?: string | null;
+        filterEnabled?: boolean | null;
+        filterRevoked?: boolean | null;
+    };
+    url: '/api/console/v1/iam/users';
+};
+
+export type ListConsoleIamUsersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListConsoleIamUsersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamUserResponse;
+};
+
+export type ListConsoleIamUsersResponse = ListConsoleIamUsersResponses[keyof ListConsoleIamUsersResponses];
+
+export type CreateConsoleIamUserData = {
+    body: NervIipPlatformGatewayWebApplicationIamAdminConsoleCreateIamUserRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/iam/users';
+};
+
+export type CreateConsoleIamUserErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateConsoleIamUserResponses = {
+    /**
+     * Created
+     */
+    201: NetCorePalExtensionsDtoResponseDataOfConsoleIamUserResponse;
+};
+
+export type CreateConsoleIamUserResponse = CreateConsoleIamUserResponses[keyof CreateConsoleIamUserResponses];
+
+export type UpdateConsoleIamUserData = {
+    body: NervIipPlatformGatewayWebApplicationIamAdminConsoleUpdateIamUserRequest;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/users/{userId}';
+};
+
+export type UpdateConsoleIamUserErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpdateConsoleIamUserResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleIamUserResponse;
+};
+
+export type UpdateConsoleIamUserResponse = UpdateConsoleIamUserResponses[keyof UpdateConsoleIamUserResponses];
+
+export type DisableConsoleIamUserData = {
+    body?: never;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/users/{userId}/disable';
+};
+
+export type DisableConsoleIamUserErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DisableConsoleIamUserResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type DisableConsoleIamUserResponse = DisableConsoleIamUserResponses[keyof DisableConsoleIamUserResponses];
+
+export type ResetConsoleIamUserPasswordData = {
+    body: NervIipPlatformGatewayWebApplicationIamAdminConsoleResetIamUserPasswordRequest;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/users/{userId}/reset-password';
+};
+
+export type ResetConsoleIamUserPasswordErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ResetConsoleIamUserPasswordResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type ResetConsoleIamUserPasswordResponse = ResetConsoleIamUserPasswordResponses[keyof ResetConsoleIamUserPasswordResponses];
+
+export type ListConsoleIamRolesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        pageIndex?: number | null;
+        pageSize?: number | null;
+        sortBy?: string | null;
+        sortOrder?: string | null;
+        filterSearch?: string | null;
+        filterEnabled?: boolean | null;
+        filterRevoked?: boolean | null;
+    };
+    url: '/api/console/v1/iam/roles';
+};
+
+export type ListConsoleIamRolesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListConsoleIamRolesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamRoleResponse;
+};
+
+export type ListConsoleIamRolesResponse = ListConsoleIamRolesResponses[keyof ListConsoleIamRolesResponses];
+
+export type CreateConsoleIamRoleData = {
+    body: NervIipPlatformGatewayWebApplicationIamAdminConsoleCreateIamRoleRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/iam/roles';
+};
+
+export type CreateConsoleIamRoleErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateConsoleIamRoleResponses = {
+    /**
+     * Created
+     */
+    201: NetCorePalExtensionsDtoResponseDataOfConsoleIamRoleResponse;
+};
+
+export type CreateConsoleIamRoleResponse = CreateConsoleIamRoleResponses[keyof CreateConsoleIamRoleResponses];
+
+export type UpdateConsoleIamRolePermissionsData = {
+    body: NervIipPlatformGatewayWebApplicationIamAdminConsoleUpdateIamRolePermissionsRequest;
+    path: {
+        roleId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/roles/{roleId}/permissions';
+};
+
+export type UpdateConsoleIamRolePermissionsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpdateConsoleIamRolePermissionsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleIamRoleResponse;
+};
+
+export type UpdateConsoleIamRolePermissionsResponse = UpdateConsoleIamRolePermissionsResponses[keyof UpdateConsoleIamRolePermissionsResponses];
+
+export type ListConsoleIamPermissionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/iam/permissions';
+};
+
+export type ListConsoleIamPermissionsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListConsoleIamPermissionsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleIamPermissionCatalogResponse;
+};
+
+export type ListConsoleIamPermissionsResponse = ListConsoleIamPermissionsResponses[keyof ListConsoleIamPermissionsResponses];
+
+export type ListConsoleIamSessionsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        pageIndex?: number | null;
+        pageSize?: number | null;
+        sortBy?: string | null;
+        sortOrder?: string | null;
+        filterSearch?: string | null;
+        filterEnabled?: boolean | null;
+        filterRevoked?: boolean | null;
+    };
+    url: '/api/console/v1/iam/sessions';
+};
+
+export type ListConsoleIamSessionsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListConsoleIamSessionsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamSessionResponse;
+};
+
+export type ListConsoleIamSessionsResponse = ListConsoleIamSessionsResponses[keyof ListConsoleIamSessionsResponses];
+
+export type RevokeConsoleIamSessionData = {
+    body?: never;
+    path: {
+        sessionId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/sessions/{sessionId}/revoke';
+};
+
+export type RevokeConsoleIamSessionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RevokeConsoleIamSessionResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type RevokeConsoleIamSessionResponse = RevokeConsoleIamSessionResponses[keyof RevokeConsoleIamSessionResponses];
 
 export type HealthEndpointData = {
     body?: never;

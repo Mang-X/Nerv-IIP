@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailErrors, GetConsoleInstanceDetailResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskErrors, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalErrors, GetConsolePrincipalResponses, HealthEndpointData, HealthEndpointResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponses, ListConsoleInstancesData, ListConsoleInstancesErrors, ListConsoleInstancesResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionErrors, LogoutConsoleSessionResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, RestartConsoleInstanceData, RestartConsoleInstanceErrors, RestartConsoleInstanceResponses } from './types.gen';
+import type { CreateConsoleIamRoleData, CreateConsoleIamRoleErrors, CreateConsoleIamRoleResponses, CreateConsoleIamUserData, CreateConsoleIamUserErrors, CreateConsoleIamUserResponses, DisableConsoleIamUserData, DisableConsoleIamUserErrors, DisableConsoleIamUserResponses, GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailErrors, GetConsoleInstanceDetailResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskErrors, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalErrors, GetConsolePrincipalResponses, HealthEndpointData, HealthEndpointResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponses, ListConsoleIamPermissionsData, ListConsoleIamPermissionsErrors, ListConsoleIamPermissionsResponses, ListConsoleIamRolesData, ListConsoleIamRolesErrors, ListConsoleIamRolesResponses, ListConsoleIamSessionsData, ListConsoleIamSessionsErrors, ListConsoleIamSessionsResponses, ListConsoleIamUsersData, ListConsoleIamUsersErrors, ListConsoleIamUsersResponses, ListConsoleInstancesData, ListConsoleInstancesErrors, ListConsoleInstancesResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionErrors, LogoutConsoleSessionResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordErrors, ResetConsoleIamUserPasswordResponses, RestartConsoleInstanceData, RestartConsoleInstanceErrors, RestartConsoleInstanceResponses, RevokeConsoleIamSessionData, RevokeConsoleIamSessionErrors, RevokeConsoleIamSessionResponses, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsErrors, UpdateConsoleIamRolePermissionsResponses, UpdateConsoleIamUserData, UpdateConsoleIamUserErrors, UpdateConsoleIamUserResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -43,6 +43,92 @@ export const listConsoleInstances = <ThrowOnError extends boolean = false>(optio
 export const getConsoleInstanceDetail = <ThrowOnError extends boolean = false>(options: Options<GetConsoleInstanceDetailData, ThrowOnError>) => (options.client ?? client).get<GetConsoleInstanceDetailResponses, GetConsoleInstanceDetailErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/console/v1/instances/{instanceKey}',
+    ...options
+});
+
+export const listConsoleIamUsers = <ThrowOnError extends boolean = false>(options?: Options<ListConsoleIamUsersData, ThrowOnError>) => (options?.client ?? client).get<ListConsoleIamUsersResponses, ListConsoleIamUsersErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/users',
+    ...options
+});
+
+export const createConsoleIamUser = <ThrowOnError extends boolean = false>(options: Options<CreateConsoleIamUserData, ThrowOnError>) => (options.client ?? client).post<CreateConsoleIamUserResponses, CreateConsoleIamUserErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/users',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const updateConsoleIamUser = <ThrowOnError extends boolean = false>(options: Options<UpdateConsoleIamUserData, ThrowOnError>) => (options.client ?? client).patch<UpdateConsoleIamUserResponses, UpdateConsoleIamUserErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/users/{userId}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const disableConsoleIamUser = <ThrowOnError extends boolean = false>(options: Options<DisableConsoleIamUserData, ThrowOnError>) => (options.client ?? client).post<DisableConsoleIamUserResponses, DisableConsoleIamUserErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/users/{userId}/disable',
+    ...options
+});
+
+export const resetConsoleIamUserPassword = <ThrowOnError extends boolean = false>(options: Options<ResetConsoleIamUserPasswordData, ThrowOnError>) => (options.client ?? client).post<ResetConsoleIamUserPasswordResponses, ResetConsoleIamUserPasswordErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/users/{userId}/reset-password',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listConsoleIamRoles = <ThrowOnError extends boolean = false>(options?: Options<ListConsoleIamRolesData, ThrowOnError>) => (options?.client ?? client).get<ListConsoleIamRolesResponses, ListConsoleIamRolesErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/roles',
+    ...options
+});
+
+export const createConsoleIamRole = <ThrowOnError extends boolean = false>(options: Options<CreateConsoleIamRoleData, ThrowOnError>) => (options.client ?? client).post<CreateConsoleIamRoleResponses, CreateConsoleIamRoleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/roles',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const updateConsoleIamRolePermissions = <ThrowOnError extends boolean = false>(options: Options<UpdateConsoleIamRolePermissionsData, ThrowOnError>) => (options.client ?? client).patch<UpdateConsoleIamRolePermissionsResponses, UpdateConsoleIamRolePermissionsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/roles/{roleId}/permissions',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listConsoleIamPermissions = <ThrowOnError extends boolean = false>(options?: Options<ListConsoleIamPermissionsData, ThrowOnError>) => (options?.client ?? client).get<ListConsoleIamPermissionsResponses, ListConsoleIamPermissionsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/permissions',
+    ...options
+});
+
+export const listConsoleIamSessions = <ThrowOnError extends boolean = false>(options?: Options<ListConsoleIamSessionsData, ThrowOnError>) => (options?.client ?? client).get<ListConsoleIamSessionsResponses, ListConsoleIamSessionsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/sessions',
+    ...options
+});
+
+export const revokeConsoleIamSession = <ThrowOnError extends boolean = false>(options: Options<RevokeConsoleIamSessionData, ThrowOnError>) => (options.client ?? client).post<RevokeConsoleIamSessionResponses, RevokeConsoleIamSessionErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/sessions/{sessionId}/revoke',
     ...options
 });
 
