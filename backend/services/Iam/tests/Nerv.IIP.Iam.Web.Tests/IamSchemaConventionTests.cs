@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -79,6 +80,16 @@ public sealed class IamSchemaConventionTests
             index.IsUnique
             && index.Properties.Count == 1
             && index.Properties[0].Name == nameof(Role.RoleName));
+    }
+
+    [Fact]
+    public void Role_normalized_name_migration_is_discoverable()
+    {
+        using var fixture = CreateFixture();
+
+        Assert.Contains(
+            "20260520090000_AddRoleNormalizedName",
+            fixture.DbContext.Database.GetMigrations());
     }
 
     private static SchemaFixture CreateFixture()
