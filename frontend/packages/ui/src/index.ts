@@ -8,6 +8,7 @@ export {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogMedia,
   AlertDialogTitle,
   AlertDialogTrigger,
 } from './components/ui/alert-dialog'
@@ -32,6 +33,8 @@ export {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogOverlay,
+  DialogScrollContent,
   DialogTitle,
   DialogTrigger,
 } from './components/ui/dialog'
@@ -72,6 +75,7 @@ export {
   PaginationFirst,
   PaginationItem,
   PaginationLast,
+  PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from './components/ui/pagination'
@@ -81,6 +85,7 @@ export {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectItemText,
   SelectLabel,
   SelectScrollDownButton,
   SelectScrollUpButton,
