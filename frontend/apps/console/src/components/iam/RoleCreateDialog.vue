@@ -1,0 +1,113 @@
+<script setup lang="ts">
+import type { ConsoleIamPermissionResponse } from '@nerv-iip/api-client'
+import RolePermissionEditor from '@/components/iam/RolePermissionEditor.vue'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Input,
+} from '@nerv-iip/ui'
+import { reactive, shallowRef, watch } from 'vue'
+
+const props = withDefaults(defineProps<{
+  pending?: boolean
+  permissions: ConsoleIamPermissionResponse[]
+}>(), {
+  pending: false,
+})
+
+const open = defineModel<boolean>('open', { default: false })
+
+const emit = defineEmits<{
+  submit: [payload: { roleName: string, permissionCodes: string[] }]
+}>()
+
+const roleName = shallowRef('')
+const permissionCodes = shallowRef<string[]>([])
+const errors = reactive({
+  roleName: '',
+})
+
+function clearErrors() {
+  errors.roleName = ''
+}
+
+function resetForm() {
+  roleName.value = ''
+  permissionCodes.value = []
+  clearErrors()
+}
+
+function validate() {
+  clearErrors()
+  errors.roleName = roleName.value.trim() ? '' : 'Role name is required.'
+
+  return !errors.roleName
+}
+
+function handleSubmit() {
+  if (!validate()) {
+    return
+  }
+
+  emit('submit', {
+    permissionCodes: [...permissionCodes.value].sort(),
+    roleName: roleName.value.trim(),
+  })
+  open.value = false
+  resetForm()
+}
+
+watch(open, (isOpen) => {
+  if (!isOpen) {
+    resetForm()
+  }
+})
+</script>
+
+<template>
+  <Dialog v-model:open="open">
+    <DialogContent class="sm:max-w-3xl">
+      <DialogHeader>
+        <DialogTitle>Create role</DialogTitle>
+        <DialogDescription>
+          Create an IAM role and assign permissions from the seeded catalog.
+        </DialogDescription>
+      </DialogHeader>
+
+      <form class="grid gap-4" @submit.prevent="handleSubmit">
+        <FieldGroup>
+          <Field>
+            <FieldLabel for="iam-create-role-name">Role name</FieldLabel>
+            <Input
+              id="iam-create-role-name"
+              v-model="roleName"
+              :aria-invalid="Boolean(errors.roleName)"
+              autocomplete="off"
+            />
+            <FieldError v-if="errors.roleName" :errors="[errors.roleName]" />
+          </Field>
+
+          <RolePermissionEditor
+            v-model="permissionCodes"
+            :permissions="props.permissions"
+          />
+        </FieldGroup>
+
+        <DialogFooter show-close-button>
+          <Button type="submit" :disabled="props.pending">
+            Create role
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  </Dialog>
+</template>
