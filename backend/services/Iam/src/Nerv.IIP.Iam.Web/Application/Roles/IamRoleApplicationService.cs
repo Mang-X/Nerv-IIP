@@ -113,7 +113,15 @@ public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository reposito
             new RoleId($"role-{Guid.CreateVersion7():N}"),
             trimmedRoleName,
             seededCodes);
-        await repository.AddAsync(role, cancellationToken);
+        try
+        {
+            await repository.AddAndSaveAsync(role, cancellationToken);
+        }
+        catch (DuplicateRoleNameException)
+        {
+            throw new KnownException($"Role name '{trimmedRoleName}' is already used.");
+        }
+
         return ToResponse(role);
     }
 

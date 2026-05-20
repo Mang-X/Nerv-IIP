@@ -15,12 +15,20 @@ const iamState = vi.hoisted(() => ({
   refreshSessions: vi.fn(),
   revokeSession: vi.fn(),
   revokeSessionPending: { value: false },
+  totalCount: { value: 1 },
+}))
+const permissionState = vi.hoisted(() => ({
+  canRevoke: { value: true },
 }))
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     sessionId: 'session-current',
   }),
+}))
+
+vi.mock('@/composables/usePermissions', () => ({
+  useHasPermission: () => computed(() => permissionState.canRevoke.value),
 }))
 
 vi.mock('@/composables/useIamAdmin', () => ({
@@ -58,7 +66,7 @@ vi.mock('@/composables/useIamAdmin', () => ({
     ]),
     sessionsError: computed(() => undefined),
     sessionsPending: shallowRef(false),
-    totalCount: computed(() => 1),
+    totalCount: computed(() => iamState.totalCount.value),
   }),
 }))
 
@@ -72,6 +80,8 @@ describe('IAM sessions page', () => {
     iamState.revokeSession.mockResolvedValue(undefined)
     iamState.refreshSessions.mockResolvedValue(undefined)
     iamState.revokeSessionPending.value = false
+    iamState.totalCount.value = 1
+    permissionState.canRevoke.value = true
   })
 
   it('renders active sessions without legacy color variables', async () => {
@@ -149,7 +159,7 @@ describe('IAM sessions page', () => {
     expect(iamState.filters.pageIndex).toBe(1)
   })
 
-  it('warns when revoking the current session', async () => {
+  it('disables revoke for the current session', async () => {
     const wrapper = mount(SessionsPage, {
       global: {
         stubs: {
@@ -161,12 +171,9 @@ describe('IAM sessions page', () => {
     })
 
     await flushPromises()
-    await wrapper.get('button[aria-label="Revoke session session-current"]').trigger('click')
-    await flushPromises()
-
-    expect(document.body.textContent).toContain(
-      'This is your current session and you may be signed out.',
-    )
+    expect(
+      wrapper.get('button[aria-label="Revoke session session-current"]').attributes('disabled'),
+    ).toBeDefined()
   })
 
   it('revokes the selected session and refreshes sessions after confirmation', async () => {
@@ -199,6 +206,25 @@ describe('IAM sessions page', () => {
     )
   })
 
+  it('disables session revoke without revoke permission', async () => {
+    permissionState.canRevoke.value = false
+    const wrapper = mount(SessionsPage, {
+      global: {
+        stubs: {
+          DefaultLayout: {
+            template: '<main><slot /></main>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(
+      wrapper.get('button[aria-label="Revoke session session-1"]').attributes('disabled'),
+    ).toBeDefined()
+  })
+
   it('disables revoke for revoked sessions', async () => {
     const wrapper = mount(SessionsPage, {
       global: {
@@ -215,5 +241,22 @@ describe('IAM sessions page', () => {
     expect(
       wrapper.get('button[aria-label="Revoke session session-revoked"]').attributes('disabled'),
     ).toBeDefined()
+  })
+
+  it('renders pagination when sessions exceed one page', async () => {
+    iamState.totalCount.value = 45
+    const wrapper = mount(SessionsPage, {
+      global: {
+        stubs: {
+          DefaultLayout: {
+            template: '<main><slot /></main>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Showing 1-20 of 45')
   })
 })

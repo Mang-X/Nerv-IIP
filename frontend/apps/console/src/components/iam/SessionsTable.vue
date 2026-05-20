@@ -15,11 +15,13 @@ import {
 
 const props = withDefaults(
   defineProps<{
+    canRevoke?: boolean
     currentSessionId?: string
     pending?: boolean
     sessions: ConsoleIamSessionResponse[]
   }>(),
   {
+    canRevoke: false,
     pending: false,
   },
 )
@@ -50,7 +52,12 @@ function sessionLabel(session: ConsoleIamSessionResponse) {
 }
 
 function canRevoke(session: ConsoleIamSessionResponse) {
-  return Boolean(session.sessionId) && !session.revokedAtUtc
+  return (
+    Boolean(session.sessionId) &&
+    !session.revokedAtUtc &&
+    session.sessionId !== props.currentSessionId &&
+    props.canRevoke
+  )
 }
 </script>
 

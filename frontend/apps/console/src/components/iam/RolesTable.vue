@@ -19,12 +19,17 @@ import {
 } from '@nerv-iip/ui'
 import { MoreHorizontalIcon } from 'lucide-vue-next'
 
-const props = withDefaults(defineProps<{
-  pending?: boolean
-  roles: ConsoleIamRoleResponse[]
-}>(), {
-  pending: false,
-})
+const props = withDefaults(
+  defineProps<{
+    canManage?: boolean
+    pending?: boolean
+    roles: ConsoleIamRoleResponse[]
+  }>(),
+  {
+    canManage: false,
+    pending: false,
+  },
+)
 
 const emit = defineEmits<{
   editPermissions: [role: ConsoleIamRoleResponse]
@@ -48,9 +53,7 @@ function keyPermissions(role: ConsoleIamRoleResponse) {
           <TableHead>Role ID</TableHead>
           <TableHead>Permission count</TableHead>
           <TableHead>Key permissions</TableHead>
-          <TableHead class="w-16 text-right">
-            Actions
-          </TableHead>
+          <TableHead class="w-16 text-right"> Actions </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -82,18 +85,17 @@ function keyPermissions(role: ConsoleIamRoleResponse) {
           </TableCell>
           <TableCell>
             <div class="flex flex-wrap gap-1.5">
-              <PermissionCodeBadge
-                v-for="code in keyPermissions(role)"
-                :key="code"
-                :code="code"
-              />
+              <PermissionCodeBadge v-for="code in keyPermissions(role)" :key="code" :code="code" />
               <span
                 v-if="(role.permissionCodes?.length ?? 0) > keyPermissions(role).length"
                 class="text-xs text-muted-foreground"
               >
                 +{{ (role.permissionCodes?.length ?? 0) - keyPermissions(role).length }} more
               </span>
-              <span v-if="(role.permissionCodes?.length ?? 0) === 0" class="text-sm text-muted-foreground">
+              <span
+                v-if="(role.permissionCodes?.length ?? 0) === 0"
+                class="text-sm text-muted-foreground"
+              >
                 No permissions
               </span>
             </div>
@@ -106,6 +108,7 @@ function keyPermissions(role: ConsoleIamRoleResponse) {
                   type="button"
                   variant="ghost"
                   :aria-label="`Open actions for ${roleLabel(role)}`"
+                  :disabled="!props.canManage"
                 >
                   <MoreHorizontalIcon class="size-4" aria-hidden="true" />
                 </Button>

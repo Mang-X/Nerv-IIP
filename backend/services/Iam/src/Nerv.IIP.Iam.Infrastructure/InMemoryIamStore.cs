@@ -119,7 +119,13 @@ public sealed class InMemoryIamStore
                 "user",
                 membership.OrganizationId,
                 membership.EnvironmentId,
-                user.PermissionVersion);
+                user.PermissionVersion,
+                _roles
+                    .Where(x => membership.RoleIds.Contains(x.RoleId))
+                    .SelectMany(x => x.PermissionCodes)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(x => x, StringComparer.Ordinal)
+                    .ToArray());
         }
     }
 
@@ -343,4 +349,5 @@ public sealed record CurrentPrincipalSnapshot(
     string PrincipalType,
     string OrganizationId,
     string EnvironmentId,
-    int PermissionVersion);
+    int PermissionVersion,
+    IReadOnlyList<string> PermissionCodes);

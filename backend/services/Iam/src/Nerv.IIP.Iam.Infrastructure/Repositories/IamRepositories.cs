@@ -68,6 +68,13 @@ public interface IRoleRepository : IRepository<Role, RoleId>
     Task<Role?> GetByIdAsync(RoleId roleId, CancellationToken cancellationToken = default);
     Task<Role?> GetByNameAsync(string roleName, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Role>> ListNotDeletedAsync(CancellationToken cancellationToken = default);
+    Task AddAndSaveAsync(Role role, CancellationToken cancellationToken = default);
+}
+
+public sealed class DuplicateRoleNameException(string roleName)
+    : Exception($"Role name '{roleName}' is already used.")
+{
+    public string RoleName { get; } = roleName;
 }
 
 public sealed class RoleRepository(ApplicationDbContext context)
@@ -101,6 +108,32 @@ public sealed class RoleRepository(ApplicationDbContext context)
             .OrderBy(x => x.RoleName)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task AddAndSaveAsync(Role role, CancellationToken cancellationToken = default)
+    {
+        await DbContext.Roles.AddAsync(role, cancellationToken);
+        try
+        {
+            await DbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsRoleNameUniqueConstraintViolation(ex))
+        {
+            throw new DuplicateRoleNameException(role.RoleName);
+        }
+    }
+
+    private static bool IsRoleNameUniqueConstraintViolation(DbUpdateException exception)
+    {
+        if (!exception.Entries.Any(entry => entry.Entity is Role))
+        {
+            return false;
+        }
+
+        var text = $"{exception.Message} {exception.InnerException?.Message}";
+        return text.Contains("IX_roles_NormalizedRoleName", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("NormalizedRoleName", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("23505", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public interface IMembershipRepository : IRepository<Membership, MembershipId>
@@ -112,6 +145,11 @@ public interface IMembershipRepository : IRepository<Membership, MembershipId>
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         string permissionCode,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<string>> ListPermissionCodesAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
         CancellationToken cancellationToken = default);
 }
 
@@ -164,6 +202,27 @@ public sealed class MembershipRepository(ApplicationDbContext context)
                 && rolePermission.PermissionCode == permissionCode
             select rolePermission.Id)
             .AnyAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<string>> ListPermissionCodesAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        return await (
+            from membership in DbContext.Memberships
+            join membershipRole in DbContext.MembershipRoles on membership.Id equals membershipRole.MembershipId
+            join role in DbContext.Roles on membershipRole.RoleId equals role.Id
+            join rolePermission in DbContext.RolePermissions on role.Id equals rolePermission.RoleId
+            where membership.UserId == userId
+                && membership.OrganizationId == organizationId
+                && membership.EnvironmentId == environmentId
+                && role.Deleted == NotDeleted
+            select rolePermission.PermissionCode)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToListAsync(cancellationToken);
     }
 }
 

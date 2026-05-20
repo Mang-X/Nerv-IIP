@@ -48,7 +48,8 @@ public sealed class InMemoryIamAuthService(InMemoryIamStore store) : IIamAuthSer
                 currentPrincipal.PrincipalType,
                 currentPrincipal.OrganizationId,
                 currentPrincipal.EnvironmentId,
-                currentPrincipal.PermissionVersion));
+                currentPrincipal.PermissionVersion,
+                currentPrincipal.PermissionCodes));
         }
         catch (UnauthorizedAccessException)
         {

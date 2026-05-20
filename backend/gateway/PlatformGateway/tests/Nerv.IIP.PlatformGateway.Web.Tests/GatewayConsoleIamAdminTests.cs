@@ -23,7 +23,8 @@ public sealed class GatewayConsoleIamAdminTests
         "admin@nerv.local",
         "org-001",
         "env-dev",
-        7);
+        7,
+        ["iam.users.read", "iam.users.manage"]);
 
     [Fact]
     public async Task Console_iam_users_requires_authentication_before_clients_are_called()

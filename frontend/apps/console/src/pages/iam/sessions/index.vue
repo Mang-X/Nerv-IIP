@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { ConsoleIamSessionResponse } from '@nerv-iip/api-client'
+import IamPagination from '@/components/iam/IamPagination.vue'
 import IamListToolbar from '@/components/iam/IamListToolbar.vue'
 import IamPageHeader from '@/components/iam/IamPageHeader.vue'
 import RevokeSessionDialog from '@/components/iam/RevokeSessionDialog.vue'
 import SessionsTable from '@/components/iam/SessionsTable.vue'
 import { useIamSessions } from '@/composables/useIamAdmin'
+import { useHasPermission } from '@/composables/usePermissions'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { Alert, AlertDescription, AlertTitle, toast } from '@nerv-iip/ui'
@@ -22,6 +24,7 @@ const sessions = useIamSessions()
 
 const search = shallowRef('')
 const status = shallowRef<'' | 'active' | 'revoked'>('')
+const canRevokeSessions = useHasPermission('iam.sessions.revoke')
 const revokeOpen = shallowRef(false)
 const selectedSession = shallowRef<ConsoleIamSessionResponse>()
 const statusOptions = [
@@ -31,21 +34,21 @@ const statusOptions = [
 
 const currentSessionId = computed(() => unref(auth.sessionId))
 
-const pageError = computed(() =>
-  sessions.sessionsError.value
-  ?? sessions.revokeSessionError.value,
+const pageError = computed(() => sessions.sessionsError.value ?? sessions.revokeSessionError.value)
+
+const tablePending = computed(
+  () => sessions.sessionsPending.value || sessions.revokeSessionPending.value,
 )
 
-const tablePending = computed(() =>
-  sessions.sessionsPending.value
-  || sessions.revokeSessionPending.value,
+watch(
+  [search, status],
+  ([nextSearch, nextStatus]) => {
+    sessions.filters.filterSearch = nextSearch.trim() || undefined
+    sessions.filters.filterRevoked = statusToRevokedFilter(nextStatus)
+    sessions.filters.pageIndex = 1
+  },
+  { immediate: true },
 )
-
-watch([search, status], ([nextSearch, nextStatus]) => {
-  sessions.filters.filterSearch = nextSearch.trim() || undefined
-  sessions.filters.filterRevoked = statusToRevokedFilter(nextStatus)
-  sessions.filters.pageIndex = 1
-}, { immediate: true })
 
 function statusToRevokedFilter(nextStatus: '' | 'active' | 'revoked') {
   if (nextStatus === 'active') {
@@ -101,10 +104,18 @@ async function confirmRevoke(sessionId: string) {
       </Alert>
 
       <SessionsTable
+        :can-revoke="canRevokeSessions"
         :current-session-id="currentSessionId"
         :pending="tablePending"
         :sessions="sessions.sessions.value"
         @revoke="openRevokeDialog"
+      />
+
+      <IamPagination
+        :page-index="sessions.filters.pageIndex"
+        :page-size="sessions.filters.pageSize"
+        :total-count="sessions.totalCount.value"
+        @page-change="sessions.filters.pageIndex = $event"
       />
 
       <RevokeSessionDialog

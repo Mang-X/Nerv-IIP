@@ -375,6 +375,7 @@ public sealed class IamPostgresProfileTests
                 var resetUser = await db.Users.SingleAsync(x => x.Id.Id == user.UserId);
                 Assert.DoesNotContain("OldPassword123!", resetUser.PasswordHash, StringComparison.Ordinal);
                 Assert.DoesNotContain("NewPassword123!", resetUser.PasswordHash, StringComparison.Ordinal);
+                Assert.Equal(2, resetUser.PermissionVersion);
             }
         }
         finally

@@ -19,6 +19,7 @@ export interface IamListToolbarStatusOption {
 const props = withDefaults(
   defineProps<{
     actionLabel: string
+    actionDisabled?: boolean
     searchLabel?: string
     searchPlaceholder?: string
     showStatusFilter?: boolean
@@ -84,7 +85,7 @@ const selectedStatus = computed({
       </Select>
     </div>
 
-    <Button type="button" @click="emit('action')">
+    <Button type="button" :disabled="props.actionDisabled" @click="emit('action')">
       {{ props.actionLabel }}
     </Button>
   </div>

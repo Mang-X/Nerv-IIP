@@ -8,6 +8,14 @@ const principal = {
   organizationId: 'org-1',
   environmentId: 'env-1',
   permissionVersion: 1,
+  permissionCodes: [
+    'iam.users.read',
+    'iam.users.manage',
+    'iam.roles.read',
+    'iam.roles.manage',
+    'iam.sessions.read',
+    'iam.sessions.revoke',
+  ],
 }
 
 const session = {

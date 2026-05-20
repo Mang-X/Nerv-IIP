@@ -18,7 +18,8 @@ public sealed class GatewayConsoleAuthTests
         "admin@nerv.local",
         "org-001",
         "env-dev",
-        7);
+        7,
+        ["iam.users.read", "iam.users.manage"]);
 
     [Fact]
     public async Task Console_login_forwards_to_iam_and_returns_session_payload()
@@ -36,7 +37,7 @@ public sealed class GatewayConsoleAuthTests
         Assert.Equal("access-token", body!.AccessToken);
         Assert.Equal("refresh-token", body.RefreshToken);
         Assert.Equal("session-001", body.SessionId);
-        Assert.Equal(Principal, body.Principal);
+        AssertPrincipal(Principal, body.Principal);
     }
 
     [Fact]
@@ -70,7 +71,7 @@ public sealed class GatewayConsoleAuthTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(new ConsoleRefreshRequest("refresh-token"), iam.LastRefreshRequest);
         Assert.Equal("access-token", body!.AccessToken);
-        Assert.Equal(Principal, body.Principal);
+        AssertPrincipal(Principal, body.Principal);
     }
 
     [Fact]
@@ -153,7 +154,7 @@ public sealed class GatewayConsoleAuthTests
         var body = await ReadResponseDataAsync<ConsolePrincipalResponse>(response);
 
         Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, iam.LastMeBearerToken);
-        Assert.Equal(Principal, body);
+        AssertPrincipal(Principal, body);
     }
 
     [Fact]
@@ -296,7 +297,8 @@ public sealed class GatewayConsoleAuthTests
                     principalType = "user",
                     organizationId = "org-001",
                     environmentId = "env-dev",
-                    permissionVersion = 7
+                    permissionVersion = 7,
+                    permissionCodes = new[] { "iam.users.read", "iam.users.manage" }
                 }))
             };
         });
@@ -310,7 +312,7 @@ public sealed class GatewayConsoleAuthTests
 
         Assert.Equal("new-access-token", response.AccessToken);
         Assert.Equal("new-refresh-token", response.RefreshToken);
-        Assert.Equal(Principal, response.Principal);
+        AssertPrincipal(Principal, response.Principal);
         Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
         Assert.Equal("/api/iam/v1/auth/login", handler.Requests[0].RequestUri!.AbsolutePath);
         Assert.Null(handler.Requests[0].Authorization);
@@ -326,6 +328,18 @@ public sealed class GatewayConsoleAuthTests
             services.RemoveAll<IGatewayIamAuthClient>();
             services.AddSingleton<IGatewayIamAuthClient>(iam);
         }));
+
+    private static void AssertPrincipal(ConsolePrincipalResponse expected, ConsolePrincipalResponse actual)
+    {
+        Assert.Equal(expected.PrincipalId, actual.PrincipalId);
+        Assert.Equal(expected.PrincipalType, actual.PrincipalType);
+        Assert.Equal(expected.LoginName, actual.LoginName);
+        Assert.Equal(expected.Email, actual.Email);
+        Assert.Equal(expected.OrganizationId, actual.OrganizationId);
+        Assert.Equal(expected.EnvironmentId, actual.EnvironmentId);
+        Assert.Equal(expected.PermissionVersion, actual.PermissionVersion);
+        Assert.Equal(expected.PermissionCodes, actual.PermissionCodes);
+    }
 
     private sealed class FakeGatewayIamAuthClient : IGatewayIamAuthClient
     {

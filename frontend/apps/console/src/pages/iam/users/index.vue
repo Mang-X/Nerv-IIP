@@ -5,6 +5,7 @@ import type {
   ConsoleResetIamUserPasswordRequest,
   ConsoleUpdateIamUserRequest,
 } from '@nerv-iip/api-client'
+import IamPagination from '@/components/iam/IamPagination.vue'
 import IamListToolbar from '@/components/iam/IamListToolbar.vue'
 import IamPageHeader from '@/components/iam/IamPageHeader.vue'
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
@@ -12,6 +13,7 @@ import UserEditDialog from '@/components/iam/UserEditDialog.vue'
 import UserResetPasswordDialog from '@/components/iam/UserResetPasswordDialog.vue'
 import UsersTable from '@/components/iam/UsersTable.vue'
 import { useIamUsers } from '@/composables/useIamAdmin'
+import { useHasPermission } from '@/composables/usePermissions'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { Alert, AlertDescription, AlertTitle, toast } from '@nerv-iip/ui'
 import { computed, shallowRef, watch } from 'vue'
@@ -35,6 +37,7 @@ const {
   resetUserPassword,
   resetUserPasswordError,
   resetUserPasswordPending,
+  totalCount,
   updateUser,
   updateUserError,
   updateUserPending,
@@ -50,32 +53,39 @@ type UpdateUserData = Parameters<typeof updateUser>[0]
 
 const search = shallowRef('')
 const status = shallowRef<'' | 'enabled' | 'disabled'>('')
+const canManageUsers = useHasPermission('iam.users.manage')
 const createDialogOpen = shallowRef(false)
 const editDialogOpen = shallowRef(false)
 const resetPasswordDialogOpen = shallowRef(false)
 const selectedUser = shallowRef<ConsoleIamUserResponse>()
 
-const pageError = computed(() =>
-  usersError.value
-  ?? createUserError.value
-  ?? updateUserError.value
-  ?? disableUserError.value
-  ?? resetUserPasswordError.value,
+const pageError = computed(
+  () =>
+    usersError.value ??
+    createUserError.value ??
+    updateUserError.value ??
+    disableUserError.value ??
+    resetUserPasswordError.value,
 )
 
-const tablePending = computed(() =>
-  usersPending.value
-  || createUserPending.value
-  || updateUserPending.value
-  || disableUserPending.value
-  || resetUserPasswordPending.value,
+const tablePending = computed(
+  () =>
+    usersPending.value ||
+    createUserPending.value ||
+    updateUserPending.value ||
+    disableUserPending.value ||
+    resetUserPasswordPending.value,
 )
 
-watch([search, status], ([nextSearch, nextStatus]) => {
-  filters.filterSearch = nextSearch.trim() || undefined
-  filters.filterEnabled = statusToEnabledFilter(nextStatus)
-  filters.pageIndex = 1
-}, { immediate: true })
+watch(
+  [search, status],
+  ([nextSearch, nextStatus]) => {
+    filters.filterSearch = nextSearch.trim() || undefined
+    filters.filterEnabled = statusToEnabledFilter(nextStatus)
+    filters.pageIndex = 1
+  },
+  { immediate: true },
+)
 
 function statusToEnabledFilter(nextStatus: '' | 'enabled' | 'disabled') {
   if (nextStatus === 'enabled') {
@@ -173,6 +183,7 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         v-model:search="search"
         v-model:status="status"
         action-label="Create user"
+        :action-disabled="!canManageUsers"
         search-label="Search users"
         search-placeholder="Search users"
         show-status-filter
@@ -185,6 +196,7 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
       </Alert>
 
       <UsersTable
+        :can-manage="canManageUsers"
         :pending="tablePending"
         :users="users"
         @disable="handleDisable"
@@ -192,15 +204,15 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         @reset-password="openResetPasswordDialog"
       />
 
-      <UserCreateDialog
-        v-model:open="createDialogOpen"
-        @submit="handleCreate"
+      <IamPagination
+        :page-index="filters.pageIndex"
+        :page-size="filters.pageSize"
+        :total-count="totalCount"
+        @page-change="filters.pageIndex = $event"
       />
-      <UserEditDialog
-        v-model:open="editDialogOpen"
-        :user="selectedUser"
-        @submit="handleUpdate"
-      />
+
+      <UserCreateDialog v-model:open="createDialogOpen" @submit="handleCreate" />
+      <UserEditDialog v-model:open="editDialogOpen" :user="selectedUser" @submit="handleUpdate" />
       <UserResetPasswordDialog
         v-model:open="resetPasswordDialogOpen"
         :user="selectedUser"

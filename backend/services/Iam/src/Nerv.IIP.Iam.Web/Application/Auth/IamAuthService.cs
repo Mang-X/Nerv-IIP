@@ -116,7 +116,12 @@ public sealed class PostgreSqlIamAuthService(
             "user",
             membership.OrganizationId.Id,
             membership.EnvironmentId.Id,
-            user.PermissionVersion);
+            user.PermissionVersion,
+            await membershipRepository.ListPermissionCodesAsync(
+                userId,
+                membership.OrganizationId,
+                membership.EnvironmentId,
+                cancellationToken));
     }
 
     public async Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)

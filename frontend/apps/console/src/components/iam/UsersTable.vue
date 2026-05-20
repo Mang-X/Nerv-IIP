@@ -20,10 +20,12 @@ import { MoreHorizontalIcon } from 'lucide-vue-next'
 
 const props = withDefaults(
   defineProps<{
+    canManage?: boolean
     pending?: boolean
     users: ConsoleIamUserResponse[]
   }>(),
   {
+    canManage: false,
     pending: false,
   },
 )
@@ -90,6 +92,7 @@ const emit = defineEmits<{
                   type="button"
                   variant="ghost"
                   :aria-label="`Open actions for ${user.loginName || user.userId || 'user'}`"
+                  :disabled="!props.canManage"
                 >
                   <MoreHorizontalIcon class="size-4" aria-hidden="true" />
                 </Button>

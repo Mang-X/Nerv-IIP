@@ -13,7 +13,8 @@ public sealed record ConsolePrincipalResponse(
     string Email,
     string OrganizationId,
     string EnvironmentId,
-    int PermissionVersion);
+    int PermissionVersion,
+    IReadOnlyList<string> PermissionCodes);
 
 public sealed record ConsoleAuthResponse(
     string AccessToken,

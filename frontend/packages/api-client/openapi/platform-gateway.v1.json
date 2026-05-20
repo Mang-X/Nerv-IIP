@@ -1898,6 +1898,12 @@
           "permissionVersion": {
             "type": "integer",
             "format": "int32"
+          },
+          "permissionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

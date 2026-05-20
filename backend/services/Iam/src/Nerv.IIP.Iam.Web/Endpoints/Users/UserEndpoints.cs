@@ -116,7 +116,7 @@ public sealed class ResetUserPasswordEndpoint(IIamPermissionAuthorizer authorize
         var req = await HttpContext.Request.ReadFromJsonAsync<ResetUserPasswordRequest>(ct)
             ?? throw new BadHttpRequestException("Request body is required.");
         var userId = Route<string>("userId") ?? string.Empty;
-        await mediator.Send(new ResetUserPasswordCommand(userId, req.NewPassword), ct);
+        await mediator.Send(new ResetUserPasswordCommand(userId, SensitivePassword.From(req.NewPassword)), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 }

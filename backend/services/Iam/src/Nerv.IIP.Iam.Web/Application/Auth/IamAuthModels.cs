@@ -12,7 +12,8 @@ public sealed record CurrentPrincipalResponse(
     string PrincipalType,
     string OrganizationId,
     string EnvironmentId,
-    int PermissionVersion);
+    int PermissionVersion,
+    IReadOnlyList<string> PermissionCodes);
 public sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
 
 public interface IIamAuthService

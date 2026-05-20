@@ -13,7 +13,15 @@ const iamState = vi.hoisted(() => ({
   disableUser: vi.fn(),
   refreshUsers: vi.fn(),
   resetUserPassword: vi.fn(),
+  totalCount: { value: 1 },
   updateUser: vi.fn(),
+}))
+const permissionState = vi.hoisted(() => ({
+  canManage: { value: true },
+}))
+
+vi.mock('@/composables/usePermissions', () => ({
+  useHasPermission: () => computed(() => permissionState.canManage.value),
 }))
 
 vi.mock('@/composables/useIamAdmin', () => ({
@@ -32,7 +40,7 @@ vi.mock('@/composables/useIamAdmin', () => ({
     resetUserPassword: iamState.resetUserPassword,
     resetUserPasswordError: computed(() => undefined),
     resetUserPasswordPending: shallowRef(false),
-    totalCount: computed(() => 1),
+    totalCount: computed(() => iamState.totalCount.value),
     updateUser: iamState.updateUser,
     updateUserError: computed(() => undefined),
     updateUserPending: shallowRef(false),
@@ -77,7 +85,9 @@ describe('IAM users page', () => {
     iamState.disableUser.mockResolvedValue(undefined)
     iamState.refreshUsers.mockResolvedValue(undefined)
     iamState.resetUserPassword.mockResolvedValue(undefined)
+    iamState.totalCount.value = 1
     iamState.updateUser.mockResolvedValue(undefined)
+    permissionState.canManage.value = true
   })
 
   it('renders the users list without legacy color variables', async () => {
@@ -136,6 +146,47 @@ describe('IAM users page', () => {
 
     expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBe('Search users')
     expect(wrapper.find('button[aria-label="Open actions for admin"]').exists()).toBe(true)
+  })
+
+  it('disables user mutation actions without manage permission', async () => {
+    permissionState.canManage.value = false
+    const wrapper = mount(UsersPage, {
+      global: {
+        stubs: {
+          DefaultLayout: {
+            template: '<main><slot /></main>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const createButton = wrapper.findAll('button').find((button) => button.text() === 'Create user')
+    expect(createButton?.attributes('disabled')).toBeDefined()
+    expect(
+      wrapper.get('button[aria-label="Open actions for admin"]').attributes('disabled'),
+    ).toBeDefined()
+  })
+
+  it('renders pagination and changes the server page', async () => {
+    iamState.totalCount.value = 45
+    const wrapper = mount(UsersPage, {
+      global: {
+        stubs: {
+          DefaultLayout: {
+            template: '<main><slot /></main>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Showing 1-20 of 45')
+    await wrapper.get('[data-slot="pagination-next"]').trigger('click')
+
+    expect(wrapper.findComponent({ name: 'IamPagination' }).exists()).toBe(true)
   })
 
   it('refreshes users after resetting a password', async () => {

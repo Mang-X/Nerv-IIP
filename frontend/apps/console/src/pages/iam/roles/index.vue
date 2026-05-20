@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { ConsoleIamRoleResponse } from '@nerv-iip/api-client'
+import IamPagination from '@/components/iam/IamPagination.vue'
 import IamListToolbar from '@/components/iam/IamListToolbar.vue'
 import IamPageHeader from '@/components/iam/IamPageHeader.vue'
 import RoleCreateDialog from '@/components/iam/RoleCreateDialog.vue'
 import RolePermissionEditor from '@/components/iam/RolePermissionEditor.vue'
 import RolesTable from '@/components/iam/RolesTable.vue'
 import { useIamRoles } from '@/composables/useIamAdmin'
+import { useHasPermission } from '@/composables/usePermissions'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import {
   Alert,
@@ -32,29 +34,36 @@ definePage({
 const roles = useIamRoles()
 
 const search = shallowRef('')
+const canManageRoles = useHasPermission('iam.roles.manage')
 const createDialogOpen = shallowRef(false)
 const editOpen = shallowRef(false)
 const selectedRole = shallowRef<ConsoleIamRoleResponse>()
 const selectedPermissionCodes = shallowRef<string[]>([])
 
-const pageError = computed(() =>
-  roles.rolesError.value
-  ?? roles.permissionsError.value
-  ?? roles.createRoleError.value
-  ?? roles.updateRolePermissionsError.value,
+const pageError = computed(
+  () =>
+    roles.rolesError.value ??
+    roles.permissionsError.value ??
+    roles.createRoleError.value ??
+    roles.updateRolePermissionsError.value,
 )
 
-const tablePending = computed(() =>
-  roles.rolesPending.value
-  || roles.permissionsPending.value
-  || roles.createRolePending.value
-  || roles.updateRolePermissionsPending.value,
+const tablePending = computed(
+  () =>
+    roles.rolesPending.value ||
+    roles.permissionsPending.value ||
+    roles.createRolePending.value ||
+    roles.updateRolePermissionsPending.value,
 )
 
-watch(search, (nextSearch) => {
-  roles.filters.filterSearch = nextSearch.trim() || undefined
-  roles.filters.pageIndex = 1
-}, { immediate: true })
+watch(
+  search,
+  (nextSearch) => {
+    roles.filters.filterSearch = nextSearch.trim() || undefined
+    roles.filters.pageIndex = 1
+  },
+  { immediate: true },
+)
 
 function openCreateDialog() {
   createDialogOpen.value = true
@@ -66,7 +75,7 @@ function openEditPermissions(role: ConsoleIamRoleResponse) {
   editOpen.value = true
 }
 
-async function handleCreate(payload: { roleName: string, permissionCodes: string[] }) {
+async function handleCreate(payload: { roleName: string; permissionCodes: string[] }) {
   try {
     await roles.createRole({
       body: payload,
@@ -74,8 +83,7 @@ async function handleCreate(payload: { roleName: string, permissionCodes: string
     createDialogOpen.value = false
     await roles.refreshRoles()
     toast.success('Role created')
-  }
-  catch {
+  } catch {
     // Keep the dialog open so the user can retry without losing input.
   }
 }
@@ -109,6 +117,7 @@ async function savePermissions() {
       <IamListToolbar
         v-model:search="search"
         action-label="Create role"
+        :action-disabled="!canManageRoles"
         search-label="Search roles"
         search-placeholder="Search roles"
         @action="openCreateDialog"
@@ -120,9 +129,17 @@ async function savePermissions() {
       </Alert>
 
       <RolesTable
+        :can-manage="canManageRoles"
         :pending="tablePending"
         :roles="roles.roles.value"
         @edit-permissions="openEditPermissions"
+      />
+
+      <IamPagination
+        :page-index="roles.filters.pageIndex"
+        :page-size="roles.filters.pageSize"
+        :total-count="roles.totalCount.value"
+        @page-change="roles.filters.pageIndex = $event"
       />
 
       <RoleCreateDialog
@@ -158,7 +175,10 @@ async function savePermissions() {
             />
 
             <DialogFooter show-close-button>
-              <Button type="submit" :disabled="roles.updateRolePermissionsPending.value">
+              <Button
+                type="submit"
+                :disabled="roles.updateRolePermissionsPending.value || !canManageRoles"
+              >
                 Save permissions
               </Button>
             </DialogFooter>

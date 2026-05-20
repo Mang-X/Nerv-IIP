@@ -1,5 +1,7 @@
 # Phase 8 IAM Admin Console And Design System Implementation Plan
 
+> **状态：Phase 8 已完成。** 该计划保留原始 `- [ ]` 任务清单作为执行记录；最终交付状态、验证结果和环境阻塞项记录在 `docs/architecture/implementation-readiness.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver the Phase 8 blue Calm Control Plane design-system baseline and the Console IAM admin workflow for users, roles, permissions and sessions.
