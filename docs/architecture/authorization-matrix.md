@@ -134,6 +134,67 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `observability.diagnostics.read` | `user` / `internal-service` | environment + resource | 查看诊断包、日志包和归档元数据。 |
 | `observability.retention.manage` | `user` / `internal-service` | organization / environment | 管理日志 retention、清理任务和归档策略。 |
 
+### Business Platform
+
+业务平台权限码用于 ADR 0012 定义的关键链路领域扩展。它们尚未进入 IAM seed；后续实现对应业务服务时，必须按本表进入 IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。
+
+| 权限码 | 建议 principalType | 建议 scope | 说明 |
+| --- | --- | --- | --- |
+| `business.masterdata.products.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看 SKU 和产品基础属性。 |
+| `business.masterdata.products.manage` | `user` / `external-client` | organization / environment + resource | 创建、修改、启停 SKU 和产品基础属性。 |
+| `business.masterdata.partners.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看客户、供应商、承运商。 |
+| `business.masterdata.partners.manage` | `user` / `external-client` | organization / environment + resource | 创建、修改、启停业务伙伴。 |
+| `business.masterdata.resources.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看工作中心、工作日历、设备资产和人员业务属性。 |
+| `business.masterdata.resources.manage` | `user` / `external-client` | organization / environment + resource | 管理工作中心、工作日历、设备资产和人员业务属性。 |
+| `business.engineering.documents.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 CAD、图纸、工艺文件等工程文件引用和版本。 |
+| `business.engineering.documents.manage` | `user` / `external-client` | environment + resource | 注册、归档和关联工程文件；文件本体仍归 File Storage。 |
+| `business.engineering.boms.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 EBOM、MBOM 和工艺路线版本。 |
+| `business.engineering.boms.manage` | `user` / `external-client` | environment + resource | 创建、修改、发布 EBOM、MBOM 和工艺路线。 |
+| `business.engineering.changes.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 ECO/ECN、影响范围和发布记录。 |
+| `business.engineering.changes.manage` | `user` / `external-client` | environment + resource | 发起、审批后发布工程变更。 |
+| `business.planning.demands.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看销售订单、预测、安全库存等需求来源。 |
+| `business.planning.demands.manage` | `user` / `external-client` | environment + resource | 创建和调整计划需求来源。 |
+| `business.planning.mrp.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MPS/MRP run、净需求和 pegging。 |
+| `business.planning.mrp.run` | `user` / `internal-service` | environment + resource | 运行 MPS/MRP，生成计划采购建议和计划工单建议。 |
+| `business.planning.suggestions.manage` | `user` / `internal-service` | environment + resource | 接受、拒绝或关闭计划建议；不直接创建正式单据。 |
+| `business.inventory.locations.manage` | `user` / `external-client` | environment + resource | 管理仓库、库区、库位和容量限制。 |
+| `business.inventory.ledger.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看库存台账、可用量、冻结量、批次和序列号。 |
+| `business.inventory.movements.create` | `user` / `external-client` / `internal-service` | environment + resource | 创建受控库存移动；必须携带幂等键和业务来源。 |
+| `business.inventory.counts.manage` | `user` / `external-client` | environment + resource | 创建盘点任务、确认差异和提交盘点调整。 |
+| `business.barcodes.templates.manage` | `user` / `external-client` | organization / environment + resource | 管理条码规则和标签模板。 |
+| `business.barcodes.scans.write` | `user` / `external-client` / `connector-host` | environment + resource | 写入扫码记录；PDA 或 Connector 场景必须携带幂等键。 |
+| `business.barcodes.print` | `user` / `external-client` | environment + resource | 生成或打印标签。 |
+| `business.approvals.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看业务审批链、审批记录和待办状态。 |
+| `business.approvals.manage` | `user` / `external-client` / `internal-service` | organization / environment + resource | 创建审批链并处理业务审批步骤；不适用于 Ops 运维审批。 |
+| `business.quality.inspections.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看检验标准、检验计划、检验记录和处置结果。 |
+| `business.quality.inspections.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建检验计划、记录检验值和完成不合格处置。 |
+| `business.erp.procurement.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看采购申请、询价、供应商报价、采购订单、收货和退货。 |
+| `business.erp.procurement.manage` | `user` / `external-client` | environment + resource | 创建和推进采购申请、询价、订单、收货、退货；承载 SRM-lite。 |
+| `business.erp.sales.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看客户、商机、报价、销售订单、发货请求和销售退货。 |
+| `business.erp.sales.manage` | `user` / `external-client` | environment + resource | 创建和推进商机、报价、销售订单、发货和退货；承载 CRM-lite/OMS-lite。 |
+| `business.erp.finance.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看应收、应付、凭证、成本核算和财务汇总。 |
+| `business.erp.finance.manage` | `user` / `internal-service` | environment + resource | 创建凭证、生成应收应付和成本核算；首批不包含完整总账月结。 |
+| `business.wms.receipts.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看收货通知、入库单和上架任务。 |
+| `business.wms.receipts.manage` | `user` / `external-client` | environment + resource | 创建和完成收货、入库、上架作业。 |
+| `business.wms.shipments.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看出库单、拣货任务和复核包装。 |
+| `business.wms.shipments.manage` | `user` / `external-client` | environment + resource | 创建和完成出库、拣货、复核包装作业。 |
+| `business.wms.automation.manage` | `user` / `external-client` / `connector-host` | environment + resource + capability | 调度 WCS adapter 任务并处理外部自动化设备回执。 |
+| `business.mes.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单、工序任务和完工入库请求。 |
+| `business.mes.work-orders.manage` | `user` / `external-client` | environment + resource | 创建、审批后释放、关闭工单。 |
+| `business.mes.reporting.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看报工记录和生产日报。 |
+| `business.mes.reporting.write` | `user` / `external-client` | environment + resource | 提交工序报工、合格数、不良数和工时。 |
+| `business.mes.schedules.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看排产结果和 Gantt 数据。 |
+| `business.mes.schedules.manage` | `user` / `external-client` | environment + resource | 触发规则派工、发布或撤销排产版本。 |
+| `business.iiot.tags.manage` | `user` / `external-client` | environment + resource | 管理设备 tag 映射、采集点和单位。 |
+| `business.iiot.telemetry.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看设备状态快照、时序摘要和 OEE 输入数据。 |
+| `business.iiot.telemetry.write` | `connector-host` / `external-client` | environment + resource + capability | 写入受控采集样本或状态摘要；不得表达 PLC/DCS 控制授权。 |
+| `business.iiot.alarms.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工业报警、状态和处理进度。 |
+| `business.iiot.alarms.write` | `connector-host` / `external-client` | environment + resource + capability | 写入报警产生、清除和状态变化事实。 |
+| `business.maintenance.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看维修工单、故障、停机和维修结果。 |
+| `business.maintenance.work-orders.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建、分派、完成维修工单。 |
+| `business.maintenance.plans.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看保养计划、点检计划和执行记录。 |
+| `business.maintenance.plans.manage` | `user` / `external-client` | environment + resource | 创建、调整和关闭保养计划、点检计划。 |
+
 ## 落地要求
 
 1. 新增权限码必须先更新本文档，再进入 IAM seed、迁移、端点授权检查和测试。
