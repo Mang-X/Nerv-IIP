@@ -52,6 +52,18 @@ public sealed class GatewayOpenApiTests
 
         var me = paths.GetProperty("/api/console/v1/auth/me");
         Assert.Equal("getConsolePrincipal", me.GetProperty("get").GetProperty("operationId").GetString());
+
+        Assert.Equal("listConsoleIamUsers", paths.GetProperty("/api/console/v1/iam/users").GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("createConsoleIamUser", paths.GetProperty("/api/console/v1/iam/users").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("updateConsoleIamUser", paths.GetProperty("/api/console/v1/iam/users/{userId}").GetProperty("patch").GetProperty("operationId").GetString());
+        Assert.Equal("disableConsoleIamUser", paths.GetProperty("/api/console/v1/iam/users/{userId}/disable").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("resetConsoleIamUserPassword", paths.GetProperty("/api/console/v1/iam/users/{userId}/reset-password").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("listConsoleIamRoles", paths.GetProperty("/api/console/v1/iam/roles").GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("createConsoleIamRole", paths.GetProperty("/api/console/v1/iam/roles").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("updateConsoleIamRolePermissions", paths.GetProperty("/api/console/v1/iam/roles/{roleId}/permissions").GetProperty("patch").GetProperty("operationId").GetString());
+        Assert.Equal("listConsoleIamPermissions", paths.GetProperty("/api/console/v1/iam/permissions").GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("listConsoleIamSessions", paths.GetProperty("/api/console/v1/iam/sessions").GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("revokeConsoleIamSession", paths.GetProperty("/api/console/v1/iam/sessions/{sessionId}/revoke").GetProperty("post").GetProperty("operationId").GetString());
     }
 
     private static void AssertJsonResponseSchema(JsonElement operation, string statusCode, string schemaName)

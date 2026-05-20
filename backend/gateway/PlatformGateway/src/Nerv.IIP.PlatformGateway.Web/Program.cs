@@ -4,7 +4,9 @@ using Nerv.IIP.Caching;
 using Nerv.IIP.Observability;
 using Nerv.IIP.PlatformGateway.Web;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using Nerv.IIP.PlatformGateway.Web.Application.IamAdmin;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Auth;
+using Nerv.IIP.PlatformGateway.Web.Endpoints.IamAdmin;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
@@ -40,6 +42,10 @@ builder.Services.AddHttpClient<IGatewayIamAuthClient, HttpGatewayIamAuthClient>(
 {
     client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5104");
 });
+builder.Services.AddHttpClient<IGatewayIamAdminClient, HttpGatewayIamAdminClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5104");
+});
 builder.Services.AddGatewayAuthentication(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
@@ -59,6 +65,17 @@ app.UseFastEndpoints(c =>
         nameof(RefreshConsoleSessionEndpoint) => "refreshConsoleSession",
         nameof(LogoutConsoleSessionEndpoint) => "logoutConsoleSession",
         nameof(GetConsolePrincipalEndpoint) => "getConsolePrincipal",
+        nameof(ListConsoleIamUsersEndpoint) => "listConsoleIamUsers",
+        nameof(CreateConsoleIamUserEndpoint) => "createConsoleIamUser",
+        nameof(UpdateConsoleIamUserEndpoint) => "updateConsoleIamUser",
+        nameof(DisableConsoleIamUserEndpoint) => "disableConsoleIamUser",
+        nameof(ResetConsoleIamUserPasswordEndpoint) => "resetConsoleIamUserPassword",
+        nameof(ListConsoleIamRolesEndpoint) => "listConsoleIamRoles",
+        nameof(CreateConsoleIamRoleEndpoint) => "createConsoleIamRole",
+        nameof(UpdateConsoleIamRolePermissionsEndpoint) => "updateConsoleIamRolePermissions",
+        nameof(ListConsoleIamPermissionsEndpoint) => "listConsoleIamPermissions",
+        nameof(ListConsoleIamSessionsEndpoint) => "listConsoleIamSessions",
+        nameof(RevokeConsoleIamSessionEndpoint) => "revokeConsoleIamSession",
         _ => ctx.EndpointType.Name
     };
 }).UseSwaggerGen();

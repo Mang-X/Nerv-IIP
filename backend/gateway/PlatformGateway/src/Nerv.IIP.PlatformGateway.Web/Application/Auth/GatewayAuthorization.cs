@@ -34,6 +34,12 @@ public interface IGatewayAuthorizationClient
 public static class GatewayPermissions
 {
     public const string AppHubInstancesRead = "apphub.instances.read";
+    public const string IamRolesManage = "iam.roles.manage";
+    public const string IamRolesRead = "iam.roles.read";
+    public const string IamSessionsRead = "iam.sessions.read";
+    public const string IamSessionsRevoke = "iam.sessions.revoke";
+    public const string IamUsersManage = "iam.users.manage";
+    public const string IamUsersRead = "iam.users.read";
     public const string OpsTasksCreate = "ops.tasks.create";
     public const string OpsTasksRead = "ops.tasks.read";
 }
@@ -92,5 +98,61 @@ public static class GatewayAuthorization
 
         context.Items[PrincipalItemKey] = result;
         return result;
+    }
+
+    public static async Task<(string BearerToken, ConsolePrincipalResponse Principal)?> RequireCurrentPrincipalPermissionAsync(
+        HttpContext context,
+        IGatewayIamAuthClient iam,
+        IGatewayAuthorizationClient auth,
+        string permissionCode,
+        CancellationToken cancellationToken)
+    {
+        var bearerToken = await context.GetTokenAsync("access_token");
+        if (string.IsNullOrWhiteSpace(bearerToken))
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                context,
+                StatusCodes.Status401Unauthorized,
+                "Unauthorized.",
+                cancellationToken);
+            return null;
+        }
+
+        ConsolePrincipalResponse principal;
+        try
+        {
+            principal = await iam.GetMeAsync(bearerToken, cancellationToken);
+        }
+        catch (GatewayAuthException ex)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                context,
+                (int)ex.StatusCode,
+                ex.Reason,
+                cancellationToken);
+            return null;
+        }
+
+        var result = await auth.CheckAsync(
+            bearerToken,
+            new GatewayPermissionRequirement(
+                permissionCode,
+                principal.OrganizationId,
+                principal.EnvironmentId,
+                null,
+                null),
+            cancellationToken);
+        if (!result.IsAllowed)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                context,
+                StatusCodes.Status403Forbidden,
+                "Forbidden.",
+                cancellationToken);
+            return null;
+        }
+
+        context.Items[PrincipalItemKey] = principal;
+        return (bearerToken, principal);
     }
 }
