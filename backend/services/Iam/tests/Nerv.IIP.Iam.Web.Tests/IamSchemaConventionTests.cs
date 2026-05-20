@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -57,6 +58,38 @@ public sealed class IamSchemaConventionTests
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, "IAM", "iam"));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void Role_name_uniqueness_uses_normalized_database_index()
+    {
+        using var fixture = CreateFixture();
+        var roleEntity = fixture.DbContext.Model.FindEntityType(typeof(Role));
+
+        Assert.NotNull(roleEntity);
+        var normalizedRoleName = roleEntity.FindProperty("NormalizedRoleName");
+        Assert.NotNull(normalizedRoleName);
+        Assert.True(normalizedRoleName.IsNullable == false);
+        Assert.Equal(128, normalizedRoleName.GetMaxLength());
+
+        Assert.Contains(roleEntity.GetIndexes(), index =>
+            index.IsUnique
+            && index.Properties.Count == 1
+            && index.Properties[0].Name == "NormalizedRoleName");
+        Assert.DoesNotContain(roleEntity.GetIndexes(), index =>
+            index.IsUnique
+            && index.Properties.Count == 1
+            && index.Properties[0].Name == nameof(Role.RoleName));
+    }
+
+    [Fact]
+    public void Role_normalized_name_migration_is_discoverable()
+    {
+        using var fixture = CreateFixture();
+
+        Assert.Contains(
+            "20260520090000_AddRoleNormalizedName",
+            fixture.DbContext.Database.GetMigrations());
     }
 
     private static SchemaFixture CreateFixture()

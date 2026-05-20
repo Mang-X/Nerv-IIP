@@ -45,4 +45,39 @@ describe('AppShell', () => {
 
     expect(router.currentRoute.value.fullPath).toBe('/operations/task-42')
   })
+
+  it('renders grouped navigation children with RouterLink route locations', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { component: { template: '<div />' }, name: '/', path: '/' },
+      ],
+    })
+
+    router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppShell, {
+      global: {
+        plugins: [router],
+      },
+      props: {
+        navItems: [
+          {
+            label: 'IAM',
+            children: [
+              { label: 'Users', to: { path: '/iam/users' } },
+              { label: 'Roles', to: { path: '/iam/roles' } },
+            ],
+          },
+        ],
+        title: 'Nerv-IIP',
+      },
+    })
+
+    expect(wrapper.text()).toContain('IAM')
+    expect(wrapper.findAllComponents(RouterLink).map((link) => link.props('to'))).toContainEqual({
+      path: '/iam/users',
+    })
+  })
 })

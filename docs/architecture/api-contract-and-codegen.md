@@ -51,6 +51,30 @@
 6. 新增或修改 Gateway 控制台接口时，必须先更新后端 Endpoint 与 OpenAPI 测试，再导出 OpenAPI 快照并重新生成前端 api-client。
 7. OpenAPI 是契约事实来源；导出的 JSON 快照是前端生成输入，不允许手改快照来绕过后端契约。
 
+### Console IAM Admin API
+
+Phase 8 已在 PlatformGateway 暴露 Console IAM Admin facade。控制台仍只消费 `/api/console/v1/**`，Gateway 负责 IAM-backed permission enforcement、bearer token 转发和下游错误映射；前端通过 `@nerv-iip/api-client` 的稳定导出消费 generated SDK、Pinia Colada query/mutation options 与类型别名。
+
+Console auth `/api/console/v1/auth/me` 返回的 principal 包含 `permissionCodes`，用于前端提前禁用无权限的 IAM admin 写操作按钮；后端 Gateway/IAM permission enforcement 仍是最终授权边界。
+
+当前 Console IAM operation IDs 固定为：
+
+| operationId | Route | 用途 |
+| --- | --- | --- |
+| `listConsoleIamUsers` | `GET /api/console/v1/iam/users` | 用户分页列表。 |
+| `createConsoleIamUser` | `POST /api/console/v1/iam/users` | 创建用户。 |
+| `updateConsoleIamUser` | `PATCH /api/console/v1/iam/users/{userId}` | 更新用户。 |
+| `disableConsoleIamUser` | `POST /api/console/v1/iam/users/{userId}/disable` | 禁用用户。 |
+| `resetConsoleIamUserPassword` | `POST /api/console/v1/iam/users/{userId}/reset-password` | 重置用户密码。 |
+| `listConsoleIamRoles` | `GET /api/console/v1/iam/roles` | 角色分页列表。 |
+| `createConsoleIamRole` | `POST /api/console/v1/iam/roles` | 创建角色。 |
+| `updateConsoleIamRolePermissions` | `PATCH /api/console/v1/iam/roles/{roleId}/permissions` | 更新角色权限。 |
+| `listConsoleIamPermissions` | `GET /api/console/v1/iam/permissions` | 权限 catalog。 |
+| `listConsoleIamSessions` | `GET /api/console/v1/iam/sessions` | 会话分页列表。 |
+| `revokeConsoleIamSession` | `POST /api/console/v1/iam/sessions/{sessionId}/revoke` | 撤销会话。 |
+
+新增、删除或修改任一 Gateway Console IAM facade endpoint 时，必须同步更新 Gateway OpenAPI operationId 测试、导出 `frontend/packages/api-client/openapi/platform-gateway.v1.json`，再运行 `pnpm -C frontend generate:api` 刷新 generated SDK、types 和 Pinia Colada options。生成 diff 只应保留真实 Gateway 契约变化；不得手改 OpenAPI 快照或 generated 文件来掩盖后端契约缺口。
+
 ### Console Log Query API
 
 1. 控制台日志查看属于 PlatformGateway 页面级 API，不属于前端直连观测后端能力。

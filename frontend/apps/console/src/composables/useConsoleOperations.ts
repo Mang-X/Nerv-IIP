@@ -16,7 +16,7 @@ import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { computed, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
 
-const PAGE_NUMBER = 1
+const PAGE_INDEX = 1
 const PAGE_SIZE = 20
 const CONTEXT_UNAVAILABLE_MESSAGE = 'Console organization and environment context is unavailable.'
 const ignoreBackgroundError = (_error: unknown) => {}
@@ -84,10 +84,10 @@ export function useConsoleInstances() {
     return listConsoleInstancesQueryOptions({
       query: {
         ...context,
-        pageNumber: PAGE_NUMBER,
+        pageIndex: PAGE_INDEX,
         pageSize: PAGE_SIZE,
       },
-    } as Parameters<typeof listConsoleInstancesQueryOptions>[0])
+    })
   })
 
   const instances = computed<InstanceListItem[]>(() => unwrapResponseData(listQuery.data.value)?.items ?? [])

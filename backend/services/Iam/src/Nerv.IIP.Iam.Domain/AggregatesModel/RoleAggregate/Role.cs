@@ -12,19 +12,27 @@ public class Role : Entity<RoleId>, IAggregateRoot
     private Role()
     {
         Id = new RoleId(string.Empty);
+        NormalizedRoleName = string.Empty;
     }
 
     public Role(RoleId id, string roleName, IEnumerable<string> permissionCodes)
     {
         Id = id;
         RoleName = roleName;
+        NormalizedRoleName = NormalizeName(roleName);
         ReplacePermissions(permissionCodes);
     }
 
     public string RoleName { get; private set; } = string.Empty;
+    public string NormalizedRoleName { get; private set; } = string.Empty;
     public IReadOnlyCollection<RolePermission> Permissions => permissions;
     public Deleted Deleted { get; private set; } = new(false);
     public RowVersion RowVersion { get; private set; } = new(0);
+
+    public static string NormalizeName(string roleName)
+    {
+        return roleName.Trim().ToUpperInvariant();
+    }
 
     public void ReplacePermissions(IEnumerable<string> permissionCodes)
     {

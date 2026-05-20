@@ -12,6 +12,7 @@ namespace Nerv.IIP.Iam.Web.Endpoints.Users;
 
 public sealed record CreateUserRequest(string LoginName, string Email, string Password);
 public sealed record UpdateUserRequest(string LoginName, string Email, bool Enabled);
+public sealed record ResetUserPasswordRequest(string NewPassword);
 public sealed record ListUsersRequest(
     int? PageIndex,
     int? PageSize,
@@ -96,6 +97,26 @@ public sealed class DisableUserEndpoint(IIamPermissionAuthorizer authorizer, IMe
 
         var userId = Route<string>("userId") ?? string.Empty;
         await mediator.Send(new DisableUserCommand(userId), ct);
+        HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+}
+
+[HttpPost("/api/iam/v1/users/{userId}/reset-password")]
+[AllowAnonymous]
+public sealed class ResetUserPasswordEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
+    : EndpointWithoutRequest
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.manage", ct))
+        {
+            return;
+        }
+
+        var req = await HttpContext.Request.ReadFromJsonAsync<ResetUserPasswordRequest>(ct)
+            ?? throw new BadHttpRequestException("Request body is required.");
+        var userId = Route<string>("userId") ?? string.Empty;
+        await mediator.Send(new ResetUserPasswordCommand(userId, SensitivePassword.From(req.NewPassword)), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 }

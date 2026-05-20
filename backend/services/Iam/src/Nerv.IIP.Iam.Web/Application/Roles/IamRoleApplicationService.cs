@@ -1,23 +1,29 @@
+using Nerv.IIP.Iam.Domain;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
+using Nerv.IIP.Iam.Web.Application.Permissions;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Iam.Web.Application.Roles;
 
 public sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
-public sealed record RoleMutationResponse(string RoleId);
-public sealed record RoleMutationResult(bool IsImplemented, RoleMutationResponse? Response, string? Detail)
-{
-    public static RoleMutationResult Implemented(RoleMutationResponse response) => new(true, response, null);
-    public static RoleMutationResult NotImplemented(string detail) => new(false, null, detail);
-}
+public sealed record CreateRoleRequest(string? RoleName, IReadOnlyList<string> PermissionCodes);
+public sealed record PatchRolePermissionsRequest(IReadOnlyList<string> PermissionCodes);
 
 public interface IIamRoleApplicationService
 {
     Task<PagedListResponse<RoleResponse>> ListRolesAsync(IamListQueryOptions options, CancellationToken cancellationToken);
 
-    Task<RoleMutationResult> CreateRoleAsync(CancellationToken cancellationToken);
+    Task<RoleResponse> CreateRoleAsync(
+        string? roleName,
+        IReadOnlyList<string> permissionCodes,
+        CancellationToken cancellationToken);
 
-    Task<RoleMutationResult> PatchRolePermissionsAsync(string roleId, CancellationToken cancellationToken);
+    Task<RoleResponse> PatchRolePermissionsAsync(
+        string roleId,
+        IReadOnlyList<string> permissionCodes,
+        CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : IIamRoleApplicationService
@@ -29,21 +35,51 @@ public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : 
                 || role.RoleId.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
                 || role.RoleName.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
                 || role.PermissionCodes.Any(code => code.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)))
-            .Select(x => new RoleResponse(x.RoleId, x.RoleName, x.PermissionCodes.OrderBy(code => code).ToArray()))
+            .Select(ToResponse)
             .ApplyRoleSort(options)
             .ToPagedResponse(options);
         return Task.FromResult(roles);
     }
 
-    public Task<RoleMutationResult> CreateRoleAsync(CancellationToken cancellationToken)
+    public Task<RoleResponse> CreateRoleAsync(
+        string? roleName,
+        IReadOnlyList<string> permissionCodes,
+        CancellationToken cancellationToken)
     {
-        return Task.FromResult(RoleMutationResult.Implemented(new RoleMutationResponse("role-placeholder")));
+        var trimmedRoleName = RoleNameValidation.NormalizeRoleName(roleName);
+        if (store.RoleNameExists(trimmedRoleName))
+        {
+            throw new KnownException($"Role name '{trimmedRoleName}' is already used.");
+        }
+
+        var seededCodes = IamPermissionCatalog.EnsureSeeded(permissionCodes ?? []);
+        return Task.FromResult(ToResponse(store.CreateRole(trimmedRoleName, seededCodes)));
     }
 
-    public Task<RoleMutationResult> PatchRolePermissionsAsync(string roleId, CancellationToken cancellationToken)
+    public Task<RoleResponse> PatchRolePermissionsAsync(
+        string roleId,
+        IReadOnlyList<string> permissionCodes,
+        CancellationToken cancellationToken)
     {
-        return Task.FromResult(RoleMutationResult.Implemented(new RoleMutationResponse(roleId)));
+        var seededCodes = IamPermissionCatalog.EnsureSeeded(permissionCodes ?? []);
+        try
+        {
+            return Task.FromResult(ToResponse(store.ReplaceRolePermissions(roleId, seededCodes)));
+        }
+        catch (InvalidOperationException)
+        {
+            throw new KnownException($"Role '{roleId}' was not found.");
+        }
     }
+
+    private static RoleResponse ToResponse(RoleFact role)
+    {
+        return new RoleResponse(
+            role.RoleId,
+            role.RoleName,
+            role.PermissionCodes.OrderBy(code => code, StringComparer.Ordinal).ToArray());
+    }
+
 }
 
 public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository repository) : IIamRoleApplicationService
@@ -56,26 +92,59 @@ public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository reposito
                 || role.Id.Id.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
                 || role.RoleName.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
                 || role.Permissions.Any(permission => permission.PermissionCode.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)))
-            .Select(x => new RoleResponse(
-                x.Id.Id,
-                x.RoleName,
-                x.Permissions
-                    .Select(p => p.PermissionCode)
-                    .OrderBy(code => code)
-                    .ToArray()))
+            .Select(ToResponse)
             .ApplyRoleSort(options)
             .ToPagedResponse(options);
     }
 
-    public Task<RoleMutationResult> CreateRoleAsync(CancellationToken cancellationToken)
+    public async Task<RoleResponse> CreateRoleAsync(
+        string? roleName,
+        IReadOnlyList<string> permissionCodes,
+        CancellationToken cancellationToken)
     {
-        return Task.FromResult(RoleMutationResult.NotImplemented("Persisted role creation is not implemented."));
+        var trimmedRoleName = RoleNameValidation.NormalizeRoleName(roleName);
+        var seededCodes = IamPermissionCatalog.EnsureSeeded(permissionCodes ?? []);
+        if (await repository.GetByNameAsync(trimmedRoleName, cancellationToken) is not null)
+        {
+            throw new KnownException($"Role name '{trimmedRoleName}' is already used.");
+        }
+
+        var role = new Role(
+            new RoleId($"role-{Guid.CreateVersion7():N}"),
+            trimmedRoleName,
+            seededCodes);
+        try
+        {
+            await repository.AddAndSaveAsync(role, cancellationToken);
+        }
+        catch (DuplicateRoleNameException)
+        {
+            throw new KnownException($"Role name '{trimmedRoleName}' is already used.");
+        }
+
+        return ToResponse(role);
     }
 
-    public Task<RoleMutationResult> PatchRolePermissionsAsync(string roleId, CancellationToken cancellationToken)
+    public async Task<RoleResponse> PatchRolePermissionsAsync(
+        string roleId,
+        IReadOnlyList<string> permissionCodes,
+        CancellationToken cancellationToken)
     {
-        return Task.FromResult(RoleMutationResult.NotImplemented("Persisted role permission updates are not implemented."));
+        var role = await repository.GetByIdAsync(new RoleId(roleId), cancellationToken)
+            ?? throw new KnownException($"Role '{roleId}' was not found.");
+        var seededCodes = IamPermissionCatalog.EnsureSeeded(permissionCodes ?? []);
+        role.ReplacePermissions(seededCodes);
+        return ToResponse(role);
     }
+
+    private static RoleResponse ToResponse(Role role)
+    {
+        return new RoleResponse(
+            role.Id.Id,
+            role.RoleName,
+            role.Permissions.Select(x => x.PermissionCode).OrderBy(code => code, StringComparer.Ordinal).ToArray());
+    }
+
 }
 
 internal static class RoleListSorting
@@ -89,5 +158,24 @@ internal static class RoleListSorting
             ("rolename", true) => roles.OrderByDescending(x => x.RoleName, StringComparer.Ordinal),
             _ => roles.OrderBy(x => x.RoleName, StringComparer.Ordinal)
         };
+    }
+}
+
+internal static class RoleNameValidation
+{
+    public static string NormalizeRoleName(string? roleName)
+    {
+        if (string.IsNullOrWhiteSpace(roleName))
+        {
+            throw new KnownException("Role name is required.");
+        }
+
+        var trimmedRoleName = roleName.Trim();
+        if (trimmedRoleName.Length > 128)
+        {
+            throw new KnownException("Role name must be 128 characters or fewer.");
+        }
+
+        return trimmedRoleName;
     }
 }

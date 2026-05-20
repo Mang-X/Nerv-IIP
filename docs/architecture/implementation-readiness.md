@@ -1,6 +1,6 @@
 # 实施状态清单
 
-本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
+本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
 ## 当前结论
 
@@ -19,13 +19,14 @@
 13. 第四阶段已经补齐 AppHub/Ops 的 netcorepal/CleanDDD PostgreSQL profile、code-analysis endpoint、`scripts/verify-fourth-slice-real-infra.ps1` 和平台级 `infra/aspire/Nerv.IIP.AppHost`；当前 AppHost build 与完整真实基础设施验证均已通过。
 14. 第四阶段统一验收口径见 docs/architecture/fourth-vertical-slice-real-infra.md；后续生产级迁移、初始化、seed 和回滚策略按 docs/adr/0009-database-migration-release-and-seed-strategy.md 执行。
 15. 第五阶段 Release-grade Persistence Foundation 已落地：AppHub/Ops 已有初始 migrations，PostgreSQL profile tests 已从 `EnsureCreated()` 改为 `MigrateAsync()`，第五阶段验证脚本已经通过。
-16. 前端 Design System 尚未冻结；除 OpenAPI 生成客户端和质量门禁外，后端基础阶段不得新增控制台页面、视觉组件、组件库迁移或样式体系决策。
+16. Phase 8 已冻结 Console Calm Control Plane 蓝色 Design System 基线；后续控制台页面、视觉组件、组件库迁移或样式体系决策必须沿用 shadcn semantic tokens、`@nerv-iip/ui` 稳定导出和 docs/architecture/frontend-design-system-planning.md 的治理口径。
 17. 数据库 schema、建表注释、schema catalog 和发布 runbook 已补齐第一版，后续持久化服务必须先满足 docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md 和 docs/architecture/database-release-runbook.md。
 18. 第六阶段 Schema Governance & Migration Hardening 用 AppHub/Ops 作为已迁移服务样本，把业务表注释、业务列注释、JSON/text 兼容注释、string ID 约束和 service-schema migrations history 配置固化为测试门禁；IAM 已沿用该门禁，FileStorage 等新增持久化服务开工前必须继续沿用。
 19. 第七阶段 IAM Persistent Auth Foundation 已落地：IAM 保留 InMemory profile，同时具备 PostgreSQL `iam` schema、初始 admin seed、JWT access token、refresh token rotation、session revoke、`/me`、Connector Host credential validation 和 internal authorization check 的后端持久化基线。
 20. 现有 PlatformGateway Console API 已接入 IAM-backed permission enforcement；Gateway 只转发 bearer token 与 permission/context，不直接引用 IAM Domain 或 Infrastructure。
-21. Console Auth + shadcn-vue Baseline 已提供最小登录 UI、会话恢复、Gateway bearer 注入、路由守卫、退出登录和 shadcn-vue UI 基线；完整用户/角色/会话管理、OAuth/OIDC、SSO、MFA 和 ABAC 仍属于后续阶段。
+21. Console Auth + shadcn-vue Baseline 已提供最小登录 UI、会话恢复、Gateway bearer 注入、路由守卫、退出登录和 shadcn-vue UI 基线。
 22. 脚本自动化治理已冻结到 ADR 0010 和 docs/architecture/script-automation-governance.md；IAM、第五阶段和第四阶段核心 verify 脚本已迁移到 helper 门禁，Ubuntu WSL 兼容门禁已通过，新增或修改脚本必须声明分类、副作用、日志、清理和 helper 使用方式。
+23. Phase 8 IAM Admin Console 已交付用户、角色、权限 catalog 和会话管理闭环：IAM 管理写入口已产品化，PlatformGateway 暴露 Console IAM Admin facade 并执行 IAM-backed permission enforcement，frontend 通过 generated `@nerv-iip/api-client` 和 `useIamAdmin.ts` 消费 `/iam/users`、`/iam/roles`、`/iam/sessions` 页面。
 
 ## 环境前置
 
@@ -192,7 +193,32 @@
 4. IAM 初始 admin、platform admin role、seed permissions、membership 和 local Connector Host credential seed 具备幂等执行语义。
 5. IAM schema convention tests 与 PostgreSQL profile tests 已作为后续 IAM 持久化变更门禁。
 6. Gateway-wide permission enforcement 已覆盖现有 Console endpoints：实例列表、实例详情、restart 运维任务创建和 operation task detail 查询都会先通过 IAM internal authorization check。
-7. Console Auth + shadcn-vue Baseline 已提供最小登录 UI、会话恢复、Gateway bearer 注入、路由守卫、退出登录和 shadcn-vue UI 基线；完整用户/角色/会话管理、OAuth/OIDC、SSO、MFA、ABAC 和客户发布 bundle 仍属于后续阶段。
+7. Console Auth + shadcn-vue Baseline 已提供最小登录 UI、会话恢复、Gateway bearer 注入、路由守卫、退出登录和 shadcn-vue UI 基线；完整 IAM Admin Console 已在 Phase 8 交付，OAuth/OIDC、SSO、MFA、ABAC 和客户发布 bundle 仍属于后续阶段。
+
+### Phase 8 已完成范围
+
+1. Console Design System 已采用 Calm Control Plane 蓝色基线：`--primary`、`--ring`、`--accent`、`--sidebar-primary` 和 `--chart-1` 使用蓝色语义 token；旧 legacy tokens 只保留兼容用途。
+2. shadcn-vue 新增 Table、Dialog、AlertDialog、Checkbox、Select、Pagination、Empty 等 IAM admin 所需 primitives，并通过 `@nerv-iip/ui` barrel 稳定导出。
+3. IAM 后端已实现角色创建、角色权限 patch、权限 catalog、用户重置密码和会话撤销等管理能力。
+4. PlatformGateway 已实现 Console IAM Admin facade：用户、角色、权限 catalog 和会话 endpoints 均先执行 IAM-backed permission enforcement，再把原 bearer token 转发给 IAM。
+5. Gateway OpenAPI 已固定 11 个 Console IAM operation IDs，并已再生成 `frontend/packages/api-client` 的 types、fetch SDK 和 Pinia Colada options。
+6. Console 已提供 `/iam/users`、`/iam/roles`、`/iam/sessions` 三个受保护页面，页面逻辑集中在 `frontend/apps/console/src/composables/useIamAdmin.ts`，只消费 generated Gateway api-client 稳定导出。
+7. IAM admin 单元测试、Gateway facade 测试、frontend page/composable 测试和 Playwright E2E 覆盖了登录后进入 Users、Roles、Sessions 的基础路径，并补齐用户创建、编辑、禁用、重置密码、角色创建、角色权限更新、会话 revoke 和 403 permission-denied safe state。
+8. 2026-05-20 浏览器验证补充：`frontend/apps/console/e2e/iam-admin.spec.ts` 使用 mock `/api/console/v1/auth/*` 与 `/api/console/v1/iam/*` 响应，在 desktop `1366x900/1366x1200` 与 mobile `390x844` 下访问 `/iam/users`、`/iam/roles`、`/iam/sessions`，检查无横向溢出、可见文本无明显重叠、当前导航蓝色、Create user/Create role primary actions 的真实 computed background/border/text 体现蓝色主动作、Users search input focus ring/border/outline 体现蓝色 token、Enabled/Active success badge 不使用 blue primary、Create user/Create role/Revoke session 对话框具备可访问标题。
+
+### Phase 8 Task 9 验证记录
+
+1. `pnpm -C frontend --filter @nerv-iip/console e2e -- iam-admin.spec.ts` 在未设置 Playwright 浏览器路径时失败，原因为 Playwright managed browser executable 缺失；这是本机 Playwright browser install 环境阻塞。
+2. 设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指向本机可用 Chromium 后运行 `pnpm -C frontend --filter @nerv-iip/console e2e -- iam-admin.spec.ts` 通过，3/3 Playwright tests passed。
+3. `dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj` 通过，34 passed；一次并行验证曾遇到 `Nerv.IIP.Observability.dll` 被其它 dotnet 进程占用，单独重跑通过。
+4. `dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj` 通过，30 passed。
+5. `pnpm -C frontend test` 通过，19 files passed、2 skipped，76 tests passed、2 skipped；IAM users/sessions/roles focused test 通过，17/17 passed。
+6. `pnpm -C frontend typecheck` 通过；`pnpm -C frontend build` 通过。
+7. `dotnet test backend/Nerv.IIP.sln --no-restore` 通过；`dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln --no-restore` 通过，Connector Host Docker integration test 按环境条件 skip。
+8. `pnpm -C frontend lint` 通过，剩余 1 个范围外 warning：`apps/console/src/composables/useConsoleOperations.ts` unused `InstanceListResponse` import。
+9. `pnpm -C frontend check` 与 `pnpm -C frontend fmt` 仍被既有范围外格式问题阻塞；本次触碰的 7 个前端文件已单独运行 `pnpm -C frontend exec vp check ...` 并通过。Playwright 失败产物 `frontend/apps/console/test-results/` 仅为测试 artifact，提交前清理。
+10. `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` 因本机 Docker Desktop Linux engine 不可用阻塞：无法连接 `npipe:////./pipe/dockerDesktopLinuxEngine`，无法拉取 `postgres:17`。
+11. `pwsh scripts/verify-third-slice-console.ps1` 因其调用 `verify-second-slice-ops.ps1`，同样被 Docker daemon 不可达阻塞；脚本明确要求 Docker CLI 和可达 Docker daemon 用于真实容器发现与 restart。
 
 ### 当前初步使用方式
 
@@ -209,9 +235,9 @@
 11. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
 12. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
 13. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
-14. PlatformGateway 当前提供实例列表、实例详情、实例 restart 和 operation task detail 查询接口；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
+14. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
 15. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-16. 当前实现用于本地开发和接口联调，不包含生产部署、完整认证授权 UI 或高风险动作审批。
+16. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台，不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署或高风险动作审批。
 17. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
@@ -243,4 +269,4 @@
 
 ## 结论
 
-Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环、第三迭代控制台纵切、第四迭代真实基础设施门禁、第五迭代迁移发布底座、第六迭代 schema governance hardening、第七迭代 IAM Persistent Auth Foundation，并已把现有 PlatformGateway Console API 接入 IAM-backed permission enforcement：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui、app-shell 和 infra/aspire 的最小工程结构与验证链路已经存在。Console Auth + shadcn-vue Baseline 已提供最小登录 UI、会话恢复、Gateway bearer 注入、路由守卫、退出登录和 shadcn-vue UI 基线。脚本自动化治理已补入 ADR 和架构说明，后续新增或修改脚本必须进入分类、副作用、helper、日志、进程清理和门禁口径。下一步可以在迁移基线、schema 门禁、IAM 持久化登录基线、Gateway 权限门禁和 Console Auth 基线之上进入完整用户/角色/会话管理、OAuth/OIDC/SSO/MFA/ABAC、FileStorage 上传下载、高风险动作审批、通知联动和多目标部署交付。真实持久化先主推 PostgreSQL，同时用 database profile 约束后续 GaussDB/DMDB 等信创替换成本。数据库建表和注释规范、schema catalog、Observability baseline 与数据库发布 runbook 已有第一版，AppHub/Ops/IAM table comment、JSON/text 注释、migrations history schema 配置和 convention tests 已作为后续持久化服务的门禁样本。后续前端功能必须沿用 Console Auth + shadcn-vue Baseline 已选 registry、preset、token 和 `@nerv-iip/ui` 导出边界。后续任务继续参考 docs/architecture/third-vertical-slice-console.md、docs/architecture/fourth-vertical-slice-real-infra.md、docs/architecture/frontend-design-system-planning.md、docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md、docs/architecture/database-release-runbook.md、docs/architecture/script-automation-governance.md、docs/architecture/observability-baseline.md、docs/adr/0009-database-migration-release-and-seed-strategy.md、docs/adr/0010-automation-script-trusted-execution-governance.md、docs/superpowers/specs/2026-05-17-release-grade-persistence-foundation-design.md、docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md、docs/superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md、docs/superpowers/plans/2026-05-17-schema-governance-migration-hardening.md、docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md 与 docs/architecture/deployment-baseline.md。
+Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环、第三迭代控制台纵切、第四迭代真实基础设施门禁、第五迭代迁移发布底座、第六迭代 schema governance hardening、第七迭代 IAM Persistent Auth Foundation，并已完成 Phase 8 IAM Admin Console 与 Calm Control Plane 蓝色 Design System 基线：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui、app-shell 和 infra/aspire 的最小工程结构与验证链路已经存在。Console Auth + shadcn-vue Baseline 已提供最小登录 UI、会话恢复、Gateway bearer 注入、路由守卫、退出登录和 shadcn-vue UI 基线；Phase 8 在此之上补齐用户/角色/权限 catalog/会话管理页面、Gateway Console IAM Admin facade、11 个稳定 Console IAM operation IDs 和 generated api-client 消费边界。脚本自动化治理已补入 ADR 和架构说明，后续新增或修改脚本必须进入分类、副作用、helper、日志、进程清理和门禁口径。下一步可以在迁移基线、schema 门禁、IAM 持久化登录基线、Gateway 权限门禁和 Console IAM Admin 基线之上进入 OAuth/OIDC/SSO/MFA/ABAC、FileStorage 上传下载、高风险动作审批、通知联动和多目标部署交付。真实持久化先主推 PostgreSQL，同时用 database profile 约束后续 GaussDB/DMDB 等信创替换成本。数据库建表和注释规范、schema catalog、Observability baseline 与数据库发布 runbook 已有第一版，AppHub/Ops/IAM table comment、JSON/text 注释、migrations history schema 配置和 convention tests 已作为后续持久化服务的门禁样本。后续前端功能必须沿用 Console Auth + shadcn-vue Baseline 已选 registry、preset、token、Calm Control Plane 蓝色语义和 `@nerv-iip/ui` 导出边界。后续任务继续参考 docs/architecture/third-vertical-slice-console.md、docs/architecture/fourth-vertical-slice-real-infra.md、docs/architecture/frontend-design-system-planning.md、docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md、docs/architecture/database-release-runbook.md、docs/architecture/script-automation-governance.md、docs/architecture/observability-baseline.md、docs/adr/0009-database-migration-release-and-seed-strategy.md、docs/adr/0010-automation-script-trusted-execution-governance.md、docs/superpowers/specs/2026-05-17-release-grade-persistence-foundation-design.md、docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md、docs/superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md、docs/superpowers/plans/2026-05-17-schema-governance-migration-hardening.md、docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md 与 docs/architecture/deployment-baseline.md。

@@ -63,76 +63,86 @@ const operationTask = {
   ],
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.route('**/api/console/v1/**', routeConsoleApi)
-})
+const isVitest = Boolean(process.env.VITEST)
 
-test('login succeeds, redirects home, and shows the instance list', async ({ page }) => {
-  await page.goto('/login')
+if (isVitest) {
+  const { describe, it } = await import('vitest')
 
-  await login(page)
-
-  await expect(page).toHaveURL('/')
-  await expect(page.getByRole('heading', { name: 'Instances' })).toBeVisible()
-  await expect(page.getByRole('cell', { name: 'Payments API' })).toBeVisible()
-  await expect(page.getByRole('cell', { name: 'payments-1' })).toBeVisible()
-})
-
-test('visiting a protected page while signed out redirects to login with redirect query', async ({
-  page,
-}) => {
-  await page.goto('/operations/op-123')
-
-  await expect(page).toHaveURL('/login?redirect=/operations/op-123')
-  await expect(page.getByRole('heading', { name: 'Nerv-IIP Console' })).toBeVisible()
-})
-
-test('login returns to the original protected path from redirect query', async ({ page }) => {
-  await page.goto('/operations/op-123')
-
-  await login(page)
-
-  await expect(page).toHaveURL('/operations/op-123')
-  await expect(page.getByRole('heading', { name: 'RestartInstance' })).toBeVisible()
-  await expect(page.getByText('attempt-1')).toBeVisible()
-})
-
-test('restarting an instance opens the operation detail timeline', async ({ page }) => {
-  await page.goto('/login')
-  await login(page)
-
-  await page.getByRole('button', { name: 'Restart' }).click()
-
-  await expect(page).toHaveURL('/operations/op-123')
-  await expect(page.getByRole('heading', { name: 'RestartInstance' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Attempts' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Audit Records' })).toBeVisible()
-  await expect(page.getByText('RestartRequested')).toBeVisible()
-})
-
-test('a 401 API response clears the stored session and redirects to login', async ({ page }) => {
-  await seedStoredSession(page)
-  await page.route('**/api/console/v1/instances*', async (route) => {
-    await route.fulfill({
-      status: 401,
-      contentType: 'application/json',
-      body: JSON.stringify({ success: false, message: 'Unauthorized' }),
-    })
+  describe.skip('console e2e', () => {
+    it('runs with Playwright', () => {})
+  })
+} else {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/console/v1/**', routeConsoleApi)
   })
 
-  await page.goto('/')
+  test('login succeeds, redirects home, and shows the instance list', async ({ page }) => {
+    await page.goto('/login')
 
-  await expect(page).toHaveURL('/login?redirect=/')
-  await expect(page.getByRole('heading', { name: 'Nerv-IIP Console' })).toBeVisible()
-  await expect(page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).resolves.toBeNull()
-})
+    await login(page)
 
-test('unknown paths are protected and redirect to login', async ({ page }) => {
-  await page.goto('/xxx')
+    await expect(page).toHaveURL('/')
+    await expect(page.getByRole('heading', { name: 'Instances' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'Payments API' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'payments-1' })).toBeVisible()
+  })
 
-  await expect(page).toHaveURL('/login?redirect=/xxx')
-  await expect(page.getByRole('heading', { name: 'Nerv-IIP Console' })).toBeVisible()
-})
+  test('visiting a protected page while signed out redirects to login with redirect query', async ({
+    page,
+  }) => {
+    await page.goto('/operations/op-123')
+
+    await expect(page).toHaveURL('/login?redirect=/operations/op-123')
+    await expect(page.getByRole('heading', { name: 'Nerv-IIP Console' })).toBeVisible()
+  })
+
+  test('login returns to the original protected path from redirect query', async ({ page }) => {
+    await page.goto('/operations/op-123')
+
+    await login(page)
+
+    await expect(page).toHaveURL('/operations/op-123')
+    await expect(page.getByRole('heading', { name: 'RestartInstance' })).toBeVisible()
+    await expect(page.getByText('attempt-1')).toBeVisible()
+  })
+
+  test('restarting an instance opens the operation detail timeline', async ({ page }) => {
+    await page.goto('/login')
+    await login(page)
+
+    await page.getByRole('button', { name: 'Restart' }).click()
+
+    await expect(page).toHaveURL('/operations/op-123')
+    await expect(page.getByRole('heading', { name: 'RestartInstance' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Attempts' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Audit Records' })).toBeVisible()
+    await expect(page.getByText('RestartRequested')).toBeVisible()
+  })
+
+  test('a 401 API response clears the stored session and redirects to login', async ({ page }) => {
+    await seedStoredSession(page)
+    await page.route('**/api/console/v1/instances*', async (route) => {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, message: 'Unauthorized' }),
+      })
+    })
+
+    await page.goto('/')
+
+    await expect(page).toHaveURL('/login?redirect=/')
+    await expect(page.getByRole('heading', { name: 'Nerv-IIP Console' })).toBeVisible()
+    await expect(page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).resolves.toBeNull()
+  })
+
+  test('unknown paths are protected and redirect to login', async ({ page }) => {
+    await page.goto('/xxx')
+
+    await expect(page).toHaveURL('/login?redirect=/xxx')
+    await expect(page.getByRole('heading', { name: 'Nerv-IIP Console' })).toBeVisible()
+  })
+}
 
 async function login(page: Page) {
   await page.getByLabel('Login name').fill('admin')
@@ -176,7 +186,7 @@ async function routeConsoleApi(route: Route) {
     return fulfillJson(
       route,
       envelope({
-        pageNumber: 1,
+        pageIndex: 1,
         pageSize: 20,
         totalCount: 1,
         items: [instance],

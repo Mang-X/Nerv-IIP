@@ -1,18 +1,30 @@
 using System.Net;
+using MediatR;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Nerv.IIP.Iam.Web.Application.Roles;
+using Nerv.IIP.Iam.Web.Endpoints.Roles;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
 public sealed class IamManagementEndpointAuthorizationTests
 {
+    [Fact]
+    public void Role_mutation_endpoints_route_writes_through_mediator()
+    {
+        AssertRoleMutationEndpointUsesMediator<CreateRoleEndpoint>();
+        AssertRoleMutationEndpointUsesMediator<PatchRolePermissionsEndpoint>();
+    }
+
     [Theory]
     [InlineData("GET", "/api/iam/v1/users")]
     [InlineData("POST", "/api/iam/v1/users")]
     [InlineData("PATCH", "/api/iam/v1/users/user-admin")]
     [InlineData("POST", "/api/iam/v1/users/user-admin/disable")]
+    [InlineData("POST", "/api/iam/v1/users/user-admin/reset-password")]
     [InlineData("GET", "/api/iam/v1/roles")]
     [InlineData("POST", "/api/iam/v1/roles")]
     [InlineData("PATCH", "/api/iam/v1/roles/role-platform-admin/permissions")]
+    [InlineData("GET", "/api/iam/v1/permissions")]
     public async Task Postgres_management_endpoints_reject_anonymous_callers_before_touching_persistence(string method, string path)
     {
         var environment = PreserveEnvironment(
@@ -51,5 +63,18 @@ public sealed class IamManagementEndpointAuthorizationTests
         {
             Environment.SetEnvironmentVariable(name, value);
         }
+    }
+
+    private static void AssertRoleMutationEndpointUsesMediator<TEndpoint>()
+    {
+        var parameterTypes = typeof(TEndpoint)
+            .GetConstructors()
+            .Single()
+            .GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+
+        Assert.Contains(typeof(IMediator), parameterTypes);
+        Assert.DoesNotContain(typeof(IIamRoleApplicationService), parameterTypes);
     }
 }

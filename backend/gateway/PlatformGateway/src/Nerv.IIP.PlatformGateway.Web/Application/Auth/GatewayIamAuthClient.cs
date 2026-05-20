@@ -57,7 +57,8 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
             principal.Email,
             principal.OrganizationId,
             principal.EnvironmentId,
-            principal.PermissionVersion);
+            principal.PermissionVersion,
+            principal.PermissionCodes);
     }
 
     private static ConsoleAuthResponse ToConsoleAuthResponse(IamAuthResponse session, ConsolePrincipalResponse principal) =>
@@ -168,7 +169,8 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
         string PrincipalType,
         string OrganizationId,
         string EnvironmentId,
-        int PermissionVersion);
+        int PermissionVersion,
+        IReadOnlyList<string> PermissionCodes);
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }

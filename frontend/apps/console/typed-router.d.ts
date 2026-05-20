@@ -45,6 +45,27 @@ declare module 'vue-router/auto-routes' {
       { path: ParamValue<false> },
       | never
     >,
+    '/iam/roles/': RouteRecordInfo<
+      '/iam/roles/',
+      '/iam/roles',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/iam/sessions/': RouteRecordInfo<
+      '/iam/sessions/',
+      '/iam/sessions',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/iam/users/': RouteRecordInfo<
+      '/iam/users/',
+      '/iam/users',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/login': RouteRecordInfo<
       '/login',
       '/login',
@@ -81,6 +102,24 @@ declare module 'vue-router/auto-routes' {
     'apps/console/src/pages/[...path].vue': {
       routes:
         | '/[...path]'
+      views:
+        | never
+    }
+    'apps/console/src/pages/iam/roles/index.vue': {
+      routes:
+        | '/iam/roles/'
+      views:
+        | never
+    }
+    'apps/console/src/pages/iam/sessions/index.vue': {
+      routes:
+        | '/iam/sessions/'
+      views:
+        | never
+    }
+    'apps/console/src/pages/iam/users/index.vue': {
+      routes:
+        | '/iam/users/'
       views:
         | never
     }

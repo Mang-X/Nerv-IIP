@@ -97,7 +97,7 @@ describe('console operation composables', () => {
       query: {
         organizationId: 'org-customer',
         environmentId: 'env-prod',
-        pageNumber: 1,
+        pageIndex: 1,
         pageSize: 20,
       },
     })
