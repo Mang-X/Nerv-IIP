@@ -96,6 +96,7 @@ export {
 export { Skeleton } from './components/ui/skeleton'
 export { Spinner } from './components/ui/spinner'
 export { Toaster } from './components/ui/sonner'
+export { toast } from 'vue-sonner'
 export {
   Table,
   TableBody,

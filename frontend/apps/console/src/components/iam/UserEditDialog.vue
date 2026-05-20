@@ -1,0 +1,132 @@
+<script setup lang="ts">
+import type { ConsoleIamUserResponse, ConsoleUpdateIamUserRequest } from '@nerv-iip/api-client'
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Input,
+} from '@nerv-iip/ui'
+import { reactive, watch } from 'vue'
+
+const props = defineProps<{
+  user?: ConsoleIamUserResponse
+}>()
+
+const open = defineModel<boolean>('open', { default: false })
+
+const emit = defineEmits<{
+  submit: [payload: Required<ConsoleUpdateIamUserRequest>]
+}>()
+
+const form = reactive({
+  email: '',
+  enabled: true,
+  loginName: '',
+})
+const errors = reactive({
+  email: '',
+  loginName: '',
+})
+
+function syncUser() {
+  form.email = props.user?.email ?? ''
+  form.enabled = props.user?.enabled !== false
+  form.loginName = props.user?.loginName ?? ''
+  clearErrors()
+}
+
+function clearErrors() {
+  errors.email = ''
+  errors.loginName = ''
+}
+
+function validate() {
+  clearErrors()
+  errors.loginName = form.loginName.trim() ? '' : 'Login name is required.'
+  errors.email = form.email.trim() ? '' : 'Email is required.'
+
+  return !errors.loginName && !errors.email
+}
+
+function handleSubmit() {
+  if (!validate()) {
+    return
+  }
+
+  emit('submit', {
+    email: form.email.trim(),
+    enabled: form.enabled,
+    loginName: form.loginName.trim(),
+  })
+  open.value = false
+}
+
+watch(() => props.user, syncUser, { immediate: true })
+watch(open, (isOpen) => {
+  if (isOpen) {
+    syncUser()
+  }
+})
+</script>
+
+<template>
+  <Dialog v-model:open="open">
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>Edit user</DialogTitle>
+        <DialogDescription>
+          Update the user's login name, email address, and enabled state.
+        </DialogDescription>
+      </DialogHeader>
+
+      <form class="grid gap-4" @submit.prevent="handleSubmit">
+        <FieldGroup>
+          <Field>
+            <FieldLabel for="iam-edit-login-name">Login name</FieldLabel>
+            <Input
+              id="iam-edit-login-name"
+              v-model="form.loginName"
+              :aria-invalid="Boolean(errors.loginName)"
+              autocomplete="username"
+            />
+            <FieldError :errors="[errors.loginName]" />
+          </Field>
+
+          <Field>
+            <FieldLabel for="iam-edit-email">Email</FieldLabel>
+            <Input
+              id="iam-edit-email"
+              v-model="form.email"
+              :aria-invalid="Boolean(errors.email)"
+              autocomplete="email"
+              type="email"
+            />
+            <FieldError :errors="[errors.email]" />
+          </Field>
+
+          <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
+            <div class="grid gap-1">
+              <FieldLabel for="iam-edit-enabled">Enabled</FieldLabel>
+            </div>
+            <Checkbox id="iam-edit-enabled" v-model:checked="form.enabled" />
+          </Field>
+        </FieldGroup>
+
+        <DialogFooter show-close-button>
+          <Button type="submit">
+            Save changes
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  </Dialog>
+</template>
