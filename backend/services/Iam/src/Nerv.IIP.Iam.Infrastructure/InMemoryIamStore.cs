@@ -92,6 +92,34 @@ public sealed class InMemoryIamStore
         }
     }
 
+    public UserFact ValidateAccessTokenPrincipal(
+        string sessionId,
+        string userId,
+        string securityStamp,
+        int permissionVersion)
+    {
+        lock (_gate)
+        {
+            var session = _sessions.SingleOrDefault(x =>
+                    x.SessionId == sessionId
+                    && x.RevokedAtUtc is null
+                    && x.ExpiresAtUtc > DateTimeOffset.UtcNow)
+                ?? throw new UnauthorizedAccessException("Session revoked.");
+            if (session.UserId != userId)
+            {
+                throw new UnauthorizedAccessException("Invalid access token.");
+            }
+
+            var user = _users.Single(x => x.UserId == session.UserId);
+            if (!user.Enabled || user.SecurityStamp != securityStamp || user.PermissionVersion != permissionVersion)
+            {
+                throw new UnauthorizedAccessException("Stale access token.");
+            }
+
+            return user;
+        }
+    }
+
     public ConnectorPrincipal ValidateConnectorHost(string connectorHostId, string secret)
     {
         lock (_gate)
@@ -286,7 +314,7 @@ public sealed class InMemoryIamStore
         _sessions.Add(session);
         var accessToken = Convert.ToBase64String(Encoding.UTF8.GetBytes(
             $"{sessionId}|{user.SecurityStamp}|{user.PermissionVersion}|{expiresAtUtc.ToUnixTimeSeconds()}"));
-        return new AuthResult(accessToken, refreshToken, sessionId, expiresAtUtc);
+        return new AuthResult(accessToken, refreshToken, sessionId, expiresAtUtc, user.UserId, user.SecurityStamp, user.PermissionVersion);
     }
 
     private void RevokeSession(string sessionId)
@@ -340,7 +368,14 @@ public sealed class InMemoryIamStore
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 }
 
-public sealed record AuthResult(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+public sealed record AuthResult(
+    string AccessToken,
+    string RefreshToken,
+    string SessionId,
+    DateTimeOffset ExpiresAtUtc,
+    string UserId,
+    string SecurityStamp,
+    int PermissionVersion);
 public sealed record ConnectorPrincipal(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
 public sealed record CurrentPrincipalSnapshot(
     string UserId,

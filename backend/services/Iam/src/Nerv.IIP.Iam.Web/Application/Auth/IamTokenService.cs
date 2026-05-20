@@ -18,14 +18,23 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
 
     public string CreateAccessToken(User user, UserSession session)
     {
+        return CreateAccessToken(user.Id.Id, session.Id.Id, user.SecurityStamp, user.PermissionVersion);
+    }
+
+    public string CreateAccessToken(
+        string userId,
+        string sessionId,
+        string securityStamp,
+        int permissionVersion)
+    {
         var now = DateTimeOffset.UtcNow;
         var claims = new ClaimsIdentity(
         [
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.Id),
-            new Claim("sessionId", session.Id.Id),
+            new Claim(JwtRegisteredClaimNames.Sub, userId),
+            new Claim("sessionId", sessionId),
             new Claim("principalType", "user"),
-            new Claim("securityStamp", user.SecurityStamp),
-            new Claim("permissionVersion", user.PermissionVersion.ToString()),
+            new Claim("securityStamp", securityStamp),
+            new Claim("permissionVersion", permissionVersion.ToString()),
             new Claim(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("n"))
         ]);
@@ -60,6 +69,11 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
             return null;
         }
 
+        return TryReadPrincipal(token);
+    }
+
+    public AccessTokenPrincipal? TryReadPrincipal(string token)
+    {
         var handler = new JwtSecurityTokenHandler { MapInboundClaims = false };
         try
         {
