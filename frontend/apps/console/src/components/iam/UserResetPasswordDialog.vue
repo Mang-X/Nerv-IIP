@@ -84,7 +84,7 @@ watch(open, (isOpen) => {
               autocomplete="new-password"
               type="password"
             />
-            <FieldError :errors="[errors.newPassword]" />
+            <FieldError v-if="errors.newPassword" :errors="[errors.newPassword]" />
           </Field>
         </FieldGroup>
 

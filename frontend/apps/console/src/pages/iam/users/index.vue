@@ -156,6 +156,7 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
   }
 
   await resetUserPassword(data)
+  await refreshUsers()
   toast.success('Password reset')
 }
 </script>
@@ -172,6 +173,7 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         v-model:search="search"
         v-model:status="status"
         action-label="Create user"
+        search-label="Search users"
         search-placeholder="Search users"
         show-status-filter
         @action="openCreateDialog"

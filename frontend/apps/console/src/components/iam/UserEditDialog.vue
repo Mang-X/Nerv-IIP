@@ -98,7 +98,7 @@ watch(open, (isOpen) => {
               :aria-invalid="Boolean(errors.loginName)"
               autocomplete="username"
             />
-            <FieldError :errors="[errors.loginName]" />
+            <FieldError v-if="errors.loginName" :errors="[errors.loginName]" />
           </Field>
 
           <Field>
@@ -110,7 +110,7 @@ watch(open, (isOpen) => {
               autocomplete="email"
               type="email"
             />
-            <FieldError :errors="[errors.email]" />
+            <FieldError v-if="errors.email" :errors="[errors.email]" />
           </Field>
 
           <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">

@@ -5,9 +5,11 @@ import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
   actionLabel: string
+  searchLabel?: string
   searchPlaceholder?: string
   showStatusFilter?: boolean
 }>(), {
+  searchLabel: 'Search',
   searchPlaceholder: 'Search',
   showStatusFilter: false,
 })
@@ -35,6 +37,7 @@ const selectedStatus = computed({
         <Input
           v-model="search"
           class="pl-8"
+          :aria-label="props.searchLabel"
           :placeholder="props.searchPlaceholder"
           type="search"
         />

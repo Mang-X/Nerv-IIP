@@ -77,7 +77,12 @@ const emit = defineEmits<{
           <TableCell class="text-right">
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
-                <Button size="icon" type="button" variant="ghost" aria-label="Open user actions">
+                <Button
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                  :aria-label="`Open actions for ${user.loginName || user.userId || 'user'}`"
+                >
                   <MoreHorizontalIcon class="size-4" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
