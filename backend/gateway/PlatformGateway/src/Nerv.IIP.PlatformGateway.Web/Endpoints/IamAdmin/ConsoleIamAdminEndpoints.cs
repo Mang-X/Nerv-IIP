@@ -43,10 +43,11 @@ public sealed class ListConsoleIamUsersEndpoint(
 [Tags("Console IAM")]
 [HttpPost("/api/console/v1/iam/users")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(ResponseData<ConsoleIamUserResponse>), StatusCodes.Status201Created)]
 public sealed class CreateConsoleIamUserEndpoint(
     IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth,
-    IGatewayIamAdminClient admin) : Endpoint<ConsoleCreateIamUserRequest, ResponseData<ConsoleIamUserResponse>>
+    IGatewayIamAdminClient admin) : Endpoint<ConsoleCreateIamUserRequest>
 {
     public override async Task HandleAsync(ConsoleCreateIamUserRequest req, CancellationToken ct)
     {
@@ -208,10 +209,11 @@ public sealed class ListConsoleIamRolesEndpoint(
 [Tags("Console IAM")]
 [HttpPost("/api/console/v1/iam/roles")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(ResponseData<ConsoleIamRoleResponse>), StatusCodes.Status201Created)]
 public sealed class CreateConsoleIamRoleEndpoint(
     IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth,
-    IGatewayIamAdminClient admin) : Endpoint<ConsoleCreateIamRoleRequest, ResponseData<ConsoleIamRoleResponse>>
+    IGatewayIamAdminClient admin) : Endpoint<ConsoleCreateIamRoleRequest>
 {
     public override async Task HandleAsync(ConsoleCreateIamRoleRequest req, CancellationToken ct)
     {

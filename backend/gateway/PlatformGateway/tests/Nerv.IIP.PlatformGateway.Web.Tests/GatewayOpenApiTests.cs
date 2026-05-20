@@ -54,12 +54,18 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("getConsolePrincipal", me.GetProperty("get").GetProperty("operationId").GetString());
 
         Assert.Equal("listConsoleIamUsers", paths.GetProperty("/api/console/v1/iam/users").GetProperty("get").GetProperty("operationId").GetString());
-        Assert.Equal("createConsoleIamUser", paths.GetProperty("/api/console/v1/iam/users").GetProperty("post").GetProperty("operationId").GetString());
+        var createIamUser = paths.GetProperty("/api/console/v1/iam/users").GetProperty("post");
+        Assert.Equal("createConsoleIamUser", createIamUser.GetProperty("operationId").GetString());
+        AssertResponseStatus(createIamUser, "201");
+        AssertNoResponseStatus(createIamUser, "200");
         Assert.Equal("updateConsoleIamUser", paths.GetProperty("/api/console/v1/iam/users/{userId}").GetProperty("patch").GetProperty("operationId").GetString());
         Assert.Equal("disableConsoleIamUser", paths.GetProperty("/api/console/v1/iam/users/{userId}/disable").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("resetConsoleIamUserPassword", paths.GetProperty("/api/console/v1/iam/users/{userId}/reset-password").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("listConsoleIamRoles", paths.GetProperty("/api/console/v1/iam/roles").GetProperty("get").GetProperty("operationId").GetString());
-        Assert.Equal("createConsoleIamRole", paths.GetProperty("/api/console/v1/iam/roles").GetProperty("post").GetProperty("operationId").GetString());
+        var createIamRole = paths.GetProperty("/api/console/v1/iam/roles").GetProperty("post");
+        Assert.Equal("createConsoleIamRole", createIamRole.GetProperty("operationId").GetString());
+        AssertResponseStatus(createIamRole, "201");
+        AssertNoResponseStatus(createIamRole, "200");
         Assert.Equal("updateConsoleIamRolePermissions", paths.GetProperty("/api/console/v1/iam/roles/{roleId}/permissions").GetProperty("patch").GetProperty("operationId").GetString());
         Assert.Equal("listConsoleIamPermissions", paths.GetProperty("/api/console/v1/iam/permissions").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("listConsoleIamSessions", paths.GetProperty("/api/console/v1/iam/sessions").GetProperty("get").GetProperty("operationId").GetString());
@@ -109,5 +115,19 @@ public sealed class GatewayOpenApiTests
 
         var actual = parameter.TryGetProperty("required", out var required) && required.GetBoolean();
         Assert.Equal(expected, actual);
+    }
+
+    private static void AssertResponseStatus(JsonElement operation, string statusCode)
+    {
+        Assert.True(
+            operation.GetProperty("responses").TryGetProperty(statusCode, out _),
+            $"Expected response status {statusCode}.");
+    }
+
+    private static void AssertNoResponseStatus(JsonElement operation, string statusCode)
+    {
+        Assert.False(
+            operation.GetProperty("responses").TryGetProperty(statusCode, out _),
+            $"Did not expect response status {statusCode}.");
     }
 }
