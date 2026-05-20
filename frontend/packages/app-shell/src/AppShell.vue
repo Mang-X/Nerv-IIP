@@ -17,8 +17,9 @@ import { RouterLink } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 
 interface NavItem {
+  children?: NavItem[]
   label: string
-  to: RouteLocationRaw
+  to?: RouteLocationRaw
 }
 
 const props = defineProps<{
@@ -46,9 +47,22 @@ const userInitials = computed(() => props.user?.loginName.slice(0, 2).toUpperCas
       </RouterLink>
 
       <nav class="app-shell__nav" aria-label="Primary navigation">
-        <RouterLink v-for="item in navItems" :key="item.label" class="app-shell__nav-link" :to="item.to">
-          {{ item.label }}
-        </RouterLink>
+        <template v-for="item in navItems" :key="item.label">
+          <div v-if="item.children?.length" class="app-shell__nav-group">
+            <span class="app-shell__nav-group-label">{{ item.label }}</span>
+            <RouterLink
+              v-for="child in item.children"
+              :key="child.label"
+              class="app-shell__nav-link app-shell__nav-link--child"
+              :to="child.to ?? { path: '/' }"
+            >
+              {{ child.label }}
+            </RouterLink>
+          </div>
+          <RouterLink v-else-if="item.to" class="app-shell__nav-link" :to="item.to">
+            {{ item.label }}
+          </RouterLink>
+        </template>
       </nav>
     </aside>
 
@@ -145,6 +159,21 @@ const userInitials = computed(() => props.user?.loginName.slice(0, 2).toUpperCas
   gap: 0.35rem;
 }
 
+.app-shell__nav-group {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.app-shell__nav-group-label {
+  color: color-mix(in oklab, var(--sidebar-foreground) 58%, transparent);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1.3;
+  padding: 0.55rem 0.75rem 0.2rem;
+  text-transform: uppercase;
+}
+
 .app-shell__nav-link {
   border-radius: var(--radius-sm);
   color: color-mix(in oklab, var(--sidebar-foreground) 78%, transparent);
@@ -156,6 +185,12 @@ const userInitials = computed(() => props.user?.loginName.slice(0, 2).toUpperCas
   transition:
     background-color 150ms ease,
     color 150ms ease;
+}
+
+.app-shell__nav-link--child {
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding-left: 1.25rem;
 }
 
 .app-shell__nav-link:hover,
@@ -228,6 +263,21 @@ const userInitials = computed(() => props.user?.loginName.slice(0, 2).toUpperCas
   .app-shell__nav-link {
     flex: 0 0 auto;
     white-space: nowrap;
+  }
+
+  .app-shell__nav-group {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0.35rem;
+  }
+
+  .app-shell__nav-group-label {
+    align-self: center;
+    padding: 0.65rem 0.25rem;
+  }
+
+  .app-shell__nav-link--child {
+    padding-left: 0.75rem;
   }
 
   .app-shell__topbar,

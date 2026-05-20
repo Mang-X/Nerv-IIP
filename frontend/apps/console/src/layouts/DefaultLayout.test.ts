@@ -39,6 +39,14 @@ describe('DefaultLayout', () => {
 
     expect(wrapper.getComponent(AppShellStub).props('navItems')).toEqual([
       { label: 'Instances', to: { name: '/' } },
+      {
+        label: 'IAM',
+        children: [
+          { label: 'Users', to: { name: '/iam/users/' } },
+          { label: 'Roles', to: { name: '/iam/roles/' } },
+          { label: 'Sessions', to: { name: '/iam/sessions/' } },
+        ],
+      },
     ])
   })
 })

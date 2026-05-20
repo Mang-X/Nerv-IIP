@@ -6,10 +6,25 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 
-const navItems = [{ label: 'Instances', to: { name: '/' } }] satisfies {
+interface ConsoleNavItem {
+  children?: ConsoleNavItem[]
   label: string
-  to: RouteLocationRaw
-}[]
+  to?: RouteLocationRaw
+}
+
+const namedRoute = (name: string) => ({ name }) as unknown as RouteLocationRaw
+
+const navItems = [
+  { label: 'Instances', to: namedRoute('/') },
+  {
+    label: 'IAM',
+    children: [
+      { label: 'Users', to: namedRoute('/iam/users/') },
+      { label: 'Roles', to: namedRoute('/iam/roles/') },
+      { label: 'Sessions', to: namedRoute('/iam/sessions/') },
+    ],
+  },
+] satisfies ConsoleNavItem[]
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
 const router = useRouter()
