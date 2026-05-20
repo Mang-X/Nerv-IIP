@@ -138,7 +138,7 @@ async function savePermissions() {
 
           <form class="grid gap-4" @submit.prevent="savePermissions">
             <Alert v-if="selectedRole?.roleId === 'role-platform-admin'">
-              <AlertTitle>Administrator role warning</AlertTitle>
+              <AlertTitle>Administrator role</AlertTitle>
               <AlertDescription>
                 Removing IAM management permissions from this role can block future role edits.
               </AlertDescription>

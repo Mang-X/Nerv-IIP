@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
+import RolesTable from '@/components/iam/RolesTable.vue'
 import RolesPage from './index.vue'
 
 const iamState = vi.hoisted(() => ({
@@ -56,6 +57,7 @@ vi.mock('@/composables/useIamAdmin', () => ({
 describe('IAM roles page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    document.body.innerHTML = ''
     iamState.createRole.mockResolvedValue(undefined)
     iamState.refreshRoles.mockResolvedValue(undefined)
     iamState.updateRolePermissions.mockResolvedValue(undefined)
@@ -79,5 +81,35 @@ describe('IAM roles page', () => {
     expect(wrapper.text()).toContain('iam.users.read')
     expect(wrapper.text()).toContain('Create role')
     expect(wrapper.find('[style*="--legacy-color"]').exists()).toBe(false)
+  })
+
+  it('renders exact administrator role warning copy when editing platform admin permissions', async () => {
+    const wrapper = mount(RolesPage, {
+      global: {
+        stubs: {
+          DefaultLayout: {
+            template: '<main><slot /></main>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    wrapper.findComponent(RolesTable).vm.$emit('editPermissions', {
+      roleId: 'role-platform-admin',
+      roleName: 'Platform Administrator',
+      permissionCodes: ['iam.roles.update', 'iam.users.read'],
+    })
+    await flushPromises()
+
+    const alertTitles = [...document.body.querySelectorAll('[data-slot="alert-title"]')]
+      .map(title => title.textContent?.trim())
+
+    expect(alertTitles)
+      .toContain('Administrator role')
+    expect(document.body.textContent).toContain(
+      'Removing IAM management permissions from this role can block future role edits.',
+    )
   })
 })
