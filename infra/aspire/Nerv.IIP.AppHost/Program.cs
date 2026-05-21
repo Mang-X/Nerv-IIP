@@ -11,7 +11,7 @@ var redis = builder.AddRedis("redis")
     .WithDataVolume("nerv-iip-redis");
 var rabbitmq = builder.AddRabbitMQ("rabbitmq")
     .WithManagementPlugin();
-var minio = builder.AddContainer("minio", "minio/minio")
+var minio = builder.AddContainer("minio", "pgsty/minio", "RELEASE.2026-04-17T00-00-00Z")
     .WithArgs("server", "/data", "--console-address", ":9001")
     .WithEnvironment("MINIO_ROOT_USER", "nervminio")
     .WithEnvironment("MINIO_ROOT_PASSWORD", "nervminio")
@@ -25,6 +25,7 @@ var otelCollector = builder.AddContainer("otel-collector", "otel/opentelemetry-c
     .WithHttpEndpoint(port: 4318, targetPort: 4318, name: "otlp-http");
 
 var apphub = builder.AddProject<Projects.Nerv_IIP_AppHub_Web>("apphub")
+    .WithHttpEndpoint(port: 5101, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
@@ -37,6 +38,7 @@ var apphub = builder.AddProject<Projects.Nerv_IIP_AppHub_Web>("apphub")
     .WaitFor(otelCollector);
 
 var iam = builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam")
+    .WithHttpEndpoint(port: 5102, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Iam__Seed__Enabled", "true")
@@ -52,6 +54,7 @@ var iam = builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam")
     .WaitFor(otelCollector);
 
 var ops = builder.AddProject<Projects.Nerv_IIP_Ops_Web>("ops")
+    .WithHttpEndpoint(port: 5103, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
@@ -64,6 +67,7 @@ var ops = builder.AddProject<Projects.Nerv_IIP_Ops_Web>("ops")
     .WaitFor(otelCollector);
 
 var fileStorage = builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage")
+    .WithHttpEndpoint(port: 5104, name: "http")
     .WithEnvironment("Storage__Provider", "MinIO")
     .WithEnvironment("Storage__MinIO__Endpoint", minio.GetEndpoint("api"))
     .WithEnvironment("Storage__MinIO__AccessKey", "nervminio")
@@ -76,6 +80,7 @@ var fileStorage = builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-st
     .WaitFor(otelCollector);
 
 var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")
+    .WithHttpEndpoint(port: 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("Iam__Jwt__SigningKey", LocalJwtSigningKey)
@@ -105,6 +110,7 @@ var connectorHost = builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("co
     .WaitFor(iam);
 
 builder.AddViteApp("console", "../../../frontend/apps/console")
+    .WithHttpEndpoint(port: 5105, name: "http")
     .WithPnpm()
     .WithEnvironment("NERV_IIP_GATEWAY_URL", gateway.GetEndpoint("http"))
     .WithReference(gateway)

@@ -100,8 +100,40 @@ function Protect-ScriptAutomationLogFile {
         return
     }
 
-    $content = Get-Content $Path -Raw
-    Write-ScriptAutomationProcessLog -Path $Path -Content $content
+    $fullPath = (Resolve-Path $Path).Path
+    $tempPath = "$fullPath.redacted-$([System.Guid]::NewGuid().ToString('N')).tmp"
+    $reader = $null
+    $writer = $null
+    $replaced = $false
+
+    try {
+        $reader = [System.IO.StreamReader]::new($fullPath, [System.Text.UTF8Encoding]::new($false), $true)
+        $writer = [System.IO.StreamWriter]::new($tempPath, $false, [System.Text.UTF8Encoding]::new($false))
+
+        while (-not $reader.EndOfStream) {
+            $line = $reader.ReadLine()
+            $writer.WriteLine((Protect-ScriptAutomationText $line))
+        }
+
+        $reader.Dispose()
+        $reader = $null
+        $writer.Dispose()
+        $writer = $null
+
+        Move-Item -LiteralPath $tempPath -Destination $fullPath -Force
+        $replaced = $true
+    }
+    finally {
+        if ($reader) {
+            $reader.Dispose()
+        }
+        if ($writer) {
+            $writer.Dispose()
+        }
+        if (-not $replaced) {
+            Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Get-ScriptAutomationProcessTreeIds {
@@ -288,6 +320,88 @@ function Invoke-DotNet {
     Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
 }
 
+function Invoke-NativeCommandInteractive {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Command,
+
+        [string[]] $Arguments = @(),
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [string] $Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        $Name = [System.IO.Path]::GetFileNameWithoutExtension($Command)
+    }
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Command
+    $startInfo.WorkingDirectory = $WorkingDirectory
+    $startInfo.UseShellExecute = $false
+
+    foreach ($argument in $Arguments) {
+        [void] $startInfo.ArgumentList.Add($argument)
+    }
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $rootProcessId = $null
+
+    try {
+        $displayArguments = Protect-ScriptAutomationText ($Arguments -join ' ')
+        Write-Diagnostic "Starting interactive $Name`: $Command $displayArguments (cwd=$WorkingDirectory)"
+
+        if (-not $process.Start()) {
+            throw "Failed to start command '$Command'."
+        }
+
+        $rootProcessId = $process.Id
+        $process.WaitForExit()
+        $exitCode = $process.ExitCode
+        $stopwatch.Stop()
+
+        if ($exitCode -ne 0) {
+            Write-Diagnostic -Level 'WARN' -Message "Interactive command exited non-zero: $Name (command=$Command, exitCode=$exitCode, pid=$rootProcessId, durationMs=$($stopwatch.ElapsedMilliseconds))"
+        }
+        else {
+            Write-Diagnostic "Interactive command completed: $Name (command=$Command, pid=$rootProcessId, durationMs=$($stopwatch.ElapsedMilliseconds))"
+        }
+
+        return [pscustomobject]@{
+            Command = $Command
+            Arguments = $Arguments
+            WorkingDirectory = $WorkingDirectory
+            ExitCode = $exitCode
+            Duration = $stopwatch.Elapsed
+            ProcessId = $rootProcessId
+        }
+    }
+    finally {
+        if ($process -and $rootProcessId -and -not $process.HasExited) {
+            Stop-ProcessTree -ProcessId $process.Id -Reason "Finally cleanup for interactive $Command" | Out-Null
+        }
+
+        $process.Dispose()
+    }
+}
+
+function Invoke-DotNetInteractive {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [string] $Name = 'dotnet'
+    )
+
+    Invoke-NativeCommandInteractive -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
+}
+
 function Invoke-Pnpm {
     param(
         [Parameter(Mandatory)]
@@ -358,7 +472,35 @@ function Start-ManagedBackgroundProcess {
     $stdoutPath = Join-Path $resolvedLogDirectory 'stdout.log'
     $stderrPath = Join-Path $resolvedLogDirectory 'stderr.log'
 
-    $process = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -NoNewWindow -PassThru
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Command
+    $startInfo.WorkingDirectory = $WorkingDirectory
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    foreach ($argument in $Arguments) {
+        [void] $startInfo.ArgumentList.Add($argument)
+    }
+
+    $stdoutStream = [System.IO.FileStream]::new($stdoutPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+    $stderrStream = [System.IO.FileStream]::new($stderrPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    $state = @{ Disposed = $false }
+    $copyCancellation = [System.Threading.CancellationTokenSource]::new()
+
+    if (-not $process.Start()) {
+        $stdoutStream.Dispose()
+        $stderrStream.Dispose()
+        $copyCancellation.Dispose()
+        $process.Dispose()
+        throw "Failed to start background process '$Command'."
+    }
+
+    $stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($stdoutStream, $copyCancellation.Token)
+    $stderrTask = $process.StandardError.BaseStream.CopyToAsync($stderrStream, $copyCancellation.Token)
+
     Write-Diagnostic "Started background process $Command (pid=$($process.Id), cwd=$WorkingDirectory, logs=$resolvedLogDirectory)"
 
     $stopBlock = {
@@ -366,13 +508,94 @@ function Start-ManagedBackgroundProcess {
             [string] $Reason = 'Managed background stop'
         )
 
-        if ($process -and -not $process.HasExited) {
-            Stop-ProcessTree -ProcessId $process.Id -Reason $Reason | Out-Null
+        if ($state.Disposed) {
+            return
         }
 
-        Protect-ScriptAutomationLogFile -Path $stdoutPath
-        Protect-ScriptAutomationLogFile -Path $stderrPath
-        $process.Dispose()
+        try {
+            if ($process -and -not $process.HasExited) {
+                Stop-ProcessTree -ProcessId $process.Id -Reason $Reason | Out-Null
+            }
+
+            if ($process) {
+                [void] $process.WaitForExit(1000)
+                if (-not $process.HasExited) {
+                    Write-Diagnostic -Level 'WARN' -Message "Background process did not exit promptly after stop request: $Command (pid=$($process.Id))"
+                }
+            }
+        }
+        finally {
+            $state.Disposed = $true
+
+            $copyTasks = @(
+                [pscustomobject]@{ Name = 'stdout'; Task = $stdoutTask },
+                [pscustomobject]@{ Name = 'stderr'; Task = $stderrTask }
+            )
+            $copyTimedOut = $false
+
+            foreach ($copyTask in $copyTasks) {
+                if (-not $copyTask.Task) {
+                    continue
+                }
+
+                $copyCompleted = $false
+                try {
+                    $copyCompleted = $copyTask.Task.Wait(1000)
+                }
+                catch {
+                    $copyCompleted = $true
+                }
+
+                if (-not $copyCompleted) {
+                    $copyTimedOut = $true
+                    Write-Diagnostic -Level 'WARN' -Message "Timed out while collecting background $($copyTask.Name) log for $Command."
+                }
+            }
+
+            if ($copyTimedOut) {
+                $copyCancellation.Cancel()
+            }
+
+            foreach ($copyTask in $copyTasks) {
+                if (-not $copyTask.Task) {
+                    continue
+                }
+
+                if (-not $copyTask.Task.IsCompleted) {
+                    try {
+                        [void] $copyTask.Task.Wait(1000)
+                    }
+                    catch {
+                    }
+                }
+
+                if (-not $copyTask.Task.IsCompleted) {
+                    throw "Background $($copyTask.Name) log copy did not complete after cancellation for $Command; refusing to dispose its stream while copy is still active."
+                }
+
+                if ($copyTask.Task.IsCanceled) {
+                    continue
+                }
+
+                try {
+                    [void] $copyTask.Task.GetAwaiter().GetResult()
+                }
+                catch {
+                    if (-not $copyTimedOut) {
+                        throw
+                    }
+
+                    Write-Diagnostic -Level 'WARN' -Message "Background $($copyTask.Name) log copy ended after cancellation for $Command`: $($_.Exception.Message)"
+                }
+            }
+
+            $stdoutStream.Dispose()
+            $stderrStream.Dispose()
+            $copyCancellation.Dispose()
+            Protect-ScriptAutomationLogFile -Path $stdoutPath
+            Protect-ScriptAutomationLogFile -Path $stderrPath
+            $process.Dispose()
+        }
     }.GetNewClosure()
 
     return [pscustomobject]@{

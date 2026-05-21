@@ -5,13 +5,13 @@
 
 ## Context
 
-第四阶段已经为 AppHub 和 Ops 引入 PostgreSQL profile、EF Core `ApplicationDbContext`、netcorepal repository/unit of work 和平台级 Aspire AppHost。当前本地验证仍使用 `EnsureCreated()` 建表，适合快速证明真实基础设施链路，但不适合生产或客户环境。
+第四阶段已经为 AppHub 和 Ops 引入 PostgreSQL profile、EF Core `ApplicationDbContext`、netcorepal repository/unit of work 和平台级 Aspire AppHost；当时本地验证允许使用 `EnsureCreated()` 快速证明真实基础设施链路。第五阶段已把 AppHub/Ops 切换到 migration-based verification，并且 Web startup 只有在 dev/local 显式配置 `Persistence:AutoMigrate=true` 时才执行自动迁移。第七阶段 IAM 也已沿用 PostgreSQL migration、幂等 seed 和 schema convention baseline。
 
 进入下一阶段后，IAM、FileStorage、Ops 审批、Notification、日志归档索引和部署脚本都会产生长期数据。平台必须先冻结迁移、初始化、seed 和回滚策略，避免各服务在启动时隐式改库，或由安装脚本直接绕过服务边界写业务数据。
 
 ## Decision
 
-1. 生产、PoC 和可交付环境不得使用 `EnsureCreated()` 创建或升级业务库；`EnsureCreated()` 只允许在测试和本地纵切验证中使用。
+1. 生产、PoC 和可交付环境不得使用 `EnsureCreated()` 创建或升级业务库；当前 AppHub/Ops/IAM 的 PostgreSQL profile 以 EF Core migrations、受控 migrator/seed 和 dev-only `Persistence:AutoMigrate=true` 为基线。
 2. 每个拥有持久化事实的服务拥有自己的 EF Core migrations。迁移文件放在该服务的 Infrastructure 项目或明确的 migrations 项目中，由该服务边界维护。
 3. 普通 Web/Worker 服务启动时不得默认自动执行破坏性迁移。数据库升级由发布流程、安装脚本或专用 migrator step 显式执行。
 4. Aspire、Docker Compose、Windows 安装脚本和 Linux 安装脚本都必须调用同一套迁移入口或等价 migrator 产物，不各自实现平行建表逻辑。
@@ -35,7 +35,7 @@
 
 ## Consequences
 
-1. 下一阶段在继续功能纵切前，需要先为已持久化的 AppHub/Ops 建立 migrations 与 migrator 入口。
+1. 第五阶段已经为 AppHub/Ops 建立 migrations 与 migrator 入口；后续新增持久化服务继续沿用同一迁移、seed 和验证口径。
 2. `scripts/verify-fourth-slice-real-infra.ps1` 可以继续作为本地门禁，但不能被解释为生产部署流程。
 3. 部署脚本会变复杂，需要管理连接串、迁移执行顺序、备份提示、失败日志和重试语义。
 4. 服务启动路径会更安全，但开发者需要显式运行迁移或使用验证脚本准备数据库。

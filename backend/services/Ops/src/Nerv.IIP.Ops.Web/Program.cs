@@ -52,7 +52,7 @@ builder.Services.Configure<OpsConnectorCredentialOptions>(
 builder.Services.AddSingleton<ConfiguredOpsConnectorCredentialValidator>();
 builder.Services.AddHttpClient<IamOpsConnectorCredentialValidator>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5104");
+    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102");
 });
 builder.Services.AddTransient<IOpsConnectorCredentialValidator, OpsConnectorCredentialValidator>();
 if (usePostgreSql)

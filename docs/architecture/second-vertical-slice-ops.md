@@ -80,7 +80,7 @@ AppHub 仍然是实例状态事实来源。Ops 只记录动作事实和执行结
 本地开发默认端口：
 
 1. AppHub：`http://localhost:5101`
-2. Ops：`http://localhost:5105`
+2. Ops：`http://localhost:5103`
 3. PlatformGateway：由验证脚本动态分配
 
 关键配置：

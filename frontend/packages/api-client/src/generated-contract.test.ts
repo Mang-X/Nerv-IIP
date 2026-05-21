@@ -20,7 +20,7 @@ describe('generated API client contract', () => {
     const config = client.getConfig()
 
     expect(config.baseUrl ?? '').toBe('')
-    expect(config.baseUrl).not.toBe('http://127.0.0.1:58204')
+    expect(config.baseUrl).not.toBe('http://127.0.0.1:5100')
   })
 
   it('matches generated query parameters for listing console instances', () => {

@@ -86,4 +86,146 @@ finally {
     }
 }
 
+$interactiveResult = Invoke-NativeCommandInteractive -Command 'pwsh' -Arguments @('-NoProfile', '-Command', 'exit 7') -Name 'interactive-exit-code-smoke'
+if ($interactiveResult.ExitCode -ne 7) {
+    throw "Expected interactive helper to return ExitCode 7, got $($interactiveResult.ExitCode)."
+}
+
+$redactionRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-log-redaction-$([System.Guid]::NewGuid().ToString('N'))"
+try {
+    New-Item -ItemType Directory -Force -Path $redactionRoot | Out-Null
+    $redactionLog = Join-Path $redactionRoot 'redaction.log'
+    [System.IO.File]::WriteAllLines(
+        $redactionLog,
+        @(
+            'normal line before secret',
+            'token=super-secret-token',
+            'normal line after secret'
+        ),
+        [System.Text.UTF8Encoding]::new($false)
+    )
+
+    Protect-ScriptAutomationLogFile -Path $redactionLog
+    $redactedLines = [System.IO.File]::ReadAllLines($redactionLog)
+    $redactedText = [string]::Join("`n", $redactedLines)
+
+    foreach ($expected in @('normal line before secret', 'token=<redacted>', 'normal line after secret')) {
+        if (-not $redactedText.Contains($expected)) {
+            throw "Expected redacted log to contain '$expected'. Output: $redactedText"
+        }
+    }
+
+    if ($redactedText.Contains('super-secret-token')) {
+        throw "Expected redacted log to remove secret token. Output: $redactedText"
+    }
+
+    $helperContent = Get-Content -Path $helper -Raw
+    $parseErrors = $null
+    $helperAst = [System.Management.Automation.Language.Parser]::ParseInput($helperContent, [ref]$null, [ref]$parseErrors)
+    if ($parseErrors -and $parseErrors.Count -gt 0) {
+        throw "Failed to parse ScriptAutomation helper: $($parseErrors[0].Message)"
+    }
+
+    $protectLogFileAst = $helperAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Protect-ScriptAutomationLogFile'
+    }, $true)
+    if (-not $protectLogFileAst) {
+        throw 'Could not find Protect-ScriptAutomationLogFile implementation.'
+    }
+
+    if ($protectLogFileAst.Extent.Text -match 'Get-Content\s+\$Path\s+-Raw') {
+        throw 'Protect-ScriptAutomationLogFile must stream log redaction instead of using Get-Content -Raw.'
+    }
+}
+finally {
+    $resolvedRedactionRoot = Resolve-Path $redactionRoot -ErrorAction SilentlyContinue
+    if ($resolvedRedactionRoot) {
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        if (-not $resolvedRedactionRoot.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove log redaction directory outside temp: $($resolvedRedactionRoot.Path)"
+        }
+
+        Remove-Item -LiteralPath $resolvedRedactionRoot.Path -Recurse -Force
+    }
+}
+
+$idempotentRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-background-idempotent-$([System.Guid]::NewGuid().ToString('N'))"
+$idempotentBackground = $null
+try {
+    $idempotentBackground = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -Name 'background-idempotent-stop-smoke' -LogDirectory (Join-Path $idempotentRoot 'background-idempotent-stop-smoke')
+
+    $firstStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    & $idempotentBackground.Stop 'first'
+    $firstStopwatch.Stop()
+
+    $secondStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    & $idempotentBackground.Stop 'second'
+    $secondStopwatch.Stop()
+
+    foreach ($measurement in @(
+        [pscustomobject]@{ Name = 'first'; Duration = $firstStopwatch.Elapsed },
+        [pscustomobject]@{ Name = 'second'; Duration = $secondStopwatch.Elapsed }
+    )) {
+        if ($measurement.Duration.TotalSeconds -gt 5) {
+            throw "Expected $($measurement.Name) background Stop call to return quickly, took $($measurement.Duration)."
+        }
+    }
+
+    $idempotentBackground = $null
+}
+finally {
+    if ($idempotentBackground) {
+        & $idempotentBackground.Stop 'idempotent stop final cleanup'
+    }
+
+    $resolvedIdempotentRoot = Resolve-Path $idempotentRoot -ErrorAction SilentlyContinue
+    if ($resolvedIdempotentRoot) {
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        if (-not $resolvedIdempotentRoot.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove idempotent smoke directory outside temp: $($resolvedIdempotentRoot.Path)"
+        }
+
+        Remove-Item -LiteralPath $resolvedIdempotentRoot.Path -Recurse -Force
+    }
+}
+
+$backgroundRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-background-arguments-$([System.Guid]::NewGuid().ToString('N'))"
+$backgroundScript = Join-Path $backgroundRoot 'print-arguments.ps1'
+$background = $null
+try {
+    New-Item -ItemType Directory -Force -Path $backgroundRoot | Out-Null
+    [System.IO.File]::WriteAllText($backgroundScript, 'Write-Output "count=$($args.Count)"; Write-Output "arg0=$($args[0])"; Write-Output "arg1=$($args[1])"', [System.Text.UTF8Encoding]::new($false))
+    $background = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-File', $backgroundScript, 'a b', 'a "quoted" b') -Name 'background-argument-smoke' -LogDirectory (Join-Path $backgroundRoot 'background-argument-smoke')
+
+    if (-not $background.Process.WaitForExit(15000)) {
+        throw 'Background argument smoke process did not exit in time.'
+    }
+
+    & $background.Stop 'Background argument smoke cleanup'
+    $stdout = Get-Content -Path $background.StdoutPath -Raw
+    $background = $null
+
+    foreach ($expected in @('count=2', 'arg0=a b', 'arg1=a "quoted" b')) {
+        if (-not $stdout.Contains($expected)) {
+            throw "Expected background stdout to contain '$expected'. Output: $stdout"
+        }
+    }
+}
+finally {
+    if ($background) {
+        & $background.Stop 'Background argument smoke final cleanup'
+    }
+
+    $resolvedBackgroundRoot = Resolve-Path $backgroundRoot -ErrorAction SilentlyContinue
+    if ($resolvedBackgroundRoot) {
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        if (-not $resolvedBackgroundRoot.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove background smoke directory outside temp: $($resolvedBackgroundRoot.Path)"
+        }
+
+        Remove-Item -LiteralPath $resolvedBackgroundRoot.Path -Recurse -Force
+    }
+}
+
 Write-Host 'Script governance fixture tests passed.'
