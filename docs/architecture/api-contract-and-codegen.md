@@ -51,6 +51,32 @@
 6. 新增或修改 Gateway 控制台接口时，必须先更新后端 Endpoint 与 OpenAPI 测试，再导出 OpenAPI 快照并重新生成前端 api-client。
 7. OpenAPI 是契约事实来源；导出的 JSON 快照是前端生成输入，不允许手改快照来绕过后端契约。
 
+### BusinessGateway Mobile OpenAPI
+
+移动 PDA 前端只直接消费 BusinessGateway 暴露的 `/api/mobile/v1/**` 接口，不直接调用 WMS、Inventory、MES、Quality、Maintenance、IAM 或 FileStorage 的服务 URL。BusinessGateway 复用 PlatformGateway 已验证的 facade 口径，但它属于业务平台聚合入口，不应把 WMS/MES/Inventory 等移动聚合逻辑写入 PlatformGateway。
+
+Mobile OpenAPI 的生成链路固定为：
+
+1. BusinessGateway 通过 FastEndpoints.Swagger 输出 `/swagger/v1/swagger.json`。
+2. 导出脚本将 BusinessGateway OpenAPI 快照写入 `frontend/packages/api-client/openapi/business-gateway-mobile.v1.json`。
+3. `frontend/packages/api-client/openapi-ts.config.ts` 增加 mobile input，生成到 `frontend/packages/api-client/src/generated/mobile/`，与现有 PlatformGateway generated 文件隔离。
+4. `frontend/packages/api-client/src/mobile.ts` 提供 PDA 稳定导出；`src/index.ts` 可重新导出移动端需要的类型、SDK 和 Pinia Colada online query options。
+5. PDA app 只从 `@nerv-iip/api-client` 稳定入口消费，不深 import `src/generated/mobile/*`。
+6. BusinessGateway 与 PlatformGateway 可以在部署层共用公网域名和反向代理，也可以使用不同 base URL；api-client transport 必须允许 PDA 的 `gatewayBaseUrl` 指向 BusinessGateway。
+7. OpenAPI 快照是生成输入，不允许手改；新增或修改 mobile endpoint 时必须先更新 BusinessGateway endpoint、OpenAPI/authorization tests，再导出快照并运行 `pnpm -C frontend generate:api`。
+
+Mobile operationId 使用 lower camelCase，并带 `Mobile` 语义前缀：
+
+| operationId | Route | 用途 |
+| --- | --- | --- |
+| `getMobileBootstrap` | `GET /api/mobile/v1/bootstrap` | 登录后拉取用户、上下文、权限、设备策略。 |
+| `listMobileTasks` | `GET /api/mobile/v1/tasks` | 拉取本人任务、最近任务、异常任务。 |
+| `getMobileSyncDelta` | `GET /api/mobile/v1/sync/delta` | 拉取基础数据和任务增量。 |
+| `batchMobileOperations` | `POST /api/mobile/v1/operations/batch` | 批量同步 PDA outbox。 |
+| `interpretMobileScan` | `POST /api/mobile/v1/scans/interpret` | 在线解释条码含义。 |
+| `registerMobileDevice` | `POST /api/mobile/v1/devices/register` | 登记设备或安装实例。 |
+| `uploadMobileDiagnostics` | `POST /api/mobile/v1/diagnostics` | 上传诊断摘要。 |
+
 ### Console IAM Admin API
 
 Phase 8 已在 PlatformGateway 暴露 Console IAM Admin facade。控制台仍只消费 `/api/console/v1/**`，Gateway 负责 IAM-backed permission enforcement、bearer token 转发和下游错误映射；前端通过 `@nerv-iip/api-client` 的稳定导出消费 generated SDK、Pinia Colada query/mutation options 与类型别名。
@@ -100,14 +126,17 @@ frontend/packages/api-client/
   openapi-ts.config.ts
   openapi/
     platform-gateway.v1.json
+    business-gateway-mobile.v1.json
   src/
     generated/
+      mobile/
     transport/
       base-url.ts
       auth.ts
       error.ts
       client-config.ts
     console.ts
+    mobile.ts
     index.ts
 ```
 
@@ -116,11 +145,13 @@ frontend/packages/api-client/
 - 只放代码生成文件。
 - 推荐包含 client.gen.ts、sdk.gen.ts、types.gen.ts，以及 Colada 查询与变更生成文件。
 - 不允许手改。
+- Mobile generated 文件放在 `src/generated/mobile/`，避免与 PlatformGateway Console generated 文件在同一目录内发生 operationId 或类型名冲突。
 
 ### openapi
 
 - 保存由脚本从 Gateway 导出的版本化 OpenAPI 快照。
 - `platform-gateway.v1.json` 对应 PlatformGateway 当前主版本控制台 API。
+- `business-gateway-mobile.v1.json` 对应 BusinessGateway 当前主版本移动 PDA API。
 - 快照更新必须能追溯到后端 Endpoint、测试和文档变化。
 - 快照是生成产物输入，格式以导出脚本输出为准，不纳入 Vite+ formatter 检查。
 
@@ -137,6 +168,7 @@ frontend/packages/api-client/
 
 - 作为稳定导出入口。
 - 应用层只消费这里，而不消费 generated 深层路径。
+- `mobile.ts` 是 PDA 专用稳定导出入口；`index.ts` 可以重新导出它，但页面不得绕过 `mobile.ts` 深 import generated。
 
 ## 生成链路
 
@@ -147,6 +179,8 @@ frontend/packages/api-client/
 5. console 应用与共享 composables 通过稳定入口消费新的 sdk/query/mutation。
 6. 变更涉及 breaking change 时，必须同步更新对应页面、组合函数和文档。
 7. OpenAPI 导出和 api-client 写入属于 `generate` 类脚本副作用，必须按 docs/architecture/script-automation-governance.md 声明写入路径、日志、服务启动和清理策略；纯 `verify` 脚本不得隐式写生成产物。
+
+BusinessGateway mobile API 引入后，生成链路增加 `business-gateway-mobile.v1.json` 作为第二个 OpenAPI 输入；仍由同一个 `frontend/packages/api-client` 包输出，但 generated 目录和稳定导出入口必须与 PlatformGateway Console 隔离。
 
 第三迭代生成配置固定使用：
 

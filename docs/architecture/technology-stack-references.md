@@ -29,6 +29,15 @@
 | shadcn-vue | Required UI-system baseline for Console Auth and later console UI work; initialized in `frontend/packages/ui` with `reka-nova` style and stable `@nerv-iip/ui` exports. | [shadcn-vue docs](https://www.shadcn-vue.com/docs/) | [unovue/shadcn-vue](https://github.com/unovue/shadcn-vue) |
 | es-toolkit | Frozen utility-library planning baseline; introduce only when it replaces real local utility complexity. | [es-toolkit docs](https://es-toolkit.dev/) | [toss/es-toolkit](https://github.com/toss/es-toolkit) |
 
+## Mobile PDA
+
+| Technology | Current status | Documentation | Repository |
+|---|---|---|---|
+| Capacitor | Selected planning baseline for Android-first PDA app development; see [mobile-pda-capacitor-architecture.md](mobile-pda-capacitor-architecture.md). | [Capacitor docs](https://capacitorjs.com/docs) / [Android guide](https://capacitorjs.com/docs/android) / [Support policy](https://capacitorjs.com/docs/main/reference/support-policy) | [ionic-team/capacitor](https://github.com/ionic-team/capacitor) |
+| Capacitor official plugins | Selected baseline for common native APIs such as Barcode Scanner, Camera, Device, Filesystem, File Transfer, Network, Preferences and Push Notifications. PDA hardware scanners still require vendor intent/SDK adapters. | [Official plugins](https://capacitorjs.com/docs/apis) / [Android plugin guide](https://capacitorjs.com/docs/plugins/android) | [ionic-team/capacitor-plugins](https://github.com/ionic-team/capacitor-plugins) |
+| Zebra DataWedge | Recommended first hardware scanner integration path for Zebra or DataWedge-compatible Android PDA devices. | [Intent Output](https://techdocs.zebra.com/datawedge/latest/guide/output/intent/) / [Barcode Input](https://techdocs.zebra.com/datawedge/latest/guide/input/barcode/) | Vendor runtime and samples; no repo baseline in this monorepo yet. |
+| Android Enterprise | Recommended production distribution and remote configuration path for managed PDA fleets when customer environments allow it. | [Private app distribution](https://support.google.com/work/android/answer/9495634?hl=en) / [Managed configurations](https://developer.android.com/work/managed-configurations?hl=en) | Platform capability, not a project dependency. |
+
 ## Backend And Platform
 
 | Technology | Current status | Documentation | Repository |
