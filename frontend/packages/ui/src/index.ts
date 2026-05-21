@@ -1,6 +1,37 @@
 export { cn } from './lib/utils'
 
 export {
+  Breadcrumb,
+  BreadcrumbEllipsis,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from './components/ui/breadcrumb'
+export {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+} from './components/ui/sidebar'
+
+export {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -97,6 +128,12 @@ export { Skeleton } from './components/ui/skeleton'
 export { Spinner } from './components/ui/spinner'
 export { Toaster } from './components/ui/sonner'
 export { toast } from 'vue-sonner'
+export {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from './components/ui/tooltip'
 export {
   Table,
   TableBody,

@@ -37,16 +37,16 @@ describe('DefaultLayout', () => {
       },
     })
 
-    expect(wrapper.getComponent(AppShellStub).props('navItems')).toEqual([
-      { label: 'Instances', to: { name: '/' } },
-      {
-        label: 'IAM',
-        children: [
-          { label: 'Users', to: { path: '/iam/users' } },
-          { label: 'Roles', to: { path: '/iam/roles' } },
-          { label: 'Sessions', to: { path: '/iam/sessions' } },
-        ],
-      },
-    ])
+    const navItems = wrapper.getComponent(AppShellStub).props('navItems') as Record<string, unknown>[]
+    expect(navItems[0]).toMatchObject({ title: 'Instances', to: { name: '/' } })
+    expect(navItems[1]).toMatchObject({
+      title: 'IAM',
+      isActive: true,
+      items: [
+        { title: 'Users', to: { path: '/iam/users' } },
+        { title: 'Roles', to: { path: '/iam/roles' } },
+        { title: 'Sessions', to: { path: '/iam/sessions' } },
+      ],
+    })
   })
 })

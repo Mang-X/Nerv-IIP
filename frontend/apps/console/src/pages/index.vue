@@ -3,7 +3,7 @@ import InstanceDetailPanel from '@/components/console/InstanceDetailPanel.vue'
 import InstanceTable from '@/components/console/InstanceTable.vue'
 import { useConsoleInstances, useRestartOperation } from '@/composables/useConsoleOperations'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import { Alert, AlertDescription, AlertTitle, Button, Skeleton } from '@nerv-iip/ui'
+import { Alert, AlertDescription, AlertTitle, Button } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -31,14 +31,12 @@ const router = useRouter()
 
 const latestOperationPath = computed(() => {
   const operationTaskId = latestOperationTask.value?.operationTaskId
-
   return operationTaskId ? `/operations/${operationTaskId}` : undefined
 })
 
 async function handleRestart(instanceKey: string) {
   const task = await restartInstance(instanceKey)
   const operationTaskId = task?.operationTaskId
-
   if (operationTaskId) {
     await router.push(`/operations/${operationTaskId}`)
   }
@@ -55,100 +53,50 @@ async function handleRefreshDetail() {
 
 <template>
   <DefaultLayout>
-    <div class="console-page">
-      <div class="console-page__content">
+    <div class="grid items-start gap-4 lg:grid-cols-[1fr_22rem] xl:grid-cols-[1fr_26rem]">
+      <div class="flex min-w-0 flex-col gap-3">
         <InstanceTable
           :instances="instances"
+          :pending="listPending"
           :restart-pending="restartPending"
           :selected-instance-key="effectiveInstanceKey"
           @restart-instance="handleRestart"
           @select-instance="selectInstance"
         />
 
-        <div v-if="listPending" role="status" aria-label="Loading instances">
-          <Skeleton class="h-12 w-full" />
-          <span class="sr-only">Loading instances...</span>
-        </div>
         <Alert v-if="listError" variant="destructive">
           <AlertDescription>{{ listError.message }}</AlertDescription>
         </Alert>
         <Alert v-if="restartError" variant="destructive">
           <AlertDescription>{{ restartError.message }}</AlertDescription>
         </Alert>
+
         <RouterLink
           v-if="latestOperationPath"
-          class="console-page__operation-link"
+          class="rounded-lg border bg-background px-4 py-3 text-sm font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           :to="latestOperationPath"
         >
           Latest operation task
         </RouterLink>
       </div>
 
-      <Alert v-if="detailError" class="console-page__detail-error" variant="destructive">
-        <AlertTitle>Unable to load instance detail</AlertTitle>
-        <AlertDescription>{{ detailError.message }}</AlertDescription>
-        <Button
-          class="console-page__detail-retry"
-          :disabled="detailPending"
-          size="sm"
-          type="button"
-          variant="outline"
-          @click="handleRefreshDetail"
-        >
-          Retry
-        </Button>
-      </Alert>
-      <InstanceDetailPanel v-else :instance="detail" :pending="detailPending" />
+      <div class="min-w-0">
+        <Alert v-if="detailError" variant="destructive" class="flex flex-col gap-3">
+          <AlertTitle>Unable to load instance detail</AlertTitle>
+          <AlertDescription>{{ detailError.message }}</AlertDescription>
+          <Button
+            :disabled="detailPending"
+            size="sm"
+            type="button"
+            variant="outline"
+            class="self-start"
+            @click="handleRefreshDetail"
+          >
+            Retry
+          </Button>
+        </Alert>
+        <InstanceDetailPanel v-else :instance="detail" :pending="detailPending" />
+      </div>
     </div>
   </DefaultLayout>
 </template>
-
-<style scoped>
-.console-page {
-  align-items: start;
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
-}
-
-.console-page__content {
-  display: grid;
-  gap: 0.75rem;
-  min-width: 0;
-}
-
-.console-page__operation-link {
-  background: var(--legacy-color-surface);
-  border: 1px solid var(--legacy-color-border);
-  border-radius: 0.5rem;
-  margin: 0;
-  padding: 0.75rem 0.9rem;
-}
-
-.console-page__operation-link {
-  color: var(--legacy-color-accent);
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.console-page__operation-link:hover,
-.console-page__operation-link:focus-visible {
-  text-decoration: underline;
-}
-
-.console-page__detail-error {
-  align-content: start;
-  display: grid;
-  gap: 0.75rem;
-}
-
-.console-page__detail-retry {
-  justify-self: start;
-}
-
-@media (max-width: 1080px) {
-  .console-page {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
