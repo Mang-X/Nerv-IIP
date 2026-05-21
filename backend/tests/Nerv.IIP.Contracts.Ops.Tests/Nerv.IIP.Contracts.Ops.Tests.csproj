@@ -19,7 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.ConnectorProtocol\Nerv.IIP.Contracts.ConnectorProtocol.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
+    <ProjectReference Include="..\..\common\Sdk\Nerv.IIP.Sdk.Auth\Nerv.IIP.Sdk.Auth.csproj" />
+    <ProjectReference Include="..\..\common\Sdk\Nerv.IIP.Sdk.Ops\Nerv.IIP.Sdk.Ops.csproj" />
   </ItemGroup>
 
 </Project>

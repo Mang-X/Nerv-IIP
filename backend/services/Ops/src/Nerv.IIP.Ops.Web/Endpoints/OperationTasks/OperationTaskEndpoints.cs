@@ -12,6 +12,28 @@ using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Ops.Web.Endpoints.OperationTasks;
 
+public sealed record ListOperationTasksRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int? Page,
+    int? PageSize);
+
+[HttpGet("/api/ops/v1/operation-tasks")]
+[AllowAnonymous]
+public sealed class ListOperationTasksEndpoint(IMediator mediator)
+    : Endpoint<ListOperationTasksRequest, ResponseData<PagedOperationTaskListResponse>>
+{
+    public override async Task HandleAsync(ListOperationTasksRequest req, CancellationToken ct)
+    {
+        var tasks = await mediator.Send(new ListOperationTasksQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Page,
+            req.PageSize), ct);
+        await Send.OkAsync(tasks.AsResponseData(), ct);
+    }
+}
+
 [HttpPost("/api/ops/v1/operation-tasks")]
 [AllowAnonymous]
 public sealed class CreateOperationTaskEndpoint(IMediator mediator) : Endpoint<CreateOperationTaskRequest, ResponseData<OperationTaskResponse>>
