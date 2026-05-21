@@ -27,10 +27,13 @@ public sealed class MasterDataAggregateTests
     {
         var sku = Sku.Create("org-001", "env-dev", "RM-1000", "Raw Material 1000", "KG", "raw-material");
 
+        Assert.Throws<ArgumentException>(() => sku.Rename(" "));
+
         sku.Disable("duplicate registration");
 
         Assert.True(sku.Disabled);
-        Assert.Throws<ArgumentException>(() => sku.Rename(" "));
+        Assert.Throws<InvalidOperationException>(() => sku.Rename("Raw Material 1000 v2"));
+        Assert.Throws<InvalidOperationException>(() => sku.Disable("still duplicate"));
     }
 
     [Fact]
