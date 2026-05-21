@@ -440,7 +440,29 @@ function Start-ManagedBackgroundProcess {
     $stdoutPath = Join-Path $resolvedLogDirectory 'stdout.log'
     $stderrPath = Join-Path $resolvedLogDirectory 'stderr.log'
 
-    $process = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -NoNewWindow -PassThru
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Command
+    $startInfo.WorkingDirectory = $WorkingDirectory
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    foreach ($argument in $Arguments) {
+        [void] $startInfo.ArgumentList.Add($argument)
+    }
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    $disposed = $false
+
+    if (-not $process.Start()) {
+        $process.Dispose()
+        throw "Failed to start background process '$Command'."
+    }
+
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+
     Write-Diagnostic "Started background process $Command (pid=$($process.Id), cwd=$WorkingDirectory, logs=$resolvedLogDirectory)"
 
     $stopBlock = {
@@ -448,13 +470,49 @@ function Start-ManagedBackgroundProcess {
             [string] $Reason = 'Managed background stop'
         )
 
-        if ($process -and -not $process.HasExited) {
-            Stop-ProcessTree -ProcessId $process.Id -Reason $Reason | Out-Null
+        if ($disposed) {
+            return
         }
 
-        Protect-ScriptAutomationLogFile -Path $stdoutPath
-        Protect-ScriptAutomationLogFile -Path $stderrPath
-        $process.Dispose()
+        try {
+            if ($process -and -not $process.HasExited) {
+                Stop-ProcessTree -ProcessId $process.Id -Reason $Reason | Out-Null
+            }
+
+            if ($process) {
+                [void] $process.WaitForExit(5000)
+                if ($process.HasExited) {
+                    try {
+                        $process.WaitForExit()
+                    }
+                    catch {
+                        Write-Diagnostic -Level 'WARN' -Message "Failed while waiting for background process log readers: $($_.Exception.Message)"
+                    }
+                }
+            }
+        }
+        finally {
+            if ($stdoutTask) {
+                if ($stdoutTask.Wait(5000)) {
+                    Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $stdoutTask.GetAwaiter().GetResult()
+                }
+                else {
+                    Write-Diagnostic -Level 'WARN' -Message "Timed out while collecting background stdout log for $Command."
+                    Write-ScriptAutomationProcessLog -Path $stdoutPath -Content ''
+                }
+            }
+            if ($stderrTask) {
+                if ($stderrTask.Wait(5000)) {
+                    Write-ScriptAutomationProcessLog -Path $stderrPath -Content $stderrTask.GetAwaiter().GetResult()
+                }
+                else {
+                    Write-Diagnostic -Level 'WARN' -Message "Timed out while collecting background stderr log for $Command."
+                    Write-ScriptAutomationProcessLog -Path $stderrPath -Content ''
+                }
+            }
+            $process.Dispose()
+            $disposed = $true
+        }
     }.GetNewClosure()
 
     return [pscustomobject]@{

@@ -91,4 +91,42 @@ if ($interactiveResult.ExitCode -ne 7) {
     throw "Expected interactive helper to return ExitCode 7, got $($interactiveResult.ExitCode)."
 }
 
+$backgroundRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-background-arguments-$([System.Guid]::NewGuid().ToString('N'))"
+$backgroundScript = Join-Path $backgroundRoot 'print-arguments.ps1'
+$background = $null
+try {
+    New-Item -ItemType Directory -Force -Path $backgroundRoot | Out-Null
+    [System.IO.File]::WriteAllText($backgroundScript, 'Write-Output "count=$($args.Count)"; Write-Output "arg0=$($args[0])"', [System.Text.UTF8Encoding]::new($false))
+    $background = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-File', $backgroundScript, 'a b') -Name 'background-argument-smoke' -LogDirectory (Join-Path $backgroundRoot 'background-argument-smoke')
+
+    if (-not $background.Process.WaitForExit(15000)) {
+        throw 'Background argument smoke process did not exit in time.'
+    }
+
+    & $background.Stop 'Background argument smoke cleanup'
+    $stdout = Get-Content -Path $background.StdoutPath -Raw
+    $background = $null
+
+    foreach ($expected in @('count=1', 'arg0=a b')) {
+        if (-not $stdout.Contains($expected)) {
+            throw "Expected background stdout to contain '$expected'. Output: $stdout"
+        }
+    }
+}
+finally {
+    if ($background) {
+        & $background.Stop 'Background argument smoke final cleanup'
+    }
+
+    $resolvedBackgroundRoot = Resolve-Path $backgroundRoot -ErrorAction SilentlyContinue
+    if ($resolvedBackgroundRoot) {
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        if (-not $resolvedBackgroundRoot.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove background smoke directory outside temp: $($resolvedBackgroundRoot.Path)"
+        }
+
+        Remove-Item -LiteralPath $resolvedBackgroundRoot.Path -Recurse -Force
+    }
+}
+
 Write-Host 'Script governance fixture tests passed.'
