@@ -14,7 +14,10 @@ public sealed record OperationTaskFact(
     DateTimeOffset RequestedAtUtc,
     string IdempotencyKey,
     string CorrelationId,
-    IReadOnlyDictionary<string, string> Parameters);
+    IReadOnlyDictionary<string, string> Parameters,
+    int DefaultMaxAttempts,
+    int DefaultLeaseDurationSeconds,
+    bool RequiresApproval);
 
 public sealed record OperationAttemptFact(
     string AttemptId,

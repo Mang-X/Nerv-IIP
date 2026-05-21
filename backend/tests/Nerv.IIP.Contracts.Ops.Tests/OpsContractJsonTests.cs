@@ -96,6 +96,117 @@ public sealed class OpsContractJsonTests
     }
 
     [Fact]
+    public void Operation_task_requested_integration_event_round_trips_with_request_payload()
+    {
+        var source = new OperationTaskRequestedIntegrationEvent(
+            "evt-ops-requested-001",
+            "ops.OperationTaskRequested",
+            1,
+            DateTimeOffset.Parse("2026-05-15T00:00:00Z"),
+            "ops",
+            "corr-ops-001",
+            "op-000001",
+            "org-001",
+            "env-dev",
+            "local-admin",
+            "ops:operation-task-requested:op-000001",
+            new OperationTaskRequestedPayload(
+                "op-000001",
+                "docker-container-local-demo-001",
+                "lifecycle.restart",
+                "local-admin",
+                DateTimeOffset.Parse("2026-05-15T00:00:00Z")));
+
+        var json = JsonSerializer.Serialize(source, JsonOptions);
+        var result = JsonSerializer.Deserialize<OperationTaskRequestedIntegrationEvent>(json, JsonOptions);
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        Assert.Equal("ops.OperationTaskRequested", root.GetProperty("eventType").GetString());
+        Assert.Equal(1, root.GetProperty("eventVersion").GetInt32());
+        Assert.Equal("ops:operation-task-requested:op-000001", root.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("local-admin", root.GetProperty("payload").GetProperty("requestedBy").GetString());
+        Assert.NotNull(result);
+        Assert.Equal("op-000001", result.Payload.OperationTaskId);
+    }
+
+    [Fact]
+    public void Operation_task_claimed_integration_event_round_trips_with_lease_payload()
+    {
+        var source = new OperationTaskClaimedIntegrationEvent(
+            "evt-ops-claimed-001",
+            "ops.OperationTaskClaimed",
+            1,
+            DateTimeOffset.Parse("2026-05-15T00:00:01Z"),
+            "ops",
+            "corr-ops-001",
+            "op-000001",
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "ops:operation-task-claimed:op-000001:attempt-000001",
+            new OperationTaskClaimedPayload(
+                "op-000001",
+                "attempt-000001",
+                "docker-container-local-demo-001",
+                "lifecycle.restart",
+                "lease-000001",
+                DateTimeOffset.Parse("2026-05-15T00:00:01Z"),
+                DateTimeOffset.Parse("2026-05-15T00:05:01Z"),
+                1,
+                3));
+
+        var json = JsonSerializer.Serialize(source, JsonOptions);
+        var result = JsonSerializer.Deserialize<OperationTaskClaimedIntegrationEvent>(json, JsonOptions);
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        Assert.Equal("ops.OperationTaskClaimed", root.GetProperty("eventType").GetString());
+        Assert.Equal("connector-host-001", root.GetProperty("actor").GetString());
+        Assert.Equal("lease-000001", root.GetProperty("payload").GetProperty("leaseId").GetString());
+        Assert.Equal(1, root.GetProperty("payload").GetProperty("attemptNo").GetInt32());
+        Assert.NotNull(result);
+        Assert.Equal("attempt-000001", result.Payload.AttemptId);
+    }
+
+    [Fact]
+    public void Audit_recorded_integration_event_round_trips_with_audit_payload()
+    {
+        var source = new AuditRecordedIntegrationEvent(
+            "evt-ops-audit-001",
+            "ops.AuditRecorded",
+            1,
+            DateTimeOffset.Parse("2026-05-15T00:00:02Z"),
+            "ops",
+            "corr-ops-001",
+            "op-000001",
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "ops:audit-recorded:audit-000001",
+            new AuditRecordedPayload(
+                "audit-000001",
+                "op-000001",
+                "operation.completed",
+                "connector-host-001",
+                DateTimeOffset.Parse("2026-05-15T00:00:02Z")));
+
+        var json = JsonSerializer.Serialize(source, JsonOptions);
+        var result = JsonSerializer.Deserialize<AuditRecordedIntegrationEvent>(json, JsonOptions);
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        Assert.Equal("ops.AuditRecorded", root.GetProperty("eventType").GetString());
+        Assert.Equal("ops:audit-recorded:audit-000001", root.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("operation.completed", root.GetProperty("payload").GetProperty("action").GetString());
+        Assert.NotNull(result);
+        Assert.Equal("audit-000001", result.Payload.AuditRecordId);
+    }
+
+    [Fact]
     public void Operation_task_failed_integration_event_round_trips_with_failure_payload()
     {
         var source = new OperationTaskFailedIntegrationEvent(

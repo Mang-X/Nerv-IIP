@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using NetCorePal.Extensions.Repository.EntityFrameworkCore;
@@ -10,6 +11,7 @@ public sealed partial class ApplicationDbContext(DbContextOptions<ApplicationDbC
     : AppDbContextBase(options, mediator), ICapDataStorage
 {
     public DbSet<OperationTask> OperationTasks => Set<OperationTask>();
+    public DbSet<OperationTemplate> OperationTemplates => Set<OperationTemplate>();
     public DbSet<OperationAttempt> OperationAttempts => Set<OperationAttempt>();
     public DbSet<AuditRecord> AuditRecords => Set<AuditRecord>();
     public DbSet<PublishedMessage> PublishedMessages => Set<PublishedMessage>();

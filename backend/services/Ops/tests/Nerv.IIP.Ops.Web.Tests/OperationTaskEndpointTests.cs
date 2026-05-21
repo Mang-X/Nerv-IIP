@@ -2,10 +2,16 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Ops.Infrastructure;
+using Nerv.IIP.Ops.Infrastructure.Repositories;
+using Nerv.IIP.Ops.Web.Application.Commands;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
@@ -466,6 +472,157 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         Assert.Equal(2, nextClaim.AttemptNo);
     }
 
+    [Fact]
+    public async Task List_operation_tasks_returns_paged_tasks_for_scope()
+    {
+        await using var listFactory = CreateEfInMemoryFactory("ops-list-tasks");
+        var client = listFactory.CreateClient();
+        AddConnectorHeaders(client, "local-connector-secret", "org-list", "env-dev");
+
+        var first = await PostCreateAsync(client, CreateRestartRequest("idem-list-001", "org-list", "env-dev"));
+        var second = await PostCreateAsync(client, CreateRestartRequest("idem-list-002", "org-list", "env-dev"));
+        await PostCreateAsync(client, CreateRestartRequest("idem-list-other-env", "org-list", "env-stage"));
+
+        var response = await client.GetAsync(
+            "/api/ops/v1/operation-tasks?organizationId=org-list&environmentId=env-dev&page=1&pageSize=20");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var page = await ReadResponseDataAsync<PagedOperationTaskListResponse>(response);
+        Assert.Equal(1, page.Page);
+        Assert.Equal(20, page.PageSize);
+        Assert.Equal(2, page.TotalCount);
+        Assert.Equal(2, page.Items.Count);
+        Assert.Contains(page.Items, x => x.OperationTaskId == first.OperationTaskId);
+        Assert.Contains(page.Items, x => x.OperationTaskId == second.OperationTaskId);
+        Assert.All(page.Items, x =>
+        {
+            Assert.Equal("org-list", x.OrganizationId);
+            Assert.Equal("env-dev", x.EnvironmentId);
+            Assert.Equal("queued", x.Status);
+        });
+    }
+
+    [Fact]
+    public async Task List_audit_records_returns_task_audit_records_for_scope()
+    {
+        await using var auditFactory = CreateEfInMemoryFactory("ops-list-audit");
+        var client = auditFactory.CreateClient();
+        AddConnectorHeaders(client, "local-connector-secret", "org-audit", "env-dev");
+
+        var created = await PostCreateAsync(client, CreateRestartRequest("idem-audit-001", "org-audit", "env-dev"));
+        await PostCreateAsync(client, CreateRestartRequest("idem-audit-other-env", "org-audit", "env-stage"));
+
+        var response = await client.GetAsync(
+            "/api/ops/v1/audit-records?organizationId=org-audit&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var records = await ReadResponseDataAsync<AuditRecordListResponse>(response);
+        Assert.Contains(records.Items, x =>
+            x.OperationTaskId == created.OperationTaskId
+            && x.Action == "operation.requested"
+            && x.Actor == "local-admin");
+        Assert.All(records.Items, x => Assert.Equal(created.OperationTaskId, x.OperationTaskId));
+    }
+
+    [Fact]
+    public async Task Operation_template_can_be_created_listed_and_read()
+    {
+        var client = factory.CreateClient();
+        var request = new CreateOperationTemplateRequest(
+            "backup.snapshot",
+            "Backup snapshot",
+            """{"type":"object"}""",
+            "medium",
+            4,
+            900,
+            RequiresApproval: false);
+
+        var createResponse = await client.PostAsJsonAsync("/api/ops/v1/operation-templates", request);
+
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        var created = await ReadResponseDataAsync<OperationTemplateResponse>(createResponse);
+        Assert.Equal("backup.snapshot", created.OperationCode);
+        Assert.Equal(4, created.DefaultMaxAttempts);
+        Assert.Equal(900, created.DefaultLeaseDurationSeconds);
+        Assert.True(created.Enabled);
+
+        var listResponse = await client.GetAsync("/api/ops/v1/operation-templates");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        var list = await ReadResponseDataAsync<OperationTemplateListResponse>(listResponse);
+        Assert.Contains(list.Items, x => x.OperationCode == "lifecycle.restart");
+        Assert.Contains(list.Items, x => x.OperationCode == "backup.snapshot");
+
+        var getResponse = await client.GetAsync("/api/ops/v1/operation-templates/backup.snapshot");
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        var fetched = await ReadResponseDataAsync<OperationTemplateResponse>(getResponse);
+        Assert.Equal(created.OperationTemplateId, fetched.OperationTemplateId);
+
+        var taskResponse = await client.PostAsJsonAsync(
+            "/api/ops/v1/operation-tasks",
+            CreateRestartRequest("idem-template-task-001") with { OperationCode = "backup.snapshot" });
+        Assert.Equal(HttpStatusCode.OK, taskResponse.StatusCode);
+        var task = await ReadResponseDataAsync<OperationTaskResponse>(taskResponse);
+        Assert.Equal("backup.snapshot", task.OperationCode);
+    }
+
+    [Fact]
+    public async Task Operation_template_defaults_are_used_when_claiming_task()
+    {
+        var client = factory.CreateClient();
+        AddConnectorHeaders(client, "local-connector-secret", "org-template-claim", "env-dev");
+        await client.PostAsJsonAsync(
+            "/api/ops/v1/operation-templates",
+            new CreateOperationTemplateRequest("backup.snapshot.claim", "Backup snapshot", "{}", "medium", 4, 900, false));
+        var created = await PostCreateAsync(
+            client,
+            CreateRestartRequest("idem-template-claim-001", "org-template-claim", "env-dev") with { OperationCode = "backup.snapshot.claim" });
+
+        var claimResponse = await client.PostAsJsonAsync(
+            "/api/ops/v1/operation-tasks/claims",
+            new ClaimOperationTasksRequest("org-template-claim", "env-dev", "connector-host-001", 1, LeaseDurationSeconds: 30, MaxAttempts: 1));
+
+        Assert.Equal(HttpStatusCode.OK, claimResponse.StatusCode);
+        var pending = await ReadResponseDataAsync<PendingOperationTasksResponse>(claimResponse);
+        var claim = Assert.Single(pending.Items);
+        Assert.Equal(created.OperationTaskId, claim.OperationTaskId);
+        Assert.Equal(4, claim.MaxAttempts);
+        Assert.Equal(TimeSpan.FromSeconds(900), claim.LeasedUntilUtc - claim.LeasedAtUtc);
+    }
+
+    [Fact]
+    public async Task Operation_template_duplicate_check_uses_normalized_operation_code()
+    {
+        var client = factory.CreateClient();
+        await client.PostAsJsonAsync(
+            "/api/ops/v1/operation-templates",
+            new CreateOperationTemplateRequest("backup.snapshot.normalized", "Backup", "{}", "low", 3, 300, false));
+
+        var duplicate = await client.PostAsJsonAsync(
+            "/api/ops/v1/operation-templates",
+            new CreateOperationTemplateRequest(" backup.snapshot.normalized ", "Backup", "{}", "low", 3, 300, false));
+
+        Assert.Equal(HttpStatusCode.BadRequest, duplicate.StatusCode);
+    }
+
+    [Fact]
+    public async Task InMemory_list_endpoints_return_tasks_and_audit_records()
+    {
+        var client = factory.CreateClient();
+        var created = await PostCreateAsync(client, CreateRestartRequest("idem-inmemory-list-001", "org-memory", "env-dev"));
+
+        var listResponse = await client.GetAsync(
+            "/api/ops/v1/operation-tasks?organizationId=org-memory&environmentId=env-dev&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        var list = await ReadResponseDataAsync<PagedOperationTaskListResponse>(listResponse);
+        Assert.Contains(list.Items, x => x.OperationTaskId == created.OperationTaskId);
+
+        var auditResponse = await client.GetAsync(
+            "/api/ops/v1/audit-records?organizationId=org-memory&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, auditResponse.StatusCode);
+        var audit = await ReadResponseDataAsync<AuditRecordListResponse>(auditResponse);
+        Assert.Contains(audit.Items, x => x.OperationTaskId == created.OperationTaskId && x.Action == "operation.requested");
+    }
+
     private HttpClient CreateAuthorizedClient(string organizationId = "org-001", string environmentId = "env-dev")
     {
         var client = factory.CreateClient();
@@ -489,6 +646,30 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.AddInMemoryCollection(settings)));
+    }
+
+    private static WebApplicationFactory<Program> CreateEfInMemoryFactory(string databaseName)
+    {
+        return new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Persistence:Provider"] = "PostgreSQL",
+                        ["ConnectionStrings:OpsDb"] = "Host=localhost;Database=ops_query_tests;Username=nerv;Password=nerv"
+                    }));
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                    services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+                    services.RemoveAll<IOperationTaskApplicationService>();
+                    services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();
+                    services.AddScoped<IOperationTemplateRepository, OperationTemplateRepository>();
+                    services.AddScoped<EfOperationTaskApplicationService>();
+                    services.AddScoped<IOperationTaskApplicationService, SavingOperationTaskApplicationService>();
+                });
+            });
     }
 
     private static void AddConnectorHeaders(
@@ -626,6 +807,51 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     }
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private sealed class SavingOperationTaskApplicationService(
+        EfOperationTaskApplicationService inner,
+        ApplicationDbContext db) : IOperationTaskApplicationService
+    {
+        public async Task<OperationTaskResponse> CreateAsync(CreateOperationTaskRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            var response = await inner.CreateAsync(request, now, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return response;
+        }
+
+        public Task<OperationTaskResponse> GetAsync(string operationTaskId, CancellationToken cancellationToken)
+        {
+            return inner.GetAsync(operationTaskId, cancellationToken);
+        }
+
+        public async Task<PendingOperationTasksResponse> ClaimPendingAsync(ClaimOperationTasksRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            var response = await inner.ClaimPendingAsync(request, now, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return response;
+        }
+
+        public async Task<OperationTaskResponse> AbandonLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            var response = await inner.AbandonLeaseAsync(operationTaskId, request, now, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return response;
+        }
+
+        public async Task<OperationTaskResponse> HeartbeatLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            var response = await inner.HeartbeatLeaseAsync(operationTaskId, request, now, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return response;
+        }
+
+        public async Task<OperationTaskResponse> RecordResultAsync(OperationResult result, CancellationToken cancellationToken)
+        {
+            var response = await inner.RecordResultAsync(result, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return response;
+        }
+    }
 
     private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
     {

@@ -24,6 +24,23 @@ public sealed record OperationTaskResponse(
     IReadOnlyList<OperationAttemptSummary> Attempts,
     IReadOnlyList<AuditRecordSummary> AuditRecords);
 
+public sealed record PagedOperationTaskListResponse(
+    int Page,
+    int PageSize,
+    int TotalCount,
+    IReadOnlyList<OperationTaskListItem> Items);
+
+public sealed record OperationTaskListItem(
+    string OperationTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string InstanceKey,
+    string OperationCode,
+    string Status,
+    string RequestedBy,
+    DateTimeOffset RequestedAtUtc,
+    string? CurrentAttemptId);
+
 public sealed record OperationAttemptSummary(
     string AttemptId,
     string Status,
@@ -44,6 +61,32 @@ public sealed record AuditRecordSummary(
     string Actor,
     DateTimeOffset OccurredAtUtc,
     string CorrelationId);
+
+public sealed record AuditRecordListResponse(IReadOnlyList<AuditRecordSummary> Items);
+
+public sealed record CreateOperationTemplateRequest(
+    string OperationCode,
+    string DisplayName,
+    string ParameterSchemaJson,
+    string RiskLevel,
+    int DefaultMaxAttempts,
+    int DefaultLeaseDurationSeconds,
+    bool RequiresApproval);
+
+public sealed record OperationTemplateResponse(
+    string OperationTemplateId,
+    string OperationCode,
+    string DisplayName,
+    string ParameterSchemaJson,
+    string RiskLevel,
+    int DefaultMaxAttempts,
+    int DefaultLeaseDurationSeconds,
+    bool RequiresApproval,
+    bool Enabled,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record OperationTemplateListResponse(IReadOnlyList<OperationTemplateResponse> Items);
 
 public sealed record PendingOperationTasksResponse(IReadOnlyList<OperationTaskDispatchItem> Items);
 

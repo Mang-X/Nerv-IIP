@@ -1,7 +1,9 @@
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
+using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Ops.Domain.DomainEvents;
 
 namespace Nerv.IIP.Ops.Domain.Tests;
 
@@ -12,7 +14,7 @@ public sealed class OperationTaskAggregateTests
     [Fact]
     public void Create_initializes_queued_task_and_idempotency_scope()
     {
-        var task = OperationTask.Create(TaskId(), CreateRequest("idem-001"), Now);
+        var task = OperationTask.Create(TaskId(), CreateRequest("idem-001"), Template("lifecycle.restart"), Now);
         task.AssignInitialAuditId(AuditId());
 
         var fact = task.ToFact();
@@ -30,9 +32,39 @@ public sealed class OperationTaskAggregateTests
     {
         var request = CreateRequest("idem-unsupported") with { OperationCode = "lifecycle.unsupported" };
 
-        var ex = Assert.Throws<InvalidOperationTaskRequestException>(() => OperationTask.Create(TaskId(), request, Now));
+        var ex = Assert.Throws<InvalidOperationTaskRequestException>(() => OperationTask.Create(TaskId(), request, Template("lifecycle.restart"), Now));
 
         Assert.Contains("Unsupported operation code", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Create_rejects_disabled_operation_template()
+    {
+        var template = Template("lifecycle.restart") with { Enabled = false };
+
+        var ex = Assert.Throws<InvalidOperationTaskRequestException>(() => OperationTask.Create(TaskId(), CreateRequest("idem-disabled"), template, Now));
+
+        Assert.Contains("disabled operation template", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Template_can_describe_operation_defaults()
+    {
+        var template = OperationTemplate.Create(
+            TemplateId(),
+            "backup.snapshot",
+            "Backup snapshot",
+            """{"type":"object"}""",
+            "medium",
+            5,
+            900,
+            requiresApproval: false,
+            Now);
+
+        Assert.Equal("backup.snapshot", template.OperationCode);
+        Assert.Equal(5, template.DefaultMaxAttempts);
+        Assert.Equal(900, template.DefaultLeaseDurationSeconds);
+        Assert.True(template.Enabled);
     }
 
     [Fact]
@@ -63,6 +95,36 @@ public sealed class OperationTaskAggregateTests
         var attempt = Assert.Single(response.Attempts);
         Assert.Equal("completed", attempt.Status);
         Assert.Contains(response.AuditRecords, x => x.Action == "operation.completed");
+    }
+
+    [Fact]
+    public void Audit_records_raise_specific_audit_recorded_domain_events()
+    {
+        var task = OperationTask.Create(TaskId(), CreateRequest("idem-001"), Template("lifecycle.restart"), Now);
+        task.AssignInitialAuditId(AuditId("audit-000001"));
+
+        var requestedEvents = task.GetDomainEvents().ToArray();
+        Assert.IsType<OperationTaskCreatedDomainEvent>(requestedEvents[0]);
+        var requestedAudit = Assert.IsType<AuditRecordedDomainEvent>(requestedEvents[1]);
+        Assert.Equal("audit-000001", requestedAudit.AuditRecord.Id.Id);
+        Assert.Equal("operation.requested", requestedAudit.AuditRecord.Action);
+
+        task.ClearDomainEvents();
+        var dispatch = Claim(task, "attempt-000001", "audit-000002", "lease-001", "connector-host-001");
+        var claimedEvents = task.GetDomainEvents().ToArray();
+        Assert.IsType<OperationTaskDispatchedDomainEvent>(claimedEvents[0]);
+        var claimedAudit = Assert.IsType<AuditRecordedDomainEvent>(claimedEvents[1]);
+        Assert.Equal("audit-000002", claimedAudit.AuditRecord.Id.Id);
+        Assert.Equal("operation.claimed", claimedAudit.AuditRecord.Action);
+
+        task.ClearDomainEvents();
+        task.RecordResult(Result(dispatch, "succeeded"), AuditId("audit-000003"));
+        var completedEvents = task.GetDomainEvents().ToArray();
+        Assert.IsType<OperationResultRecordedDomainEvent>(completedEvents[0]);
+        Assert.IsType<OperationTaskCompletedDomainEvent>(completedEvents[1]);
+        var completedAudit = Assert.IsType<AuditRecordedDomainEvent>(completedEvents[2]);
+        Assert.Equal("audit-000003", completedAudit.AuditRecord.Id.Id);
+        Assert.Equal("operation.completed", completedAudit.AuditRecord.Action);
     }
 
     [Fact]
@@ -125,7 +187,7 @@ public sealed class OperationTaskAggregateTests
 
     private static OperationTask CreateTask()
     {
-        var task = OperationTask.Create(TaskId(), CreateRequest("idem-001"), Now);
+        var task = OperationTask.Create(TaskId(), CreateRequest("idem-001"), Template("lifecycle.restart"), Now);
         task.AssignInitialAuditId(AuditId());
         return task;
     }
@@ -190,6 +252,9 @@ public sealed class OperationTaskAggregateTests
     }
 
     private static OperationTaskId TaskId(string id = "op-000001") => new(id);
+    private static OperationTemplateId TemplateId(string id = "opt-000001") => new(id);
     private static OperationAttemptId AttemptId(string id) => new(id);
     private static AuditRecordId AuditId(string id = "audit-000001") => new(id);
+    private static OperationTemplateSnapshot Template(string operationCode) =>
+        new(operationCode, Enabled: true, DefaultMaxAttempts: 3, DefaultLeaseDurationSeconds: 300, RequiresApproval: false);
 }

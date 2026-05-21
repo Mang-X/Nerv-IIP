@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.DomainEvents;
 using NetCorePal.Extensions.Domain;
 
@@ -46,8 +47,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         CorrelationId = correlationId;
         ParametersJson = parametersJson;
 
-        AddAudit(new AuditRecordId(""), "operation.requested", requestedBy, requestedAtUtc, correlationId);
+        var auditRecord = AddAudit(new AuditRecordId(""), "operation.requested", requestedBy, requestedAtUtc, correlationId);
         this.AddDomainEvent(new OperationTaskCreatedDomainEvent(this));
+        AddAuditRecordedDomainEvent(auditRecord);
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -61,16 +63,28 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public string IdempotencyScope { get; private set; } = string.Empty;
     public string CorrelationId { get; private set; } = string.Empty;
     public string ParametersJson { get; private set; } = "{}";
+    public int DefaultMaxAttempts { get; private set; } = 3;
+    public int DefaultLeaseDurationSeconds { get; private set; } = 300;
+    public bool RequiresApproval { get; private set; }
     public Deleted Deleted { get; private set; } = new(false);
     public RowVersion RowVersion { get; private set; } = new(0);
     public IReadOnlyCollection<OperationAttempt> Attempts => _attempts;
     public IReadOnlyCollection<AuditRecord> AuditRecords => _auditRecords;
 
-    public static OperationTask Create(OperationTaskId id, CreateOperationTaskRequest request, DateTimeOffset now)
+    public static OperationTask Create(
+        OperationTaskId id,
+        CreateOperationTaskRequest request,
+        OperationTemplateSnapshot template,
+        DateTimeOffset now)
     {
-        if (!string.Equals(request.OperationCode, "lifecycle.restart", StringComparison.Ordinal))
+        if (!string.Equals(request.OperationCode, template.OperationCode, StringComparison.Ordinal))
         {
             throw new InvalidOperationTaskRequestException($"Unsupported operation code: {request.OperationCode}");
+        }
+
+        if (!template.Enabled)
+        {
+            throw new InvalidOperationTaskRequestException($"Cannot create task from disabled operation template: {request.OperationCode}");
         }
 
         return new OperationTask(
@@ -83,7 +97,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             now,
             request.IdempotencyKey,
             request.CorrelationId,
-            JsonSerializer.Serialize(request.Parameters, JsonOptions));
+            JsonSerializer.Serialize(request.Parameters, JsonOptions))
+        {
+            DefaultMaxAttempts = Math.Clamp(template.DefaultMaxAttempts, 1, 10),
+            DefaultLeaseDurationSeconds = Math.Clamp(template.DefaultLeaseDurationSeconds, 30, 3600),
+            RequiresApproval = template.RequiresApproval
+        };
     }
 
     public OperationTaskDispatchItem Claim(
@@ -123,8 +142,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             maxAttempts);
         _attempts.Add(attempt);
         Status = "dispatched";
-        AddAudit(auditRecordId, "operation.claimed", connectorHostId, now, CorrelationId);
+        var auditRecord = AddAudit(auditRecordId, "operation.claimed", connectorHostId, now, CorrelationId);
         this.AddDomainEvent(new OperationTaskDispatchedDomainEvent(this, attempt));
+        AddAuditRecordedDomainEvent(auditRecord);
 
         return new OperationTaskDispatchItem(
             Id.Id,
@@ -153,7 +173,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         attempt.Abandon(now, "lease-timeout");
         Status = attempt.AttemptNo >= attempt.MaxAttempts ? "failed" : "queued";
-        AddAudit(auditRecordId, "operation.lease-timeout", attempt.ConnectorHostId, now, CorrelationId);
+        var auditRecord = AddAudit(auditRecordId, "operation.lease-timeout", attempt.ConnectorHostId, now, CorrelationId);
+        AddAuditRecordedDomainEvent(auditRecord);
     }
 
     public OperationTaskResponse AbandonLease(string leaseId, string connectorHostId, string abandonReason, AuditRecordId auditRecordId, DateTimeOffset now)
@@ -161,7 +182,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         var attempt = GetMatchingActiveLease(leaseId, connectorHostId);
         attempt.Abandon(now, abandonReason);
         Status = attempt.AttemptNo >= attempt.MaxAttempts ? "failed" : "queued";
-        AddAudit(auditRecordId, "operation.abandoned", connectorHostId, now, CorrelationId);
+        var auditRecord = AddAudit(auditRecordId, "operation.abandoned", connectorHostId, now, CorrelationId);
+        AddAuditRecordedDomainEvent(auditRecord);
         return ToResponse();
     }
 
@@ -174,7 +196,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         }
 
         attempt.Heartbeat(now.Add(leaseDuration));
-        AddAudit(auditRecordId, "operation.heartbeat", connectorHostId, now, CorrelationId);
+        var auditRecord = AddAudit(auditRecordId, "operation.heartbeat", connectorHostId, now, CorrelationId);
+        AddAuditRecordedDomainEvent(auditRecord);
         return ToResponse();
     }
 
@@ -195,11 +218,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         attempt.Record(status, result.FinishedAtUtc, result.Failure);
         Status = status;
-        AddAudit(auditRecordId, auditAction, result.Context.ConnectorHostId, result.FinishedAtUtc, result.Context.CorrelationId);
+        var auditRecord = AddAudit(auditRecordId, auditAction, result.Context.ConnectorHostId, result.FinishedAtUtc, result.Context.CorrelationId);
         this.AddDomainEvent(new OperationResultRecordedDomainEvent(this, attempt));
         this.AddDomainEvent(completed
             ? new OperationTaskCompletedDomainEvent(this, attempt, result)
             : new OperationTaskFailedDomainEvent(this, attempt, result));
+        AddAuditRecordedDomainEvent(auditRecord);
         return ToResponse();
     }
 
@@ -216,7 +240,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             RequestedAtUtc,
             IdempotencyKey,
             CorrelationId,
-            Parameters);
+            Parameters,
+            DefaultMaxAttempts,
+            DefaultLeaseDurationSeconds,
+            RequiresApproval);
     }
 
     public OperationTaskResponse ToResponse()
@@ -275,9 +302,16 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         return attempt;
     }
 
-    private void AddAudit(AuditRecordId auditRecordId, string action, string actor, DateTimeOffset occurredAtUtc, string correlationId)
+    private AuditRecord AddAudit(AuditRecordId auditRecordId, string action, string actor, DateTimeOffset occurredAtUtc, string correlationId)
     {
-        _auditRecords.Add(new AuditRecord(auditRecordId, Id, action, actor, occurredAtUtc, correlationId));
+        var auditRecord = new AuditRecord(auditRecordId, Id, action, actor, occurredAtUtc, correlationId);
+        _auditRecords.Add(auditRecord);
+        return auditRecord;
+    }
+
+    private void AddAuditRecordedDomainEvent(AuditRecord auditRecord)
+    {
+        this.AddDomainEvent(new AuditRecordedDomainEvent(this, auditRecord));
     }
 }
 

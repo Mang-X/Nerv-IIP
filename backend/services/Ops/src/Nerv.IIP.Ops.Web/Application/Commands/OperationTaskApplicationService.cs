@@ -1,6 +1,7 @@
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
+using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
 
@@ -49,7 +50,9 @@ public sealed class InMemoryOperationTaskApplicationService(IOpsStateStore store
     }
 }
 
-public sealed class EfOperationTaskApplicationService(IOperationTaskRepository repository) : IOperationTaskApplicationService
+public sealed class EfOperationTaskApplicationService(
+    IOperationTaskRepository repository,
+    IOperationTemplateRepository operationTemplateRepository) : IOperationTaskApplicationService
 {
     public async Task<OperationTaskResponse> CreateAsync(CreateOperationTaskRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -60,7 +63,8 @@ public sealed class EfOperationTaskApplicationService(IOperationTaskRepository r
             return existing.ToResponse();
         }
 
-        var task = OperationTask.Create(await repository.NextTaskIdAsync(cancellationToken), request, now);
+        var template = await ResolveTemplateAsync(request.OperationCode, cancellationToken);
+        var task = OperationTask.Create(await repository.NextTaskIdAsync(cancellationToken), request, template, now);
         task.AssignInitialAuditId(await repository.NextAuditRecordIdAsync(cancellationToken));
         await repository.AddAsync(task, cancellationToken);
         return task.ToResponse();
@@ -82,9 +86,6 @@ public sealed class EfOperationTaskApplicationService(IOperationTaskRepository r
             now,
             cancellationToken);
         var items = new List<OperationTaskDispatchItem>();
-        var leaseDuration = TimeSpan.FromSeconds(Math.Clamp(request.LeaseDurationSeconds, 30, 3600));
-        var maxAttempts = Math.Clamp(request.MaxAttempts, 1, 10);
-
         foreach (var task in pendingTasks)
         {
             task.AbandonExpiredLease(await repository.NextAuditRecordIdAsync(cancellationToken), now);
@@ -99,8 +100,8 @@ public sealed class EfOperationTaskApplicationService(IOperationTaskRepository r
                 Guid.NewGuid().ToString("N"),
                 request.ConnectorHostId,
                 now,
-                leaseDuration,
-                maxAttempts));
+                TimeSpan.FromSeconds(Math.Clamp(task.DefaultLeaseDurationSeconds, 30, 3600)),
+                Math.Clamp(task.DefaultMaxAttempts, 1, 10)));
         }
 
         return new PendingOperationTasksResponse(items);
@@ -137,4 +138,30 @@ public sealed class EfOperationTaskApplicationService(IOperationTaskRepository r
         var auditId = await repository.NextAuditRecordIdAsync(cancellationToken);
         return task.RecordResult(result, auditId);
     }
+
+    private async Task<OperationTemplateSnapshot> ResolveTemplateAsync(string operationCode, CancellationToken cancellationToken)
+    {
+        var template = await operationTemplateRepository.GetByOperationCodeAsync(operationCode, cancellationToken);
+        if (template is not null)
+        {
+            return template.ToSnapshot();
+        }
+
+        if (string.Equals(operationCode, BuiltInOperationTemplates.LifecycleRestart.OperationCode, StringComparison.Ordinal))
+        {
+            return BuiltInOperationTemplates.LifecycleRestart;
+        }
+
+        throw new InvalidOperationTaskRequestException($"Unsupported operation code: {operationCode}");
+    }
+}
+
+internal static class BuiltInOperationTemplates
+{
+    public static readonly OperationTemplateSnapshot LifecycleRestart = new(
+        "lifecycle.restart",
+        Enabled: true,
+        DefaultMaxAttempts: 3,
+        DefaultLeaseDurationSeconds: 300,
+        RequiresApproval: false);
 }

@@ -13,6 +13,12 @@ using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 var usePostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
+var autoMigrate = string.Equals(builder.Configuration["Persistence:AutoMigrate"], "true", StringComparison.OrdinalIgnoreCase);
+if (usePostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for Ops in Development. Use an explicit migrator, release script or migration bundle outside Development.");
+}
+
 builder.Services.AddFastEndpoints();
 builder.Services.AddMediatR(configuration =>
 {
@@ -59,15 +65,17 @@ if (usePostgreSql)
 {
     builder.Services.AddScoped<OpsDatabaseMigrationRunner>();
     builder.Services.AddScoped<IOperationTaskApplicationService, EfOperationTaskApplicationService>();
+    builder.Services.AddScoped<IOperationTemplateApplicationService, EfOperationTemplateApplicationService>();
 }
 else
 {
     builder.Services.AddSingleton<IOperationTaskApplicationService, InMemoryOperationTaskApplicationService>();
+    builder.Services.AddSingleton<IOperationTemplateApplicationService, InMemoryOperationTemplateApplicationService>();
 }
 builder.Services.AddNervIipObservability(builder.Configuration, "ops");
 
 var app = builder.Build();
-if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigrate"))
+if (usePostgreSql && autoMigrate)
 {
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<OpsDatabaseMigrationRunner>().MigrateAsync();
