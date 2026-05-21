@@ -171,6 +171,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Notification.Web.T
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Notification.Infrastructure", "services\Notification\src\Nerv.IIP.Notification.Infrastructure\Nerv.IIP.Notification.Infrastructure.csproj", "{9CC99CDF-02F7-4C70-94CD-12EA0F9003A4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Notification.Web", "services\Notification\src\Nerv.IIP.Notification.Web\Nerv.IIP.Notification.Web.csproj", "{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -817,6 +819,18 @@ Global
 		{9CC99CDF-02F7-4C70-94CD-12EA0F9003A4}.Release|x64.Build.0 = Release|Any CPU
 		{9CC99CDF-02F7-4C70-94CD-12EA0F9003A4}.Release|x86.ActiveCfg = Release|Any CPU
 		{9CC99CDF-02F7-4C70-94CD-12EA0F9003A4}.Release|x86.Build.0 = Release|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Debug|x64.Build.0 = Debug|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Debug|x86.Build.0 = Debug|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Release|x64.ActiveCfg = Release|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Release|x64.Build.0 = Release|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Release|x86.ActiveCfg = Release|Any CPU
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -902,5 +916,6 @@ Global
 		{8693BB73-28E3-4828-9751-8646CF6D5B73} = {428F4B99-902C-FC4B-8D32-09714F842F15}
 		{DAFD1BA9-224B-42CF-B685-15762E78D1C1} = {428F4B99-902C-FC4B-8D32-09714F842F15}
 		{9CC99CDF-02F7-4C70-94CD-12EA0F9003A4} = {8F92B431-7114-C16D-7B8D-1A63B3CF6875}
+		{6D5272FE-6C83-453D-A5EE-1D261FB9B23A} = {8F92B431-7114-C16D-7B8D-1A63B3CF6875}
 	EndGlobalSection
 EndGlobal
