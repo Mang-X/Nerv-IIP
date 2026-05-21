@@ -16,7 +16,7 @@ The desired outcome is simple: a developer can clone the repository, install the
 4. `scripts/lib/ScriptAutomation.ps1` already provides safe wrappers for native commands, background processes, logging, timeout cleanup and scoped environment variables.
 5. Frontend commands are currently exposed from `frontend/package.json` and `frontend/apps/console/package.json`.
 6. Service launch ports are inconsistent: Gateway uses `5073`, Ops uses `5105`, AppHub uses `5204`, FileStorage uses `5261`, IAM uses `5283`, while older docs and fallback code still mention `5100`, `5103`, `5104` and `5105`.
-7. Console development already uses `127.0.0.1:5173`.
+7. Console development currently uses `127.0.0.1:5173`, which is Vite's common default port and should not become the platform's canonical Console port.
 
 ## Recommended Approach
 
@@ -97,7 +97,7 @@ Platform HTTP services use a contiguous `5100` range:
 | `5102` | IAM |
 | `5103` | Ops |
 | `5104` | FileStorage |
-| `5173` | Console |
+| `5105` | Console |
 
 Infrastructure services keep familiar ecosystem ports:
 
@@ -123,6 +123,7 @@ The service-port updates should touch:
 7. `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/appsettings.Development.json`
 8. hardcoded fallback URLs in `Program.cs` files where they represent local development defaults.
 9. `frontend/packages/api-client/src/transport/base-url.ts` if its server-side default still points at the old Gateway port.
+10. `frontend/apps/console/package.json` and `frontend/apps/console/vite.config.ts` so the Console dev server no longer uses Vite's default `5173` port.
 
 ## Architecture
 
