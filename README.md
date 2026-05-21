@@ -243,7 +243,7 @@ Nerv-IIP/
 
 第三阶段控制台纵切可以用 `scripts/verify-third-slice-console.ps1` 验证：Gateway 暴露稳定 OpenAPI，frontend 工作区可生成类型安全 api-client，console 可展示实例列表与详情、创建 restart 任务并查看 OperationTask 状态。
 
-第四阶段真实基础设施底座入口已经补齐并通过 `scripts/verify-fourth-slice-real-infra.ps1`：脚本会拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector，验证 AppHub/Ops PostgreSQL profile，并用 `-UsePostgres` 复跑第三阶段控制台纵切。PostgreSQL 本机默认映射到 `15432`，AppHub/Ops 使用独立数据库连接以避免共享库下 `EnsureCreated()` 漏建服务表。平台级 Aspire AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，当前 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 和第四阶段完整验证均已通过。
+第四阶段真实基础设施底座入口已经补齐并通过 `scripts/verify-fourth-slice-real-infra.ps1`：脚本会拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector，验证 PostgreSQL 持久化 profile，并用 `-UsePostgres` 复跑第三阶段控制台纵切。PostgreSQL 本机默认映射到 `15432`，AppHub/Ops 使用独立数据库连接以避免共享库下早期建表路径漏建服务表。平台级 Aspire AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，当前 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 和第四阶段完整验证均已通过。
 
 第五阶段 Release-grade Persistence Foundation 已落地并通过 `scripts/verify-fifth-slice-persistence-foundation.ps1`：AppHub/Ops 已有初始 EF Core migrations，PostgreSQL profile tests 通过 `Database.MigrateAsync()` 创建 schema，Web startup 只有在 `Persistence:AutoMigrate=true` 时才执行本地/dev auto-migration。数据库 schema 规范、schema catalog、Observability baseline 和数据库发布 runbook 已补第一版，但完整 PoC/私有化发布仍需要发布脚本、备份恢复演练、seed 清单和诊断输出契约。第五阶段曾暂缓前端功能实施；当前 Console Auth + shadcn-vue Baseline 已完成后，后续控制台页面、视觉组件和组件库迁移必须沿用已选 Design System 边界。
 

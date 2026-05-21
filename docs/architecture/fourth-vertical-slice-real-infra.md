@@ -50,10 +50,10 @@ pnpm -C frontend build
 
 ## 当前限制
 
-1. 第四阶段仍允许 AppHub/Ops 在本地验证路径中使用 `EnsureCreated()`；生产级迁移、初始化、seed 和回滚策略由 ADR 0009 承接。
+1. 本文档记录第四阶段验收口径；当时 AppHub/Ops 本地验证路径允许使用 `EnsureCreated()`。第五阶段迁移发布底座已经 supersede 该限制：AppHub/Ops 当前使用 migration-based verification，dev/local 自动迁移必须显式设置 `Persistence:AutoMigrate=true`，生产级迁移、初始化、seed 和回滚策略由 ADR 0009 与数据库发布 runbook 承接。
 2. CAP/RabbitMQ 当前是基础包、连接和资源拓扑已接线；业务集成事件 outbox、消费者幂等和发布订阅验收尚未进入本阶段完成定义。
-3. IAM 仍是内存态认证授权骨架，控制台登录、权限 guard、Connector Host 正式授权链路尚未完成。
-4. FileStorage 仍是边界骨架，真实上传下载、MinIO provider、下载授权和清理任务尚未完成。
+3. IAM 的内存态认证授权骨架是第四阶段历史范围；第七阶段已落地 IAM Persistent Auth、Gateway permission enforcement、Console Auth 和 Connector Host credential validation，Phase 8 已补齐 IAM Admin Console。
+4. FileStorage 已进入 AppHost 拓扑并具备 MinIO provider 接线；完整业务上传下载、下载授权和清理任务仍属于后续功能纵切。
 5. AppHost 尚未覆盖 Notification、Knowledge、AI Integration 和 Qdrant。
 6. Docker Compose 仍是本地依赖兜底入口，并与 AppHost 的 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector 本地依赖保持对齐；完整 Compose 产物、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
