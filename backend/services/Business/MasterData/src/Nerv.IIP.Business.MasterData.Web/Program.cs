@@ -138,7 +138,7 @@ try
 
     #region 多环境支持与服务注册发现
 
-    builder.Services.AddMultiEnv(envOption => envOption.ServiceName = "Abc.Template")
+    builder.Services.AddMultiEnv(envOption => envOption.ServiceName = "BusinessMasterData")
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
 
@@ -190,6 +190,7 @@ try
     app.UseStaticFiles();
     //app.UseHttpsRedirection();
     app.UseRouting();
+    app.UseAuthentication();
     app.UseAuthorization();
 
     app.MapControllers();
