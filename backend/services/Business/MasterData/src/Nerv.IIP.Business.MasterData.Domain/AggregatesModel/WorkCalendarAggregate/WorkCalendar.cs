@@ -21,6 +21,7 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
         this.AddDomainEvent(new MasterDataAggregateCreatedDomainEvent(nameof(WorkCalendar), OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new WorkCalendarChangedDomainEvent(OrganizationId, EnvironmentId, Code));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -48,6 +49,7 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
         workingTimes.Add(new WorkCalendarWorkingTime(dayOfWeek, startsAt, endsAt));
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(WorkCalendar), OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new WorkCalendarChangedDomainEvent(OrganizationId, EnvironmentId, Code));
     }
 
     public void Disable(string reason)
@@ -57,6 +59,7 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(WorkCalendar), OrganizationId, EnvironmentId, Code, validReason));
+        this.AddDomainEvent(new WorkCalendarChangedDomainEvent(OrganizationId, EnvironmentId, Code));
     }
 
     private void EnsureEnabled()

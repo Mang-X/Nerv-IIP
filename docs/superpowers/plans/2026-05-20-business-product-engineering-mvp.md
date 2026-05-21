@@ -10,12 +10,20 @@
 
 ---
 
+## MasterData Realignment Dependency
+
+Before executing this plan, complete `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`. ProductEngineering must consume the realigned MasterData contracts for SKU, UOM, resource hierarchy, work center, device asset and reference data.
+
+For process manufacturing, this plan must treat `Recipe` / `Formula` and `ProcessParameter` as first-class versioned engineering facts owned by ProductEngineering. MasterData owns reusable material attributes, UOM, resource capability and parameter definitions; ProductEngineering owns released product-specific recipe/formula/routing versions.
+
 ## Source Inputs
 
 1. Business spec requirements `BP-ENG-001` through `BP-ENG-004`
 2. Architecture chain `CAD/PDM/PLM -> EBOM/MBOM/Routing -> ECO/ECN -> MRP/MES`
 3. Authorization matrix entries under `business.engineering.*`
 4. ADR 0011 integration event envelope baseline
+5. `docs/adr/0013-business-master-data-governance.md`
+6. `docs/architecture/business-master-data-process-manufacturing-supplement.md`
 
 ## Boundaries
 
@@ -23,6 +31,7 @@
 2. Do not create purchase orders, work orders, stock movements or MRP suggestions.
 3. Do not auto-change in-flight MES work orders after an engineering change release.
 4. Do not share ProductEngineering tables with MasterData.
+5. Do not store reusable UOM, SKU material attributes, resource hierarchy or device capability facts in ProductEngineering; resolve them from MasterData.
 
 ## File Structure Map
 

@@ -2,8 +2,14 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggrega
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using System.Reflection;
@@ -81,5 +87,109 @@ public sealed class MasterDataAggregateTests
 
         Assert.Equal("WC-CNC-01", asset.WorkCenterCode);
         Assert.Empty(secretProperties);
+    }
+
+    [Fact]
+    public void Unit_of_measure_requires_dimension_precision_and_rounding()
+    {
+        var uom = UnitOfMeasure.Create("org-001", "env-dev", "KG", "Kilogram", "mass", 3, "half-up");
+
+        Assert.Equal("KG", uom.Code);
+        Assert.Equal("mass", uom.DimensionType);
+        Assert.Equal(3, uom.Precision);
+        Assert.Equal("half-up", uom.RoundingMode);
+        Assert.Throws<ArgumentOutOfRangeException>(() => UnitOfMeasure.Create("org-001", "env-dev", "BAD", "Bad", "mass", -1, "half-up"));
+    }
+
+    [Fact]
+    public void Uom_conversion_rejects_same_unit_and_non_positive_factor()
+    {
+        var conversion = UomConversion.Create("org-001", "env-dev", "KG", "G", 1000m, 0m, 3, "half-up", DateOnly.FromDateTime(DateTime.UtcNow));
+
+        Assert.Equal("KG", conversion.FromUomCode);
+        Assert.Equal("G", conversion.ToUomCode);
+        Assert.Equal(1000m, conversion.Factor);
+        Assert.Throws<ArgumentException>(() => UomConversion.Create("org-001", "env-dev", "KG", "KG", 1m, 0m, 3, "half-up", DateOnly.FromDateTime(DateTime.UtcNow)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => UomConversion.Create("org-001", "env-dev", "KG", "G", 0m, 0m, 3, "half-up", DateOnly.FromDateTime(DateTime.UtcNow)));
+    }
+
+    [Fact]
+    public void Sku_can_hold_industrial_material_policy()
+    {
+        var sku = Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "RM-API-001",
+            "Active Ingredient",
+            "KG",
+            "raw-material",
+            "raw-material",
+            "lot-required",
+            "not-serialized",
+            "SHELF-24M",
+            "COLD",
+            "BARCODE-RAW",
+            true,
+            ["hazardous", "gmp-controlled"]);
+
+        Assert.Equal("KG", sku.BaseUomCode);
+        Assert.Equal("lot-required", sku.BatchTrackingPolicy);
+        Assert.Equal("SHELF-24M", sku.ShelfLifePolicyCode);
+        Assert.True(sku.QualityRequired);
+        Assert.Contains("hazardous", sku.ComplianceTags);
+    }
+
+    [Fact]
+    public void Resource_hierarchy_shift_and_reference_data_are_business_master_facts()
+    {
+        var site = Site.Create("org-001", "env-dev", "SITE-SH", "Shanghai Site", "Asia/Shanghai");
+        var line = ProductionLine.Create("org-001", "env-dev", "LINE-MIX-01", "Mixing Line 01", site.Code);
+        var shift = Shift.Create("org-001", "env-dev", "SHIFT-NIGHT", "Night Shift", TimeOnly.FromTimeSpan(TimeSpan.FromHours(22)), TimeOnly.FromTimeSpan(TimeSpan.FromHours(6)), 420);
+        var code = ReferenceDataCode.Create("org-001", "env-dev", "material-form", "powder", "Powder");
+
+        Assert.Equal("SITE-SH", line.SiteCode);
+        Assert.True(shift.CrossesMidnight);
+        Assert.Equal("material-form", code.CodeSet);
+        Assert.Equal("powder", code.Code);
+    }
+
+    [Fact]
+    public void Work_center_and_device_asset_capture_static_resource_capability()
+    {
+        var workCenter = WorkCenter.CreateResource(
+            "org-001",
+            "env-dev",
+            "WC-MIX-01",
+            "Mixing Vessel 01",
+            720,
+            "process-unit",
+            "PLANT-01",
+            "LINE-MIX-01",
+            "CAL-24X5",
+            "L",
+            true);
+        var asset = DeviceAsset.RegisterCapability(
+            "org-001",
+            "env-dev",
+            "DEV-MIX-01",
+            "Mixing Vessel",
+            "LINE-MIX-01",
+            "WC-MIX-01",
+            "vessel",
+            "Acme",
+            "SN-001",
+            500m,
+            2000m,
+            "L",
+            "high",
+            true,
+            true,
+            new Dictionary<string, string> { ["scada"] = "MIXER-01" });
+
+        Assert.Equal("process-unit", workCenter.ResourceType);
+        Assert.Equal("PLANT-01", workCenter.PlantCode);
+        Assert.Equal("L", asset.CapacityUomCode);
+        Assert.Equal(500m, asset.MinimumCapacity);
+        Assert.Equal("MIXER-01", asset.ExternalReferences["scada"]);
     }
 }

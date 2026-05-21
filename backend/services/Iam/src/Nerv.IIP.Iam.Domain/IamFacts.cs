@@ -29,6 +29,12 @@ public static class NervIipSeedPermissions
         "ops.tasks.create",
         "ops.tasks.read",
         "ops.results.write",
-        "ops.audit.read"
+        "ops.audit.read",
+        "business.masterdata.products.read",
+        "business.masterdata.products.manage",
+        "business.masterdata.partners.read",
+        "business.masterdata.partners.manage",
+        "business.masterdata.resources.read",
+        "business.masterdata.resources.manage"
     ];
 }

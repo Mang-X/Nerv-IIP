@@ -15,6 +15,12 @@ public sealed class WorkCenterEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.Code).HasColumnName("code").IsRequired().HasMaxLength(100).HasComment("Business unique work center code.");
         builder.Property(x => x.Name).HasColumnName("name").IsRequired().HasMaxLength(200).HasComment("Work center display name.");
         builder.Property(x => x.CapacityMinutesPerDay).HasColumnName("capacity_minutes_per_day").IsRequired().HasComment("Nominal available capacity per day in minutes.");
+        builder.Property(x => x.ResourceType).HasColumnName("resource_type").IsRequired().HasMaxLength(100).HasComment("Resource type such as work-center, process-unit, labor-cell or equipment-group.");
+        builder.Property(x => x.PlantCode).HasColumnName("plant_code").IsRequired().HasMaxLength(100).HasComment("Plant code where the work center belongs.");
+        builder.Property(x => x.LineCode).HasColumnName("line_code").IsRequired().HasMaxLength(100).HasComment("Production line code where the work center belongs.");
+        builder.Property(x => x.DefaultCalendarCode).HasColumnName("default_calendar_code").IsRequired().HasMaxLength(100).HasComment("Default work calendar code used for planning capacity.");
+        builder.Property(x => x.CapacityUnit).HasColumnName("capacity_unit").IsRequired().HasMaxLength(50).HasComment("Unit for nominal resource capacity, for example minute, liter or kilogram.");
+        builder.Property(x => x.FiniteCapacity).HasColumnName("finite_capacity").IsRequired().HasComment("Flag that indicates planning should treat the work center as finite capacity.");
         builder.Property(x => x.Disabled).HasColumnName("disabled").IsRequired().HasComment("Disabled flag that hides the work center from active use.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the work center was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the work center was last updated.");

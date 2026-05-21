@@ -169,6 +169,20 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Device asset aggregate id.");
 
+                    b.Property<string>("AssetClassCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("asset_class_code")
+                        .HasComment("Asset class code used for equipment grouping and maintenance policy.");
+
+                    b.Property<string>("CapacityUomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("capacity_uom_code")
+                        .HasComment("Unit of measure code for static equipment capacity.");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -180,6 +194,13 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the device asset was created.");
+
+                    b.Property<string>("Criticality")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("criticality")
+                        .HasComment("Maintenance and planning criticality code.");
 
                     b.Property<bool>("Disabled")
                         .HasColumnType("boolean")
@@ -200,6 +221,30 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("line_code")
                         .HasComment("Production line code where the device asset is installed.");
 
+                    b.Property<bool>("Maintainable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("maintainable")
+                        .HasComment("Flag that indicates Maintenance can create work orders for this asset.");
+
+                    b.Property<string>("Manufacturer")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("manufacturer")
+                        .HasComment("Equipment manufacturer name.");
+
+                    b.Property<decimal?>("MaximumCapacity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("maximum_capacity")
+                        .HasComment("Maximum static processing capacity in capacity_uom_code.");
+
+                    b.Property<decimal?>("MinimumCapacity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("minimum_capacity")
+                        .HasComment("Minimum static processing capacity in capacity_uom_code.");
+
                     b.Property<string>("Model")
                         .IsRequired()
                         .HasMaxLength(160)
@@ -213,6 +258,18 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the device asset.");
+
+                    b.Property<string>("SerialNo")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("serial_no")
+                        .HasComment("Manufacturer serial number or asset serial reference.");
+
+                    b.Property<bool>("TelemetryEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("telemetry_enabled")
+                        .HasComment("Flag that indicates IndustrialTelemetry may map tags to this asset.");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -321,12 +378,319 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate.ProductionLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Production line aggregate id.");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code")
+                        .HasComment("Business unique production line code.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the production line was created.");
+
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Disabled flag that hides the production line from active use.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the production line is valid.");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name")
+                        .HasComment("Production line display name.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the production line.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Site or plant code that contains the production line.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the production line was last updated.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SiteCode", "Disabled");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("production_lines", "business_masterdata", t =>
+                        {
+                            t.HasComment("Business master data production lines within a site or plant.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate.ReferenceDataCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Reference data code aggregate id.");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code")
+                        .HasComment("Business unique code inside the code set.");
+
+                    b.Property<string>("CodeSet")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code_set")
+                        .HasComment("Reference code set name such as material-form, asset-class or storage-condition.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the reference code was created.");
+
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Disabled flag that hides the reference code from active use.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the reference data code is valid.");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name")
+                        .HasComment("Reference data code display name.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the reference data code.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the reference code was last updated.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CodeSet", "Disabled");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CodeSet", "Code")
+                        .IsUnique();
+
+                    b.ToTable("reference_data_codes", "business_masterdata", t =>
+                        {
+                            t.HasComment("Business master data controlled reference codes shared by business domains.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate.Shift", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Shift aggregate id.");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code")
+                        .HasComment("Business unique shift code.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the shift was created.");
+
+                    b.Property<bool>("CrossesMidnight")
+                        .HasColumnType("boolean")
+                        .HasColumnName("crosses_midnight")
+                        .HasComment("Flag that indicates the shift ends on the next local day.");
+
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Disabled flag that hides the shift from active use.");
+
+                    b.Property<TimeOnly>("EndsAt")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("ends_at")
+                        .HasComment("Local end time of the shift.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the shift is valid.");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name")
+                        .HasComment("Shift display name.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the shift.");
+
+                    b.Property<int>("PaidMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("paid_minutes")
+                        .HasComment("Paid or planned working minutes in the shift.");
+
+                    b.Property<TimeOnly>("StartsAt")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("starts_at")
+                        .HasComment("Local start time of the shift.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the shift was last updated.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Disabled");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("shifts", "business_masterdata", t =>
+                        {
+                            t.HasComment("Business master data shift definitions used by calendars, teams and execution planning.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate.Site", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Site aggregate id.");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code")
+                        .HasComment("Business unique site or plant code.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the site was created.");
+
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Disabled flag that hides the site from active use.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the site is valid.");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name")
+                        .HasComment("Site or plant display name.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the site.");
+
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("timezone")
+                        .HasComment("IANA or business timezone used for local calendars.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the site was last updated.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Disabled");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("sites", "business_masterdata", t =>
+                        {
+                            t.HasComment("Business master data sites or plants used as industrial resource hierarchy roots.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate.Sku", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("SKU aggregate id.");
+
+                    b.Property<string>("BaseUomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("base_uom_code")
+                        .HasComment("Base unit of measure code used for material master identity.");
+
+                    b.Property<string>("BatchTrackingPolicy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("batch_tracking_policy")
+                        .HasComment("Policy that states whether lot, heat, date code or expiry tracking is required.");
 
                     b.Property<string>("Category")
                         .IsRequired()
@@ -347,6 +711,13 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the SKU was created.");
 
+                    b.Property<string>("DefaultBarcodeRuleCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("default_barcode_rule_code")
+                        .HasComment("Default barcode rule code consumed by BarcodeLabel.");
+
                     b.Property<bool>("Disabled")
                         .HasColumnType("boolean")
                         .HasColumnName("disabled")
@@ -358,6 +729,27 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id where the SKU is valid.");
+
+                    b.Property<string>("InventoryUomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("inventory_uom_code")
+                        .HasComment("Default inventory unit of measure code.");
+
+                    b.Property<string>("ManufacturingUomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("manufacturing_uom_code")
+                        .HasComment("Default manufacturing unit of measure code.");
+
+                    b.Property<string>("MaterialType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("material_type")
+                        .HasComment("Material type such as raw material, finished good, packaging or service.");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -372,6 +764,46 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the SKU.");
+
+                    b.Property<string>("PurchaseUomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("purchase_uom_code")
+                        .HasComment("Default purchasing unit of measure code.");
+
+                    b.Property<bool>("QualityRequired")
+                        .HasColumnType("boolean")
+                        .HasColumnName("quality_required")
+                        .HasComment("Flag that indicates Quality must inspect or release this SKU before unrestricted use.");
+
+                    b.Property<string>("SalesUomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("sales_uom_code")
+                        .HasComment("Default sales unit of measure code.");
+
+                    b.Property<string>("SerialTrackingPolicy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("serial_tracking_policy")
+                        .HasComment("Policy that states whether serial number tracking is required.");
+
+                    b.Property<string>("ShelfLifePolicyCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("shelf_life_policy_code")
+                        .HasComment("Shelf life policy code used by Inventory and Quality.");
+
+                    b.Property<string>("StorageConditionCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("storage_condition_code")
+                        .HasComment("Storage condition code such as ambient, cold or hazardous.");
 
                     b.Property<string>("Unit")
                         .IsRequired()
@@ -475,6 +907,175 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Unit of measure aggregate id.");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("code")
+                        .HasComment("Business unique unit of measure code.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the unit was created.");
+
+                    b.Property<string>("DimensionType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("dimension_type")
+                        .HasComment("Physical or business dimension such as mass, volume, count, time or potency.");
+
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Disabled flag that hides the unit from active use.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the unit of measure is valid.");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name")
+                        .HasComment("Unit of measure display name.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the unit of measure.");
+
+                    b.Property<int>("Precision")
+                        .HasColumnType("integer")
+                        .HasColumnName("precision")
+                        .HasComment("Decimal precision allowed when values are expressed in this unit.");
+
+                    b.Property<string>("RoundingMode")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("rounding_mode")
+                        .HasComment("Rounding mode used when converting values to this unit.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the unit was last updated.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DimensionType", "Disabled");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("units_of_measure", "business_masterdata", t =>
+                        {
+                            t.HasComment("Business master data units of measure used by material, inventory, quality, planning and execution.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate.UomConversion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("UOM conversion aggregate id.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the conversion rule was created.");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("effective_from")
+                        .HasComment("Business date from which the conversion rule is effective.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the UOM conversion is valid.");
+
+                    b.Property<decimal>("Factor")
+                        .HasPrecision(24, 12)
+                        .HasColumnType("numeric(24,12)")
+                        .HasColumnName("factor")
+                        .HasComment("Positive multiplicative factor used for conversion.");
+
+                    b.Property<string>("FromUomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("from_uom_code")
+                        .HasComment("Source unit of measure code.");
+
+                    b.Property<decimal>("Offset")
+                        .HasPrecision(24, 12)
+                        .HasColumnType("numeric(24,12)")
+                        .HasColumnName("offset")
+                        .HasComment("Additive offset applied after the conversion factor.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the UOM conversion.");
+
+                    b.Property<int>("Precision")
+                        .HasColumnType("integer")
+                        .HasColumnName("precision")
+                        .HasComment("Decimal precision used for converted values.");
+
+                    b.Property<string>("RoundingMode")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("rounding_mode")
+                        .HasComment("Rounding mode used for converted values.");
+
+                    b.Property<string>("ToUomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("to_uom_code")
+                        .HasComment("Target unit of measure code.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the conversion rule was last updated.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromUomCode", "ToUomCode");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "FromUomCode", "ToUomCode", "EffectiveFrom")
+                        .IsUnique();
+
+                    b.ToTable("uom_conversions", "business_masterdata", t =>
+                        {
+                            t.HasComment("Business master data unit conversion rules with effective dates and rounding policy.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendar", b =>
                 {
                     b.Property<Guid>("Id")
@@ -550,6 +1151,13 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("capacity_minutes_per_day")
                         .HasComment("Nominal available capacity per day in minutes.");
 
+                    b.Property<string>("CapacityUnit")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("capacity_unit")
+                        .HasComment("Unit for nominal resource capacity, for example minute, liter or kilogram.");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -562,6 +1170,13 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the work center was created.");
 
+                    b.Property<string>("DefaultCalendarCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("default_calendar_code")
+                        .HasComment("Default work calendar code used for planning capacity.");
+
                     b.Property<bool>("Disabled")
                         .HasColumnType("boolean")
                         .HasColumnName("disabled")
@@ -573,6 +1188,18 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id where the work center is valid.");
+
+                    b.Property<bool>("FiniteCapacity")
+                        .HasColumnType("boolean")
+                        .HasColumnName("finite_capacity")
+                        .HasComment("Flag that indicates planning should treat the work center as finite capacity.");
+
+                    b.Property<string>("LineCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("line_code")
+                        .HasComment("Production line code where the work center belongs.");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -587,6 +1214,20 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the work center.");
+
+                    b.Property<string>("PlantCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("plant_code")
+                        .HasComment("Plant code where the work center belongs.");
+
+                    b.Property<string>("ResourceType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("resource_type")
+                        .HasComment("Resource type such as work-center, process-unit, labor-cell or equipment-group.");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")

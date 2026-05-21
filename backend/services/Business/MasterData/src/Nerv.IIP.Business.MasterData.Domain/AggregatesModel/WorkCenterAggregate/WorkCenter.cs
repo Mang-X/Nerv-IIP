@@ -10,7 +10,18 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
     {
     }
 
-    private WorkCenter(string organizationId, string environmentId, string code, string name, int capacityMinutesPerDay)
+    private WorkCenter(
+        string organizationId,
+        string environmentId,
+        string code,
+        string name,
+        int capacityMinutesPerDay,
+        string resourceType,
+        string plantCode,
+        string lineCode,
+        string defaultCalendarCode,
+        string capacityUnit,
+        bool finiteCapacity)
     {
         if (capacityMinutesPerDay <= 0)
         {
@@ -22,9 +33,16 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         Code = Required(code);
         Name = Required(name);
         CapacityMinutesPerDay = capacityMinutesPerDay;
+        ResourceType = Required(resourceType);
+        PlantCode = Optional(plantCode);
+        LineCode = Optional(lineCode);
+        DefaultCalendarCode = Optional(defaultCalendarCode);
+        CapacityUnit = Required(capacityUnit);
+        FiniteCapacity = finiteCapacity;
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
         this.AddDomainEvent(new MasterDataAggregateCreatedDomainEvent(nameof(WorkCenter), OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new ResourceChangedDomainEvent(nameof(WorkCenter), OrganizationId, EnvironmentId, Code));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -32,13 +50,35 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
     public string Code { get; private set; } = string.Empty;
     public string Name { get; private set; } = string.Empty;
     public int CapacityMinutesPerDay { get; private set; }
+    public string ResourceType { get; private set; } = string.Empty;
+    public string PlantCode { get; private set; } = string.Empty;
+    public string LineCode { get; private set; } = string.Empty;
+    public string DefaultCalendarCode { get; private set; } = string.Empty;
+    public string CapacityUnit { get; private set; } = string.Empty;
+    public bool FiniteCapacity { get; private set; }
     public bool Disabled { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
 
     public static WorkCenter Create(string organizationId, string environmentId, string code, string name, int capacityMinutesPerDay)
     {
-        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay);
+        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay, "work-center", string.Empty, string.Empty, string.Empty, "minute", true);
+    }
+
+    public static WorkCenter CreateResource(
+        string organizationId,
+        string environmentId,
+        string code,
+        string name,
+        int capacityMinutesPerDay,
+        string resourceType,
+        string plantCode,
+        string lineCode,
+        string defaultCalendarCode,
+        string capacityUnit,
+        bool finiteCapacity)
+    {
+        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay, resourceType, plantCode, lineCode, defaultCalendarCode, capacityUnit, finiteCapacity);
     }
 
     public void Disable(string reason)
@@ -48,6 +88,7 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(WorkCenter), OrganizationId, EnvironmentId, Code, validReason));
+        this.AddDomainEvent(new ResourceChangedDomainEvent(nameof(WorkCenter), OrganizationId, EnvironmentId, Code));
     }
 
     private void EnsureEnabled()
@@ -61,5 +102,10 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
     private static string Required(string value)
     {
         return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+    }
+
+    private static string Optional(string value)
+    {
+        return value?.Trim() ?? string.Empty;
     }
 }
