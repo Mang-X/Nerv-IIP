@@ -19,6 +19,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using Refit;
 using NetCorePal.Extensions.CodeAnalysis;
+using Nerv.IIP.Business.MasterData.Domain;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithClientIp()
@@ -100,7 +101,9 @@ try
 
     builder.Services.AddDbContext<ApplicationDbContext>(options =>
     {
-        options.UseNpgsql(builder.Configuration.GetConnectionString("PostgreSQL"));
+        options.UseNpgsql(
+            builder.Configuration.GetConnectionString("PostgreSQL"),
+            npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", MasterDataFacts.Schema));
         // 仅在开发环境启用敏感数据日志，防止生产环境泄露敏感信息
         if (builder.Environment.IsDevelopment())
         {

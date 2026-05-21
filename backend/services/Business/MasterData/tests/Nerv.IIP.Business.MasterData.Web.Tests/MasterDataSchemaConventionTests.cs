@@ -19,6 +19,25 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 public sealed class MasterDataSchemaConventionTests
 {
     [Fact]
+    public void Runtime_PostgreSQL_profile_configures_migrations_history_schema()
+    {
+        var programPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "src",
+            "Nerv.IIP.Business.MasterData.Web",
+            "Program.cs"));
+
+        var programSource = File.ReadAllText(programPath);
+
+        Assert.Contains("MigrationsHistoryTable(\"__EFMigrationsHistory\", MasterDataFacts.Schema)", programSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MasterData_schema_metadata_follows_database_conventions()
     {
         using var fixture = CreateFixture();
