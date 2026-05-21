@@ -18,11 +18,11 @@ builder.Services.AddSingleton<IReadOnlyList<IConnector>>(sp => sp.GetServices<IC
 builder.Services.AddSingleton<IReadOnlyList<IConnectorOperationExecutor>>(sp => sp.GetServices<IConnectorOperationExecutor>().ToList());
 builder.Services.AddHttpClient<IConnectorProtocolClient, HttpConnectorProtocolClient>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["Platform:AppHubBaseUrl"] ?? "http://localhost:5103");
+    client.BaseAddress = new Uri(builder.Configuration["Platform:AppHubBaseUrl"] ?? "http://localhost:5101");
 });
 builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["Platform:OpsBaseUrl"] ?? "http://localhost:5105");
+    client.BaseAddress = new Uri(builder.Configuration["Platform:OpsBaseUrl"] ?? "http://localhost:5103");
 });
 builder.Services.AddSingleton<ConnectorReportingLoop>();
 builder.Services.AddSingleton<ConnectorOperationLoop>();
