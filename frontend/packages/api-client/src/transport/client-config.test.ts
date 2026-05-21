@@ -7,9 +7,9 @@ describe('getApiBaseUrl', () => {
   it('uses explicit Vite environment value first', () => {
     expect(
       getApiBaseUrl({
-        VITE_NERV_IIP_API_BASE_URL: 'http://127.0.0.1:58204',
+        VITE_NERV_IIP_API_BASE_URL: 'http://127.0.0.1:5100',
       } as unknown as ImportMetaEnv),
-    ).toBe('http://127.0.0.1:58204')
+    ).toBe('http://127.0.0.1:5100')
   })
 
   it('uses browser-relative API base URL when no explicit value is configured', () => {
