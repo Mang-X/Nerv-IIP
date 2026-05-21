@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Contracts\Nerv.IIP.Contracts.FileStorage\Nerv.IIP.Contracts.FileStorage.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Sdk.Core\Nerv.IIP.Sdk.Core.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Sdk.Auth\Nerv.IIP.Sdk.Auth.csproj" />
   </ItemGroup>

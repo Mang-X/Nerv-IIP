@@ -1,0 +1,229 @@
+using Nerv.IIP.Contracts.FileStorage;
+using Nerv.IIP.FileStorage.Domain;
+using Nerv.IIP.FileStorage.Infrastructure;
+using Nerv.IIP.FileStorage.Infrastructure.Records;
+using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
+using ContractOwnerReference = Nerv.IIP.Contracts.FileStorage.OwnerReference;
+
+namespace Nerv.IIP.FileStorage.Web.Application.Files;
+
+// Known debt: IFileStorageService is synchronous today; move these EF calls to async when the Web boundary becomes async.
+public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
+{
+    private readonly ApplicationDbContext dbContext;
+    private readonly IFileStorageUploadProvider uploadProvider;
+
+    public PostgreSqlFileStorageService(ApplicationDbContext dbContext)
+        : this(dbContext, new ServerProxyUploadProvider())
+    {
+    }
+
+    public PostgreSqlFileStorageService(ApplicationDbContext dbContext, IFileStorageUploadProvider uploadProvider)
+    {
+        this.dbContext = dbContext;
+        this.uploadProvider = uploadProvider;
+    }
+
+    public FileStorageResult<CreateUploadSessionResponse> CreateUploadSession(CreateUploadSessionRequest request)
+    {
+        if (!FilePurposePolicy.IsAllowed(request.FilePurpose))
+        {
+            return FileStorageResult<CreateUploadSessionResponse>.BadRequest($"Unsupported file purpose '{request.FilePurpose}'.");
+        }
+
+        if (!FileStorageRequestValidation.IsValidCreateUploadSessionRequest(request))
+        {
+            return FileStorageResult<CreateUploadSessionResponse>.BadRequest("Upload session request is invalid.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var uploadSessionId = NewId("ups");
+        var fileId = NewId("file");
+        var session = UploadSessionRecord.Create(
+            uploadSessionId,
+            fileId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Owner.OwnerService,
+            request.Owner.OwnerType,
+            request.Owner.OwnerId,
+            request.FilePurpose,
+            request.FileName,
+            request.ContentType,
+            request.ExpectedSizeBytes,
+            request.Checksum,
+            BuildObjectKey(request.OrganizationId, fileId),
+            uploadProvider.Provider,
+            now,
+            now.AddMinutes(15));
+
+        dbContext.UploadSessions.Add(session);
+        dbContext.SaveChanges();
+        var upload = uploadProvider.CreateUploadInstructions(session.UploadSessionId, session.FileId);
+
+        return FileStorageResult<CreateUploadSessionResponse>.Ok(new CreateUploadSessionResponse(
+            session.UploadSessionId,
+            session.FileId,
+            uploadProvider.UploadMode,
+            uploadProvider.Provider,
+            session.ExpiresAtUtc,
+            upload));
+    }
+
+    public FileStorageResult<FileMetadataResponse> CompleteUploadSession(string uploadSessionId, CompleteUploadSessionRequest request)
+    {
+        var session = dbContext.UploadSessions.SingleOrDefault(x => x.UploadSessionId == uploadSessionId);
+        if (session is null)
+        {
+            return FileStorageResult<FileMetadataResponse>.NotFound($"Upload session '{uploadSessionId}' was not found.");
+        }
+
+        if (session.Completed)
+        {
+            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session is already completed.");
+        }
+
+        if (session.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+        {
+            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired.");
+        }
+
+        if (!string.Equals(session.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(session.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)
+            || !string.Equals(session.FilePurpose, request.FilePurpose, StringComparison.Ordinal))
+        {
+            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        session.MarkCompleted(now);
+        var file = StoredFileRecord.Create(
+            session.FileId,
+            session.OrganizationId,
+            session.EnvironmentId,
+            session.OwnerService,
+            session.OwnerType,
+            session.OwnerId,
+            session.FilePurpose,
+            session.FileName,
+            session.ContentType,
+            session.ExpectedSizeBytes,
+            session.Checksum,
+            session.ObjectKey,
+            "pending",
+            "available",
+            session.CreatedAtUtc,
+            now);
+
+        dbContext.StoredFiles.Add(file);
+        dbContext.SaveChanges();
+
+        return FileStorageResult<FileMetadataResponse>.Ok(ToResponse(file));
+    }
+
+    public FileStorageResult<FileMetadataResponse> GetFileMetadata(string fileId)
+    {
+        var file = dbContext.StoredFiles.SingleOrDefault(x => x.FileId == fileId);
+        return file is null
+            ? FileStorageResult<FileMetadataResponse>.NotFound($"File '{fileId}' was not found.")
+            : FileStorageResult<FileMetadataResponse>.Ok(ToResponse(file));
+    }
+
+    public FileStorageResult<DownloadGrantResponse> CreateDownloadGrant(string fileId, CreateDownloadGrantRequest request)
+    {
+        var file = dbContext.StoredFiles.SingleOrDefault(x => x.FileId == fileId);
+        if (file is null)
+        {
+            return FileStorageResult<DownloadGrantResponse>.NotFound($"File '{fileId}' was not found.");
+        }
+
+        if (!string.Equals(file.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(file.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
+        {
+            return FileStorageResult<DownloadGrantResponse>.BadRequest("File context does not match.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var grant = DownloadGrantRecord.Create(
+            NewId("dgr"),
+            file.FileId,
+            file.OrganizationId,
+            file.EnvironmentId,
+            ServerProxyUploadProvider.Name,
+            now,
+            now.AddMinutes(10));
+
+        dbContext.DownloadGrants.Add(grant);
+        dbContext.SaveChanges();
+
+        return FileStorageResult<DownloadGrantResponse>.Ok(new DownloadGrantResponse(
+            file.FileId,
+            grant.ExpiresAtUtc,
+            new TransferInstructions(
+                $"/api/files/v1/download-grants/{grant.DownloadGrantId}/content",
+                new Dictionary<string, string>
+                {
+                    ["x-nerv-download-mode"] = ServerProxyUploadProvider.Name
+                })));
+    }
+
+    public bool TryGetUploadSessionIdForDownloadGrant(string downloadGrantId, out string uploadSessionId)
+    {
+        uploadSessionId = string.Empty;
+        var now = DateTimeOffset.UtcNow;
+        var grant = dbContext.DownloadGrants.SingleOrDefault(x =>
+            x.DownloadGrantId == downloadGrantId
+            && x.ExpiresAtUtc > now);
+        if (grant is null)
+        {
+            return false;
+        }
+
+        var session = dbContext.UploadSessions.SingleOrDefault(x => x.FileId == grant.FileId);
+        if (session is null)
+        {
+            return false;
+        }
+
+        uploadSessionId = session.UploadSessionId;
+        return true;
+    }
+
+    public bool CanAcceptTusUpload(string uploadSessionId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return dbContext.UploadSessions.Any(x =>
+            x.UploadSessionId == uploadSessionId
+            && x.Provider == TusUploadProvider.Name
+            && !x.Completed
+            && x.ExpiresAtUtc > now);
+    }
+
+    private static FileMetadataResponse ToResponse(StoredFileRecord file)
+    {
+        return new FileMetadataResponse(
+            file.FileId,
+            file.OrganizationId,
+            file.EnvironmentId,
+            new ContractOwnerReference(file.OwnerService, file.OwnerType, file.OwnerId),
+            file.FilePurpose,
+            file.FileName,
+            file.ContentType,
+            file.SizeBytes,
+            file.Checksum,
+            file.ScanStatus,
+            file.Status,
+            file.CreatedAtUtc,
+            file.CompletedAtUtc);
+    }
+
+    private static string NewId(string prefix)
+    {
+        return $"{prefix}_{Guid.NewGuid():N}";
+    }
+
+    private static string BuildObjectKey(string organizationId, string fileId)
+    {
+        return $"{organizationId}/{fileId}";
+    }
+}
