@@ -84,7 +84,9 @@ function rowKey(instance: InstanceListItem, index: number) {
               :key="rowKey(instance, index)"
               :class="instance.instanceKey === selectedInstanceKey ? 'bg-primary/5' : ''"
               class="cursor-pointer"
+              tabindex="0"
               @click="instance.instanceKey && emit('selectInstance', instance.instanceKey)"
+              @keydown.enter.space="instance.instanceKey && emit('selectInstance', instance.instanceKey)"
             >
               <TableCell>
                 <div class="flex flex-col gap-0.5">
