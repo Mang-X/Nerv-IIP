@@ -6,6 +6,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using System.Reflection;
 
 namespace Nerv.IIP.Business.MasterData.Domain.Tests;
 
@@ -71,8 +72,11 @@ public sealed class MasterDataAggregateTests
     public void Device_asset_belongs_to_work_center_without_holding_control_secrets()
     {
         var asset = DeviceAsset.Register("org-001", "env-dev", "DEV-CNC-01", "CNC-500", "line-1", "WC-CNC-01");
+        var secretProperties = typeof(DeviceAsset)
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Where(property => property.Name.Contains("Secret", StringComparison.OrdinalIgnoreCase));
 
         Assert.Equal("WC-CNC-01", asset.WorkCenterCode);
-        Assert.Empty(asset.ControlSecretNames);
+        Assert.Empty(secretProperties);
     }
 }

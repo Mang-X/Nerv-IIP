@@ -6,8 +6,6 @@ public partial record DeviceAssetId : IGuidStronglyTypedId;
 
 public class DeviceAsset : Entity<DeviceAssetId>, IAggregateRoot
 {
-    private readonly List<string> controlSecretNames = [];
-
     protected DeviceAsset()
     {
     }
@@ -40,7 +38,6 @@ public class DeviceAsset : Entity<DeviceAssetId>, IAggregateRoot
     public bool Disabled { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
-    public IReadOnlyCollection<string> ControlSecretNames => controlSecretNames.AsReadOnly();
 
     public static DeviceAsset Register(
         string organizationId,
