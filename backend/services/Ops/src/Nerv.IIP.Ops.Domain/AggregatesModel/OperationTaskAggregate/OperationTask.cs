@@ -160,6 +160,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             attempt.LeasedAtUtc ?? now,
             attempt.LeasedUntilUtc ?? now.Add(leaseDuration),
             attempt.AttemptNo ?? attemptNo,
+            Math.Max(0, (int)leaseDuration.TotalSeconds),
             attempt.MaxAttempts ?? maxAttempts);
     }
 

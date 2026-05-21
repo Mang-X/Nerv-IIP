@@ -78,7 +78,7 @@ public sealed class EfOperationTemplateApplicationService(
     public async Task<OperationTemplateResponse> GetAsync(string operationCode, CancellationToken cancellationToken)
     {
         var template = await repository.GetByOperationCodeAsync(operationCode, cancellationToken)
-            ?? throw new OperationTaskNotFoundException(operationCode);
+            ?? throw new OperationTemplateNotFoundException(operationCode);
         return ToResponse(template);
     }
 

@@ -15,6 +15,8 @@ public sealed record ListAuditRecordsQuery(
 public sealed class ListAuditRecordsQueryHandler(IServiceProvider serviceProvider)
     : IQueryHandler<ListAuditRecordsQuery, AuditRecordListResponse>
 {
+    private const int MaxAuditRecordsResponseSize = 500;
+
     public async Task<AuditRecordListResponse> Handle(ListAuditRecordsQuery request, CancellationToken cancellationToken)
     {
         var context = serviceProvider.GetService<ApplicationDbContext>();
@@ -37,6 +39,7 @@ public sealed class ListAuditRecordsQueryHandler(IServiceProvider serviceProvide
             .SelectMany(x => x.AuditRecords)
             .OrderByDescending(x => x.OccurredAtUtc)
             .ThenByDescending(x => x.Id)
+            .Take(MaxAuditRecordsResponseSize)
             .Select(x => new AuditRecordSummary(
                 x.Id.Id,
                 x.OperationTaskId.Id,

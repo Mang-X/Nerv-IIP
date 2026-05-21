@@ -11,7 +11,7 @@ using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 var usePostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
-var autoMigrate = string.Equals(builder.Configuration["Persistence:AutoMigrate"], "true", StringComparison.OrdinalIgnoreCase);
+var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
 if (usePostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
 {
     throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for AppHub in Development. Use an explicit migrator, release script or migration bundle outside Development.");

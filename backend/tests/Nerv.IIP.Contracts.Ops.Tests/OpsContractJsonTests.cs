@@ -30,6 +30,7 @@ public sealed class OpsContractJsonTests
                 DateTimeOffset.Parse("2026-05-15T00:00:01Z"),
                 DateTimeOffset.Parse("2026-05-15T00:05:01Z"),
                 1,
+                300,
                 3,
                 null)],
             [new AuditRecordSummary("audit-000001", "op-000001", "operation.completed", "connector-host-001", DateTimeOffset.Parse("2026-05-15T00:00:02Z"), "corr-ops-001")]);

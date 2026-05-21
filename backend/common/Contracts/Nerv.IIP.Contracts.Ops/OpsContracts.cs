@@ -51,6 +51,7 @@ public sealed record OperationAttemptSummary(
     DateTimeOffset LeasedAtUtc,
     DateTimeOffset LeasedUntilUtc,
     int AttemptNo,
+    int LeaseDurationSeconds,
     int MaxAttempts,
     string? AbandonReason);
 
@@ -95,7 +96,13 @@ public sealed record ClaimOperationTasksRequest(
     string EnvironmentId,
     string ConnectorHostId,
     int Take,
+    /// <summary>
+    /// Ignored by Ops; claimed tasks use the lease duration captured from their operation template.
+    /// </summary>
     int LeaseDurationSeconds = 300,
+    /// <summary>
+    /// Ignored by Ops; claimed tasks use max attempts captured from their operation template.
+    /// </summary>
     int MaxAttempts = 3);
 
 public sealed record AbandonOperationTaskLeaseRequest(
@@ -126,4 +133,5 @@ public sealed record OperationTaskDispatchItem(
     DateTimeOffset LeasedAtUtc,
     DateTimeOffset LeasedUntilUtc,
     int AttemptNo,
+    int LeaseDurationSeconds,
     int MaxAttempts);

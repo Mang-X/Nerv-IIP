@@ -75,6 +75,7 @@ public sealed class OpsStateStoreTests
             Now.AddSeconds(1)).Items);
 
         Assert.Equal(4, dispatch.MaxAttempts);
+        Assert.Equal(900, dispatch.LeaseDurationSeconds);
         Assert.Equal(Now.AddSeconds(901), dispatch.LeasedUntilUtc);
     }
 

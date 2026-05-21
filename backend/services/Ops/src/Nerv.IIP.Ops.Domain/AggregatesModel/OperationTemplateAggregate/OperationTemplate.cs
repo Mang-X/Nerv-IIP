@@ -14,6 +14,14 @@ public sealed record OperationTemplateSnapshot(
 
 public sealed class OperationTemplate : Entity<OperationTemplateId>, IAggregateRoot
 {
+    private static readonly HashSet<string> AllowedRiskLevels = new(StringComparer.Ordinal)
+    {
+        "low",
+        "medium",
+        "high",
+        "critical"
+    };
+
     private OperationTemplate()
     {
         Id = new OperationTemplateId(string.Empty);
@@ -34,7 +42,7 @@ public sealed class OperationTemplate : Entity<OperationTemplateId>, IAggregateR
         OperationCode = NormalizeRequired(operationCode, nameof(operationCode));
         DisplayName = NormalizeRequired(displayName, nameof(displayName));
         ParameterSchemaJson = NormalizeSchema(parameterSchemaJson);
-        RiskLevel = NormalizeRequired(riskLevel, nameof(riskLevel));
+        RiskLevel = NormalizeRiskLevel(riskLevel);
         DefaultMaxAttempts = ClampDefaultMaxAttempts(defaultMaxAttempts);
         DefaultLeaseDurationSeconds = ClampDefaultLeaseDurationSeconds(defaultLeaseDurationSeconds);
         RequiresApproval = requiresApproval;
@@ -123,6 +131,17 @@ public sealed class OperationTemplate : Entity<OperationTemplateId>, IAggregateR
     private static string NormalizeSchema(string parameterSchemaJson)
     {
         return string.IsNullOrWhiteSpace(parameterSchemaJson) ? "{}" : parameterSchemaJson.Trim();
+    }
+
+    private static string NormalizeRiskLevel(string riskLevel)
+    {
+        var normalized = NormalizeRequired(riskLevel, nameof(riskLevel)).ToLowerInvariant();
+        if (!AllowedRiskLevels.Contains(normalized))
+        {
+            throw new InvalidOperationTaskRequestException($"Unsupported operation template risk level: {riskLevel}");
+        }
+
+        return normalized;
     }
 
     private static int ClampDefaultMaxAttempts(int value)

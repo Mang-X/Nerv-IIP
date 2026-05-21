@@ -159,6 +159,7 @@ public sealed class OpsSdkEnvelopeCompatibilityTests
             DateTimeOffset.Parse("2026-05-15T00:00:01Z"),
             DateTimeOffset.Parse("2026-05-15T00:05:01Z"),
             1,
+            300,
             3);
     }
 

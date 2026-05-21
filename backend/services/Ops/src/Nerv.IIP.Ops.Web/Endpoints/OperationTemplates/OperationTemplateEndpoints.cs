@@ -87,7 +87,7 @@ public sealed class GetOperationTemplateEndpoint(IMediator mediator)
             var template = await mediator.Send(new GetOperationTemplateQuery(Route<string>("operationCode")!), ct);
             await Send.OkAsync(template.AsResponseData(), ct);
         }
-        catch (OperationTaskNotFoundException ex)
+        catch (OperationTemplateNotFoundException ex)
         {
             await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status404NotFound, ex.Message, ct);
         }

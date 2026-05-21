@@ -7,6 +7,8 @@ namespace Nerv.IIP.Ops.Domain;
 public abstract class OpsStateException(string message) : Exception(message);
 public sealed class OperationTaskNotFoundException(string operationTaskId)
     : OpsStateException($"Operation task was not found: {operationTaskId}");
+public sealed class OperationTemplateNotFoundException(string operationCode)
+    : OpsStateException($"Operation template was not found: {operationCode}");
 public sealed class InvalidOperationResultException(string message) : OpsStateException(message);
 public sealed class InvalidOperationTaskRequestException(string message) : OpsStateException(message);
 
@@ -27,6 +29,7 @@ public interface IOpsStateStore
 
 public sealed class InMemoryOpsStateStore : IOpsStateStore
 {
+    private const int MaxAuditRecordsResponseSize = 500;
     private readonly object _gate = new();
     private readonly Dictionary<string, string> _idempotency = new(StringComparer.Ordinal);
     private readonly Dictionary<string, OperationTemplateSnapshot> _templates = new(StringComparer.Ordinal)
@@ -140,6 +143,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                 .Where(x => taskIds.Contains(x.OperationTaskId))
                 .OrderByDescending(x => x.OccurredAtUtc)
                 .ThenByDescending(x => x.AuditRecordId, StringComparer.Ordinal)
+                .Take(MaxAuditRecordsResponseSize)
                 .Select(x => new AuditRecordSummary(
                     x.AuditRecordId,
                     x.OperationTaskId,
@@ -205,7 +209,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         {
             return _templateResponses.TryGetValue(operationCode, out var template)
                 ? template
-                : throw new OperationTaskNotFoundException(operationCode);
+                : throw new OperationTemplateNotFoundException(operationCode);
         }
     }
 
@@ -271,6 +275,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                     now,
                     leasedUntilUtc,
                     attemptNo,
+                    Math.Max(0, (int)leaseDuration.TotalSeconds),
                     maxAttempts));
             }
 

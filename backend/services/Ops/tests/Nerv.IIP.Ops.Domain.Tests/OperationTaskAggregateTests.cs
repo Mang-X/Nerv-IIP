@@ -68,6 +68,24 @@ public sealed class OperationTaskAggregateTests
     }
 
     [Fact]
+    public void Template_rejects_unknown_risk_level()
+    {
+        var create = () => OperationTemplate.Create(
+            TemplateId(),
+            "backup.snapshot",
+            "Backup snapshot",
+            "{}",
+            "experimental",
+            3,
+            300,
+            requiresApproval: false,
+            Now);
+
+        var ex = Assert.Throws<InvalidOperationTaskRequestException>(create);
+        Assert.Contains("risk level", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Claim_moves_queued_task_to_dispatched_and_blocks_second_claim()
     {
         var task = CreateTask();

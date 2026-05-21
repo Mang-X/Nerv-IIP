@@ -1,10 +1,15 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Ops.Infrastructure;
+using Nerv.IIP.Ops.Infrastructure.Repositories;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
+[CollectionDefinition("readiness", DisableParallelization = true)]
+public sealed class ReadinessCollection;
+
+[Collection("readiness")]
 public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     [Fact]
@@ -27,7 +32,7 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
         try
         {
             Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
-            Environment.SetEnvironmentVariable("Persistence__AutoMigrate", "true");
+            Environment.SetEnvironmentVariable("Persistence__AutoMigrate", " true ");
             Environment.SetEnvironmentVariable("ConnectionStrings__OpsDb", "Host=localhost;Database=nerv_iip_ops_guard;Username=nerv;Password=nerv");
 
             using var guardedFactory = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
@@ -42,35 +47,22 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
     }
 
     [Fact]
-    public void Operation_task_id_generation_does_not_count_existing_tasks()
+    public async Task Operation_task_id_generation_does_not_count_existing_tasks()
     {
-        var repositorySource = File.ReadAllText(Path.Combine(
-            FindRepositoryRoot(),
-            "backend",
-            "services",
-            "Ops",
-            "src",
-            "Nerv.IIP.Ops.Infrastructure",
-            "Repositories",
-            "OperationTaskRepository.cs"));
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        using var context = new ApplicationDbContext(options, mediator: null!);
+        var repository = new OperationTaskRepository(context);
 
-        Assert.DoesNotContain(".CountAsync(", repositorySource, StringComparison.Ordinal);
-    }
+        var first = (await repository.NextTaskIdAsync()).Id;
+        var second = (await repository.NextTaskIdAsync()).Id;
 
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "CLAUDE.md")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException("Could not find repository root.");
+        Assert.NotEqual(first, second);
+        Assert.StartsWith("op-", first, StringComparison.Ordinal);
+        Assert.StartsWith("op-", second, StringComparison.Ordinal);
+        Assert.True(Guid.TryParseExact(first["op-".Length..], "N", out _));
+        Assert.True(Guid.TryParseExact(second["op-".Length..], "N", out _));
     }
 
     private static IReadOnlyDictionary<string, string?> PreserveEnvironment(params string[] names)

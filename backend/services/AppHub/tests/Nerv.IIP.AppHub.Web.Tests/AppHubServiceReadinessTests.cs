@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
-
 namespace Nerv.IIP.AppHub.Web.Tests;
 
+[CollectionDefinition("readiness", DisableParallelization = true)]
+public sealed class ReadinessCollection;
+
+[Collection("readiness")]
 public sealed class AppHubServiceReadinessTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     [Fact]
@@ -18,7 +20,7 @@ public sealed class AppHubServiceReadinessTests(WebApplicationFactory<Program> f
         try
         {
             Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
-            Environment.SetEnvironmentVariable("Persistence__AutoMigrate", "true");
+            Environment.SetEnvironmentVariable("Persistence__AutoMigrate", " true ");
             Environment.SetEnvironmentVariable("ConnectionStrings__AppHubDb", "Host=localhost;Database=nerv_iip_apphub_guard;Username=nerv;Password=nerv");
 
             using var guardedFactory = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Production"));

@@ -566,6 +566,30 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     }
 
     [Fact]
+    public async Task Operation_template_get_returns_template_specific_not_found_message()
+    {
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/ops/v1/operation-templates/missing.template");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Contains("Operation template was not found", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Operation_template_create_rejects_unknown_risk_level()
+    {
+        var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/ops/v1/operation-templates",
+            new CreateOperationTemplateRequest("backup.snapshot.risk", "Backup snapshot", "{}", "experimental", 3, 300, false));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("risk level", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Operation_template_defaults_are_used_when_claiming_task()
     {
         var client = factory.CreateClient();
@@ -586,6 +610,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         var claim = Assert.Single(pending.Items);
         Assert.Equal(created.OperationTaskId, claim.OperationTaskId);
         Assert.Equal(4, claim.MaxAttempts);
+        Assert.Equal(900, claim.LeaseDurationSeconds);
         Assert.Equal(TimeSpan.FromSeconds(900), claim.LeasedUntilUtc - claim.LeasedAtUtc);
     }
 

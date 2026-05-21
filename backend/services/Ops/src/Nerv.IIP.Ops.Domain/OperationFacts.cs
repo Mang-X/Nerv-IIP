@@ -60,6 +60,7 @@ public static class OperationTaskMapper
                 x.LeasedAtUtc,
                 x.LeasedUntilUtc,
                 x.AttemptNo,
+                GetLeaseDurationSeconds(x.LeasedAtUtc, x.LeasedUntilUtc),
                 x.MaxAttempts,
                 x.AbandonReason))
             .ToList();
@@ -86,5 +87,10 @@ public static class OperationTaskMapper
             attemptSummaries.LastOrDefault()?.AttemptId,
             attemptSummaries,
             auditSummaries);
+    }
+
+    private static int GetLeaseDurationSeconds(DateTimeOffset leasedAtUtc, DateTimeOffset leasedUntilUtc)
+    {
+        return Math.Max(0, (int)(leasedUntilUtc - leasedAtUtc).TotalSeconds);
     }
 }
