@@ -333,10 +333,11 @@ function Invoke-NativeCommandInteractive {
         $stopwatch.Stop()
 
         if ($exitCode -ne 0) {
-            throw "Interactive command '$Command' exited with $exitCode after $($stopwatch.Elapsed)."
+            Write-Diagnostic -Level 'WARN' -Message "Interactive command exited non-zero: $Name (command=$Command, exitCode=$exitCode, pid=$rootProcessId, durationMs=$($stopwatch.ElapsedMilliseconds))"
         }
-
-        Write-Diagnostic "Interactive command completed: $Name (command=$Command, pid=$rootProcessId, durationMs=$($stopwatch.ElapsedMilliseconds))"
+        else {
+            Write-Diagnostic "Interactive command completed: $Name (command=$Command, pid=$rootProcessId, durationMs=$($stopwatch.ElapsedMilliseconds))"
+        }
 
         return [pscustomobject]@{
             Command = $Command

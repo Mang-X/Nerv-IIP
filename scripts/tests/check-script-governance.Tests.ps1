@@ -86,4 +86,9 @@ finally {
     }
 }
 
+$interactiveResult = Invoke-NativeCommandInteractive -Command 'pwsh' -Arguments @('-NoProfile', '-Command', 'exit 7') -Name 'interactive-exit-code-smoke'
+if ($interactiveResult.ExitCode -ne 7) {
+    throw "Expected interactive helper to return ExitCode 7, got $($interactiveResult.ExitCode)."
+}
+
 Write-Host 'Script governance fixture tests passed.'

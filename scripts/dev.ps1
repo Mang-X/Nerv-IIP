@@ -89,4 +89,5 @@ if ($NoBuild) {
     $arguments += '--no-build'
 }
 
-Invoke-DotNetInteractive -Arguments $arguments -WorkingDirectory $root -Name 'dev-apphost' | Out-Null
+$result = Invoke-DotNetInteractive -Arguments $arguments -WorkingDirectory $root -Name 'dev-apphost'
+exit $result.ExitCode
