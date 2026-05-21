@@ -7,7 +7,7 @@
 | Item | Link |
 |---|---|
 | Nerv-IIP repository | [Mang-X/Nerv-IIP](https://github.com/Mang-X/Nerv-IIP) |
-| Current baseline | 第五阶段 Release-grade Persistence Foundation 已合入；当前第六阶段已完成 schema governance hardening，状态见 [implementation-readiness.md](implementation-readiness.md) 与 [schema-governance design](../superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md)。 |
+| Current baseline | 当前能力基线随主平台实现持续演进；最新实施状态、Phase 8 控制台能力和统一本地开发入口见 [implementation-readiness.md](implementation-readiness.md)。 |
 
 ## Frontend
 
@@ -39,7 +39,7 @@
 | FastEndpoints | Required endpoint framework for platform HTTP APIs. | [FastEndpoints docs](https://fast-endpoints.com/) | [FastEndpoints/FastEndpoints](https://github.com/FastEndpoints/FastEndpoints) |
 | FastEndpoints.Swagger | Required Gateway OpenAPI generation path. | [FastEndpoints Swagger docs](https://fast-endpoints.com/docs/swagger-support) | [FastEndpoints/FastEndpoints](https://github.com/FastEndpoints/FastEndpoints) |
 | netcorepal-cloud-framework | Required backend architectural baseline for platform domain services; AppHub and Ops have adopted the CleanDDD/netcorepal shape in the fourth slice. | [netcorepal-cloud-framework docs](https://netcorepal.github.io/netcorepal-cloud-framework/) | [netcorepal/netcorepal-cloud-framework](https://github.com/netcorepal/netcorepal-cloud-framework) |
-| Aspire AppHost | Required deployment/development orchestration baseline; platform-level AppHost exists at `infra/aspire/Nerv.IIP.AppHost` and currently covers AppHub, Ops, Gateway, Connector Host, PostgreSQL, Redis and RabbitMQ. | [.NET Aspire docs](https://learn.microsoft.com/dotnet/aspire/) | [dotnet/aspire](https://github.com/dotnet/aspire) |
+| Aspire AppHost | Required deployment/development orchestration baseline; platform-level AppHost exists at `infra/aspire/Nerv.IIP.AppHost` and currently covers PlatformGateway, AppHub, IAM, Ops, FileStorage, Connector Host, Console, PostgreSQL, Redis, RabbitMQ, MinIO and OpenTelemetry Collector. | [.NET Aspire docs](https://learn.microsoft.com/dotnet/aspire/) | [dotnet/aspire](https://github.com/dotnet/aspire) |
 | .NET Aspire Dashboard | Selected Microsoft-official, self-hostable, open-source short-term observability UI for local development, integration and PoC diagnostics; not a production log persistence backend. | [Aspire Dashboard docs](https://aspire.dev/dashboard/standalone/) | [microsoft/aspire](https://github.com/microsoft/aspire) |
 | PowerShell | Required verification-script runtime. | [PowerShell docs](https://learn.microsoft.com/powershell/) | [PowerShell/PowerShell](https://github.com/PowerShell/PowerShell) |
 | OpenTelemetry | Required observability baseline. | [OpenTelemetry .NET docs](https://opentelemetry.io/docs/languages/dotnet/) | [open-telemetry/opentelemetry-dotnet](https://github.com/open-telemetry/opentelemetry-dotnet) |
@@ -55,7 +55,7 @@
 | GaussDB / DMDB | Template-supported domestic database profile candidates for 信创 validation; not the default profile and not production-supported in Nerv-IIP until provider, CAP storage, migrations and tests are verified in this repo. | [NetCorePal.Template package](https://www.nuget.org/packages/NetCorePal.Template) | [netcorepal-cloud-template template.json](https://github.com/netcorepal/netcorepal-cloud-template/blob/main/template/.template.config/template.json) |
 | Redis | Required cache/backplane baseline; fourth-stage AppHost and local compose include Redis, while individual service cache behavior remains staged by feature need. | [Redis docs](https://redis.io/docs/latest/) | [redis/redis](https://github.com/redis/redis) |
 | RabbitMQ | Required messaging baseline; fourth-stage AppHost, compose and AppHub/Ops CAP wiring include RabbitMQ, but business integration-event outbox behavior remains follow-up scope. | [RabbitMQ docs](https://www.rabbitmq.com/docs) | [rabbitmq/rabbitmq-server](https://github.com/rabbitmq/rabbitmq-server) |
-| S3-compatible object storage | Frozen object-storage baseline; local development uses the Silo-compatible `pgsty/minio:RELEASE.2026-04-17T00-00-00Z` runtime image, while FileStorage continues to depend on the provider abstraction for MinIO, AIStor or equivalent S3-compatible backends. | [MinIO/AIStor S3 compatibility reference](https://docs.min.io/community/minio-object-store/reference/s3-api-compatibility.html) | [pgsty/minio local runtime image](https://hub.docker.com/r/pgsty/minio) |
+| S3-compatible object storage | Frozen object-storage baseline; local development uses the S3-compatible local runtime image `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`, while FileStorage continues to depend on the provider abstraction for MinIO, AIStor or equivalent S3-compatible backends. | [MinIO/AIStor S3 compatibility reference](https://docs.min.io/community/minio-object-store/reference/s3-api-compatibility.html) | [pgsty/minio local runtime image](https://hub.docker.com/r/pgsty/minio) |
 | Qdrant | Frozen vector-store baseline for future knowledge/RAG work. | [Qdrant docs](https://qdrant.tech/documentation/) | [qdrant/qdrant](https://github.com/qdrant/qdrant) |
 
 ## AI And Knowledge
