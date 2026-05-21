@@ -191,6 +191,11 @@ public static class NervIipObservabilityRegistration
     internal static SerilogOtlpProtocol ReadSerilogOtlpProtocol(IConfiguration configuration, string endpoint)
     {
         var configuredProtocol = ReadConfiguredOtlpProtocol(configuration);
+        if (IsHttpProtobufProtocol(configuredProtocol))
+        {
+            return SerilogOtlpProtocol.HttpProtobuf;
+        }
+
         if (Enum.TryParse<SerilogOtlpProtocol>(configuredProtocol, ignoreCase: true, out var protocol))
         {
             return protocol;

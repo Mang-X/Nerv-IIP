@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Observability;
 using OpenTelemetry.Exporter;
+using Serilog.Sinks.OpenTelemetry;
 
 namespace Nerv.IIP.Observability.Tests;
 
@@ -111,6 +112,19 @@ public sealed class NervIipObservabilityRegistrationTests
         var protocol = NervIipObservabilityRegistration.ReadOpenTelemetryOtlpProtocol(configuration, "http://collector:9999");
 
         Assert.Equal(OtlpExportProtocol.HttpProtobuf, protocol);
+    }
+
+    [Fact]
+    public void ReadSerilogOtlpProtocol_ShouldSupportStandardHttpProtobufValue()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["OpenTelemetry:Protocol"] = "http/protobuf"
+        });
+
+        var protocol = NervIipObservabilityRegistration.ReadSerilogOtlpProtocol(configuration, "http://collector:9999");
+
+        Assert.Equal(OtlpProtocol.HttpProtobuf, protocol);
     }
 
     [Fact]
