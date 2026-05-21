@@ -4,13 +4,23 @@
     <ProjectReference Include="..\Nerv.IIP.Notification.Domain\Nerv.IIP.Notification.Domain.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Notification.Infrastructure\Nerv.IIP.Notification.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Notification\Nerv.IIP.Contracts.Notification.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="DotNetCore.CAP.RabbitMQ" />
     <PackageReference Include="FastEndpoints" />
     <PackageReference Include="FluentValidation.AspNetCore" />
     <PackageReference Include="MediatR" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="NetCorePal.Context.AspNetCore" />
+    <PackageReference Include="NetCorePal.Context.CAP" />
+    <PackageReference Include="NetCorePal.Context.Shared" />
     <PackageReference Include="NetCorePal.Extensions.AspNetCore" />
+    <PackageReference Include="NetCorePal.Extensions.DistributedTransactions.CAP.PostgreSQL" />
     <PackageReference Include="NetCorePal.Extensions.Primitives" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />

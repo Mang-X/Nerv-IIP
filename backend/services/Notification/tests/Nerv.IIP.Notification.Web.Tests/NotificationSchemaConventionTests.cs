@@ -11,6 +11,7 @@ using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Infrastructure.Migrations;
 using Nerv.IIP.Notification.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Testing.EntityFramework;
+using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
@@ -48,6 +49,9 @@ public sealed class NotificationSchemaConventionTests
         AssertTable(fixture.DbContext, typeof(NotificationTask), "notification_tasks");
         AssertTable(fixture.DbContext, typeof(DeliveryAttempt), "delivery_attempts");
         AssertTable(fixture.DbContext, typeof(ProcessedIntegrationEvent), "processed_integration_events");
+        AssertTable(fixture.DbContext, typeof(PublishedMessage), "cap_published_messages");
+        AssertTable(fixture.DbContext, typeof(ReceivedMessage), "cap_received_messages");
+        AssertTable(fixture.DbContext, typeof(CapLock), "cap_locks");
 
         AssertUniqueIndex(
             fixture.DbContext,
@@ -149,6 +153,20 @@ public sealed class NotificationSchemaConventionTests
         AssertForeignKeyOperation(migrationBuilder, "delivery_attempts", "notification_messages", "NotificationMessageId");
     }
 
+    [Fact]
+    public void Notification_cap_storage_migration_contains_required_tables()
+    {
+        var migration = new AddNotificationCapStorage();
+        var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddNotificationCapStorage)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [migrationBuilder]);
+
+        AssertCreateTable(migrationBuilder, "cap_published_messages");
+        AssertCreateTable(migrationBuilder, "cap_received_messages");
+        AssertCreateTable(migrationBuilder, "cap_locks");
+    }
+
     private static SchemaFixture CreateFixture()
     {
         var services = new ServiceCollection();
@@ -222,6 +240,14 @@ public sealed class NotificationSchemaConventionTests
             Assert.NotNull(operation.IsDescending);
             Assert.Equal([false, false, true], operation.IsDescending);
         }
+    }
+
+    private static void AssertCreateTable(MigrationBuilder migrationBuilder, string tableName)
+    {
+        var operation = migrationBuilder.Operations
+            .OfType<CreateTableOperation>()
+            .SingleOrDefault(x => x.Schema == "notification" && x.Name == tableName);
+        Assert.NotNull(operation);
     }
 
     private static void AssertForeignKeyOperation(MigrationBuilder migrationBuilder, string tableName, string principalTableName, params string[] columns)
