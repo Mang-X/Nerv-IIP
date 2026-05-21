@@ -288,6 +288,87 @@ function Invoke-DotNet {
     Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
 }
 
+function Invoke-NativeCommandInteractive {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Command,
+
+        [string[]] $Arguments = @(),
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [string] $Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        $Name = [System.IO.Path]::GetFileNameWithoutExtension($Command)
+    }
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Command
+    $startInfo.WorkingDirectory = $WorkingDirectory
+    $startInfo.UseShellExecute = $false
+
+    foreach ($argument in $Arguments) {
+        [void] $startInfo.ArgumentList.Add($argument)
+    }
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $rootProcessId = $null
+
+    try {
+        $displayArguments = Protect-ScriptAutomationText ($Arguments -join ' ')
+        Write-Diagnostic "Starting interactive $Name`: $Command $displayArguments (cwd=$WorkingDirectory)"
+
+        if (-not $process.Start()) {
+            throw "Failed to start command '$Command'."
+        }
+
+        $rootProcessId = $process.Id
+        $process.WaitForExit()
+        $exitCode = $process.ExitCode
+        $stopwatch.Stop()
+
+        if ($exitCode -ne 0) {
+            throw "Interactive command '$Command' exited with $exitCode after $($stopwatch.Elapsed)."
+        }
+
+        Write-Diagnostic "Interactive command completed: $Name (command=$Command, pid=$rootProcessId, durationMs=$($stopwatch.ElapsedMilliseconds))"
+
+        return [pscustomobject]@{
+            Command = $Command
+            Arguments = $Arguments
+            WorkingDirectory = $WorkingDirectory
+            ExitCode = $exitCode
+            Duration = $stopwatch.Elapsed
+            ProcessId = $rootProcessId
+        }
+    }
+    finally {
+        if ($process -and $rootProcessId -and -not $process.HasExited) {
+            Stop-ProcessTree -ProcessId $process.Id -Reason "Finally cleanup for interactive $Command" | Out-Null
+        }
+
+        $process.Dispose()
+    }
+}
+
+function Invoke-DotNetInteractive {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [string] $Name = 'dotnet'
+    )
+
+    Invoke-NativeCommandInteractive -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
+}
+
 function Invoke-Pnpm {
     param(
         [Parameter(Mandatory)]

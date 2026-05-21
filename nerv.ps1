@@ -3,6 +3,14 @@ param(
     [Parameter(Position = 0)]
     [string] $Command = 'help',
 
+    [switch] $NoBuild,
+
+    [switch] $InfraOnly,
+
+    [switch] $OpenDashboard,
+
+    [switch] $Help,
+
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $RemainingArguments = @()
 )
@@ -56,7 +64,21 @@ switch ($Command.ToLowerInvariant()) {
             exit 1
         }
 
-        & $devScript @RemainingArguments
+        $devParameters = @{}
+        if ($NoBuild) {
+            $devParameters['NoBuild'] = $true
+        }
+        if ($InfraOnly) {
+            $devParameters['InfraOnly'] = $true
+        }
+        if ($OpenDashboard) {
+            $devParameters['OpenDashboard'] = $true
+        }
+        if ($Help) {
+            $devParameters['Help'] = $true
+        }
+
+        & $devScript @devParameters @RemainingArguments
         exit $LASTEXITCODE
     }
     'ports' {

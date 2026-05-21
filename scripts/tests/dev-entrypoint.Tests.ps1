@@ -68,13 +68,15 @@ if (-not $unknown.Output.Contains("Unknown command 'unknown-command'")) {
     throw "Unknown command output was not helpful. Output: $($unknown.Output)"
 }
 
-$dev = Invoke-Nerv -Arguments @('dev', '-NoBuild')
-if ($dev.ExitCode -eq 0) {
-    throw "Expected dev command to fail while scripts/dev.ps1 is absent. Output: $($dev.Output)"
+$devHelp = Invoke-Nerv -Arguments @('dev', '-Help')
+if ($devHelp.ExitCode -ne 0) {
+    throw "Expected dev -Help to exit 0, got $($devHelp.ExitCode). Output: $($devHelp.Output)"
 }
 
-if (-not $dev.Output.Contains('Development script not found')) {
-    throw "Dev command output was not helpful while scripts/dev.ps1 is absent. Output: $($dev.Output)"
+foreach ($expected in @('-NoBuild', '-InfraOnly', '-OpenDashboard', 'Aspire AppHost')) {
+    if (-not $devHelp.Output.Contains($expected)) {
+        throw "dev -Help output did not contain '$expected'. Output: $($devHelp.Output)"
+    }
 }
 
 Write-Host 'Development entrypoint smoke tests passed.'
