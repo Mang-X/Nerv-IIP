@@ -189,8 +189,15 @@ public sealed class PostgreSqlIamAuthService(
             ipAddress);
 
         await userSessionRepository.AddAsync(session, cancellationToken);
+        var membership = await membershipRepository.GetFirstByUserIdAsync(user.Id, cancellationToken);
         var issuedAtUtc = DateTimeOffset.UtcNow;
-        var accessToken = tokenService.CreateAccessToken(user, session);
+        var accessToken = membership is null
+            ? tokenService.CreateAccessToken(user, session)
+            : tokenService.CreateAccessToken(
+                user,
+                session,
+                membership.OrganizationId.Id,
+                membership.EnvironmentId.Id);
         var expiresAtUtc = tokenService.GetAccessTokenExpiresAtUtc(issuedAtUtc);
         return new AuthResponse(accessToken, refreshToken, session.Id.Id, expiresAtUtc);
     }

@@ -81,6 +81,12 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Contains(jwt.Audiences, audience => audience == "nerv-iip-api");
         Assert.Equal("user-admin", principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value);
         Assert.Equal(auth.SessionId, principal.FindFirst("sessionId")?.Value);
+        Assert.Equal("user", principal.FindFirst("principalType")?.Value);
+        Assert.Equal("admin", principal.FindFirst("loginName")?.Value);
+        Assert.Equal("admin@nerv-iip.local", principal.FindFirst("email")?.Value);
+        Assert.Equal("org-001", principal.FindFirst("organizationId")?.Value);
+        Assert.Equal("env-dev", principal.FindFirst("environmentId")?.Value);
+        Assert.Equal("1", principal.FindFirst("permissionVersion")?.Value);
 
         _client.DefaultRequestHeaders.Authorization = new("Bearer", auth.AccessToken);
         var me = await _client.GetAsync("/api/iam/v1/me");

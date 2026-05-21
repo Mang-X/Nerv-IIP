@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
+using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace Nerv.IIP.PlatformGateway.Web.Application.Auth;
 
@@ -121,7 +123,8 @@ public static class GatewayAuthorization
         ConsolePrincipalResponse principal;
         try
         {
-            principal = await iam.GetMeAsync(bearerToken, cancellationToken);
+            principal = TryCreatePrincipalFromClaims(context.User)
+                ?? await iam.GetMeAsync(bearerToken, cancellationToken);
         }
         catch (GatewayAuthException ex)
         {
@@ -154,5 +157,50 @@ public static class GatewayAuthorization
 
         context.Items[PrincipalItemKey] = result;
         return (bearerToken, principal);
+    }
+
+    private static ConsolePrincipalResponse? TryCreatePrincipalFromClaims(ClaimsPrincipal user)
+    {
+        var principalId = FirstClaimValue(user, JwtRegisteredClaimNames.Sub, ClaimTypes.NameIdentifier);
+        var principalType = FirstClaimValue(user, "principalType");
+        var loginName = FirstClaimValue(user, "loginName", ClaimTypes.Name);
+        var email = FirstClaimValue(user, "email", ClaimTypes.Email);
+        var organizationId = FirstClaimValue(user, "organizationId");
+        var environmentId = FirstClaimValue(user, "environmentId");
+        var permissionVersionValue = FirstClaimValue(user, "permissionVersion");
+        if (string.IsNullOrWhiteSpace(principalId)
+            || string.IsNullOrWhiteSpace(principalType)
+            || string.IsNullOrWhiteSpace(loginName)
+            || string.IsNullOrWhiteSpace(email)
+            || string.IsNullOrWhiteSpace(organizationId)
+            || string.IsNullOrWhiteSpace(environmentId)
+            || !int.TryParse(permissionVersionValue, out var permissionVersion))
+        {
+            return null;
+        }
+
+        return new ConsolePrincipalResponse(
+            principalId,
+            principalType,
+            loginName,
+            email,
+            organizationId,
+            environmentId,
+            permissionVersion,
+            []);
+    }
+
+    private static string? FirstClaimValue(ClaimsPrincipal user, params string[] claimTypes)
+    {
+        foreach (var claimType in claimTypes)
+        {
+            var value = user.FindFirstValue(claimType);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
     }
 }
