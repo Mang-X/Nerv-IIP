@@ -1,0 +1,11 @@
+global using NetCorePal.Extensions.AspNetCore;
+global using NetCorePal.Extensions.DependencyInjection;
+global using Microsoft.Extensions.DependencyInjection;
+global using Nerv.IIP.Business.MasterData.Domain;
+global using Nerv.IIP.Business.MasterData.Infrastructure;
+global using FluentValidation;
+global using NetCorePal.Extensions.Primitives;
+global using MediatR;
+global using NetCorePal.Extensions.Domain;
+global using NetCorePal.Extensions.Dto;
+global using NetCorePal.Extensions.DistributedTransactions;

@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+    <File Path="Directory.Packages.props" />
+    <File Path="eng/versions.props" />
+    <File Path="global.json" />
+    <File Path="NuGet.config" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Nerv.IIP.Business.MasterData.Domain/Nerv.IIP.Business.MasterData.Domain.csproj" />
+    <Project Path="src/Nerv.IIP.Business.MasterData.Infrastructure/Nerv.IIP.Business.MasterData.Infrastructure.csproj" />
+    <Project Path="src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/Nerv.IIP.Business.MasterData.Domain.Tests/Nerv.IIP.Business.MasterData.Domain.Tests.csproj" />
+    <Project Path="test/Nerv.IIP.Business.MasterData.Infrastructure.Tests/Nerv.IIP.Business.MasterData.Infrastructure.Tests.csproj" />
+    <Project Path="test/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj" />
+  </Folder>
+</Solution>
