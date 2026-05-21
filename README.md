@@ -37,6 +37,8 @@ Nerv-IIP 是一个从 0 到 1 规划的原生 AI 应用管理平台，可面向�
 - 业务平台领域架构：[docs/architecture/business-platform-domain-architecture.md](docs/architecture/business-platform-domain-architecture.md)
 - 业务平台完整规格：[docs/superpowers/specs/2026-05-20-business-platform-domain-design.md](docs/superpowers/specs/2026-05-20-business-platform-domain-design.md)
 - 业务平台实施计划入口：[docs/superpowers/plans/2026-05-20-business-main-platform-integration-readiness.md](docs/superpowers/plans/2026-05-20-business-main-platform-integration-readiness.md)
+- 移动端 PDA Capacitor PRD：[docs/superpowers/specs/2026-05-21-mobile-pda-capacitor-prd.md](docs/superpowers/specs/2026-05-21-mobile-pda-capacitor-prd.md)
+- 移动端 PDA Capacitor 架构：[docs/architecture/mobile-pda-capacitor-architecture.md](docs/architecture/mobile-pda-capacitor-architecture.md)
 - 仓库结构：[docs/architecture/repo-layout.md](docs/architecture/repo-layout.md)
 - 实施状态：[docs/architecture/implementation-readiness.md](docs/architecture/implementation-readiness.md)
 - 前端结构：[docs/architecture/frontend-structure.md](docs/architecture/frontend-structure.md)
@@ -180,20 +182,21 @@ Nerv-IIP/
 15. docs/architecture/third-vertical-slice-console.md
 16. docs/architecture/frontend-structure.md
 17. docs/architecture/api-contract-and-codegen.md
-18. docs/architecture/ai-boundaries.md
-19. docs/architecture/knowledge-source-lifecycle.md
-20. docs/architecture/backend-bootstrap-plan.md
-21. docs/architecture/implementation-readiness.md
-22. docs/architecture/deployment-baseline.md
-23. docs/architecture/technology-stack-references.md
-24. docs/architecture/fourth-vertical-slice-real-infra.md
-25. docs/architecture/frontend-design-system-planning.md
-26. docs/architecture/database-schema-conventions.md
-27. docs/architecture/database-schema-catalog.md
-28. docs/architecture/database-release-runbook.md
-29. docs/architecture/script-automation-governance.md
-30. docs/architecture/observability-baseline.md
-31. docs/architecture/connector-host-machine-auth.md
+18. docs/architecture/mobile-pda-capacitor-architecture.md
+19. docs/architecture/ai-boundaries.md
+20. docs/architecture/knowledge-source-lifecycle.md
+21. docs/architecture/backend-bootstrap-plan.md
+22. docs/architecture/implementation-readiness.md
+23. docs/architecture/deployment-baseline.md
+24. docs/architecture/technology-stack-references.md
+25. docs/architecture/fourth-vertical-slice-real-infra.md
+26. docs/architecture/frontend-design-system-planning.md
+27. docs/architecture/database-schema-conventions.md
+28. docs/architecture/database-schema-catalog.md
+29. docs/architecture/database-release-runbook.md
+30. docs/architecture/script-automation-governance.md
+31. docs/architecture/observability-baseline.md
+32. docs/architecture/connector-host-machine-auth.md
 
 ### 规格设计
 
@@ -202,6 +205,7 @@ Nerv-IIP/
 3. docs/superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md
 4. docs/superpowers/specs/2026-05-18-console-auth-shadcn-design.md
 5. docs/superpowers/specs/2026-05-20-business-platform-domain-design.md
+6. docs/superpowers/specs/2026-05-21-mobile-pda-capacitor-prd.md
 
 ### 实施计划
 

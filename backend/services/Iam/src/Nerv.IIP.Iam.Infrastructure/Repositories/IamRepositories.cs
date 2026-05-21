@@ -138,6 +138,7 @@ public sealed class RoleRepository(ApplicationDbContext context)
 
 public interface IMembershipRepository : IRepository<Membership, MembershipId>
 {
+    // Returns the stable first membership by organization and environment identifiers.
     Task<Membership?> GetFirstByUserIdAsync(UserId userId, CancellationToken cancellationToken = default);
     Task<bool> UserHasPermissionAsync(UserId userId, string permissionCode, CancellationToken cancellationToken = default);
     Task<bool> UserHasPermissionAsync(
@@ -162,7 +163,8 @@ public sealed class MembershipRepository(ApplicationDbContext context)
     {
         return await DbContext.Memberships
             .Where(x => x.UserId == userId)
-            .OrderBy(x => x.Id)
+            .OrderBy(x => x.OrganizationId)
+            .ThenBy(x => x.EnvironmentId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 

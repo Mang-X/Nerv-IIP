@@ -134,6 +134,16 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `observability.diagnostics.read` | `user` / `internal-service` | environment + resource | 查看诊断包、日志包和归档元数据。 |
 | `observability.retention.manage` | `user` / `internal-service` | organization / environment | 管理日志 retention、清理任务和归档策略。 |
 
+### Mobile Platform
+
+`mobile.*` 权限码用于平台级移动设备管理、诊断和部署治理。它们区别于 `business.*` 业务执行权限：`mobile.*` 不表达收货、拣货、报工、检验或维修等业务动作；业务动作仍必须使用对应 `business.*` 权限码。PDA 执行业务操作时通常同时需要业务权限、组织/环境上下文和设备上下文；设备可见性或诊断上传再由 `mobile.*` 约束。
+
+| 权限码 | 建议 principalType | 建议 scope | 说明 |
+| --- | --- | --- | --- |
+| `mobile.devices.read` | `user` / `internal-service` | organization / environment + resource | 查看 PDA 设备、安装实例、App 版本、最近同步时间和失败摘要。 |
+| `mobile.devices.manage` | `user` / `internal-service` | organization / environment + resource | 登记、停用、解绑 PDA 设备，管理设备默认组织/环境和准入策略。 |
+| `mobile.diagnostics.write` | `user` / `external-client` | environment + resource | PDA 上传脱敏诊断摘要、同步队列摘要、设备信息和最近错误。 |
+
 ### Business Platform
 
 业务平台权限码用于 ADR 0012 定义的关键链路领域扩展。它们尚未进入 IAM seed；后续实现对应业务服务时，必须按本表进入 IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。
@@ -201,4 +211,4 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 2. 对外 API、Gateway facade、SDK 和服务间调用不得各自发明未登记权限码。
 3. `connector-host` 和 `external-client` 必须同时校验 organization、environment、resource 或 capability scope；不得只校验权限码。
 4. `internal-service` 只能表达服务到服务调用身份，不得作为绕过最终用户、外部客户端或 Connector Host 授权的后门。
-5. Notification、Knowledge、AI Integration 和 Observability 首次实现时，应在对应服务文档中链接本文档，并标明实际 seed 状态。
+5. Notification、Knowledge、AI Integration、Observability 和 Mobile Platform 首次实现时，应在对应服务文档中链接本文档，并标明实际 seed 状态。
