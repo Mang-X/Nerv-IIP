@@ -9,13 +9,14 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@nerv-iip/ui'
-import { ActivityIcon, KeyRoundIcon, LayersIcon, ShieldIcon, UsersIcon } from 'lucide-vue-next'
+import { BellIcon, LayersIcon, ShieldIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const navItems: NavItem[] = [
   { title: 'Instances', icon: LayersIcon, to: { name: '/' } },
+  { title: 'Notifications', icon: BellIcon, to: { path: '/notifications' } },
   {
     title: 'IAM',
     icon: ShieldIcon,

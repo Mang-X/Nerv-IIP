@@ -122,6 +122,197 @@
         ]
       }
     },
+    "/api/console/v1/notifications/messages": {
+      "get": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "listConsoleNotificationMessages",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/console/v1/notifications/tasks": {
+      "get": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "listConsoleNotificationTasks",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfNotificationTaskListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/console/v1/notifications/intents": {
+      "post": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "submitConsoleNotificationIntent",
+        "requestBody": {
+          "x-name": "SubmitNotificationIntentRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPContractsNotificationSubmitNotificationIntentRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfNotificationIntentResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/console/v1/notifications/messages/{messageId}/read": {
+      "post": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "markConsoleNotificationMessageRead",
+        "parameters": [
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfMarkNotificationMessageReadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/console/v1/notifications/messages/read-batch": {
+      "post": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "markConsoleNotificationMessagesRead",
+        "requestBody": {
+          "x-name": "MarkNotificationMessagesReadRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPContractsNotificationMarkNotificationMessagesReadRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfMarkNotificationMessageReadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/console/v1/instances": {
       "get": {
         "tags": [
@@ -1257,6 +1448,313 @@
       "NervIIPPlatformGatewayWebEndpointsOperationsGetConsoleOperationTaskRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsNotificationNotificationMessageListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsNotificationNotificationMessageListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsNotificationNotificationMessageResponse"
+            }
+          }
+        }
+      },
+      "NervIIPContractsNotificationNotificationMessageResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "intentId": {
+            "type": "string"
+          },
+          "recipientRef": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "resource": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsNotificationNotificationResourceRef"
+              }
+            ]
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsNotificationNotificationResourceRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resourceType": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "fileId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfNotificationTaskListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsNotificationNotificationTaskListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsNotificationNotificationTaskListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsNotificationNotificationTaskResponse"
+            }
+          }
+        }
+      },
+      "NervIIPContractsNotificationNotificationTaskResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "recipientRef": {
+            "type": "string"
+          },
+          "taskType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "actionRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfNotificationIntentResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsNotificationNotificationIntentResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsNotificationNotificationIntentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "type": "string"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsNotificationNotificationMessageResponse"
+            }
+          }
+        }
+      },
+      "NervIIPContractsNotificationSubmitNotificationIntentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceService": {
+            "type": "string"
+          },
+          "sourceEventType": {
+            "type": "string"
+          },
+          "sourceEventId": {
+            "type": "string"
+          },
+          "intentType": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "dedupeKey": {
+            "type": "string"
+          },
+          "resource": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsNotificationNotificationResourceRef"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "suggestedRecipientRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfMarkNotificationMessageReadResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsNotificationMarkNotificationMessageReadResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsNotificationMarkNotificationMessageReadResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "readAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfMarkNotificationMessageReadResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "$ref": "#/components/schemas/NervIIPContractsNotificationMarkNotificationMessageReadResponse"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsNotificationMarkNotificationMessagesReadRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messageIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "NetCorePalExtensionsDtoResponseDataOfInstanceListResponse": {
         "allOf": [

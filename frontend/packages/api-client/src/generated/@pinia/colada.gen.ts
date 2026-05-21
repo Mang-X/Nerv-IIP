@@ -4,8 +4,8 @@ import { type _JSONValue, defineQueryOptions, type UseMutationOptions } from '@p
 
 import { serializeQueryKeyValue } from '../client';
 import { client } from '../client.gen';
-import { createConsoleIamRole, createConsoleIamUser, disableConsoleIamUser, getBuildInfoEndpoint, getConsoleInstanceDetail, getConsoleOperationTask, getConsolePrincipal, healthEndpoint, invalidateGatewayCacheEndpoint, listConsoleIamPermissions, listConsoleIamRoles, listConsoleIamSessions, listConsoleIamUsers, listConsoleInstances, loginConsoleUser, logoutConsoleSession, type Options, refreshConsoleSession, resetConsoleIamUserPassword, restartConsoleInstance, revokeConsoleIamSession, updateConsoleIamRolePermissions, updateConsoleIamUser } from '../sdk.gen';
-import type { CreateConsoleIamRoleData, CreateConsoleIamRoleResponse, CreateConsoleIamUserData, CreateConsoleIamUserResponse, DisableConsoleIamUserData, DisableConsoleIamUserResponse, GetBuildInfoEndpointData, GetBuildInfoEndpointResponse, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponse, GetConsoleOperationTaskData, GetConsoleOperationTaskResponse, GetConsolePrincipalData, GetConsolePrincipalResponse, HealthEndpointData, HealthEndpointResponse, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponse, ListConsoleIamPermissionsData, ListConsoleIamPermissionsResponse, ListConsoleIamRolesData, ListConsoleIamRolesResponse, ListConsoleIamSessionsData, ListConsoleIamSessionsResponse, ListConsoleIamUsersData, ListConsoleIamUsersResponse, ListConsoleInstancesData, ListConsoleInstancesResponse, LoginConsoleUserData, LoginConsoleUserResponse, LogoutConsoleSessionData, LogoutConsoleSessionResponse, RefreshConsoleSessionData, RefreshConsoleSessionResponse, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordResponse, RestartConsoleInstanceData, RestartConsoleInstanceResponse, RevokeConsoleIamSessionData, RevokeConsoleIamSessionResponse, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsResponse, UpdateConsoleIamUserData, UpdateConsoleIamUserResponse } from '../types.gen';
+import { createConsoleIamRole, createConsoleIamUser, disableConsoleIamUser, getBuildInfoEndpoint, getConsoleInstanceDetail, getConsoleOperationTask, getConsolePrincipal, healthEndpoint, invalidateGatewayCacheEndpoint, listConsoleIamPermissions, listConsoleIamRoles, listConsoleIamSessions, listConsoleIamUsers, listConsoleInstances, listConsoleNotificationMessages, listConsoleNotificationTasks, loginConsoleUser, logoutConsoleSession, markConsoleNotificationMessageRead, markConsoleNotificationMessagesRead, type Options, refreshConsoleSession, resetConsoleIamUserPassword, restartConsoleInstance, revokeConsoleIamSession, submitConsoleNotificationIntent, updateConsoleIamRolePermissions, updateConsoleIamUser } from '../sdk.gen';
+import type { CreateConsoleIamRoleData, CreateConsoleIamRoleResponse, CreateConsoleIamUserData, CreateConsoleIamUserResponse, DisableConsoleIamUserData, DisableConsoleIamUserResponse, GetBuildInfoEndpointData, GetBuildInfoEndpointResponse, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponse, GetConsoleOperationTaskData, GetConsoleOperationTaskResponse, GetConsolePrincipalData, GetConsolePrincipalResponse, HealthEndpointData, HealthEndpointResponse, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponse, ListConsoleIamPermissionsData, ListConsoleIamPermissionsResponse, ListConsoleIamRolesData, ListConsoleIamRolesResponse, ListConsoleIamSessionsData, ListConsoleIamSessionsResponse, ListConsoleIamUsersData, ListConsoleIamUsersResponse, ListConsoleInstancesData, ListConsoleInstancesResponse, ListConsoleNotificationMessagesData, ListConsoleNotificationMessagesResponse, ListConsoleNotificationTasksData, ListConsoleNotificationTasksResponse, LoginConsoleUserData, LoginConsoleUserResponse, LogoutConsoleSessionData, LogoutConsoleSessionResponse, MarkConsoleNotificationMessageReadData, MarkConsoleNotificationMessageReadResponse, MarkConsoleNotificationMessagesReadData, MarkConsoleNotificationMessagesReadResponse, RefreshConsoleSessionData, RefreshConsoleSessionResponse, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordResponse, RestartConsoleInstanceData, RestartConsoleInstanceResponse, RevokeConsoleIamSessionData, RevokeConsoleIamSessionResponse, SubmitConsoleNotificationIntentData, SubmitConsoleNotificationIntentResponse, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsResponse, UpdateConsoleIamUserData, UpdateConsoleIamUserResponse } from '../types.gen';
 
 export const restartConsoleInstanceMutationOptions = (options?: Partial<Options<RestartConsoleInstanceData>>): UseMutationOptions<RestartConsoleInstanceResponse, Options<RestartConsoleInstanceData>, Error> => ({
     mutation: async (vars) => {
@@ -66,6 +66,67 @@ export const getConsoleOperationTaskQueryOptions = defineQueryOptions<Options<Ge
         return data;
     }
 }));
+
+export const listConsoleNotificationMessagesQueryKey = (options?: Options<ListConsoleNotificationMessagesData>) => createQueryKey('listConsoleNotificationMessages', options, ['Api']);
+
+export const listConsoleNotificationMessagesQueryOptions = defineQueryOptions<Options<ListConsoleNotificationMessagesData>, ListConsoleNotificationMessagesResponse, Error>((options?: Options<ListConsoleNotificationMessagesData>) => ({
+    key: listConsoleNotificationMessagesQueryKey(options),
+    query: async (context) => {
+        const { data } = await listConsoleNotificationMessages({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const listConsoleNotificationTasksQueryKey = (options?: Options<ListConsoleNotificationTasksData>) => createQueryKey('listConsoleNotificationTasks', options, ['Api']);
+
+export const listConsoleNotificationTasksQueryOptions = defineQueryOptions<Options<ListConsoleNotificationTasksData>, ListConsoleNotificationTasksResponse, Error>((options?: Options<ListConsoleNotificationTasksData>) => ({
+    key: listConsoleNotificationTasksQueryKey(options),
+    query: async (context) => {
+        const { data } = await listConsoleNotificationTasks({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const submitConsoleNotificationIntentMutationOptions = (options?: Partial<Options<SubmitConsoleNotificationIntentData>>): UseMutationOptions<SubmitConsoleNotificationIntentResponse, Options<SubmitConsoleNotificationIntentData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await submitConsoleNotificationIntent({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const markConsoleNotificationMessageReadMutationOptions = (options?: Partial<Options<MarkConsoleNotificationMessageReadData>>): UseMutationOptions<MarkConsoleNotificationMessageReadResponse, Options<MarkConsoleNotificationMessageReadData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await markConsoleNotificationMessageRead({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const markConsoleNotificationMessagesReadMutationOptions = (options?: Partial<Options<MarkConsoleNotificationMessagesReadData>>): UseMutationOptions<MarkConsoleNotificationMessagesReadResponse, Options<MarkConsoleNotificationMessagesReadData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await markConsoleNotificationMessagesRead({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
 
 export const listConsoleInstancesQueryKey = (options: Options<ListConsoleInstancesData>) => createQueryKey('listConsoleInstances', options, ['Api']);
 

@@ -70,6 +70,12 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("listConsoleIamPermissions", paths.GetProperty("/api/console/v1/iam/permissions").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("listConsoleIamSessions", paths.GetProperty("/api/console/v1/iam/sessions").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("revokeConsoleIamSession", paths.GetProperty("/api/console/v1/iam/sessions/{sessionId}/revoke").GetProperty("post").GetProperty("operationId").GetString());
+
+        Assert.Equal("listConsoleNotificationMessages", paths.GetProperty("/api/console/v1/notifications/messages").GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("listConsoleNotificationTasks", paths.GetProperty("/api/console/v1/notifications/tasks").GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("submitConsoleNotificationIntent", paths.GetProperty("/api/console/v1/notifications/intents").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("markConsoleNotificationMessageRead", paths.GetProperty("/api/console/v1/notifications/messages/{messageId}/read").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("markConsoleNotificationMessagesRead", paths.GetProperty("/api/console/v1/notifications/messages/read-batch").GetProperty("post").GetProperty("operationId").GetString());
     }
 
     private static void AssertJsonResponseSchema(JsonElement operation, string statusCode, string schemaName)

@@ -2,6 +2,13 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import { client } from './generated/client.gen'
 import type { ListConsoleInstancesData } from './generated/types.gen'
 import {
+  listConsoleNotificationMessagesQueryOptions,
+  listConsoleNotificationTasksQueryOptions,
+  markConsoleNotificationMessageReadMutationOptions,
+  markConsoleNotificationMessagesReadMutationOptions,
+  submitConsoleNotificationIntentMutationOptions,
+} from './console'
+import {
   createConsoleIamRoleMutationOptions,
   createConsoleIamUserMutationOptions,
   disableConsoleIamUserMutationOptions,
@@ -49,5 +56,13 @@ describe('generated API client contract', () => {
     expect(listConsoleIamPermissionsQueryOptions).toBeTypeOf('function')
     expect(listConsoleIamSessionsQueryOptions).toBeTypeOf('function')
     expect(revokeConsoleIamSessionMutationOptions).toBeTypeOf('function')
+  })
+
+  it('exports Console Notification generated operations through stable api-client entry points', () => {
+    expect(listConsoleNotificationMessagesQueryOptions).toBeTypeOf('function')
+    expect(listConsoleNotificationTasksQueryOptions).toBeTypeOf('function')
+    expect(submitConsoleNotificationIntentMutationOptions).toBeTypeOf('function')
+    expect(markConsoleNotificationMessageReadMutationOptions).toBeTypeOf('function')
+    expect(markConsoleNotificationMessagesReadMutationOptions).toBeTypeOf('function')
   })
 })

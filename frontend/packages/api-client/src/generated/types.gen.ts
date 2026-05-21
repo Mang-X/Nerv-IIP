@@ -63,6 +63,92 @@ export type NervIipPlatformGatewayWebEndpointsOperationsGetConsoleOperationTaskR
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationMessageListResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationMessageListResponse = {
+    items?: Array<NervIipContractsNotificationNotificationMessageResponse>;
+};
+
+export type NervIipContractsNotificationNotificationMessageResponse = {
+    messageId?: string;
+    intentId?: string;
+    recipientRef?: string;
+    status?: string;
+    severity?: string;
+    title?: string;
+    summary?: string;
+    resource?: NervIipContractsNotificationNotificationResourceRef | null;
+    createdAtUtc?: string;
+    readAtUtc?: string | null;
+};
+
+export type NervIipContractsNotificationNotificationResourceRef = {
+    resourceType?: string;
+    resourceId?: string;
+    fileId?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationTaskListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationTaskListResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationTaskListResponse = {
+    items?: Array<NervIipContractsNotificationNotificationTaskResponse>;
+};
+
+export type NervIipContractsNotificationNotificationTaskResponse = {
+    taskId?: string;
+    messageId?: string;
+    recipientRef?: string;
+    taskType?: string;
+    status?: string;
+    actionRef?: string | null;
+    createdAtUtc?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationIntentResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationIntentResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationIntentResponse = {
+    intentId?: string;
+    duplicate?: boolean;
+    messages?: Array<NervIipContractsNotificationNotificationMessageResponse>;
+};
+
+export type NervIipContractsNotificationSubmitNotificationIntentRequest = {
+    sourceService?: string;
+    sourceEventType?: string;
+    sourceEventId?: string;
+    intentType?: string;
+    severity?: string;
+    dedupeKey?: string;
+    resource?: NervIipContractsNotificationNotificationResourceRef | null;
+    title?: string;
+    summary?: string;
+    suggestedRecipientRefs?: Array<string>;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfMarkNotificationMessageReadResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationMarkNotificationMessageReadResponse | null;
+};
+
+export type NervIipContractsNotificationMarkNotificationMessageReadResponse = {
+    messageId?: string;
+    status?: string;
+    readAtUtc?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfMarkNotificationMessageReadResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipContractsNotificationMarkNotificationMessageReadResponse> | null;
+};
+
+export type NervIipContractsNotificationMarkNotificationMessagesReadRequest = {
+    messageIds?: Array<string>;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfInstanceListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsAppHubQueriesInstanceListResponse | null;
 };
@@ -336,6 +422,143 @@ export type GetConsoleOperationTaskResponses = {
 };
 
 export type GetConsoleOperationTaskResponse = GetConsoleOperationTaskResponses[keyof GetConsoleOperationTaskResponses];
+
+export type ListConsoleNotificationMessagesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/messages';
+};
+
+export type ListConsoleNotificationMessagesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListConsoleNotificationMessagesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse;
+};
+
+export type ListConsoleNotificationMessagesResponse = ListConsoleNotificationMessagesResponses[keyof ListConsoleNotificationMessagesResponses];
+
+export type ListConsoleNotificationTasksData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/tasks';
+};
+
+export type ListConsoleNotificationTasksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListConsoleNotificationTasksResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationTaskListResponse;
+};
+
+export type ListConsoleNotificationTasksResponse = ListConsoleNotificationTasksResponses[keyof ListConsoleNotificationTasksResponses];
+
+export type SubmitConsoleNotificationIntentData = {
+    body: NervIipContractsNotificationSubmitNotificationIntentRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/intents';
+};
+
+export type SubmitConsoleNotificationIntentErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type SubmitConsoleNotificationIntentResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationIntentResponse;
+};
+
+export type SubmitConsoleNotificationIntentResponse = SubmitConsoleNotificationIntentResponses[keyof SubmitConsoleNotificationIntentResponses];
+
+export type MarkConsoleNotificationMessageReadData = {
+    body?: never;
+    path: {
+        messageId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/notifications/messages/{messageId}/read';
+};
+
+export type MarkConsoleNotificationMessageReadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type MarkConsoleNotificationMessageReadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMarkNotificationMessageReadResponse;
+};
+
+export type MarkConsoleNotificationMessageReadResponse = MarkConsoleNotificationMessageReadResponses[keyof MarkConsoleNotificationMessageReadResponses];
+
+export type MarkConsoleNotificationMessagesReadData = {
+    body: NervIipContractsNotificationMarkNotificationMessagesReadRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/messages/read-batch';
+};
+
+export type MarkConsoleNotificationMessagesReadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type MarkConsoleNotificationMessagesReadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfMarkNotificationMessageReadResponse;
+};
+
+export type MarkConsoleNotificationMessagesReadResponse = MarkConsoleNotificationMessagesReadResponses[keyof MarkConsoleNotificationMessagesReadResponses];
 
 export type ListConsoleInstancesData = {
     body?: never;
