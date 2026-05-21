@@ -56,7 +56,7 @@ public sealed class GatewayConsoleIamAdminTests
         var response = await client.GetAsync("/api/console/v1/iam/users");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, iam.LastMeBearerToken);
+        Assert.Equal(0, iam.GetMeCallCount);
         Assert.Equal("iam.users.read", auth.LastRequirement!.PermissionCode);
         Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
         Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
@@ -146,9 +146,42 @@ public sealed class GatewayConsoleIamAdminTests
             CancellationToken.None);
 
         Assert.NotNull(authorized);
+        Assert.Equal(1, iam.GetMeCallCount);
         var item = Assert.IsType<GatewayAuthorizationResult>(context.Items[GatewayAuthorization.PrincipalItemKey]);
         Assert.Equal("auth-principal", item.PrincipalId);
         Assert.Equal("auth-login", item.LoginName);
+    }
+
+    [Fact]
+    public async Task Current_principal_permission_uses_complete_claims_without_get_me_call()
+    {
+        var auth = new DistinctGatewayAuthorizationClient();
+        var iam = new FakeGatewayIamAuthClient();
+        var context = CreateAuthenticatedHttpContext(
+            GatewayTestTokens.ValidAccessToken(),
+            [
+                new Claim("sub", "user-admin"),
+                new Claim("principalType", "user"),
+                new Claim("loginName", "admin"),
+                new Claim("email", "admin@nerv.local"),
+                new Claim("organizationId", "org-claims"),
+                new Claim("environmentId", "env-claims"),
+                new Claim("permissionVersion", "11")
+            ]);
+
+        var authorized = await GatewayAuthorization.RequireCurrentPrincipalPermissionAsync(
+            context,
+            iam,
+            auth,
+            "iam.users.read",
+            CancellationToken.None);
+
+        Assert.NotNull(authorized);
+        Assert.Equal(0, iam.GetMeCallCount);
+        Assert.Equal("org-claims", auth.LastRequirement!.OrganizationId);
+        Assert.Equal("env-claims", auth.LastRequirement.EnvironmentId);
+        Assert.Equal("user-admin", authorized.Value.Principal.PrincipalId);
+        Assert.Equal(11, authorized.Value.Principal.PermissionVersion);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(
@@ -165,7 +198,9 @@ public sealed class GatewayConsoleIamAdminTests
             services.AddSingleton<IGatewayIamAdminClient>(admin);
         }));
 
-    private static DefaultHttpContext CreateAuthenticatedHttpContext(string bearerToken)
+    private static DefaultHttpContext CreateAuthenticatedHttpContext(
+        string bearerToken,
+        IReadOnlyCollection<Claim>? claims = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -176,7 +211,10 @@ public sealed class GatewayConsoleIamAdminTests
 
         return new DefaultHttpContext
         {
-            RequestServices = services.BuildServiceProvider()
+            RequestServices = services.BuildServiceProvider(),
+            User = claims is null
+                ? new ClaimsPrincipal()
+                : new ClaimsPrincipal(new ClaimsIdentity(claims, TestAuthHandler.SchemeName))
         };
     }
 
@@ -214,11 +252,14 @@ public sealed class GatewayConsoleIamAdminTests
 
     private sealed class DistinctGatewayAuthorizationClient : IGatewayAuthorizationClient
     {
+        public GatewayPermissionRequirement? LastRequirement { get; private set; }
+
         public Task<GatewayAuthorizationResult> CheckAsync(
             string bearerToken,
             GatewayPermissionRequirement requirement,
             CancellationToken cancellationToken)
         {
+            LastRequirement = requirement;
             return Task.FromResult(GatewayAuthorizationResult.Allowed("auth-principal", "user", "auth-login"));
         }
     }
@@ -226,6 +267,7 @@ public sealed class GatewayConsoleIamAdminTests
     private sealed class FakeGatewayIamAuthClient : IGatewayIamAuthClient
     {
         public string? LastMeBearerToken { get; private set; }
+        public int GetMeCallCount { get; private set; }
 
         public Task<ConsoleAuthResponse> LoginAsync(ConsoleLoginRequest request, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
@@ -238,6 +280,7 @@ public sealed class GatewayConsoleIamAdminTests
 
         public Task<ConsolePrincipalResponse> GetMeAsync(string bearerToken, CancellationToken cancellationToken)
         {
+            GetMeCallCount++;
             LastMeBearerToken = bearerToken;
             return Task.FromResult(Principal);
         }
