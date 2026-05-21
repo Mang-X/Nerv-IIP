@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check
+#   Category: verify
 #   SideEffects:
 #     - Starts the local Nerv-IIP platform through Aspire AppHost or dependency services through Docker Compose
 #   Writes:

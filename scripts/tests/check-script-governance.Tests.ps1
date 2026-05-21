@@ -120,12 +120,21 @@ try {
     }
 
     $helperContent = Get-Content -Path $helper -Raw
-    $protectLogFileMatch = [regex]::Match($helperContent, '(?s)function Protect-ScriptAutomationLogFile\s*\{.*?\n\}')
-    if (-not $protectLogFileMatch.Success) {
+    $parseErrors = $null
+    $helperAst = [System.Management.Automation.Language.Parser]::ParseInput($helperContent, [ref]$null, [ref]$parseErrors)
+    if ($parseErrors -and $parseErrors.Count -gt 0) {
+        throw "Failed to parse ScriptAutomation helper: $($parseErrors[0].Message)"
+    }
+
+    $protectLogFileAst = $helperAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Protect-ScriptAutomationLogFile'
+    }, $true)
+    if (-not $protectLogFileAst) {
         throw 'Could not find Protect-ScriptAutomationLogFile implementation.'
     }
 
-    if ($protectLogFileMatch.Value -match 'Get-Content\s+\$Path\s+-Raw') {
+    if ($protectLogFileAst.Extent.Text -match 'Get-Content\s+\$Path\s+-Raw') {
         throw 'Protect-ScriptAutomationLogFile must stream log redaction instead of using Get-Content -Raw.'
     }
 }
