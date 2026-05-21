@@ -40,7 +40,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: process.env.NERV_IIP_GATEWAY_URL ?? 'http://127.0.0.1:58204',
+        target: process.env.NERV_IIP_GATEWAY_URL ?? 'http://127.0.0.1:58205',
         changeOrigin: true,
       },
     },

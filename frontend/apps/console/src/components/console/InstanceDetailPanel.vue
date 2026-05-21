@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { Badge } from '@nerv-iip/ui'
+import {
+  Badge,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Separator,
+  Skeleton,
+} from '@nerv-iip/ui'
 import type { InstanceDetailResponse } from '@nerv-iip/api-client'
 import { computed } from 'vue'
 
@@ -13,21 +21,17 @@ type Capability = NonNullable<InstanceDetailResponse['capabilities']>[number]
 const metadataEntries = computed(() => Object.entries(props.instance?.metadata ?? {}))
 
 function badgeVariant(status?: string | null) {
-  const normalized = status?.toLowerCase()
-
-  return normalized === 'failed' ||
-    normalized === 'unhealthy' ||
-    normalized === 'stopped' ||
-    normalized === 'cancelled' ||
-    normalized === 'canceled'
+  const s = status?.toLowerCase()
+  return s === 'failed' || s === 'unhealthy' || s === 'stopped' || s === 'cancelled' || s === 'canceled'
     ? 'destructive'
-    : 'secondary'
+    : s === 'running' || s === 'healthy'
+      ? 'success'
+      : 'secondary'
 }
 
 function capabilityKey(capability: Capability, index: number) {
   const code = capability.capabilityCode ?? 'unknown'
   const version = capability.capabilityVersion ?? 'unversioned'
-
   return capability.capabilityCode && capability.capabilityVersion
     ? `capability:${code}:${version}`
     : `capability:${code}:${version}:${index}`
@@ -35,192 +39,102 @@ function capabilityKey(capability: Capability, index: number) {
 </script>
 
 <template>
-  <aside class="detail-panel" aria-labelledby="detail-panel-title">
-    <div class="detail-panel__header">
-      <p class="detail-panel__eyebrow">Selected</p>
-      <h2 id="detail-panel-title" class="detail-panel__title">
+  <Card class="min-w-0" aria-labelledby="detail-panel-title">
+    <CardHeader class="pb-3">
+      <p class="text-xs font-bold uppercase tracking-wider text-primary">Selected</p>
+      <CardTitle id="detail-panel-title" class="text-lg">
         {{ instance?.instanceName ?? instance?.instanceKey ?? 'Instance detail' }}
-      </h2>
-    </div>
+      </CardTitle>
+    </CardHeader>
 
-    <p v-if="pending" class="detail-panel__muted">Loading detail...</p>
+    <Separator />
 
-    <template v-else-if="instance">
-      <dl class="detail-panel__facts">
-        <div class="detail-panel__fact">
-          <dt>Application</dt>
-          <dd>{{ instance.applicationName ?? instance.applicationKey ?? 'Unknown' }}</dd>
+    <CardContent class="pt-4">
+      <template v-if="pending">
+        <div class="flex flex-col gap-3">
+          <Skeleton v-for="i in 6" :key="i" class="h-4 w-full" />
         </div>
-        <div class="detail-panel__fact">
-          <dt>Node</dt>
-          <dd>{{ instance.nodeName ?? instance.nodeKey ?? 'Unassigned' }}</dd>
-        </div>
-        <div class="detail-panel__fact">
-          <dt>Status</dt>
-          <dd>
-            <Badge :variant="badgeVariant(instance.reportedStatus)">
-              {{ instance.reportedStatus ?? 'unknown' }}
-            </Badge>
-          </dd>
-        </div>
-        <div class="detail-panel__fact">
-          <dt>Health</dt>
-          <dd>
-            <Badge :variant="badgeVariant(instance.healthStatus)">
-              {{ instance.healthStatus ?? 'unknown' }}
-            </Badge>
-          </dd>
-        </div>
-        <div class="detail-panel__fact">
-          <dt>Last heartbeat</dt>
-          <dd>{{ instance.lastHeartbeatAtUtc ?? 'Not reported' }}</dd>
-        </div>
-        <div class="detail-panel__fact">
-          <dt>Last state</dt>
-          <dd>{{ instance.lastStateObservedAtUtc ?? 'Not reported' }}</dd>
-        </div>
-      </dl>
+      </template>
 
-      <section class="detail-panel__section" aria-labelledby="capabilities-title">
-        <h3 id="capabilities-title" class="detail-panel__section-title">Capabilities</h3>
-        <ul v-if="instance.capabilities?.length" class="detail-panel__capabilities">
-          <li
-            v-for="(capability, index) in instance.capabilities"
-            :key="capabilityKey(capability, index)"
-            class="detail-panel__capability"
-          >
-            <span class="detail-panel__capability-code">{{
-              capability.capabilityCode ?? 'unknown'
-            }}</span>
-            <span class="detail-panel__muted">{{ capability.category ?? 'uncategorized' }}</span>
-            <span class="detail-panel__muted">{{
-              capability.supportedOperations?.join(', ') ?? 'No operations'
-            }}</span>
-          </li>
-        </ul>
-        <p v-else class="detail-panel__muted">No capabilities reported.</p>
-      </section>
-
-      <section class="detail-panel__section" aria-labelledby="metadata-title">
-        <h3 id="metadata-title" class="detail-panel__section-title">Metadata</h3>
-        <dl v-if="metadataEntries.length" class="detail-panel__metadata">
-          <div
-            v-for="[key, value] in metadataEntries"
-            :key="key"
-            class="detail-panel__metadata-row"
-          >
-            <dt>{{ key }}</dt>
-            <dd>{{ value }}</dd>
+      <template v-else-if="instance">
+        <dl class="grid gap-3">
+          <div class="grid gap-0.5">
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Application</dt>
+            <dd class="break-anywhere text-sm">{{ instance.applicationName ?? instance.applicationKey ?? 'Unknown' }}</dd>
+          </div>
+          <div class="grid gap-0.5">
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Node</dt>
+            <dd class="break-anywhere text-sm">{{ instance.nodeName ?? instance.nodeKey ?? 'Unassigned' }}</dd>
+          </div>
+          <div class="grid gap-0.5">
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Status</dt>
+            <dd>
+              <Badge :variant="badgeVariant(instance.reportedStatus)">
+                {{ instance.reportedStatus ?? 'unknown' }}
+              </Badge>
+            </dd>
+          </div>
+          <div class="grid gap-0.5">
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Health</dt>
+            <dd>
+              <Badge :variant="badgeVariant(instance.healthStatus)">
+                {{ instance.healthStatus ?? 'unknown' }}
+              </Badge>
+            </dd>
+          </div>
+          <div class="grid gap-0.5">
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Last heartbeat</dt>
+            <dd class="text-sm">{{ instance.lastHeartbeatAtUtc ?? 'Not reported' }}</dd>
+          </div>
+          <div class="grid gap-0.5">
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Last state</dt>
+            <dd class="text-sm">{{ instance.lastStateObservedAtUtc ?? 'Not reported' }}</dd>
           </div>
         </dl>
-        <p v-else class="detail-panel__muted">No metadata reported.</p>
-      </section>
-    </template>
 
-    <p v-else class="detail-panel__muted">Select an instance to inspect its runtime facts.</p>
-  </aside>
+        <Separator class="my-4" />
+
+        <section aria-labelledby="capabilities-title">
+          <h3 id="capabilities-title" class="mb-3 text-sm font-semibold">Capabilities</h3>
+          <ul v-if="instance.capabilities?.length" class="flex flex-col gap-2 p-0 list-none m-0">
+            <li
+              v-for="(capability, index) in instance.capabilities"
+              :key="capabilityKey(capability, index)"
+              class="flex flex-col gap-0.5 rounded-md border bg-muted/40 p-3"
+            >
+              <span class="break-anywhere text-sm font-semibold">
+                {{ capability.capabilityCode ?? 'unknown' }}
+              </span>
+              <span class="text-xs text-muted-foreground">{{ capability.category ?? 'uncategorized' }}</span>
+              <span class="text-xs text-muted-foreground">
+                {{ capability.supportedOperations?.join(', ') ?? 'No operations' }}
+              </span>
+            </li>
+          </ul>
+          <p v-else class="text-sm text-muted-foreground">No capabilities reported.</p>
+        </section>
+
+        <Separator class="my-4" />
+
+        <section aria-labelledby="metadata-title">
+          <h3 id="metadata-title" class="mb-3 text-sm font-semibold">Metadata</h3>
+          <dl v-if="metadataEntries.length" class="flex flex-col gap-2 m-0">
+            <div
+              v-for="[key, value] in metadataEntries"
+              :key="key"
+              class="grid gap-0.5"
+            >
+              <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">{{ key }}</dt>
+              <dd class="break-anywhere text-sm m-0">{{ value }}</dd>
+            </div>
+          </dl>
+          <p v-else class="text-sm text-muted-foreground">No metadata reported.</p>
+        </section>
+      </template>
+
+      <p v-else class="text-sm text-muted-foreground">
+        Select an instance to inspect its runtime facts.
+      </p>
+    </CardContent>
+  </Card>
 </template>
-
-<style scoped>
-.detail-panel {
-  background: var(--legacy-color-surface);
-  border: 1px solid var(--legacy-color-border);
-  border-radius: 0.5rem;
-  box-shadow: 0 10px 30px rgb(15 23 42 / 0.05);
-  min-width: 0;
-  padding: 1.15rem;
-}
-
-.detail-panel__header {
-  border-bottom: 1px solid var(--legacy-color-border);
-  margin: 0 -1.15rem 1rem;
-  padding: 0 1.15rem 1rem;
-}
-
-.detail-panel__eyebrow {
-  color: var(--legacy-color-accent);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  margin: 0 0 0.25rem;
-  text-transform: uppercase;
-}
-
-.detail-panel__title {
-  font-size: 1.1rem;
-  line-height: 1.25;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.detail-panel__facts {
-  display: grid;
-  gap: 0.75rem;
-  margin: 0;
-}
-
-.detail-panel__fact,
-.detail-panel__metadata-row {
-  display: grid;
-  gap: 0.25rem;
-}
-
-.detail-panel__fact dt,
-.detail-panel__metadata-row dt {
-  color: var(--legacy-color-text-muted);
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.detail-panel__fact dd,
-.detail-panel__metadata-row dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.detail-panel__section {
-  border-top: 1px solid var(--legacy-color-border);
-  margin-top: 1rem;
-  padding-top: 1rem;
-}
-
-.detail-panel__section-title {
-  font-size: 0.92rem;
-  margin: 0 0 0.7rem;
-}
-
-.detail-panel__capabilities {
-  display: grid;
-  gap: 0.65rem;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.detail-panel__capability {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.45rem;
-  display: grid;
-  gap: 0.25rem;
-  padding: 0.7rem;
-}
-
-.detail-panel__capability-code {
-  font-weight: 800;
-  overflow-wrap: anywhere;
-}
-
-.detail-panel__metadata {
-  display: grid;
-  gap: 0.65rem;
-  margin: 0;
-}
-
-.detail-panel__muted {
-  color: var(--legacy-color-text-muted);
-  margin: 0;
-}
-</style>

@@ -47,10 +47,10 @@ function submit() {
 </script>
 
 <template>
-  <Card class="w-full">
+  <Card class="border-none shadow-none">
     <form class="flex flex-col gap-4" @submit.prevent="submit">
-      <CardHeader>
-        <CardTitle>Sign in</CardTitle>
+      <CardHeader class="text-center">
+        <CardTitle class="text-xl">Sign in</CardTitle>
         <CardDescription>Use your Console account to continue.</CardDescription>
       </CardHeader>
 

@@ -73,14 +73,7 @@ const emit = defineEmits<{
             {{ user.userId || '-' }}
           </TableCell>
           <TableCell>
-            <Badge
-              :variant="user.enabled === false ? 'secondary' : 'outline'"
-              :class="
-                user.enabled === false
-                  ? undefined
-                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              "
-            >
+            <Badge :variant="user.enabled === false ? 'secondary' : 'success'">
               {{ user.enabled === false ? 'Disabled' : 'Enabled' }}
             </Badge>
           </TableCell>

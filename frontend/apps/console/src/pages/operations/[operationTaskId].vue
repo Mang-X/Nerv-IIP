@@ -21,8 +21,13 @@ const { operationError, operationPending, operationTask } = useOperationTask(ope
 
 <template>
   <DefaultLayout>
-    <div class="operation-page">
-      <RouterLink class="operation-page__back" to="/">Back to instances</RouterLink>
+    <div class="flex flex-col gap-4">
+      <RouterLink
+        class="w-fit text-sm font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+        to="/"
+      >
+        ← Back to instances
+      </RouterLink>
       <Alert v-if="operationError" variant="destructive">
         <AlertDescription>{{ operationError.message }}</AlertDescription>
       </Alert>
@@ -30,22 +35,3 @@ const { operationError, operationPending, operationTask } = useOperationTask(ope
     </div>
   </DefaultLayout>
 </template>
-
-<style scoped>
-.operation-page {
-  display: grid;
-  gap: 0.9rem;
-}
-
-.operation-page__back {
-  color: var(--legacy-color-accent);
-  font-weight: 800;
-  text-decoration: none;
-  width: fit-content;
-}
-
-.operation-page__back:hover,
-.operation-page__back:focus-visible {
-  text-decoration: underline;
-}
-</style>

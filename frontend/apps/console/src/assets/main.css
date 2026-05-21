@@ -1,3 +1,4 @@
+
 @import 'tailwindcss';
 
 @source '../../../../packages/ui/src';
@@ -11,17 +12,6 @@
 
 :root {
   color-scheme: light;
-  --legacy-color-page: #f7f8fa;
-  --legacy-color-surface: #ffffff;
-  --legacy-color-border: #d8dde6;
-  --legacy-color-text: #172033;
-  --legacy-color-text-muted: #62708a;
-  --legacy-color-accent: #256f67;
-  --legacy-color-on-accent: #ffffff;
-  --legacy-color-danger: #b8323a;
-  --legacy-color-on-danger: #ffffff;
-  --legacy-color-success: #15724b;
-  --legacy-color-warning: #9a6200;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -62,8 +52,6 @@
 
 body {
   margin: 0;
-  background: var(--legacy-color-page);
-  color: var(--legacy-color-text);
   font-family:
     ui-sans-serif,
     system-ui,
@@ -71,11 +59,6 @@ body {
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
-}
-
-button,
-input {
-  font: inherit;
 }
 
 @theme inline {

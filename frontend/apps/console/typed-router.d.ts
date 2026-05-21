@@ -93,43 +93,43 @@ declare module 'vue-router/auto-routes' {
    * @internal
    */
   export interface _RouteFileInfoMap {
-    'apps/console/src/pages/index.vue': {
+    'src/pages/index.vue': {
       routes:
         | '/'
       views:
         | never
     }
-    'apps/console/src/pages/[...path].vue': {
+    'src/pages/[...path].vue': {
       routes:
         | '/[...path]'
       views:
         | never
     }
-    'apps/console/src/pages/iam/roles/index.vue': {
+    'src/pages/iam/roles/index.vue': {
       routes:
         | '/iam/roles/'
       views:
         | never
     }
-    'apps/console/src/pages/iam/sessions/index.vue': {
+    'src/pages/iam/sessions/index.vue': {
       routes:
         | '/iam/sessions/'
       views:
         | never
     }
-    'apps/console/src/pages/iam/users/index.vue': {
+    'src/pages/iam/users/index.vue': {
       routes:
         | '/iam/users/'
       views:
         | never
     }
-    'apps/console/src/pages/login.vue': {
+    'src/pages/login.vue': {
       routes:
         | '/login'
       views:
         | never
     }
-    'apps/console/src/pages/operations/[operationTaskId].vue': {
+    'src/pages/operations/[operationTaskId].vue': {
       routes:
         | '/operations/[operationTaskId]'
       views:
