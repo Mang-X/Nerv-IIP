@@ -124,7 +124,11 @@ public sealed class InMemoryIamAuthService(InMemoryIamStore store, IamTokenServi
             result.UserId,
             result.SessionId,
             result.SecurityStamp,
-            result.PermissionVersion);
+            result.PermissionVersion,
+            result.LoginName,
+            result.Email,
+            result.OrganizationId,
+            result.EnvironmentId);
         return new AuthResponse(accessToken, result.RefreshToken, result.SessionId, result.ExpiresAtUtc);
     }
 }
