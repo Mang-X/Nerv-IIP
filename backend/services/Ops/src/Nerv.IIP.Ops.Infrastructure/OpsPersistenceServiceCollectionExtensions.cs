@@ -23,6 +23,7 @@ public static class OpsPersistenceServiceCollectionExtensions
             services.AddRepositories(typeof(ApplicationDbContext).Assembly);
             services.AddUnitOfWork<ApplicationDbContext>();
             services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();
+            services.AddScoped<IOperationTemplateRepository, OperationTemplateRepository>();
             return services;
         }
 

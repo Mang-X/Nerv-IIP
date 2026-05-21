@@ -42,3 +42,70 @@ public sealed record OperationTaskFailedPayload(
     string OperationCode,
     DateTimeOffset FinishedAtUtc,
     string? FailureCode);
+
+public sealed record OperationTaskRequestedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationTaskRequestedPayload Payload);
+
+public sealed record OperationTaskRequestedPayload(
+    string OperationTaskId,
+    string InstanceKey,
+    string OperationCode,
+    string RequestedBy,
+    DateTimeOffset RequestedAtUtc);
+
+public sealed record OperationTaskClaimedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationTaskClaimedPayload Payload);
+
+public sealed record OperationTaskClaimedPayload(
+    string OperationTaskId,
+    string AttemptId,
+    string InstanceKey,
+    string OperationCode,
+    string LeaseId,
+    DateTimeOffset LeasedAtUtc,
+    DateTimeOffset LeasedUntilUtc,
+    int AttemptNo,
+    int MaxAttempts);
+
+public sealed record AuditRecordedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    AuditRecordedPayload Payload);
+
+public sealed record AuditRecordedPayload(
+    string AuditRecordId,
+    string OperationTaskId,
+    string Action,
+    string Actor,
+    DateTimeOffset OccurredAtUtc);

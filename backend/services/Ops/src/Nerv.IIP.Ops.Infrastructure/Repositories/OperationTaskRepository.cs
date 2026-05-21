@@ -70,10 +70,10 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<OperationTaskId> NextTaskIdAsync(CancellationToken cancellationToken = default)
+    public Task<OperationTaskId> NextTaskIdAsync(CancellationToken cancellationToken = default)
     {
-        var count = await DbContext.OperationTasks.CountAsync(cancellationToken);
-        return new OperationTaskId($"op-{count + 1:000000}");
+        _ = cancellationToken;
+        return Task.FromResult(new OperationTaskId($"op-{Guid.CreateVersion7():N}"));
     }
 
     public Task<OperationAttemptId> NextAttemptIdAsync(CancellationToken cancellationToken = default)

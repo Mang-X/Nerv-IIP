@@ -55,6 +55,45 @@ public sealed class OpsStateStoreTests
     }
 
     [Fact]
+    public void Claimed_task_uses_template_attempt_and_lease_defaults()
+    {
+        var store = new InMemoryOpsStateStore();
+        store.CreateTemplate(
+            new CreateOperationTemplateRequest(
+                "backup.snapshot",
+                "Backup snapshot",
+                "{}",
+                "medium",
+                4,
+                900,
+                RequiresApproval: false),
+            Now);
+        store.Create(CreateRequest("idem-template-defaults") with { OperationCode = "backup.snapshot" }, Now);
+
+        var dispatch = Assert.Single(store.ClaimPending(
+            new ClaimOperationTasksRequest("org-001", "env-dev", "connector-host-001", 1, LeaseDurationSeconds: 30, MaxAttempts: 1),
+            Now.AddSeconds(1)).Items);
+
+        Assert.Equal(4, dispatch.MaxAttempts);
+        Assert.Equal(900, dispatch.LeaseDurationSeconds);
+        Assert.Equal(Now.AddSeconds(901), dispatch.LeasedUntilUtc);
+    }
+
+    [Fact]
+    public void Template_creation_normalizes_operation_code_before_duplicate_check()
+    {
+        var store = new InMemoryOpsStateStore();
+        store.CreateTemplate(new CreateOperationTemplateRequest("backup.snapshot", "Backup", "{}", "low", 3, 300, false), Now);
+
+        var duplicate = () => store.CreateTemplate(
+            new CreateOperationTemplateRequest(" backup.snapshot ", "Backup", "{}", "low", 3, 300, false),
+            Now);
+
+        var ex = Assert.Throws<InvalidOperationTaskRequestException>(duplicate);
+        Assert.Contains("already exists", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Result_with_wrong_connector_host_is_rejected_without_mutating_task()
     {
         var store = new InMemoryOpsStateStore();

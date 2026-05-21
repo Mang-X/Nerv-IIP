@@ -27,6 +27,9 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.IdempotencyScope).IsRequired().HasMaxLength(512).HasComment("Organization and environment scoped idempotency key.");
         builder.Property(x => x.CorrelationId).IsRequired().HasMaxLength(128).HasComment("Correlation identifier.");
         builder.Property(x => x.ParametersJson).IsRequired().HasComment("JSON operation parameter dictionary produced by Gateway and Ops task creation, consumed by Connector Host execution; additive optional keys are compatible, required key or semantic changes require Ops contract versioning.");
+        builder.Property(x => x.DefaultMaxAttempts).HasComment("Template-provided default maximum execution attempts captured at task creation.");
+        builder.Property(x => x.DefaultLeaseDurationSeconds).HasComment("Template-provided default connector lease duration captured at task creation.");
+        builder.Property(x => x.RequiresApproval).HasComment("Whether the selected template requires approval before task execution.");
         builder.Property(x => x.Deleted).HasConversion(x => x.Value, x => new Deleted(x)).HasComment("Soft delete flag.");
         builder.Property(x => x.RowVersion).HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version.");
 

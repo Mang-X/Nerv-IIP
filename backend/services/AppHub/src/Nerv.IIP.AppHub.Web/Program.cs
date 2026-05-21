@@ -11,6 +11,12 @@ using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 var usePostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
+var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
+if (usePostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for AppHub in Development. Use an explicit migrator, release script or migration bundle outside Development.");
+}
+
 builder.Services.AddFastEndpoints();
 builder.Services.AddMediatR(configuration =>
 {
@@ -53,7 +59,7 @@ if (usePostgreSql)
 }
 
 var app = builder.Build();
-if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigrate"))
+if (usePostgreSql && autoMigrate)
 {
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>().MigrateAsync();

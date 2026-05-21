@@ -1,11 +1,14 @@
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 
 namespace Nerv.IIP.Ops.Domain;
 
 public abstract class OpsStateException(string message) : Exception(message);
 public sealed class OperationTaskNotFoundException(string operationTaskId)
     : OpsStateException($"Operation task was not found: {operationTaskId}");
+public sealed class OperationTemplateNotFoundException(string operationCode)
+    : OpsStateException($"Operation template was not found: {operationCode}");
 public sealed class InvalidOperationResultException(string message) : OpsStateException(message);
 public sealed class InvalidOperationTaskRequestException(string message) : OpsStateException(message);
 
@@ -13,6 +16,11 @@ public interface IOpsStateStore
 {
     OperationTaskResponse Create(CreateOperationTaskRequest request, DateTimeOffset now);
     OperationTaskResponse Get(string operationTaskId);
+    PagedOperationTaskListResponse ListTasks(string organizationId, string environmentId, int? page, int? pageSize);
+    AuditRecordListResponse ListAuditRecords(string organizationId, string environmentId, string? operationTaskId);
+    OperationTemplateResponse CreateTemplate(CreateOperationTemplateRequest request, DateTimeOffset now);
+    OperationTemplateListResponse ListTemplates();
+    OperationTemplateResponse GetTemplate(string operationCode);
     PendingOperationTasksResponse ClaimPending(ClaimOperationTasksRequest request, DateTimeOffset now);
     OperationTaskResponse AbandonLease(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now);
     OperationTaskResponse HeartbeatLease(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now);
@@ -21,8 +29,17 @@ public interface IOpsStateStore
 
 public sealed class InMemoryOpsStateStore : IOpsStateStore
 {
+    private const int MaxAuditRecordsResponseSize = 500;
     private readonly object _gate = new();
     private readonly Dictionary<string, string> _idempotency = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, OperationTemplateSnapshot> _templates = new(StringComparer.Ordinal)
+    {
+        ["lifecycle.restart"] = new OperationTemplateSnapshot("lifecycle.restart", true, 3, 300, false)
+    };
+    private readonly Dictionary<string, OperationTemplateResponse> _templateResponses = new(StringComparer.Ordinal)
+    {
+        ["lifecycle.restart"] = BuiltInTemplateResponse()
+    };
     private readonly List<OperationTaskFact> _tasks = [];
     private readonly List<OperationAttemptFact> _attempts = [];
     private readonly List<AuditRecordFact> _auditRecords = [];
@@ -37,9 +54,14 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                 return GetUnlocked(existingTaskId);
             }
 
-            if (!string.Equals(request.OperationCode, "lifecycle.restart", StringComparison.Ordinal))
+            if (!_templates.TryGetValue(request.OperationCode, out var template))
             {
                 throw new InvalidOperationTaskRequestException($"Unsupported operation code: {request.OperationCode}");
+            }
+
+            if (!template.Enabled)
+            {
+                throw new InvalidOperationTaskRequestException($"Cannot create task from disabled operation template: {request.OperationCode}");
             }
 
             var taskId = $"op-{_tasks.Count + 1:000000}";
@@ -54,7 +76,10 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                 now,
                 request.IdempotencyKey,
                 request.CorrelationId,
-                new Dictionary<string, string>(request.Parameters, StringComparer.Ordinal));
+                new Dictionary<string, string>(request.Parameters, StringComparer.Ordinal),
+                template.DefaultMaxAttempts,
+                template.DefaultLeaseDurationSeconds,
+                template.RequiresApproval);
 
             _tasks.Add(task);
             _idempotency[idempotencyScope] = taskId;
@@ -68,6 +93,123 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         lock (_gate)
         {
             return GetUnlocked(operationTaskId);
+        }
+    }
+
+    public PagedOperationTaskListResponse ListTasks(string organizationId, string environmentId, int? page, int? pageSize)
+    {
+        lock (_gate)
+        {
+            var resolvedPage = page is > 0 ? page.Value : 1;
+            var resolvedPageSize = pageSize is > 0 ? Math.Min(pageSize.Value, 200) : 20;
+            var query = _tasks
+                .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+                .OrderByDescending(x => x.RequestedAtUtc)
+                .ThenByDescending(x => x.OperationTaskId, StringComparer.Ordinal)
+                .ToArray();
+            var items = query
+                .Skip((resolvedPage - 1) * resolvedPageSize)
+                .Take(resolvedPageSize)
+                .Select(x => new OperationTaskListItem(
+                    x.OperationTaskId,
+                    x.OrganizationId,
+                    x.EnvironmentId,
+                    x.InstanceKey,
+                    x.OperationCode,
+                    x.Status,
+                    x.RequestedBy,
+                    x.RequestedAtUtc,
+                    _attempts
+                        .Where(a => a.OperationTaskId == x.OperationTaskId)
+                        .OrderByDescending(a => a.StartedAtUtc)
+                        .Select(a => a.AttemptId)
+                        .FirstOrDefault()))
+                .ToArray();
+
+            return new PagedOperationTaskListResponse(resolvedPage, resolvedPageSize, query.Length, items);
+        }
+    }
+
+    public AuditRecordListResponse ListAuditRecords(string organizationId, string environmentId, string? operationTaskId)
+    {
+        lock (_gate)
+        {
+            var taskIds = _tasks
+                .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+                .Where(x => string.IsNullOrWhiteSpace(operationTaskId) || x.OperationTaskId == operationTaskId)
+                .Select(x => x.OperationTaskId)
+                .ToHashSet(StringComparer.Ordinal);
+            var items = _auditRecords
+                .Where(x => taskIds.Contains(x.OperationTaskId))
+                .OrderByDescending(x => x.OccurredAtUtc)
+                .ThenByDescending(x => x.AuditRecordId, StringComparer.Ordinal)
+                .Take(MaxAuditRecordsResponseSize)
+                .Select(x => new AuditRecordSummary(
+                    x.AuditRecordId,
+                    x.OperationTaskId,
+                    x.Action,
+                    x.Actor,
+                    x.OccurredAtUtc,
+                    x.CorrelationId))
+                .ToArray();
+
+            return new AuditRecordListResponse(items);
+        }
+    }
+
+    public OperationTemplateResponse CreateTemplate(CreateOperationTemplateRequest request, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            var template = OperationTemplate.Create(
+                new OperationTemplateId($"opt-{Guid.CreateVersion7():N}"),
+                request.OperationCode,
+                request.DisplayName,
+                request.ParameterSchemaJson,
+                request.RiskLevel,
+                request.DefaultMaxAttempts,
+                request.DefaultLeaseDurationSeconds,
+                request.RequiresApproval,
+                now);
+            if (_templateResponses.ContainsKey(template.OperationCode))
+            {
+                throw new InvalidOperationTaskRequestException($"Operation template already exists: {template.OperationCode}");
+            }
+
+            var response = new OperationTemplateResponse(
+                template.Id.Id,
+                template.OperationCode,
+                template.DisplayName,
+                template.ParameterSchemaJson,
+                template.RiskLevel,
+                template.DefaultMaxAttempts,
+                template.DefaultLeaseDurationSeconds,
+                template.RequiresApproval,
+                template.Enabled,
+                template.CreatedAtUtc,
+                template.UpdatedAtUtc);
+            _templateResponses.Add(response.OperationCode, response);
+            _templates.Add(response.OperationCode, template.ToSnapshot());
+            return response;
+        }
+    }
+
+    public OperationTemplateListResponse ListTemplates()
+    {
+        lock (_gate)
+        {
+            return new OperationTemplateListResponse(
+                _templateResponses.Values.OrderBy(x => x.OperationCode, StringComparer.Ordinal).ToArray());
+        }
+    }
+
+    public OperationTemplateResponse GetTemplate(string operationCode)
+    {
+        lock (_gate)
+        {
+            return _templateResponses.TryGetValue(operationCode, out var template)
+                ? template
+                : throw new OperationTemplateNotFoundException(operationCode);
         }
     }
 
@@ -91,14 +233,14 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
             {
                 var attemptId = $"attempt-{_attempts.Count + 1:000000}";
                 var attemptNo = _attempts.Count(x => x.OperationTaskId == task.OperationTaskId) + 1;
-                var maxAttempts = Math.Clamp(request.MaxAttempts, 1, 10);
+                var maxAttempts = Math.Clamp(task.DefaultMaxAttempts, 1, 10);
                 if (attemptNo > maxAttempts)
                 {
                     ReplaceTask(task with { Status = "failed" });
                     continue;
                 }
 
-                var leaseDuration = TimeSpan.FromSeconds(Math.Clamp(request.LeaseDurationSeconds, 30, 3600));
+                var leaseDuration = TimeSpan.FromSeconds(Math.Clamp(task.DefaultLeaseDurationSeconds, 30, 3600));
                 var leasedUntilUtc = now.Add(leaseDuration);
                 var leaseId = Guid.NewGuid().ToString("N");
                 _attempts.Add(new OperationAttemptFact(
@@ -133,6 +275,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                     now,
                     leasedUntilUtc,
                     attemptNo,
+                    Math.Max(0, (int)leaseDuration.TotalSeconds),
                     maxAttempts));
             }
 
@@ -308,5 +451,22 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
     private void ReplaceAttempt(OperationAttemptFact attempt)
     {
         _attempts[_attempts.FindIndex(x => x.AttemptId == attempt.AttemptId)] = attempt;
+    }
+
+    private static OperationTemplateResponse BuiltInTemplateResponse()
+    {
+        var now = DateTimeOffset.Parse("2026-05-21T00:00:00Z");
+        return new OperationTemplateResponse(
+            "opt-lifecycle-restart",
+            "lifecycle.restart",
+            "Lifecycle restart",
+            "{}",
+            "low",
+            3,
+            300,
+            RequiresApproval: false,
+            Enabled: true,
+            now,
+            now);
     }
 }

@@ -104,6 +104,7 @@ public sealed class OperationLoopTests
             DateTimeOffset.Parse("2026-05-19T00:00:00Z"),
             DateTimeOffset.Parse("2026-05-19T00:05:00Z"),
             1,
+            300,
             3);
     }
 

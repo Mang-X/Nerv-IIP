@@ -24,6 +24,23 @@ public sealed record OperationTaskResponse(
     IReadOnlyList<OperationAttemptSummary> Attempts,
     IReadOnlyList<AuditRecordSummary> AuditRecords);
 
+public sealed record PagedOperationTaskListResponse(
+    int Page,
+    int PageSize,
+    int TotalCount,
+    IReadOnlyList<OperationTaskListItem> Items);
+
+public sealed record OperationTaskListItem(
+    string OperationTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string InstanceKey,
+    string OperationCode,
+    string Status,
+    string RequestedBy,
+    DateTimeOffset RequestedAtUtc,
+    string? CurrentAttemptId);
+
 public sealed record OperationAttemptSummary(
     string AttemptId,
     string Status,
@@ -34,6 +51,7 @@ public sealed record OperationAttemptSummary(
     DateTimeOffset LeasedAtUtc,
     DateTimeOffset LeasedUntilUtc,
     int AttemptNo,
+    int LeaseDurationSeconds,
     int MaxAttempts,
     string? AbandonReason);
 
@@ -45,6 +63,32 @@ public sealed record AuditRecordSummary(
     DateTimeOffset OccurredAtUtc,
     string CorrelationId);
 
+public sealed record AuditRecordListResponse(IReadOnlyList<AuditRecordSummary> Items);
+
+public sealed record CreateOperationTemplateRequest(
+    string OperationCode,
+    string DisplayName,
+    string ParameterSchemaJson,
+    string RiskLevel,
+    int DefaultMaxAttempts,
+    int DefaultLeaseDurationSeconds,
+    bool RequiresApproval);
+
+public sealed record OperationTemplateResponse(
+    string OperationTemplateId,
+    string OperationCode,
+    string DisplayName,
+    string ParameterSchemaJson,
+    string RiskLevel,
+    int DefaultMaxAttempts,
+    int DefaultLeaseDurationSeconds,
+    bool RequiresApproval,
+    bool Enabled,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record OperationTemplateListResponse(IReadOnlyList<OperationTemplateResponse> Items);
+
 public sealed record PendingOperationTasksResponse(IReadOnlyList<OperationTaskDispatchItem> Items);
 
 public sealed record ClaimOperationTasksRequest(
@@ -52,7 +96,13 @@ public sealed record ClaimOperationTasksRequest(
     string EnvironmentId,
     string ConnectorHostId,
     int Take,
+    /// <summary>
+    /// Ignored by Ops; claimed tasks use the lease duration captured from their operation template.
+    /// </summary>
     int LeaseDurationSeconds = 300,
+    /// <summary>
+    /// Ignored by Ops; claimed tasks use max attempts captured from their operation template.
+    /// </summary>
     int MaxAttempts = 3);
 
 public sealed record AbandonOperationTaskLeaseRequest(
@@ -83,4 +133,5 @@ public sealed record OperationTaskDispatchItem(
     DateTimeOffset LeasedAtUtc,
     DateTimeOffset LeasedUntilUtc,
     int AttemptNo,
+    int LeaseDurationSeconds,
     int MaxAttempts);
