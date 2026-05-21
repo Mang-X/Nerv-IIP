@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Nerv.IIP.Notification.Infrastructure;
+using Nerv.IIP.Notification.Infrastructure.Repositories;
 using NetCorePal.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Notification.Web.Application;
@@ -33,6 +34,7 @@ internal static class NotificationPersistenceServiceCollectionExtensions
         }
 
         services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddScoped<INotificationIntentRepository, NotificationIntentRepository>();
         return services;
     }
 }

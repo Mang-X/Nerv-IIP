@@ -27,7 +27,7 @@ public static class NotificationTaskStatuses
 
 public static class NotificationTaskTypes
 {
-    public const string Review = "notification.review";
+    public const string Review = "review";
 }
 
 public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
@@ -78,7 +78,7 @@ public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
 
         foreach (var recipientRef in recipientRefs)
         {
-            var messageId = new NotificationMessageId(Guid.NewGuid());
+            var messageId = new NotificationMessageId(Guid.CreateVersion7());
             var message = new NotificationMessage(
                 messageId,
                 Required(recipientRef, "Recipient ref is required."),
@@ -94,7 +94,7 @@ public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
             if (string.Equals(IntentType, NotificationIntentTypes.Task, StringComparison.Ordinal))
             {
                 _tasks.Add(new NotificationTask(
-                    new NotificationTaskId(Guid.NewGuid()),
+                    new NotificationTaskId(Guid.CreateVersion7()),
                     messageId,
                     message.RecipientRef,
                     NotificationTaskTypes.Review,

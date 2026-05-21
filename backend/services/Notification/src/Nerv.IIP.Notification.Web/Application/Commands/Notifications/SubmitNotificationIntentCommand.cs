@@ -1,7 +1,6 @@
-using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
-using Nerv.IIP.Notification.Infrastructure;
+using Nerv.IIP.Notification.Infrastructure.Repositories;
 using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.Primitives;
 
@@ -13,22 +12,19 @@ public sealed record SubmitNotificationIntentCommand(
     SubmitNotificationIntentRequest Request,
     DateTimeOffset Now) : ICommand<NotificationIntentResponse>;
 
-public sealed class SubmitNotificationIntentCommandHandler(ApplicationDbContext dbContext)
+public sealed class SubmitNotificationIntentCommandHandler(INotificationIntentRepository repository)
     : ICommandHandler<SubmitNotificationIntentCommand, NotificationIntentResponse>
 {
     public async Task<NotificationIntentResponse> Handle(SubmitNotificationIntentCommand command, CancellationToken cancellationToken)
     {
         var request = command.Request;
-        var existing = await dbContext.NotificationIntents
-            .Include(x => x.Messages)
-            .Include(x => x.Tasks)
-            .FirstOrDefaultAsync(x =>
-                x.OrganizationId == command.OrganizationId
-                && x.EnvironmentId == command.EnvironmentId
-                && x.SourceService == request.SourceService
-                && x.SourceEventType == request.SourceEventType
-                && x.DedupeKey == request.DedupeKey,
-                cancellationToken);
+        var existing = await repository.GetByDedupeKeyAsync(
+            command.OrganizationId,
+            command.EnvironmentId,
+            request.SourceService,
+            request.SourceEventType,
+            request.DedupeKey,
+            cancellationToken);
         if (existing is not null)
         {
             return existing.ToResponse(duplicate: true);
@@ -51,7 +47,7 @@ public sealed class SubmitNotificationIntentCommandHandler(ApplicationDbContext 
             request.SuggestedRecipientRefs,
             command.Now);
 
-        dbContext.NotificationIntents.Add(intent);
+        await repository.AddAsync(intent, cancellationToken);
         return intent.ToResponse(duplicate: false);
     }
 }
