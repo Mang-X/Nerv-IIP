@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.MasterData.Domain;
 
 namespace Nerv.IIP.Business.MasterData.Infrastructure;
 
@@ -18,6 +19,7 @@ public class DesignTimeApplicationDbContextFactory: IDesignTimeDbContextFactory<
                 b =>
                 {
                     b.MigrationsAssembly(typeof(DesignTimeApplicationDbContextFactory).Assembly.FullName);
+                    b.MigrationsHistoryTable("__EFMigrationsHistory", MasterDataFacts.Schema);
                 });
         });
         var provider = services.BuildServiceProvider();
