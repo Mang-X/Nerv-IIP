@@ -1,4 +1,5 @@
 .agents/skills/
+.claude/skills/
 .codex-review
 bin/
 obj/

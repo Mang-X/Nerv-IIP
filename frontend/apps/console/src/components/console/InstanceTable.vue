@@ -1,10 +1,21 @@
 <script setup lang="ts">
-import { Badge, Button } from '@nerv-iip/ui'
+import {
+  Badge,
+  Button,
+  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableEmpty,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@nerv-iip/ui'
 import type { InstanceListItem } from '@nerv-iip/api-client'
-import { computed } from 'vue'
 
 const props = defineProps<{
   instances: InstanceListItem[]
+  pending?: boolean
   restartPending?: boolean
   selectedInstanceKey?: string
 }>()
@@ -14,220 +25,106 @@ const emit = defineEmits<{
   selectInstance: [instanceKey: string]
 }>()
 
-const hasInstances = computed(() => props.instances.length > 0)
-
 function badgeVariant(status?: string | null) {
-  const normalized = status?.toLowerCase()
-
-  return normalized === 'failed' ||
-    normalized === 'unhealthy' ||
-    normalized === 'stopped' ||
-    normalized === 'cancelled' ||
-    normalized === 'canceled'
+  const s = status?.toLowerCase()
+  return s === 'failed' || s === 'unhealthy' || s === 'stopped' || s === 'cancelled' || s === 'canceled'
     ? 'destructive'
-    : 'secondary'
+    : s === 'running' || s === 'healthy'
+      ? 'success'
+      : 'secondary'
 }
 
 function instanceLabel(instance: InstanceListItem) {
   return instance.instanceName ?? instance.instanceKey ?? 'Unknown instance'
 }
 
-function instanceRowKey(instance: InstanceListItem, index: number) {
-  return (
-    instance.instanceKey ??
-    `instance:${instance.instanceName ?? instance.applicationKey ?? 'unknown'}:${index}`
-  )
-}
-
-function selectInstance(instance: InstanceListItem) {
-  if (instance.instanceKey) {
-    emit('selectInstance', instance.instanceKey)
-  }
-}
-
-function restartInstance(instance: InstanceListItem) {
-  if (instance.instanceKey) {
-    emit('restartInstance', instance.instanceKey)
-  }
+function rowKey(instance: InstanceListItem, index: number) {
+  return instance.instanceKey ?? `instance:${instance.instanceName ?? instance.applicationKey ?? 'unknown'}:${index}`
 }
 </script>
 
 <template>
-  <section class="instance-table" aria-labelledby="instance-table-title">
-    <div class="instance-table__header">
-      <div>
-        <p class="instance-table__eyebrow">Console</p>
-        <h1 id="instance-table-title" class="instance-table__title">Instances</h1>
+  <div class="overflow-hidden rounded-lg border bg-background">
+    <div class="flex items-center justify-between border-b px-5 py-4">
+      <div class="flex flex-col gap-0.5">
+        <p class="text-xs font-bold uppercase tracking-wider text-primary">Console</p>
+        <h1 class="text-xl font-semibold text-foreground">Instances</h1>
       </div>
-      <span class="instance-table__count">{{ instances.length }} total</span>
+      <span class="text-sm font-semibold text-muted-foreground">{{ instances.length }} total</span>
     </div>
 
-    <div v-if="hasInstances" class="instance-table__scroller">
-      <table class="instance-table__table">
-        <thead>
-          <tr>
-            <th scope="col">App</th>
-            <th scope="col">Instance</th>
-            <th scope="col">Node</th>
-            <th scope="col">Status</th>
-            <th scope="col">Health</th>
-            <th scope="col">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="(instance, index) in instances"
-            :key="instanceRowKey(instance, index)"
-            :class="{
-              'instance-table__row--selected': instance.instanceKey === selectedInstanceKey,
-            }"
-          >
-            <td>
-              <button
-                class="instance-table__select"
-                type="button"
-                @click="selectInstance(instance)"
-              >
-                <span class="instance-table__primary">{{
-                  instance.applicationName ?? instance.applicationKey ?? 'Unknown app'
-                }}</span>
-                <span class="instance-table__secondary">{{
-                  instance.version ?? 'Unversioned'
-                }}</span>
-              </button>
-            </td>
-            <td>{{ instanceLabel(instance) }}</td>
-            <td>{{ instance.nodeName ?? instance.nodeKey ?? 'Unassigned' }}</td>
-            <td>
-              <Badge :variant="badgeVariant(instance.reportedStatus)">
-                {{ instance.reportedStatus ?? 'unknown' }}
-              </Badge>
-            </td>
-            <td>
-              <Badge :variant="badgeVariant(instance.healthStatus)">
-                {{ instance.healthStatus ?? 'unknown' }}
-              </Badge>
-            </td>
-            <td>
-              <Button
-                :disabled="restartPending || !instance.instanceKey"
-                variant="outline"
-                @click="restartInstance(instance)"
-              >
-                Restart
-              </Button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <div class="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>App</TableHead>
+            <TableHead>Instance</TableHead>
+            <TableHead>Node</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Health</TableHead>
+            <TableHead class="w-24">Action</TableHead>
+          </TableRow>
+        </TableHeader>
 
-    <p v-else class="instance-table__empty">No instances found for this environment.</p>
-  </section>
+        <TableBody>
+          <template v-if="pending">
+            <TableRow v-for="i in 5" :key="i">
+              <TableCell><Skeleton class="h-4 w-32" /></TableCell>
+              <TableCell><Skeleton class="h-4 w-24" /></TableCell>
+              <TableCell><Skeleton class="h-4 w-20" /></TableCell>
+              <TableCell><Skeleton class="h-5 w-16 rounded-full" /></TableCell>
+              <TableCell><Skeleton class="h-5 w-16 rounded-full" /></TableCell>
+              <TableCell><Skeleton class="h-8 w-16" /></TableCell>
+            </TableRow>
+          </template>
+
+          <template v-else-if="instances.length">
+            <TableRow
+              v-for="(instance, index) in instances"
+              :key="rowKey(instance, index)"
+              :class="instance.instanceKey === selectedInstanceKey ? 'bg-primary/5' : ''"
+              class="cursor-pointer"
+              @click="instance.instanceKey && emit('selectInstance', instance.instanceKey)"
+            >
+              <TableCell>
+                <div class="flex flex-col gap-0.5">
+                  <span class="font-semibold">
+                    {{ instance.applicationName ?? instance.applicationKey ?? 'Unknown app' }}
+                  </span>
+                  <span class="text-xs text-muted-foreground">
+                    {{ instance.version ?? 'Unversioned' }}
+                  </span>
+                </div>
+              </TableCell>
+              <TableCell>{{ instanceLabel(instance) }}</TableCell>
+              <TableCell>{{ instance.nodeName ?? instance.nodeKey ?? 'Unassigned' }}</TableCell>
+              <TableCell>
+                <Badge :variant="badgeVariant(instance.reportedStatus)">
+                  {{ instance.reportedStatus ?? 'unknown' }}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Badge :variant="badgeVariant(instance.healthStatus)">
+                  {{ instance.healthStatus ?? 'unknown' }}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Button
+                  :disabled="restartPending || !instance.instanceKey"
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  @click.stop="instance.instanceKey && emit('restartInstance', instance.instanceKey)"
+                >
+                  Restart
+                </Button>
+              </TableCell>
+            </TableRow>
+          </template>
+
+          <TableEmpty v-else :colspan="6">No instances found for this environment.</TableEmpty>
+        </TableBody>
+      </Table>
+    </div>
+  </div>
 </template>
-
-<style scoped>
-.instance-table {
-  background: var(--legacy-color-surface);
-  border: 1px solid var(--legacy-color-border);
-  border-radius: 0.5rem;
-  box-shadow: 0 10px 30px rgb(15 23 42 / 0.06);
-  min-width: 0;
-  overflow: hidden;
-}
-
-.instance-table__header {
-  align-items: center;
-  border-bottom: 1px solid var(--legacy-color-border);
-  display: flex;
-  justify-content: space-between;
-  padding: 1.15rem 1.25rem;
-}
-
-.instance-table__eyebrow {
-  color: var(--legacy-color-accent);
-  font-size: 0.75rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  margin: 0 0 0.25rem;
-  text-transform: uppercase;
-}
-
-.instance-table__title {
-  font-size: 1.35rem;
-  line-height: 1.2;
-  margin: 0;
-}
-
-.instance-table__count {
-  color: var(--legacy-color-text-muted);
-  font-size: 0.85rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.instance-table__scroller {
-  overflow-x: auto;
-}
-
-.instance-table__table {
-  border-collapse: collapse;
-  min-width: 760px;
-  width: 100%;
-}
-
-.instance-table__table th,
-.instance-table__table td {
-  border-bottom: 1px solid #e8edf4;
-  padding: 0.9rem 1rem;
-  text-align: left;
-  vertical-align: middle;
-}
-
-.instance-table__table th {
-  color: var(--legacy-color-text-muted);
-  font-size: 0.76rem;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.instance-table__table tr:last-child td {
-  border-bottom: 0;
-}
-
-.instance-table__row--selected {
-  background: #f2fbf9;
-}
-
-.instance-table__select {
-  background: transparent;
-  border: 0;
-  color: inherit;
-  cursor: pointer;
-  display: grid;
-  gap: 0.2rem;
-  padding: 0;
-  text-align: left;
-}
-
-.instance-table__select:focus-visible {
-  border-radius: 0.35rem;
-  box-shadow: 0 0 0 3px rgb(37 111 103 / 0.22);
-  outline: none;
-}
-
-.instance-table__primary {
-  font-weight: 800;
-}
-
-.instance-table__secondary {
-  color: var(--legacy-color-text-muted);
-  font-size: 0.82rem;
-}
-
-.instance-table__empty {
-  color: var(--legacy-color-text-muted);
-  margin: 0;
-  padding: 1.25rem;
-}
-</style>
