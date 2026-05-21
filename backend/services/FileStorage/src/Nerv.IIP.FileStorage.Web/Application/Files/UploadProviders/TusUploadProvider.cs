@@ -4,7 +4,7 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 
 public sealed class TusUploadProvider : IFileStorageUploadProvider
 {
-    private const string Name = "tus";
+    public const string Name = "tus";
 
     public string Provider => Name;
     public string UploadMode => Name;

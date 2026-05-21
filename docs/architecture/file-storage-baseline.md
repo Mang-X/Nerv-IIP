@@ -109,7 +109,7 @@ VerifyUploadedObject
 
 provider 能力建议：
 
-1. `TusUploadProvider`：当前已生成 tus 上传指令形状，并提供最小 `HEAD`/`PATCH` offset endpoint；后续继续补齐 size/checksum 校验、过期清理和更完整 tus 兼容性。
+1. `TusUploadProvider`：当前已生成 tus 上传指令形状，并提供本地 `HEAD`/`PATCH` offset endpoint、基础 tus header 校验、按 session 串行追加和 download grant content 读取；生产入口需要由 Gateway/auth 层保护，后续继续补齐 size/checksum 强校验、过期清理和更完整 tus 兼容性。
 2. `ServerProxyUploadProvider`：保留平台中转上传路径，用于小文件、内网限制或需要服务端扫描的场景。
 3. `S3MultipartUploadProvider`：对接 MinIO/S3，生成 multipart uploadId、part presigned urls，完成后校验 ETag、size 和 checksum；该 provider 放在 post-MVP 的对象存储部署联调阶段。
 

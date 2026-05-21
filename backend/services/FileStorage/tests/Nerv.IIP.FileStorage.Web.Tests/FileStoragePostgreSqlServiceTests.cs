@@ -139,6 +139,33 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
+    public async Task TryGetUploadSessionIdForDownloadGrant_ExpiredGrant_ReturnsFalse()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = new PostgreSqlFileStorageService(dbContext);
+        var created = service.CreateUploadSession(CreateUploadRequest()).Value!;
+        var complete = service.CompleteUploadSession(
+            created.UploadSessionId,
+            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096));
+        Assert.Equal(StatusCodes.Status200OK, complete.StatusCode);
+        var now = DateTimeOffset.UtcNow;
+        dbContext.DownloadGrants.Add(DownloadGrantRecord.Create(
+            "dgr_expired",
+            created.FileId,
+            "org-001",
+            "prod",
+            "server-proxy",
+            now.AddMinutes(-20),
+            now.AddMinutes(-10)));
+        await dbContext.SaveChangesAsync();
+
+        var exists = service.TryGetUploadSessionIdForDownloadGrant("dgr_expired", out var uploadSessionId);
+
+        Assert.False(exists);
+        Assert.Equal(string.Empty, uploadSessionId);
+    }
+
+    [Fact]
     public async Task CreateDownloadGrant_InsertsDownloadGrantRecord()
     {
         await using var dbContext = CreateDbContext();

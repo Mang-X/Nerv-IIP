@@ -22,7 +22,7 @@ public interface ILocalFileContentIndex
 
 public interface ILocalTusUploadSessionIndex
 {
-    bool UploadSessionExists(string uploadSessionId);
+    bool CanAcceptTusUpload(string uploadSessionId);
 }
 
 public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
@@ -30,7 +30,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     private readonly ConcurrentDictionary<string, UploadSession> uploadSessions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, FileMetadata> files = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> fileUploadSessions = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, string> downloadGrantFiles = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DownloadGrantIndexEntry> downloadGrantFiles = new(StringComparer.Ordinal);
     private readonly IFileStorageUploadProvider uploadProvider;
 
     public InMemoryFileStorageService()
@@ -161,10 +161,11 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         }
 
         var grantId = NewId("dgr");
-        downloadGrantFiles[grantId] = file.FileId;
+        var expiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(10);
+        downloadGrantFiles[grantId] = new DownloadGrantIndexEntry(file.FileId, expiresAtUtc);
         var response = new DownloadGrantResponse(
             file.FileId,
-            DateTimeOffset.UtcNow.AddMinutes(10),
+            expiresAtUtc,
             new TransferInstructions(
                 $"/api/files/v1/download-grants/{grantId}/content",
                 new Dictionary<string, string>
@@ -178,8 +179,9 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     public bool TryGetUploadSessionIdForDownloadGrant(string downloadGrantId, out string uploadSessionId)
     {
         uploadSessionId = string.Empty;
-        if (!downloadGrantFiles.TryGetValue(downloadGrantId, out var fileId)
-            || !fileUploadSessions.TryGetValue(fileId, out var mappedUploadSessionId))
+        if (!downloadGrantFiles.TryGetValue(downloadGrantId, out var grant)
+            || grant.ExpiresAtUtc <= DateTimeOffset.UtcNow
+            || !fileUploadSessions.TryGetValue(grant.FileId, out var mappedUploadSessionId))
         {
             return false;
         }
@@ -188,9 +190,12 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         return true;
     }
 
-    public bool UploadSessionExists(string uploadSessionId)
+    public bool CanAcceptTusUpload(string uploadSessionId)
     {
-        return uploadSessions.ContainsKey(uploadSessionId);
+        return uploadSessions.TryGetValue(uploadSessionId, out var session)
+            && string.Equals(session.Provider, TusUploadProvider.Name, StringComparison.Ordinal)
+            && !session.Completed
+            && session.ExpiresAtUtc > DateTimeOffset.UtcNow;
     }
 
     private static string NewId(string prefix)
@@ -203,6 +208,8 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         return $"{organizationId}/{fileId}";
     }
 }
+
+internal sealed record DownloadGrantIndexEntry(string FileId, DateTimeOffset ExpiresAtUtc);
 
 internal static class FileStorageRequestValidation
 {

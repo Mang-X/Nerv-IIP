@@ -9,9 +9,9 @@ using Nerv.IIP.Observability;
 var builder = WebApplication.CreateBuilder(args);
 var usePostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
 builder.Services.AddFastEndpoints();
-builder.Services.AddSingleton<LocalTusFileStore>();
-builder.Services.AddSingleton<IFileStorageUploadProvider>(_ =>
-    string.Equals(builder.Configuration["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
+builder.Services.AddSingleton<ILocalTusFileStoreAccessor, LocalTusFileStoreAccessor>();
+builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>
+    string.Equals(services.GetRequiredService<IConfiguration>()["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
         ? new TusUploadProvider()
         : new ServerProxyUploadProvider());
 

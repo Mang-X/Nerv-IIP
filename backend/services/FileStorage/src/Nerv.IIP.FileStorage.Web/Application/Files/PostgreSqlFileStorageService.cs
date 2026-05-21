@@ -7,6 +7,7 @@ using ContractOwnerReference = Nerv.IIP.Contracts.FileStorage.OwnerReference;
 
 namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
+// Known debt: IFileStorageService is synchronous today; move these EF calls to async when the Web boundary becomes async.
 public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
 {
     private readonly ApplicationDbContext dbContext;
@@ -169,7 +170,10 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
     public bool TryGetUploadSessionIdForDownloadGrant(string downloadGrantId, out string uploadSessionId)
     {
         uploadSessionId = string.Empty;
-        var grant = dbContext.DownloadGrants.SingleOrDefault(x => x.DownloadGrantId == downloadGrantId);
+        var now = DateTimeOffset.UtcNow;
+        var grant = dbContext.DownloadGrants.SingleOrDefault(x =>
+            x.DownloadGrantId == downloadGrantId
+            && x.ExpiresAtUtc > now);
         if (grant is null)
         {
             return false;
@@ -185,9 +189,14 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         return true;
     }
 
-    public bool UploadSessionExists(string uploadSessionId)
+    public bool CanAcceptTusUpload(string uploadSessionId)
     {
-        return dbContext.UploadSessions.Any(x => x.UploadSessionId == uploadSessionId);
+        var now = DateTimeOffset.UtcNow;
+        return dbContext.UploadSessions.Any(x =>
+            x.UploadSessionId == uploadSessionId
+            && x.Provider == TusUploadProvider.Name
+            && !x.Completed
+            && x.ExpiresAtUtc > now);
     }
 
     private static FileMetadataResponse ToResponse(StoredFileRecord file)

@@ -15,7 +15,7 @@ The first FileStorage MVP implements the platform-owned file metadata and author
 5. Persist FileStorage facts in PostgreSQL under the `filestorage` schema.
 6. Enforce the same schema convention tests already used by AppHub, Ops and IAM.
 
-The first slice does not implement real binary transfer. It proves the platform contract, persistence model, authorization-shaped API, and no-leak boundary for internal object keys.
+The first contract slice proved the platform contract, persistence model, authorization-shaped API, and no-leak boundary for internal object keys. The MVP now also includes a local tus transfer path for binary upload/download without requiring MinIO/S3 deployment.
 
 ## Provider Order
 
@@ -46,15 +46,18 @@ POST /api/files/v1/upload-sessions
 POST /api/files/v1/upload-sessions/{uploadSessionId}/complete
 GET  /api/files/v1/files/{fileId}
 POST /api/files/v1/files/{fileId}/download-grants
+HEAD /api/files/v1/tus/{uploadSessionId}
+PATCH /api/files/v1/tus/{uploadSessionId}
+GET  /api/files/v1/download-grants/{downloadGrantId}/content
 ```
 
 `CreateUploadSession` accepts organization/environment context, owner reference, file purpose, file name, content type, expected size and optional checksum. It returns `uploadSessionId`, `fileId`, `uploadMode`, provider name, expiry and upload instructions.
 
-`CompleteUploadSession` marks a pending session as completed and creates stored file metadata. The first slice validates session state, expiry, purpose and caller context. It records an internal object key but does not verify a real object store object yet.
+`CompleteUploadSession` marks a pending session as completed and creates stored file metadata. The first slice validates session state, expiry, purpose and caller context. It records an internal object key but does not verify a MinIO/S3 object yet.
 
 `GetFileMetadata` returns public file facts only: `fileId`, organization/environment, owner reference, purpose, file name, content type, size, checksum, scan status, status and timestamps. It must not return `objectKey`.
 
-`CreateDownloadGrant` returns a short-lived platform download URL or placeholder URL for the first slice. It must not return `objectKey`.
+`CreateDownloadGrant` returns a short-lived platform download URL. With `FileStorage:UploadProvider=tus`, the content endpoint reads locally stored tus bytes; it must not return `objectKey`.
 
 ## Persistence
 
@@ -97,9 +100,10 @@ The first implementation must follow TDD:
 The first FileStorage MVP is accepted when:
 
 1. A client can create an upload session.
-2. The same session can be completed into stored file metadata.
-3. The stored file can be read by `fileId`.
-4. A download grant can be created for that file.
-5. Public responses do not expose internal object keys.
-6. FileStorage PostgreSQL migration and schema convention tests pass.
-7. Backend solution tests and AppHost build still pass.
+2. With the tus provider enabled, the client can upload bytes with offset tracking and resume by querying `HEAD`.
+3. The same session can be completed into stored file metadata.
+4. The stored file can be read by `fileId`.
+5. A download grant can be created and used to read the local tus bytes.
+6. Public responses do not expose internal object keys.
+7. FileStorage PostgreSQL migration and schema convention tests pass.
+8. Backend solution tests and AppHost build still pass.

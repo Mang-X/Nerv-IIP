@@ -3,10 +3,8 @@ using System.Text.Json;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Web.Application.Files;
@@ -89,6 +87,75 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
+    public async Task TusUploadEndpoint_MissingTusResumableHeader_ReturnsPreconditionFailed()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = factory.CreateClient();
+            var created = await CreateTusUploadSessionAsync(client);
+            using var patchRequest = new HttpRequestMessage(HttpMethod.Patch, created.Upload.Url)
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes("hello"))
+            };
+            patchRequest.Headers.Add("Upload-Offset", "0");
+            patchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
+
+            var response = await client.SendAsync(patchRequest);
+
+            Assert.Equal(StatusCodes.Status412PreconditionFailed, (int)response.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_InvalidContentType_ReturnsUnsupportedMediaType()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = factory.CreateClient();
+            var created = await CreateTusUploadSessionAsync(client);
+            using var patchRequest = new HttpRequestMessage(HttpMethod.Patch, created.Upload.Url)
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes("hello"))
+            };
+            patchRequest.Headers.Add("Tus-Resumable", "1.0.0");
+            patchRequest.Headers.Add("Upload-Offset", "0");
+            patchRequest.Content.Headers.ContentType = new("application/octet-stream");
+
+            var response = await client.SendAsync(patchRequest);
+
+            Assert.Equal(StatusCodes.Status415UnsupportedMediaType, (int)response.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_ServerProxySession_ReturnsNotFound()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        var client = factory.CreateClient();
+        var createdResponse = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
+        createdResponse.EnsureSuccessStatusCode();
+        var created = await createdResponse.Content.ReadFromJsonAsync<CreateUploadSessionResponse>();
+        Assert.NotNull(created);
+        Assert.Equal("server-proxy", created.Provider);
+
+        var response = await SendTusHeadAsync(client, $"/api/files/v1/tus/{created.UploadSessionId}");
+
+        Assert.Equal(StatusCodes.Status404NotFound, (int)response.StatusCode);
+    }
+
+    [Fact]
     public async Task TusUploadEndpoint_CompleteAndDownload_ReturnsUploadedBytes()
     {
         var rootPath = CreateTempDirectory();
@@ -116,6 +183,38 @@ public sealed class FileStorageTusProviderTests
 
             downloadResponse.EnsureSuccessStatusCode();
             Assert.Equal(uploadedBytes, await downloadResponse.Content.ReadAsByteArrayAsync());
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadGrantContentEndpoint_MissingLocalBytes_ReturnsNotFound()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = factory.CreateClient();
+            var created = await CreateTusUploadSessionAsync(client);
+
+            var completeResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+                new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, 0));
+            completeResponse.EnsureSuccessStatusCode();
+
+            var grantResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/files/{created.FileId}/download-grants",
+                new CreateDownloadGrantRequest("org-001", "prod"));
+            grantResponse.EnsureSuccessStatusCode();
+            var grant = await grantResponse.Content.ReadFromJsonAsync<DownloadGrantResponse>();
+            Assert.NotNull(grant);
+
+            var downloadResponse = await client.GetAsync(grant.Download.Url);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)downloadResponse.StatusCode);
         }
         finally
         {
