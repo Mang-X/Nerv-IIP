@@ -451,17 +451,21 @@ function Start-ManagedBackgroundProcess {
         [void] $startInfo.ArgumentList.Add($argument)
     }
 
+    $stdoutStream = [System.IO.FileStream]::new($stdoutPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+    $stderrStream = [System.IO.FileStream]::new($stderrPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
-    $disposed = $false
+    $state = @{ Disposed = $false }
 
     if (-not $process.Start()) {
+        $stdoutStream.Dispose()
+        $stderrStream.Dispose()
         $process.Dispose()
         throw "Failed to start background process '$Command'."
     }
 
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($stdoutStream)
+    $stderrTask = $process.StandardError.BaseStream.CopyToAsync($stderrStream)
 
     Write-Diagnostic "Started background process $Command (pid=$($process.Id), cwd=$WorkingDirectory, logs=$resolvedLogDirectory)"
 
@@ -470,7 +474,7 @@ function Start-ManagedBackgroundProcess {
             [string] $Reason = 'Managed background stop'
         )
 
-        if ($disposed) {
+        if ($state.Disposed) {
             return
         }
 
@@ -481,37 +485,36 @@ function Start-ManagedBackgroundProcess {
 
             if ($process) {
                 [void] $process.WaitForExit(5000)
-                if ($process.HasExited) {
-                    try {
-                        $process.WaitForExit()
-                    }
-                    catch {
-                        Write-Diagnostic -Level 'WARN' -Message "Failed while waiting for background process log readers: $($_.Exception.Message)"
-                    }
+                if (-not $process.HasExited) {
+                    Write-Diagnostic -Level 'WARN' -Message "Background process did not exit promptly after stop request: $Command (pid=$($process.Id))"
                 }
             }
         }
         finally {
+            $state.Disposed = $true
+
             if ($stdoutTask) {
                 if ($stdoutTask.Wait(5000)) {
-                    Write-ScriptAutomationProcessLog -Path $stdoutPath -Content $stdoutTask.GetAwaiter().GetResult()
+                    [void] $stdoutTask.GetAwaiter().GetResult()
                 }
                 else {
                     Write-Diagnostic -Level 'WARN' -Message "Timed out while collecting background stdout log for $Command."
-                    Write-ScriptAutomationProcessLog -Path $stdoutPath -Content ''
                 }
             }
             if ($stderrTask) {
                 if ($stderrTask.Wait(5000)) {
-                    Write-ScriptAutomationProcessLog -Path $stderrPath -Content $stderrTask.GetAwaiter().GetResult()
+                    [void] $stderrTask.GetAwaiter().GetResult()
                 }
                 else {
                     Write-Diagnostic -Level 'WARN' -Message "Timed out while collecting background stderr log for $Command."
-                    Write-ScriptAutomationProcessLog -Path $stderrPath -Content ''
                 }
             }
+
+            $stdoutStream.Dispose()
+            $stderrStream.Dispose()
+            Protect-ScriptAutomationLogFile -Path $stdoutPath
+            Protect-ScriptAutomationLogFile -Path $stderrPath
             $process.Dispose()
-            $disposed = $true
         }
     }.GetNewClosure()
 

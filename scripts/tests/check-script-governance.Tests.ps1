@@ -91,6 +91,46 @@ if ($interactiveResult.ExitCode -ne 7) {
     throw "Expected interactive helper to return ExitCode 7, got $($interactiveResult.ExitCode)."
 }
 
+$idempotentRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-background-idempotent-$([System.Guid]::NewGuid().ToString('N'))"
+$idempotentBackground = $null
+try {
+    $idempotentBackground = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -Name 'background-idempotent-stop-smoke' -LogDirectory (Join-Path $idempotentRoot 'background-idempotent-stop-smoke')
+
+    $firstStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    & $idempotentBackground.Stop 'first'
+    $firstStopwatch.Stop()
+
+    $secondStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    & $idempotentBackground.Stop 'second'
+    $secondStopwatch.Stop()
+
+    foreach ($measurement in @(
+        [pscustomobject]@{ Name = 'first'; Duration = $firstStopwatch.Elapsed },
+        [pscustomobject]@{ Name = 'second'; Duration = $secondStopwatch.Elapsed }
+    )) {
+        if ($measurement.Duration.TotalSeconds -gt 5) {
+            throw "Expected $($measurement.Name) background Stop call to return quickly, took $($measurement.Duration)."
+        }
+    }
+
+    $idempotentBackground = $null
+}
+finally {
+    if ($idempotentBackground) {
+        & $idempotentBackground.Stop 'idempotent stop final cleanup'
+    }
+
+    $resolvedIdempotentRoot = Resolve-Path $idempotentRoot -ErrorAction SilentlyContinue
+    if ($resolvedIdempotentRoot) {
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        if (-not $resolvedIdempotentRoot.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove idempotent smoke directory outside temp: $($resolvedIdempotentRoot.Path)"
+        }
+
+        Remove-Item -LiteralPath $resolvedIdempotentRoot.Path -Recurse -Force
+    }
+}
+
 $backgroundRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-background-arguments-$([System.Guid]::NewGuid().ToString('N'))"
 $backgroundScript = Join-Path $backgroundRoot 'print-arguments.ps1'
 $background = $null
