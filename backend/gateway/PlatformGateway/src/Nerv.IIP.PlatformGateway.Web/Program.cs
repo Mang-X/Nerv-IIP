@@ -13,7 +13,6 @@ using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
 using NetCorePal.Extensions.AspNetCore;
 using System.Net;
 using Microsoft.Extensions.Http.Resilience;
-using Polly;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services
@@ -28,6 +27,7 @@ builder.Services
     });
 builder.Services.AddNervIipCaching(builder.Configuration, "platform-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "platform-gateway");
+builder.Services.Configure<GatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.AddHttpClient<IAppHubClient, HttpAppHubClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["AppHub:BaseUrl"] ?? "http://localhost:5101");
@@ -84,22 +84,3 @@ app.UseFastEndpoints(c =>
 app.Run();
 
 public partial class Program;
-
-internal static class GatewayHttpClientResilience
-{
-    public static IHttpResiliencePipelineBuilder AddGatewayNonIdempotentSafeResilience(this IHttpClientBuilder builder)
-    {
-        return builder.AddResilienceHandler("non-idempotent-safe", pipeline =>
-        {
-            pipeline
-                .AddTimeout(TimeSpan.FromSeconds(10))
-                .AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
-                {
-                    FailureRatio = 0.5,
-                    MinimumThroughput = 10,
-                    SamplingDuration = TimeSpan.FromSeconds(30),
-                    BreakDuration = TimeSpan.FromSeconds(15)
-                });
-        });
-    }
-}

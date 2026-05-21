@@ -1,38 +1,37 @@
+using System.Net;
+using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.PlatformGateway.Web;
+
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
 
 public sealed class GatewayHttpClientResilienceTests
 {
     [Fact]
-    public void Non_idempotent_gateway_clients_do_not_use_standard_retry_handler()
+    public async Task Non_idempotent_gateway_clients_do_not_retry_server_errors()
     {
-        var program = File.ReadAllText(FindProgramFile());
-        var helperStart = program.IndexOf("AddGatewayNonIdempotentSafeResilience(this", StringComparison.Ordinal);
-        Assert.NotEqual(-1, helperStart);
+        var handler = new AlwaysUnavailableHandler();
+        var services = new ServiceCollection();
+        services
+            .AddHttpClient("non-idempotent-safe")
+            .ConfigurePrimaryHttpMessageHandler(() => handler)
+            .AddGatewayNonIdempotentSafeResilience();
+        await using var provider = services.BuildServiceProvider();
+        var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("non-idempotent-safe");
 
-        var helperBody = program[helperStart..];
+        var response = await client.GetAsync("http://downstream.local/unavailable");
 
-        Assert.DoesNotContain("AddStandardResilienceHandler", helperBody);
-        Assert.DoesNotContain("Retry", helperBody);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(1, handler.CallCount);
     }
 
-    private static string FindProgramFile()
+    private sealed class AlwaysUnavailableHandler : HttpMessageHandler
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
+        public int CallCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            var programPath = Path.Combine(
-                directory.FullName,
-                "src",
-                "Nerv.IIP.PlatformGateway.Web",
-                "Program.cs");
-            if (File.Exists(programPath))
-            {
-                return programPath;
-            }
-
-            directory = directory.Parent;
+            CallCount++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
         }
-
-        throw new FileNotFoundException("Could not locate gateway Program.cs.");
     }
 }

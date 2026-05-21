@@ -3,14 +3,26 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.Iam;
 
 namespace Nerv.IIP.PlatformGateway.Web.Application.Auth;
 
-public sealed class HttpGatewayAuthorizationClient(HttpClient httpClient, IAppCache cache) : IGatewayAuthorizationClient
+public sealed class GatewayAuthorizationOptions
 {
-    private static readonly TimeSpan AuthorizationCacheTtl = TimeSpan.FromSeconds(45);
+    public int AuthorizationCacheTtlSeconds { get; set; } = 45;
+}
+
+public sealed class HttpGatewayAuthorizationClient(
+    HttpClient httpClient,
+    IAppCache cache,
+    IOptions<GatewayAuthorizationOptions> options) : IGatewayAuthorizationClient
+{
+    private TimeSpan AuthorizationCacheTtl => TimeSpan.FromSeconds(
+        options.Value.AuthorizationCacheTtlSeconds > 0
+            ? options.Value.AuthorizationCacheTtlSeconds
+            : 45);
 
     public async Task<GatewayAuthorizationResult> CheckAsync(
         string bearerToken,

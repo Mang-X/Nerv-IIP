@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
@@ -47,13 +48,45 @@ public sealed class GatewayAuthorizationClientTests
         Assert.Equal(3, handler.CallCount);
     }
 
+    [Fact]
+    public async Task CheckAsync_uses_configured_cache_ttl()
+    {
+        var handler = new CountingAuthorizationHandler();
+        var cache = new RecordingCache();
+        var client = CreateClient(
+            handler,
+            cache,
+            Options.Create(new GatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 12 }));
+        var requirement = new GatewayPermissionRequirement(
+            "iam.users.read",
+            "org-001",
+            "env-dev",
+            null,
+            null);
+
+        await client.CheckAsync("token-v7", requirement, CancellationToken.None);
+
+        Assert.Equal(TimeSpan.FromSeconds(12), cache.LastTtl);
+    }
+
     private static HttpGatewayAuthorizationClient CreateClient(CountingAuthorizationHandler handler)
+    {
+        return CreateClient(
+            handler,
+            new MemoryAppCache(),
+            Options.Create(new GatewayAuthorizationOptions()));
+    }
+
+    private static HttpGatewayAuthorizationClient CreateClient(
+        CountingAuthorizationHandler handler,
+        IAppCache cache,
+        IOptions<GatewayAuthorizationOptions> options)
     {
         var httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://iam.local")
         };
-        return new HttpGatewayAuthorizationClient(httpClient, new MemoryAppCache());
+        return new HttpGatewayAuthorizationClient(httpClient, cache, options);
     }
 
     private sealed class CountingAuthorizationHandler : HttpMessageHandler
@@ -72,6 +105,25 @@ public sealed class GatewayAuthorizationClientTests
                     0))
             };
             return Task.FromResult(response);
+        }
+    }
+
+    private sealed class RecordingCache : IAppCache
+    {
+        public TimeSpan? LastTtl { get; private set; }
+
+        public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl)
+        {
+            LastTtl = ttl;
+            return await factory();
+        }
+
+        public void InvalidatePrefix(string prefix)
+        {
+        }
+
+        public void Clear()
+        {
         }
     }
 
