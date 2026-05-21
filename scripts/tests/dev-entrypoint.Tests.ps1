@@ -68,4 +68,13 @@ if (-not $unknown.Output.Contains("Unknown command 'unknown-command'")) {
     throw "Unknown command output was not helpful. Output: $($unknown.Output)"
 }
 
+$dev = Invoke-Nerv -Arguments @('dev', '-NoBuild')
+if ($dev.ExitCode -eq 0) {
+    throw "Expected dev command to fail while scripts/dev.ps1 is absent. Output: $($dev.Output)"
+}
+
+if (-not $dev.Output.Contains('Development script not found')) {
+    throw "Dev command output was not helpful while scripts/dev.ps1 is absent. Output: $($dev.Output)"
+}
+
 Write-Host 'Development entrypoint smoke tests passed.'

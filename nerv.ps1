@@ -51,6 +51,11 @@ Infrastructure services:
 switch ($Command.ToLowerInvariant()) {
     'dev' {
         $devScript = Join-Path $repoRoot 'scripts/dev.ps1'
+        if (-not (Test-Path -LiteralPath $devScript -PathType Leaf)) {
+            Write-Host "Development script not found: $devScript"
+            exit 1
+        }
+
         & $devScript @RemainingArguments
         exit $LASTEXITCODE
     }
