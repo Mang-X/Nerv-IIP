@@ -14,14 +14,14 @@
 8. 部署策略已经冻结为“多部署目标，单一部署模型”：平台级 Aspire AppHost 作为统一拓扑入口，Docker Compose、安装包和整合安装脚本作为不同环境的交付目标。
 9. 仓库根必须保留 `NuGet.config` 固定 NuGet restore 包源，避免本机全局多包源配置与 Central Package Management、`TreatWarningsAsErrors` 组合后触发 `NU1507`。
 10. 第三阶段控制台纵切已经落地，可通过 `scripts/verify-third-slice-console.ps1` 验证 Gateway OpenAPI、Hey API 生成、Vue 控制台 typecheck/test/build。
-11. 前端工作区使用 Vite+ 作为统一工具入口；`pnpm -C frontend check`、`lint`、`fmt` 需要 Node.js `>=22.18.0`，仓库根 `.node-version` 固定为 22.22.3，本机验证版本为 OpenJS.NodeJS.22 v22.22.3。
+11. 前端工作区使用 Vite+ 作为统一工具入口；`pnpm -C frontend check`、`lint`、`fmt` 需要 Node.js `>=22.18.0`，仓库根 `.node-version` 保留 22.22.3 作为保守复现基线；本地开发可以使用更新的 Current 版本（如 Node.js 26），只要前端质量门禁可复现通过。
 12. 技术栈官方文档与源码仓库链接统一维护在 docs/architecture/technology-stack-references.md；新增长期技术选型时必须同步更新，避免同名项目或社区分叉造成歧义。
 13. 第四阶段已经补齐 AppHub/Ops 的 netcorepal/CleanDDD PostgreSQL profile、code-analysis endpoint、`scripts/verify-fourth-slice-real-infra.ps1` 和平台级 `infra/aspire/Nerv.IIP.AppHost`；当前 AppHost build 与完整真实基础设施验证均已通过。
 14. 第四阶段统一验收口径见 docs/architecture/fourth-vertical-slice-real-infra.md；后续生产级迁移、初始化、seed 和回滚策略按 docs/adr/0009-database-migration-release-and-seed-strategy.md 执行。
 15. 第五阶段 Release-grade Persistence Foundation 已落地：AppHub/Ops 已有初始 migrations，PostgreSQL profile tests 已从 `EnsureCreated()` 改为 `MigrateAsync()`，第五阶段验证脚本已经通过。
 16. Phase 8 已冻结 Console Calm Control Plane 蓝色 Design System 基线；后续控制台页面、视觉组件、组件库迁移或样式体系决策必须沿用 shadcn semantic tokens、`@nerv-iip/ui` 稳定导出和 docs/architecture/frontend-design-system-planning.md 的治理口径。
 17. 数据库 schema、建表注释、schema catalog 和发布 runbook 已补齐第一版，后续持久化服务必须先满足 docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md 和 docs/architecture/database-release-runbook.md。
-18. 第六阶段 Schema Governance & Migration Hardening 用 AppHub/Ops 作为已迁移服务样本，把业务表注释、业务列注释、JSON/text 兼容注释、string ID 约束和 service-schema migrations history 配置固化为测试门禁；IAM 已沿用该门禁，FileStorage 等新增持久化服务开工前必须继续沿用。
+18. 第六阶段 Schema Governance & Migration Hardening 用 AppHub/Ops 作为已迁移服务样本，把业务表注释、业务列注释、JSON/text 兼容注释、string ID 约束和 service-schema migrations history 配置固化为测试门禁；IAM 已沿用该门禁，FileStorage 也已沿用到 `filestorage` schema、初始 migration 和 schema convention tests。
 19. 第七阶段 IAM Persistent Auth Foundation 已落地：IAM 保留 InMemory profile，同时具备 PostgreSQL `iam` schema、初始 admin seed、JWT access token、refresh token rotation、session revoke、`/me`、Connector Host credential validation 和 internal authorization check 的后端持久化基线。
 20. 现有 PlatformGateway Console API 已接入 IAM-backed permission enforcement；Gateway 只转发 bearer token 与 permission/context，不直接引用 IAM Domain 或 Infrastructure。
 21. Console Auth + shadcn-vue Baseline 已提供最小登录 UI、会话恢复、Gateway bearer 注入、路由守卫、退出登录和 shadcn-vue UI 基线。
@@ -29,6 +29,7 @@
 23. Phase 8 IAM Admin Console 已交付用户、角色、权限 catalog 和会话管理闭环：IAM 管理写入口已产品化，PlatformGateway 暴露 Console IAM Admin facade 并执行 IAM-backed permission enforcement，frontend 通过 generated `@nerv-iip/api-client` 和 `useIamAdmin.ts` 消费 `/iam/users`、`/iam/roles`、`/iam/sessions` 页面。
 24. BusinessMasterData 作为业务平台 Layer 0 基石已经完成审查重裁决：原 `2026-05-20-business-master-data-foundation.md` 只作为最小骨架，继续 Task 4/5 或下游业务域前必须先执行 `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`，并遵守 `docs/adr/0013-business-master-data-governance.md`、`docs/architecture/business-master-data-field-matrix.md` 和 `docs/architecture/business-master-data-process-manufacturing-supplement.md`。
 25. BusinessMasterData realignment 已开始落地：MasterData Domain 增加 UOM、UOM conversion、Site、ProductionLine、Shift、ReferenceDataCode 和扩展 SKU/WorkCenter/DeviceAsset 属性；Infrastructure 已生成 `RealignBusinessMasterData` migration；Web 层已提供 MasterData 变更 IntegrationEvent payload、批量 resolve/validate query、统一 list query，并补齐 SKU、UOM、UOM conversion、伙伴、部门、团队、人员技能、工厂、产线、班次、日历、工作中心、设备和参考数据的 create endpoints；API 合同测试已覆盖稳定 operationId、路由、权限码、创建成功和重复业务键；IAM seed 已加入 `business.masterdata.*` 六个权限。可通过 `scripts/verify-business-master-data-realignment.ps1` 做本地验证。
+26. FileStorage MVP 已交付公开 contracts、`Sdk.FileStorage` HTTP client、server-proxy metadata API 子集、PostgreSQL-backed API service、`filestorage` PostgreSQL schema baseline、初始 migration、schema convention tests 和本地 tus `HEAD`/`PATCH` 上传 endpoint；当前不包含 MinIO/S3 multipart 或 Gateway/Console facade。
 
 ## 环境前置
 
@@ -42,7 +43,7 @@
 6. 平台领域服务优先使用 netcorepal 的 web 模板作为初始骨架，但命令必须显式指定 `--Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false`，详见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
 7. 2026-05-17 已确认 NetCorePal.Template 3.2.0 支持 `PostgreSQL`、`GaussDB`、`DMDB` 等数据库参数；Nerv-IIP 默认落地 PostgreSQL profile，信创环境按 database profile 验证替换，不承诺无验证的完全无感切换。
 8. 后续落地平台级 AppHost、Compose 生成和 Aspire Dashboard 时，需要安装 Aspire CLI；服务模板仍保持 `--UseAspire false`，避免生成服务级局部编排入口。
-9. 第三阶段前端工具链需要 Node.js `>=22.18.0`、pnpm 11.1.2 和 Vite+ 0.1.21。仓库根 `.node-version` 固定为 22.22.3；本机已通过 `winget` 将 OpenJS.NodeJS.22 升级到 22.22.3，避免 Vite+ lint/fmt 路径读取 `vite.config.ts` 时触发 Node `22.17.x` 的 TS config 加载错误。
+9. 第三阶段前端工具链需要 Node.js `>=22.18.0`、pnpm 11.1.2 和 Vite+ 0.1.21。仓库根 `.node-version` 保留 22.22.3，原因是 Node `22.17.x` 会在 Vite+ lint/fmt 路径读取 `vite.config.ts` 时触发 TS config 加载错误；Node.js 26 这类更新 Current 版本可以作为本地开发版本，不视为环境漂移阻塞。
 10. 第五阶段起仓库包含本地 `dotnet-tools.json`，用于固定 `dotnet-ef` 版本。首次生成或检查迁移前运行 `dotnet tool restore`，再使用 `dotnet tool run dotnet-ef ...`，避免依赖开发者全局工具。
 11. AppHub/Ops 生成 EF migration 时必须显式进入 PostgreSQL profile：设置 `Persistence__Provider=PostgreSQL` 和对应 `ConnectionStrings__AppHubDb` 或 `ConnectionStrings__OpsDb`，否则 Web startup 默认 InMemory，design-time 无法解析服务 DbContext。
 
@@ -130,7 +131,7 @@
 1. backend 与 connector-hosts 两套 solution 创建。
 2. Platform SDK 的 Core、Auth、ConnectorProtocol、FileStorage、Ops 最小项目骨架。
 3. IAM 用户、角色、权限、会话、外部客户端、Connector Host 凭证和授权授予的最小事实骨架。
-4. FileStorage 文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和 MinIO/object storage 适配的最小服务骨架。
+4. FileStorage 文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和 object storage provider 边界的最小服务骨架；MinIO/S3 multipart 不进入当前 MVP。
 5. AppHub registrations、heartbeats、state-snapshots 三个接口。
 6. PlatformGateway 实例列表与实例详情查询接口。
 7. Connector Host 通过 Nerv.IIP.Sdk.ConnectorProtocol 到 AppHub 的客户端与 Docker CLI-backed Docker Connector。
@@ -222,6 +223,17 @@
 10. `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` 因本机 Docker Desktop Linux engine 不可用阻塞：无法连接 `npipe:////./pipe/dockerDesktopLinuxEngine`，无法拉取 `postgres:17`。
 11. `pwsh scripts/verify-third-slice-console.ps1` 因其调用 `verify-second-slice-ops.ps1`，同样被 Docker daemon 不可达阻塞；脚本明确要求 Docker CLI 和可达 Docker daemon 用于真实容器发现与 restart。
 
+### FileStorage MVP 已完成范围
+
+1. FileStorage Web 已提供公开 API 子集：`POST /api/files/v1/upload-sessions`、`POST /api/files/v1/upload-sessions/{uploadSessionId}/complete`、`GET /api/files/v1/files/{fileId}`、`POST /api/files/v1/files/{fileId}/download-grants`。
+2. 默认上传/下载策略仍为 `server-proxy` metadata stub，返回平台控制 placeholder 路径；设置 `FileStorage:UploadProvider=tus` 后创建上传会话会返回 tus 上传指令 `/api/files/v1/tus/{uploadSessionId}`，并支持 `HEAD` 查询 `Upload-Offset`、`PATCH` 按 offset 追加字节、暂停后续传，以及 download grant content endpoint 下载本地 tus 字节。MinIO/S3 multipart 仍不进入 MVP。
+3. 公开响应和测试覆盖 `objectKey`/`object_key` 不泄漏；内部 object key 只保留在 FileStorage Domain/Infrastructure 实现与持久化模型中。
+4. `backend/common/Contracts/Nerv.IIP.Contracts.FileStorage` 已提供 Web/SDK 共享公开 DTO；`Nerv.IIP.Sdk.FileStorage` 已提供 `IFileStorageClient` 与 `HttpFileStorageClient`，覆盖创建上传会话、完成上传会话、读取文件元数据和创建下载授权。
+5. FileStorage Infrastructure 已新增 `ApplicationDbContext`、`filestorage` schema、`stored_files`、`upload_sessions`、`download_grants`、`20260521061426_InitialFileStorageSchema` migration 和 `FileStorageSchemaConventionTests`。
+6. 默认 WebApplicationFactory 和本地启动仍使用 in-memory API store；显式 `Persistence:Provider=PostgreSQL` 时启用 PostgreSQL-backed API service，且 `Persistence:AutoMigrate=true` 时执行 FileStorage migration runner。tus 字节当前落本地 `FileStorage:Tus:RootPath`。
+7. 2026-05-21 验证通过：`dotnet test backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/Nerv.IIP.Contracts.FileStorage.Tests.csproj --no-restore`、`dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore`、`dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore`。
+8. 下一阶段把本地 tus endpoint 补齐 size/checksum 强校验、过期清理和更完整协议兼容；MinIO/S3 multipart 放到 post-MVP 部署联调。
+
 ### 当前初步使用方式
 
 1. 根目录 `.\nerv.ps1 dev` 已成为主平台本地联调入口；`.\nerv.ps1 ports` 输出标准本地端口矩阵。
@@ -236,14 +248,14 @@
 10. 运行 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` 可验证 IAM PostgreSQL profile、迁移、seed、登录/刷新/退出、`/me`、Connector Host credential validation 和后端回归。
 11. 运行 `pwsh scripts/check-script-governance.ps1` 可验证脚本解析、分类声明、高风险命令 wrapper 和 legacy exemption 是否仍受控。
 12. 运行 `pwsh scripts/check-script-compatibility.ps1` 可在 macOS/Linux 上记录脚本兼容门禁证据；Windows 本地只能使用 `-AllowWindows -FastOnly` 做 smoke，不作为兼容性声明依据。
-13. 运行 AppHub/Ops/IAM schema convention tests 可验证当前已迁移服务的 schema metadata 门禁。
+13. 运行 AppHub/Ops/IAM/FileStorage schema convention tests 可验证当前已迁移服务的 schema metadata 门禁。
 14. 运行 `pwsh scripts/verify-business-master-data-realignment.ps1` 可验证 BusinessMasterData realignment 的 Domain、Web、schema convention 和 IAM seed 基线。
 15. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
 16. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
 17. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
 18. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
 19. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-20. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台，不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署或高风险动作审批。
+20. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、BusinessMasterData Layer 0 realignment，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批或 MinIO/S3 multipart。
 21. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
@@ -275,4 +287,4 @@
 
 ## 结论
 
-Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环、第三迭代控制台纵切、第四迭代真实基础设施门禁、第五迭代迁移发布底座、第六迭代 schema governance hardening、第七迭代 IAM Persistent Auth Foundation，并已完成 Phase 8 IAM Admin Console 与 Calm Control Plane 蓝色 Design System 基线：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui、app-shell 和 infra/aspire 的最小工程结构与验证链路已经存在。Console Auth + shadcn-vue Baseline 已提供最小登录 UI、会话恢复、Gateway bearer 注入、路由守卫、退出登录和 shadcn-vue UI 基线；Phase 8 在此之上补齐用户/角色/权限 catalog/会话管理页面、Gateway Console IAM Admin facade、11 个稳定 Console IAM operation IDs 和 generated api-client 消费边界。脚本自动化治理已补入 ADR 和架构说明，后续新增或修改脚本必须进入分类、副作用、helper、日志、进程清理和门禁口径。下一步可以在迁移基线、schema 门禁、IAM 持久化登录基线、Gateway 权限门禁和 Console IAM Admin 基线之上进入 OAuth/OIDC/SSO/MFA/ABAC、FileStorage 上传下载、高风险动作审批、通知联动和多目标部署交付。真实持久化先主推 PostgreSQL，同时用 database profile 约束后续 GaussDB/DMDB 等信创替换成本。数据库建表和注释规范、schema catalog、Observability baseline 与数据库发布 runbook 已有第一版，AppHub/Ops/IAM table comment、JSON/text 注释、migrations history schema 配置和 convention tests 已作为后续持久化服务的门禁样本。后续前端功能必须沿用 Console Auth + shadcn-vue Baseline 已选 registry、preset、token、Calm Control Plane 蓝色语义和 `@nerv-iip/ui` 导出边界。后续任务继续参考 docs/architecture/third-vertical-slice-console.md、docs/architecture/fourth-vertical-slice-real-infra.md、docs/architecture/frontend-design-system-planning.md、docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md、docs/architecture/database-release-runbook.md、docs/architecture/script-automation-governance.md、docs/architecture/observability-baseline.md、docs/adr/0009-database-migration-release-and-seed-strategy.md、docs/adr/0010-automation-script-trusted-execution-governance.md、docs/superpowers/specs/2026-05-17-release-grade-persistence-foundation-design.md、docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md、docs/superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md、docs/superpowers/plans/2026-05-17-schema-governance-migration-hardening.md、docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md 与 docs/architecture/deployment-baseline.md。
+Nerv-IIP 已经完成第一迭代接入查询纵切、第二迭代低风险动作闭环、第三迭代控制台纵切、第四迭代真实基础设施门禁、第五迭代迁移发布底座、第六迭代 schema governance hardening、第七迭代 IAM Persistent Auth Foundation，并已完成 Phase 8 IAM Admin Console、Calm Control Plane 蓝色 Design System 基线和 FileStorage MVP 当前子集：backend/common、Iam、FileStorage、AppHub、PlatformGateway、Ops、Connector Host、Docker Connector、frontend console、api-client、ui、app-shell 和 infra/aspire 的最小工程结构与验证链路已经存在。Console Auth + shadcn-vue Baseline 已提供最小登录 UI、会话恢复、Gateway bearer 注入、路由守卫、退出登录和 shadcn-vue UI 基线；Phase 8 在此之上补齐用户/角色/权限 catalog/会话管理页面、Gateway Console IAM Admin facade、11 个稳定 Console IAM operation IDs 和 generated api-client 消费边界；FileStorage 已补齐公开 contracts/SDK、server-proxy metadata API、PostgreSQL-backed API service、`filestorage` schema、初始 migration、schema convention tests 和本地 tus `HEAD`/`PATCH` 上传与 download content endpoint。脚本自动化治理已补入 ADR 和架构说明，后续新增或修改脚本必须进入分类、副作用、helper、日志、进程清理和门禁口径。下一步可以在迁移基线、schema 门禁、IAM 持久化登录基线、Gateway 权限门禁、Console IAM Admin 基线和 FileStorage metadata/schema/contracts/local tus 基线之上进入 OAuth/OIDC/SSO/MFA/ABAC、tus 协议硬化、高风险动作审批、通知联动和多目标部署交付；MinIO/S3 multipart 放到 post-MVP 的对象存储部署联调。真实持久化先主推 PostgreSQL，同时用 database profile 约束后续 GaussDB/DMDB 等信创替换成本。数据库建表和注释规范、schema catalog、Observability baseline 与数据库发布 runbook 已有第一版，AppHub/Ops/IAM/FileStorage table comment、JSON/text 注释、migrations history schema 配置和 convention tests 已作为后续持久化服务的门禁样本。后续前端功能必须沿用 Console Auth + shadcn-vue Baseline 已选 registry、preset、token、Calm Control Plane 蓝色语义和 `@nerv-iip/ui` 导出边界。后续任务继续参考 docs/architecture/third-vertical-slice-console.md、docs/architecture/fourth-vertical-slice-real-infra.md、docs/architecture/frontend-design-system-planning.md、docs/architecture/database-schema-conventions.md、docs/architecture/database-schema-catalog.md、docs/architecture/database-release-runbook.md、docs/architecture/script-automation-governance.md、docs/architecture/observability-baseline.md、docs/adr/0009-database-migration-release-and-seed-strategy.md、docs/adr/0010-automation-script-trusted-execution-governance.md、docs/superpowers/specs/2026-05-17-release-grade-persistence-foundation-design.md、docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md、docs/superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md、docs/superpowers/plans/2026-05-17-schema-governance-migration-hardening.md、docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md 与 docs/architecture/deployment-baseline.md。

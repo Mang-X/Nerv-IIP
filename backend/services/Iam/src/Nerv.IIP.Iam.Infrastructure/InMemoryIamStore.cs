@@ -312,9 +312,24 @@ public sealed class InMemoryIamStore
         var expiresAtUtc = now.AddMinutes(15);
         var session = new UserSessionFact(sessionId, user.UserId, Hash(refreshToken), now, now.AddDays(14), null, user.PermissionVersion);
         _sessions.Add(session);
+        var membership = _memberships
+            .OrderBy(x => x.OrganizationId, StringComparer.Ordinal)
+            .ThenBy(x => x.EnvironmentId, StringComparer.Ordinal)
+            .FirstOrDefault(x => x.UserId == user.UserId);
         var accessToken = Convert.ToBase64String(Encoding.UTF8.GetBytes(
             $"{sessionId}|{user.SecurityStamp}|{user.PermissionVersion}|{expiresAtUtc.ToUnixTimeSeconds()}"));
-        return new AuthResult(accessToken, refreshToken, sessionId, expiresAtUtc, user.UserId, user.SecurityStamp, user.PermissionVersion);
+        return new AuthResult(
+            accessToken,
+            refreshToken,
+            sessionId,
+            expiresAtUtc,
+            user.UserId,
+            user.SecurityStamp,
+            user.PermissionVersion,
+            user.LoginName,
+            user.Email,
+            membership?.OrganizationId,
+            membership?.EnvironmentId);
     }
 
     private void RevokeSession(string sessionId)
@@ -375,7 +390,11 @@ public sealed record AuthResult(
     DateTimeOffset ExpiresAtUtc,
     string UserId,
     string SecurityStamp,
-    int PermissionVersion);
+    int PermissionVersion,
+    string LoginName,
+    string Email,
+    string? OrganizationId,
+    string? EnvironmentId);
 public sealed record ConnectorPrincipal(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
 public sealed record CurrentPrincipalSnapshot(
     string UserId,

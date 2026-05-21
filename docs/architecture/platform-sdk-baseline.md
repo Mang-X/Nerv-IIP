@@ -162,7 +162,7 @@ Nerv.IIP.Sdk.Observability
 1. `Sdk.Core`：公共上下文、错误模型、HTTP transport。
 2. `Sdk.Auth`：Connector Host credential 注入和 token 处理薄封装。
 3. `Sdk.ConnectorProtocol`：注册、心跳、状态快照客户端。
-4. `Sdk.FileStorage`：上传会话和上传指令客户端可以先落接口骨架，文件内容流转不阻塞第一条 Connector Host 纵切。
+4. `Sdk.FileStorage`：已新增公开 FileStorage contracts 和 `HttpFileStorageClient`，覆盖创建上传会话、完成上传会话、读取文件元数据和创建下载授权；客户端隐藏 server-proxy/tus 上传指令差异，当前不直接实现二进制流转。
 5. `Sdk.Ops`：已覆盖第二阶段低风险动作闭环所需的客户端能力，包括创建 `OperationTask`、按 ID 查询任务详情、按组织/环境/Connector Host 拉取 pending task、回传 `OperationResult`，以及在 Connector Host 调用 pending/result 接口时注入本地认证头。
 
 `Sdk.Notification` 和 `Sdk.Observability` 仍可以先冻结接口方向，在站内通知纵切和诊断附件场景中补齐。`Sdk.Ops` 后续不再需要补“是否能创建/查询任务”的基础能力，而是继续补附件引用、持久化 outbox 协作、完整 IAM scope 支持、重试语义和生产存储下的错误归一化。

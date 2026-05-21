@@ -18,18 +18,45 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
 
     public string CreateAccessToken(User user, UserSession session)
     {
-        return CreateAccessToken(user.Id.Id, session.Id.Id, user.SecurityStamp, user.PermissionVersion);
+        return CreateAccessToken(
+            user.Id.Id,
+            session.Id.Id,
+            user.SecurityStamp,
+            user.PermissionVersion,
+            user.LoginName,
+            user.Email);
+    }
+
+    public string CreateAccessToken(
+        User user,
+        UserSession session,
+        string organizationId,
+        string environmentId)
+    {
+        return CreateAccessToken(
+            user.Id.Id,
+            session.Id.Id,
+            user.SecurityStamp,
+            user.PermissionVersion,
+            user.LoginName,
+            user.Email,
+            organizationId,
+            environmentId);
     }
 
     public string CreateAccessToken(
         string userId,
         string sessionId,
         string securityStamp,
-        int permissionVersion)
+        int permissionVersion,
+        string? loginName = null,
+        string? email = null,
+        string? organizationId = null,
+        string? environmentId = null)
     {
         var now = DateTimeOffset.UtcNow;
-        var claims = new ClaimsIdentity(
-        [
+        var claims = new List<Claim>
+        {
             new Claim(JwtRegisteredClaimNames.Sub, userId),
             new Claim("sessionId", sessionId),
             new Claim("principalType", "user"),
@@ -37,12 +64,16 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
             new Claim("permissionVersion", permissionVersion.ToString()),
             new Claim(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("n"))
-        ]);
+        };
+        AddIfPresent(claims, "loginName", loginName);
+        AddIfPresent(claims, "email", email);
+        AddIfPresent(claims, "organizationId", organizationId);
+        AddIfPresent(claims, "environmentId", environmentId);
 
         var token = new JwtSecurityToken(
             issuer: GetIssuer(),
             audience: GetAudience(),
-            claims: claims.Claims,
+            claims: claims,
             notBefore: now.UtcDateTime,
             expires: now.AddMinutes(GetAccessTokenMinutes()).UtcDateTime,
             signingCredentials: new SigningCredentials(GetSigningKey(), SecurityAlgorithms.HmacSha256));
@@ -162,5 +193,13 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
         return int.TryParse(configuration["Iam:Jwt:AccessTokenMinutes"], out var minutes) && minutes > 0
             ? minutes
             : 15;
+    }
+
+    private static void AddIfPresent(List<Claim> claims, string type, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            claims.Add(new Claim(type, value));
+        }
     }
 }

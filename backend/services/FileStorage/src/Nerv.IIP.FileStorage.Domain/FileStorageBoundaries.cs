@@ -1,7 +1,39 @@
 namespace Nerv.IIP.FileStorage.Domain;
 
-public sealed record FileMetadata(string FileId, string Purpose, string ObjectKey, string ScanStatus);
-public sealed record UploadSession(string UploadSessionId, string FileId, string Provider, DateTimeOffset ExpiresAtUtc);
+public sealed record OwnerReference(string OwnerService, string OwnerType, string OwnerId);
+
+public sealed record FileMetadata(
+    string FileId,
+    string OrganizationId,
+    string EnvironmentId,
+    OwnerReference Owner,
+    string FilePurpose,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    string? Checksum,
+    string ObjectKey,
+    string ScanStatus,
+    string Status,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset CompletedAtUtc);
+
+public sealed record UploadSession(
+    string UploadSessionId,
+    string FileId,
+    string OrganizationId,
+    string EnvironmentId,
+    OwnerReference Owner,
+    string FilePurpose,
+    string FileName,
+    string ContentType,
+    long ExpectedSizeBytes,
+    string? Checksum,
+    string Provider,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset ExpiresAtUtc,
+    bool Completed);
+
 public sealed record UploadInstruction(string UploadSessionId, Uri UploadUri, IReadOnlyDictionary<string, string> Headers);
 public sealed record DownloadGrant(string FileId, Uri DownloadUri, DateTimeOffset ExpiresAtUtc);
 

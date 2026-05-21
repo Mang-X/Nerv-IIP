@@ -3,10 +3,17 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Json;
 using Serilog.Sinks.OpenTelemetry;
+using SerilogOtlpProtocol = Serilog.Sinks.OpenTelemetry.OtlpProtocol;
+
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Nerv.IIP.Observability.Tests")]
 
 namespace Nerv.IIP.Observability;
 
@@ -15,6 +22,11 @@ public static class NervIipObservabilityRegistration
     public static IServiceCollection AddNervIipObservability(this IServiceCollection services, IConfiguration configuration, string serviceName)
     {
         services.AddSingleton(new NervIipObservabilityOptions(serviceName));
+        if (GetBoolean(configuration, "OpenTelemetry:Enabled", defaultValue: true))
+        {
+            services.AddNervIipOpenTelemetry(configuration, serviceName);
+        }
+
         services.AddLogging(logging =>
         {
             logging.AddConfiguration(configuration.GetSection("Logging"));
@@ -55,6 +67,50 @@ public static class NervIipObservabilityRegistration
         });
     }
 
+    private static IServiceCollection AddNervIipOpenTelemetry(this IServiceCollection services, IConfiguration configuration, string serviceName)
+    {
+        var traceOtlpEndpoint = ReadOtlpEndpoint(configuration, NervIipOpenTelemetrySignal.Traces);
+        var hasTraceOtlpEndpoint = Uri.TryCreate(traceOtlpEndpoint, UriKind.Absolute, out _);
+        var metricsOtlpEndpoint = ReadOtlpEndpoint(configuration, NervIipOpenTelemetrySignal.Metrics);
+        var hasMetricsOtlpEndpoint = Uri.TryCreate(metricsOtlpEndpoint, UriKind.Absolute, out _);
+
+        services.AddOpenTelemetry()
+            .ConfigureResource(resource => resource.AddService(serviceName))
+            .WithTracing(tracing =>
+            {
+                tracing
+                    .AddAspNetCoreInstrumentation()
+                    .AddHttpClientInstrumentation();
+
+                if (hasTraceOtlpEndpoint)
+                {
+                    tracing.AddOtlpExporter(options =>
+                    {
+                        options.Protocol = ReadOpenTelemetryOtlpProtocol(configuration, traceOtlpEndpoint);
+                        options.Endpoint = ResolveOpenTelemetryOtlpEndpoint(configuration, traceOtlpEndpoint, NervIipOpenTelemetrySignal.Traces);
+                    });
+                }
+            })
+            .WithMetrics(metrics =>
+            {
+                metrics
+                    .AddAspNetCoreInstrumentation()
+                    .AddHttpClientInstrumentation()
+                    .AddRuntimeInstrumentation();
+
+                if (hasMetricsOtlpEndpoint)
+                {
+                    metrics.AddOtlpExporter(options =>
+                    {
+                        options.Protocol = ReadOpenTelemetryOtlpProtocol(configuration, metricsOtlpEndpoint);
+                        options.Endpoint = ResolveOpenTelemetryOtlpEndpoint(configuration, metricsOtlpEndpoint, NervIipOpenTelemetrySignal.Metrics);
+                    });
+                }
+            });
+
+        return services;
+    }
+
     private static Serilog.ILogger CreateSerilogLogger(IConfiguration configuration, string serviceName)
     {
         var formatter = new JsonFormatter(renderMessage: true);
@@ -85,17 +141,14 @@ public static class NervIipObservabilityRegistration
                 shared: true);
         }
 
-        var otlpEndpoint = FirstNonEmpty(
-            Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"),
-            configuration["OpenTelemetry:Endpoint"],
-            configuration["Logging:OpenTelemetry:Endpoint"]);
+        var otlpEndpoint = ReadOtlpEndpoint(configuration, NervIipOpenTelemetrySignal.Logs);
 
         if (!string.IsNullOrWhiteSpace(otlpEndpoint))
         {
             loggerConfiguration.WriteTo.OpenTelemetry(options =>
             {
                 options.Endpoint = otlpEndpoint;
-                options.Protocol = ReadOtlpProtocol(configuration, otlpEndpoint);
+                options.Protocol = ReadSerilogOtlpProtocol(configuration, otlpEndpoint);
                 options.ResourceAttributes = new Dictionary<string, object>
                 {
                     ["service.name"] = serviceName
@@ -112,17 +165,120 @@ public static class NervIipObservabilityRegistration
         return Enum.TryParse<LogEventLevel>(configuredLevel, ignoreCase: true, out var level) ? level : LogEventLevel.Information;
     }
 
-    private static OtlpProtocol ReadOtlpProtocol(IConfiguration configuration, string endpoint)
+    internal static string ReadOtlpEndpoint(IConfiguration configuration, NervIipOpenTelemetrySignal signal)
     {
-        var configuredProtocol = FirstNonEmpty(configuration["OpenTelemetry:Protocol"], configuration["Logging:OpenTelemetry:Protocol"]);
-        if (Enum.TryParse<OtlpProtocol>(configuredProtocol, ignoreCase: true, out var protocol))
+        var signalSpecificEndpoint = signal switch
+        {
+            NervIipOpenTelemetrySignal.Traces => FirstNonEmpty(
+                Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
+                configuration["OpenTelemetry:Traces:Endpoint"]),
+            NervIipOpenTelemetrySignal.Metrics => FirstNonEmpty(
+                Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"),
+                configuration["OpenTelemetry:Metrics:Endpoint"]),
+            NervIipOpenTelemetrySignal.Logs => FirstNonEmpty(
+                Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"),
+                configuration["OpenTelemetry:Logs:Endpoint"]),
+            _ => string.Empty
+        };
+
+        return FirstNonEmpty(
+            signalSpecificEndpoint,
+            Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"),
+            configuration["OpenTelemetry:Endpoint"],
+            configuration["Logging:OpenTelemetry:Endpoint"]);
+    }
+
+    internal static SerilogOtlpProtocol ReadSerilogOtlpProtocol(IConfiguration configuration, string endpoint)
+    {
+        var configuredProtocol = ReadConfiguredOtlpProtocol(configuration);
+        if (IsHttpProtobufProtocol(configuredProtocol))
+        {
+            return SerilogOtlpProtocol.HttpProtobuf;
+        }
+
+        if (Enum.TryParse<SerilogOtlpProtocol>(configuredProtocol, ignoreCase: true, out var protocol))
         {
             return protocol;
         }
 
         return endpoint.Contains("4318", StringComparison.OrdinalIgnoreCase) || endpoint.Contains("/v1/logs", StringComparison.OrdinalIgnoreCase)
-            ? OtlpProtocol.HttpProtobuf
-            : OtlpProtocol.Grpc;
+            ? SerilogOtlpProtocol.HttpProtobuf
+            : SerilogOtlpProtocol.Grpc;
+    }
+
+    internal static OtlpExportProtocol ReadOpenTelemetryOtlpProtocol(IConfiguration configuration, string endpoint)
+    {
+        var configuredProtocol = ReadConfiguredOtlpProtocol(configuration);
+        if (IsHttpProtobufProtocol(configuredProtocol))
+        {
+            return OtlpExportProtocol.HttpProtobuf;
+        }
+
+        if (Enum.TryParse<OtlpExportProtocol>(configuredProtocol, ignoreCase: true, out var protocol))
+        {
+            return protocol;
+        }
+
+        return endpoint.Contains("4318", StringComparison.OrdinalIgnoreCase)
+            || endpoint.Contains("/v1/traces", StringComparison.OrdinalIgnoreCase)
+            || endpoint.Contains("/v1/metrics", StringComparison.OrdinalIgnoreCase)
+            || endpoint.Contains("/v1/logs", StringComparison.OrdinalIgnoreCase)
+            ? OtlpExportProtocol.HttpProtobuf
+            : OtlpExportProtocol.Grpc;
+    }
+
+    internal static Uri ResolveOpenTelemetryOtlpEndpoint(IConfiguration configuration, string endpoint, NervIipOpenTelemetrySignal signal)
+    {
+        var endpointUri = new Uri(endpoint, UriKind.Absolute);
+        if (ReadOpenTelemetryOtlpProtocol(configuration, endpoint) != OtlpExportProtocol.HttpProtobuf)
+        {
+            return endpointUri;
+        }
+
+        var signalPath = signal switch
+        {
+            NervIipOpenTelemetrySignal.Traces => "/v1/traces",
+            NervIipOpenTelemetrySignal.Metrics => "/v1/metrics",
+            NervIipOpenTelemetrySignal.Logs => "/v1/logs",
+            _ => string.Empty
+        };
+
+        var builder = new UriBuilder(endpointUri);
+        var path = builder.Path.TrimEnd('/');
+        path = TrimKnownOtlpSignalPath(path);
+        builder.Path = string.IsNullOrWhiteSpace(path) || path == "/"
+            ? signalPath
+            : $"{path}{signalPath}";
+        return builder.Uri;
+    }
+
+    private static string ReadConfiguredOtlpProtocol(IConfiguration configuration)
+    {
+        return FirstNonEmpty(
+            Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_PROTOCOL"),
+            configuration["OpenTelemetry:Protocol"],
+            configuration["Logging:OpenTelemetry:Protocol"]);
+    }
+
+    private static bool IsHttpProtobufProtocol(string value)
+    {
+        return value.Equals("HttpProtobuf", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("Http", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("http/protobuf", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("http_protobuf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string TrimKnownOtlpSignalPath(string path)
+    {
+        foreach (var suffix in new[] { "/v1/traces", "/v1/metrics", "/v1/logs" })
+        {
+            if (path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return path[..^suffix.Length];
+            }
+        }
+
+        return path;
     }
 
     private static bool GetBoolean(IConfiguration configuration, string key, bool defaultValue)
@@ -153,3 +309,10 @@ public static class NervIipObservabilityRegistration
 }
 
 public sealed record NervIipObservabilityOptions(string ServiceName);
+
+internal enum NervIipOpenTelemetrySignal
+{
+    Traces,
+    Metrics,
+    Logs
+}

@@ -1,13 +1,40 @@
 using FastEndpoints;
 using Nerv.IIP.Caching;
+using Nerv.IIP.FileStorage.Infrastructure;
+using Nerv.IIP.FileStorage.Web.Application.Files;
+using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
+using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using Nerv.IIP.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
+var usePostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
 builder.Services.AddFastEndpoints();
+builder.Services.AddSingleton<ILocalTusFileStoreAccessor, LocalTusFileStoreAccessor>();
+builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>
+    string.Equals(services.GetRequiredService<IConfiguration>()["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
+        ? new TusUploadProvider()
+        : new ServerProxyUploadProvider());
+
+if (usePostgreSql)
+{
+    builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
+}
+else
+{
+    builder.Services.AddSingleton<IFileStorageService, InMemoryFileStorageService>();
+}
+
+builder.Services.AddFileStoragePersistence(builder.Configuration);
 builder.Services.AddNervIipCaching(builder.Configuration, "file-storage");
 builder.Services.AddNervIipObservability(builder.Configuration, "file-storage");
 
 var app = builder.Build();
+if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigrate"))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<FileStorageDatabaseMigrationRunner>().MigrateAsync();
+}
+
 app.UseNervIipCorrelation();
 app.UseFastEndpoints();
 app.Run();
