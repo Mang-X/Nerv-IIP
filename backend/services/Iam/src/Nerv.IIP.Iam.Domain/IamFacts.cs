@@ -35,6 +35,10 @@ public static class NervIipSeedPermissions
         "business.masterdata.partners.read",
         "business.masterdata.partners.manage",
         "business.masterdata.resources.read",
-        "business.masterdata.resources.manage"
+        "business.masterdata.resources.manage",
+        "notifications.intents.submit",
+        "notifications.messages.read",
+        "notifications.messages.mark-read",
+        "notifications.tasks.read"
     ];
 }

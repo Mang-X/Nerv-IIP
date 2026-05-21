@@ -44,6 +44,8 @@ public sealed record NotificationTaskResponse(
 
 public sealed record NotificationTaskListResponse(IReadOnlyCollection<NotificationTaskResponse> Items);
 
+public sealed record MarkNotificationMessagesReadRequest(IReadOnlyCollection<string> MessageIds);
+
 public sealed record MarkNotificationMessageReadResponse(string MessageId, string Status, DateTimeOffset ReadAtUtc);
 
 public static class NotificationContractConstants

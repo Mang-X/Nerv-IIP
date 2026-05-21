@@ -6,8 +6,6 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 
-public sealed record MarkNotificationMessagesReadRequest(IReadOnlyCollection<string> MessageIds);
-
 public sealed record MarkNotificationMessagesReadCommand(
     string OrganizationId,
     string EnvironmentId,

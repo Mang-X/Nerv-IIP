@@ -8,7 +8,9 @@ using Nerv.IIP.PlatformGateway.Web.Application.IamAdmin;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Auth;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.IamAdmin;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
+using Nerv.IIP.PlatformGateway.Web.Endpoints.Notifications;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
+using Nerv.IIP.PlatformGateway.Web.Application.NotificationClient;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
 using NetCorePal.Extensions.AspNetCore;
 using System.Net;
@@ -35,6 +37,10 @@ builder.Services.AddHttpClient<IAppHubClient, HttpAppHubClient>(client =>
 builder.Services.AddHttpClient<IGatewayOpsClient, GatewayOpsClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Ops:BaseUrl"] ?? "http://localhost:5103");
+}).AddGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IGatewayNotificationClient, HttpGatewayNotificationClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Notification:BaseUrl"] ?? "http://localhost:5106");
 }).AddGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IGatewayAuthorizationClient, HttpGatewayAuthorizationClient>(client =>
 {
@@ -78,6 +84,11 @@ app.UseFastEndpoints(c =>
         nameof(ListConsoleIamPermissionsEndpoint) => "listConsoleIamPermissions",
         nameof(ListConsoleIamSessionsEndpoint) => "listConsoleIamSessions",
         nameof(RevokeConsoleIamSessionEndpoint) => "revokeConsoleIamSession",
+        nameof(ListConsoleNotificationMessagesEndpoint) => "listConsoleNotificationMessages",
+        nameof(ListConsoleNotificationTasksEndpoint) => "listConsoleNotificationTasks",
+        nameof(SubmitConsoleNotificationIntentEndpoint) => "submitConsoleNotificationIntent",
+        nameof(MarkConsoleNotificationMessageReadEndpoint) => "markConsoleNotificationMessageRead",
+        nameof(MarkConsoleNotificationMessagesReadEndpoint) => "markConsoleNotificationMessagesRead",
         _ => ctx.EndpointType.Name
     };
 }).UseSwaggerGen();

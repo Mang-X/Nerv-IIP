@@ -27,7 +27,11 @@ public static class IamPermissionCatalog
         ["ops.tasks.create"] = "Create operation tasks.",
         ["ops.tasks.read"] = "Read operation tasks.",
         ["ops.results.write"] = "Write operation results.",
-        ["ops.audit.read"] = "Read operation audit records."
+        ["ops.audit.read"] = "Read operation audit records.",
+        ["notifications.intents.submit"] = "Submit notification intents.",
+        ["notifications.messages.read"] = "Read notification messages.",
+        ["notifications.messages.mark-read"] = "Mark notification messages as read.",
+        ["notifications.tasks.read"] = "Read notification tasks."
     };
 
     private static readonly HashSet<string> SeedCodes = NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal);

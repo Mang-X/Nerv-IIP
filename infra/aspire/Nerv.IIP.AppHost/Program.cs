@@ -7,6 +7,7 @@ var postgres = builder.AddPostgres("postgres")
 var appHubDatabase = postgres.AddDatabase("apphub-db", "nerv_iip_apphub");
 var iamDatabase = postgres.AddDatabase("iam-db", "nerv_iip_iam");
 var opsDatabase = postgres.AddDatabase("ops-db", "nerv_iip_ops");
+var notificationDatabase = postgres.AddDatabase("notification-db", "nerv_iip_notification");
 var redis = builder.AddRedis("redis")
     .WithDataVolume("nerv-iip-redis");
 var rabbitmq = builder.AddRabbitMQ("rabbitmq")
@@ -79,22 +80,36 @@ var fileStorage = builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-st
     .WaitFor(minio)
     .WaitFor(otelCollector);
 
+var notification = builder.AddProject<Projects.Nerv_IIP_Notification_Web>("notification")
+    .WithHttpEndpoint(port: 5106, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(notificationDatabase, "NotificationDb")
+    .WithReference(rabbitmq)
+    .WaitFor(notificationDatabase)
+    .WaitFor(rabbitmq)
+    .WaitFor(otelCollector);
+
 var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")
     .WithHttpEndpoint(port: 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("Iam__Jwt__SigningKey", LocalJwtSigningKey)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
+    .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithReference(apphub)
     .WithReference(iam)
     .WithReference(ops)
+    .WithReference(notification)
     .WithReference(fileStorage)
     .WithReference(redis)
     .WaitFor(apphub)
     .WaitFor(iam)
     .WaitFor(ops)
+    .WaitFor(notification)
     .WaitFor(fileStorage)
     .WaitFor(redis);
 
