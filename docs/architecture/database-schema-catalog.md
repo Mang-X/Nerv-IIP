@@ -42,8 +42,7 @@ Source:
 
 Known gaps:
 
-1. 当前 Web 层仍保留 netcorepal 模板 Order/Deliver 示例端点和仓储类型；Task 3 仅将这些示例实体排除出 MasterData EF model，未改动 API 行为。
-2. CAP system tables 当前只在 catalog 中标记 system-owned，后续可补 table comment 便于数据库工具展示。
+1. CAP system tables 当前只在 catalog 中标记 system-owned，后续可补 table comment 便于数据库工具展示。
 
 ## AppHub Schema
 

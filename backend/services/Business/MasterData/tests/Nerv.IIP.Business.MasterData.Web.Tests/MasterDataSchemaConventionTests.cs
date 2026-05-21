@@ -1,4 +1,3 @@
-using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -21,20 +20,21 @@ public sealed class MasterDataSchemaConventionTests
     [Fact]
     public void Runtime_PostgreSQL_profile_configures_migrations_history_schema()
     {
-        var programPath = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "..",
-            "..",
-            "..",
-            "..",
-            "..",
-            "src",
-            "Nerv.IIP.Business.MasterData.Web",
-            "Program.cs"));
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole());
+        services.AddMediatR(configuration =>
+        {
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
+        });
+        services.AddMasterDataPostgreSqlPersistence("Host=localhost;Database=nerv_iip_schema_conventions;Username=nerv;Password=nerv");
 
-        var programSource = File.ReadAllText(programPath);
+        using var fixture = new SchemaFixture(services.BuildServiceProvider());
+        var failures = SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(
+            fixture.DbContext,
+            MasterDataFacts.ServiceName,
+            MasterDataFacts.Schema);
 
-        Assert.Contains("MigrationsHistoryTable(\"__EFMigrationsHistory\", MasterDataFacts.Schema)", programSource, StringComparison.Ordinal);
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
     [Fact]
@@ -71,9 +71,7 @@ public sealed class MasterDataSchemaConventionTests
         {
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
         });
-        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
-            "Host=localhost;Database=nerv_iip_schema_conventions;Username=nerv;Password=nerv",
-            npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", MasterDataFacts.Schema)));
+        services.AddMasterDataPostgreSqlPersistence("Host=localhost;Database=nerv_iip_schema_conventions;Username=nerv;Password=nerv");
 
         return new SchemaFixture(services.BuildServiceProvider());
     }

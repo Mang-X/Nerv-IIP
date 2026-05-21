@@ -6,7 +6,6 @@ using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using StackExchange.Redis;
 using FluentValidation.AspNetCore;
-using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.MasterData.Web.Clients;
 using Nerv.IIP.Business.MasterData.Web.Extensions;
 using FastEndpoints;
@@ -97,21 +96,9 @@ try
 
     #region 基础设施
 
-    builder.Services.AddRepositories(typeof(ApplicationDbContext).Assembly);
-
-    builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    {
-        options.UseNpgsql(
-            builder.Configuration.GetConnectionString("PostgreSQL"),
-            npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", MasterDataFacts.Schema));
-        // 仅在开发环境启用敏感数据日志，防止生产环境泄露敏感信息
-        if (builder.Environment.IsDevelopment())
-        {
-            options.EnableSensitiveDataLogging();
-        }
-        options.EnableDetailedErrors();
-    });
-    builder.Services.AddUnitOfWork<ApplicationDbContext>();
+    builder.Services.AddMasterDataPostgreSqlPersistence(
+        builder.Configuration.GetConnectionString("PostgreSQL"),
+        builder.Environment.IsDevelopment());
     builder.Services.AddRedisLocks();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
@@ -215,7 +202,7 @@ try
         var html = VisualizationHtmlBuilder.GenerateVisualizationHtml(
             CodeFlowAnalysisHelper.GetResultFromAssemblies(typeof(Program).Assembly,
                 typeof(ApplicationDbContext).Assembly,
-                typeof(Nerv.IIP.Business.MasterData.Domain.AggregatesModel.OrderAggregate.Order).Assembly)
+                typeof(MasterDataFacts).Assembly)
         );
         return Results.Content(html, "text/html; charset=utf-8");
     });

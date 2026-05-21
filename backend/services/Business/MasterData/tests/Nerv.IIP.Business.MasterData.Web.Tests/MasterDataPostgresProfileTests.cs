@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
@@ -17,14 +18,10 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
 public sealed class MasterDataPostgresProfileTests
 {
-    [Fact]
+    [PostgresFact]
     public async Task Postgres_store_persists_master_data_aggregates()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return;
-        }
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
 
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole());
@@ -32,16 +29,14 @@ public sealed class MasterDataPostgresProfileTests
         {
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
         });
-        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
-            connectionString,
-            npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", MasterDataFacts.Schema)));
+        services.AddMasterDataPostgreSqlPersistence(connectionString);
 
         await using var provider = services.BuildServiceProvider();
 
         using (var scope = provider.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            await DropMasterDataSchemaAsync(db);
             await db.Database.MigrateAsync();
             await AssertMigrationsHistoryTableInSchemaAsync(db, MasterDataFacts.Schema);
 
@@ -73,6 +68,15 @@ public sealed class MasterDataPostgresProfileTests
         }
     }
 
+    private static async Task DropMasterDataSchemaAsync(ApplicationDbContext db)
+    {
+        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(MasterDataFacts.Schema);
+        await db.Database.OpenConnectionAsync();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static async Task AssertMigrationsHistoryTableInSchemaAsync(ApplicationDbContext db, string schema)
     {
         await db.Database.OpenConnectionAsync();
@@ -92,5 +96,17 @@ public sealed class MasterDataPostgresProfileTests
 
         var exists = (bool?)await command.ExecuteScalarAsync() ?? false;
         Assert.True(exists, $"Expected EF migrations history table in schema '{schema}'.");
+    }
+}
+
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+public sealed class PostgresFactAttribute : FactAttribute
+{
+    public PostgresFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+        {
+            Skip = "Set NERV_IIP_TEST_POSTGRES to run PostgreSQL profile tests.";
+        }
     }
 }

@@ -1,9 +1,7 @@
 using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
-using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeliverAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
-using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.OrderAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
@@ -19,8 +17,6 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     : AppDbContextBase(options, mediator)
     , IPostgreSqlCapDataStorage
 {
-    public DbSet<Order> Orders => Set<Order>();
-    public DbSet<DeliverRecord> DeliverRecords => Set<DeliverRecord>();
     public DbSet<Sku> Skus => Set<Sku>();
     public DbSet<BusinessPartner> BusinessPartners => Set<BusinessPartner>();
     public DbSet<Department> Departments => Set<Department>();
@@ -39,8 +35,6 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(MasterDataFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
-        modelBuilder.Ignore<Order>();
-        modelBuilder.Ignore<DeliverRecord>();
         ConfigureCapStorage(modelBuilder);
     }
 
