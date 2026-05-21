@@ -17,6 +17,7 @@ The desired outcome is simple: a developer can clone the repository, install the
 5. Frontend commands are currently exposed from `frontend/package.json` and `frontend/apps/console/package.json`.
 6. Service launch ports are inconsistent: Gateway uses `5073`, Ops uses `5105`, AppHub uses `5204`, FileStorage uses `5261`, IAM uses `5283`, while older docs and fallback code still mention `5100`, `5103`, `5104` and `5105`.
 7. Console development currently uses `127.0.0.1:5173`, which is Vite's common default port and should not become the platform's canonical Console port.
+8. Local MinIO runtime references currently use `minio/minio` in both Aspire AppHost and `infra/docker-compose.dev.yml`; this should move to the maintained `pgsty/minio` image line for local development.
 
 ## Recommended Approach
 
@@ -48,6 +49,7 @@ This keeps the project feeling like a complete platform without introducing a he
 7. Update README and architecture docs with the daily startup path.
 8. Add script governance coverage for the new scripts.
 9. Add focused verification for command routing, script governance and AppHost build.
+10. Update local MinIO container image references from `minio/minio` to `pgsty/minio` with an explicit release tag.
 
 ### Out Of Scope
 
@@ -58,6 +60,7 @@ This keeps the project feeling like a complete platform without introducing a he
 5. Making infrastructure service ports artificially contiguous when ecosystem defaults are more recognizable.
 6. Changing production configuration, customer deployment ports or network policy.
 7. Starting or stopping user-managed Docker resources outside the current local development topology.
+8. Replacing the FileStorage object-storage abstraction or choosing a non-MinIO S3-compatible backend.
 
 ## Command Surface
 
@@ -111,6 +114,23 @@ Infrastructure services keep familiar ecosystem ports:
 | `9001` | MinIO Console |
 | `4317` | OTLP gRPC |
 | `4318` | OTLP HTTP |
+
+## Container Image Baseline
+
+Local development should use `pgsty/minio` instead of `minio/minio`.
+
+The implementation should update both local topology entrypoints:
+
+1. `infra/aspire/Nerv.IIP.AppHost/Program.cs`
+2. `infra/docker-compose.dev.yml`
+
+Use an explicit release tag rather than `latest`; at design time the intended tag is:
+
+```text
+pgsty/minio:RELEASE.2026-04-17T00-00-00Z
+```
+
+If a newer `pgsty/minio` release exists at implementation time, prefer the latest stable release tag after checking the image metadata. This change is only about the local development container image. The platform still treats object storage through the FileStorage provider abstraction and remains compatible with MinIO or equivalent S3-compatible object storage.
 
 The service-port updates should touch:
 
