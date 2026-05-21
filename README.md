@@ -35,8 +35,12 @@ Nerv-IIP 是一个从 0 到 1 规划的原生 AI 应用管理平台，可面向�
 - 当前能力基线：已完成 IAM Persistent Auth Foundation、Gateway-wide permission enforcement、pnpm 11.1.2 基线、Console Auth + shadcn-vue 基线、Phase 8 蓝色 Design System baseline、IAM Admin Console workflow 和统一本地开发启动入口。
 - 架构总览：[docs/architecture/context-map.md](docs/architecture/context-map.md)
 - 业务平台领域架构：[docs/architecture/business-platform-domain-architecture.md](docs/architecture/business-platform-domain-architecture.md)
+- BusinessMasterData 治理 ADR：[docs/adr/0013-business-master-data-governance.md](docs/adr/0013-business-master-data-governance.md)
+- BusinessMasterData 字段矩阵：[docs/architecture/business-master-data-field-matrix.md](docs/architecture/business-master-data-field-matrix.md)
+- 流程型制造主数据补充：[docs/architecture/business-master-data-process-manufacturing-supplement.md](docs/architecture/business-master-data-process-manufacturing-supplement.md)
 - 业务平台完整规格：[docs/superpowers/specs/2026-05-20-business-platform-domain-design.md](docs/superpowers/specs/2026-05-20-business-platform-domain-design.md)
 - 业务平台实施计划入口：[docs/superpowers/plans/2026-05-20-business-main-platform-integration-readiness.md](docs/superpowers/plans/2026-05-20-business-main-platform-integration-readiness.md)
+- BusinessMasterData realignment 计划：[docs/superpowers/plans/2026-05-21-business-master-data-realignment.md](docs/superpowers/plans/2026-05-21-business-master-data-realignment.md)
 - 移动端 PDA Capacitor PRD：[docs/superpowers/specs/2026-05-21-mobile-pda-capacitor-prd.md](docs/superpowers/specs/2026-05-21-mobile-pda-capacitor-prd.md)
 - 移动端 PDA Capacitor 架构：[docs/architecture/mobile-pda-capacitor-architecture.md](docs/architecture/mobile-pda-capacitor-architecture.md)
 - 仓库结构：[docs/architecture/repo-layout.md](docs/architecture/repo-layout.md)
@@ -162,6 +166,7 @@ Nerv-IIP/
 10. docs/adr/0010-automation-script-trusted-execution-governance.md
 11. docs/adr/0011-integration-event-contract-baseline.md
 12. docs/adr/0012-business-platform-domain-layering.md
+13. docs/adr/0013-business-master-data-governance.md
 
 ### 架构说明
 
@@ -182,21 +187,23 @@ Nerv-IIP/
 15. docs/architecture/third-vertical-slice-console.md
 16. docs/architecture/frontend-structure.md
 17. docs/architecture/api-contract-and-codegen.md
-18. docs/architecture/mobile-pda-capacitor-architecture.md
-19. docs/architecture/ai-boundaries.md
-20. docs/architecture/knowledge-source-lifecycle.md
-21. docs/architecture/backend-bootstrap-plan.md
-22. docs/architecture/implementation-readiness.md
-23. docs/architecture/deployment-baseline.md
-24. docs/architecture/technology-stack-references.md
-25. docs/architecture/fourth-vertical-slice-real-infra.md
-26. docs/architecture/frontend-design-system-planning.md
-27. docs/architecture/database-schema-conventions.md
-28. docs/architecture/database-schema-catalog.md
-29. docs/architecture/database-release-runbook.md
-30. docs/architecture/script-automation-governance.md
-31. docs/architecture/observability-baseline.md
-32. docs/architecture/connector-host-machine-auth.md
+18. docs/architecture/ai-boundaries.md
+19. docs/architecture/knowledge-source-lifecycle.md
+20. docs/architecture/backend-bootstrap-plan.md
+21. docs/architecture/implementation-readiness.md
+22. docs/architecture/deployment-baseline.md
+23. docs/architecture/technology-stack-references.md
+24. docs/architecture/fourth-vertical-slice-real-infra.md
+25. docs/architecture/frontend-design-system-planning.md
+26. docs/architecture/database-schema-conventions.md
+27. docs/architecture/database-schema-catalog.md
+28. docs/architecture/database-release-runbook.md
+29. docs/architecture/script-automation-governance.md
+30. docs/architecture/observability-baseline.md
+31. docs/architecture/connector-host-machine-auth.md
+32. docs/architecture/business-master-data-field-matrix.md
+33. docs/architecture/business-master-data-process-manufacturing-supplement.md
+34. docs/architecture/mobile-pda-capacitor-architecture.md
 
 ### 规格设计
 
@@ -218,15 +225,16 @@ Nerv-IIP/
 7. docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md
 8. docs/superpowers/plans/2026-05-20-business-main-platform-integration-readiness.md
 9. docs/superpowers/plans/2026-05-20-business-master-data-foundation.md
-10. docs/superpowers/plans/2026-05-20-business-product-engineering-mvp.md
-11. docs/superpowers/plans/2026-05-20-business-common-capability-foundation.md
-12. docs/superpowers/plans/2026-05-20-business-demand-planning-mvp.md
-13. docs/superpowers/plans/2026-05-20-business-erp-procurement-sales-finance-mvp.md
-14. docs/superpowers/plans/2026-05-20-business-wms-execution-mvp.md
-15. docs/superpowers/plans/2026-05-20-business-mes-execution-mvp.md
-16. docs/superpowers/plans/2026-05-20-business-industrial-telemetry-mvp.md
-17. docs/superpowers/plans/2026-05-20-business-maintenance-mvp.md
-18. docs/superpowers/plans/2026-05-20-business-full-chain-acceptance.md
+10. docs/superpowers/plans/2026-05-21-business-master-data-realignment.md
+11. docs/superpowers/plans/2026-05-20-business-product-engineering-mvp.md
+12. docs/superpowers/plans/2026-05-20-business-common-capability-foundation.md
+13. docs/superpowers/plans/2026-05-20-business-demand-planning-mvp.md
+14. docs/superpowers/plans/2026-05-20-business-erp-procurement-sales-finance-mvp.md
+15. docs/superpowers/plans/2026-05-20-business-wms-execution-mvp.md
+16. docs/superpowers/plans/2026-05-20-business-mes-execution-mvp.md
+17. docs/superpowers/plans/2026-05-20-business-industrial-telemetry-mvp.md
+18. docs/superpowers/plans/2026-05-20-business-maintenance-mvp.md
+19. docs/superpowers/plans/2026-05-20-business-full-chain-acceptance.md
 
 ## 里程碑
 
@@ -281,6 +289,7 @@ pnpm -C frontend build
 5. 基于 Console Auth + shadcn-vue Baseline 和 Phase 8 Calm Control Plane 蓝色基线继续收敛前端 Design System，后续控制台页面、视觉组件和组件库迁移必须沿用已选 registry、preset、semantic tokens 和导出边界。
 6. 以平台级 Aspire AppHost 为统一拓扑入口，继续衍生 Docker Compose、安装包和 Windows/Linux 整合安装脚本。
 7. 将现有 `verify`/`generate` 脚本迁移到脚本治理 helper 与 fast gate，先收敛 IAM、第五阶段和第四阶段真实基础设施验证入口。
+8. BusinessMasterData realignment 已开始落地，已覆盖核心主数据 create/list/resolve 合同、稳定 operationId、权限码和重复键测试；继续完善下游 ProductEngineering Recipe/Formula 计划和业务前端入口前，应先通过 `scripts/verify-business-master-data-realignment.ps1` 保持主数据基石稳定。
 
 ## 非目标
 

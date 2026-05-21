@@ -14,6 +14,8 @@
 
 This is a multi-service foundation plan because the four services are tightly coupled prerequisites for WMS, MES and ERP but still maintain separate persistence boundaries.
 
+This plan depends on `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`. Inventory must consume MasterData SKU traceability policy and UOM conversion; Quality must consume SKU, partner, device/work-center and reusable characteristic definitions without owning SKU or partner master facts; BarcodeLabel must consume SKU and default barcode policy; BusinessApproval may reference business organization attributes but must not copy IAM roles or permissions.
+
 ## Boundaries
 
 1. Inventory is the only owner of stock balance and stock movement.
@@ -21,6 +23,8 @@ This is a multi-service foundation plan because the four services are tightly co
 3. BusinessApproval does not replace Ops approval.
 4. Quality does not directly change stock balance; it emits inspection results consumed by WMS or Inventory.
 5. BarcodeLabel does not own business document status.
+6. Inventory owns actual lot, serial, heat, expiry, location status and stock movement facts; MasterData owns SKU traceability policy and UOM rules.
+7. Quality owns inspection standards, records, COA, nonconformance and release decisions; MasterData owns reusable reference definitions only when they are cross-domain.
 
 ## File Structure Map
 

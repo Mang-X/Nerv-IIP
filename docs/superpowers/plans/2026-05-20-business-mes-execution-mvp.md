@@ -10,12 +10,17 @@
 
 ---
 
+## MasterData Realignment Dependency
+
+Before executing this plan, complete `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`. MES must resolve SKU, UOM, work center, work calendar, device asset, team and personnel skill references through MasterData contracts. For process manufacturing, MES owns batch execution, actual consumption/output, batch records, deviations, cleaning execution and genealogy; it does not own recipe/formula versions or static material/resource master facts.
+
 ## Boundaries
 
 1. No APS optimizer; scheduling is deterministic rule scheduling.
 2. No direct inventory balance writes.
 3. No direct maintenance fact mutation; MES consumes availability events.
 4. Work orders require released MBOM and routing references.
+5. Process batch records, actual process values and deviations are MES execution facts; reusable material attributes, UOM and static resource capability remain MasterData facts.
 
 ## File Structure Map
 

@@ -10,12 +10,17 @@
 
 ---
 
+## MasterData Realignment Dependency
+
+Before executing this plan, complete `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`. DemandPlanning must consume MasterData reference snapshots for SKU, UOM conversion, work center, work calendar, resource capability and device/resource availability baseline. Planning may add planning-specific defaults or parameters only after the MasterData field matrix decides they do not belong on SKU or resource master facts.
+
 ## Boundaries
 
 1. No APS optimizer or constraint solver in this slice.
 2. No direct writes to ERP, MES or Inventory tables.
 3. MRP time bucket is daily for the MVP.
 4. Suggestions are planning facts until ERP or MES accepts them.
+5. Do not create parallel SKU, UOM, work center, calendar or device master facts in DemandPlanning.
 
 ## File Structure Map
 

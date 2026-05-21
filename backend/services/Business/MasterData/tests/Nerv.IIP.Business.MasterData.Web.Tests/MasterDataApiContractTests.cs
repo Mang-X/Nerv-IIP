@@ -1,0 +1,301 @@
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.MasterData.Web.Application.Auth;
+using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
+using Nerv.IIP.Business.MasterData.Infrastructure;
+using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
+using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
+using Nerv.IIP.Business.MasterData.Web.Application.Queries;
+using NetCorePal.Extensions.Primitives;
+
+namespace Nerv.IIP.Business.MasterData.Web.Tests;
+
+public sealed class MasterDataApiContractTests
+{
+    [Theory]
+    [InlineData(typeof(CreateSkuEndpoint))]
+    [InlineData(typeof(CreateUnitOfMeasureEndpoint))]
+    [InlineData(typeof(CreateUomConversionEndpoint))]
+    [InlineData(typeof(CreateBusinessPartnerEndpoint))]
+    [InlineData(typeof(CreateDepartmentEndpoint))]
+    [InlineData(typeof(CreateTeamEndpoint))]
+    [InlineData(typeof(AssignPersonnelSkillEndpoint))]
+    [InlineData(typeof(CreateSiteEndpoint))]
+    [InlineData(typeof(CreateProductionLineEndpoint))]
+    [InlineData(typeof(CreateShiftEndpoint))]
+    [InlineData(typeof(CreateWorkCalendarEndpoint))]
+    [InlineData(typeof(CreateWorkCenterEndpoint))]
+    [InlineData(typeof(RegisterDeviceAssetEndpoint))]
+    [InlineData(typeof(CreateReferenceDataCodeEndpoint))]
+    public void MasterData_mutation_endpoints_route_through_mediator(Type endpointType)
+    {
+        var parameterTypes = endpointType
+            .GetConstructors()
+            .Single()
+            .GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+
+        Assert.Contains(typeof(ISender), parameterTypes);
+        Assert.DoesNotContain(typeof(ApplicationDbContext), parameterTypes);
+    }
+
+    [Fact]
+    public void MasterData_endpoint_sources_do_not_commit_transactions_directly()
+    {
+        var source = File.ReadAllText(Path.Combine(MasterDataServiceRoot(), "src", "Nerv.IIP.Business.MasterData.Web", "Endpoints", "MasterData", "MasterDataEndpoints.cs"));
+
+        Assert.DoesNotContain("ApplicationDbContext", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SaveChangesAsync", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MasterData_list_endpoint_routes_through_mediator()
+    {
+        var parameterTypes = typeof(ListMasterDataResourcesEndpoint)
+            .GetConstructors()
+            .Single()
+            .GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+
+        Assert.Contains(typeof(ISender), parameterTypes);
+        Assert.DoesNotContain(typeof(ApplicationDbContext), parameterTypes);
+    }
+
+    [Fact]
+    public void MasterData_endpoint_contracts_have_stable_openapi_operation_ids()
+    {
+        var contracts = MasterDataEndpointContracts.All;
+
+        Assert.Equal(17, contracts.Count);
+        Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
+        Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
+        Assert.All(contracts, contract =>
+        {
+            Assert.Matches("^[a-z][A-Za-z0-9]*$", contract.OperationId);
+            Assert.Contains("BusinessMasterData", contract.OperationId, StringComparison.Ordinal);
+            Assert.StartsWith("/api/business/v1/master-data/", contract.Route, StringComparison.Ordinal);
+            Assert.Contains(contract.HttpMethod, new[] { "GET", "POST" });
+            Assert.Contains(contract.PermissionCode, NervIipBusinessMasterDataPermissionSet);
+        });
+    }
+
+    [Fact]
+    public void MasterData_endpoint_contracts_match_route_attributes()
+    {
+        var source = File.ReadAllText(Path.Combine(MasterDataServiceRoot(), "src", "Nerv.IIP.Business.MasterData.Web", "Endpoints", "MasterData", "MasterDataEndpoints.cs"));
+        var failures = MasterDataEndpointContracts.All
+            .Where(contract => !source.Contains($"[Http{ToPascalMethod(contract.HttpMethod)}(\"{contract.Route}\")]", StringComparison.Ordinal))
+            .Select(contract => $"{contract.EndpointType.Name} route attribute does not match {contract.HttpMethod} {contract.Route}.")
+            .ToArray();
+
+        Assert.Empty(failures);
+    }
+
+    [Fact]
+    public void MasterData_endpoints_define_permissions_and_openapi_names_from_contracts()
+    {
+        var source = File.ReadAllText(Path.Combine(MasterDataServiceRoot(), "src", "Nerv.IIP.Business.MasterData.Web", "Endpoints", "MasterData", "MasterDataEndpoints.cs"));
+        var failures = MasterDataEndpointContracts.All
+            .Where(contract =>
+                !source.Contains($"MasterDataEndpointContracts.Get<{contract.EndpointType.Name}>()", StringComparison.Ordinal) ||
+                !source.Contains("Permissions(contract.PermissionCode);", StringComparison.Ordinal) ||
+                !source.Contains("Description(builder => builder.WithName(contract.OperationId));", StringComparison.Ordinal))
+            .Select(contract => $"{contract.EndpointType.Name} does not configure permission/openapi contract")
+            .ToArray();
+
+        Assert.Empty(failures);
+    }
+
+    [Fact]
+    public async Task Resolve_references_supports_reference_data_codes_for_process_master_data()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "material-form", "powder", "Powder"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ResolveMasterDataReferencesQueryHandler(dbContext);
+        var response = await handler.Handle(
+            new ResolveMasterDataReferencesQuery(
+                "org-001",
+                "env-dev",
+                [
+                    new MasterDataReferenceRequest("reference-data", "powder", "material-form"),
+                    new MasterDataReferenceRequest("reference-data:material-form", "powder")
+                ]),
+            CancellationToken.None);
+
+        Assert.All(response.References, reference =>
+        {
+            Assert.True(reference.Exists);
+            Assert.True(reference.Active);
+            Assert.Equal("Powder", reference.DisplayName);
+        });
+    }
+
+    [Fact]
+    public async Task List_resources_supports_reference_data_codes()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "material-form", "powder", "Powder"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListMasterDataResourcesQueryHandler(dbContext);
+        var response = await handler.Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "reference-data"),
+            CancellationToken.None);
+
+        var resource = Assert.Single(response.Resources);
+        Assert.Equal("reference-data", resource.ResourceType);
+        Assert.Equal("material-form:powder", resource.Code);
+        Assert.Equal("Powder", resource.DisplayName);
+        Assert.True(resource.Active);
+    }
+
+    [Fact]
+    public async Task MasterData_create_commands_create_core_resources_without_direct_save()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var created = new[]
+        {
+            await new CreateSkuCommandHandler(new SkuRepository(dbContext)).Handle(
+                new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Finished Good", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, ["gmp"]),
+                CancellationToken.None),
+            await new CreateUnitOfMeasureCommandHandler(new UnitOfMeasureRepository(dbContext)).Handle(
+                new CreateUnitOfMeasureCommand("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"),
+                CancellationToken.None),
+            await new CreateUomConversionCommandHandler(new UomConversionRepository(dbContext)).Handle(
+                new CreateUomConversionCommand("org-001", "env-dev", "kg", "g", 1000m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
+                CancellationToken.None),
+            await new CreateBusinessPartnerCommandHandler(new BusinessPartnerRepository(dbContext)).Handle(
+                new CreateBusinessPartnerCommand("org-001", "env-dev", "SUP-001", "supplier", "Supplier A"),
+                CancellationToken.None),
+            await new CreateDepartmentCommandHandler(new DepartmentRepository(dbContext)).Handle(
+                new CreateDepartmentCommand("org-001", "env-dev", "D-001", "Production", null),
+                CancellationToken.None),
+            await new CreateTeamCommandHandler(new TeamRepository(dbContext)).Handle(
+                new CreateTeamCommand("org-001", "env-dev", "T-001", "Team A", "D-001", "S-001"),
+                CancellationToken.None),
+            await new AssignPersonnelSkillCommandHandler(new PersonnelSkillRepository(dbContext)).Handle(
+                new AssignPersonnelSkillCommand("org-001", "env-dev", "user-001", "weighing", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+                CancellationToken.None),
+            await new CreateSiteCommandHandler(new SiteRepository(dbContext)).Handle(
+                new CreateSiteCommand("org-001", "env-dev", "SITE-001", "Main Plant", "Asia/Shanghai"),
+                CancellationToken.None),
+            await new CreateProductionLineCommandHandler(new ProductionLineRepository(dbContext)).Handle(
+                new CreateProductionLineCommand("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001"),
+                CancellationToken.None),
+            await new CreateShiftCommandHandler(new ShiftRepository(dbContext)).Handle(
+                new CreateShiftCommand("org-001", "env-dev", "S-001", "Night Shift", new TimeOnly(20, 0), new TimeOnly(8, 0), 720),
+                CancellationToken.None),
+            await new CreateWorkCalendarCommandHandler(new WorkCalendarRepository(dbContext)).Handle(
+                new CreateWorkCalendarCommand("org-001", "env-dev", "CAL-001", "Standard Calendar"),
+                CancellationToken.None),
+            await new CreateWorkCenterCommandHandler(new WorkCenterRepository(dbContext)).Handle(
+                new CreateWorkCenterCommand("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "SITE-001", "LINE-001", "CAL-001", "minute", true),
+                CancellationToken.None),
+            await new RegisterDeviceAssetCommandHandler(new DeviceAssetRepository(dbContext)).Handle(
+                new RegisterDeviceAssetCommand("org-001", "env-dev", "EQ-001", "Mixer 500", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>()),
+                CancellationToken.None),
+            await new CreateReferenceDataCodeCommandHandler(new ReferenceDataCodeRepository(dbContext)).Handle(
+                new CreateReferenceDataCodeCommand("org-001", "env-dev", "material-form", "powder", "Powder"),
+                CancellationToken.None),
+        };
+
+        Assert.Equal(14, created.Length);
+        Assert.Contains(created, x => x.ResourceType == "sku" && x.Code == "SKU-001");
+        Assert.Contains(created, x => x.ResourceType == "uom-conversion" && x.Code == "kg->g");
+        Assert.Contains(created, x => x.ResourceType == "reference-data-code" && x.Code == "powder");
+        Assert.Equal(14, dbContext.ChangeTracker.Entries().Count(entry => entry.State == EntityState.Added));
+    }
+
+    [Fact]
+    public async Task Create_sku_command_rejects_duplicate_business_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Skus.Add(Domain.AggregatesModel.SkuAggregate.Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "SKU-001",
+            "Finished Good",
+            "kg",
+            "finished-good",
+            "material",
+            "lot",
+            "none",
+            "180d",
+            "ambient",
+            "ean13",
+            true,
+            ["gmp"]));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Duplicate", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, []),
+            CancellationToken.None));
+        Assert.Contains("already exists", exception.Message, StringComparison.Ordinal);
+    }
+
+    private static ServiceProvider CreateInMemoryProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration =>
+        {
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
+        });
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseInMemoryDatabase($"master-data-api-contract-{Guid.NewGuid():N}"));
+        return services.BuildServiceProvider();
+    }
+
+    private static readonly string[] NervIipBusinessMasterDataPermissionSet =
+    [
+        BusinessPermissionCodes.MasterDataProductsRead,
+        BusinessPermissionCodes.MasterDataProductsManage,
+        BusinessPermissionCodes.MasterDataPartnersRead,
+        BusinessPermissionCodes.MasterDataPartnersManage,
+        BusinessPermissionCodes.MasterDataResourcesRead,
+        BusinessPermissionCodes.MasterDataResourcesManage
+    ];
+
+    private static string ToPascalMethod(string method)
+    {
+        return method.ToUpperInvariant() switch
+        {
+            "GET" => "Get",
+            "POST" => "Post",
+            _ => method
+        };
+    }
+
+    private static string MasterDataServiceRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, "backend", "services", "Business", "MasterData");
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate backend/services/Business/MasterData from test output directory.");
+    }
+}

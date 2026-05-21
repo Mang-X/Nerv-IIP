@@ -10,6 +10,18 @@
 
 ---
 
+## Realignment Gate
+
+2026-05-21 review found that this plan is a valid minimum skeleton but is not sufficient as the long-lived MasterData foundation for both discrete and process manufacturing. Before continuing with Task 4 or Task 5, execute `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`.
+
+The realignment is governed by:
+
+1. `docs/adr/0013-business-master-data-governance.md`
+2. `docs/architecture/business-master-data-field-matrix.md`
+3. `docs/architecture/business-master-data-process-manufacturing-supplement.md`
+
+Task 1 through Task 3 may be treated as historical foundation work. Task 4 and Task 5 must be updated by the realignment plan so API contracts, IAM permissions, schema catalog and readiness notes include UOM, SKU industrial attributes, resource hierarchy, process-manufacturing boundaries, downstream resolve APIs and MasterData change events.
+
 ## Source Inputs
 
 1. `docs/adr/0012-business-platform-domain-layering.md`
