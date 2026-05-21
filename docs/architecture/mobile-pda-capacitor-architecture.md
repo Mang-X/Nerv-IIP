@@ -424,17 +424,7 @@ Mobile OpenAPI 使用独立 BusinessGateway 契约，但仍进入现有 `@nerv-i
 5. PDA 应用只从 `@nerv-iip/api-client` 稳定入口消费，不深 import `src/generated/mobile/*`。
 6. BusinessGateway 与 PlatformGateway 可以在部署层共用公网域名和反向代理，也可以分开域名；前端 transport 必须允许 PDA 的 `gatewayBaseUrl` 指向 BusinessGateway，不假设与 Console `baseURL` 相同。
 
-Mobile operationId 固定使用 lower camelCase，并带 `Mobile` 语义前缀：
-
-| operationId | Route | 用途 |
-| --- | --- | --- |
-| `getMobileBootstrap` | `GET /api/mobile/v1/bootstrap` | 登录后拉取用户、上下文、权限、设备策略。 |
-| `listMobileTasks` | `GET /api/mobile/v1/tasks` | 拉取本人任务、最近任务、异常任务。 |
-| `getMobileSyncDelta` | `GET /api/mobile/v1/sync/delta` | 拉取基础数据和任务增量。 |
-| `batchMobileOperations` | `POST /api/mobile/v1/operations/batch` | 批量同步 outbox。 |
-| `interpretMobileScan` | `POST /api/mobile/v1/scans/interpret` | 在线解释条码。 |
-| `registerMobileDevice` | `POST /api/mobile/v1/devices/register` | 登记设备或安装实例。 |
-| `uploadMobileDiagnostics` | `POST /api/mobile/v1/diagnostics` | 上传诊断摘要。 |
+Mobile operationId 固定使用 lower camelCase 并带 `Mobile` 语义前缀，完整表格见 [api-contract-and-codegen.md](api-contract-and-codegen.md)。
 
 所有写 API 必须支持：
 
