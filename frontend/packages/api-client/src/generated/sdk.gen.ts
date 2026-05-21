@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateConsoleIamRoleData, CreateConsoleIamRoleErrors, CreateConsoleIamRoleResponses, CreateConsoleIamUserData, CreateConsoleIamUserErrors, CreateConsoleIamUserResponses, DisableConsoleIamUserData, DisableConsoleIamUserErrors, DisableConsoleIamUserResponses, GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailErrors, GetConsoleInstanceDetailResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskErrors, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalErrors, GetConsolePrincipalResponses, HealthEndpointData, HealthEndpointResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponses, ListConsoleIamPermissionsData, ListConsoleIamPermissionsErrors, ListConsoleIamPermissionsResponses, ListConsoleIamRolesData, ListConsoleIamRolesErrors, ListConsoleIamRolesResponses, ListConsoleIamSessionsData, ListConsoleIamSessionsErrors, ListConsoleIamSessionsResponses, ListConsoleIamUsersData, ListConsoleIamUsersErrors, ListConsoleIamUsersResponses, ListConsoleInstancesData, ListConsoleInstancesErrors, ListConsoleInstancesResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionErrors, LogoutConsoleSessionResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordErrors, ResetConsoleIamUserPasswordResponses, RestartConsoleInstanceData, RestartConsoleInstanceErrors, RestartConsoleInstanceResponses, RevokeConsoleIamSessionData, RevokeConsoleIamSessionErrors, RevokeConsoleIamSessionResponses, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsErrors, UpdateConsoleIamRolePermissionsResponses, UpdateConsoleIamUserData, UpdateConsoleIamUserErrors, UpdateConsoleIamUserResponses } from './types.gen';
+import type { CreateConsoleIamRoleData, CreateConsoleIamRoleErrors, CreateConsoleIamRoleResponses, CreateConsoleIamUserData, CreateConsoleIamUserErrors, CreateConsoleIamUserResponses, DisableConsoleIamUserData, DisableConsoleIamUserErrors, DisableConsoleIamUserResponses, GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailErrors, GetConsoleInstanceDetailResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskErrors, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalErrors, GetConsolePrincipalResponses, HealthEndpointData, HealthEndpointResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponses, ListConsoleIamPermissionsData, ListConsoleIamPermissionsErrors, ListConsoleIamPermissionsResponses, ListConsoleIamRolesData, ListConsoleIamRolesErrors, ListConsoleIamRolesResponses, ListConsoleIamSessionsData, ListConsoleIamSessionsErrors, ListConsoleIamSessionsResponses, ListConsoleIamUsersData, ListConsoleIamUsersErrors, ListConsoleIamUsersResponses, ListConsoleInstancesData, ListConsoleInstancesErrors, ListConsoleInstancesResponses, ListConsoleNotificationMessagesData, ListConsoleNotificationMessagesErrors, ListConsoleNotificationMessagesResponses, ListConsoleNotificationTasksData, ListConsoleNotificationTasksErrors, ListConsoleNotificationTasksResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionErrors, LogoutConsoleSessionResponses, MarkConsoleNotificationMessageReadData, MarkConsoleNotificationMessageReadErrors, MarkConsoleNotificationMessageReadResponses, MarkConsoleNotificationMessagesReadData, MarkConsoleNotificationMessagesReadErrors, MarkConsoleNotificationMessagesReadResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordErrors, ResetConsoleIamUserPasswordResponses, RestartConsoleInstanceData, RestartConsoleInstanceErrors, RestartConsoleInstanceResponses, RevokeConsoleIamSessionData, RevokeConsoleIamSessionErrors, RevokeConsoleIamSessionResponses, SubmitConsoleNotificationIntentData, SubmitConsoleNotificationIntentErrors, SubmitConsoleNotificationIntentResponses, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsErrors, UpdateConsoleIamRolePermissionsResponses, UpdateConsoleIamUserData, UpdateConsoleIamUserErrors, UpdateConsoleIamUserResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -32,6 +32,44 @@ export const getConsoleOperationTask = <ThrowOnError extends boolean = false>(op
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/console/v1/operation-tasks/{operationTaskId}',
     ...options
+});
+
+export const listConsoleNotificationMessages = <ThrowOnError extends boolean = false>(options?: Options<ListConsoleNotificationMessagesData, ThrowOnError>) => (options?.client ?? client).get<ListConsoleNotificationMessagesResponses, ListConsoleNotificationMessagesErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/messages',
+    ...options
+});
+
+export const listConsoleNotificationTasks = <ThrowOnError extends boolean = false>(options?: Options<ListConsoleNotificationTasksData, ThrowOnError>) => (options?.client ?? client).get<ListConsoleNotificationTasksResponses, ListConsoleNotificationTasksErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/tasks',
+    ...options
+});
+
+export const submitConsoleNotificationIntent = <ThrowOnError extends boolean = false>(options: Options<SubmitConsoleNotificationIntentData, ThrowOnError>) => (options.client ?? client).post<SubmitConsoleNotificationIntentResponses, SubmitConsoleNotificationIntentErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/intents',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const markConsoleNotificationMessageRead = <ThrowOnError extends boolean = false>(options: Options<MarkConsoleNotificationMessageReadData, ThrowOnError>) => (options.client ?? client).post<MarkConsoleNotificationMessageReadResponses, MarkConsoleNotificationMessageReadErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/messages/{messageId}/read',
+    ...options
+});
+
+export const markConsoleNotificationMessagesRead = <ThrowOnError extends boolean = false>(options: Options<MarkConsoleNotificationMessagesReadData, ThrowOnError>) => (options.client ?? client).post<MarkConsoleNotificationMessagesReadResponses, MarkConsoleNotificationMessagesReadErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/messages/read-batch',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 export const listConsoleInstances = <ThrowOnError extends boolean = false>(options: Options<ListConsoleInstancesData, ThrowOnError>) => (options.client ?? client).get<ListConsoleInstancesResponses, ListConsoleInstancesErrors, ThrowOnError>({

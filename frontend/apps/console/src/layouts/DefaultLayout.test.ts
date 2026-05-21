@@ -39,7 +39,8 @@ describe('DefaultLayout', () => {
 
     const navItems = wrapper.getComponent(AppShellStub).props('navItems') as Record<string, unknown>[]
     expect(navItems[0]).toMatchObject({ title: 'Instances', to: { name: '/' } })
-    expect(navItems[1]).toMatchObject({
+    expect(navItems[1]).toMatchObject({ title: 'Notifications', to: { path: '/notifications' } })
+    expect(navItems[2]).toMatchObject({
       title: 'IAM',
       isActive: true,
       items: [

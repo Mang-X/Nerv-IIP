@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nerv.IIP.Sdk.Core\Nerv.IIP.Sdk.Core.csproj" />
+    <ProjectReference Include="..\..\Contracts\Nerv.IIP.Contracts.Notification\Nerv.IIP.Contracts.Notification.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

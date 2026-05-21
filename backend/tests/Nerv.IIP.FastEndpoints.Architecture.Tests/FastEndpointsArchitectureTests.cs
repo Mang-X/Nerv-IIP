@@ -8,6 +8,7 @@ public sealed class FastEndpointsArchitectureTests
         "backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web",
         "backend/services/AppHub/src/Nerv.IIP.AppHub.Web",
         "backend/services/Ops/src/Nerv.IIP.Ops.Web",
+        "backend/services/Notification/src/Nerv.IIP.Notification.Web",
         "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web"
     };
 
@@ -37,6 +38,7 @@ public sealed class FastEndpointsArchitectureTests
         "backend/services/Iam/src/Nerv.IIP.Iam.Web",
         "backend/services/AppHub/src/Nerv.IIP.AppHub.Web",
         "backend/services/Ops/src/Nerv.IIP.Ops.Web",
+        "backend/services/Notification/src/Nerv.IIP.Notification.Web",
         "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web"
     };
 
@@ -65,6 +67,9 @@ public sealed class FastEndpointsArchitectureTests
 
         Assert.Contains("Projects.Nerv_IIP_Iam_Web", programText);
         Assert.Contains("Projects.Nerv_IIP_FileStorage_Web", programText);
+        Assert.Contains("Projects.Nerv_IIP_Notification_Web", programText);
+        Assert.Contains("WithHttpEndpoint(port: 5106", programText);
+        Assert.Contains("Notification__BaseUrl", programText);
         Assert.Contains("AddContainer(\"minio\"", programText);
         Assert.Contains("AddContainer(\"otel-collector\"", programText);
         Assert.Contains("otel-collector.dev.yaml", programText);
@@ -74,6 +79,7 @@ public sealed class FastEndpointsArchitectureTests
 
         Assert.Contains("Nerv.IIP.Iam.Web.csproj", projectText);
         Assert.Contains("Nerv.IIP.FileStorage.Web.csproj", projectText);
+        Assert.Contains("Nerv.IIP.Notification.Web.csproj", projectText);
         Assert.Contains("Aspire.Hosting.JavaScript", projectText);
 
         Assert.True(File.Exists(collectorConfig), "OpenTelemetry Collector dev config must be present.");
