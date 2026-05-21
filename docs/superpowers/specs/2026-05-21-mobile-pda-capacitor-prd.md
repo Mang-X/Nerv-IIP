@@ -359,34 +359,6 @@ PDA 首批复用现有业务权限码：
 
 后续如果引入平台级设备台账，应在 [authorization-matrix.md](../../architecture/authorization-matrix.md) 中新增 `mobile.devices.read`、`mobile.devices.manage`、`mobile.diagnostics.write` 等权限码，再进入 IAM seed 和 Gateway enforcement。
 
-## 选型调研摘要
-
-| 维度 | 结论 |
-| --- | --- |
-| Capacitor 平台支持 | 官方文档当前为 v8，支持 Android、iOS、Web 三类官方目标。 |
-| Android 兼容性 | Capacitor v8 支持 Android 7/API 24+，但 Barcode Scanner 插件要求 Android minSdk 26；工业 PDA 建议 Android 10+。 |
-| 原生能力 | 官方插件覆盖 Camera、Barcode Scanner、Filesystem、File Transfer、Network、Push Notifications、Preferences 等；无法覆盖的 PDA 能力需要自定义 Android 插件。 |
-| 扫码 | 官方 Barcode Scanner 更适合摄像头扫码；工业 PDA 硬件扫描头应优先走 Zebra DataWedge intent、Honeywell SDK/intent 或厂商 SDK。 |
-| 离线 | Capacitor 文档明确 LocalStorage/IndexedDB 有淘汰风险；业务离线必须使用 SQLite/安全存储和 outbox。 |
-| 安全 | 官方安全建议包括不嵌入 secrets、Keychain/Keystore、PKCE、HTTPS、CSP。 |
-| 企业分发 | Android Enterprise 私有应用可通过 EMM 远程安装或出现在 Managed Play；managed configuration 可由 IT 管理员远程下发设置。 |
-
-主要参考：
-
-1. [Capacitor v8 documentation](https://capacitorjs.com/docs)
-2. [Capacitor Android documentation](https://capacitorjs.com/docs/android)
-3. [Capacitor support policy](https://capacitorjs.com/docs/main/reference/support-policy)
-4. [Capacitor official plugins](https://capacitorjs.com/docs/apis)
-5. [Capacitor Barcode Scanner](https://capacitorjs.com/docs/apis/barcode-scanner)
-6. [Capacitor storage guide](https://capacitorjs.com/docs/guides/storage)
-7. [Capacitor security guide](https://capacitorjs.com/docs/guides/security)
-8. [Zebra DataWedge Intent Output](https://techdocs.zebra.com/datawedge/latest/guide/output/intent/)
-9. [Zebra DataWedge Barcode Input](https://techdocs.zebra.com/datawedge/latest/guide/input/barcode/)
-10. [Honeywell Mobility SDK for Android](https://automation.honeywell.com/us/en/software/productivity-solutions/enabling-software/mobility-sdk-android)
-11. [Android Enterprise private app distribution](https://support.google.com/work/android/answer/9495634?hl=en)
-12. [Android managed configurations](https://developer.android.com/work/managed-configurations?hl=en)
-13. [Android offline-first architecture](https://developer.android.com/topic/architecture/data-layer/offline-first?hl=en)
-
 ## 成功指标
 
 | 指标 | MVP 目标 |
