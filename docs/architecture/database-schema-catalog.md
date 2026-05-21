@@ -2,7 +2,7 @@
 
 本文档记录当前 Nerv-IIP 已落地和计划落地的数据库 schema。物理结构仍以 EF Core migrations 和 EntityConfigurations 为准；本文档负责解释业务语义、边界、索引意图和可视化上下文。
 
-当前 catalog 覆盖第五阶段已经迁移验证通过、并在第六阶段完成 schema governance hardening 的 AppHub 与 Ops，以及第七阶段已经落地 IAM Persistent Auth Foundation 的 IAM。FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引在真正建表前必须补充相同粒度的条目和 convention tests。
+当前 catalog 覆盖第五阶段已经迁移验证通过、并在第六阶段完成 schema governance hardening 的 AppHub 与 Ops，第七阶段已经落地 IAM Persistent Auth Foundation 的 IAM，以及 FileStorage 第一阶段 MVP 的 schema 基线。Notification、Knowledge、AI Integration 和 Observability 索引在真正建表前必须补充相同粒度的条目和 convention tests。
 
 ## 读法
 
@@ -116,6 +116,31 @@ Known gaps:
 2. 用户/角色写管理端点在本阶段尚未产品化；PostgreSQL profile 下相关 write endpoints 会先执行 IAM permission 检查，授权通过后返回 501。
 3. 客户发布 seed input 与 migration bundle 仍属于后续 release work。
 
+## FileStorage Schema
+
+Schema: `filestorage`
+
+Owner: `backend/services/FileStorage`
+
+Source:
+
+1. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/ApplicationDbContext.cs`
+2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/FileStoragePersistenceServiceCollectionExtensions.cs`
+3. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/EntityConfigurations/*.cs`
+4. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260521061426_InitialFileStorageSchema.cs`
+
+| Table | Kind | Purpose | Key relationships and indexes |
+| --- | --- | --- | --- |
+| `stored_files` | business | FileStorage 已完成文件的公开元数据与内部对象定位事实。 | `file_id` 为业务生成 string ID；`object_key` 唯一且仅限内部持久化；`organization_id + environment_id + owner_service + owner_type + owner_id` 支持按业务 owner 查询。 |
+| `upload_sessions` | business | 上传会话元数据，记录预留 fileId、调用方上下文、provider、过期时间和完成状态。 | `upload_session_id` 为业务生成 string ID；`file_id` 唯一；`object_key` 唯一；`organization_id + environment_id + expires_at_utc` 支持过期会话扫描。 |
+| `download_grants` | business | 短期下载授权元数据，当前用于 server-proxy placeholder 下载路径。 | `download_grant_id` 为业务生成 string ID；`file_id` 指向 `stored_files`；`organization_id + environment_id + file_id + expires_at_utc` 支持授权校验和清理。 |
+| `__EFMigrationsHistory` | system | EF Core migration history table，记录 FileStorage 已应用迁移。 | 必须位于 `filestorage` schema；业务代码不直接读写。 |
+
+Known gaps:
+
+1. 当前 FileStorage API 仍是 server-proxy metadata stub，默认运行路径使用 in-memory store；PostgreSQL schema/model/migration 已具备，但真实 DB 读写 service、repository/UoW 和 release bundle 仍待后续。
+2. tus 尚未接入，但它是 FileStorage MVP 的完整传输能力目标；MinIO/S3 multipart 不进入 MVP，放到后续对象存储部署联调。`object_key` 不得被提升为公开 API、SDK DTO、Gateway facade 或 Console generated client 字段。
+
 ## 后续服务建表前清单
 
 新服务进入建表阶段前，必须先补充本节对应条目，不能等迁移生成后再回忆设计意图。
@@ -123,7 +148,7 @@ Known gaps:
 | Service | Expected schema | Catalog status | Implemented | Validated | Release-supported | Required before first migration |
 | --- | --- | --- | --- | --- | --- | --- |
 | IAM | `iam` | Implemented | Yes | Yes | No | 已有 PostgreSQL `iam` schema、初始 migration、schema convention tests、idempotent seed、登录/refresh/logout/`/me` 和 Connector Host credential validation；客户 release bundle 仍待后续。 |
-| FileStorage | `filestorage` | Planned only | No | No | No | 文件元数据、对象 provider、版本/引用关系、病毒扫描/归档状态、MinIO/key 命名策略。 |
+| FileStorage | `filestorage` | Implemented baseline | Yes | Yes | No | 已有 `stored_files`、`upload_sessions`、`download_grants` 初始 migration、schema convention tests 和 server-proxy metadata API；真实 DB 写读 service、tus MVP 传输能力和客户 release bundle 仍待后续；MinIO/S3 multipart 为 post-MVP 部署联调项。 |
 | Notification | `notification` | Planned only | No | No | No | 通知模板、投递任务、收件人、渠道、重试和用户可见状态。 |
 | Knowledge | `knowledge` | Planned only | No | No | No | 知识源、文档、分片、索引状态、向量/全文索引边界和重建策略；关系库保存索引元数据，外部向量库保存可重建索引。 |
 | AI Integration | `ai` or `ai_integration` | Planned only | No | No | No | 模型/provider 配置、工具授权、调用审计、配额周期、prompt/version 归档、审批挂点和敏感信息边界。 |
@@ -132,5 +157,5 @@ Known gaps:
 ## 下一轮 hardening 建议
 
 1. 生成或维护简版 ER 图，以 AppHub/Ops/IAM 当前 catalog 和数据库注释为输入。
-2. 在新增 FileStorage、Notification、Knowledge、AI Integration 或 Observability 索引迁移前，先补该服务的 catalog 草案，再写实体配置、schema convention tests 和 migration。
+2. 在新增 Notification、Knowledge、AI Integration 或 Observability 索引迁移前，先补该服务的 catalog 草案，再写实体配置、schema convention tests 和 migration；FileStorage 后续新增表时继续按本 catalog 和 schema convention tests 更新。
 3. 后续如 CAP system tables 需要进入客户数据字典展示，补充 system table comment 或保持 catalog 的 system-owned 标记为权威说明。

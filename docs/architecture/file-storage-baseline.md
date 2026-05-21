@@ -39,9 +39,30 @@
 | DownloadGrant | 下载授权 | 表示一次短期下载许可，可映射为平台中转下载或对象存储预签名 URL。 |
 | FileReference | 业务引用关系 | 记录 ownerService、ownerType、ownerId 与 fileId 的绑定，但不解释业务对象本身。 |
 
+## MVP 当前子集
+
+2026-05-21 已落地 FileStorage MVP 的 contracts、SDK、元数据 API、PostgreSQL-backed service 和本地 tus endpoint。不把 MinIO 部署联调作为前置条件。
+
+当前公开 API 子集为：
+
+```text
+POST /api/files/v1/upload-sessions
+POST /api/files/v1/upload-sessions/{uploadSessionId}/complete
+GET  /api/files/v1/files/{fileId}
+POST /api/files/v1/files/{fileId}/download-grants
+```
+
+当前默认实现仍返回 `uploadMode = server-proxy`、`provider = server-proxy` 的平台控制 placeholder 上传/下载路径；设置 `FileStorage:UploadProvider=tus` 后，创建上传会话会返回 `uploadMode = tus`、`provider = tus` 和 `/api/files/v1/tus/{uploadSessionId}` 上传指令。FileStorage 已新增 PostgreSQL `filestorage` schema 的 `stored_files`、`upload_sessions`、`download_grants` 初始 migration 和 schema convention tests；设置 `Persistence:Provider=PostgreSQL` 时可启用 PostgreSQL-backed API service。当前 tus MVP 提供 FileStorage-owned 本地传输入口：`HEAD /api/files/v1/tus/{uploadSessionId}` 查询当前 `Upload-Offset`，`PATCH /api/files/v1/tus/{uploadSessionId}` 按 offset 追加字节，客户端可通过停止发送并再次 `HEAD` 后继续 `PATCH` 实现暂停/续传；download grant content endpoint 可读取本地 tus 字节。字节存放在本地 `FileStorage:Tus:RootPath`，暂不接 MinIO/S3 multipart。`object_key` 只允许出现在 FileStorage 持久化/内部实现中，公开 API response、SDK DTO、Gateway facade 和 Console generated client 均不得暴露。
+
+MVP 后续顺序保持为：
+
+1. server-proxy metadata stub、contracts/SDK、PostgreSQL-backed service 和本地 tus endpoint：稳定 API、schema、SDK DTO、上传 offset 和下载内容消费形状。
+2. tus hardening：在当前本地 endpoint 上补齐 size/checksum 强校验、清理任务和更完整协议兼容，并作为 FileStorage MVP 的完整传输路径。
+3. MinIO/S3 multipart：不进入 MVP，放到后续对象存储部署联调阶段；接入时只作为基础设施 adapter，只发短期指令或预签名 URL。
+
 ## 推荐接口
 
-首批接口以 OpenAPI 作为事实来源，并进入 Platform SDK：
+长期推荐接口以 OpenAPI 作为事实来源，并进入 Platform SDK；其中部分接口尚未进入当前 MVP：
 
 ```text
 POST /api/files/v1/upload-sessions
@@ -53,11 +74,11 @@ POST /api/files/v1/files/{fileId}/download-grants
 POST /api/files/v1/files/{fileId}/archive
 ```
 
-`CreateUploadSession` 由服务端选择或校验上传模式，返回 `uploadSessionId`；`GetUploadInstructions` 返回客户端执行上传所需的短期指令。推荐首批保留以下 provider 抽象：
+`CreateUploadSession` 由服务端选择或校验上传模式，返回 `uploadSessionId` 和当前上传指令；长期也可以拆出 `GetUploadInstructions`。MVP 版本以 `server-proxy` metadata stub 起步，当前已可通过配置使用本地 tus endpoint；以下 provider 抽象用于长期演进：
 
-1. S3 multipart：File Storage 创建受限上传会话并发放 MinIO/S3 multipart 预签名 URL，客户端直传对象存储后调用 complete 完成校验。
-2. tus：File Storage 或专用 tus 组件提供断点续传 endpoint，File Storage 仍负责会话创建、权限、完成校验和文件提交。
-3. server-proxy：客户端把文件流提交到 File Storage，由服务写入对象存储，适合小文件或受限网络环境。
+1. tus：File Storage 或专用 tus 组件提供断点续传 endpoint，File Storage 仍负责会话创建、权限、完成校验和文件提交。
+2. server-proxy：客户端把文件流提交到 File Storage，由服务写入对象存储，适合小文件或受限网络环境。
+3. S3 multipart：File Storage 创建受限上传会话并发放 MinIO/S3 multipart 预签名 URL，客户端直传对象存储后调用 complete 完成校验；该 provider 不进入 MVP。
 
 无论采用哪种模式，最终完成写入时都必须校验组织、环境、主体、用途、文件大小、content type、checksum、provider 回执和上传会话有效期。客户端只持有短期上传指令，不持有长期对象存储凭证。
 
@@ -86,17 +107,17 @@ AbortUploadSession
 VerifyUploadedObject
 ```
 
-首批 provider 能力建议：
+provider 能力建议：
 
-1. `S3MultipartUploadProvider`：对接 MinIO/S3，生成 multipart uploadId、part presigned urls，完成后校验 ETag、size 和 checksum。
-2. `TusUploadProvider`：对接 tus endpoint，支持断点续传和续传状态查询，完成后将上传结果提交给 File Storage 校验。
-3. `ServerProxyUploadProvider`：保留平台中转上传路径，用于小文件、内网限制或需要服务端扫描的场景。
+1. `TusUploadProvider`：当前已生成 tus 上传指令形状，并提供最小 `HEAD`/`PATCH` offset endpoint；后续继续补齐 size/checksum 校验、过期清理和更完整 tus 兼容性。
+2. `ServerProxyUploadProvider`：保留平台中转上传路径，用于小文件、内网限制或需要服务端扫描的场景。
+3. `S3MultipartUploadProvider`：对接 MinIO/S3，生成 multipart uploadId、part presigned urls，完成后校验 ETag、size 和 checksum；该 provider 放在 post-MVP 的对象存储部署联调阶段。
 
 provider 选择可以由文件用途、大小、客户端能力、网络环境或部署配置决定，但选择结果必须记录在 `UploadSession` 中，便于审计和故障诊断。
 
 ## 存储与元数据边界
 
-1. File Storage 元数据写入 PostgreSQL，二进制内容写入 MinIO 或等价对象存储。
+1. File Storage 元数据可写入 PostgreSQL；MVP 字节传输先通过 FileStorage-owned 本地 tus store 补齐，MinIO 或等价对象存储作为 post-MVP 的底层二进制存放后端接入。
 2. 数据库中保存 provider、uploadMode、bucket、objectKey、checksum、size、contentType、retentionUntil、createdBy、ownerService 等治理字段。
 3. `objectKey` 是内部存储定位信息，不能出现在前端、外部应用或 Connector Host 的长期业务契约中。
 4. 业务服务只保存 `fileId` 或 `FileReference`，不能保存预签名 URL 作为长期事实。

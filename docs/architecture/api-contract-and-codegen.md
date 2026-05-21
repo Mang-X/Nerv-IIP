@@ -166,6 +166,7 @@ frontend/packages/api-client/
 5. 需要轮询的服务端状态通过 Pinia Colada query options 和官方 auto-refetch 插件表达，不在组件里手写 `setInterval`。
 6. Design System 冻结前，不因后端契约变更新增页面、视觉组件、组件库迁移或样式 token；相关规划见 docs/architecture/frontend-design-system-planning.md。
 7. 生成客户端可以承载 JSON/text 契约字段，但字段语义、版本和兼容策略必须在后端契约或服务文档中可追踪。
+8. FileStorage 公开 DTO 的源码事实当前位于 `backend/common/Contracts/Nerv.IIP.Contracts.FileStorage`；SDK/Web 边界复用同一 DTO，公开响应不得包含 `objectKey` 或 `object_key`。
 
 ## 版本与变更管理
 
