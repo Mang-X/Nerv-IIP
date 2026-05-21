@@ -6,7 +6,6 @@ using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using StackExchange.Redis;
 using FluentValidation.AspNetCore;
-using Nerv.IIP.Business.MasterData.Web.Clients;
 using Nerv.IIP.Business.MasterData.Web.Extensions;
 using FastEndpoints;
 using Serilog;
@@ -15,8 +14,6 @@ using Hangfire;
 using Hangfire.Redis.StackExchange;
 using Microsoft.AspNetCore.Http.Json;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
-using Refit;
 using NetCorePal.Extensions.CodeAnalysis;
 using Nerv.IIP.Business.MasterData.Domain;
 
@@ -34,7 +31,6 @@ try
     builder.Services.AddHealthChecks();
     builder.Services.AddMvc()
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
-    builder.Services.AddSignalR();
 
     #endregion
 
@@ -65,7 +61,6 @@ try
         options.TokenValidationParameters.ValidIssuer = "netcorepal";
         options.TokenValidationParameters.ValidateIssuer = true;
     });
-    builder.Services.AddNetCorePalJwt().AddRedisStore();
 
     #endregion
 
@@ -99,7 +94,6 @@ try
     builder.Services.AddMasterDataPostgreSqlPersistence(
         builder.Configuration.GetConnectionString("PostgreSQL"),
         builder.Environment.IsDevelopment());
-    builder.Services.AddRedisLocks();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     builder.Services.AddIntegrationEvents(typeof(Program))
@@ -131,25 +125,6 @@ try
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = "BusinessMasterData")
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
-
-    #endregion
-
-    #region 远程服务客户端配置
-
-    var jsonSerializerSettings = new JsonSerializerSettings
-    {
-        ContractResolver = new CamelCasePropertyNamesContractResolver(),
-        NullValueHandling = NullValueHandling.Ignore,
-        ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-    };
-    jsonSerializerSettings.AddNetCorePalJsonConverters();
-    var ser = new NewtonsoftJsonContentSerializer(jsonSerializerSettings);
-    var settings = new RefitSettings(ser);
-    builder.Services.AddRefitClient<IUserServiceClient>(settings)
-        .ConfigureHttpClient(client =>
-            client.BaseAddress = new Uri(builder.Configuration.GetValue<string>("https+http://user:8080")!))
-        .AddMultiEnvMicrosoftServiceDiscovery() //多环境服务发现支持
-        .AddStandardResilienceHandler(); //添加标准的重试策略
 
     #endregion
 
@@ -185,12 +160,6 @@ try
 
     app.MapControllers();
     app.UseFastEndpoints();
-
-    #region SignalR
-
-    app.MapHub<Nerv.IIP.Business.MasterData.Web.Application.Hubs.ChatHub>("/chat");
-
-    #endregion
 
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

@@ -1,4 +1,4 @@
-# NetCorePal Template - Infrastructure Initialization Script (PowerShell)
+# Business Master Data - Infrastructure Initialization Script (PowerShell)
 # This script initializes the required infrastructure for development
 
 param(
@@ -26,18 +26,18 @@ function Write-Warning {
     Write-Host "[WARNING] $Message" -ForegroundColor Yellow
 }
 
-function Write-Error {
+function Write-ErrorMessage {
     param([string]$Message)
     Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
 function Show-Help {
-    Write-Host "NetCorePal Template - Infrastructure Initialization" -ForegroundColor Green
+    Write-Host "Business Master Data - Infrastructure Initialization" -ForegroundColor Green
     Write-Host "=================================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "Usage: .\init-infrastructure.ps1 [OPTIONS]"
     Write-Host ""
-    Write-Host "Initialize infrastructure containers for NetCorePal Template development"
+    Write-Host "Initialize infrastructure containers for Business Master Data development"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Help          Show this help message"
@@ -59,7 +59,7 @@ function Test-Docker {
         $null = Get-Command docker -ErrorAction Stop
     }
     catch {
-        Write-Error "Docker is not installed. Please install Docker Desktop first."
+        Write-ErrorMessage "Docker is not installed. Please install Docker Desktop first."
         Write-Host "Download from: https://www.docker.com/products/docker-desktop/" -ForegroundColor Cyan
         exit 1
     }
@@ -68,7 +68,7 @@ function Test-Docker {
         $null = docker info 2>$null
     }
     catch {
-        Write-Error "Docker is not running. Please start Docker Desktop first."
+        Write-ErrorMessage "Docker is not running. Please start Docker Desktop first."
         exit 1
     }
 
@@ -109,7 +109,7 @@ function Start-Container {
         return $true
     }
     catch {
-        Write-Error "Failed to start $Name container: $_"
+        Write-ErrorMessage "Failed to start $Name container: $_"
         return $false
     }
 }
@@ -134,7 +134,7 @@ function Wait-ForContainer {
     }
 
     Write-Host ""  # New line after dots
-    Write-Error "$ContainerName failed to start properly"
+    Write-ErrorMessage "$ContainerName failed to start properly"
     return $false
 }
 
@@ -241,7 +241,7 @@ function Start-Infrastructure {
 }
 
 # Main execution
-Write-Host "🚀 NetCorePal Template - Infrastructure Setup" -ForegroundColor Green
+Write-Host "🚀 Business Master Data - Infrastructure Setup" -ForegroundColor Green
 Write-Host "==============================================" -ForegroundColor Green
 
 if ($Help) {
@@ -253,6 +253,6 @@ try {
     Start-Infrastructure
 }
 catch {
-    Write-Error "An error occurred during setup: $_"
+    Write-ErrorMessage "An error occurred during setup: $_"
     exit 1
 }

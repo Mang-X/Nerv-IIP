@@ -1,4 +1,4 @@
--- PostgreSQL Initialization Script for NetCorePal Template
+-- PostgreSQL Initialization Script for Business Master Data
 -- This script creates the necessary database and user for development
 
 -- Create development database if it doesn't exist

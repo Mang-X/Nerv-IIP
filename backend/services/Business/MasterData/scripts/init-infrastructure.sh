@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# NetCorePal Template - Infrastructure Initialization Script
+# Business Master Data - Infrastructure Initialization Script
 # This script initializes the required infrastructure for development
 
 set -e
 
-echo "🚀 NetCorePal Template - Infrastructure Setup"
+echo "🚀 Business Master Data - Infrastructure Setup"
 echo "=============================================="
 
 # Color codes for output
@@ -164,7 +164,7 @@ case "${1:-}" in
     --help|-h)
         echo "Usage: $0 [OPTIONS]"
         echo
-        echo "Initialize infrastructure containers for NetCorePal Template development"
+        echo "Initialize infrastructure containers for Business Master Data development"
         echo
         echo "Options:"
         echo "  -h, --help     Show this help message"

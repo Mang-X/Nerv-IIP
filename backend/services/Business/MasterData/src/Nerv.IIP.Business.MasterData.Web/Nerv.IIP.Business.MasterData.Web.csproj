@@ -9,8 +9,6 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="AspNet.Security.OAuth.Feishu" />
-    <PackageReference Include="AspNet.Security.OAuth.Weixin" />
     <PackageReference Include="DotNetCore.CAP.Dashboard" />
     <PackageReference Include="DotNetCore.CAP.RabbitMQ" />
     <PackageReference Include="FastEndpoints" />
@@ -19,28 +17,24 @@
     <PackageReference Include="FluentValidation.AspNetCore" />
     <PackageReference Include="Hangfire.AspNetCore" />
     <PackageReference Include="Hangfire.Redis.StackExchange" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
-    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" />
     <PackageReference Include="NetCorePal.Context.AspNetCore" />
     <PackageReference Include="NetCorePal.Context.CAP" />
     <PackageReference Include="NetCorePal.Context.Shared" />
     <PackageReference Include="NetCorePal.Extensions.AspNetCore" />
     <PackageReference Include="NetCorePal.Extensions.CodeAnalysis" />
-    <PackageReference Include="NetCorePal.Extensions.DistributedLocks.Redis" />
     <PackageReference Include="NetCorePal.Extensions.MultiEnv" />
     <PackageReference Include="NetCorePal.Extensions.MicrosoftServiceDiscovery" />
+    <PackageReference Include="NetCorePal.Extensions.NewtonsoftJson" />
     <PackageReference Include="NetCorePal.Extensions.Primitives" />
-    <PackageReference Include="NetCorePal.Extensions.Jwt.StackExchangeRedis" />
     <PackageReference Include="prometheus-net.AspNetCore" />
     <PackageReference Include="prometheus-net.AspNetCore.HealthChecks" />
-    <PackageReference Include="Refit.HttpClientFactory" />
-    <PackageReference Include="Refit.Newtonsoft.Json" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Enrichers.ClientInfo" />
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" />

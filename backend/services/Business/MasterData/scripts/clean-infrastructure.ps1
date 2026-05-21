@@ -1,4 +1,4 @@
-# NetCorePal Template - Infrastructure Cleanup Script (PowerShell)
+# Business Master Data - Infrastructure Cleanup Script (PowerShell)
 # This script stops and removes all infrastructure containers
 
 param(
@@ -24,18 +24,18 @@ function Write-Warning {
     Write-Host "[WARNING] $Message" -ForegroundColor Yellow
 }
 
-function Write-Error {
+function Write-ErrorMessage {
     param([string]$Message)
     Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
 function Show-Help {
-    Write-Host "NetCorePal Template - Infrastructure Cleanup" -ForegroundColor Green
+    Write-Host "Business Master Data - Infrastructure Cleanup" -ForegroundColor Green
     Write-Host "===========================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "Usage: .\clean-infrastructure.ps1 [OPTIONS]"
     Write-Host ""
-    Write-Host "Clean up NetCorePal Template infrastructure containers"
+    Write-Host "Clean up Business Master Data infrastructure containers"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Help          Show this help message"
@@ -178,7 +178,7 @@ function Start-Cleanup {
 }
 
 # Main execution
-Write-Host "🧹 NetCorePal Template - Infrastructure Cleanup" -ForegroundColor Green
+Write-Host "🧹 Business Master Data - Infrastructure Cleanup" -ForegroundColor Green
 Write-Host "===============================================" -ForegroundColor Green
 
 if ($Help) {
@@ -190,6 +190,6 @@ try {
     Start-Cleanup
 }
 catch {
-    Write-Error "An error occurred during cleanup: $_"
+    Write-ErrorMessage "An error occurred during cleanup: $_"
     exit 1
 }

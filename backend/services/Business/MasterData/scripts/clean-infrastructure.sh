@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# NetCorePal Template - Infrastructure Cleanup Script
+# Business Master Data - Infrastructure Cleanup Script
 # This script stops and removes all infrastructure containers
 
 set -e
 
-echo "🧹 NetCorePal Template - Infrastructure Cleanup"
+echo "🧹 Business Master Data - Infrastructure Cleanup"
 echo "==============================================="
 
 # Color codes for output
@@ -115,7 +115,7 @@ main() {
             --help|-h)
                 echo "Usage: $0 [OPTIONS]"
                 echo
-                echo "Clean up NetCorePal Template infrastructure containers"
+            echo "Clean up Business Master Data infrastructure containers"
                 echo
                 echo "Options:"
                 echo "  -h, --help     Show this help message"

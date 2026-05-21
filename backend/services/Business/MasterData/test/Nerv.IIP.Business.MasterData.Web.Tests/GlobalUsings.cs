@@ -1,9 +1,0 @@
-global using Xunit;
-global using Nerv.IIP.Business.MasterData.Web.Tests.Fixtures;
-global using FastEndpoints.Testing;
-global using FastEndpoints;
-global using Microsoft.Extensions.DependencyInjection;
-global using Microsoft.Extensions.DependencyInjection.Extensions;
-global using NetCorePal.Extensions.NewtonsoftJson;
-global using Microsoft.Extensions.Configuration;
-global using Microsoft.Extensions.Logging;

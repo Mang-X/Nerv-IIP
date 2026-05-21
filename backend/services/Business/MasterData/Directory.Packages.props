@@ -14,10 +14,8 @@
 
   <ItemGroup>
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="9.0.0" />
-    <PackageVersion Include="AspNet.Security.OAuth.Feishu" Version="9.0.0" />
-    <PackageVersion Include="AspNet.Security.OAuth.Weixin" Version="9.0.0" />
 
     <!-- Database providers - framework specific versions -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8" />
@@ -56,8 +54,6 @@
     <PackageVersion Include="Hangfire.Redis.StackExchange" Version="1.9.4" />
     <PackageVersion Include="prometheus-net.AspNetCore" Version="8.2.1" />
     <PackageVersion Include="prometheus-net.AspNetCore.HealthChecks" Version="8.2.1" />
-    <PackageVersion Include="Refit.HttpClientFactory" Version="8.0.0" />
-    <PackageVersion Include="Refit.Newtonsoft.Json" Version="8.0.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.1.2" />
     <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.1.0" />
@@ -93,13 +89,11 @@
     <PackageVersion Include="NetCorePal.Context.Shared" Version="$(NetCorePalVersion)" />
     <PackageVersion Include="NetCorePal.Extensions.AspNetCore" Version="$(NetCorePalVersion)" />
     <PackageVersion Include="NetCorePal.Extensions.CodeAnalysis" Version="$(NetCorePalVersion)" />
-    <PackageVersion Include="NetCorePal.Extensions.DistributedLocks.Redis" Version="$(NetCorePalVersion)" />
     <PackageVersion Include="NetCorePal.Extensions.DistributedTransactions.CAP.MySql" Version="$(NetCorePalVersion)" />
     <PackageVersion Include="NetCorePal.Extensions.DistributedTransactions.CAP.SqlServer" Version="$(NetCorePalVersion)" />
     <PackageVersion Include="NetCorePal.Extensions.DistributedTransactions.CAP.PostgreSQL" Version="$(NetCorePalVersion)" />
     <PackageVersion Include="NetCorePal.Extensions.DistributedTransactions.CAP.Sqlite" Version="$(NetCorePalVersion)" />
     <PackageVersion Include="NetCorePal.Extensions.Domain.Abstractions" Version="$(NetCorePalVersion)" />
-    <PackageVersion Include="NetCorePal.Extensions.Jwt.StackExchangeRedis" Version="$(NetCorePalVersion)" />
     <PackageVersion Include="NetCorePal.Extensions.MicrosoftServiceDiscovery" Version="$(NetCorePalVersion)" />
     <PackageVersion Include="NetCorePal.Extensions.MultiEnv" Version="$(NetCorePalVersion)" />
     <PackageVersion Include="NetCorePal.Extensions.NewtonsoftJson" Version="$(NetCorePalVersion)" />
