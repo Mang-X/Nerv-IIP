@@ -100,8 +100,40 @@ function Protect-ScriptAutomationLogFile {
         return
     }
 
-    $content = Get-Content $Path -Raw
-    Write-ScriptAutomationProcessLog -Path $Path -Content $content
+    $fullPath = (Resolve-Path $Path).Path
+    $tempPath = "$fullPath.redacted-$([System.Guid]::NewGuid().ToString('N')).tmp"
+    $reader = $null
+    $writer = $null
+    $replaced = $false
+
+    try {
+        $reader = [System.IO.StreamReader]::new($fullPath, [System.Text.UTF8Encoding]::new($false), $true)
+        $writer = [System.IO.StreamWriter]::new($tempPath, $false, [System.Text.UTF8Encoding]::new($false))
+
+        while (-not $reader.EndOfStream) {
+            $line = $reader.ReadLine()
+            $writer.WriteLine((Protect-ScriptAutomationText $line))
+        }
+
+        $reader.Dispose()
+        $reader = $null
+        $writer.Dispose()
+        $writer = $null
+
+        Move-Item -LiteralPath $tempPath -Destination $fullPath -Force
+        $replaced = $true
+    }
+    finally {
+        if ($reader) {
+            $reader.Dispose()
+        }
+        if ($writer) {
+            $writer.Dispose()
+        }
+        if (-not $replaced) {
+            Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Get-ScriptAutomationProcessTreeIds {

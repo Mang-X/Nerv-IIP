@@ -91,6 +91,56 @@ if ($interactiveResult.ExitCode -ne 7) {
     throw "Expected interactive helper to return ExitCode 7, got $($interactiveResult.ExitCode)."
 }
 
+$redactionRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-log-redaction-$([System.Guid]::NewGuid().ToString('N'))"
+try {
+    New-Item -ItemType Directory -Force -Path $redactionRoot | Out-Null
+    $redactionLog = Join-Path $redactionRoot 'redaction.log'
+    [System.IO.File]::WriteAllLines(
+        $redactionLog,
+        @(
+            'normal line before secret',
+            'token=super-secret-token',
+            'normal line after secret'
+        ),
+        [System.Text.UTF8Encoding]::new($false)
+    )
+
+    Protect-ScriptAutomationLogFile -Path $redactionLog
+    $redactedLines = [System.IO.File]::ReadAllLines($redactionLog)
+    $redactedText = [string]::Join("`n", $redactedLines)
+
+    foreach ($expected in @('normal line before secret', 'token=<redacted>', 'normal line after secret')) {
+        if (-not $redactedText.Contains($expected)) {
+            throw "Expected redacted log to contain '$expected'. Output: $redactedText"
+        }
+    }
+
+    if ($redactedText.Contains('super-secret-token')) {
+        throw "Expected redacted log to remove secret token. Output: $redactedText"
+    }
+
+    $helperContent = Get-Content -Path $helper -Raw
+    $protectLogFileMatch = [regex]::Match($helperContent, '(?s)function Protect-ScriptAutomationLogFile\s*\{.*?\n\}')
+    if (-not $protectLogFileMatch.Success) {
+        throw 'Could not find Protect-ScriptAutomationLogFile implementation.'
+    }
+
+    if ($protectLogFileMatch.Value -match 'Get-Content\s+\$Path\s+-Raw') {
+        throw 'Protect-ScriptAutomationLogFile must stream log redaction instead of using Get-Content -Raw.'
+    }
+}
+finally {
+    $resolvedRedactionRoot = Resolve-Path $redactionRoot -ErrorAction SilentlyContinue
+    if ($resolvedRedactionRoot) {
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        if (-not $resolvedRedactionRoot.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove log redaction directory outside temp: $($resolvedRedactionRoot.Path)"
+        }
+
+        Remove-Item -LiteralPath $resolvedRedactionRoot.Path -Recurse -Force
+    }
+}
+
 $idempotentRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-background-idempotent-$([System.Guid]::NewGuid().ToString('N'))"
 $idempotentBackground = $null
 try {
@@ -136,8 +186,8 @@ $backgroundScript = Join-Path $backgroundRoot 'print-arguments.ps1'
 $background = $null
 try {
     New-Item -ItemType Directory -Force -Path $backgroundRoot | Out-Null
-    [System.IO.File]::WriteAllText($backgroundScript, 'Write-Output "count=$($args.Count)"; Write-Output "arg0=$($args[0])"', [System.Text.UTF8Encoding]::new($false))
-    $background = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-File', $backgroundScript, 'a b') -Name 'background-argument-smoke' -LogDirectory (Join-Path $backgroundRoot 'background-argument-smoke')
+    [System.IO.File]::WriteAllText($backgroundScript, 'Write-Output "count=$($args.Count)"; Write-Output "arg0=$($args[0])"; Write-Output "arg1=$($args[1])"', [System.Text.UTF8Encoding]::new($false))
+    $background = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-File', $backgroundScript, 'a b', 'a "quoted" b') -Name 'background-argument-smoke' -LogDirectory (Join-Path $backgroundRoot 'background-argument-smoke')
 
     if (-not $background.Process.WaitForExit(15000)) {
         throw 'Background argument smoke process did not exit in time.'
@@ -147,7 +197,7 @@ try {
     $stdout = Get-Content -Path $background.StdoutPath -Raw
     $background = $null
 
-    foreach ($expected in @('count=1', 'arg0=a b')) {
+    foreach ($expected in @('count=2', 'arg0=a b', 'arg1=a "quoted" b')) {
         if (-not $stdout.Contains($expected)) {
             throw "Expected background stdout to contain '$expected'. Output: $stdout"
         }
