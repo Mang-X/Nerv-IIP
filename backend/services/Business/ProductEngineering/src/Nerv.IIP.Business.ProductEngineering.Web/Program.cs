@@ -1,0 +1,162 @@
+using System.Reflection;
+using System.Text.Json;
+using FastEndpoints;
+using FastEndpoints.Swagger;
+using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using NetCorePal.Context.CAP;
+using NetCorePal.Extensions.CodeAnalysis;
+using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
+using Nerv.IIP.Localization;
+using Newtonsoft.Json;
+using Prometheus;
+using Serilog;
+using Serilog.Formatting.Json;
+
+Log.Logger = new LoggerConfiguration()
+    .Enrich.WithClientIp()
+    .WriteTo.Console(new JsonFormatter())
+    .CreateLogger();
+
+var isTesting = false;
+try
+{
+    var builder = WebApplication.CreateBuilder(args);
+    builder.Host.UseSerilog();
+    isTesting = builder.Environment.IsEnvironment("Testing");
+
+    builder.Services.AddHealthChecks();
+    builder.Services.AddMvc()
+        .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
+    builder.Services.AddHealthChecks().ForwardToPrometheus();
+    builder.Services.AddHttpClient(Options.DefaultName)
+        .UseHttpClientMetrics();
+
+    builder.Services.AddAuthentication().AddJwtBearer(options =>
+    {
+        options.RequireHttpsMetadata = false;
+        options.TokenValidationParameters.ValidAudience = "netcorepal";
+        options.TokenValidationParameters.ValidateAudience = true;
+        options.TokenValidationParameters.ValidIssuer = "netcorepal";
+        options.TokenValidationParameters.ValidateIssuer = true;
+    });
+
+    builder.Services.AddControllers().AddNetCorePalSystemTextJson();
+    builder.Services
+        .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
+        .SwaggerDocument(o =>
+        {
+            o.DocumentSettings = s =>
+            {
+                s.Title = "Nerv IIP Business ProductEngineering";
+                s.Version = "v1";
+            };
+        });
+    builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.AddNetCorePalJsonConverters());
+    builder.Services.AddFluentValidationAutoValidation();
+    builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+    builder.Services.AddKnownExceptionErrorModelInterceptor();
+    builder.Services.AddNervIipLocalization();
+
+    var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
+    if (isTesting && string.IsNullOrWhiteSpace(connectionString))
+    {
+        connectionString = "Host=localhost;Database=nerv_iip_product_engineering_testing;Username=nerv;Password=nerv";
+    }
+
+    builder.Services.AddProductEngineeringPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
+    builder.Services.AddNetCorePalServiceDiscoveryClient();
+    if (isTesting)
+    {
+        builder.Services.AddIntegrationEvents(typeof(Program));
+    }
+    else
+    {
+        builder.Services.AddIntegrationEvents(typeof(Program))
+            .UseCap<ApplicationDbContext>(b =>
+            {
+                b.RegisterServicesFromAssemblies(typeof(Program));
+                b.AddContextIntegrationFilters();
+            });
+    }
+
+    builder.Services.AddMediatR(cfg =>
+        cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
+            .AddCommandLockBehavior()
+            .AddKnownExceptionValidationBehavior()
+            .AddUnitOfWorkBehaviors());
+
+    builder.Services.AddMultiEnv(envOption => envOption.ServiceName = ProductEngineeringFacts.ServiceName)
+        .UseMicrosoftServiceDiscovery();
+    builder.Services.AddConfigurationServiceEndpointProvider();
+
+    var app = builder.Build();
+    if (app.Environment.IsDevelopment())
+    {
+        using var scope = app.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await dbContext.Database.EnsureCreatedAsync();
+    }
+
+    app.UseNervIipRequestLocalization();
+    app.UseKnownExceptionHandler();
+    app.UseStaticFiles();
+    app.UseRouting();
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.MapControllers();
+    app.UseFastEndpoints(c =>
+    {
+        c.Endpoints.NameGenerator = ctx =>
+            ProductionVersionEndpointContracts.TryGet(ctx.EndpointType, out var contract)
+                ? contract.OperationId
+                : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+    }).UseSwaggerGen();
+
+    app.UseHttpMetrics();
+    app.MapHealthChecks("/health");
+    app.MapMetrics();
+    app.MapGet("/code-analysis", () =>
+    {
+        var html = VisualizationHtmlBuilder.GenerateVisualizationHtml(
+            CodeFlowAnalysisHelper.GetResultFromAssemblies(
+                typeof(Program).Assembly,
+                typeof(ApplicationDbContext).Assembly,
+                typeof(ProductEngineeringFacts).Assembly));
+        return Results.Content(html, "text/html; charset=utf-8");
+    });
+
+    await app.RunAsync();
+}
+catch (Exception ex)
+{
+    if (isTesting)
+    {
+        throw;
+    }
+
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    await Log.CloseAndFlushAsync();
+}
+
+static string ToLowerCamelEndpointName(string endpointTypeName)
+{
+    var name = endpointTypeName.EndsWith("Endpoint", StringComparison.Ordinal)
+        ? endpointTypeName[..^"Endpoint".Length]
+        : endpointTypeName;
+
+    return char.ToLowerInvariant(name[0]) + name[1..];
+}
+
+#pragma warning disable S1118
+public partial class Program
+#pragma warning restore S1118
+{
+}

@@ -4,7 +4,7 @@
 
 **Goal:** Build DemandPlanning lite with demand sources, MPS, MRP runs, planned purchase suggestions, planned work order suggestions and pegging.
 
-**Architecture:** DemandPlanning consumes released engineering versions and inventory availability through APIs, contracts or imported snapshots. It owns planning runs and suggestions, but it does not create formal purchase orders, formal work orders or stock movements. MRP starts as a deterministic daily-bucket calculation so the first slice can be tested without APS complexity.
+**Architecture:** DemandPlanning consumes released engineering versions and inventory availability through APIs, contracts or imported snapshots. For planned work orders it resolves ProductEngineering ProductionVersion by SKU, due date and lot size instead of choosing naked MBOM/routing ids. It owns planning runs and suggestions, but it does not create formal purchase orders, formal work orders or stock movements. MRP starts as a deterministic daily-bucket calculation so the first slice can be tested without APS complexity.
 
 **Tech Stack:** .NET 10, FastEndpoints, MediatR, EF Core, Npgsql, netcorepal integration events, xUnit.
 
@@ -116,7 +116,7 @@ Assert pegging links both suggestions back to the demand source and input versio
 public sealed record MrpDemandInput(string DemandSourceId, string SkuCode, decimal Quantity, DateOnly DueDate);
 public sealed record MrpInventoryInput(string SkuCode, decimal AvailableQuantity);
 public sealed record MrpBomInput(string ParentSkuCode, string ComponentSkuCode, decimal QuantityPerParent, string VersionId);
-public sealed record MrpSuggestionResult(string SuggestionType, string SkuCode, decimal Quantity, DateOnly DueDate, IReadOnlyCollection<string> PeggingRefs);
+public sealed record MrpSuggestionResult(string SuggestionType, string SkuCode, decimal Quantity, DateOnly DueDate, string? ProductionVersionId, IReadOnlyCollection<string> PeggingRefs);
 ```
 
 The calculator subtracts available finished goods first, explodes component demand from net production quantity, subtracts component inventory and returns positive net suggestions only.
@@ -158,7 +158,7 @@ Create events:
 ```csharp
 public sealed record MrpRunCompletedIntegrationEvent(string RunId, DateOnly HorizonStart, DateOnly HorizonEnd, int SuggestionCount);
 public sealed record PlannedPurchaseSuggestedIntegrationEvent(string SuggestionId, string SkuCode, decimal Quantity, DateOnly DueDate, IReadOnlyCollection<string> PeggingRefs);
-public sealed record PlannedWorkOrderSuggestedIntegrationEvent(string SuggestionId, string SkuCode, decimal Quantity, DateOnly DueDate, IReadOnlyCollection<string> VersionRefs);
+public sealed record PlannedWorkOrderSuggestedIntegrationEvent(string SuggestionId, string SkuCode, decimal Quantity, DateOnly DueDate, string ProductionVersionId, IReadOnlyCollection<string> VersionRefs);
 ```
 
 - [ ] **Step 3: Add routes**

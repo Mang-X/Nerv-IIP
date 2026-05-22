@@ -85,7 +85,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | BP-MD-005 | 维护业务部门、班组、人员技能和资质 | 业务管理员、生产计划员 | Department/Team/PersonnelSkill | 创建/修改/查看 | 引用 IAM userId；不复制 IAM 用户事实 | 排班、派工、审批和技能校验前置。 |
 | BP-ENG-001 | 上传或引用 CAD/图纸/设计包 | 产品工程师 | EngineeringDocument | 创建/查看 | 文件通过 File Storage；不保存对象 key | CAD 是外部来源。 |
 | BP-ENG-002 | 建立工程物料和 EBOM 版本 | 产品工程师 | EngineeringItem/EBOM | 创建/修改/查看 | 子件 SKU 或工程物料必须存在 | PDM-lite。 |
-| BP-ENG-003 | 建立 MBOM 和工艺路线版本 | 产品工程师、生产计划员 | MBOM/Routing | 创建/修改/发布 | 工作中心必须存在；版本发布后不可直接改 | PLM-lite。 |
+| BP-ENG-003 | 建立 MBOM、工艺路线和生产版本 | 产品工程师、生产计划员 | MBOM/Routing/ProductionVersion | 创建/修改/发布/解析 | 工作中心必须存在；版本发布后不可直接改；ProductionVersion 只绑定已发布 MBOM/路线 | PLM-lite。 |
 | BP-ENG-004 | 发起 ECO/ECN 并审批发布 | 产品工程师、审批人 | EngineeringChange | 创建/审批/关闭 | 发布后通知 MRP/MES/ERP | 工程变更链路。 |
 | BP-PLAN-001 | 维护需求来源：销售订单、预测、安全库存补充 | 计划员 | DemandSource | 创建/修改/查看 | 来源可追踪 | Sales/Forecast 输入。 |
 | BP-PLAN-002 | 运行 MPS/MRP | 计划员 | MrpRun | 创建/异步/查看 | 使用已发布 BOM/工艺路线和库存事实 | 生成净需求。 |
@@ -136,6 +136,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | MBOM | 制造 BOM 结构 | 输入生产用料和损耗率；输出 mbomVersionId。 |
 | Routing | 工艺路线和工序版本 | 输入工序、工作中心、标准工时；输出 routingVersionId。 |
 | EngineeringChange | ECO/ECN 变更闭环 | 输入变更范围、原因、审批；输出发布事件。 |
+| ProductionVersion | SKU 制造版本绑定 | 输入 SKU、有效期、批量范围、优先级；输出 productionVersionId、mbomVersionId、routingVersionId。 |
 | DemandSource | 销售订单、预测、安全库存等需求来源 | 输入需求类型、数量、日期；输出 demandSourceId。 |
 | MrpRun | MRP 计算批次和参数 | 输入需求、库存、BOM；输出净需求和建议。 |
 | PlanningSuggestion | 计划采购/工单建议 | 输入净需求；输出 suggestionId 和 pegging。 |
@@ -148,7 +149,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | InboundOrder | 入库执行事实 | 输入来源单据、SKU、数量、库位；输出入库完成。 |
 | OutboundOrder | 出库执行事实 | 输入来源单据、SKU、批次；输出出库完成。 |
 | WcsTask | WMS 与外部 WCS 的任务映射 | 输入仓储任务；输出回执或失败。 |
-| WorkOrder | 制造任务、版本引用和数量控制 | 输入 SKU、MBOM、路线、数量；输出工单状态。 |
+| WorkOrder | 制造任务、版本引用和数量控制 | 输入 SKU、productionVersionId、数量；输出工单状态。 |
 | ProductionReport | 工序报工事实 | 输入工序、数量、工时、不良；输出报工事件。 |
 | TelemetryTag | 设备数据映射 | 输入设备、tag、单位、采样策略；输出 tagId。 |
 | AlarmEvent | 报警事实 | 输入报警代码、级别、时间；输出报警状态。 |
@@ -196,6 +197,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | Routing | 工艺路线版本 | 工序顺序唯一；工作中心有效。 |
 | EngineeringChange | ECO/ECN | 审批通过后才能发布；发布后不可撤销，只能新变更修正。 |
 | DemandSource | 需求来源 | 来源可追踪；同一外部来源幂等。 |
+| ProductionVersion | 生产版本 | 只能绑定已发布 MBOM/工艺路线；同 SKU 重叠有效期内只能有一个默认版本；archived 后不能被新工单解析引用。 |
 | MasterProductionSchedule | MPS | 计划期间唯一；锁定后不能被自动重算覆盖。 |
 | MrpRun | MRP 运行批次 | 输入版本固定；结果可追踪到需求和供应。 |
 | PlanningSuggestion | 计划建议 | 接受/拒绝为终态；不能直接变正式单据。 |
@@ -223,7 +225,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | InboundOrder | 入库单 | 完成后不可改明细。 |
 | OutboundOrder | 出库单 | 完成前必须满足拣货和复核要求。 |
 | WcsTask | WCS adapter 任务 | 外部任务号幂等；失败必须可诊断。 |
-| WorkOrder | 工单 | 释放前必须引用已发布 MBOM/路线。 |
+| WorkOrder | 工单 | 创建时引用 ProductEngineering 解析出的 productionVersionId，释放前可追溯到已发布 MBOM/路线。 |
 | OperationTask | 工序任务 | 报工数量不能超过剩余数量。 |
 | ProductionReport | 报工记录 | 合格数和不良数不能为负；不良必须有原因。 |
 | ScheduleResult | 排产结果 | 同一版本不可变；工作中心时间段不重叠。 |
@@ -280,7 +282,8 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | DispatchWcsTaskCommand | WcsTask | warehouseTaskId, adapterType, payload | WcsTaskDispatchedDomainEvent | warehouseTaskId+adapterType。 |
 | CompleteWcsTaskCommand | WcsTask | externalTaskId, result, occurredAtUtc | WcsTaskCompleted/FailedDomainEvent | externalTaskId。 |
 | FailWcsTaskCommand | WcsTask | externalTaskId, failureCode, diagnosticMessage, occurredAtUtc | WcsTaskFailedDomainEvent | externalTaskId。 |
-| CreateWorkOrderFromSuggestionCommand | WorkOrder | suggestionId, quantity, mbomVersionId, routingVersionId | WorkOrderCreatedDomainEvent | suggestionId。 |
+| CreateProductionVersionCommand | ProductionVersion | skuCode, mbomVersionId, routingVersionId, validFrom, validTo, lotSizeMin, lotSizeMax, priority, isDefault | ProductionVersionCreatedDomainEvent | sku+有效期。 |
+| CreateWorkOrderFromSuggestionCommand | WorkOrder | suggestionId, quantity, productionVersionId | WorkOrderCreatedDomainEvent | suggestionId。 |
 | ReleaseWorkOrderCommand | WorkOrder | workOrderId, approvalRef | WorkOrderReleasedDomainEvent | workOrderId。 |
 | ReportOperationCommand | OperationTask | operationTaskId, goodQty, defectQty, reason, laborMinutes, idempotencyKey | OperationReportedDomainEvent | idempotencyKey。 |
 | RunRuleScheduleCommand | ScheduleResult | workOrderScope, calendarScope, ruleSet | ScheduleResultCreatedDomainEvent | scheduleVersion。 |
@@ -364,6 +367,11 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `GET /api/business/v1/planning/demands` | ListDemandSourcesQuery | `business.planning.demands.read` | 只读分页查询。 |
 | `POST /api/business/v1/planning/mrp-runs` | RunMrpCommand | `business.planning.mrp.run` | runId。 |
 | `GET /api/business/v1/planning/mrp-runs` | ListMrpRunsQuery | `business.planning.mrp.read` | 只读分页查询。 |
+| `GET /api/business/v1/engineering/production-versions` | ListProductionVersionsQuery | `business.engineering.production-versions.read` | 按 SKU/status 查询生产版本。 |
+| `GET /api/business/v1/engineering/production-versions/resolve` | ResolveProductionVersionQuery | `business.engineering.production-versions.read` | MES/MRP 用 skuCode+effectiveDate+lotSize 解析 productionVersionId+MBOM+Routing。 |
+| `POST /api/business/v1/engineering/production-versions` | CreateProductionVersionCommand | `business.engineering.production-versions.manage` | 绑定已发布 MBOM+Routing。 |
+| `PUT /api/business/v1/engineering/production-versions/{productionVersionId}` | UpdateProductionVersionCommand | `business.engineering.production-versions.manage` | 调整有效期、批量范围、优先级。 |
+| `POST /api/business/v1/engineering/production-versions/{productionVersionId}/archive` | ArchiveProductionVersionCommand | `business.engineering.production-versions.manage` | archived 后不再可解析给新工单。 |
 | `GET /api/business/v1/planning/mrp-runs/{runId}/pegging` | GetMrpPeggingQuery | `business.planning.mrp.read` | 只读。 |
 | `GET /api/business/v1/planning/suggestions` | ListPlanningSuggestionsQuery | `business.planning.mrp.read` | 只读分页查询。 |
 | `POST /api/business/v1/planning/suggestions/{suggestionId}/accept` | AcceptPlanningSuggestionCommand | `business.planning.suggestions.manage` | suggestionId。 |
@@ -405,7 +413,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `POST /api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch` | DispatchWcsTaskCommand | `business.wms.automation.manage` | warehouseTaskId+adapter。 |
 | `POST /api/business/v1/wms/wcs-tasks/{externalTaskId}/complete` | CompleteWcsTaskCommand | `business.wms.automation.manage` | externalTaskId。 |
 | `POST /api/business/v1/wms/wcs-tasks/{externalTaskId}/fail` | FailWcsTaskCommand | `business.wms.automation.manage` | externalTaskId。 |
-| `POST /api/business/v1/mes/work-orders/from-suggestion` | CreateWorkOrderFromSuggestionCommand | `business.mes.work-orders.manage` | suggestionId。 |
+| `POST /api/business/v1/mes/work-orders/from-suggestion` | CreateWorkOrderFromSuggestionCommand | `business.mes.work-orders.manage` | suggestionId；请求引用 productionVersionId。 |
 | `POST /api/business/v1/mes/work-orders/{workOrderId}/release` | ReleaseWorkOrderCommand | `business.mes.work-orders.manage` | workOrderId。 |
 | `GET /api/business/v1/mes/work-orders` | ListWorkOrdersQuery | `business.mes.work-orders.read` | 只读分页查询。 |
 | `POST /api/business/v1/mes/operation-tasks/{operationTaskId}/reports` | ReportOperationCommand | `business.mes.reporting.write` | `Idempotency-Key` 必填。 |
@@ -484,13 +492,13 @@ Acceptance:
 Scope:
 
 1. EngineeringDocument、EngineeringItem。
-2. EBOM、MBOM、Routing。
+2. EBOM、MBOM、Routing、ProductionVersion。
 3. ECO/ECN 和发布状态。
 
 Acceptance:
 
 1. CAD/图纸文件通过 File Storage 引用。
-2. EBOM/MBOM/工艺路线可发布，发布版本不可直接修改。
+2. EBOM/MBOM/工艺路线可发布，发布版本不可直接修改；ProductionVersion 绑定已发布 MBOM + Routing，并提供解析 API。
 3. 工程变更发布事件可被 Planning/MES 消费。
 
 ### Slice 3. Common Capability Foundation
