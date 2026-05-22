@@ -192,11 +192,11 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `business.wms.shipments.manage` | `user` / `external-client` | environment + resource | 创建和完成出库、拣货、复核包装作业。 |
 | `business.wms.automation.manage` | `user` / `external-client` / `connector-host` | environment + resource + capability | 调度 WCS adapter 任务并处理外部自动化设备回执。 |
 | `business.mes.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单、工序任务和完工入库请求。 |
-| `business.mes.work-orders.manage` | `user` / `external-client` | environment + resource | 创建、审批后释放、关闭工单。 |
+| `business.mes.work-orders.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建、审批后释放、关闭工单。 |
 | `business.mes.reporting.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看报工记录和生产日报。 |
 | `business.mes.reporting.write` | `user` / `external-client` | environment + resource | 提交工序报工、合格数、不良数和工时。 |
 | `business.mes.schedules.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看排产结果和 Gantt 数据。 |
-| `business.mes.schedules.manage` | `user` / `external-client` | environment + resource | 触发规则派工、发布或撤销排产版本。 |
+| `business.mes.schedules.manage` | `user` / `external-client` / `internal-service` | environment + resource | 触发规则派工、发布或撤销排产版本。 |
 | `business.iiot.tags.manage` | `user` / `external-client` | environment + resource | 管理设备 tag 映射、采集点和单位。 |
 | `business.iiot.telemetry.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看设备状态快照、时序摘要和 OEE 输入数据。 |
 | `business.iiot.telemetry.write` | `connector-host` / `external-client` | environment + resource + capability | 写入受控采集样本或状态摘要；不得表达 PLC/DCS 控制授权。 |
