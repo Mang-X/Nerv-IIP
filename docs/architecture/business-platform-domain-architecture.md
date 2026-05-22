@@ -292,6 +292,26 @@ ADR 0012、本架构文档、业务 spec、README/repo layout/权限矩阵入口
 
 验证工程到制造、计划到采购/生产、采购到库存到应付、订单到交付到应收、生产执行到成本、设备到维护到产能、仓储自动化 adapter 七条链路。
 
+## Issue Roadmap
+
+GitHub issue 是实施跟踪容器，不改变 ADR 0012/0013 与本文档冻结的领域边界。#78 是甘特/RFC 参考，当前后端与领域实施路线图不以 #78 作为执行 issue。
+
+| Slice / 能力 | GitHub 跟踪 | 当前处理 |
+| --- | --- | --- |
+| 平台补齐与前置能力 | #70、#71、#141、#142、#143 | #70/#71 保留为 epic；FileStorage tus hardening、MinIO/S3 object storage、前端组件缺口分别拆到子 issue。 |
+| Slice 1. MasterData Foundation | #72 已关闭 | BusinessMasterData realignment 已落地并作为下游服务引用事实源；后续只承接跨服务接线。 |
+| Slice 2. ProductEngineering MVP | #127 | 当前已有 ProductionVersion；EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN 继续在 #127 内完成。 |
+| Slice 3. Common Capability Foundation | #73、#131、#132、#133、#134 | #73 保留为 epic；Inventory、Quality inspection、BarcodeLabel、BusinessApproval 拆为独立子 issue。 |
+| Slice 4. DemandPlanning MVP | #128 | 依赖 ProductEngineering 发布契约和 Inventory 可用量查询；算法可先用 fixture 数据推进。 |
+| Slice 5. ERP Procurement/Sales/Finance MVP | #76、#137、#138、#139 | #76 保留为 epic；Procurement、Sales、Finance 分拆实施。 |
+| Slice 6. WMS Execution MVP | #75、#136 | #75 保留为 epic；WMS 入库、出库、盘点和 WCS adapter 边界在 #136 落地。 |
+| Slice 7. MES Execution MVP | #74、#135 | #74 保留为 epic；现有 in-memory Web 原型迁移到 CleanDDD Domain/Infrastructure/PostgreSQL。 |
+| Slice 8. IndustrialTelemetry MVP | #129 | 设备状态、报警和摘要事实进入独立服务，PLC/DCS/SCADA 继续保持外部系统边界。 |
+| Slice 9. Maintenance MVP | #130 | 维修工单、保养、点检、停机事实独立建模；报警触发维修工单依赖 #129。 |
+| Slice 10. Full-Chain Acceptance | #77、#140 | #77 保留为 epic；业务服务 AppHost 注册、verify 脚本模式和 readiness 跟踪在 #140 落地。 |
+
+Wave 1 并行开发的 agent handoff 入口是 `docs/superpowers/specs/2026-05-23-business-wave-1-agent-session-design.md`。首批启动 #127、#131、#132、#135 和 #140；#128、#136 与 #137 到 #139 等 ProductEngineering、Inventory 和 MES 基础契约稳定后再进入下一波。
+
 ## 开放问题
 
 | 问题 | 影响 | 当前处理 |
