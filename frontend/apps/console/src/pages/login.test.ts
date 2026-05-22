@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createConsoleI18n } from '@/i18n'
 import LoginPage from './login.vue'
 
 const api = vi.hoisted(() => ({
@@ -42,7 +43,7 @@ describe('Login page', () => {
         config: {
           errorHandler: appError,
         },
-        plugins: [createPinia()],
+        plugins: [createPinia(), createConsoleI18n({ locale: 'en-US' })],
       },
     })
 

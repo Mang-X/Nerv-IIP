@@ -44,6 +44,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
             await client.PostAsJsonAsync("/api/ops/v1/operation-tasks/op-missing/lease/heartbeat", new HeartbeatOperationTaskLeaseRequest("org-001", "env-dev", "connector-host-001", "lease-001")),
             await client.PostAsJsonAsync("/api/ops/v1/operation-results", resultRequest),
             await client.GetAsync("/api/ops/v1/audit-records?organizationId=org-001&environmentId=env-dev"),
+            await client.PostAsJsonAsync("/api/ops/v1/audit-intents", new SubmitAuditIntentRequest("org-001", "env-dev", "op-missing", "manual.reviewed", "user:auditor", "corr-audit-unauthorized")),
             await client.PostAsJsonAsync("/api/ops/v1/operation-templates", new CreateOperationTemplateRequest("backup.unauthorized", "Backup", "{}", "medium", 3, 300, false)),
             await client.GetAsync("/api/ops/v1/operation-templates"),
             await client.GetAsync("/api/ops/v1/operation-templates/lifecycle.restart")
@@ -561,6 +562,89 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     }
 
     [Fact]
+    public async Task Submit_audit_intent_creates_audit_record_for_task_scope()
+    {
+        await using var auditFactory = CreateEfInMemoryFactory("ops-submit-audit-intent");
+        var client = CreateInternalServiceClient(auditFactory);
+        var created = await PostCreateAsync(client, CreateRestartRequest("idem-audit-intent-001", "org-audit-intent", "env-dev"));
+
+        var response = await client.PostAsJsonAsync(
+            "/api/ops/v1/audit-intents",
+            new SubmitAuditIntentRequest(
+                "org-audit-intent",
+                "env-dev",
+                created.OperationTaskId,
+                "manual.reviewed",
+                "user:auditor",
+                "corr-audit-intent-001"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var intent = await ReadResponseDataAsync<AuditIntentResponse>(response);
+        Assert.Equal(created.OperationTaskId, intent.OperationTaskId);
+        Assert.Equal("manual.reviewed", intent.Action);
+        Assert.Equal("user:auditor", intent.Actor);
+
+        var auditResponse = await client.GetAsync(
+            "/api/ops/v1/audit-records?organizationId=org-audit-intent&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, auditResponse.StatusCode);
+        var records = await ReadResponseDataAsync<AuditRecordListResponse>(auditResponse);
+        Assert.Contains(records.Items, x =>
+            x.AuditRecordId == intent.AuditRecordId
+            && x.Action == "manual.reviewed"
+            && x.CorrelationId == "corr-audit-intent-001");
+    }
+
+    [Fact]
+    public async Task Submit_audit_intent_rejects_operation_task_outside_scope()
+    {
+        await using var auditFactory = CreateEfInMemoryFactory("ops-submit-audit-intent-scope");
+        var client = CreateInternalServiceClient(auditFactory);
+        var created = await PostCreateAsync(client, CreateRestartRequest("idem-audit-intent-scope-001", "org-audit-intent", "env-dev"));
+
+        var response = await client.PostAsJsonAsync(
+            "/api/ops/v1/audit-intents",
+            new SubmitAuditIntentRequest(
+                "org-other",
+                "env-dev",
+                created.OperationTaskId,
+                "manual.reviewed",
+                "user:auditor",
+                "corr-audit-intent-scope-001"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Submit_audit_intent_rejects_missing_or_oversized_audit_fields()
+    {
+        await using var auditFactory = CreateEfInMemoryFactory("ops-submit-audit-intent-validation");
+        var client = CreateInternalServiceClient(auditFactory);
+        var created = await PostCreateAsync(client, CreateRestartRequest("idem-audit-intent-validation-001", "org-audit-intent", "env-dev"));
+
+        var missingActor = await client.PostAsJsonAsync(
+            "/api/ops/v1/audit-intents",
+            new SubmitAuditIntentRequest(
+                "org-audit-intent",
+                "env-dev",
+                created.OperationTaskId,
+                "manual.reviewed",
+                "",
+                "corr-audit-intent-validation-001"));
+        var oversizedAction = await client.PostAsJsonAsync(
+            "/api/ops/v1/audit-intents",
+            new SubmitAuditIntentRequest(
+                "org-audit-intent",
+                "env-dev",
+                created.OperationTaskId,
+                new string('a', 129),
+                "user:auditor",
+                "corr-audit-intent-validation-002"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, missingActor.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, oversizedAction.StatusCode);
+    }
+
+    [Fact]
     public async Task Operation_template_can_be_created_listed_and_read()
     {
         var client = CreateInternalServiceClient(factory);
@@ -918,6 +1002,13 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         public async Task<OperationTaskResponse> RecordResultAsync(OperationResult result, CancellationToken cancellationToken)
         {
             var response = await inner.RecordResultAsync(result, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return response;
+        }
+
+        public async Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            var response = await inner.SubmitAuditIntentAsync(request, now, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             return response;
         }

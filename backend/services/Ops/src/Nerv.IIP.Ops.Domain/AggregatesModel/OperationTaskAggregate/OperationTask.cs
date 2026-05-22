@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.DomainEvents;
 using NetCorePal.Extensions.Domain;
@@ -226,6 +227,20 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             : new OperationTaskFailedDomainEvent(this, attempt, result));
         AddAuditRecordedDomainEvent(auditRecord);
         return ToResponse();
+    }
+
+    public AuditIntentResponse SubmitAuditIntent(SubmitAuditIntentRequest request, AuditRecordId auditRecordId, DateTimeOffset now)
+    {
+        AuditIntentValidator.Validate(request);
+        if (!string.Equals(OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationTaskRequestException("Audit intent context does not match the operation task scope.");
+        }
+
+        var auditRecord = AddAudit(auditRecordId, request.Action, request.Actor, now, request.CorrelationId);
+        AddAuditRecordedDomainEvent(auditRecord);
+        return AuditRecordMapper.ToIntentResponse(auditRecord.ToFact());
     }
 
     public OperationTaskFact ToFact()

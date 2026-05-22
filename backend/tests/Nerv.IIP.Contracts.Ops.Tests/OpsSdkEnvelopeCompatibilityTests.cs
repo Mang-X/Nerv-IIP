@@ -70,6 +70,38 @@ public sealed class OpsSdkEnvelopeCompatibilityTests
     }
 
     [Fact]
+    public async Task SubmitAuditIntentAsync_ResponseDataEnvelope_ReturnsData()
+    {
+        var expected = new AuditIntentResponse(
+            "audit-001",
+            "op-audit",
+            "manual.reviewed",
+            "user:auditor",
+            DateTimeOffset.Parse("2026-05-22T00:00:00Z"),
+            "corr-audit-001");
+        HttpRequestMessage? captured = null;
+        using var httpClient = CreateHttpClient(request =>
+        {
+            captured = request;
+            return JsonResponse(new ResponseDataEnvelope<AuditIntentResponse>(expected));
+        });
+        var client = new HttpOpsClient(httpClient);
+
+        var result = await client.SubmitAuditIntentAsync(new SubmitAuditIntentRequest(
+            "org-001",
+            "env-dev",
+            "op-audit",
+            "manual.reviewed",
+            "user:auditor",
+            "corr-audit-001"));
+
+        Assert.Equal("audit-001", result.AuditRecordId);
+        Assert.NotNull(captured);
+        Assert.Equal(HttpMethod.Post, captured.Method);
+        Assert.Equal("/api/ops/v1/audit-intents", captured.RequestUri?.PathAndQuery);
+    }
+
+    [Fact]
     public async Task AbandonOperationTaskLeaseAsync_ResponseDataEnvelope_ReturnsData()
     {
         var expected = CreateOperationTaskResponse("op-abandon");

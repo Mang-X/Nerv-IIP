@@ -5,15 +5,17 @@ import { useConsoleInstances, useRestartOperation } from '@/composables/useConso
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { Alert, AlertDescription, AlertTitle, Button } from '@nerv-iip/ui'
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
 definePage({
   meta: {
     requiresAuth: true,
-    title: 'Instances',
+    title: 'routes.instances',
   },
 })
 
+const { t } = useI18n()
 const {
   detail,
   detailError,
@@ -73,16 +75,16 @@ async function handleRefreshDetail() {
 
         <RouterLink
           v-if="latestOperationPath"
-          class="rounded-lg border bg-background px-4 py-3 text-sm font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          class="console-page__operation-link rounded-lg border bg-background px-4 py-3 text-sm font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           :to="latestOperationPath"
         >
-          Latest operation task
+          {{ t('home.latestOperationTask') }}
         </RouterLink>
       </div>
 
       <div class="min-w-0">
         <Alert v-if="detailError" variant="destructive" class="flex flex-col gap-3">
-          <AlertTitle>Unable to load instance detail</AlertTitle>
+          <AlertTitle>{{ t('home.unableToLoadInstanceDetail') }}</AlertTitle>
           <AlertDescription>{{ detailError.message }}</AlertDescription>
           <Button
             :disabled="detailPending"
@@ -92,7 +94,7 @@ async function handleRefreshDetail() {
             class="self-start"
             @click="handleRefreshDetail"
           >
-            Retry
+            {{ t('action.retry') }}
           </Button>
         </Alert>
         <InstanceDetailPanel v-else :instance="detail" :pending="detailPending" />

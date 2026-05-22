@@ -6,6 +6,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { handleUnauthorized } from './api/unauthorized'
 import './assets/main.css'
+import { getCurrentLocale, i18n } from './i18n'
 import { router } from './router'
 import { useAuthStore } from './stores/auth'
 
@@ -18,6 +19,7 @@ const auth = useAuthStore()
 auth.setSessionExpiredHandler(() => handleUnauthorized(auth, router))
 configureApiClient({
   accessTokenProvider: () => auth.accessToken,
+  localeProvider: () => getCurrentLocale(),
   onUnauthorized: () => handleUnauthorized(auth, router),
 })
 
@@ -31,5 +33,6 @@ app.use(PiniaColada, {
     }),
   ],
 })
+app.use(i18n)
 app.use(router)
 app.mount('#app')

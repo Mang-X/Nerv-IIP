@@ -15,6 +15,7 @@ public interface IOperationTaskApplicationService
     Task<OperationTaskResponse> AbandonLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken);
     Task<OperationTaskResponse> HeartbeatLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken);
     Task<OperationTaskResponse> RecordResultAsync(OperationResult result, CancellationToken cancellationToken);
+    Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, DateTimeOffset now, CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryOperationTaskApplicationService(IOpsStateStore store) : IOperationTaskApplicationService
@@ -47,6 +48,11 @@ public sealed class InMemoryOperationTaskApplicationService(IOpsStateStore store
     public Task<OperationTaskResponse> RecordResultAsync(OperationResult result, CancellationToken cancellationToken)
     {
         return Task.FromResult(store.RecordResult(result));
+    }
+
+    public Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(store.SubmitAuditIntent(request, now));
     }
 }
 
@@ -137,6 +143,16 @@ public sealed class EfOperationTaskApplicationService(
             ?? throw new OperationTaskNotFoundException(result.OperationTaskId);
         var auditId = await repository.NextAuditRecordIdAsync(cancellationToken);
         return task.RecordResult(result, auditId);
+    }
+
+    public async Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var task = await repository.GetByIdAsync(request.OperationTaskId, cancellationToken)
+            ?? throw new OperationTaskNotFoundException(request.OperationTaskId);
+        return task.SubmitAuditIntent(
+            request,
+            await repository.NextAuditRecordIdAsync(cancellationToken),
+            now);
     }
 
     private async Task<OperationTemplateSnapshot> ResolveTemplateAsync(string operationCode, CancellationToken cancellationToken)

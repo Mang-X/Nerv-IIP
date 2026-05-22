@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using FastEndpoints;
 using FastEndpoints.Swagger;
+using Nerv.IIP.Localization;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
@@ -62,9 +63,11 @@ else
 }
 builder.Services.AddNotificationPersistence(builder.Configuration);
 builder.Services.AddNervIipObservability(builder.Configuration, "notification");
+builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
 app.UseNervIipCorrelation();
+app.UseNervIipRequestLocalization();
 if (usePostgreSql)
 {
     app.UseContext();

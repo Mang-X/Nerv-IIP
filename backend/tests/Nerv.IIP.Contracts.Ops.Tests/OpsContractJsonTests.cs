@@ -62,6 +62,42 @@ public sealed class OpsContractJsonTests
     }
 
     [Fact]
+    public void Audit_intent_contracts_round_trip_with_web_json_options()
+    {
+        var request = new SubmitAuditIntentRequest(
+            "org-001",
+            "env-dev",
+            "op-000001",
+            "manual.reviewed",
+            "user:auditor",
+            "corr-audit-001");
+        var response = new AuditIntentResponse(
+            "audit-000002",
+            "op-000001",
+            "manual.reviewed",
+            "user:auditor",
+            DateTimeOffset.Parse("2026-05-22T00:00:00Z"),
+            "corr-audit-001");
+
+        var requestJson = JsonSerializer.Serialize(request, JsonOptions);
+        var responseJson = JsonSerializer.Serialize(response, JsonOptions);
+        var requestResult = JsonSerializer.Deserialize<SubmitAuditIntentRequest>(requestJson, JsonOptions);
+        var responseResult = JsonSerializer.Deserialize<AuditIntentResponse>(responseJson, JsonOptions);
+
+        using var requestDocument = JsonDocument.Parse(requestJson);
+        using var responseDocument = JsonDocument.Parse(responseJson);
+
+        Assert.Equal("op-000001", requestDocument.RootElement.GetProperty("operationTaskId").GetString());
+        Assert.Equal("manual.reviewed", requestDocument.RootElement.GetProperty("action").GetString());
+        Assert.Equal("audit-000002", responseDocument.RootElement.GetProperty("auditRecordId").GetString());
+        Assert.Equal("corr-audit-001", responseDocument.RootElement.GetProperty("correlationId").GetString());
+        Assert.NotNull(requestResult);
+        Assert.Equal("user:auditor", requestResult.Actor);
+        Assert.NotNull(responseResult);
+        Assert.Equal("manual.reviewed", responseResult.Action);
+    }
+
+    [Fact]
     public void Operation_task_completed_integration_event_round_trips_with_envelope_fields()
     {
         var source = new OperationTaskCompletedIntegrationEvent(

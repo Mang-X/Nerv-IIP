@@ -42,6 +42,52 @@ public sealed record AuditRecordFact(
     DateTimeOffset OccurredAtUtc,
     string CorrelationId);
 
+public static class AuditRecordMapper
+{
+    public static AuditIntentResponse ToIntentResponse(AuditRecordFact auditRecord)
+    {
+        return new AuditIntentResponse(
+            auditRecord.AuditRecordId,
+            auditRecord.OperationTaskId,
+            auditRecord.Action,
+            auditRecord.Actor,
+            auditRecord.OccurredAtUtc,
+            auditRecord.CorrelationId);
+    }
+}
+
+public static class AuditIntentValidator
+{
+    private const int MaxAuditFieldLength = 128;
+
+    public static void Validate(SubmitAuditIntentRequest request)
+    {
+        ValidateRequired(request.OrganizationId, nameof(request.OrganizationId));
+        ValidateRequired(request.EnvironmentId, nameof(request.EnvironmentId));
+        ValidateRequired(request.OperationTaskId, nameof(request.OperationTaskId));
+        ValidateAuditField(request.Action, nameof(request.Action));
+        ValidateAuditField(request.Actor, nameof(request.Actor));
+        ValidateAuditField(request.CorrelationId, nameof(request.CorrelationId));
+    }
+
+    private static void ValidateAuditField(string value, string fieldName)
+    {
+        ValidateRequired(value, fieldName);
+        if (value.Length > MaxAuditFieldLength)
+        {
+            throw new InvalidOperationTaskRequestException($"Audit intent {fieldName} must be at most {MaxAuditFieldLength} characters.");
+        }
+    }
+
+    private static void ValidateRequired(string value, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationTaskRequestException($"Audit intent {fieldName} is required.");
+        }
+    }
+}
+
 public static class OperationTaskMapper
 {
     public static OperationTaskResponse ToResponse(

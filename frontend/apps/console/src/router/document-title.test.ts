@@ -11,7 +11,7 @@ describe('document title sync', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/', component: { template: '<div />' }, meta: { title: 'Instances' } },
+        { path: '/', component: { template: '<div />' }, meta: { title: 'routes.instances' } },
         { path: '/untitled', component: { template: '<div />' } },
       ],
     })
@@ -24,7 +24,7 @@ describe('document title sync', () => {
 
     await router.push('/')
 
-    expect(document.title).toBe('Instances')
+    expect(document.title).toBe('实例')
   })
 
   it('falls back to the console title when route meta title is missing', async () => {
@@ -32,6 +32,6 @@ describe('document title sync', () => {
 
     await router.push('/untitled')
 
-    expect(document.title).toBe('Nerv-IIP Console')
+    expect(document.title).toBe('Nerv-IIP 控制台')
   })
 })

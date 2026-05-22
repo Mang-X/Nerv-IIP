@@ -35,6 +35,8 @@ export interface NavItem {
 defineProps<{
   title: string
   navItems: NavItem[]
+  navLabel?: string
+  signOutLabel?: string
   user?: {
     name: string
     email?: string
@@ -66,10 +68,10 @@ defineEmits<{
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain :items="navItems" />
+        <NavMain :items="navItems" :label="navLabel" />
       </SidebarContent>
       <SidebarFooter v-if="user">
-        <NavUser :user="user" @sign-out="$emit('signOut')" />
+        <NavUser :sign-out-label="signOutLabel" :user="user" @sign-out="$emit('signOut')" />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

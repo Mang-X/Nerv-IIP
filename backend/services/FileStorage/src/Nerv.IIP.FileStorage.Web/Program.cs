@@ -4,6 +4,7 @@ using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
+using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 
@@ -29,6 +30,7 @@ else
 builder.Services.AddFileStoragePersistence(builder.Configuration);
 builder.Services.AddNervIipCaching(builder.Configuration, "file-storage");
 builder.Services.AddNervIipObservability(builder.Configuration, "file-storage");
+builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
 if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigrate"))
@@ -38,6 +40,7 @@ if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigra
 }
 
 app.UseNervIipCorrelation();
+app.UseNervIipRequestLocalization();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints();

@@ -18,6 +18,7 @@ import {
 } from '@nerv-iip/ui'
 import { LogInIcon } from 'lucide-vue-next'
 import { reactive } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 withDefaults(
   defineProps<{
@@ -32,6 +33,8 @@ withDefaults(
 const emit = defineEmits<{
   submit: [credentials: { loginName: string; password: string }]
 }>()
+
+const { t } = useI18n()
 
 const form = reactive({
   loginName: '',
@@ -50,8 +53,8 @@ function submit() {
   <Card class="border-none shadow-none">
     <form class="flex flex-col gap-4" @submit.prevent="submit">
       <CardHeader class="text-center">
-        <CardTitle class="text-xl">Sign in</CardTitle>
-        <CardDescription>Use your Console account to continue.</CardDescription>
+        <CardTitle class="text-xl">{{ t('login.title') }}</CardTitle>
+        <CardDescription>{{ t('login.description') }}</CardDescription>
       </CardHeader>
 
       <CardContent class="flex flex-col gap-4">
@@ -61,7 +64,7 @@ function submit() {
 
         <FieldGroup>
           <Field :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">
-            <FieldLabel for="login-name">Login name</FieldLabel>
+            <FieldLabel for="login-name">{{ t('login.loginName') }}</FieldLabel>
             <Input
               id="login-name"
               v-model="form.loginName"
@@ -72,11 +75,11 @@ function submit() {
               required
               type="text"
             />
-            <FieldDescription>Seeded local admin uses admin.</FieldDescription>
+            <FieldDescription>{{ t('login.loginNameHint') }}</FieldDescription>
           </Field>
 
           <Field :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">
-            <FieldLabel for="password">Password</FieldLabel>
+            <FieldLabel for="password">{{ t('login.password') }}</FieldLabel>
             <Input
               id="password"
               v-model="form.password"
@@ -95,7 +98,7 @@ function submit() {
         <Button class="w-full" :disabled="pending" type="submit">
           <Spinner v-if="pending" data-icon="inline-start" />
           <LogInIcon v-else data-icon="inline-start" />
-          {{ pending ? 'Signing in' : 'Sign in' }}
+          {{ pending ? t('login.pending') : t('login.title') }}
         </Button>
       </CardFooter>
     </form>

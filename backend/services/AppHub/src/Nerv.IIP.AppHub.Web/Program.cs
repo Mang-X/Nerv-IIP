@@ -3,6 +3,7 @@ using FastEndpoints;
 using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.Caching;
+using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
 using NetCorePal.Extensions.AspNetCore;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -53,6 +54,7 @@ else
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
 builder.Services.AddAppHubPersistence(builder.Configuration);
+builder.Services.AddNervIipLocalization();
 if (usePostgreSql)
 {
     builder.Services.AddScoped<AppHubDatabaseMigrationRunner>();
@@ -66,6 +68,7 @@ if (usePostgreSql && autoMigrate)
 }
 
 app.UseNervIipCorrelation();
+app.UseNervIipRequestLocalization();
 if (usePostgreSql)
 {
     app.UseContext();
