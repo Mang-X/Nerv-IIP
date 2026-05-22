@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Newtonsoft.Json;
 using NetCorePal.Extensions.CodeAnalysis;
 using Nerv.IIP.Business.MasterData.Domain;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 
 Log.Logger = new LoggerConfiguration()
@@ -116,6 +117,8 @@ try
     builder.Services.AddMasterDataPostgreSqlPersistence(
         masterDataConnectionString,
         builder.Environment.IsDevelopment());
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<IMasterDataIntegrationEventContextAccessor, HttpMasterDataIntegrationEventContextAccessor>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
