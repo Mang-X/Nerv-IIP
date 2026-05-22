@@ -406,11 +406,12 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `POST /api/business/v1/wms/wcs-tasks/{externalTaskId}/complete` | CompleteWcsTaskCommand | `business.wms.automation.manage` | externalTaskId。 |
 | `POST /api/business/v1/wms/wcs-tasks/{externalTaskId}/fail` | FailWcsTaskCommand | `business.wms.automation.manage` | externalTaskId。 |
 | `POST /api/business/v1/mes/work-orders/from-suggestion` | CreateWorkOrderFromSuggestionCommand | `business.mes.work-orders.manage` | suggestionId。 |
+| `POST /api/business/v1/mes/work-orders/rush` | CreateRushWorkOrderCommand | `business.mes.work-orders.manage` | 创建高优先级工单并立即以 `rush-order` 触发重排；productionVersionId 作为兼容 #95 的外部引用透传，不在 MES 内定义 ProductEngineering 模型。 |
 | `POST /api/business/v1/mes/work-orders/{workOrderId}/release` | ReleaseWorkOrderCommand | `business.mes.work-orders.manage` | workOrderId。 |
 | `GET /api/business/v1/mes/work-orders` | ListWorkOrdersQuery | `business.mes.work-orders.read` | 只读分页查询。 |
 | `POST /api/business/v1/mes/operation-tasks/{operationTaskId}/reports` | ReportOperationCommand | `business.mes.reporting.write` | `Idempotency-Key` 必填。 |
 | `GET /api/business/v1/mes/reports` | ListProductionReportsQuery | `business.mes.reporting.read` | 只读分页查询。 |
-| `POST /api/business/v1/mes/schedules/run` | RunRuleScheduleCommand | `business.mes.schedules.manage` | scheduleVersion。 |
+| `POST /api/business/v1/mes/schedules/run` | RescheduleCommand | `business.mes.schedules.manage` | 请求包含 trigger：`manual`、`rush-order`、`asset-unavailable`、`asset-restored`；返回新 scheduleVersion 和被推迟工单列表。 |
 | `GET /api/business/v1/mes/schedules/gantt` | GetScheduleGanttQuery | `business.mes.schedules.read` | 只读甘特数据。 |
 | `POST /api/business/v1/iiot/tags` | CreateTelemetryTagCommand | `business.iiot.tags.manage` | device+tag key。 |
 | `GET /api/business/v1/iiot/tags` | ListTelemetryTagsQuery | `business.iiot.telemetry.read` | 只读分页查询。 |
@@ -446,8 +447,8 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `mes.OperationReported` | MES | reportId, workOrderId, operationTaskId, goodQty, defectQty | Quality、ERP、Maintenance。 |
 | `industrialTelemetry.AlarmRaised` | IndustrialTelemetry | alarmId, deviceAssetId, severity, occurredAtUtc | Maintenance、MES、Notification。 |
 | `industrialTelemetry.DeviceStateChanged` | IndustrialTelemetry | deviceAssetId, previousState, currentState, occurredAtUtc | MES、Maintenance、Planning。 |
-| `maintenance.AssetUnavailable` | Maintenance | deviceAssetId, reason, fromUtc | MES、Planning、Notification。 |
-| `maintenance.AssetRestored` | Maintenance | deviceAssetId, restoredAtUtc | MES、Planning、Notification。 |
+| `maintenance.AssetUnavailable` | Maintenance | deviceAssetId, reason, fromUtc | MES、Planning、Notification；契约位于 `Nerv.IIP.Contracts.Maintenance`，MES 将 deviceAssetId 映射为 WorkCenter 不可用窗口并按配置触发 `asset-unavailable` 重排。 |
+| `maintenance.AssetRestored` | Maintenance | deviceAssetId, restoredAtUtc | MES、Planning、Notification；MES 关闭对应 WorkCenter 不可用窗口并按配置触发 `asset-restored` 重排。 |
 
 ## Slices
 
