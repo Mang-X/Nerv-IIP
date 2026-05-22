@@ -8,6 +8,7 @@ using Nerv.IIP.Ops.Web.Application.Auth;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using Nerv.IIP.Ops.Web.Application.Queries;
 using Nerv.IIP.Ops.Web.Endpoints;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Ops.Web.Endpoints.OperationTasks;
@@ -19,7 +20,7 @@ public sealed record ListOperationTasksRequest(
     int? PageSize);
 
 [HttpGet("/api/ops/v1/operation-tasks")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class ListOperationTasksEndpoint(IMediator mediator)
     : Endpoint<ListOperationTasksRequest, ResponseData<PagedOperationTaskListResponse>>
 {
@@ -35,7 +36,7 @@ public sealed class ListOperationTasksEndpoint(IMediator mediator)
 }
 
 [HttpPost("/api/ops/v1/operation-tasks")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class CreateOperationTaskEndpoint(IMediator mediator) : Endpoint<CreateOperationTaskRequest, ResponseData<OperationTaskResponse>>
 {
     public override async Task HandleAsync(CreateOperationTaskRequest req, CancellationToken ct)
@@ -53,7 +54,7 @@ public sealed class CreateOperationTaskEndpoint(IMediator mediator) : Endpoint<C
 }
 
 [HttpGet("/api/ops/v1/operation-tasks/{operationTaskId}")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class GetOperationTaskEndpoint(IMediator mediator) : EndpointWithoutRequest<ResponseData<OperationTaskResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -72,7 +73,7 @@ public sealed class GetOperationTaskEndpoint(IMediator mediator) : EndpointWitho
 }
 
 [HttpGet("/api/ops/v1/operation-tasks/pending")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class GetPendingOperationTasksEndpoint(
     IMediator mediator,
     IOpsConnectorCredentialValidator connectorCredentialValidator,
@@ -110,7 +111,7 @@ public sealed class GetPendingOperationTasksEndpoint(
 }
 
 [HttpPost("/api/ops/v1/operation-tasks/claims")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class ClaimOperationTasksEndpoint(
     IMediator mediator,
     IOpsConnectorCredentialValidator connectorCredentialValidator,
@@ -145,7 +146,7 @@ public sealed class ClaimOperationTasksEndpoint(
 }
 
 [HttpPost("/api/ops/v1/operation-tasks/{operationTaskId}/lease/abandon")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class AbandonOperationTaskLeaseEndpoint(
     IMediator mediator,
     IOpsConnectorCredentialValidator connectorCredentialValidator,
@@ -185,7 +186,7 @@ public sealed class AbandonOperationTaskLeaseEndpoint(
 }
 
 [HttpPost("/api/ops/v1/operation-tasks/{operationTaskId}/lease/heartbeat")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class HeartbeatOperationTaskLeaseEndpoint(
     IMediator mediator,
     IOpsConnectorCredentialValidator connectorCredentialValidator,
@@ -225,7 +226,7 @@ public sealed class HeartbeatOperationTaskLeaseEndpoint(
 }
 
 [HttpPost("/api/ops/v1/operation-results")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class RecordOperationResultEndpoint(
     IMediator mediator,
     IOpsConnectorCredentialValidator connectorCredentialValidator,

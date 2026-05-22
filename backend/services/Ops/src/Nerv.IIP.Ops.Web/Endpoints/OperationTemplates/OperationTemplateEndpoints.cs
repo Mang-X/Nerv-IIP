@@ -5,6 +5,7 @@ using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using Nerv.IIP.Ops.Web.Endpoints;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Dto;
 using NetCorePal.Extensions.Primitives;
 
@@ -45,7 +46,7 @@ public sealed class GetOperationTemplateQueryHandler(IOperationTemplateApplicati
 }
 
 [HttpPost("/api/ops/v1/operation-templates")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class CreateOperationTemplateEndpoint(IMediator mediator)
     : Endpoint<CreateOperationTemplateRequest, ResponseData<OperationTemplateResponse>>
 {
@@ -64,7 +65,7 @@ public sealed class CreateOperationTemplateEndpoint(IMediator mediator)
 }
 
 [HttpGet("/api/ops/v1/operation-templates")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class ListOperationTemplatesEndpoint(IMediator mediator)
     : EndpointWithoutRequest<ResponseData<OperationTemplateListResponse>>
 {
@@ -76,7 +77,7 @@ public sealed class ListOperationTemplatesEndpoint(IMediator mediator)
 }
 
 [HttpGet("/api/ops/v1/operation-templates/{operationCode}")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class GetOperationTemplateEndpoint(IMediator mediator)
     : EndpointWithoutRequest<ResponseData<OperationTemplateResponse>>
 {

@@ -1,18 +1,62 @@
+using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Nerv.IIP.Contracts.FileStorage;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
 public sealed class FileStorageSkeletonTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     [Fact]
+    public async Task File_storage_api_endpoints_require_internal_service_authorization()
+    {
+        var client = factory.CreateClient();
+
+        using var patchRequest = new HttpRequestMessage(HttpMethod.Patch, "/api/files/v1/tus/ups-missing")
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes("hello"))
+        };
+        patchRequest.Headers.Add("Tus-Resumable", "1.0.0");
+        patchRequest.Headers.Add("Upload-Offset", "0");
+        patchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
+
+        var responses = new[]
+        {
+            await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadSessionRequest()),
+            await client.PostAsJsonAsync("/api/files/v1/upload-sessions/ups-missing/complete", new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, 0)),
+            await client.GetAsync("/api/files/v1/files/file-missing"),
+            await client.PostAsJsonAsync("/api/files/v1/files/file-missing/download-grants", new CreateDownloadGrantRequest("org-001", "prod")),
+            await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, "/api/files/v1/tus/ups-missing")),
+            await client.SendAsync(patchRequest),
+            await client.GetAsync("/api/files/v1/download-grants/grant-missing/content")
+        };
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode));
+    }
+
+    [Fact]
+    public async Task File_storage_health_endpoint_remains_anonymous()
+    {
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/health");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Service_exposes_health_and_file_storage_boundaries()
     {
         var client = factory.CreateClient();
 
         var health = await client.GetStringAsync("/health");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            InternalServiceAuthentication.DefaultDevelopmentBearerToken);
         var boundaries = await client.GetFromJsonAsync<FileStorageBoundaries>("/internal/file-storage/v1/boundaries");
 
         Assert.Equal("Healthy", health);
@@ -25,6 +69,9 @@ public sealed class FileStorageSkeletonTests(WebApplicationFactory<Program> fact
     public async Task UploadSessionWorkflow_MetadataFirstServerProxy_CompletesFileAndIssuesDownloadGrant()
     {
         var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            InternalServiceAuthentication.DefaultDevelopmentBearerToken);
         var createRequest = new CreateUploadSessionRequest(
             "org-001",
             "prod",
@@ -95,6 +142,9 @@ public sealed class FileStorageSkeletonTests(WebApplicationFactory<Program> fact
     public async Task CreateUploadSession_UnsupportedPurpose_ReturnsBadRequest()
     {
         var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            InternalServiceAuthentication.DefaultDevelopmentBearerToken);
         var request = new CreateUploadSessionRequest(
             "org-001",
             "prod",
@@ -108,6 +158,19 @@ public sealed class FileStorageSkeletonTests(WebApplicationFactory<Program> fact
         var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", request);
 
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    private static CreateUploadSessionRequest CreateUploadSessionRequest()
+    {
+        return new CreateUploadSessionRequest(
+            "org-001",
+            "prod",
+            new OwnerReference("AppHub", "ApplicationPackage", "app-42"),
+            "application-package",
+            "demo.zip",
+            "application/zip",
+            4096,
+            "sha256:test");
     }
 
     private static async Task AssertObjectKeyIsNotExposedAsync(HttpResponseMessage response)

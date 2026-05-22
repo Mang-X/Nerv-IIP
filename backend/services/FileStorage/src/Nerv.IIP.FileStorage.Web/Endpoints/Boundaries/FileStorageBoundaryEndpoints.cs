@@ -1,13 +1,14 @@
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.FileStorage.Domain;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.FileStorage.Web.Endpoints.Boundaries;
 
 public sealed record FileStorageBoundaryResponse(IReadOnlyList<string> DomainFacts, IReadOnlyList<string> ProviderBoundaries);
 
 [HttpGet("/internal/file-storage/v1/boundaries")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class GetFileStorageBoundariesEndpoint : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -19,7 +20,7 @@ public sealed class GetFileStorageBoundariesEndpoint : EndpointWithoutRequest
 }
 
 [HttpGet("/internal/file-storage/v1/purposes/{purpose}")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class GetFilePurposeEndpoint : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)

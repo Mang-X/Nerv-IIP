@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -12,15 +13,49 @@ using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
 using Nerv.IIP.Ops.Web.Application.Commands;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
 public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     [Fact]
-    public async Task Operation_task_can_be_created_dispatched_and_completed()
+    public async Task Ops_api_endpoints_require_internal_service_authorization()
     {
         var client = factory.CreateClient();
+        var createRequest = CreateRestartRequest("idem-unauthorized-001");
+        var resultRequest = CreateResult(
+            "op-missing",
+            "attempt-missing",
+            "docker-container-local-demo-001",
+            "lifecycle.restart",
+            "org-001",
+            "env-dev",
+            "connector-host-001");
+
+        var responses = new[]
+        {
+            await client.PostAsJsonAsync("/api/ops/v1/operation-tasks", createRequest),
+            await client.GetAsync("/api/ops/v1/operation-tasks?organizationId=org-001&environmentId=env-dev"),
+            await client.GetAsync("/api/ops/v1/operation-tasks/op-missing"),
+            await client.GetAsync("/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10"),
+            await client.PostAsJsonAsync("/api/ops/v1/operation-tasks/claims", new ClaimOperationTasksRequest("org-001", "env-dev", "connector-host-001", 1)),
+            await client.PostAsJsonAsync("/api/ops/v1/operation-tasks/op-missing/lease/abandon", new AbandonOperationTaskLeaseRequest("org-001", "env-dev", "connector-host-001", "lease-001", "test")),
+            await client.PostAsJsonAsync("/api/ops/v1/operation-tasks/op-missing/lease/heartbeat", new HeartbeatOperationTaskLeaseRequest("org-001", "env-dev", "connector-host-001", "lease-001")),
+            await client.PostAsJsonAsync("/api/ops/v1/operation-results", resultRequest),
+            await client.GetAsync("/api/ops/v1/audit-records?organizationId=org-001&environmentId=env-dev"),
+            await client.PostAsJsonAsync("/api/ops/v1/operation-templates", new CreateOperationTemplateRequest("backup.unauthorized", "Backup", "{}", "medium", 3, 300, false)),
+            await client.GetAsync("/api/ops/v1/operation-templates"),
+            await client.GetAsync("/api/ops/v1/operation-templates/lifecycle.restart")
+        };
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode));
+    }
+
+    [Fact]
+    public async Task Operation_task_can_be_created_dispatched_and_completed()
+    {
+        var client = CreateInternalServiceClient(factory);
         client.DefaultRequestHeaders.Add("X-Connector-Host-Id", "connector-host-001");
         client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
         client.DefaultRequestHeaders.Add("X-Organization-Id", "org-001");
@@ -104,7 +139,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Missing_operation_task_returns_404_json()
     {
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
 
         var response = await client.GetAsync("/api/ops/v1/operation-tasks/op-missing");
 
@@ -115,7 +150,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Pending_and_result_reject_invalid_connector_credentials()
     {
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
 
         var pendingResponse = await client.GetAsync(
             "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
@@ -140,7 +175,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     public async Task Development_fake_connector_credential_uses_configured_secret()
     {
         await using var configuredFactory = CreateFactoryWithConnectorCredential("rotated-test-secret");
-        var client = configuredFactory.CreateClient();
+        var client = CreateInternalServiceClient(configuredFactory);
         AddConnectorHeaders(client, "rotated-test-secret");
 
         var response = await client.GetAsync(
@@ -155,7 +190,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         await using var expiredFactory = CreateFactoryWithConnectorCredential(
             "expired-test-secret",
             new KeyValuePair<string, string?>("ConnectorHostCredential:ValidToUtc", "2000-01-01T00:00:00Z"));
-        var expiredClient = expiredFactory.CreateClient();
+        var expiredClient = CreateInternalServiceClient(expiredFactory);
         AddConnectorHeaders(expiredClient, "expired-test-secret");
 
         var expiredResponse = await expiredClient.GetAsync(
@@ -166,7 +201,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         await using var revokedFactory = CreateFactoryWithConnectorCredential(
             "revoked-test-secret",
             new KeyValuePair<string, string?>("ConnectorHostCredential:Revoked", "true"));
-        var revokedClient = revokedFactory.CreateClient();
+        var revokedClient = CreateInternalServiceClient(revokedFactory);
         AddConnectorHeaders(revokedClient, "revoked-test-secret");
 
         var revokedResponse = await revokedClient.GetAsync(
@@ -185,10 +220,11 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["Iam:BaseUrl"] = "http://127.0.0.1:1"
+                        ["Iam:BaseUrl"] = "http://127.0.0.1:1",
+                        ["InternalService:BearerToken"] = "production-internal-token"
                     }));
             });
-        var client = productionFactory.CreateClient();
+        var client = CreateInternalServiceClient(productionFactory, "production-internal-token");
         AddConnectorHeaders(client, "local-connector-secret");
 
         var response = await client.GetAsync(
@@ -203,7 +239,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         var loggerProvider = new RecordingLoggerProvider();
         await using var loggingFactory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder => builder.ConfigureLogging(logging => logging.AddProvider(loggerProvider)));
-        var client = loggingFactory.CreateClient();
+        var client = CreateInternalServiceClient(loggingFactory);
 
         var response = await client.GetAsync(
             "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
@@ -476,7 +512,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     public async Task List_operation_tasks_returns_paged_tasks_for_scope()
     {
         await using var listFactory = CreateEfInMemoryFactory("ops-list-tasks");
-        var client = listFactory.CreateClient();
+        var client = CreateInternalServiceClient(listFactory);
         AddConnectorHeaders(client, "local-connector-secret", "org-list", "env-dev");
 
         var first = await PostCreateAsync(client, CreateRestartRequest("idem-list-001", "org-list", "env-dev"));
@@ -506,7 +542,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     public async Task List_audit_records_returns_task_audit_records_for_scope()
     {
         await using var auditFactory = CreateEfInMemoryFactory("ops-list-audit");
-        var client = auditFactory.CreateClient();
+        var client = CreateInternalServiceClient(auditFactory);
         AddConnectorHeaders(client, "local-connector-secret", "org-audit", "env-dev");
 
         var created = await PostCreateAsync(client, CreateRestartRequest("idem-audit-001", "org-audit", "env-dev"));
@@ -527,7 +563,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Operation_template_can_be_created_listed_and_read()
     {
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
         var request = new CreateOperationTemplateRequest(
             "backup.snapshot",
             "Backup snapshot",
@@ -568,7 +604,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Operation_template_get_returns_template_specific_not_found_message()
     {
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
 
         var response = await client.GetAsync("/api/ops/v1/operation-templates/missing.template");
 
@@ -579,7 +615,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Operation_template_create_rejects_unknown_risk_level()
     {
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
 
         var response = await client.PostAsJsonAsync(
             "/api/ops/v1/operation-templates",
@@ -592,7 +628,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Operation_template_defaults_are_used_when_claiming_task()
     {
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
         AddConnectorHeaders(client, "local-connector-secret", "org-template-claim", "env-dev");
         await client.PostAsJsonAsync(
             "/api/ops/v1/operation-templates",
@@ -617,7 +653,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Operation_template_duplicate_check_uses_normalized_operation_code()
     {
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
         await client.PostAsJsonAsync(
             "/api/ops/v1/operation-templates",
             new CreateOperationTemplateRequest("backup.snapshot.normalized", "Backup", "{}", "low", 3, 300, false));
@@ -632,7 +668,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task InMemory_list_endpoints_return_tasks_and_audit_records()
     {
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
         var created = await PostCreateAsync(client, CreateRestartRequest("idem-inmemory-list-001", "org-memory", "env-dev"));
 
         var listResponse = await client.GetAsync(
@@ -650,8 +686,17 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
 
     private HttpClient CreateAuthorizedClient(string organizationId = "org-001", string environmentId = "env-dev")
     {
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
         AddConnectorHeaders(client, "local-connector-secret", organizationId, environmentId);
+        return client;
+    }
+
+    private static HttpClient CreateInternalServiceClient(
+        WebApplicationFactory<Program> testFactory,
+        string token = InternalServiceAuthentication.DefaultDevelopmentBearerToken)
+    {
+        var client = testFactory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return client;
     }
 

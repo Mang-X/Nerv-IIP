@@ -2,6 +2,7 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.FileStorage.Web.Endpoints.Files;
 
@@ -11,7 +12,7 @@ public sealed class GetTusUploadOffsetEndpoint(IFileStorageService files, ILocal
     public override void Configure()
     {
         Head("/api/files/v1/tus/{uploadSessionId}");
-        AllowAnonymous();
+        Policies(InternalServiceAuthorizationPolicy.Name);
         Options(x => x.WithTags("Files"));
     }
 
@@ -48,7 +49,7 @@ public sealed class GetTusUploadOffsetEndpoint(IFileStorageService files, ILocal
 
 [Tags("Files")]
 [HttpPatch("/api/files/v1/tus/{uploadSessionId}")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class PatchTusUploadEndpoint(IFileStorageService files, ILocalTusFileStoreAccessor storeAccessor)
     : EndpointWithoutRequest
 {
@@ -130,7 +131,7 @@ public sealed class PatchTusUploadEndpoint(IFileStorageService files, ILocalTusF
 
 [Tags("Files")]
 [HttpGet("/api/files/v1/download-grants/{downloadGrantId}/content")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class DownloadGrantContentEndpoint(IFileStorageService files, ILocalTusFileStoreAccessor storeAccessor)
     : EndpointWithoutRequest
 {

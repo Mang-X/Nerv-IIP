@@ -4,12 +4,13 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Notification.Web.Endpoints.Notifications;
 
 [HttpPost("/api/notifications/v1/messages/read-batch")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class MarkNotificationMessagesReadEndpoint(IMediator mediator)
     : Endpoint<MarkNotificationMessagesReadRequest, ResponseData<IReadOnlyCollection<MarkNotificationMessageReadResponse>>>
 {

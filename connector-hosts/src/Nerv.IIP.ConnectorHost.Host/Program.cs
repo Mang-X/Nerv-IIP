@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using Nerv.IIP.ConnectorHost.Application;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.Docker;
@@ -5,8 +6,10 @@ using Nerv.IIP.ConnectorHost.Host;
 using Nerv.IIP.Sdk.Auth;
 using Nerv.IIP.Sdk.ConnectorProtocol;
 using Nerv.IIP.Sdk.Ops;
+using Nerv.IIP.ServiceAuth;
 
 var builder = Host.CreateApplicationBuilder(args);
+builder.Services.AddNervIipInternalServiceTokenProvider(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton(_ => CreateRuntimeContext(builder.Configuration));
 builder.Services.AddSingleton(_ => CreateConnectorCredential(builder.Configuration));
 builder.Services.AddSingleton<IDockerProcessRunner, DockerProcessRunner>();
@@ -20,9 +23,11 @@ builder.Services.AddHttpClient<IConnectorProtocolClient, HttpConnectorProtocolCl
 {
     client.BaseAddress = new Uri(builder.Configuration["Platform:AppHubBaseUrl"] ?? "http://localhost:5101");
 });
-builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>(client =>
+builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>((services, client) =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Platform:OpsBaseUrl"] ?? "http://localhost:5103");
+    var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 });
 builder.Services.AddSingleton<ConnectorReportingLoop>();
 builder.Services.AddSingleton<ConnectorOperationLoop>();

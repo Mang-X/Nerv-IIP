@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Web.Application.Queries;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Ops.Web.Endpoints.AuditRecords;
@@ -13,7 +14,7 @@ public sealed record ListAuditRecordsRequest(
     string? OperationTaskId);
 
 [HttpGet("/api/ops/v1/audit-records")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class ListAuditRecordsEndpoint(IMediator mediator)
     : Endpoint<ListAuditRecordsRequest, ResponseData<AuditRecordListResponse>>
 {

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -6,11 +7,30 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Notification.Infrastructure;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
 public sealed class NotificationEndpointTests
 {
+    [Fact]
+    public async Task Notification_api_endpoints_require_internal_service_authorization()
+    {
+        using var factory = new NotificationWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var responses = new[]
+        {
+            await client.PostAsJsonAsync("/api/notifications/v1/intents", CreateIntent("dedupe-unauthorized", "user:admin")),
+            await client.GetAsync("/api/notifications/v1/messages?recipientRef=user:admin"),
+            await client.PostAsync($"/api/notifications/v1/messages/{Guid.NewGuid()}/read", null),
+            await client.PostAsJsonAsync("/api/notifications/v1/messages/read-batch", new { messageIds = new[] { Guid.NewGuid().ToString() } }),
+            await client.GetAsync("/api/notifications/v1/tasks?recipientRef=user:admin")
+        };
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode));
+    }
+
     [Fact]
     public async Task Submit_intent_creates_messages_for_recipients()
     {
@@ -307,6 +327,9 @@ public sealed class NotificationEndpointTests
         public HttpClient CreateNotificationClient(string? organizationId = "org-001", string? environmentId = "env-001")
         {
             var client = CreateClient();
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                InternalServiceAuthentication.DefaultDevelopmentBearerToken);
             if (organizationId is not null)
             {
                 client.DefaultRequestHeaders.Add("X-Organization-Id", organizationId);

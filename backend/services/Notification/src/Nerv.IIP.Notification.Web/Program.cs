@@ -4,6 +4,7 @@ using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
 using Nerv.IIP.Observability;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -18,6 +19,7 @@ if (usePostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
 }
 
 builder.Services.AddFastEndpoints();
+builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddMediatR(configuration =>
 {
     configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
@@ -58,6 +60,8 @@ if (usePostgreSql)
     app.UseContext();
 }
 app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = HttpStatusCode.BadRequest });
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseFastEndpoints();
 app.Run();
 

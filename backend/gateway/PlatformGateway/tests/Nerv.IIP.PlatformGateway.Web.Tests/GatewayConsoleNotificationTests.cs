@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.NotificationClient;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
 
@@ -160,7 +161,7 @@ public sealed class GatewayConsoleNotificationTests
         {
             BaseAddress = new Uri("http://notification.local")
         };
-        var notification = new HttpGatewayNotificationClient(httpClient);
+        var notification = new HttpGatewayNotificationClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
         var context = new GatewayNotificationRequestContext(
             "/api/notifications/v1/messages?recipientRef=user%3Aadmin",
             "org-001",
@@ -176,7 +177,7 @@ public sealed class GatewayConsoleNotificationTests
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/notifications/v1/messages?recipientRef=user%3Aadmin", request.RequestUri.PathAndQuery);
         Assert.Equal("Bearer", request.Authorization!.Scheme);
-        Assert.Equal("access-token", request.Authorization.Parameter);
+        Assert.Equal("internal-test-token", request.Authorization.Parameter);
         Assert.Equal("org-001", request.Headers["X-Organization-Id"]);
         Assert.Equal("env-dev", request.Headers["X-Environment-Id"]);
         Assert.Equal("corr-client", request.Headers["X-Correlation-Id"]);
@@ -201,7 +202,7 @@ public sealed class GatewayConsoleNotificationTests
         {
             BaseAddress = new Uri("http://notification.local")
         };
-        var notification = new HttpGatewayNotificationClient(httpClient);
+        var notification = new HttpGatewayNotificationClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
         var context = new GatewayNotificationRequestContext(
             "/api/notifications/v1/messages/read-batch",
             "org-001",
@@ -378,6 +379,8 @@ public sealed class GatewayConsoleNotificationTests
         Uri RequestUri,
         System.Net.Http.Headers.AuthenticationHeaderValue? Authorization,
         IReadOnlyDictionary<string, string> Headers);
+
+    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 
     private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
     {
