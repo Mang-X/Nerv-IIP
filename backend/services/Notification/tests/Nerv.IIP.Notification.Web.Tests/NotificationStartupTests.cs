@@ -4,6 +4,10 @@ using Microsoft.Extensions.Configuration;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
+[CollectionDefinition("notification-startup", DisableParallelization = true)]
+public sealed class NotificationStartupCollection;
+
+[Collection("notification-startup")]
 public sealed class NotificationStartupTests
 {
     [Fact]
@@ -24,32 +28,22 @@ public sealed class NotificationStartupTests
     [Fact]
     public void Postgres_automigrate_is_rejected_outside_development()
     {
-        var environment = PreserveEnvironment(
-            "Persistence__Provider",
-            "Persistence__AutoMigrate",
-            "ConnectionStrings__NotificationDb");
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Persistence:Provider", "PostgreSQL");
+                builder.UseSetting("Persistence:AutoMigrate", "true");
+                builder.UseSetting(
+                    "ConnectionStrings:NotificationDb",
+                    "Host=localhost;Database=nerv_iip_notification_guard;Username=nerv;Password=nerv");
+            });
 
-        try
-        {
-            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
-            Environment.SetEnvironmentVariable("Persistence__AutoMigrate", "true");
-            Environment.SetEnvironmentVariable(
-                "ConnectionStrings__NotificationDb",
-                "Host=localhost;Database=nerv_iip_notification_guard;Username=nerv;Password=nerv");
-
-            using var factory = new WebApplicationFactory<Program>()
-                .WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
-
-            var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
-            Assert.Contains(
-                "Persistence:AutoMigrate=true is only allowed for Notification in Development.",
-                exception.Message,
-                StringComparison.Ordinal);
-        }
-        finally
-        {
-            RestoreEnvironment(environment);
-        }
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains(
+            "Persistence:AutoMigrate=true is only allowed for Notification in Development.",
+            exception.Message,
+            StringComparison.Ordinal);
     }
 
     private static WebApplicationFactory<Program> CreateInMemoryFactory()
@@ -68,16 +62,4 @@ public sealed class NotificationStartupTests
             });
     }
 
-    private static IReadOnlyDictionary<string, string?> PreserveEnvironment(params string[] names)
-    {
-        return names.ToDictionary(name => name, Environment.GetEnvironmentVariable);
-    }
-
-    private static void RestoreEnvironment(IReadOnlyDictionary<string, string?> environment)
-    {
-        foreach (var (name, value) in environment)
-        {
-            Environment.SetEnvironmentVariable(name, value);
-        }
-    }
 }
