@@ -3,6 +3,7 @@ using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using NetCorePal.Extensions.Dto;
+using System.Diagnostics.CodeAnalysis;
 using static Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData.MasterDataEndpointMapping;
 
 namespace Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
@@ -14,6 +15,28 @@ internal static class MasterDataEndpointMapping
     public static MasterDataResourceResponse ToResponse(MasterDataResourceResult result)
     {
         return new MasterDataResourceResponse(result.ResourceType, result.Code, result.DisplayName);
+    }
+}
+
+public abstract class MasterDataEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
+    where TRequest : notnull
+{
+    protected void ConfigureMasterDataContract(MasterDataEndpointContract contract)
+    {
+        switch (contract.HttpMethod)
+        {
+            case "GET":
+                Get(contract.Route);
+                break;
+            case "POST":
+                Post(contract.Route);
+                break;
+            default:
+                throw new NotSupportedException($"HTTP method '{contract.HttpMethod}' is not supported by MasterData endpoints.");
+        }
+
+        Tags("Business MasterData");
+        Permissions(contract.PermissionCode);
     }
 }
 
@@ -40,16 +63,13 @@ public sealed record CreateSkuRequest(
     bool QualityRequired,
     IReadOnlyCollection<string>? ComplianceTags);
 
-[Tags("Business MasterData")]
-[HttpGet("/api/business/v1/master-data/resources")]
 public sealed class ListMasterDataResourcesEndpoint(ISender sender)
-    : Endpoint<ListMasterDataResourcesRequest, ResponseData<ListMasterDataResourcesResponse>>
+    : MasterDataEndpoint<ListMasterDataResourcesRequest, ResponseData<ListMasterDataResourcesResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<ListMasterDataResourcesEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(ListMasterDataResourcesRequest req, CancellationToken ct)
@@ -61,16 +81,13 @@ public sealed class ListMasterDataResourcesEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/skus")]
 public sealed class CreateSkuEndpoint(ISender sender)
-    : Endpoint<CreateSkuRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateSkuRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateSkuEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateSkuRequest req, CancellationToken ct)
@@ -114,16 +131,13 @@ public sealed record CreateUomConversionRequest(
     string RoundingMode,
     DateOnly EffectiveFrom);
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/units-of-measure")]
 public sealed class CreateUnitOfMeasureEndpoint(ISender sender)
-    : Endpoint<CreateUnitOfMeasureRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateUnitOfMeasureRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateUnitOfMeasureEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateUnitOfMeasureRequest req, CancellationToken ct)
@@ -140,16 +154,13 @@ public sealed class CreateUnitOfMeasureEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/uom-conversions")]
 public sealed class CreateUomConversionEndpoint(ISender sender)
-    : Endpoint<CreateUomConversionRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateUomConversionRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateUomConversionEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateUomConversionRequest req, CancellationToken ct)
@@ -175,16 +186,13 @@ public sealed record CreateBusinessPartnerRequest(
     string PartnerType,
     string Name);
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/partners")]
 public sealed class CreateBusinessPartnerEndpoint(ISender sender)
-    : Endpoint<CreateBusinessPartnerRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateBusinessPartnerRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateBusinessPartnerEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateBusinessPartnerRequest req, CancellationToken ct)
@@ -265,16 +273,13 @@ public sealed record CreateWorkCalendarRequest(
     string Code,
     string Name);
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/departments")]
 public sealed class CreateDepartmentEndpoint(ISender sender)
-    : Endpoint<CreateDepartmentRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateDepartmentRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateDepartmentEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateDepartmentRequest req, CancellationToken ct)
@@ -289,16 +294,13 @@ public sealed class CreateDepartmentEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/teams")]
 public sealed class CreateTeamEndpoint(ISender sender)
-    : Endpoint<CreateTeamRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateTeamRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateTeamEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateTeamRequest req, CancellationToken ct)
@@ -314,16 +316,13 @@ public sealed class CreateTeamEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/personnel-skills")]
 public sealed class AssignPersonnelSkillEndpoint(ISender sender)
-    : Endpoint<AssignPersonnelSkillRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<AssignPersonnelSkillRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<AssignPersonnelSkillEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(AssignPersonnelSkillRequest req, CancellationToken ct)
@@ -340,16 +339,13 @@ public sealed class AssignPersonnelSkillEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/sites")]
 public sealed class CreateSiteEndpoint(ISender sender)
-    : Endpoint<CreateSiteRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateSiteRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateSiteEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateSiteRequest req, CancellationToken ct)
@@ -364,16 +360,13 @@ public sealed class CreateSiteEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/production-lines")]
 public sealed class CreateProductionLineEndpoint(ISender sender)
-    : Endpoint<CreateProductionLineRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateProductionLineRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateProductionLineEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateProductionLineRequest req, CancellationToken ct)
@@ -388,16 +381,13 @@ public sealed class CreateProductionLineEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/shifts")]
 public sealed class CreateShiftEndpoint(ISender sender)
-    : Endpoint<CreateShiftRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateShiftRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateShiftEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateShiftRequest req, CancellationToken ct)
@@ -414,16 +404,13 @@ public sealed class CreateShiftEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/work-calendars")]
 public sealed class CreateWorkCalendarEndpoint(ISender sender)
-    : Endpoint<CreateWorkCalendarRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateWorkCalendarRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateWorkCalendarEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateWorkCalendarRequest req, CancellationToken ct)
@@ -437,16 +424,13 @@ public sealed class CreateWorkCalendarEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/work-centers")]
 public sealed class CreateWorkCenterEndpoint(ISender sender)
-    : Endpoint<CreateWorkCenterRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateWorkCenterRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateWorkCenterEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateWorkCenterRequest req, CancellationToken ct)
@@ -485,16 +469,13 @@ public sealed record RegisterDeviceAssetRequest(
     bool TelemetryEnabled,
     IReadOnlyDictionary<string, string>? ExternalReferences);
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/device-assets")]
 public sealed class RegisterDeviceAssetEndpoint(ISender sender)
-    : Endpoint<RegisterDeviceAssetRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<RegisterDeviceAssetRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<RegisterDeviceAssetEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(RegisterDeviceAssetRequest req, CancellationToken ct)
@@ -527,16 +508,13 @@ public sealed record CreateReferenceDataCodeRequest(
     string Code,
     string Name);
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/reference-data")]
 public sealed class CreateReferenceDataCodeEndpoint(ISender sender)
-    : Endpoint<CreateReferenceDataCodeRequest, ResponseData<MasterDataResourceResponse>>
+    : MasterDataEndpoint<CreateReferenceDataCodeRequest, ResponseData<MasterDataResourceResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<CreateReferenceDataCodeEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(CreateReferenceDataCodeRequest req, CancellationToken ct)
@@ -551,16 +529,13 @@ public sealed class CreateReferenceDataCodeEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/references/resolve")]
 public sealed class ResolveMasterDataReferencesEndpoint(ISender sender)
-    : Endpoint<ResolveMasterDataReferencesQuery, ResponseData<ResolveMasterDataReferencesResponse>>
+    : MasterDataEndpoint<ResolveMasterDataReferencesQuery, ResponseData<ResolveMasterDataReferencesResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<ResolveMasterDataReferencesEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(ResolveMasterDataReferencesQuery req, CancellationToken ct)
@@ -570,16 +545,13 @@ public sealed class ResolveMasterDataReferencesEndpoint(ISender sender)
     }
 }
 
-[Tags("Business MasterData")]
-[HttpPost("/api/business/v1/master-data/references/validate")]
 public sealed class ValidateMasterDataReferencesEndpoint(ISender sender)
-    : Endpoint<ValidateMasterDataReferencesQuery, ResponseData<ValidateMasterDataReferencesResponse>>
+    : MasterDataEndpoint<ValidateMasterDataReferencesQuery, ResponseData<ValidateMasterDataReferencesResponse>>
 {
     public override void Configure()
     {
         var contract = MasterDataEndpointContracts.Get<ValidateMasterDataReferencesEndpoint>();
-        Permissions(contract.PermissionCode);
-        Description(builder => builder.WithName(contract.OperationId));
+        ConfigureMasterDataContract(contract);
     }
 
     public override async Task HandleAsync(ValidateMasterDataReferencesQuery req, CancellationToken ct)
@@ -622,5 +594,11 @@ public static class MasterDataEndpointContracts
     public static MasterDataEndpointContract Get<TEndpoint>()
     {
         return All.Single(x => x.EndpointType == typeof(TEndpoint));
+    }
+
+    public static bool TryGet(Type endpointType, [NotNullWhen(true)] out MasterDataEndpointContract? contract)
+    {
+        contract = All.SingleOrDefault(x => x.EndpointType == endpointType);
+        return contract is not null;
     }
 }

@@ -8,6 +8,7 @@ using StackExchange.Redis;
 using FluentValidation.AspNetCore;
 using Nerv.IIP.Business.MasterData.Web.Extensions;
 using FastEndpoints;
+using FastEndpoints.Swagger;
 using Serilog;
 using Serilog.Formatting.Json;
 using Hangfire;
@@ -16,15 +17,18 @@ using Microsoft.AspNetCore.Http.Json;
 using Newtonsoft.Json;
 using NetCorePal.Extensions.CodeAnalysis;
 using Nerv.IIP.Business.MasterData.Domain;
+using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithClientIp()
     .WriteTo.Console(new JsonFormatter())
     .CreateLogger();
+var isTesting = false;
 try
 {
     var builder = WebApplication.CreateBuilder(args);
     builder.Host.UseSerilog();
+    isTesting = builder.Environment.IsEnvironment("Testing");
 
     #region SignalR
 
@@ -46,12 +50,19 @@ try
 
     #region 身份认证
 
-    var redis = await ConnectionMultiplexer.ConnectAsync(builder.Configuration.GetConnectionString("Redis")!);
-    builder.Services.AddSingleton<IConnectionMultiplexer>(_ => redis);
+    if (isTesting)
+    {
+        builder.Services.AddDataProtection();
+    }
+    else
+    {
+        var redis = await ConnectionMultiplexer.ConnectAsync(builder.Configuration.GetConnectionString("Redis")!);
+        builder.Services.AddSingleton<IConnectionMultiplexer>(_ => redis);
 
-    // DataProtection - use custom extension that resolves IConnectionMultiplexer from DI
-    builder.Services.AddDataProtection()
-        .PersistKeysToStackExchangeRedis("DataProtection-Keys");
+        // DataProtection - use custom extension that resolves IConnectionMultiplexer from DI
+        builder.Services.AddDataProtection()
+            .PersistKeysToStackExchangeRedis("DataProtection-Keys");
+    }
 
     builder.Services.AddAuthentication().AddJwtBearer(options =>
     {
@@ -67,15 +78,20 @@ try
     #region Controller
 
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
-    // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-    builder.Services.AddEndpointsApiExplorer();
-    builder.Services.AddSwaggerGen(c => c.AddEntityIdSchemaMap()); //强类型id swagger schema 映射
-
     #endregion
 
     #region FastEndpoints
 
-    builder.Services.AddFastEndpoints(o => o.IncludeAbstractValidators = true);
+    builder.Services
+        .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
+        .SwaggerDocument(o =>
+        {
+            o.DocumentSettings = s =>
+            {
+                s.Title = "Nerv IIP Business MasterData";
+                s.Version = "v1";
+            };
+        });
     builder.Services.Configure<JsonOptions>(o =>
         o.SerializerOptions.AddNetCorePalJsonConverters());
 
@@ -91,26 +107,38 @@ try
 
     #region 基础设施
 
+    var masterDataConnectionString = builder.Configuration.GetConnectionString("PostgreSQL");
+    if (isTesting && string.IsNullOrWhiteSpace(masterDataConnectionString))
+    {
+        masterDataConnectionString = "Host=localhost;Database=nerv_iip_masterdata_testing;Username=nerv;Password=nerv";
+    }
+
     builder.Services.AddMasterDataPostgreSqlPersistence(
-        builder.Configuration.GetConnectionString("PostgreSQL"),
+        masterDataConnectionString,
         builder.Environment.IsDevelopment());
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
-    builder.Services.AddIntegrationEvents(typeof(Program))
-        .UseCap<ApplicationDbContext>(b =>
-        {
-            b.RegisterServicesFromAssemblies(typeof(Program));
-            b.AddContextIntegrationFilters();
-        });
-
-
-    builder.Services.AddCap(x =>
+    if (isTesting)
     {
-        x.UseNetCorePalStorage<ApplicationDbContext>();
-        x.JsonSerializerOptions.AddNetCorePalJsonConverters();
-        x.UseRabbitMQ(p => builder.Configuration.GetSection("RabbitMQ").Bind(p));
-        x.UseDashboard(); //CAP Dashboard  path：  /cap
-    });
+        builder.Services.AddIntegrationEvents(typeof(Program));
+    }
+    else
+    {
+        builder.Services.AddIntegrationEvents(typeof(Program))
+            .UseCap<ApplicationDbContext>(b =>
+            {
+                b.RegisterServicesFromAssemblies(typeof(Program));
+                b.AddContextIntegrationFilters();
+            });
+
+        builder.Services.AddCap(x =>
+        {
+            x.UseNetCorePalStorage<ApplicationDbContext>();
+            x.JsonSerializerOptions.AddNetCorePalJsonConverters();
+            x.UseRabbitMQ(p => builder.Configuration.GetSection("RabbitMQ").Bind(p));
+            x.UseDashboard(); //CAP Dashboard  path：  /cap
+        });
+    }
 
     #endregion
 
@@ -130,8 +158,11 @@ try
 
     #region Jobs
 
-    builder.Services.AddHangfire(x => { x.UseRedisStorage(builder.Configuration.GetConnectionString("Redis")); });
-    builder.Services.AddHangfireServer(); //hangfire dashboard  path：  /hangfire
+    if (!isTesting)
+    {
+        builder.Services.AddHangfire(x => { x.UseRedisStorage(builder.Configuration.GetConnectionString("Redis")); });
+        builder.Services.AddHangfireServer(); //hangfire dashboard  path：  /hangfire
+    }
 
     #endregion
 
@@ -146,12 +177,6 @@ try
 
     app.UseKnownExceptionHandler();
     // Configure the HTTP request pipeline.
-    if (app.Environment.IsDevelopment())
-    {
-        app.UseSwagger();
-        app.UseSwaggerUI();
-    }
-
     app.UseStaticFiles();
     //app.UseHttpsRedirection();
     app.UseRouting();
@@ -159,7 +184,13 @@ try
     app.UseAuthorization();
 
     app.MapControllers();
-    app.UseFastEndpoints();
+    app.UseFastEndpoints(c =>
+    {
+        c.Endpoints.NameGenerator = ctx =>
+            MasterDataEndpointContracts.TryGet(ctx.EndpointType, out var contract)
+                ? contract.OperationId
+                : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+    }).UseSwaggerGen();
 
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");
@@ -176,16 +207,33 @@ try
         return Results.Content(html, "text/html; charset=utf-8");
     });
 
-    app.UseHangfireDashboard();
+    if (!isTesting)
+    {
+        app.UseHangfireDashboard();
+    }
     await app.RunAsync();
 }
 catch (Exception ex)
 {
+    if (isTesting)
+    {
+        throw;
+    }
+
     Log.Fatal(ex, "Application terminated unexpectedly");
 }
 finally
 {
     await Log.CloseAndFlushAsync();
+}
+
+static string ToLowerCamelEndpointName(string endpointTypeName)
+{
+    var name = endpointTypeName.EndsWith("Endpoint", StringComparison.Ordinal)
+        ? endpointTypeName[..^"Endpoint".Length]
+        : endpointTypeName;
+
+    return char.ToLowerInvariant(name[0]) + name[1..];
 }
 
 #pragma warning disable S1118

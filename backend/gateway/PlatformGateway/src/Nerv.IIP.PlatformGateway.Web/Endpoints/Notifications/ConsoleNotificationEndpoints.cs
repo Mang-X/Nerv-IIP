@@ -4,11 +4,13 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.NotificationClient;
+using Nerv.IIP.PlatformGateway.Web.Application.OpenApi;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Notifications;
 
 [HttpGet("/api/console/v1/notifications/messages")]
+[GatewayOperationId("listConsoleNotificationMessages")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class ListConsoleNotificationMessagesEndpoint(
     IGatewayNotificationClient notificationClient,
@@ -47,6 +49,7 @@ public sealed class ListConsoleNotificationMessagesEndpoint(
 }
 
 [HttpGet("/api/console/v1/notifications/tasks")]
+[GatewayOperationId("listConsoleNotificationTasks")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class ListConsoleNotificationTasksEndpoint(
     IGatewayNotificationClient notificationClient,
@@ -85,6 +88,7 @@ public sealed class ListConsoleNotificationTasksEndpoint(
 }
 
 [HttpPost("/api/console/v1/notifications/intents")]
+[GatewayOperationId("submitConsoleNotificationIntent")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class SubmitConsoleNotificationIntentEndpoint(
     IGatewayNotificationClient notificationClient,
@@ -123,6 +127,7 @@ public sealed class SubmitConsoleNotificationIntentEndpoint(
 }
 
 [HttpPost("/api/console/v1/notifications/messages/{messageId}/read")]
+[GatewayOperationId("markConsoleNotificationMessageRead")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class MarkConsoleNotificationMessageReadEndpoint(
     IGatewayNotificationClient notificationClient,
@@ -162,6 +167,7 @@ public sealed class MarkConsoleNotificationMessageReadEndpoint(
 }
 
 [HttpPost("/api/console/v1/notifications/messages/read-batch")]
+[GatewayOperationId("markConsoleNotificationMessagesRead")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class MarkConsoleNotificationMessagesReadEndpoint(
     IGatewayNotificationClient notificationClient,

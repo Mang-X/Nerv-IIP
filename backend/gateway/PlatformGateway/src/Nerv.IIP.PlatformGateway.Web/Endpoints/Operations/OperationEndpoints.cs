@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
+using Nerv.IIP.PlatformGateway.Web.Application.OpenApi;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
@@ -10,6 +11,7 @@ namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
 public sealed record RestartInstanceRequest(string OrganizationId, string EnvironmentId, string Reason, string IdempotencyKey);
 
 [HttpPost("/api/console/v1/instances/{instanceKey}/operations/restart")]
+[GatewayOperationId("restartConsoleInstance")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class RestartInstanceEndpoint(
     IGatewayOpsClient opsClient,
@@ -63,6 +65,7 @@ public sealed class GetConsoleOperationTaskRequest
 }
 
 [HttpGet("/api/console/v1/operation-tasks/{operationTaskId}")]
+[GatewayOperationId("getConsoleOperationTask")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class GetConsoleOperationTaskEndpoint(
     IGatewayOpsClient opsClient,

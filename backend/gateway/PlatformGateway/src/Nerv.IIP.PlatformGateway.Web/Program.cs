@@ -5,13 +5,9 @@ using Nerv.IIP.Observability;
 using Nerv.IIP.PlatformGateway.Web;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.IamAdmin;
-using Nerv.IIP.PlatformGateway.Web.Endpoints.Auth;
-using Nerv.IIP.PlatformGateway.Web.Endpoints.IamAdmin;
-using Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
-using Nerv.IIP.PlatformGateway.Web.Endpoints.Notifications;
-using Nerv.IIP.PlatformGateway.Web.Endpoints.Operations;
 using Nerv.IIP.PlatformGateway.Web.Application.NotificationClient;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
+using Nerv.IIP.PlatformGateway.Web.Application.OpenApi;
 using NetCorePal.Extensions.AspNetCore;
 using System.Net;
 using Microsoft.Extensions.Http.Resilience;
@@ -65,34 +61,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints(c =>
 {
-    c.Endpoints.NameGenerator = ctx => ctx.EndpointType.Name switch
-    {
-        nameof(ListInstancesEndpoint) => "listConsoleInstances",
-        nameof(GetInstanceDetailEndpoint) => "getConsoleInstanceDetail",
-        nameof(RestartInstanceEndpoint) => "restartConsoleInstance",
-        nameof(GetConsoleOperationTaskEndpoint) => "getConsoleOperationTask",
-        nameof(LoginConsoleUserEndpoint) => "loginConsoleUser",
-        nameof(RefreshConsoleSessionEndpoint) => "refreshConsoleSession",
-        nameof(LogoutConsoleSessionEndpoint) => "logoutConsoleSession",
-        nameof(GetConsolePrincipalEndpoint) => "getConsolePrincipal",
-        nameof(ListConsoleIamUsersEndpoint) => "listConsoleIamUsers",
-        nameof(CreateConsoleIamUserEndpoint) => "createConsoleIamUser",
-        nameof(UpdateConsoleIamUserEndpoint) => "updateConsoleIamUser",
-        nameof(DisableConsoleIamUserEndpoint) => "disableConsoleIamUser",
-        nameof(ResetConsoleIamUserPasswordEndpoint) => "resetConsoleIamUserPassword",
-        nameof(ListConsoleIamRolesEndpoint) => "listConsoleIamRoles",
-        nameof(CreateConsoleIamRoleEndpoint) => "createConsoleIamRole",
-        nameof(UpdateConsoleIamRolePermissionsEndpoint) => "updateConsoleIamRolePermissions",
-        nameof(ListConsoleIamPermissionsEndpoint) => "listConsoleIamPermissions",
-        nameof(ListConsoleIamSessionsEndpoint) => "listConsoleIamSessions",
-        nameof(RevokeConsoleIamSessionEndpoint) => "revokeConsoleIamSession",
-        nameof(ListConsoleNotificationMessagesEndpoint) => "listConsoleNotificationMessages",
-        nameof(ListConsoleNotificationTasksEndpoint) => "listConsoleNotificationTasks",
-        nameof(SubmitConsoleNotificationIntentEndpoint) => "submitConsoleNotificationIntent",
-        nameof(MarkConsoleNotificationMessageReadEndpoint) => "markConsoleNotificationMessageRead",
-        nameof(MarkConsoleNotificationMessagesReadEndpoint) => "markConsoleNotificationMessagesRead",
-        _ => ctx.EndpointType.Name
-    };
+    c.Endpoints.NameGenerator = GatewayOperationIdConvention.Generate;
 }).UseSwaggerGen();
 app.Run();
 
