@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using FastEndpoints;
+using FastEndpoints.Swagger;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
@@ -18,7 +19,16 @@ if (usePostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for Notification in Development. Use an explicit migrator, release script or migration bundle outside Development.");
 }
 
-builder.Services.AddFastEndpoints();
+builder.Services
+    .AddFastEndpoints()
+    .SwaggerDocument(o =>
+    {
+        o.DocumentSettings = s =>
+        {
+            s.Title = "Nerv IIP Notification";
+            s.Version = "v1";
+        };
+    });
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddMediatR(configuration =>
 {
@@ -62,8 +72,20 @@ if (usePostgreSql)
 app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = HttpStatusCode.BadRequest });
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseFastEndpoints();
+app.UseFastEndpoints(c =>
+{
+    c.Endpoints.NameGenerator = ctx => ToLowerCamelEndpointName(ctx.EndpointType.Name);
+}).UseSwaggerGen();
 app.Run();
+
+static string ToLowerCamelEndpointName(string endpointTypeName)
+{
+    var name = endpointTypeName.EndsWith("Endpoint", StringComparison.Ordinal)
+        ? endpointTypeName[..^"Endpoint".Length]
+        : endpointTypeName;
+
+    return char.ToLowerInvariant(name[0]) + name[1..];
+}
 
 static int ReadRabbitMqPort(IConfiguration configuration)
 {

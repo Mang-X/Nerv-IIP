@@ -7,6 +7,21 @@ internal static class ResponseDataEndpointResults
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    public static async Task WriteDataAsync<T>(
+        HttpContext context,
+        int statusCode,
+        T data,
+        CancellationToken cancellationToken)
+    {
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await JsonSerializer.SerializeAsync(
+            context.Response.Body,
+            data.AsResponseData(),
+            JsonOptions,
+            cancellationToken);
+    }
+
     public static async Task WriteErrorAsync(
         HttpContext context,
         int statusCode,

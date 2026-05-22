@@ -84,30 +84,28 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
-    public void MasterData_endpoint_contracts_match_route_attributes()
+    public void MasterData_endpoint_contracts_are_the_route_registry()
     {
         var source = File.ReadAllText(Path.Combine(MasterDataServiceRoot(), "src", "Nerv.IIP.Business.MasterData.Web", "Endpoints", "MasterData", "MasterDataEndpoints.cs"));
-        var failures = MasterDataEndpointContracts.All
-            .Where(contract => !source.Contains($"[Http{ToPascalMethod(contract.HttpMethod)}(\"{contract.Route}\")]", StringComparison.Ordinal))
-            .Select(contract => $"{contract.EndpointType.Name} route attribute does not match {contract.HttpMethod} {contract.Route}.")
-            .ToArray();
 
-        Assert.Empty(failures);
+        Assert.DoesNotContain("[Http", source, StringComparison.Ordinal);
+        Assert.Contains("Get(contract.Route);", source, StringComparison.Ordinal);
+        Assert.Contains("Post(contract.Route);", source, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void MasterData_endpoints_define_permissions_and_openapi_names_from_contracts()
+    public void MasterData_endpoints_define_permissions_from_contracts()
     {
         var source = File.ReadAllText(Path.Combine(MasterDataServiceRoot(), "src", "Nerv.IIP.Business.MasterData.Web", "Endpoints", "MasterData", "MasterDataEndpoints.cs"));
         var failures = MasterDataEndpointContracts.All
             .Where(contract =>
                 !source.Contains($"MasterDataEndpointContracts.Get<{contract.EndpointType.Name}>()", StringComparison.Ordinal) ||
-                !source.Contains("Permissions(contract.PermissionCode);", StringComparison.Ordinal) ||
-                !source.Contains("Description(builder => builder.WithName(contract.OperationId));", StringComparison.Ordinal))
-            .Select(contract => $"{contract.EndpointType.Name} does not configure permission/openapi contract")
+                !source.Contains("ConfigureMasterDataContract(contract);", StringComparison.Ordinal))
+            .Select(contract => $"{contract.EndpointType.Name} does not configure permission contract")
             .ToArray();
 
         Assert.Empty(failures);
+        Assert.DoesNotContain("Description(builder => builder.WithName(contract.OperationId));", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -271,16 +269,6 @@ public sealed class MasterDataApiContractTests
         BusinessPermissionCodes.MasterDataResourcesRead,
         BusinessPermissionCodes.MasterDataResourcesManage
     ];
-
-    private static string ToPascalMethod(string method)
-    {
-        return method.ToUpperInvariant() switch
-        {
-            "GET" => "Get",
-            "POST" => "Post",
-            _ => method
-        };
-    }
 
     private static string MasterDataServiceRoot()
     {

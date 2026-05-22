@@ -3,11 +3,13 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using Nerv.IIP.PlatformGateway.Web.Application.OpenApi;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Auth;
 
 [HttpPost("/api/console/v1/auth/login")]
+[GatewayOperationId("loginConsoleUser")]
 [AllowAnonymous]
 public sealed class LoginConsoleUserEndpoint(IGatewayIamAuthClient iam) : Endpoint<ConsoleLoginRequest, ResponseData<ConsoleAuthResponse>>
 {
@@ -26,6 +28,7 @@ public sealed class LoginConsoleUserEndpoint(IGatewayIamAuthClient iam) : Endpoi
 }
 
 [HttpPost("/api/console/v1/auth/refresh")]
+[GatewayOperationId("refreshConsoleSession")]
 [AllowAnonymous]
 public sealed class RefreshConsoleSessionEndpoint(IGatewayIamAuthClient iam) : Endpoint<ConsoleRefreshRequest, ResponseData<ConsoleAuthResponse>>
 {
@@ -44,6 +47,7 @@ public sealed class RefreshConsoleSessionEndpoint(IGatewayIamAuthClient iam) : E
 }
 
 [HttpPost("/api/console/v1/auth/logout")]
+[GatewayOperationId("logoutConsoleSession")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class LogoutConsoleSessionEndpoint(IGatewayIamAuthClient iam) : Endpoint<ConsoleLogoutRequest>
 {
@@ -69,6 +73,7 @@ public sealed class LogoutConsoleSessionEndpoint(IGatewayIamAuthClient iam) : En
 }
 
 [HttpGet("/api/console/v1/auth/me")]
+[GatewayOperationId("getConsolePrincipal")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class GetConsolePrincipalEndpoint(IGatewayIamAuthClient iam) : EndpointWithoutRequest<ResponseData<ConsolePrincipalResponse>>
 {

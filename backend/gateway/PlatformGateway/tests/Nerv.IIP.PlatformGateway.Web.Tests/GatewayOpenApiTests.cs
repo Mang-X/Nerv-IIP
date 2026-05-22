@@ -6,6 +6,14 @@ namespace Nerv.IIP.PlatformGateway.Web.Tests;
 public sealed class GatewayOpenApiTests
 {
     [Fact]
+    public void Gateway_openapi_operation_ids_are_not_defined_by_program_endpoint_switch()
+    {
+        var program = File.ReadAllText(FindGatewayProgramPath());
+
+        Assert.DoesNotContain("ctx.EndpointType.Name switch", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Gateway_exports_console_openapi_document_with_stable_operation_ids()
     {
         await using var factory = new WebApplicationFactory<Program>();
@@ -14,6 +22,7 @@ public sealed class GatewayOpenApiTests
         var json = await client.GetStringAsync("/swagger/v1/swagger.json");
         using var document = JsonDocument.Parse(json);
         var paths = document.RootElement.GetProperty("paths");
+        AssertOperationIdsAreUnique(document);
 
         Assert.True(paths.TryGetProperty("/api/console/v1/instances", out var instances));
         var list = instances.GetProperty("get");
@@ -76,7 +85,68 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("submitConsoleNotificationIntent", paths.GetProperty("/api/console/v1/notifications/intents").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("markConsoleNotificationMessageRead", paths.GetProperty("/api/console/v1/notifications/messages/{messageId}/read").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("markConsoleNotificationMessagesRead", paths.GetProperty("/api/console/v1/notifications/messages/read-batch").GetProperty("post").GetProperty("operationId").GetString());
+
+        Assert.Equal("HealthEndpoint", paths.GetProperty("/health").GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("GetBuildInfoEndpoint", paths.GetProperty("/internal/gateway/v1/build-info").GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("InvalidateGatewayCacheEndpoint", paths.GetProperty("/internal/gateway/cache/invalidate").GetProperty("post").GetProperty("operationId").GetString());
     }
+
+    private static string FindGatewayProgramPath()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                "backend",
+                "gateway",
+                "PlatformGateway",
+                "src",
+                "Nerv.IIP.PlatformGateway.Web",
+                "Program.cs");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("Could not find PlatformGateway Program.cs.");
+    }
+
+    private static void AssertOperationIdsAreUnique(JsonDocument document)
+    {
+        var operations = document.RootElement
+            .GetProperty("paths")
+            .EnumerateObject()
+            .SelectMany(path => path.Value
+                .EnumerateObject()
+                .Where(operation => IsHttpMethod(operation.Name))
+                .Select(operation => (
+                    Name: $"{operation.Name.ToUpperInvariant()} {path.Name}",
+                    OperationId: operation.Value.TryGetProperty("operationId", out var operationId)
+                        ? operationId.GetString()
+                        : null)))
+            .ToArray();
+
+        var missingOperationIds = operations
+            .Where(operation => string.IsNullOrWhiteSpace(operation.OperationId))
+            .Select(operation => operation.Name)
+            .ToArray();
+        Assert.Empty(missingOperationIds);
+
+        var duplicateOperationIds = operations
+            .Where(operation => !string.IsNullOrWhiteSpace(operation.OperationId))
+            .GroupBy(operation => operation.OperationId!, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => $"{group.Key}: {string.Join(", ", group.Select(operation => operation.Name))}")
+            .ToArray();
+        Assert.Empty(duplicateOperationIds);
+    }
+
+    private static bool IsHttpMethod(string method) =>
+        method is "get" or "post" or "put" or "patch" or "delete" or "head" or "options" or "trace";
 
     private static void AssertJsonResponseSchema(JsonElement operation, string statusCode, string schemaName)
     {

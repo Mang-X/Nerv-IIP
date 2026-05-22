@@ -27,6 +27,15 @@ public sealed class GatewayConsoleIamAdminTests
         ["iam.users.read", "iam.users.manage"]);
 
     [Fact]
+    public void Console_iam_admin_endpoints_use_authorized_proxy_endpoint()
+    {
+        var source = File.ReadAllText(FindConsoleIamAdminEndpointsPath());
+
+        Assert.Contains("AuthorizedProxyEndpoint", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("ConsoleIamAdminEndpointResults.AuthorizeAsync", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Console_iam_users_requires_authentication_before_clients_are_called()
     {
         var auth = FakeGatewayAuthorizationClient.Allowed();
@@ -197,6 +206,32 @@ public sealed class GatewayConsoleIamAdminTests
             services.RemoveAll<IGatewayIamAdminClient>();
             services.AddSingleton<IGatewayIamAdminClient>(admin);
         }));
+
+    private static string FindConsoleIamAdminEndpointsPath()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                "backend",
+                "gateway",
+                "PlatformGateway",
+                "src",
+                "Nerv.IIP.PlatformGateway.Web",
+                "Endpoints",
+                "IamAdmin",
+                "ConsoleIamAdminEndpoints.cs");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("Could not find ConsoleIamAdminEndpoints.cs.");
+    }
 
     private static DefaultHttpContext CreateAuthenticatedHttpContext(
         string bearerToken,

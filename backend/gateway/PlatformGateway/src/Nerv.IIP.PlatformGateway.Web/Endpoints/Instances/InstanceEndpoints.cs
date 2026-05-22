@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using Nerv.IIP.PlatformGateway.Web.Application.OpenApi;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Instances;
@@ -19,6 +20,7 @@ public sealed class ListInstancesRequest
 }
 
 [HttpGet("/api/console/v1/instances")]
+[GatewayOperationId("listConsoleInstances")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class ListInstancesEndpoint(
     IAppHubClient appHub,
@@ -74,6 +76,7 @@ public sealed class GetInstanceDetailRequest
 }
 
 [HttpGet("/api/console/v1/instances/{instanceKey}")]
+[GatewayOperationId("getConsoleInstanceDetail")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class GetInstanceDetailEndpoint(
     IAppHubClient appHub,

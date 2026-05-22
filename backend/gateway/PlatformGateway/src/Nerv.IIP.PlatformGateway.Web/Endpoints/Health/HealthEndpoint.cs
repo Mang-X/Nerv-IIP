@@ -1,10 +1,12 @@
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
+using Nerv.IIP.PlatformGateway.Web.Application.OpenApi;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Health;
 
 [HttpGet("/health")]
+[GatewayOperationId("HealthEndpoint")]
 [AllowAnonymous]
 public sealed class HealthEndpoint : EndpointWithoutRequest
 {
@@ -16,6 +18,7 @@ public sealed class HealthEndpoint : EndpointWithoutRequest
 }
 
 [HttpGet("/internal/gateway/v1/build-info")]
+[GatewayOperationId("GetBuildInfoEndpoint")]
 [AllowAnonymous]
 public sealed class GetBuildInfoEndpoint : EndpointWithoutRequest<ResponseData<object>>
 {
