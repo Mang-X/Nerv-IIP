@@ -122,7 +122,7 @@
 
 ### Step 5. 落统一部署与基础设施开发编排
 
-- 提供 PostgreSQL、Redis、RabbitMQ、MinIO、Qdrant、OpenTelemetry 的本地开发编排。
+- 提供 PostgreSQL、Redis、MinIO、Qdrant、OpenTelemetry 的本地开发编排；RabbitMQ 作为 `Messaging:Provider=RabbitMQ` 时启用的可选编排资源。
 - 让 Gateway、Iam、FileStorage、AppHub、Ops、Connector Host 在同一本地开发编排中联调；Notification 可在通知纵切进入时加入同一编排，但不阻塞首条注册纵切。
 - 新增平台级 Aspire AppHost 作为统一拓扑模型，后续用于本地联调、Dashboard、服务发现和 Docker Compose 生成。
 - 保留 `infra/docker-compose.dev.yml` 作为早期本地依赖兜底入口，但完整平台 Compose 应从 Aspire AppHost 派生。

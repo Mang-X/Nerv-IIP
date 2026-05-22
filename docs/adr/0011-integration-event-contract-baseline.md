@@ -5,7 +5,7 @@
 
 ## Context
 
-Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 RabbitMQ 作为异步集成事件与后台异步任务分发基线，并要求跨服务状态传播优先通过集成事件完成，禁止通过共享数据库表或直接写入他服务 schema 协作。
+Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 CAP outbox + 可配置 messaging provider 作为异步集成事件与后台异步任务分发基线，并要求跨服务状态传播优先通过集成事件完成，禁止通过共享数据库表或直接写入他服务 schema 协作。默认单机 profile 使用 InMemory message queue，RabbitMQ 是跨进程和生产扩展 profile。
 
 当前 AppHub、Ops、IAM、File Storage、Notification、Connector Host 等边界会逐步引入跨服务事件。若不尽早冻结 envelope、版本、路由和失败处理规则，不同服务很容易各自定义事件形态，导致消费者无法稳定追踪来源、重放消息、做幂等处理或区分业务失败与 poison message。
 
@@ -30,7 +30,7 @@ Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 Rabbi
 15. `<deployment-env>` 表示部署环境类别或实例环境标识，由部署 profile 统一注入；它不是 envelope 中的 `environmentId`，不得把客户名称、数据库名、连接串片段或内部主机名放入 routing key。
 16. `<event-name>` 使用 kebab-case 的过去式事实名。routing key 中的版本必须与 envelope 的 `eventVersion` 一致。
 17. 消费者订阅应尽量按 source service、bounded context、event name 和 version 精确绑定；需要通配订阅时必须在消费者文档或测试中说明过滤规则，避免误消费其它租户、环境或版本的事件。
-18. 发布方默认使用 CAP outbox 或等价可靠发布机制，outbox 记录必须与产生事件的领域事实处于同一事务边界。不得在事务提交前直接把跨服务事件发送到 RabbitMQ。
+18. 发布方默认使用 CAP outbox 或等价可靠发布机制，outbox 记录必须与产生事件的领域事实处于同一事务边界。不得在事务提交前直接把跨服务事件发送到具体 broker；当前 broker profile 包括默认 InMemory 和显式 RabbitMQ。
 19. 消费者必须具备幂等处理能力，并以 `eventId` 加消费者名称作为最低幂等键；当业务幂等边界强于事件实例时，还必须使用 `idempotencyKey` 或业务唯一约束防止重复副作用。
 20. 消费者处理必须先完成 schema/version 校验、组织/环境上下文校验和幂等判断，再执行业务副作用。
 21. 临时失败使用有上限的重试策略，重试必须保留原始 `eventId`、`correlationId`、`causationId` 和 `idempotencyKey`。重试次数、退避窗口和超时由消息基础设施 profile 配置，但消费者不得无限重试。

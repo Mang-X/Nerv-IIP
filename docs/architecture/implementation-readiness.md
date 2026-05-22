@@ -30,6 +30,7 @@
 24. BusinessMasterData 作为业务平台 Layer 0 基石已经完成审查重裁决：原 `2026-05-20-business-master-data-foundation.md` 只作为最小骨架，继续 Task 4/5 或下游业务域前必须先执行 `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`，并遵守 `docs/adr/0013-business-master-data-governance.md`、`docs/architecture/business-master-data-field-matrix.md` 和 `docs/architecture/business-master-data-process-manufacturing-supplement.md`。
 25. BusinessMasterData realignment 已开始落地：MasterData Domain 增加 UOM、UOM conversion、Site、ProductionLine、Shift、ReferenceDataCode 和扩展 SKU/WorkCenter/DeviceAsset 属性；Infrastructure 已生成 `RealignBusinessMasterData` migration；Web 层已提供 MasterData 变更 IntegrationEvent payload、批量 resolve/validate query、统一 list query，并补齐 SKU、UOM、UOM conversion、伙伴、部门、团队、人员技能、工厂、产线、班次、日历、工作中心、设备和参考数据的 create endpoints；API 合同测试已覆盖稳定 operationId、路由、权限码、创建成功和重复业务键；IAM seed 已加入 `business.masterdata.*` 六个权限。可通过 `scripts/verify-business-master-data-realignment.ps1` 做本地验证。
 26. FileStorage MVP 已交付公开 contracts、`Sdk.FileStorage` HTTP client、server-proxy metadata API 子集、PostgreSQL-backed API service、`filestorage` PostgreSQL schema baseline、初始 migration、schema convention tests 和本地 tus `HEAD`/`PATCH` 上传 endpoint；当前不包含 MinIO/S3 multipart 或 Gateway/Console facade。
+27. Messaging provider 已与 persistence provider 解耦：AppHub、Ops、Notification、BusinessMasterData 和 BusinessQuality 的 PostgreSQL profile 默认使用 `Messaging:Provider=InMemory` + CAP InMemory message queue；显式设置 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ broker。平台级 AppHost 默认不创建 RabbitMQ resource，`scripts/verify-second-slice-ops.ps1 -UsePostgres` 默认也不再依赖 RabbitMQ。
 
 ## 环境前置
 
@@ -40,7 +41,7 @@
 3. 创建服务时显式生成 `net10.0`；后续等 netcorepal-cloud-framework 明确适配 .NET 11 后，再统一升级到 .NET 11。
 4. 安装 NetCorePal.Template：`dotnet new install NetCorePal.Template`。
 5. 创建服务前运行 `dotnet new netcorepal-web --help` 核对本机模板参数。
-6. 平台领域服务优先使用 netcorepal 的 web 模板作为初始骨架，但命令必须显式指定 `--Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false`，详见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md。
+6. 平台领域服务优先使用 netcorepal 的 web 模板作为初始骨架，但命令必须显式指定 `--Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false`，详见 docs/architecture/backend-cleanddd-netcorepal-guidelines.md；运行时消息传输由 `Messaging:Provider` 选择，默认 `InMemory`。
 7. 2026-05-17 已确认 NetCorePal.Template 3.2.0 支持 `PostgreSQL`、`GaussDB`、`DMDB` 等数据库参数；Nerv-IIP 默认落地 PostgreSQL profile，信创环境按 database profile 验证替换，不承诺无验证的完全无感切换。
 8. 后续落地平台级 AppHost、Compose 生成和 Aspire Dashboard 时，需要安装 Aspire CLI；服务模板仍保持 `--UseAspire false`，避免生成服务级局部编排入口。
 9. 第三阶段前端工具链需要 Node.js `>=22.18.0`、pnpm 11.1.2 和 Vite+ 0.1.21。仓库根 `.node-version` 保留 22.22.3，原因是 Node `22.17.x` 会在 Vite+ lint/fmt 路径读取 `vite.config.ts` 时触发 TS config 加载错误；Node.js 26 这类更新 Current 版本可以作为本地开发版本，不视为环境漂移阻塞。
@@ -164,8 +165,8 @@
 1. AppHub 和 Ops 已作为 netcorepal/CleanDDD 迁移试点，落 Domain aggregate、Application command/query、Infrastructure repository/ApplicationDbContext 和 mediator-driven endpoint。
 2. PostgreSQL 使用服务级 database 与 schema：AppHub 默认连接 `nerv_iip_apphub` 并使用 `apphub` schema，Ops 默认连接 `nerv_iip_ops` 并使用 `ops` schema；provider 选择只留在 Infrastructure/profile/test/deployment 层。
 3. AppHub/Ops 已暴露 `/code-analysis`，用于查看 netcorepal 识别的命令、查询、聚合、事件和处理器流向。
-4. `scripts/verify-fourth-slice-real-infra.ps1` 已作为第四阶段验收入口，默认通过 `infra/docker-compose.dev.yml` 拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector；本机 PostgreSQL 默认端口为 `15432`，避免撞到本机已有 `5432`。
-5. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，覆盖 PlatformGateway、AppHub、IAM、Ops、FileStorage、Connector Host、Console、PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector；AppHost 当前 build 通过，并为 AppHub/IAM/Ops 使用独立 database resource。
+4. `scripts/verify-fourth-slice-real-infra.ps1` 已作为第四阶段验收入口，默认通过 `infra/docker-compose.dev.yml` 拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector；本机 PostgreSQL 默认端口为 `15432`，避免撞到本机已有 `5432`。RabbitMQ 是第四阶段历史验证资源，当前常规 PostgreSQL + 单机 messaging profile 可不依赖 RabbitMQ。
+5. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，覆盖 PlatformGateway、AppHub、IAM、Ops、FileStorage、Connector Host、Console、PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector；RabbitMQ 仅在 `Messaging:Provider=RabbitMQ` 时加入拓扑。AppHost 当前 build 通过，并为 AppHub/IAM/Ops 使用独立 database resource。
 6. PlatformGateway、Connector Host、Contracts/SDK 和 frontend console 不强行套完整 netcorepal 三项目模型；IAM 完整授权、FileStorage 上传下载、CAP outbox、通知和审批不进入本阶段实现范围。
 7. `pwsh scripts/verify-fourth-slice-real-infra.ps1` 已在 Docker Desktop 环境下通过，最终输出 `Fourth vertical slice real infrastructure verified.`。
 
@@ -242,7 +243,7 @@
 4. 运行 `pwsh scripts/verify-first-slice.ps1` 可验证 backend 与 connector-hosts 的 restore、build、test，以及 AppHub 到 PlatformGateway 的第一条本地纵切。
 5. 运行 `pwsh scripts/verify-second-slice-ops.ps1` 可验证 Gateway、Ops、Connector Host 和 Docker Connector 的低风险 restart 闭环。
 6. 运行 `pwsh scripts/verify-third-slice-console.ps1` 可验证 Gateway OpenAPI 导出、前端 api-client 生成、Vue 控制台 typecheck/test/build。
-7. 运行 `pwsh scripts/verify-third-slice-console.ps1 -UsePostgres` 可在 PostgreSQL profile 下复跑第三阶段链路，前提是本地 PostgreSQL 和 RabbitMQ 已可用；可通过 `NERV_IIP_APPHUB_POSTGRES`、`NERV_IIP_IAM_POSTGRES` 与 `NERV_IIP_OPS_POSTGRES` 分别覆盖服务连接串。
+7. 运行 `pwsh scripts/verify-third-slice-console.ps1 -UsePostgres` 可在 PostgreSQL profile 下复跑第三阶段链路，前提是本地 PostgreSQL 可用；默认 messaging profile 为 InMemory。显式使用 `Messaging:Provider=RabbitMQ` 时才需要本地 RabbitMQ。可通过 `NERV_IIP_APPHUB_POSTGRES`、`NERV_IIP_IAM_POSTGRES` 与 `NERV_IIP_OPS_POSTGRES` 分别覆盖服务连接串。
 8. 运行 `pwsh scripts/verify-fourth-slice-real-infra.ps1` 可拉起本地依赖并执行第四阶段真实基础设施门禁；脚本会重建 `nerv_iip_apphub_verify`、`nerv_iip_iam_verify` 和 `nerv_iip_ops_verify` 验证库，避免共享库或旧数据影响结果。
 9. 运行 `pwsh scripts/verify-fifth-slice-persistence-foundation.ps1` 可验证 AppHub/Ops 迁移发布底座和后端 SDK/契约回归。
 10. 运行 `pwsh scripts/verify-iam-persistent-auth-foundation.ps1` 可验证 IAM PostgreSQL profile、迁移、seed、登录/刷新/退出、`/me`、Connector Host credential validation 和后端回归。

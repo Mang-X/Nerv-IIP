@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 using Nerv.IIP.Localization;
+using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.CodeAnalysis;
 using NetCorePal.Extensions.NewtonsoftJson;
@@ -107,7 +108,7 @@ try
         {
             x.UseNetCorePalStorage<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
-            x.UseRabbitMQ(p => builder.Configuration.GetSection("RabbitMQ").Bind(p));
+            x.UseConfiguredTransport(builder.Configuration);
             x.UseDashboard();
         });
     }

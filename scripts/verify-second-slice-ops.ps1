@@ -15,7 +15,9 @@
 #     - .NET SDK 10
 #     - Docker Desktop
 param(
-  [switch]$UsePostgres
+  [switch]$UsePostgres,
+  [ValidateSet("InMemory", "RabbitMQ")]
+  [string]$MessagingProvider = "InMemory"
 )
 
 Set-StrictMode -Version Latest
@@ -156,36 +158,42 @@ try {
   $dockerDemoStarted = $true
 
   $appHubJob = Start-Job -Name "AppHub" -ScriptBlock {
-    param($project, $url, $usePostgres, $connectionString)
+    param($project, $url, $usePostgres, $connectionString, $messagingProvider)
     $env:ASPNETCORE_URLS = $url
     if ($usePostgres) {
       $env:Persistence__Provider = "PostgreSQL"
       $env:Persistence__AutoMigrate = "true"
       $env:ConnectionStrings__AppHubDb = $connectionString
-      $env:RabbitMQ__HostName = "localhost"
-      $env:RabbitMQ__Port = "5672"
-      $env:RabbitMQ__UserName = "guest"
-      $env:RabbitMQ__Password = "guest"
+      $env:Messaging__Provider = $messagingProvider
+      if ($messagingProvider -eq "RabbitMQ") {
+        $env:RabbitMQ__HostName = "localhost"
+        $env:RabbitMQ__Port = "5672"
+        $env:RabbitMQ__UserName = "guest"
+        $env:RabbitMQ__Password = "guest"
+      }
     }
     dotnet run --project $project --no-build --no-launch-profile
-  } -ArgumentList $appHubProject, $appHubUrl, $UsePostgres.IsPresent, $appHubPostgresConnectionString
+  } -ArgumentList $appHubProject, $appHubUrl, $UsePostgres.IsPresent, $appHubPostgresConnectionString, $MessagingProvider
   $jobs += $appHubJob
   Wait-Healthy $appHubUrl
 
   $opsJob = Start-Job -Name "Ops" -ScriptBlock {
-    param($project, $url, $usePostgres, $connectionString)
+    param($project, $url, $usePostgres, $connectionString, $messagingProvider)
     $env:ASPNETCORE_URLS = $url
     if ($usePostgres) {
       $env:Persistence__Provider = "PostgreSQL"
       $env:Persistence__AutoMigrate = "true"
       $env:ConnectionStrings__OpsDb = $connectionString
-      $env:RabbitMQ__HostName = "localhost"
-      $env:RabbitMQ__Port = "5672"
-      $env:RabbitMQ__UserName = "guest"
-      $env:RabbitMQ__Password = "guest"
+      $env:Messaging__Provider = $messagingProvider
+      if ($messagingProvider -eq "RabbitMQ") {
+        $env:RabbitMQ__HostName = "localhost"
+        $env:RabbitMQ__Port = "5672"
+        $env:RabbitMQ__UserName = "guest"
+        $env:RabbitMQ__Password = "guest"
+      }
     }
     dotnet run --project $project --no-build --no-launch-profile
-  } -ArgumentList $opsProject, $opsUrl, $UsePostgres.IsPresent, $opsPostgresConnectionString
+  } -ArgumentList $opsProject, $opsUrl, $UsePostgres.IsPresent, $opsPostgresConnectionString, $MessagingProvider
   $jobs += $opsJob
   Wait-Healthy $opsUrl
 
@@ -201,10 +209,6 @@ try {
       $env:Iam__Seed__AdminPassword = "Admin123!"
       $env:Iam__Seed__ConnectorHostSecret = "local-connector-secret"
       $env:Iam__Jwt__SigningKey = "verify-signing-key-that-is-long-enough-for-local-tests"
-      $env:RabbitMQ__HostName = "localhost"
-      $env:RabbitMQ__Port = "5672"
-      $env:RabbitMQ__UserName = "guest"
-      $env:RabbitMQ__Password = "guest"
     }
     dotnet run --project $project --no-build --no-launch-profile
   } -ArgumentList $iamProject, $iamUrl, $UsePostgres.IsPresent, $iamPostgresConnectionString
