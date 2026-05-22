@@ -3,6 +3,7 @@ using MediatR;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
+using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
@@ -21,6 +22,8 @@ public sealed record CreateRushWorkOrderRequest(
     decimal Quantity,
     DateTimeOffset DueUtc,
     string WorkCenterId,
+    string? OperationTaskId,
+    int? OperationSequence,
     int DurationMinutes);
 
 public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
@@ -38,10 +41,11 @@ public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
         }
 
         Tags("Business MES");
+        Policies(InternalServiceAuthorizationPolicy.Name);
     }
 }
 
-public sealed class RunScheduleEndpoint(ISender sender)
+public sealed class RunScheduleEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<RunScheduleRequest, MesScheduleResult>
 {
     public override void Configure()
@@ -55,12 +59,12 @@ public sealed class RunScheduleEndpoint(ISender sender)
             req.OrganizationId,
             req.EnvironmentId,
             req.Trigger,
-            DateTimeOffset.UtcNow), ct);
+            timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(result, ct);
     }
 }
 
-public sealed class CreateRushWorkOrderEndpoint(ISender sender)
+public sealed class CreateRushWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<CreateRushWorkOrderRequest, CreateRushWorkOrderResponse>
 {
     public override void Configure()
@@ -79,8 +83,10 @@ public sealed class CreateRushWorkOrderEndpoint(ISender sender)
             req.Quantity,
             req.DueUtc,
             req.WorkCenterId,
+            req.OperationTaskId ?? $"{req.WorkOrderId}-OP-10",
+            req.OperationSequence ?? 10,
             TimeSpan.FromMinutes(req.DurationMinutes),
-            DateTimeOffset.UtcNow), ct);
+            timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(result, ct);
     }
 }

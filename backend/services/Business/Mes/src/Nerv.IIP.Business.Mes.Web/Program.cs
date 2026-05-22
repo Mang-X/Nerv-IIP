@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
+using Nerv.IIP.ServiceAuth;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,9 +18,12 @@ builder.Services
             s.Version = "v1";
         };
     });
+builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+// MES MVP has no DbContext/UoW yet, so commands use MediatR IRequest until persistence lands.
 builder.Services.AddSingleton<IMesPlanningStore, InMemoryMesPlanningStore>();
 builder.Services.AddSingleton<RuleScheduler>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(new MesRescheduleOptions
 {
     AutoRescheduleOnAssetUnavailable = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetUnavailable", true),
@@ -27,6 +31,8 @@ builder.Services.AddSingleton(new MesRescheduleOptions
 });
 
 var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseFastEndpoints(c =>
 {
     c.Endpoints.NameGenerator = ctx =>

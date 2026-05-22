@@ -136,7 +136,7 @@ public sealed class RuleScheduler
                 return DateTimeOffset.MaxValue - duration;
             }
 
-            candidate = conflict.ToUtc ?? conflict.FromUtc.AddDays(3650);
+            candidate = conflict.ToUtc.Value;
         }
     }
 

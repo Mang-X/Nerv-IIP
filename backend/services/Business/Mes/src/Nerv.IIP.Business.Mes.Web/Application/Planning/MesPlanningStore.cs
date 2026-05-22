@@ -60,6 +60,10 @@ public interface IMesPlanningStore
     IReadOnlyCollection<ScheduleOperation> GetScheduleOperations(string organizationId, string environmentId);
 }
 
+/// <summary>
+/// Process-local MES planning store for the first rescheduling vertical slice.
+/// Schedule state is intentionally not durable until the MES persistence model lands.
+/// </summary>
 public sealed class InMemoryMesPlanningStore : IMesPlanningStore
 {
     private readonly List<PlannedWorkOrder> _workOrders = [];

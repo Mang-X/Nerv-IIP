@@ -27,12 +27,17 @@ public sealed class RushWorkOrderCommandTests
                 1m,
                 now.AddHours(4),
                 "WC-A",
+                "OP-RUSH-20",
+                20,
                 TimeSpan.FromHours(1),
                 now),
             CancellationToken.None);
 
         Assert.Equal("WO-RUSH", response.WorkOrderId);
         Assert.Equal(1000, store.WorkOrders.Single(x => x.WorkOrderId == "WO-RUSH").Priority);
+        var operation = Assert.Single(store.OperationTasks, x => x.WorkOrderId == "WO-RUSH");
+        Assert.Equal("OP-RUSH-20", operation.OperationTaskId);
+        Assert.Equal(20, operation.OperationSequence);
         Assert.Equal(RescheduleTrigger.RushOrder, response.Schedule.Trigger);
         Assert.Contains("WO-NORMAL", response.AffectedWorkOrderIds);
     }

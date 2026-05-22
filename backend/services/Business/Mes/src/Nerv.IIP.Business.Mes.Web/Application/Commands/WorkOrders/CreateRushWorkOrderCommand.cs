@@ -14,6 +14,8 @@ public sealed record CreateRushWorkOrderCommand(
     decimal Quantity,
     DateTimeOffset DueUtc,
     string WorkCenterId,
+    string OperationTaskId,
+    int OperationSequence,
     TimeSpan Duration,
     DateTimeOffset RequestedAtUtc) : IRequest<CreateRushWorkOrderResponse>;
 
@@ -44,9 +46,9 @@ public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, R
             request.DueUtc));
         store.AddOperationTask(new PlannedOperationTask(
             request.WorkOrderId,
-            "OP-10",
+            request.OperationTaskId,
             OperationTaskStatus.Queued,
-            10,
+            request.OperationSequence,
             request.WorkCenterId,
             [],
             request.RequestedAtUtc,
