@@ -4,6 +4,7 @@ import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth'
+import { createConsoleI18n } from '@/i18n'
 import { listConsoleInstancesQueryOptions } from '@nerv-iip/api-client'
 import IndexPage from './index.vue'
 
@@ -146,7 +147,11 @@ describe('Console index page', () => {
 
     return mount(IndexPage, {
       global: {
-        plugins: [pinia, [PiniaColada, { queryOptions: { gcTime: 300_000 } }]],
+        plugins: [
+          pinia,
+          createConsoleI18n({ locale: 'en-US' }),
+          [PiniaColada, { queryOptions: { gcTime: 300_000 } }],
+        ],
         stubs: {
           RouterLink: {
             props: ['to'],

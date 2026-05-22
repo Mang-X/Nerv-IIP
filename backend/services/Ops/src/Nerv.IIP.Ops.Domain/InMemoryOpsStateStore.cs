@@ -18,6 +18,7 @@ public interface IOpsStateStore
     OperationTaskResponse Get(string operationTaskId);
     PagedOperationTaskListResponse ListTasks(string organizationId, string environmentId, int? page, int? pageSize);
     AuditRecordListResponse ListAuditRecords(string organizationId, string environmentId, string? operationTaskId);
+    AuditIntentResponse SubmitAuditIntent(SubmitAuditIntentRequest request, DateTimeOffset now);
     OperationTemplateResponse CreateTemplate(CreateOperationTemplateRequest request, DateTimeOffset now);
     OperationTemplateListResponse ListTemplates();
     OperationTemplateResponse GetTemplate(string operationCode);
@@ -154,6 +155,18 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                 .ToArray();
 
             return new AuditRecordListResponse(items);
+        }
+    }
+
+    public AuditIntentResponse SubmitAuditIntent(SubmitAuditIntentRequest request, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            AuditIntentValidator.Validate(request);
+            var task = FindTask(request.OperationTaskId);
+            ValidateAuditIntentScope(task, request);
+            var audit = AddAudit(request.OperationTaskId, request.Action, request.Actor, now, request.CorrelationId);
+            return AuditRecordMapper.ToIntentResponse(audit);
         }
     }
 
@@ -379,6 +392,15 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
+    private static void ValidateAuditIntentScope(OperationTaskFact task, SubmitAuditIntentRequest request)
+    {
+        if (!string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationTaskRequestException("Audit intent context does not match the operation task scope.");
+        }
+    }
+
     private void RequeueExpiredLeasesUnlocked(string organizationId, string environmentId, DateTimeOffset now)
     {
         var expiredTasks = _tasks
@@ -432,15 +454,17 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         return $"{organizationId}\u001f{environmentId}\u001f{idempotencyKey}";
     }
 
-    private void AddAudit(string operationTaskId, string action, string actor, DateTimeOffset occurredAtUtc, string correlationId)
+    private AuditRecordFact AddAudit(string operationTaskId, string action, string actor, DateTimeOffset occurredAtUtc, string correlationId)
     {
-        _auditRecords.Add(new AuditRecordFact(
+        var audit = new AuditRecordFact(
             $"audit-{_auditRecords.Count + 1:000000}",
             operationTaskId,
             action,
             actor,
             occurredAtUtc,
-            correlationId));
+            correlationId);
+        _auditRecords.Add(audit);
+        return audit;
     }
 
     private void ReplaceTask(OperationTaskFact task)

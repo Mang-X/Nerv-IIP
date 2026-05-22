@@ -12,6 +12,7 @@ public interface IOpsClient
     Task<OperationTaskResponse> GetOperationTaskAsync(string operationTaskId, CancellationToken cancellationToken = default);
     Task<PendingOperationTasksResponse> GetPendingOperationTasksAsync(string organizationId, string environmentId, string connectorHostId, int take, CancellationToken cancellationToken = default);
     Task<PendingOperationTasksResponse> ClaimOperationTasksAsync(ClaimOperationTasksRequest request, CancellationToken cancellationToken = default);
+    Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, CancellationToken cancellationToken = default);
     Task<OperationTaskResponse> AbandonOperationTaskLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest request, CancellationToken cancellationToken = default);
     Task<OperationTaskResponse> HeartbeatOperationTaskLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, CancellationToken cancellationToken = default);
     Task SendOperationResultAsync(OperationResult result, CancellationToken cancellationToken = default);
@@ -50,6 +51,13 @@ public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await PlatformApiClient.ReadResponseDataAsync<PendingOperationTasksResponse>(response, cancellationToken);
+    }
+
+    public async Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest auditIntent, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync("/api/ops/v1/audit-intents", auditIntent, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await PlatformApiClient.ReadResponseDataAsync<AuditIntentResponse>(response, cancellationToken);
     }
 
     public async Task<OperationTaskResponse> AbandonOperationTaskLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest abandon, CancellationToken cancellationToken = default)

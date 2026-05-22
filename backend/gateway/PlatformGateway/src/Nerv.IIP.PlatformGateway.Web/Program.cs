@@ -1,9 +1,11 @@
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Nerv.IIP.Caching;
+using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
 using Nerv.IIP.PlatformGateway.Web;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using Nerv.IIP.PlatformGateway.Web.Application.Http;
 using Nerv.IIP.PlatformGateway.Web.Application.IamAdmin;
 using Nerv.IIP.PlatformGateway.Web.Application.NotificationClient;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
@@ -26,36 +28,40 @@ builder.Services
     });
 builder.Services.AddNervIipCaching(builder.Configuration, "platform-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "platform-gateway");
+builder.Services.AddNervIipLocalization();
 builder.Services.AddNervIipInternalServiceTokenProvider(builder.Configuration, builder.Environment);
 builder.Services.Configure<GatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddHttpClient<IAppHubClient, HttpAppHubClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["AppHub:BaseUrl"] ?? "http://localhost:5101");
-}).AddStandardResilienceHandler();
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IGatewayOpsClient, GatewayOpsClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Ops:BaseUrl"] ?? "http://localhost:5103");
-}).AddGatewayNonIdempotentSafeResilience();
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IGatewayNotificationClient, HttpGatewayNotificationClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Notification:BaseUrl"] ?? "http://localhost:5106");
-}).AddGatewayNonIdempotentSafeResilience();
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IGatewayAuthorizationClient, HttpGatewayAuthorizationClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102");
-}).AddStandardResilienceHandler();
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IGatewayIamAuthClient, HttpGatewayIamAuthClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102");
-}).AddGatewayNonIdempotentSafeResilience();
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IGatewayIamAdminClient, HttpGatewayIamAdminClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102");
-}).AddGatewayNonIdempotentSafeResilience();
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddGatewayNonIdempotentSafeResilience();
 builder.Services.AddGatewayAuthentication(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 app.UseNervIipCorrelation();
+app.UseNervIipRequestLocalization();
 app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = HttpStatusCode.BadRequest });
 app.UseAuthentication();
 app.UseAuthorization();

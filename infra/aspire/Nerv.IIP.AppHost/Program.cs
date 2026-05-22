@@ -1,6 +1,10 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-const string LocalJwtSigningKey = "aspire-local-development-signing-key-that-is-long-enough";
+var iamJwtSigningKey = builder.AddParameter("iam-jwt-signing-key", secret: true);
+var minioRootUser = builder.AddParameter("minio-root-user", secret: true);
+var minioRootPassword = builder.AddParameter("minio-root-password", secret: true);
+var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secret: true);
+var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
 
 var postgres = builder.AddPostgres("postgres")
     .WithDataVolume("nerv-iip-postgres");
@@ -14,8 +18,8 @@ var rabbitmq = builder.AddRabbitMQ("rabbitmq")
     .WithManagementPlugin();
 var minio = builder.AddContainer("minio", "pgsty/minio", "RELEASE.2026-04-17T00-00-00Z")
     .WithArgs("server", "/data", "--console-address", ":9001")
-    .WithEnvironment("MINIO_ROOT_USER", "nervminio")
-    .WithEnvironment("MINIO_ROOT_PASSWORD", "nervminio")
+    .WithEnvironment("MINIO_ROOT_USER", minioRootUser)
+    .WithEnvironment("MINIO_ROOT_PASSWORD", minioRootPassword)
     .WithHttpEndpoint(port: 9000, targetPort: 9000, name: "api")
     .WithHttpEndpoint(port: 9001, targetPort: 9001, name: "console")
     .WithVolume("nerv-iip-minio", "/data");
@@ -43,9 +47,9 @@ var iam = builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Iam__Seed__Enabled", "true")
-    .WithEnvironment("Iam__Seed__AdminPassword", "Admin123!")
-    .WithEnvironment("Iam__Seed__ConnectorHostSecret", "local-connector-secret")
-    .WithEnvironment("Iam__Jwt__SigningKey", LocalJwtSigningKey)
+    .WithEnvironment("Iam__Seed__AdminPassword", iamSeedAdminPassword)
+    .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)
+    .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithReference(iamDatabase, "IamDb")
@@ -71,8 +75,8 @@ var fileStorage = builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-st
     .WithHttpEndpoint(port: 5104, name: "http")
     .WithEnvironment("Storage__Provider", "MinIO")
     .WithEnvironment("Storage__MinIO__Endpoint", minio.GetEndpoint("api"))
-    .WithEnvironment("Storage__MinIO__AccessKey", "nervminio")
-    .WithEnvironment("Storage__MinIO__SecretKey", "nervminio")
+    .WithEnvironment("Storage__MinIO__AccessKey", minioRootUser)
+    .WithEnvironment("Storage__MinIO__SecretKey", minioRootPassword)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithReference(redis)
@@ -95,7 +99,7 @@ var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway
     .WithHttpEndpoint(port: 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
-    .WithEnvironment("Iam__Jwt__SigningKey", LocalJwtSigningKey)
+    .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
@@ -115,6 +119,7 @@ var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway
 
 var connectorHost = builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")
     .WithEnvironment("ConnectorHost__CycleSeconds", "1")
+    .WithEnvironment("ConnectorHost__ConnectorSecret", iamSeedConnectorHostSecret)
     .WithEnvironment("Platform__AppHubBaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Platform__OpsBaseUrl", ops.GetEndpoint("http"))
     .WithReference(apphub)

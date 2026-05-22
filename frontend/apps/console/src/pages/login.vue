@@ -4,15 +4,17 @@ import { useAuthStore } from '@/stores/auth'
 import { sanitizeRedirectPath } from '@/router/redirects'
 import { storeToRefs } from 'pinia'
 import { computed, shallowRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
     guestOnly: true,
-    title: 'Sign in',
+    title: 'routes.login',
   },
 })
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const { authError } = storeToRefs(auth)
 const route = useRoute('/login')
@@ -52,11 +54,11 @@ async function submit(credentials: { loginName: string; password: string }) {
         <div class="flex flex-col gap-2">
           <h1 class="text-3xl font-bold tracking-tight">Nerv-IIP</h1>
           <p class="text-sm font-medium uppercase tracking-widest text-primary-foreground/70">
-            Industrial IoT Control Plane
+            {{ t('app.tagline') }}
           </p>
         </div>
         <p class="max-w-sm text-sm leading-relaxed text-primary-foreground/60">
-          Manage application instances and operation tasks through the Gateway.
+          {{ t('app.description') }}
         </p>
       </div>
     </div>
@@ -71,7 +73,7 @@ async function submit(credentials: { loginName: string; password: string }) {
         </div>
         <LoginForm :error="authError" :pending="pending" @submit="submit" />
         <p class="text-center text-xs text-muted-foreground">
-          Industrial IoT Control Plane
+          {{ t('app.tagline') }}
         </p>
       </div>
     </div>

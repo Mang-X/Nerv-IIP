@@ -12,22 +12,25 @@ import {
 import { BellIcon, LayersIcon, ShieldIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
-const navItems: NavItem[] = [
-  { title: 'Instances', icon: LayersIcon, to: { name: '/' } },
-  { title: 'Notifications', icon: BellIcon, to: { path: '/notifications' } },
+const { t, te } = useI18n()
+
+const navItems = computed<NavItem[]>(() => [
+  { title: t('nav.instances'), icon: LayersIcon, to: { name: '/' } },
+  { title: t('nav.notifications'), icon: BellIcon, to: { path: '/notifications' } },
   {
-    title: 'IAM',
+    title: t('nav.iam'),
     icon: ShieldIcon,
     isActive: true,
     items: [
-      { title: 'Users', to: { path: '/iam/users' } },
-      { title: 'Roles', to: { path: '/iam/roles' } },
-      { title: 'Sessions', to: { path: '/iam/sessions' } },
+      { title: t('nav.users'), to: { path: '/iam/users' } },
+      { title: t('nav.roles'), to: { path: '/iam/roles' } },
+      { title: t('nav.sessions'), to: { path: '/iam/sessions' } },
     ],
   },
-]
+])
 
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
@@ -36,7 +39,8 @@ const route = useRoute()
 
 const breadcrumbs = computed(() => {
   const path = route?.path ?? '/'
-  const title = (route?.meta?.title as string) ?? 'Dashboard'
+  const titleKey = (route?.meta?.title as string) ?? 'breadcrumb.dashboard'
+  const title = te(titleKey) ? t(titleKey) : titleKey
 
   if (path === '/' || path === '/login') {
     return [{ label: title }]
@@ -63,7 +67,7 @@ const shellUser = computed(() => {
   const p = principal.value
   if (!p) return undefined
   return {
-    name: p.loginName ?? p.principalId ?? 'Authenticated user',
+    name: p.loginName ?? p.principalId ?? t('nav.users'),
     email: p.email,
   }
 })
@@ -75,7 +79,14 @@ async function signOut() {
 </script>
 
 <template>
-  <AppShell title="Nerv-IIP" :nav-items="navItems" :user="shellUser" @sign-out="signOut">
+  <AppShell
+    title="Nerv-IIP"
+    :nav-items="navItems"
+    :nav-label="t('nav.platform')"
+    :sign-out-label="t('nav.signOut')"
+    :user="shellUser"
+    @sign-out="signOut"
+  >
     <template #header>
       <Breadcrumb>
         <BreadcrumbList>

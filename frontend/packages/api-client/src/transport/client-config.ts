@@ -6,6 +6,7 @@ export interface ConfigureApiClientOptions {
   baseUrl?: string
   fetch?: typeof fetch
   headers?: HeadersInit
+  localeProvider?: () => string | undefined
   onUnauthorized?: () => void
 }
 
@@ -43,9 +44,14 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
     const headers = new Headers(request.headers)
 
     const token = options.accessTokenProvider?.()
+    const locale = options.localeProvider?.()
 
     if (token) {
       headers.set('Authorization', `Bearer ${token}`)
+    }
+
+    if (locale && !headers.has('Accept-Language')) {
+      headers.set('Accept-Language', locale)
     }
 
     return new Request(request, { headers })

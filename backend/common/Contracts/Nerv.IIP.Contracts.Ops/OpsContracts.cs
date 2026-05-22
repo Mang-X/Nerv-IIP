@@ -65,6 +65,22 @@ public sealed record AuditRecordSummary(
 
 public sealed record AuditRecordListResponse(IReadOnlyList<AuditRecordSummary> Items);
 
+public sealed record SubmitAuditIntentRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationTaskId,
+    string Action,
+    string Actor,
+    string CorrelationId);
+
+public sealed record AuditIntentResponse(
+    string AuditRecordId,
+    string OperationTaskId,
+    string Action,
+    string Actor,
+    DateTimeOffset OccurredAtUtc,
+    string CorrelationId);
+
 public sealed record CreateOperationTemplateRequest(
     string OperationCode,
     string DisplayName,

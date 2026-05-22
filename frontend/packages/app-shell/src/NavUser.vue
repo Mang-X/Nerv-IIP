@@ -18,6 +18,7 @@ import {
 } from '@nerv-iip/ui'
 
 const props = defineProps<{
+  signOutLabel?: string
   user: {
     name: string
     email?: string
@@ -77,7 +78,7 @@ const initials = computed(() => props.user.name.slice(0, 2).toUpperCase())
           <DropdownMenuGroup>
             <DropdownMenuItem @click="emit('signOut')">
               <LogOut />
-              Sign out
+              {{ signOutLabel ?? 'Sign out' }}
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>

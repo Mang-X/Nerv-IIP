@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { describe, expect, it } from 'vitest'
 import { defineComponent } from 'vue'
+import { createConsoleI18n } from '@/i18n'
 import DefaultLayout from './DefaultLayout.vue'
 
 const AppShellStub = defineComponent({
@@ -27,7 +28,7 @@ describe('DefaultLayout', () => {
   it('passes Vue Router route locations to AppShell navigation', () => {
     const wrapper = mount(DefaultLayout, {
       global: {
-        plugins: [createPinia()],
+        plugins: [createPinia(), createConsoleI18n({ locale: 'en-US' })],
         stubs: {
           AppShell: AppShellStub,
         },

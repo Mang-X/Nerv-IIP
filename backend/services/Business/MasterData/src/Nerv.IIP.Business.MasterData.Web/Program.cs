@@ -19,6 +19,7 @@ using NetCorePal.Extensions.CodeAnalysis;
 using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
+using Nerv.IIP.Localization;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithClientIp()
@@ -103,6 +104,7 @@ try
     builder.Services.AddFluentValidationAutoValidation();
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
+    builder.Services.AddNervIipLocalization();
 
     #endregion
 
@@ -178,6 +180,7 @@ try
         await dbContext.Database.EnsureCreatedAsync();
     }
 
+    app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler();
     // Configure the HTTP request pipeline.
     app.UseStaticFiles();

@@ -121,6 +121,78 @@ describe('configureApiClient', () => {
     expect(requests[0]?.headers.get('Authorization')).toBe('Bearer test-token')
   })
 
+  it('injects Accept-Language from configured locale provider', async () => {
+    const requests: Request[] = []
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      requests.push(request)
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      })
+    })
+
+    configureApiClient({
+      baseUrl: 'https://gateway.example.test',
+      fetch,
+      localeProvider: () => 'zh-CN',
+    })
+
+    await client.get({ url: '/secure' })
+
+    expect(requests[0]?.headers.get('Accept-Language')).toBe('zh-CN')
+  })
+
+  it('does not overwrite explicit per-request Accept-Language when locale provider returns nothing', async () => {
+    const requests: Request[] = []
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      requests.push(request)
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      })
+    })
+
+    configureApiClient({
+      baseUrl: 'https://gateway.example.test',
+      fetch,
+      localeProvider: () => undefined,
+    })
+
+    await client.get({
+      headers: { 'Accept-Language': 'en-US' },
+      url: '/secure',
+    })
+
+    expect(requests[0]?.headers.get('Accept-Language')).toBe('en-US')
+  })
+
+  it('lets explicit per-request Accept-Language override the locale provider', async () => {
+    const requests: Request[] = []
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      requests.push(request)
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      })
+    })
+
+    configureApiClient({
+      baseUrl: 'https://gateway.example.test',
+      fetch,
+      localeProvider: () => 'zh-CN',
+    })
+
+    await client.get({
+      headers: { 'Accept-Language': 'en-US' },
+      url: '/secure',
+    })
+
+    expect(requests[0]?.headers.get('Accept-Language')).toBe('en-US')
+  })
+
   it('does not send Authorization after provider returns nothing', async () => {
     const requests: Request[] = []
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

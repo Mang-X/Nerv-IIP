@@ -2,6 +2,7 @@ using DotNetCore.CAP;
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Web.Application.Auth;
@@ -85,6 +86,7 @@ else
     builder.Services.AddSingleton<IOperationTemplateApplicationService, InMemoryOperationTemplateApplicationService>();
 }
 builder.Services.AddNervIipObservability(builder.Configuration, "ops");
+builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
 if (usePostgreSql && autoMigrate)
@@ -94,6 +96,7 @@ if (usePostgreSql && autoMigrate)
 }
 
 app.UseNervIipCorrelation();
+app.UseNervIipRequestLocalization();
 if (usePostgreSql)
 {
     app.UseContext();

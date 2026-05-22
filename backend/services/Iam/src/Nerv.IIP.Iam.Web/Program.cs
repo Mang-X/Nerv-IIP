@@ -7,6 +7,7 @@ using Nerv.IIP.Iam.Web.Application.Seed;
 using Nerv.IIP.Iam.Web.Application.Sessions;
 using Nerv.IIP.Iam.Web.Application.Users;
 using Nerv.IIP.Iam.Web.Endpoints;
+using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
 using NetCorePal.Extensions.AspNetCore;
 using NetCorePal.Extensions.DependencyInjection;
@@ -26,6 +27,7 @@ builder.Services.AddMediatR(configuration =>
 });
 builder.Services.AddNervIipCaching(builder.Configuration, "iam");
 builder.Services.AddNervIipObservability(builder.Configuration, "iam");
+builder.Services.AddNervIipLocalization();
 builder.Services.AddIamPersistence(builder.Configuration);
 builder.Services.Configure<IamSeedOptions>(builder.Configuration.GetSection("Iam:Seed"));
 builder.Services.AddScoped<IamPasswordService>();
@@ -64,6 +66,7 @@ if (usesPostgreSql
 
 var app = builder.Build();
 app.UseNervIipCorrelation();
+app.UseNervIipRequestLocalization();
 app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = HttpStatusCode.BadRequest });
 app.UseFastEndpoints();
 
