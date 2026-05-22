@@ -95,6 +95,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | BP-INV-002 | 提交库存移动 | WMS、ERP、MES | StockMovement | 创建 | 必须携带幂等键；校验可用量 | 唯一库存事实源。 |
 | BP-INV-003 | 创建盘点任务、确认差异和调整 | 仓储管理员、审批人 | StockCountTask | 创建/审批/关闭 | 差异调整需审批 | WMS 执行扫码。 |
 | BP-QUAL-001 | 建立检验标准、检验计划和检验记录 | 质检员 | InspectionPlan/Record | 创建/修改/关闭 | 附件通过 File Storage | 收货/工序/退货质检。 |
+| BP-QUAL-002 | 创建并关闭不合格品报告 | 质检员、质量工程师 | NonconformanceReport | 创建/处置/关闭 | 关闭前必须有处置类型；返工/报废/退供需记录外部执行单据 ID | 只发布 Quality 集成事件，不直接修改 MES/Inventory/ERP/WMS 数据。 |
 | BP-APP-001 | 创建业务审批链并记录审批结果 | 审批人 | ApprovalChain | 创建/修改/关闭 | 不替代 Ops | 采购、ECO、工单、盘点差异等。 |
 | BP-ERP-001 | 从计划采购建议创建采购申请 | 采购员 | PurchaseRequisition | 创建/查看 | suggestionId 可追踪 | MRP 到采购。 |
 | BP-ERP-002 | 处理 RFQ、供应商报价、采购订单和采购收货 | 采购员、供应商 | RFQ/PurchaseOrder/Receipt | 创建/修改/关闭 | 供应商有效；价格精度固定 | SRM-lite。 |
@@ -144,6 +145,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | StockMovement | 所有库存数量变更的审计事实 | 输入移动类型、数量、幂等键；输出 movementId。 |
 | ApprovalChain | 业务单据审批状态 | 输入单据引用、模板；输出审批结果。 |
 | InspectionPlan | 检验计划和抽样规则 | 输入来源单据、检验类型；输出判定。 |
+| NonconformanceReport | 不合格品报告和处置闭环 | 输入不良来源、SKU、数量、原因；输出处置方案、外部执行引用和关闭结果。 |
 | PurchaseOrder | 供应商、价格、交期和收货状态 | 输入供应商、SKU、价格；输出采购状态。 |
 | SalesOrder | 客户、价格、交期和履约状态 | 输入客户、SKU、价格；输出销售状态。 |
 | InboundOrder | 入库执行事实 | 输入来源单据、SKU、数量、库位；输出入库完成。 |
@@ -210,6 +212,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | ApprovalChain | 审批链 | 只能按步骤推进；终态不可再审批。 |
 | InspectionStandard | 检验标准 | SKU+检验类型有效标准唯一。 |
 | InspectionPlan | 检验计划 | 未完成计划不能判定通过。 |
+| NonconformanceReport | 不合格品报告 | 不良数量必须大于 0；关闭前必须提交处置；rework/scrap/return-to-supplier 关闭前必须记录对应外部执行 ID；关闭后不可修改处置。 |
 | PurchaseRequisition | 采购申请 | 审批通过前不能生成采购订单。 |
 | RequestForQuotation | 采购询价 | 关闭后不能接收新报价；供应商范围必须明确。 |
 | SupplierQuotation | 供应商报价 | 过期报价不能转采购订单。 |
@@ -262,6 +265,9 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | StartApprovalChainCommand | ApprovalChain | documentType, documentId, applicantId, templateId | ApprovalChainStartedDomainEvent | documentType+documentId。 |
 | ResolveApprovalStepCommand | ApprovalChain | chainId, approverId, result, comment | ApprovalApproved/RejectedDomainEvent | chainId+step+approver。 |
 | RecordInspectionResultCommand | InspectionPlan | planId, measuredValues, result, attachmentFileIds | InspectionPassed/RejectedDomainEvent | planId+sequence。 |
+| CreateNonconformanceReportCommand | NonconformanceReport | sourceType, sourceDocumentId, skuCode, defectQuantity, defectReason, batchNo, serialNo, attachmentFileIds | NonconformanceReportOpenedDomainEvent | ncrCode 自动编号。 |
+| SubmitNonconformanceReportDispositionCommand | NonconformanceReport | ncrId, dispositionType, approvalChainId, attachmentFileIds | NonconformanceReportDispositionDecidedDomainEvent | 已关闭 NCR 不可修改。 |
+| CloseNonconformanceReportCommand | NonconformanceReport | ncrId, reworkWorkOrderId, scrapMovementId, returnDocumentId | NonconformanceReportClosedDomainEvent | 按处置类型校验外部执行引用。 |
 | CreateBarcodeTemplateCommand | BarcodeRule | templateCode, ruleExpression, labelLayout | BarcodeTemplateCreatedDomainEvent | templateCode。 |
 | CreateLabelPrintBatchCommand | LabelPrintBatch | templateCode, sourceDocumentRef, labels | LabelPrintBatchCreatedDomainEvent | sourceDocumentRef+templateCode。 |
 | RecordBarcodeScanCommand | ScanRecord | barcodeValue, sourceDeviceId, idempotencyKey | BarcodeScannedDomainEvent | sourceDeviceId+idempotencyKey。 |
@@ -383,6 +389,11 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `POST /api/business/v1/quality/inspection-plans` | CreateInspectionPlanCommand | `business.quality.inspections.manage` | source document 幂等。 |
 | `POST /api/business/v1/quality/inspection-plans/{planId}/records` | RecordInspectionResultCommand | `business.quality.inspections.manage` | planId+sequence。 |
 | `GET /api/business/v1/quality/inspection-records` | ListInspectionRecordsQuery | `business.quality.inspections.read` | 只读分页查询。 |
+| `POST /api/business/v1/quality/ncrs` | CreateNonconformanceReportCommand | `business.quality.ncr.manage` | 创建独立 NCR 并自动编号。 |
+| `GET /api/business/v1/quality/ncrs` | ListNonconformanceReportsQuery | `business.quality.ncr.read` | 按状态、来源、SKU 查询。 |
+| `GET /api/business/v1/quality/ncrs/{ncrId}` | GetNonconformanceReportQuery | `business.quality.ncr.read` | NCR 详情。 |
+| `POST /api/business/v1/quality/ncrs/{ncrId}/disposition` | SubmitNonconformanceReportDispositionCommand | `business.quality.ncr.manage` | 提交处置方案并发布后续动作事件。 |
+| `POST /api/business/v1/quality/ncrs/{ncrId}/close` | CloseNonconformanceReportCommand | `business.quality.ncr.manage` | 记录外部执行引用并关闭 NCR。 |
 | `POST /api/business/v1/barcodes/templates` | CreateBarcodeTemplateCommand | `business.barcodes.templates.manage` | template code 唯一。 |
 | `POST /api/business/v1/barcodes/print-batches` | CreateLabelPrintBatchCommand | `business.barcodes.print` | print batch 幂等。 |
 | `POST /api/business/v1/barcodes/scans` | RecordBarcodeScanCommand | `business.barcodes.scans.write` | device+idempotencyKey。 |
@@ -453,6 +464,9 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `wms.OutboundOrderCompleted` | WMS | outboundOrderId, sourceType, lines | Inventory、ERP。 |
 | `inventory.StockMovementPosted` | Inventory | movementId, movementType, documentRef, lines | ERP、MES、Planning、WMS。 |
 | `mes.OperationReported` | MES | reportId, workOrderId, operationTaskId, goodQty, defectQty | Quality、ERP、Maintenance。 |
+| `quality.NcrOpened` | Quality | ncrId, ncrCode, sourceType, sourceDocumentId, skuCode, defectQuantity, defectReason | Notification。 |
+| `quality.DispositionDecided` | Quality | ncrId, ncrCode, skuCode, defectQuantity, dispositionType, approvalChainId | MES、Inventory、ERP、WMS。 |
+| `quality.NcrClosed` | Quality | ncrId, ncrCode, skuCode, defectQuantity, dispositionType, executionRefs | Notification、WMS、MES、ERP、Inventory。 |
 | `industrialTelemetry.AlarmRaised` | IndustrialTelemetry | alarmId, deviceAssetId, severity, occurredAtUtc | Maintenance、MES、Notification。 |
 | `industrialTelemetry.DeviceStateChanged` | IndustrialTelemetry | deviceAssetId, previousState, currentState, occurredAtUtc | MES、Maintenance、Planning。 |
 | `maintenance.AssetUnavailable` | Maintenance | deviceAssetId, reason, fromUtc | MES、Planning、Notification；契约位于 `Nerv.IIP.Contracts.Maintenance`，MES 将 deviceAssetId 映射为 WorkCenter 不可用窗口并按配置触发 `asset-unavailable` 重排。 |
@@ -507,7 +521,7 @@ Acceptance:
 Scope:
 
 1. Inventory 库位、批次、序列号、库存台账、库存移动。
-2. Quality 检验标准、计划、记录。
+2. Quality 检验标准、计划、记录和 NonconformanceReport 不合格处置闭环。
 3. BarcodeLabel 条码规则、标签模板、扫码记录。
 4. BusinessApproval 审批模板、审批链、审批记录。
 
