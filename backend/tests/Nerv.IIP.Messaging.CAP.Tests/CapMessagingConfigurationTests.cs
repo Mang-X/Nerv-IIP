@@ -63,6 +63,8 @@ public sealed class CapMessagingConfigurationTests
 
     private static string[] GetExtensionTypeNames(CapOptions options)
     {
+        // CAP exposes transport selection only through registered extensions; use reflection narrowly
+        // here so the tests can assert provider wiring without starting a broker or service provider.
         var extensionsProperty = typeof(CapOptions).GetProperty(
             "Extensions",
             BindingFlags.Instance | BindingFlags.NonPublic);

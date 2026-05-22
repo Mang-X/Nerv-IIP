@@ -5,6 +5,10 @@ using Savorboard.CAP.InMemoryMessageQueue;
 
 namespace Nerv.IIP.Messaging.CAP;
 
+/// <summary>
+/// Configures the CAP transport for services that ship with both in-memory and RabbitMQ binaries.
+/// The selected provider removes RabbitMQ as a runtime requirement for single-node deployments.
+/// </summary>
 public static class CapMessagingConfiguration
 {
     public const string ProviderConfigurationKey = "Messaging:Provider";
