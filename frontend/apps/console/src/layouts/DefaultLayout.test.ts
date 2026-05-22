@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import { describe, expect, it } from 'vitest'
 import { defineComponent } from 'vue'
 import { createConsoleI18n } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 import DefaultLayout from './DefaultLayout.vue'
 
 const AppShellStub = defineComponent({
@@ -49,6 +50,31 @@ describe('DefaultLayout', () => {
         { title: 'Roles', to: { path: '/iam/roles' } },
         { title: 'Sessions', to: { path: '/iam/sessions' } },
       ],
+    })
+  })
+
+  it('uses a dedicated translated fallback for authenticated user display name', () => {
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.$patch({
+      principal: {
+        principalType: 'user',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
+    })
+
+    const wrapper = mount(DefaultLayout, {
+      global: {
+        plugins: [pinia, createConsoleI18n({ locale: 'en-US' })],
+        stubs: {
+          AppShell: AppShellStub,
+        },
+      },
+    })
+
+    expect(wrapper.getComponent(AppShellStub).props('user')).toMatchObject({
+      name: 'Authenticated user',
     })
   })
 })

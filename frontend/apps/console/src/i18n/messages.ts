@@ -28,6 +28,7 @@ export const messages = {
       users: '用户',
       roles: '角色',
       sessions: '会话',
+      authenticatedUser: '已登录用户',
       signOut: '退出登录',
     },
     routes: {
@@ -68,6 +69,7 @@ export const messages = {
       users: 'Users',
       roles: 'Roles',
       sessions: 'Sessions',
+      authenticatedUser: 'Authenticated user',
       signOut: 'Sign out',
     },
     routes: {

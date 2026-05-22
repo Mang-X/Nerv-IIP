@@ -67,7 +67,7 @@ const shellUser = computed(() => {
   const p = principal.value
   if (!p) return undefined
   return {
-    name: p.loginName ?? p.principalId ?? t('nav.users'),
+    name: p.loginName ?? p.principalId ?? t('nav.authenticatedUser'),
     email: p.email,
   }
 })
