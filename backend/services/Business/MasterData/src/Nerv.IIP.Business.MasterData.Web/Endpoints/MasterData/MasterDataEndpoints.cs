@@ -3,6 +3,7 @@ using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using NetCorePal.Extensions.Dto;
+using System.Diagnostics.CodeAnalysis;
 using static Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData.MasterDataEndpointMapping;
 
 namespace Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
@@ -595,9 +596,9 @@ public static class MasterDataEndpointContracts
         return All.Single(x => x.EndpointType == typeof(TEndpoint));
     }
 
-    public static bool TryGet(Type endpointType, out MasterDataEndpointContract contract)
+    public static bool TryGet(Type endpointType, [NotNullWhen(true)] out MasterDataEndpointContract? contract)
     {
-        contract = All.SingleOrDefault(x => x.EndpointType == endpointType)!;
+        contract = All.SingleOrDefault(x => x.EndpointType == endpointType);
         return contract is not null;
     }
 }

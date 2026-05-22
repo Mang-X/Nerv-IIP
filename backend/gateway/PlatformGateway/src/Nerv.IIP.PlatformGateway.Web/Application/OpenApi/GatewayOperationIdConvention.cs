@@ -13,6 +13,7 @@ public static class GatewayOperationIdConvention
             .GetCustomAttribute<GatewayOperationIdAttribute>(inherit: false)
             ?.OperationId;
 
+        // Explicit attributes are stable contract names; only unannotated endpoints use the convention fallback.
         return operationId ?? ToLowerCamelCase(RemoveEndpointSuffix(context.EndpointType.Name));
     }
 
