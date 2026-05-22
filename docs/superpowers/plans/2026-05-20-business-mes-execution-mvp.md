@@ -4,7 +4,7 @@
 
 **Goal:** Build MES MVP covering work orders, operation tasks, rule scheduling, reporting, finished goods receipt requests and production day reports.
 
-**Architecture:** MES owns manufacturing execution facts and references released MBOM/routing versions from ProductEngineering. It accepts planned work order suggestions from DemandPlanning but does not own MRP calculation. Finished goods receipt is requested from WMS; inventory balance remains in Inventory.
+**Architecture:** MES owns manufacturing execution facts and references ProductEngineering ProductionVersion ids, which resolve to released MBOM/routing versions. It accepts planned work order suggestions from DemandPlanning but does not own MRP calculation. Finished goods receipt is requested from WMS; inventory balance remains in Inventory.
 
 **Tech Stack:** .NET 10, FastEndpoints, MediatR, EF Core, Npgsql, netcorepal integration events, xUnit.
 
@@ -19,7 +19,7 @@ Before executing this plan, complete `docs/superpowers/plans/2026-05-21-business
 1. No APS optimizer; scheduling is deterministic rule scheduling.
 2. No direct inventory balance writes.
 3. No direct maintenance fact mutation; MES consumes availability events.
-4. Work orders require released MBOM and routing references.
+4. Work orders require a ProductEngineering productionVersionId that resolves to released MBOM and routing references.
 5. Process batch records, actual process values and deviations are MES execution facts; reusable material attributes, UOM and static resource capability remain MasterData facts.
 
 ## File Structure Map
@@ -88,13 +88,13 @@ git commit -m "feat: scaffold mes service"
 Cover:
 
 ```csharp
-var workOrder = WorkOrder.FromPlanningSuggestion("org-001", "env-dev", "suggestion-wo-001", "SKU-FG-1000", 8m, "mbom-A", "routing-A");
+var workOrder = WorkOrder.FromPlanningSuggestion("org-001", "env-dev", "suggestion-wo-001", "SKU-FG-1000", 8m, "production-version-A");
 workOrder.Release("approval-chain-003");
 var task = OperationTask.Create("org-001", "env-dev", workOrder.Id.Value, 10, "WC-CNC-01", 8m);
 var report = task.Report(5m, 1m, "surface-defect", 120, "idem-report-001");
 ```
 
-Assert release requires MBOM/routing references, good plus defect quantity cannot exceed remaining quantity, defect quantity requires a reason, and reporting requires an idempotency key.
+Assert creation requires a productionVersionId that can be traced to MBOM/routing references, good plus defect quantity cannot exceed remaining quantity, defect quantity requires a reason, and reporting requires an idempotency key.
 
 - [ ] **Step 2: Implement events**
 
@@ -220,7 +220,7 @@ git commit -m "docs: record mes execution readiness"
 
 ## Self-Review Checklist
 
-1. Work orders reference released MBOM and routing versions.
+1. Work orders reference ProductEngineering productionVersionId values that resolve to released MBOM and routing versions.
 2. Reporting is idempotent and rejects over-reporting.
 3. Rule scheduling is deterministic and documented as the MVP boundary.
 4. Finished goods receipt is a WMS request, not an Inventory balance write.
