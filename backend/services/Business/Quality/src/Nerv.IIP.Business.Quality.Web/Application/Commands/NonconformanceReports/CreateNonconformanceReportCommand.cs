@@ -70,11 +70,21 @@ public sealed class NonconformanceReportCodeGenerator : INonconformanceReportCod
 {
     public Task<string> NextAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
     {
-        _ = organizationId;
-        _ = environmentId;
         cancellationToken.ThrowIfCancellationRequested();
 
-        var code = $"NCR-{Guid.CreateVersion7():N}";
+        var code = $"NCR-{ToCodeToken(organizationId, "org")}-{ToCodeToken(environmentId, "env")}-{Guid.CreateVersion7():N}";
         return Task.FromResult(code);
+    }
+
+    private static string ToCodeToken(string value, string fallback)
+    {
+        var chars = value
+            .Trim()
+            .ToLowerInvariant()
+            .Where(char.IsLetterOrDigit)
+            .Take(12)
+            .ToArray();
+
+        return chars.Length == 0 ? fallback : new string(chars);
     }
 }
