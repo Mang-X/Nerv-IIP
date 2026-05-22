@@ -27,7 +27,7 @@ public sealed class ResolveProductionVersionQueryHandler(ApplicationDbContext db
 {
     public async Task<ResolveProductionVersionResponse> Handle(ResolveProductionVersionQuery request, CancellationToken cancellationToken)
     {
-        var candidates = await dbContext.ProductionVersions
+        var selected = await dbContext.ProductionVersions
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
@@ -38,6 +38,9 @@ public sealed class ResolveProductionVersionQueryHandler(ApplicationDbContext db
                 (x.ValidTo == null || request.EffectiveDate <= x.ValidTo) &&
                 (x.LotSizeMin == null || x.LotSizeMin <= request.LotSize) &&
                 (x.LotSizeMax == null || request.LotSize <= x.LotSizeMax))
+            .OrderByDescending(x => x.LotSizeMin != null || x.LotSizeMax != null)
+            .ThenBy(x => x.Priority)
+            .ThenByDescending(x => x.IsDefault)
             .Select(x => new
             {
                 ProductionVersionId = x.Id.Id.ToString("D"),
@@ -46,18 +49,9 @@ public sealed class ResolveProductionVersionQueryHandler(ApplicationDbContext db
                 x.SkuCode,
                 x.MbomVersionId,
                 x.RoutingVersionId,
-                x.Status,
-                x.Priority,
-                x.IsDefault,
-                HasLotWindow = x.LotSizeMin != null || x.LotSizeMax != null
+                x.Status
             })
-            .ToListAsync(cancellationToken);
-
-        var selected = candidates
-            .OrderByDescending(x => x.HasLotWindow)
-            .ThenBy(x => x.Priority)
-            .ThenByDescending(x => x.IsDefault)
-            .FirstOrDefault()
+            .FirstOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"No active production version can resolve SKU '{request.SkuCode}' for {request.EffectiveDate:yyyy-MM-dd} and lot size {request.LotSize}.");
 
         return new ResolveProductionVersionResponse(
