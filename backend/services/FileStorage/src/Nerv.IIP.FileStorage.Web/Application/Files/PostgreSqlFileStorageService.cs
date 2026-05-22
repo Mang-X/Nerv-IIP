@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Domain;
 using Nerv.IIP.FileStorage.Infrastructure;
@@ -7,7 +8,6 @@ using ContractOwnerReference = Nerv.IIP.Contracts.FileStorage.OwnerReference;
 
 namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
-// Known debt: IFileStorageService is synchronous today; move these EF calls to async when the Web boundary becomes async.
 public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
 {
     private readonly ApplicationDbContext dbContext;
@@ -24,7 +24,9 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         this.uploadProvider = uploadProvider;
     }
 
-    public FileStorageResult<CreateUploadSessionResponse> CreateUploadSession(CreateUploadSessionRequest request)
+    public async Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
+        CreateUploadSessionRequest request,
+        CancellationToken cancellationToken)
     {
         if (!FilePurposePolicy.IsAllowed(request.FilePurpose))
         {
@@ -58,7 +60,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             now.AddMinutes(15));
 
         dbContext.UploadSessions.Add(session);
-        dbContext.SaveChanges();
+        await dbContext.SaveChangesAsync(cancellationToken);
         var upload = uploadProvider.CreateUploadInstructions(session.UploadSessionId, session.FileId);
 
         return FileStorageResult<CreateUploadSessionResponse>.Ok(new CreateUploadSessionResponse(
@@ -70,9 +72,14 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             upload));
     }
 
-    public FileStorageResult<FileMetadataResponse> CompleteUploadSession(string uploadSessionId, CompleteUploadSessionRequest request)
+    public async Task<FileStorageResult<FileMetadataResponse>> CompleteUploadSessionAsync(
+        string uploadSessionId,
+        CompleteUploadSessionRequest request,
+        CancellationToken cancellationToken)
     {
-        var session = dbContext.UploadSessions.SingleOrDefault(x => x.UploadSessionId == uploadSessionId);
+        var session = await dbContext.UploadSessions.SingleOrDefaultAsync(
+            x => x.UploadSessionId == uploadSessionId,
+            cancellationToken);
         if (session is null)
         {
             return FileStorageResult<FileMetadataResponse>.NotFound($"Upload session '{uploadSessionId}' was not found.");
@@ -116,22 +123,27 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             now);
 
         dbContext.StoredFiles.Add(file);
-        dbContext.SaveChanges();
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         return FileStorageResult<FileMetadataResponse>.Ok(ToResponse(file));
     }
 
-    public FileStorageResult<FileMetadataResponse> GetFileMetadata(string fileId)
+    public async Task<FileStorageResult<FileMetadataResponse>> GetFileMetadataAsync(
+        string fileId,
+        CancellationToken cancellationToken)
     {
-        var file = dbContext.StoredFiles.SingleOrDefault(x => x.FileId == fileId);
+        var file = await dbContext.StoredFiles.SingleOrDefaultAsync(x => x.FileId == fileId, cancellationToken);
         return file is null
             ? FileStorageResult<FileMetadataResponse>.NotFound($"File '{fileId}' was not found.")
             : FileStorageResult<FileMetadataResponse>.Ok(ToResponse(file));
     }
 
-    public FileStorageResult<DownloadGrantResponse> CreateDownloadGrant(string fileId, CreateDownloadGrantRequest request)
+    public async Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
+        string fileId,
+        CreateDownloadGrantRequest request,
+        CancellationToken cancellationToken)
     {
-        var file = dbContext.StoredFiles.SingleOrDefault(x => x.FileId == fileId);
+        var file = await dbContext.StoredFiles.SingleOrDefaultAsync(x => x.FileId == fileId, cancellationToken);
         if (file is null)
         {
             return FileStorageResult<DownloadGrantResponse>.NotFound($"File '{fileId}' was not found.");
@@ -154,7 +166,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             now.AddMinutes(10));
 
         dbContext.DownloadGrants.Add(grant);
-        dbContext.SaveChanges();
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         return FileStorageResult<DownloadGrantResponse>.Ok(new DownloadGrantResponse(
             file.FileId,
@@ -167,36 +179,40 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 })));
     }
 
-    public bool TryGetUploadSessionIdForDownloadGrant(string downloadGrantId, out string uploadSessionId)
+    public async Task<string?> GetUploadSessionIdForDownloadGrantAsync(
+        string downloadGrantId,
+        CancellationToken cancellationToken)
     {
-        uploadSessionId = string.Empty;
         var now = DateTimeOffset.UtcNow;
-        var grant = dbContext.DownloadGrants.SingleOrDefault(x =>
+        var grant = await dbContext.DownloadGrants.SingleOrDefaultAsync(x =>
             x.DownloadGrantId == downloadGrantId
-            && x.ExpiresAtUtc > now);
+            && x.ExpiresAtUtc > now,
+            cancellationToken);
         if (grant is null)
         {
-            return false;
+            return null;
         }
 
-        var session = dbContext.UploadSessions.SingleOrDefault(x => x.FileId == grant.FileId);
+        var session = await dbContext.UploadSessions.SingleOrDefaultAsync(
+            x => x.FileId == grant.FileId,
+            cancellationToken);
         if (session is null)
         {
-            return false;
+            return null;
         }
 
-        uploadSessionId = session.UploadSessionId;
-        return true;
+        return session.UploadSessionId;
     }
 
-    public bool CanAcceptTusUpload(string uploadSessionId)
+    public Task<bool> CanAcceptTusUploadAsync(string uploadSessionId, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        return dbContext.UploadSessions.Any(x =>
+        return dbContext.UploadSessions.AnyAsync(x =>
             x.UploadSessionId == uploadSessionId
             && x.Provider == TusUploadProvider.Name
             && !x.Completed
-            && x.ExpiresAtUtc > now);
+            && x.ExpiresAtUtc > now,
+            cancellationToken);
     }
 
     private static FileMetadataResponse ToResponse(StoredFileRecord file)

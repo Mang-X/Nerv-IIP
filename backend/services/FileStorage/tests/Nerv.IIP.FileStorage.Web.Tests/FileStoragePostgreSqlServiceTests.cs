@@ -18,7 +18,7 @@ public sealed class FileStoragePostgreSqlServiceTests
         await using var dbContext = CreateDbContext();
         var service = new PostgreSqlFileStorageService(dbContext);
 
-        var result = service.CreateUploadSession(CreateUploadRequest());
+        var result = await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
         Assert.NotNull(result.Value);
@@ -52,7 +52,7 @@ public sealed class FileStoragePostgreSqlServiceTests
             ContentType = new string('a', 257)
         };
 
-        var result = service.CreateUploadSession(request);
+        var result = await service.CreateUploadSessionAsync(request, CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
         Assert.Null(result.Value);
@@ -65,11 +65,12 @@ public sealed class FileStoragePostgreSqlServiceTests
     {
         await using var dbContext = CreateDbContext();
         var service = new PostgreSqlFileStorageService(dbContext);
-        var created = service.CreateUploadSession(CreateUploadRequest()).Value!;
+        var created = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
 
-        var result = service.CompleteUploadSession(
+        var result = await service.CompleteUploadSessionAsync(
             created.UploadSessionId,
-            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096));
+            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096),
+            CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
         Assert.NotNull(result.Value);
@@ -118,7 +119,7 @@ public sealed class FileStoragePostgreSqlServiceTests
             DateTimeOffset.UtcNow));
         await dbContext.SaveChangesAsync();
 
-        var result = service.GetFileMetadata("file_123");
+        var result = await service.GetFileMetadataAsync("file_123", CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
         Assert.NotNull(result.Value);
@@ -143,10 +144,11 @@ public sealed class FileStoragePostgreSqlServiceTests
     {
         await using var dbContext = CreateDbContext();
         var service = new PostgreSqlFileStorageService(dbContext);
-        var created = service.CreateUploadSession(CreateUploadRequest()).Value!;
-        var complete = service.CompleteUploadSession(
+        var created = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
+        var complete = await service.CompleteUploadSessionAsync(
             created.UploadSessionId,
-            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096));
+            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096),
+            CancellationToken.None);
         Assert.Equal(StatusCodes.Status200OK, complete.StatusCode);
         var now = DateTimeOffset.UtcNow;
         dbContext.DownloadGrants.Add(DownloadGrantRecord.Create(
@@ -159,10 +161,9 @@ public sealed class FileStoragePostgreSqlServiceTests
             now.AddMinutes(-10)));
         await dbContext.SaveChangesAsync();
 
-        var exists = service.TryGetUploadSessionIdForDownloadGrant("dgr_expired", out var uploadSessionId);
+        var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync("dgr_expired", CancellationToken.None);
 
-        Assert.False(exists);
-        Assert.Equal(string.Empty, uploadSessionId);
+        Assert.Null(uploadSessionId);
     }
 
     [Fact]
@@ -189,7 +190,10 @@ public sealed class FileStoragePostgreSqlServiceTests
             DateTimeOffset.UtcNow));
         await dbContext.SaveChangesAsync();
 
-        var result = service.CreateDownloadGrant("file_123", new CreateDownloadGrantRequest("org-001", "prod"));
+        var result = await service.CreateDownloadGrantAsync(
+            "file_123",
+            new CreateDownloadGrantRequest("org-001", "prod"),
+            CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
         Assert.NotNull(result.Value);

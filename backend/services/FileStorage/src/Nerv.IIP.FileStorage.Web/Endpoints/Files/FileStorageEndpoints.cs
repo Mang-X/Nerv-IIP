@@ -13,7 +13,8 @@ public sealed class CreateUploadSessionEndpoint(IFileStorageService files)
 {
     public override async Task HandleAsync(CreateUploadSessionRequest req, CancellationToken ct)
     {
-        await this.SendResultAsync(files.CreateUploadSession(req), ct);
+        var result = await files.CreateUploadSessionAsync(req, ct);
+        await this.SendResultAsync(result, ct);
     }
 }
 
@@ -25,7 +26,8 @@ public sealed class CompleteUploadSessionEndpoint(IFileStorageService files)
 {
     public override async Task HandleAsync(CompleteUploadSessionRequest req, CancellationToken ct)
     {
-        await this.SendResultAsync(files.CompleteUploadSession(Route<string>("uploadSessionId")!, req), ct);
+        var result = await files.CompleteUploadSessionAsync(Route<string>("uploadSessionId")!, req, ct);
+        await this.SendResultAsync(result, ct);
     }
 }
 
@@ -37,7 +39,8 @@ public sealed class GetFileMetadataEndpoint(IFileStorageService files)
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
-        await this.SendResultAsync(files.GetFileMetadata(Route<string>("fileId")!), ct);
+        var result = await files.GetFileMetadataAsync(Route<string>("fileId")!, ct);
+        await this.SendResultAsync(result, ct);
     }
 }
 
@@ -49,7 +52,8 @@ public sealed class CreateDownloadGrantEndpoint(IFileStorageService files)
 {
     public override async Task HandleAsync(CreateDownloadGrantRequest req, CancellationToken ct)
     {
-        await this.SendResultAsync(files.CreateDownloadGrant(Route<string>("fileId")!, req), ct);
+        var result = await files.CreateDownloadGrantAsync(Route<string>("fileId")!, req, ct);
+        await this.SendResultAsync(result, ct);
     }
 }
 
