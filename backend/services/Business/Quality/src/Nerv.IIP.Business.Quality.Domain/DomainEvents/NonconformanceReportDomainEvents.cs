@@ -2,8 +2,8 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggre
 
 namespace Nerv.IIP.Business.Quality.Domain.DomainEvents;
 
-public record NonconformanceReportOpenedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
+public sealed record NonconformanceReportOpenedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
 
-public record NonconformanceReportDispositionDecidedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
+public sealed record NonconformanceReportDispositionDecidedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
 
-public record NonconformanceReportClosedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
+public sealed record NonconformanceReportClosedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;

@@ -102,6 +102,25 @@ public sealed class NonconformanceReportAggregateTests
     }
 
     [Fact]
+    public void Disposition_in_progress_ncr_cannot_replace_existing_disposition()
+    {
+        var ncr = NewNcr();
+        ncr.SubmitDisposition("conditional-release", "approval-chain-001", []);
+
+        Assert.Throws<InvalidOperationException>(() => ncr.SubmitDisposition("scrap", "approval-chain-002", []));
+        Assert.Equal("conditional-release", ncr.DispositionType);
+        Assert.Equal("approval-chain-001", ncr.DispositionApprovalChainId);
+    }
+
+    [Fact]
+    public void Domain_events_are_sealed_records()
+    {
+        Assert.True(typeof(NonconformanceReportOpenedDomainEvent).IsSealed);
+        Assert.True(typeof(NonconformanceReportDispositionDecidedDomainEvent).IsSealed);
+        Assert.True(typeof(NonconformanceReportClosedDomainEvent).IsSealed);
+    }
+
+    [Fact]
     public void Close_requires_disposition_and_raises_closed_event()
     {
         var ncr = NewNcr();

@@ -70,7 +70,11 @@ public sealed class NonconformanceReportCodeGenerator : INonconformanceReportCod
 {
     public Task<string> NextAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
     {
-        var code = $"NCR-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Random.Shared.Next(1000, 9999)}";
+        _ = organizationId;
+        _ = environmentId;
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var code = $"NCR-{Guid.CreateVersion7():N}";
         return Task.FromResult(code);
     }
 }

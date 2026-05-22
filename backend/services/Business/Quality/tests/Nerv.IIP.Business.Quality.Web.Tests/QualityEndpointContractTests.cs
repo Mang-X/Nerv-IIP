@@ -1,3 +1,5 @@
+using Nerv.IIP.Business.Quality.Domain;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 
@@ -30,5 +32,23 @@ public sealed class QualityEndpointContractTests
             && x.Route == "/api/business/v1/quality/ncrs/{ncrId}/close"
             && x.PermissionCode == BusinessPermissionCodes.QualityNcrManage
             && x.OperationId == "closeBusinessQualityNcr");
+    }
+
+    [Fact]
+    public async Task Ncr_code_generator_uses_non_probabilistic_guid_v7_token()
+    {
+        var generator = new NonconformanceReportCodeGenerator();
+
+        var code = await generator.NextAsync("org-001", "env-dev", CancellationToken.None);
+
+        Assert.StartsWith("NCR-", code, StringComparison.Ordinal);
+        Assert.True(Guid.TryParseExact(code["NCR-".Length..], "N", out var id));
+        Assert.Equal(7, id.Version);
+    }
+
+    [Fact]
+    public void Quality_facts_expose_service_name_for_multienv_configuration()
+    {
+        Assert.Equal("BusinessQuality", QualityFacts.ServiceName);
     }
 }

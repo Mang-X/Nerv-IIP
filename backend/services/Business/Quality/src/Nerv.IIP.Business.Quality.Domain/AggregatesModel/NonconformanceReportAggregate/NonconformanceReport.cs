@@ -110,6 +110,11 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         IReadOnlyCollection<string> attachmentFileIds)
     {
         EnsureNotClosed();
+        if (Status == "disposition-in-progress")
+        {
+            throw new InvalidOperationException("NCR disposition has already been submitted.");
+        }
+
         DispositionType = Supported(dispositionType, DispositionTypes, nameof(dispositionType));
         DispositionApprovalChainId = Optional(dispositionApprovalChainId);
         AddAttachments(attachmentFileIds);
