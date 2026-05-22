@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using System.Diagnostics;
 using System.Security.Claims;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
@@ -18,7 +19,7 @@ public sealed class MasterDataIntegrationEventContextTests
             HttpContext = httpContext
         });
 
-        var context = accessor.GetContext("fallback-cause");
+        var context = accessor.GetContext();
 
         Assert.Equal("corr-http-001", context.CorrelationId);
         Assert.Equal("cmd-http-001", context.CausationId);
@@ -40,10 +41,43 @@ public sealed class MasterDataIntegrationEventContextTests
             HttpContext = httpContext
         });
 
-        var context = accessor.GetContext("cmd-fallback-002");
+        var context = accessor.GetContext();
 
         Assert.Equal("corr-http-002", context.CorrelationId);
-        Assert.Equal("cmd-fallback-002", context.CausationId);
+        Assert.NotEmpty(context.CausationId);
         Assert.Equal("user:user-001", context.Actor);
+    }
+
+    [Fact]
+    public void Http_context_accessor_prefers_authenticated_subject_over_actor_header()
+    {
+        var httpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "user-001")],
+                "test"))
+        };
+        httpContext.Request.Headers["X-Correlation-Id"] = "corr-http-003";
+        httpContext.Request.Headers["X-Actor"] = "user:spoofed";
+        var accessor = new HttpMasterDataIntegrationEventContextAccessor(new HttpContextAccessor
+        {
+            HttpContext = httpContext
+        });
+
+        var context = accessor.GetContext();
+
+        Assert.Equal("user:user-001", context.Actor);
+    }
+
+    [Fact]
+    public void Http_context_accessor_uses_activity_correlation_tag_before_generating_fallback()
+    {
+        using var activity = new Activity("masterdata-test").Start();
+        activity.SetTag("correlationId", "corr-activity-001");
+        var accessor = new HttpMasterDataIntegrationEventContextAccessor(new HttpContextAccessor());
+
+        var context = accessor.GetContext();
+
+        Assert.Equal("corr-activity-001", context.CorrelationId);
     }
 }

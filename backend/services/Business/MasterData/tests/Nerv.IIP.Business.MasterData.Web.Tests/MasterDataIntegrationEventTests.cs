@@ -76,11 +76,11 @@ public sealed class MasterDataIntegrationEventTests
         MasterDataIntegrationEventContext? context = null)
         : IMasterDataIntegrationEventContextAccessor
     {
-        public MasterDataIntegrationEventContext GetContext(string defaultCausationId)
+        public MasterDataIntegrationEventContext GetContext()
         {
             return context ?? new MasterDataIntegrationEventContext(
                 "corr-test-001",
-                defaultCausationId,
+                "cause-test-001",
                 "system:business-masterdata");
         }
     }

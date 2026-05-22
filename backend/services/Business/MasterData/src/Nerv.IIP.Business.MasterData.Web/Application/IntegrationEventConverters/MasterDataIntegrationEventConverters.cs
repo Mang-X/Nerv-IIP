@@ -9,7 +9,7 @@ public sealed class SkuChangedIntegrationEventConverter(IMasterDataIntegrationEv
     public SkuChangedIntegrationEvent Convert(SkuChangedDomainEvent domainEvent)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
-        var context = contextAccessor.GetContext(domainEvent.Code);
+        var context = contextAccessor.GetContext();
         return new SkuChangedIntegrationEvent(
             EventIds.New(),
             MasterDataIntegrationEventTypes.SkuChanged,
@@ -32,7 +32,7 @@ public sealed class SkuDisabledIntegrationEventConverter(IMasterDataIntegrationE
     public SkuDisabledIntegrationEvent Convert(SkuDisabledDomainEvent domainEvent)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
-        var context = contextAccessor.GetContext(domainEvent.Code);
+        var context = contextAccessor.GetContext();
         return new SkuDisabledIntegrationEvent(
             EventIds.New(),
             MasterDataIntegrationEventTypes.SkuDisabled,
@@ -55,7 +55,7 @@ public sealed class UnitOfMeasureChangedIntegrationEventConverter(IMasterDataInt
     public UnitOfMeasureChangedIntegrationEvent Convert(UnitOfMeasureChangedDomainEvent domainEvent)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
-        var context = contextAccessor.GetContext(domainEvent.Code);
+        var context = contextAccessor.GetContext();
         return new UnitOfMeasureChangedIntegrationEvent(
             EventIds.New(),
             MasterDataIntegrationEventTypes.UnitOfMeasureChanged,
@@ -78,7 +78,7 @@ public sealed class BusinessPartnerChangedIntegrationEventConverter(IMasterDataI
     public BusinessPartnerChangedIntegrationEvent Convert(BusinessPartnerChangedDomainEvent domainEvent)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
-        var context = contextAccessor.GetContext(domainEvent.Code);
+        var context = contextAccessor.GetContext();
         return new BusinessPartnerChangedIntegrationEvent(
             EventIds.New(),
             MasterDataIntegrationEventTypes.BusinessPartnerChanged,
@@ -101,7 +101,7 @@ public sealed class ResourceChangedIntegrationEventConverter(IMasterDataIntegrat
     public ResourceChangedIntegrationEvent Convert(ResourceChangedDomainEvent domainEvent)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
-        var context = contextAccessor.GetContext($"{domainEvent.ResourceType}:{domainEvent.Code}");
+        var context = contextAccessor.GetContext();
         return new ResourceChangedIntegrationEvent(
             EventIds.New(),
             MasterDataIntegrationEventTypes.ResourceChanged,
@@ -124,7 +124,7 @@ public sealed class WorkCalendarChangedIntegrationEventConverter(IMasterDataInte
     public WorkCalendarChangedIntegrationEvent Convert(WorkCalendarChangedDomainEvent domainEvent)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
-        var context = contextAccessor.GetContext(domainEvent.Code);
+        var context = contextAccessor.GetContext();
         return new WorkCalendarChangedIntegrationEvent(
             EventIds.New(),
             MasterDataIntegrationEventTypes.WorkCalendarChanged,
@@ -147,7 +147,7 @@ public sealed class DeviceAssetChangedIntegrationEventConverter(IMasterDataInteg
     public DeviceAssetChangedIntegrationEvent Convert(DeviceAssetChangedDomainEvent domainEvent)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
-        var context = contextAccessor.GetContext(domainEvent.Code);
+        var context = contextAccessor.GetContext();
         return new DeviceAssetChangedIntegrationEvent(
             EventIds.New(),
             MasterDataIntegrationEventTypes.DeviceAssetChanged,
@@ -170,7 +170,7 @@ public sealed class ReferenceDataCodeChangedIntegrationEventConverter(IMasterDat
     public ReferenceDataCodeChangedIntegrationEvent Convert(ReferenceDataCodeChangedDomainEvent domainEvent)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
-        var context = contextAccessor.GetContext($"{domainEvent.CodeSet}:{domainEvent.Code}");
+        var context = contextAccessor.GetContext();
         return new ReferenceDataCodeChangedIntegrationEvent(
             EventIds.New(),
             MasterDataIntegrationEventTypes.ReferenceDataCodeChanged,
