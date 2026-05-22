@@ -50,6 +50,20 @@ public sealed class ProductionVersionApiContractTests
         Assert.DoesNotContain(typeof(ApplicationDbContext), parameterTypes);
     }
 
+    [Theory]
+    [InlineData(typeof(CreateProductionVersionCommand))]
+    [InlineData(typeof(UpdateProductionVersionCommand))]
+    public void Production_version_commands_do_not_expose_internal_binding_statuses(Type commandType)
+    {
+        var propertyNames = commandType
+            .GetProperties()
+            .Select(property => property.Name)
+            .ToArray();
+
+        Assert.DoesNotContain("MbomStatus", propertyNames);
+        Assert.DoesNotContain("RoutingStatus", propertyNames);
+    }
+
     [Fact]
     public async Task Create_command_rejects_overlapping_default_for_same_sku()
     {
@@ -86,9 +100,7 @@ public sealed class ProductionVersionApiContractTests
                 null,
                 null,
                 20,
-                true,
-                EngineeringVersionStatus.Published,
-                EngineeringVersionStatus.Published),
+                true),
             CancellationToken.None));
         Assert.Contains("default", exception.Message, StringComparison.OrdinalIgnoreCase);
     }

@@ -12,9 +12,7 @@ public sealed record UpdateProductionVersionCommand(
     decimal? LotSizeMin,
     decimal? LotSizeMax,
     int Priority,
-    bool IsDefault,
-    EngineeringVersionStatus MbomStatus,
-    EngineeringVersionStatus RoutingStatus) : ICommand<ProductionVersionCommandResult>;
+    bool IsDefault) : ICommand<ProductionVersionCommandResult>;
 
 public sealed class UpdateProductionVersionCommandValidator : AbstractValidator<UpdateProductionVersionCommand>
 {
@@ -56,8 +54,8 @@ public sealed class UpdateProductionVersionCommandHandler(IProductionVersionRepo
             request.LotSizeMax,
             request.Priority,
             request.IsDefault,
-            request.MbomStatus,
-            request.RoutingStatus);
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
         return new ProductionVersionCommandResult(version.Id.Id.ToString("D"));
     }
 }

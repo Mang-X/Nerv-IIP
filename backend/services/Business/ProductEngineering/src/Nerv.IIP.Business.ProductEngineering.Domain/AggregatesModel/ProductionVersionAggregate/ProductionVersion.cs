@@ -14,7 +14,6 @@ public enum EngineeringVersionStatus
 public static class ProductionVersionStatus
 {
     public const string Active = "active";
-    public const string Locked = "locked";
     public const string Archived = "archived";
 }
 

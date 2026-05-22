@@ -14,9 +14,7 @@ public sealed record CreateProductionVersionCommand(
     decimal? LotSizeMin,
     decimal? LotSizeMax,
     int Priority,
-    bool IsDefault,
-    EngineeringVersionStatus MbomStatus,
-    EngineeringVersionStatus RoutingStatus) : ICommand<ProductionVersionCommandResult>;
+    bool IsDefault) : ICommand<ProductionVersionCommandResult>;
 
 public sealed record ProductionVersionCommandResult(string ProductionVersionId);
 
@@ -63,8 +61,8 @@ public sealed class CreateProductionVersionCommandHandler(IProductionVersionRepo
             request.LotSizeMax,
             request.Priority,
             request.IsDefault,
-            request.MbomStatus,
-            request.RoutingStatus);
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
         await repository.AddAsync(version, cancellationToken);
         return new ProductionVersionCommandResult(version.Id.Id.ToString("D"));
     }

@@ -50,4 +50,15 @@ public sealed class ProductEngineeringContractJsonTests
         Assert.Equal(new DateOnly(2026, 6, 1), request.EffectiveDate);
         Assert.Equal(24m, request.LotSize);
     }
+
+    [Fact]
+    public void Contract_statuses_only_publish_currently_supported_lifecycle_values()
+    {
+        var statuses = typeof(ProductionEngineeringContractStatuses)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Select(field => (string)field.GetValue(null)!)
+            .ToArray();
+
+        Assert.Equal(["active", "archived"], statuses);
+    }
 }

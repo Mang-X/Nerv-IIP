@@ -71,9 +71,7 @@ public sealed class CreateProductionVersionEndpoint(ISender sender)
             req.LotSizeMin,
             req.LotSizeMax,
             req.Priority,
-            req.IsDefault,
-            EngineeringVersionStatus.Published,
-            EngineeringVersionStatus.Published), ct);
+            req.IsDefault), ct);
         await Send.OkAsync(new CreateProductionVersionResponse(result.ProductionVersionId).AsResponseData(), ct);
     }
 }
@@ -109,9 +107,7 @@ public sealed class UpdateProductionVersionEndpoint(ISender sender)
             req.LotSizeMin,
             req.LotSizeMax,
             req.Priority,
-            req.IsDefault,
-            EngineeringVersionStatus.Published,
-            EngineeringVersionStatus.Published), ct);
+            req.IsDefault), ct);
         await Send.OkAsync(new CreateProductionVersionResponse(result.ProductionVersionId).AsResponseData(), ct);
     }
 }

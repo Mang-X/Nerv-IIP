@@ -3,7 +3,6 @@ namespace Nerv.IIP.Contracts.ProductEngineering;
 public static class ProductionEngineeringContractStatuses
 {
     public const string Active = "active";
-    public const string Locked = "locked";
     public const string Archived = "archived";
 }
 
