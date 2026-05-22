@@ -1,4 +1,26 @@
-namespace Nerv.IIP.Business.MasterData.Web.Application.IntegrationEvents;
+namespace Nerv.IIP.Contracts.MasterData;
+
+public static class MasterDataIntegrationEventTypes
+{
+    public const string SkuChanged = "masterData.SkuChanged";
+    public const string SkuDisabled = "masterData.SkuDisabled";
+    public const string UnitOfMeasureChanged = "masterData.UnitOfMeasureChanged";
+    public const string BusinessPartnerChanged = "masterData.BusinessPartnerChanged";
+    public const string ResourceChanged = "masterData.ResourceChanged";
+    public const string WorkCalendarChanged = "masterData.WorkCalendarChanged";
+    public const string DeviceAssetChanged = "masterData.DeviceAssetChanged";
+    public const string ReferenceDataCodeChanged = "masterData.ReferenceDataCodeChanged";
+}
+
+public static class MasterDataIntegrationEventVersions
+{
+    public const int V1 = 1;
+}
+
+public static class MasterDataIntegrationEventSources
+{
+    public const string BusinessMasterData = "business-masterdata";
+}
 
 public sealed record SkuChangedIntegrationEvent(
     string EventId,

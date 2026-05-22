@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Business.MasterData.Domain.DomainEvents;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
@@ -9,7 +10,7 @@ public sealed class MasterDataIntegrationEventTests
     [Fact]
     public void Sku_changed_event_uses_stable_adr0011_envelope_shape()
     {
-        var converter = new SkuChangedIntegrationEventConverter();
+        var converter = new SkuChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
         var domainEvent = new SkuChangedDomainEvent("org-001", "env-dev", "SKU-FG-1000");
 
         var integrationEvent = converter.Convert(domainEvent);
@@ -27,9 +28,26 @@ public sealed class MasterDataIntegrationEventTests
     }
 
     [Fact]
+    public void Sku_changed_event_propagates_correlation_causation_and_actor_context()
+    {
+        var converter = new SkuChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor(
+            new MasterDataIntegrationEventContext(
+                "corr-masterdata-001",
+                "cmd-create-sku-001",
+                "user:planner-001")));
+        var domainEvent = new SkuChangedDomainEvent("org-001", "env-dev", "SKU-FG-1000");
+
+        var integrationEvent = converter.Convert(domainEvent);
+
+        Assert.Equal("corr-masterdata-001", integrationEvent.CorrelationId);
+        Assert.Equal("cmd-create-sku-001", integrationEvent.CausationId);
+        Assert.Equal("user:planner-001", integrationEvent.Actor);
+    }
+
+    [Fact]
     public void Sku_disabled_event_carries_reason_without_sensitive_payload()
     {
-        var converter = new SkuDisabledIntegrationEventConverter();
+        var converter = new SkuDisabledIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
         var domainEvent = new SkuDisabledDomainEvent("org-001", "env-dev", "SKU-OLD", "duplicate registration");
 
         var integrationEvent = converter.Convert(domainEvent);
@@ -43,7 +61,7 @@ public sealed class MasterDataIntegrationEventTests
     [Fact]
     public void Reference_data_event_uses_code_set_in_payload_and_idempotency_key()
     {
-        var converter = new ReferenceDataCodeChangedIntegrationEventConverter();
+        var converter = new ReferenceDataCodeChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
         var domainEvent = new ReferenceDataCodeChangedDomainEvent("org-001", "env-dev", "material-form", "powder");
 
         var integrationEvent = converter.Convert(domainEvent);
@@ -52,5 +70,18 @@ public sealed class MasterDataIntegrationEventTests
         Assert.Equal("material-form", integrationEvent.Payload.CodeSet);
         Assert.Equal("powder", integrationEvent.Payload.Code);
         Assert.Equal("masterdata:reference-data-code-changed:org-001:env-dev:material-form:powder", integrationEvent.IdempotencyKey);
+    }
+
+    private sealed class StubMasterDataIntegrationEventContextAccessor(
+        MasterDataIntegrationEventContext? context = null)
+        : IMasterDataIntegrationEventContextAccessor
+    {
+        public MasterDataIntegrationEventContext GetContext()
+        {
+            return context ?? new MasterDataIntegrationEventContext(
+                "corr-test-001",
+                "cause-test-001",
+                "system:business-masterdata");
+        }
     }
 }
