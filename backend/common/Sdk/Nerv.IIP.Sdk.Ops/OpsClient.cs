@@ -1,8 +1,8 @@
 using System.Net.Http.Json;
-using System.Text.Json;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Sdk.Auth;
+using Nerv.IIP.Sdk.Core;
 
 namespace Nerv.IIP.Sdk.Ops;
 
@@ -19,13 +19,11 @@ public interface IOpsClient
 
 public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential? credential = null) : IOpsClient
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     public async Task<OperationTaskResponse> CreateOperationTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsJsonAsync("/api/ops/v1/operation-tasks", request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await ReadResponseDataAsync<OperationTaskResponse>(response, "operation task", cancellationToken);
+        return await PlatformApiClient.ReadResponseDataAsync<OperationTaskResponse>(response, cancellationToken);
     }
 
     public async Task<OperationTaskResponse> GetOperationTaskAsync(string operationTaskId, CancellationToken cancellationToken = default)
@@ -33,7 +31,7 @@ public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential
         var escapedOperationTaskId = Uri.EscapeDataString(operationTaskId);
         using var response = await httpClient.GetAsync($"/api/ops/v1/operation-tasks/{escapedOperationTaskId}", cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await ReadResponseDataAsync<OperationTaskResponse>(response, "operation task", cancellationToken);
+        return await PlatformApiClient.ReadResponseDataAsync<OperationTaskResponse>(response, cancellationToken);
     }
 
     public async Task<PendingOperationTasksResponse> GetPendingOperationTasksAsync(string organizationId, string environmentId, string connectorHostId, int take, CancellationToken cancellationToken = default)
@@ -42,7 +40,7 @@ public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential
         ApplyCredential(request);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await ReadResponseDataAsync<PendingOperationTasksResponse>(response, "pending operation tasks", cancellationToken);
+        return await PlatformApiClient.ReadResponseDataAsync<PendingOperationTasksResponse>(response, cancellationToken);
     }
 
     public async Task<PendingOperationTasksResponse> ClaimOperationTasksAsync(ClaimOperationTasksRequest claim, CancellationToken cancellationToken = default)
@@ -51,7 +49,7 @@ public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential
         ApplyCredential(request);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await ReadResponseDataAsync<PendingOperationTasksResponse>(response, "claim", cancellationToken);
+        return await PlatformApiClient.ReadResponseDataAsync<PendingOperationTasksResponse>(response, cancellationToken);
     }
 
     public async Task<OperationTaskResponse> AbandonOperationTaskLeaseAsync(string operationTaskId, AbandonOperationTaskLeaseRequest abandon, CancellationToken cancellationToken = default)
@@ -60,7 +58,7 @@ public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential
         ApplyCredential(request);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await ReadResponseDataAsync<OperationTaskResponse>(response, "abandon", cancellationToken);
+        return await PlatformApiClient.ReadResponseDataAsync<OperationTaskResponse>(response, cancellationToken);
     }
 
     public async Task<OperationTaskResponse> HeartbeatOperationTaskLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest heartbeat, CancellationToken cancellationToken = default)
@@ -69,7 +67,7 @@ public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential
         ApplyCredential(request);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await ReadResponseDataAsync<OperationTaskResponse>(response, "heartbeat", cancellationToken);
+        return await PlatformApiClient.ReadResponseDataAsync<OperationTaskResponse>(response, cancellationToken);
     }
 
     public async Task SendOperationResultAsync(OperationResult result, CancellationToken cancellationToken = default)
@@ -86,27 +84,5 @@ public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential
         {
             ConnectorHostAuthentication.Apply(request, credential);
         }
-    }
-
-    private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response, string responseName, CancellationToken cancellationToken)
-    {
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            throw new InvalidOperationException($"Ops returned an empty {responseName} response.");
-        }
-
-        using var document = JsonDocument.Parse(json);
-        var payload = document.RootElement.TryGetProperty("data", out var data)
-            ? data
-            : document.RootElement;
-
-        if (payload.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-        {
-            throw new InvalidOperationException($"Ops returned an empty {responseName} response.");
-        }
-
-        return payload.Deserialize<T>(JsonOptions)
-            ?? throw new InvalidOperationException($"Ops returned an empty {responseName} response.");
     }
 }
