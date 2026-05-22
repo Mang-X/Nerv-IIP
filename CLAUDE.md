@@ -97,7 +97,7 @@ scripts/verify-*.ps1                  # Verification scripts (see script-automat
 
 1. Do NOT create unbound SharedKernel/Common/Utils mega-directories.
 2. Do NOT merge Connector Host into `backend/Nerv.IIP.sln`.
-3. Do NOT reference `connector-hosts/` from main platform code (and vice-versa for implementation projects).
+3. Do NOT reference `connector-hosts/` from `backend/` or `frontend/` (and vice-versa).
 4. Do NOT write industry domain rules into PlatformGateway, IAM, AppHub, Ops, or main console.
 5. Do NOT create cross-schema foreign keys between services.
 6. Do NOT use `EnsureCreated()` in non-disposable environments (PoC, shared dev, production).
@@ -204,5 +204,5 @@ Before claiming a task is complete:
 
 ## GitHub Workflow
 
-- Use `gh` CLI directly for PR creation. Do not use the GitHub connector.
+- Use `gh` CLI directly for PR creation. Do NOT try the GitHub connector — it returns 404 in this repo.
 - If a PR operation fails via `gh`, report the command and error clearly.
