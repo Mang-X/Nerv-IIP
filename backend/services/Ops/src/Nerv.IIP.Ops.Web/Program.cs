@@ -3,6 +3,7 @@ using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Localization;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Web.Application.Auth;
@@ -51,13 +52,7 @@ if (usePostgreSql)
     builder.Services.AddCap(options =>
     {
         options.UseNetCorePalStorage<ApplicationDbContext>();
-        options.UseRabbitMQ(rabbitMqOptions =>
-        {
-            rabbitMqOptions.HostName = builder.Configuration["RabbitMQ:HostName"] ?? "localhost";
-            rabbitMqOptions.Port = ReadRabbitMqPort(builder.Configuration);
-            rabbitMqOptions.UserName = builder.Configuration["RabbitMQ:UserName"] ?? "guest";
-            rabbitMqOptions.Password = builder.Configuration["RabbitMQ:Password"] ?? "guest";
-        });
+        options.UseConfiguredTransport(builder.Configuration);
     });
 }
 else
@@ -117,11 +112,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static int ReadRabbitMqPort(IConfiguration configuration)
-{
-    return int.TryParse(configuration["RabbitMQ:Port"], out var port) && port > 0 ? port : 5672;
 }
 
 public partial class Program;

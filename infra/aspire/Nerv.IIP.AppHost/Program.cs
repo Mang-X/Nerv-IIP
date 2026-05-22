@@ -5,6 +5,8 @@ var minioRootUser = builder.AddParameter("minio-root-user", secret: true);
 var minioRootPassword = builder.AddParameter("minio-root-password", secret: true);
 var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secret: true);
 var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
+var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
+var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
 
 var postgres = builder.AddPostgres("postgres")
     .WithDataVolume("nerv-iip-postgres");
@@ -14,8 +16,9 @@ var opsDatabase = postgres.AddDatabase("ops-db", "nerv_iip_ops");
 var notificationDatabase = postgres.AddDatabase("notification-db", "nerv_iip_notification");
 var redis = builder.AddRedis("redis")
     .WithDataVolume("nerv-iip-redis");
-var rabbitmq = builder.AddRabbitMQ("rabbitmq")
-    .WithManagementPlugin();
+var rabbitmq = useRabbitMq
+    ? builder.AddRabbitMQ("rabbitmq").WithManagementPlugin()
+    : null;
 var minio = builder.AddContainer("minio", "pgsty/minio", "RELEASE.2026-04-17T00-00-00Z")
     .WithArgs("server", "/data", "--console-address", ":9001")
     .WithEnvironment("MINIO_ROOT_USER", minioRootUser)
@@ -32,15 +35,20 @@ var otelCollector = builder.AddContainer("otel-collector", "otel/opentelemetry-c
 var apphub = builder.AddProject<Projects.Nerv_IIP_AppHub_Web>("apphub")
     .WithHttpEndpoint(port: 5101, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithReference(appHubDatabase, "AppHubDb")
     .WithReference(redis)
-    .WithReference(rabbitmq)
     .WaitFor(appHubDatabase)
     .WaitFor(redis)
-    .WaitFor(rabbitmq)
     .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    apphub = apphub
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
 
 var iam = builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam")
     .WithHttpEndpoint(port: 5102, name: "http")
@@ -61,15 +69,20 @@ var iam = builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam")
 var ops = builder.AddProject<Projects.Nerv_IIP_Ops_Web>("ops")
     .WithHttpEndpoint(port: 5103, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithReference(opsDatabase, "OpsDb")
-    .WithReference(rabbitmq)
     .WaitFor(opsDatabase)
-    .WaitFor(rabbitmq)
     .WaitFor(iam)
     .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    ops = ops
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
 
 var fileStorage = builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage")
     .WithHttpEndpoint(port: 5104, name: "http")
@@ -87,13 +100,18 @@ var fileStorage = builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-st
 var notification = builder.AddProject<Projects.Nerv_IIP_Notification_Web>("notification")
     .WithHttpEndpoint(port: 5106, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithReference(notificationDatabase, "NotificationDb")
-    .WithReference(rabbitmq)
     .WaitFor(notificationDatabase)
-    .WaitFor(rabbitmq)
     .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    notification = notification
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
 
 var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")
     .WithHttpEndpoint(port: 5100, name: "http")

@@ -4,6 +4,7 @@ using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Localization;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
 using NetCorePal.Extensions.AspNetCore;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -39,13 +40,7 @@ if (usePostgreSql)
     builder.Services.AddCap(options =>
     {
         options.UseNetCorePalStorage<ApplicationDbContext>();
-        options.UseRabbitMQ(rabbitMqOptions =>
-        {
-            rabbitMqOptions.HostName = builder.Configuration["RabbitMQ:HostName"] ?? "localhost";
-            rabbitMqOptions.Port = ReadRabbitMqPort(builder.Configuration);
-            rabbitMqOptions.UserName = builder.Configuration["RabbitMQ:UserName"] ?? "guest";
-            rabbitMqOptions.Password = builder.Configuration["RabbitMQ:Password"] ?? "guest";
-        });
+        options.UseConfiguredTransport(builder.Configuration);
     });
 }
 else
@@ -76,10 +71,5 @@ if (usePostgreSql)
 app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = HttpStatusCode.BadRequest });
 app.UseFastEndpoints();
 app.Run();
-
-static int ReadRabbitMqPort(IConfiguration configuration)
-{
-    return int.TryParse(configuration["RabbitMQ:Port"], out var port) && port > 0 ? port : 5672;
-}
 
 public partial class Program;

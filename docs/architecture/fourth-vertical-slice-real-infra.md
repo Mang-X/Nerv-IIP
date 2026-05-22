@@ -6,7 +6,7 @@
 
 1. 将 AppHub 和 Ops 从内存态纵切推进到 netcorepal/CleanDDD 形态。
 2. 以 PostgreSQL 作为首个真实持久化 profile，验证服务事实跨 DbContext 生命周期保存。
-3. 接入 Redis、RabbitMQ 和 CAP 基础包，冻结后续缓存、消息和 outbox 接线边界。
+3. 接入 Redis、RabbitMQ 和 CAP 基础包，冻结后续缓存、消息和 outbox 接线边界；当前运行口径已进一步把 RabbitMQ 调整为 `Messaging:Provider=RabbitMQ` 时的可选 broker。
 4. 建立平台级 Aspire AppHost，作为 AppHub、Ops、Gateway、Connector Host 与基础设施资源的统一拓扑入口。
 5. 保留前三阶段验证入口，并提供一个能拉起真实依赖、复跑控制台链路的第四阶段总门禁。
 
@@ -19,7 +19,7 @@
 5. AppHub/Ops 已暴露 `/code-analysis`，用于查看 netcorepal 识别的命令、查询、聚合、事件和处理器流向。
 6. `scripts/verify-second-slice-ops.ps1` 和 `scripts/verify-third-slice-console.ps1` 支持 `-UsePostgres`。
 7. `scripts/verify-fourth-slice-real-infra.ps1` 会拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector，重建验证库并复跑第三阶段控制台纵切。
-8. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，当前覆盖 AppHub、IAM、Ops、FileStorage、PlatformGateway、Connector Host、frontend console、PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector。
+8. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，当前覆盖 AppHub、IAM、Ops、FileStorage、PlatformGateway、Connector Host、frontend console、PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector；RabbitMQ 在 `Messaging:Provider=RabbitMQ` profile 下加入拓扑。
 
 ## 验证命令
 
@@ -51,11 +51,11 @@ pnpm -C frontend build
 ## 当前限制
 
 1. 本文档记录第四阶段验收口径；当时 AppHub/Ops 本地验证路径允许使用 `EnsureCreated()`。第五阶段迁移发布底座已经 supersede 该限制：AppHub/Ops 当前使用 migration-based verification，dev/local 自动迁移必须显式设置 `Persistence:AutoMigrate=true`，生产级迁移、初始化、seed 和回滚策略由 ADR 0009 与数据库发布 runbook 承接。
-2. CAP/RabbitMQ 当前是基础包、连接和资源拓扑已接线；业务集成事件 outbox、消费者幂等和发布订阅验收尚未进入本阶段完成定义。
+2. CAP/RabbitMQ 当前是基础包、连接和资源拓扑已接线；后续默认单机 profile 使用 CAP InMemory message queue，RabbitMQ 只在显式 messaging profile 中启用。业务集成事件 outbox、消费者幂等和发布订阅验收尚未进入本阶段完成定义。
 3. IAM 的内存态认证授权骨架是第四阶段历史范围；第七阶段已落地 IAM Persistent Auth、Gateway permission enforcement、Console Auth 和 Connector Host credential validation，Phase 8 已补齐 IAM Admin Console。
 4. FileStorage 已进入 AppHost 拓扑并具备 MinIO provider 接线；完整业务上传下载、下载授权和清理任务仍属于后续功能纵切。
-5. AppHost 尚未覆盖 Notification、Knowledge、AI Integration 和 Qdrant。
-6. Docker Compose 仍是本地依赖兜底入口，并与 AppHost 的 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector 本地依赖保持对齐；完整 Compose 产物、安装包和 Windows/Linux 整合安装脚本尚未落地。
+5. AppHost 尚未覆盖 Knowledge、AI Integration 和 Qdrant。
+6. Docker Compose 仍是本地依赖兜底入口，并与 AppHost 的 PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector 本地依赖保持对齐；RabbitMQ 保留为可选 messaging profile 资源。完整 Compose 产物、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ## 后续承接
 

@@ -47,6 +47,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Quality\Nerv.IIP.Contracts.Quality.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Localization\Nerv.IIP.Localization\Nerv.IIP.Localization.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Messaging\Nerv.IIP.Messaging.CAP\Nerv.IIP.Messaging.CAP.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Business.Quality.Domain\Nerv.IIP.Business.Quality.Domain.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Business.Quality.Infrastructure\Nerv.IIP.Business.Quality.Infrastructure.csproj" />
   </ItemGroup>

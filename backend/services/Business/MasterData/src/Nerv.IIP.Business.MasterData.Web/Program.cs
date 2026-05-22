@@ -20,6 +20,7 @@ using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 using Nerv.IIP.Localization;
+using Nerv.IIP.Messaging.CAP;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithClientIp()
@@ -140,7 +141,7 @@ try
         {
             x.UseNetCorePalStorage<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
-            x.UseRabbitMQ(p => builder.Configuration.GetSection("RabbitMQ").Bind(p));
+            x.UseConfiguredTransport(builder.Configuration);
             x.UseDashboard(); //CAP Dashboard  path：  /cap
         });
     }
