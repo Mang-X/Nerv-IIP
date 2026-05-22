@@ -1,5 +1,6 @@
 using FastEndpoints;
 using MediatR;
+using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
@@ -42,6 +43,7 @@ public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
 
         Tags("Business MES");
         Policies(InternalServiceAuthorizationPolicy.Name);
+        Permissions(contract.PermissionCode);
     }
 }
 
@@ -95,14 +97,15 @@ public sealed record MesEndpointContract(
     Type EndpointType,
     string HttpMethod,
     string Route,
+    string PermissionCode,
     string OperationId);
 
 public static class MesEndpointContracts
 {
     public static readonly IReadOnlyCollection<MesEndpointContract> All =
     [
-        new(typeof(RunScheduleEndpoint), "POST", "/api/business/v1/mes/schedules/run", "runBusinessMesSchedule"),
-        new(typeof(CreateRushWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/rush", "createBusinessMesRushWorkOrder"),
+        new(typeof(RunScheduleEndpoint), "POST", "/api/business/v1/mes/schedules/run", MesPermissionCodes.SchedulesManage, "runBusinessMesSchedule"),
+        new(typeof(CreateRushWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/rush", MesPermissionCodes.WorkOrdersManage, "createBusinessMesRushWorkOrder"),
     ];
 
     public static MesEndpointContract Get<TEndpoint>()

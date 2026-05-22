@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -13,12 +14,17 @@ public sealed class MesEndpointContractTests
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/schedules/run"
+            && x.PermissionCode == MesPermissionCodes.SchedulesManage
             && x.OperationId == "runBusinessMesSchedule");
 
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/work-orders/rush"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
             && x.OperationId == "createBusinessMesRushWorkOrder");
+
+        Assert.All(MesEndpointContracts.All, contract =>
+            Assert.Contains(contract.PermissionCode, MesPermissionCodes.All));
     }
 
     [Theory]
