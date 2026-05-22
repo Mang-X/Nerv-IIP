@@ -124,7 +124,7 @@ scripts/verify-*.ps1                  # Verification scripts
 
 1. Do NOT create unbound SharedKernel/Common/Utils mega-directories.
 2. Do NOT merge Connector Host into `backend/Nerv.IIP.sln`.
-3. Do NOT reference `connector-hosts/` from `backend/` or `frontend/` (and vice-versa for implementation projects).
+3. Do NOT reference `connector-hosts/` from `backend/` or `frontend/` (and vice-versa).
 4. Do NOT write industry domain rules into PlatformGateway, IAM, AppHub, Ops, or main console.
 5. Do NOT create cross-schema foreign keys between services.
 6. Do NOT use `EnsureCreated()` in non-disposable environments (PoC, shared dev, production).
@@ -206,7 +206,8 @@ At minimum:
 3. ✅ Generated artifacts refreshed if contracts changed (OpenAPI → api-client).
 4. ✅ DB migrations/catalog/comments updated if schema changed.
 5. ✅ Scripts pass governance if scripts changed.
-6. ✅ Relevant docs in `docs/architecture/` and `docs/adr/` updated.
+6. ✅ Affected `verify-*.ps1` scripts still pass.
+7. ✅ Relevant docs in `docs/architecture/` and `docs/adr/` updated.
 
 ## Finding Documentation
 
