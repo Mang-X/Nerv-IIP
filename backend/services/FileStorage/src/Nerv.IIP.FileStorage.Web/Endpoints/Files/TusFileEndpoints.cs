@@ -19,7 +19,7 @@ public sealed class GetTusUploadOffsetEndpoint(IFileStorageService files, ILocal
     public override async Task HandleAsync(CancellationToken ct)
     {
         var uploadSessionId = Route<string>("uploadSessionId")!;
-        if (!CanAcceptTusUpload(files, uploadSessionId) || !storeAccessor.TryGet(out var store))
+        if (!await CanAcceptTusUploadAsync(files, uploadSessionId, ct) || !storeAccessor.TryGet(out var store))
         {
             await Send.NotFoundAsync(ct);
             return;
@@ -36,9 +36,14 @@ public sealed class GetTusUploadOffsetEndpoint(IFileStorageService files, ILocal
         response.Headers.CacheControl = "no-store";
     }
 
-    internal static bool CanAcceptTusUpload(IFileStorageService files, string uploadSessionId)
+    internal static Task<bool> CanAcceptTusUploadAsync(
+        IFileStorageService files,
+        string uploadSessionId,
+        CancellationToken cancellationToken)
     {
-        return files is ILocalTusUploadSessionIndex index && index.CanAcceptTusUpload(uploadSessionId);
+        return files is ILocalTusUploadSessionIndex index
+            ? index.CanAcceptTusUploadAsync(uploadSessionId, cancellationToken)
+            : Task.FromResult(false);
     }
 }
 
@@ -54,7 +59,7 @@ public sealed class PatchTusUploadEndpoint(IFileStorageService files, ILocalTusF
     public override async Task HandleAsync(CancellationToken ct)
     {
         var uploadSessionId = Route<string>("uploadSessionId")!;
-        if (!GetTusUploadOffsetEndpoint.CanAcceptTusUpload(files, uploadSessionId)
+        if (!await GetTusUploadOffsetEndpoint.CanAcceptTusUploadAsync(files, uploadSessionId, ct)
             || !storeAccessor.TryGet(out var store))
         {
             await Send.NotFoundAsync(ct);
@@ -132,8 +137,11 @@ public sealed class DownloadGrantContentEndpoint(IFileStorageService files, ILoc
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
-        if (files is not ILocalFileContentIndex index
-            || !index.TryGetUploadSessionIdForDownloadGrant(Route<string>("downloadGrantId")!, out var uploadSessionId)
+        var uploadSessionId = files is ILocalFileContentIndex index
+            ? await index.GetUploadSessionIdForDownloadGrantAsync(Route<string>("downloadGrantId")!, ct)
+            : null;
+
+        if (uploadSessionId is null
             || !storeAccessor.TryGet(out var store)
             || !store.Exists(uploadSessionId))
         {

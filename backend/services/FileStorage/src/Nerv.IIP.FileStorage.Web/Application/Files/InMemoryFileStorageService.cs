@@ -9,20 +9,33 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
 public interface IFileStorageService
 {
-    FileStorageResult<CreateUploadSessionResponse> CreateUploadSession(CreateUploadSessionRequest request);
-    FileStorageResult<FileMetadataResponse> CompleteUploadSession(string uploadSessionId, CompleteUploadSessionRequest request);
-    FileStorageResult<FileMetadataResponse> GetFileMetadata(string fileId);
-    FileStorageResult<DownloadGrantResponse> CreateDownloadGrant(string fileId, CreateDownloadGrantRequest request);
+    Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
+        CreateUploadSessionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<FileStorageResult<FileMetadataResponse>> CompleteUploadSessionAsync(
+        string uploadSessionId,
+        CompleteUploadSessionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<FileStorageResult<FileMetadataResponse>> GetFileMetadataAsync(
+        string fileId,
+        CancellationToken cancellationToken);
+
+    Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
+        string fileId,
+        CreateDownloadGrantRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface ILocalFileContentIndex
 {
-    bool TryGetUploadSessionIdForDownloadGrant(string downloadGrantId, out string uploadSessionId);
+    Task<string?> GetUploadSessionIdForDownloadGrantAsync(string downloadGrantId, CancellationToken cancellationToken);
 }
 
 public interface ILocalTusUploadSessionIndex
 {
-    bool CanAcceptTusUpload(string uploadSessionId);
+    Task<bool> CanAcceptTusUploadAsync(string uploadSessionId, CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
@@ -43,16 +56,20 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         this.uploadProvider = uploadProvider;
     }
 
-    public FileStorageResult<CreateUploadSessionResponse> CreateUploadSession(CreateUploadSessionRequest request)
+    public Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
+        CreateUploadSessionRequest request,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!FilePurposePolicy.IsAllowed(request.FilePurpose))
         {
-            return FileStorageResult<CreateUploadSessionResponse>.BadRequest($"Unsupported file purpose '{request.FilePurpose}'.");
+            return Task.FromResult(FileStorageResult<CreateUploadSessionResponse>.BadRequest($"Unsupported file purpose '{request.FilePurpose}'."));
         }
 
         if (!FileStorageRequestValidation.IsValidCreateUploadSessionRequest(request))
         {
-            return FileStorageResult<CreateUploadSessionResponse>.BadRequest("Upload session request is invalid.");
+            return Task.FromResult(FileStorageResult<CreateUploadSessionResponse>.BadRequest("Upload session request is invalid."));
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -85,37 +102,42 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             session.ExpiresAtUtc,
             upload);
 
-        return FileStorageResult<CreateUploadSessionResponse>.Ok(response);
+        return Task.FromResult(FileStorageResult<CreateUploadSessionResponse>.Ok(response));
     }
 
-    public FileStorageResult<FileMetadataResponse> CompleteUploadSession(string uploadSessionId, CompleteUploadSessionRequest request)
+    public Task<FileStorageResult<FileMetadataResponse>> CompleteUploadSessionAsync(
+        string uploadSessionId,
+        CompleteUploadSessionRequest request,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!uploadSessions.TryGetValue(uploadSessionId, out var session))
         {
-            return FileStorageResult<FileMetadataResponse>.NotFound($"Upload session '{uploadSessionId}' was not found.");
+            return Task.FromResult(FileStorageResult<FileMetadataResponse>.NotFound($"Upload session '{uploadSessionId}' was not found."));
         }
 
         if (session.Completed)
         {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session is already completed.");
+            return Task.FromResult(FileStorageResult<FileMetadataResponse>.BadRequest("Upload session is already completed."));
         }
 
         if (session.ExpiresAtUtc <= DateTimeOffset.UtcNow)
         {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired.");
+            return Task.FromResult(FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired."));
         }
 
         if (!string.Equals(session.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(session.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)
             || !string.Equals(session.FilePurpose, request.FilePurpose, StringComparison.Ordinal))
         {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
+            return Task.FromResult(FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match."));
         }
 
         var completedSession = session with { Completed = true };
         if (!uploadSessions.TryUpdate(uploadSessionId, completedSession, session))
         {
-            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session could not be completed.");
+            return Task.FromResult(FileStorageResult<FileMetadataResponse>.BadRequest("Upload session could not be completed."));
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -137,27 +159,38 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
 
         files[file.FileId] = file;
         fileUploadSessions[file.FileId] = uploadSessionId;
-        return FileStorageResult<FileMetadataResponse>.Ok(file.ToResponse());
+        return Task.FromResult(FileStorageResult<FileMetadataResponse>.Ok(file.ToResponse()));
     }
 
-    public FileStorageResult<FileMetadataResponse> GetFileMetadata(string fileId)
+    public Task<FileStorageResult<FileMetadataResponse>> GetFileMetadataAsync(
+        string fileId,
+        CancellationToken cancellationToken)
     {
-        return files.TryGetValue(fileId, out var file)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var result = files.TryGetValue(fileId, out var file)
             ? FileStorageResult<FileMetadataResponse>.Ok(file.ToResponse())
             : FileStorageResult<FileMetadataResponse>.NotFound($"File '{fileId}' was not found.");
+
+        return Task.FromResult(result);
     }
 
-    public FileStorageResult<DownloadGrantResponse> CreateDownloadGrant(string fileId, CreateDownloadGrantRequest request)
+    public Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
+        string fileId,
+        CreateDownloadGrantRequest request,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!files.TryGetValue(fileId, out var file))
         {
-            return FileStorageResult<DownloadGrantResponse>.NotFound($"File '{fileId}' was not found.");
+            return Task.FromResult(FileStorageResult<DownloadGrantResponse>.NotFound($"File '{fileId}' was not found."));
         }
 
         if (!string.Equals(file.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(file.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
         {
-            return FileStorageResult<DownloadGrantResponse>.BadRequest("File context does not match.");
+            return Task.FromResult(FileStorageResult<DownloadGrantResponse>.BadRequest("File context does not match."));
         }
 
         var grantId = NewId("dgr");
@@ -173,29 +206,35 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
                     ["x-nerv-download-mode"] = ServerProxyUploadProvider.Name
                 }));
 
-        return FileStorageResult<DownloadGrantResponse>.Ok(response);
+        return Task.FromResult(FileStorageResult<DownloadGrantResponse>.Ok(response));
     }
 
-    public bool TryGetUploadSessionIdForDownloadGrant(string downloadGrantId, out string uploadSessionId)
+    public Task<string?> GetUploadSessionIdForDownloadGrantAsync(
+        string downloadGrantId,
+        CancellationToken cancellationToken)
     {
-        uploadSessionId = string.Empty;
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!downloadGrantFiles.TryGetValue(downloadGrantId, out var grant)
             || grant.ExpiresAtUtc <= DateTimeOffset.UtcNow
             || !fileUploadSessions.TryGetValue(grant.FileId, out var mappedUploadSessionId))
         {
-            return false;
+            return Task.FromResult<string?>(null);
         }
 
-        uploadSessionId = mappedUploadSessionId;
-        return true;
+        return Task.FromResult<string?>(mappedUploadSessionId);
     }
 
-    public bool CanAcceptTusUpload(string uploadSessionId)
+    public Task<bool> CanAcceptTusUploadAsync(string uploadSessionId, CancellationToken cancellationToken)
     {
-        return uploadSessions.TryGetValue(uploadSessionId, out var session)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var canAccept = uploadSessions.TryGetValue(uploadSessionId, out var session)
             && string.Equals(session.Provider, TusUploadProvider.Name, StringComparison.Ordinal)
             && !session.Completed
             && session.ExpiresAtUtc > DateTimeOffset.UtcNow;
+
+        return Task.FromResult(canAccept);
     }
 
     private static string NewId(string prefix)

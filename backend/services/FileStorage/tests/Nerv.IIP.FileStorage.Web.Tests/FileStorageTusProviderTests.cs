@@ -249,7 +249,7 @@ public sealed class FileStorageTusProviderTests
         await using var dbContext = CreateDbContext();
         var service = new PostgreSqlFileStorageService(dbContext, new TusUploadProvider());
 
-        var result = service.CreateUploadSession(CreateUploadRequest());
+        var result = await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
         Assert.NotNull(result.Value);

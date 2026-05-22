@@ -9,9 +9,13 @@
     <PackageVersion Include="DotNetCore.CAP.RabbitMQ" Version="8.4.0" />
     <PackageVersion Include="FastEndpoints" Version="8.1.0" />
     <PackageVersion Include="FastEndpoints.Swagger" Version="8.1.0" />
+    <PackageVersion Include="FastEndpoints.Swagger.Swashbuckle" Version="2.3.0" />
     <PackageVersion Include="FluentValidation.AspNetCore" Version="11.3.1" />
+    <PackageVersion Include="Hangfire.AspNetCore" Version="1.8.17" />
+    <PackageVersion Include="Hangfire.Redis.StackExchange" Version="1.9.4" />
     <PackageVersion Include="MediatR" Version="14.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="10.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.8" />
@@ -19,6 +23,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.21.0" />
     <PackageVersion Include="NetCorePal.Context.AspNetCore" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Context.CAP" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Context.Shared" Version="3.3.0" />
@@ -26,6 +31,9 @@
     <PackageVersion Include="NetCorePal.Extensions.CodeAnalysis" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.DistributedTransactions.CAP.PostgreSQL" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.Domain.Abstractions" Version="3.3.0" />
+    <PackageVersion Include="NetCorePal.Extensions.MicrosoftServiceDiscovery" Version="3.3.0" />
+    <PackageVersion Include="NetCorePal.Extensions.MultiEnv" Version="3.3.0" />
+    <PackageVersion Include="NetCorePal.Extensions.NewtonsoftJson" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.Primitives" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.Repository.EntityFrameworkCore" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.Repository.EntityFrameworkCore.Snowflake" Version="3.3.0" />
@@ -35,10 +43,15 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
+    <PackageVersion Include="prometheus-net.AspNetCore" Version="8.2.1" />
+    <PackageVersion Include="prometheus-net.AspNetCore.HealthChecks" Version="8.2.1" />
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.1.2" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.1.0" />
+    <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.3.0.106239" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.9.11" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.2.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
