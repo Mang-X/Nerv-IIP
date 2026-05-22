@@ -1,0 +1,202 @@
+using Nerv.IIP.Business.Quality.Domain.DomainEvents;
+
+namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+
+public partial record NonconformanceReportId : IGuidStronglyTypedId;
+
+public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggregateRoot
+{
+    private static readonly HashSet<string> SourceTypes =
+    [
+        "receiving",
+        "in-process",
+        "final",
+        "customer-return",
+    ];
+
+    private static readonly HashSet<string> DispositionTypes =
+    [
+        "rework",
+        "scrap",
+        "return-to-supplier",
+        "conditional-release",
+        "sort-and-screen",
+    ];
+
+    private NonconformanceReport()
+    {
+    }
+
+    private NonconformanceReport(
+        string organizationId,
+        string environmentId,
+        string ncrCode,
+        string sourceType,
+        string sourceDocumentId,
+        string skuCode,
+        decimal defectQuantity,
+        string defectReason,
+        string? batchNo,
+        string? serialNo,
+        IReadOnlyCollection<string> attachmentFileIds)
+    {
+        OrganizationId = Required(organizationId);
+        EnvironmentId = Required(environmentId);
+        NcrCode = Required(ncrCode);
+        SourceType = Supported(sourceType, SourceTypes, nameof(sourceType));
+        SourceDocumentId = Required(sourceDocumentId);
+        SkuCode = Required(skuCode);
+        DefectQuantity = Positive(defectQuantity, nameof(defectQuantity));
+        DefectReason = Required(defectReason);
+        BatchNo = Optional(batchNo);
+        SerialNo = Optional(serialNo);
+        Status = "open";
+        CreatedAtUtc = DateTime.UtcNow;
+        UpdatedAtUtc = CreatedAtUtc;
+        AttachmentFileIds.AddRange(attachmentFileIds.Select(Required).Distinct(StringComparer.OrdinalIgnoreCase));
+        this.AddDomainEvent(new NonconformanceReportOpenedDomainEvent(this));
+    }
+
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
+    public string NcrCode { get; private set; } = string.Empty;
+    public string SourceType { get; private set; } = string.Empty;
+    public string SourceDocumentId { get; private set; } = string.Empty;
+    public string SkuCode { get; private set; } = string.Empty;
+    public decimal DefectQuantity { get; private set; }
+    public string DefectReason { get; private set; } = string.Empty;
+    public string? BatchNo { get; private set; }
+    public string? SerialNo { get; private set; }
+    public string Status { get; private set; } = string.Empty;
+    public string? DispositionType { get; private set; }
+    public string? DispositionApprovalChainId { get; private set; }
+    public string? ReworkWorkOrderId { get; private set; }
+    public string? ScrapMovementId { get; private set; }
+    public string? ReturnDocumentId { get; private set; }
+    public List<string> AttachmentFileIds { get; private set; } = [];
+    public DateTime CreatedAtUtc { get; private set; }
+    public DateTime UpdatedAtUtc { get; private set; }
+
+    public static NonconformanceReport Open(
+        string organizationId,
+        string environmentId,
+        string ncrCode,
+        string sourceType,
+        string sourceDocumentId,
+        string skuCode,
+        decimal defectQuantity,
+        string defectReason,
+        string? batchNo,
+        string? serialNo,
+        IReadOnlyCollection<string> attachmentFileIds)
+    {
+        return new NonconformanceReport(
+            organizationId,
+            environmentId,
+            ncrCode,
+            sourceType,
+            sourceDocumentId,
+            skuCode,
+            defectQuantity,
+            defectReason,
+            batchNo,
+            serialNo,
+            attachmentFileIds);
+    }
+
+    public void SubmitDisposition(
+        string dispositionType,
+        string? dispositionApprovalChainId,
+        IReadOnlyCollection<string> attachmentFileIds)
+    {
+        EnsureNotClosed();
+        DispositionType = Supported(dispositionType, DispositionTypes, nameof(dispositionType));
+        DispositionApprovalChainId = Optional(dispositionApprovalChainId);
+        AddAttachments(attachmentFileIds);
+        Status = "disposition-in-progress";
+        Touch();
+        this.AddDomainEvent(new NonconformanceReportDispositionDecidedDomainEvent(this));
+    }
+
+    public void Close(string? reworkWorkOrderId, string? scrapMovementId, string? returnDocumentId)
+    {
+        EnsureNotClosed();
+        if (string.IsNullOrWhiteSpace(DispositionType))
+        {
+            throw new InvalidOperationException("NCR cannot be closed before disposition is decided.");
+        }
+
+        ReworkWorkOrderId = Optional(reworkWorkOrderId);
+        ScrapMovementId = Optional(scrapMovementId);
+        ReturnDocumentId = Optional(returnDocumentId);
+        EnsureClosureReferences();
+        Status = "closed";
+        Touch();
+        this.AddDomainEvent(new NonconformanceReportClosedDomainEvent(this));
+    }
+
+    private void EnsureClosureReferences()
+    {
+        if (DispositionType == "rework" && string.IsNullOrWhiteSpace(ReworkWorkOrderId))
+        {
+            throw new InvalidOperationException("Rework disposition requires a rework work order id before closing.");
+        }
+
+        if (DispositionType == "scrap" && string.IsNullOrWhiteSpace(ScrapMovementId))
+        {
+            throw new InvalidOperationException("Scrap disposition requires a scrap stock movement id before closing.");
+        }
+
+        if (DispositionType == "return-to-supplier" && string.IsNullOrWhiteSpace(ReturnDocumentId))
+        {
+            throw new InvalidOperationException("Return-to-supplier disposition requires a return document id before closing.");
+        }
+    }
+
+    private void EnsureNotClosed()
+    {
+        if (Status == "closed")
+        {
+            throw new InvalidOperationException("Closed NCR cannot be changed.");
+        }
+    }
+
+    private void AddAttachments(IReadOnlyCollection<string> attachmentFileIds)
+    {
+        foreach (var attachmentFileId in attachmentFileIds.Select(Required))
+        {
+            if (!AttachmentFileIds.Contains(attachmentFileId, StringComparer.OrdinalIgnoreCase))
+            {
+                AttachmentFileIds.Add(attachmentFileId);
+            }
+        }
+    }
+
+    private void Touch()
+    {
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    private static decimal Positive(decimal value, string parameterName)
+    {
+        return value <= 0 ? throw new ArgumentOutOfRangeException(parameterName, "Value must be positive.") : value;
+    }
+
+    private static string Required(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+    }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string Supported(string value, HashSet<string> supportedValues, string parameterName)
+    {
+        var normalized = Required(value).ToLowerInvariant();
+        return supportedValues.Contains(normalized)
+            ? normalized
+            : throw new ArgumentException($"Unsupported value '{value}'.", parameterName);
+    }
+}
