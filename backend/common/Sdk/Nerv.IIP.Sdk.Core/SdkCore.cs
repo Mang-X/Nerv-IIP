@@ -30,20 +30,23 @@ public static class PlatformApiClient
         ArgumentNullException.ThrowIfNull(method);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(context.OrganizationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(context.EnvironmentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(context.CorrelationId);
 
         var request = new HttpRequestMessage(method, path);
-        request.Headers.TryAddWithoutValidation("X-Organization-Id", context.OrganizationId);
-        request.Headers.TryAddWithoutValidation("X-Environment-Id", context.EnvironmentId);
-        request.Headers.TryAddWithoutValidation("X-Correlation-Id", context.CorrelationId);
+        request.Headers.Add("X-Organization-Id", context.OrganizationId);
+        request.Headers.Add("X-Environment-Id", context.EnvironmentId);
+        request.Headers.Add("X-Correlation-Id", context.CorrelationId);
 
         if (!string.IsNullOrWhiteSpace(context.IdempotencyKey))
         {
-            request.Headers.TryAddWithoutValidation("X-Idempotency-Key", context.IdempotencyKey);
+            request.Headers.Add("X-Idempotency-Key", context.IdempotencyKey);
         }
 
         if (!string.IsNullOrWhiteSpace(context.TraceParent))
         {
-            request.Headers.TryAddWithoutValidation("traceparent", context.TraceParent);
+            request.Headers.Add("traceparent", context.TraceParent);
         }
 
         return request;
@@ -53,7 +56,9 @@ public static class PlatformApiClient
     {
         ArgumentNullException.ThrowIfNull(response);
 
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        var content = response.Content
+            ?? throw new InvalidOperationException("Platform API returned an empty response.");
+        var json = await content.ReadAsStringAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(json))
         {
             throw new InvalidOperationException("Platform API returned an empty response.");

@@ -38,6 +38,28 @@ public sealed class PlatformApiClientTests
         Assert.False(request.Headers.Contains("traceparent"));
     }
 
+    [Theory]
+    [InlineData("", "prod", "corr-123")]
+    [InlineData("org-001", "", "corr-123")]
+    [InlineData("org-001", "prod", "")]
+    public void CreateRequestRejectsMissingRequiredPlatformContextHeaders(
+        string organizationId,
+        string environmentId,
+        string correlationId)
+    {
+        var context = new PlatformRequestContext(organizationId, environmentId, correlationId);
+
+        Assert.Throws<ArgumentException>(() => PlatformApiClient.CreateRequest(HttpMethod.Get, "/api/example", context));
+    }
+
+    [Fact]
+    public void CreateRequestRejectsInvalidHeaderValues()
+    {
+        var context = new PlatformRequestContext("org-001", "prod\r\nX-Injected: true", "corr-123");
+
+        Assert.Throws<FormatException>(() => PlatformApiClient.CreateRequest(HttpMethod.Get, "/api/example", context));
+    }
+
     [Fact]
     public async Task ReadResponseDataAsyncReturnsDataFromResponseDataEnvelope()
     {
