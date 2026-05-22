@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build ProductEngineering lite with engineering documents, engineering items, EBOM, MBOM, routing and ECO/ECN release flow.
+**Goal:** Build ProductEngineering lite with engineering documents, engineering items, EBOM, MBOM, routing, ProductionVersion binding and ECO/ECN release flow.
 
-**Architecture:** Create `backend/services/Business/ProductEngineering` as the PDM/PLM-lite owner. It stores file references from File Storage, versioned engineering facts and release events; it does not implement CAD design, inventory, formal work orders or MRP calculation. Published EBOM, MBOM and routing versions are immutable and emit integration events for Planning and MES.
+**Architecture:** Create `backend/services/Business/ProductEngineering` as the PDM/PLM-lite owner. It stores file references from File Storage, versioned engineering facts and release events; it does not implement CAD design, inventory, formal work orders or MRP calculation. Published EBOM, MBOM and routing versions are immutable. ProductionVersion binds a released MBOM + Routing for one SKU/effective window/lot-size range and exposes a resolve API for Planning and MES.
 
 **Tech Stack:** .NET 10, FastEndpoints, MediatR, EF Core, Npgsql, netcorepal domain events/integration event converters, xUnit.
 
@@ -43,6 +43,7 @@ backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngine
   AggregatesModel/EngineeringBomAggregate/EngineeringBom.cs
   AggregatesModel/ManufacturingBomAggregate/ManufacturingBom.cs
   AggregatesModel/RoutingAggregate/Routing.cs
+  AggregatesModel/ProductionVersionAggregate/ProductionVersion.cs
   AggregatesModel/EngineeringChangeAggregate/EngineeringChange.cs
   DomainEvents/ProductEngineeringDomainEvents.cs
 
@@ -114,6 +115,7 @@ git commit -m "feat: scaffold product engineering service"
 - Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/EngineeringBomAggregate/EngineeringBom.cs`
 - Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/ManufacturingBomAggregate/ManufacturingBom.cs`
 - Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/RoutingAggregate/Routing.cs`
+- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/ProductionVersionAggregate/ProductionVersion.cs`
 - Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/EngineeringChangeAggregate/EngineeringChange.cs`
 - Create: `backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/ProductEngineeringAggregateTests.cs`
 
@@ -127,6 +129,7 @@ EngineeringItem.Create("org-001", "env-dev", "ENG-1000", "Pump Assembly");
 EngineeringBom.CreateDraft("org-001", "env-dev", "ENG-1000", "A").AddLine("ENG-1001", 2m, "EA").Release(DateOnly.FromDateTime(DateTime.UtcNow));
 ManufacturingBom.CreateDraft("org-001", "env-dev", "SKU-FG-1000", "A").AddLine("SKU-RM-1000", 1.5m, "KG").Release(DateOnly.FromDateTime(DateTime.UtcNow));
 Routing.CreateDraft("org-001", "env-dev", "SKU-FG-1000", "A").AddOperation(10, "WC-CNC-01", 30).Release(DateOnly.FromDateTime(DateTime.UtcNow));
+ProductionVersion.Create("org-001", "env-dev", "SKU-FG-1000", "mbom-A", "routing-A", DateOnly.FromDateTime(DateTime.UtcNow), null, null, null, 10, true, EngineeringVersionStatus.Published, EngineeringVersionStatus.Published);
 EngineeringChange.Open("org-001", "env-dev", "ECO-0001", "release mbom A").Approve("approval-chain-001").Release();
 ```
 
@@ -145,6 +148,7 @@ Implement these invariants:
 | EngineeringBom | child lines cannot repeat in the same version; released version is immutable. |
 | ManufacturingBom | all lines reference SKU codes; released version is immutable. |
 | Routing | operation sequence is unique and positive; work center code is required. |
+| ProductionVersion | binds only published MBOM/Routing, rejects invalid effective/lot windows, and archived versions cannot resolve for new work orders. |
 | EngineeringChange | release requires approval reference and affected version list. |
 
 Create domain events named `EngineeringDocumentRegisteredDomainEvent`, `EngineeringBomReleasedDomainEvent`, `ManufacturingBomReleasedDomainEvent`, `RoutingReleasedDomainEvent` and `EngineeringChangeReleasedDomainEvent`.
@@ -194,7 +198,7 @@ Tests must serialize the records and assert property names remain camelCase.
 
 - [ ] **Step 2: Add EF mapping**
 
-Use schema `product_engineering` and these tables: `engineering_documents`, `engineering_items`, `engineering_boms`, `manufacturing_boms`, `routings`, `engineering_changes`. Add comments for every business column and unique indexes for organization/environment plus code/version.
+Use schema `product_engineering` and these tables: `engineering_documents`, `engineering_items`, `engineering_boms`, `manufacturing_boms`, `routings`, `production_versions`, `engineering_changes`. Add comments for every business column and unique indexes for organization/environment plus code/version.
 
 - [ ] **Step 3: Generate migration and update catalog**
 
@@ -234,6 +238,8 @@ git commit -m "feat: persist product engineering releases"
 - Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ReleaseEngineeringBomCommand.cs`
 - Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ReleaseManufacturingBomCommand.cs`
 - Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ReleaseRoutingCommand.cs`
+- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ProductionVersions/CreateProductionVersionCommand.cs`
+- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Queries/ProductionVersions/ResolveProductionVersionQuery.cs`
 - Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ReleaseEngineeringChangeCommand.cs`
 - Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Queries/ListEngineeringBomsQuery.cs`
 - Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Queries/GetEngineeringChangeQuery.cs`
@@ -254,6 +260,11 @@ Cover:
 | `POST /api/business/v1/engineering/mboms/{mbomId}/release` | `business.engineering.boms.manage` |
 | `POST /api/business/v1/engineering/routings/{routingId}/release` | `business.engineering.boms.manage` |
 | `GET /api/business/v1/engineering/eboms` | `business.engineering.boms.read` |
+| `GET /api/business/v1/engineering/production-versions` | `business.engineering.production-versions.read` |
+| `GET /api/business/v1/engineering/production-versions/resolve` | `business.engineering.production-versions.read` |
+| `POST /api/business/v1/engineering/production-versions` | `business.engineering.production-versions.manage` |
+| `PUT /api/business/v1/engineering/production-versions/{productionVersionId}` | `business.engineering.production-versions.manage` |
+| `POST /api/business/v1/engineering/production-versions/{productionVersionId}/archive` | `business.engineering.production-versions.manage` |
 | `POST /api/business/v1/engineering/changes/{changeId}/release` | `business.engineering.changes.manage` |
 | `GET /api/business/v1/engineering/changes/{changeId}` | `business.engineering.changes.read` |
 
@@ -336,6 +347,6 @@ git commit -m "docs: record product engineering readiness"
 ## Self-Review Checklist
 
 1. `BP-ENG-001` through `BP-ENG-004` are covered by tests and endpoints.
-2. Published EBOM, MBOM, Routing and EngineeringChange facts are immutable.
+2. Published EBOM, MBOM, Routing and EngineeringChange facts are immutable; ProductionVersion only binds published MBOM/Routing and resolves active, non-archived versions for MES/MRP.
 3. Events use ADR 0011 envelope-compatible payloads and contain no object storage keys.
 4. ProductEngineering stores only file references and released engineering facts.
