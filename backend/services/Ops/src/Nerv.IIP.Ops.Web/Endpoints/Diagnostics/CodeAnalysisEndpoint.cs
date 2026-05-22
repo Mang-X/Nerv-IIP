@@ -2,12 +2,13 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Ops.Infrastructure;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.CodeAnalysis;
 
 namespace Nerv.IIP.Ops.Web.Endpoints.Diagnostics;
 
 [HttpGet("/code-analysis")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class CodeAnalysisEndpoint : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)

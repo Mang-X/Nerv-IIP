@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -28,6 +28,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.ConnectorHost.Application.Tests", "tests\Nerv.IIP.ConnectorHost.Application.Tests\Nerv.IIP.ConnectorHost.Application.Tests.csproj", "{AD2AF0AB-DDD9-481B-8661-9EB9BF61D4EC}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.ConnectorHost.Connectors.Docker.Tests", "tests\Nerv.IIP.ConnectorHost.Connectors.Docker.Tests\Nerv.IIP.ConnectorHost.Connectors.Docker.Tests.csproj", "{324F0FBC-6C4C-4B5B-8932-EC26FC2A97E0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.ServiceAuth", "..\backend\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj", "{86C5BA31-4058-4524-9679-51FC939237D8}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -171,6 +173,18 @@ Global
 		{324F0FBC-6C4C-4B5B-8932-EC26FC2A97E0}.Release|x64.Build.0 = Release|Any CPU
 		{324F0FBC-6C4C-4B5B-8932-EC26FC2A97E0}.Release|x86.ActiveCfg = Release|Any CPU
 		{324F0FBC-6C4C-4B5B-8932-EC26FC2A97E0}.Release|x86.Build.0 = Release|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Debug|x64.Build.0 = Debug|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Debug|x86.Build.0 = Debug|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Release|x64.ActiveCfg = Release|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Release|x64.Build.0 = Release|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Release|x86.ActiveCfg = Release|Any CPU
+		{86C5BA31-4058-4524-9679-51FC939237D8}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

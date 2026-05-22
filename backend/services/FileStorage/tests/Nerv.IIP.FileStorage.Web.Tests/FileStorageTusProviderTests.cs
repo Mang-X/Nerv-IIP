@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text;
@@ -9,6 +10,7 @@ using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -35,7 +37,7 @@ public sealed class FileStorageTusProviderTests
     public async Task CreateUploadSession_WithTusConfiguration_ReturnsTusUploadInstructions()
     {
         await using var factory = CreateFactoryWithTusProvider();
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
 
         var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
 
@@ -57,7 +59,7 @@ public sealed class FileStorageTusProviderTests
         try
         {
             await using var factory = CreateFactoryWithTusProvider(rootPath);
-            var client = factory.CreateClient();
+            var client = CreateInternalServiceClient(factory);
             var created = await CreateTusUploadSessionAsync(client);
 
             var headBefore = await SendTusHeadAsync(client, created.Upload.Url);
@@ -93,7 +95,7 @@ public sealed class FileStorageTusProviderTests
         try
         {
             await using var factory = CreateFactoryWithTusProvider(rootPath);
-            var client = factory.CreateClient();
+            var client = CreateInternalServiceClient(factory);
             var created = await CreateTusUploadSessionAsync(client);
             using var patchRequest = new HttpRequestMessage(HttpMethod.Patch, created.Upload.Url)
             {
@@ -119,7 +121,7 @@ public sealed class FileStorageTusProviderTests
         try
         {
             await using var factory = CreateFactoryWithTusProvider(rootPath);
-            var client = factory.CreateClient();
+            var client = CreateInternalServiceClient(factory);
             var created = await CreateTusUploadSessionAsync(client);
             using var patchRequest = new HttpRequestMessage(HttpMethod.Patch, created.Upload.Url)
             {
@@ -143,7 +145,7 @@ public sealed class FileStorageTusProviderTests
     public async Task TusUploadEndpoint_ServerProxySession_ReturnsNotFound()
     {
         await using var factory = new WebApplicationFactory<Program>();
-        var client = factory.CreateClient();
+        var client = CreateInternalServiceClient(factory);
         var createdResponse = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
         createdResponse.EnsureSuccessStatusCode();
         var created = await createdResponse.Content.ReadFromJsonAsync<CreateUploadSessionResponse>();
@@ -162,7 +164,7 @@ public sealed class FileStorageTusProviderTests
         try
         {
             await using var factory = CreateFactoryWithTusProvider(rootPath);
-            var client = factory.CreateClient();
+            var client = CreateInternalServiceClient(factory);
             var uploadedBytes = Encoding.UTF8.GetBytes("hello");
             var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length);
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
@@ -197,7 +199,7 @@ public sealed class FileStorageTusProviderTests
         try
         {
             await using var factory = CreateFactoryWithTusProvider(rootPath);
-            var client = factory.CreateClient();
+            var client = CreateInternalServiceClient(factory);
             var created = await CreateTusUploadSessionAsync(client);
 
             var completeResponse = await client.PostAsJsonAsync(
@@ -229,7 +231,7 @@ public sealed class FileStorageTusProviderTests
         try
         {
             await using var factory = CreateFactoryWithTusProvider(rootPath);
-            var client = factory.CreateClient();
+            var client = CreateInternalServiceClient(factory);
 
             var response = await SendTusHeadAsync(client, "/api/files/v1/tus/ups_missing");
 
@@ -273,6 +275,15 @@ public sealed class FileStorageTusProviderTests
                     });
                 });
             });
+    }
+
+    private static HttpClient CreateInternalServiceClient(WebApplicationFactory<Program> factory)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            InternalServiceAuthentication.DefaultDevelopmentBearerToken);
+        return client;
     }
 
     private static ApplicationDbContext CreateDbContext()

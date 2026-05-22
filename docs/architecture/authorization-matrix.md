@@ -32,7 +32,7 @@ Endpoint 只声明需要的权限码与上下文；业务不变式仍由 Domain 
 | `external-client` | 外部系统、平台应用或受控第三方客户端。 | Platform SDK、公开 API、Webhook 回调、后续 OAuth/OIDC client credential。 | IAM ExternalClient、AuthorizationGrant、organization/environment、resource/capability scope。 |
 | `internal-service` | 平台内部服务到服务调用主体。 | Gateway 到 IAM 授权检查，服务间后台任务或事件处理后的回查。 | 平台部署身份、服务账号或后续 workload identity；不得绕过 IAM 边界事实。 |
 
-当前 access token 基线已覆盖 `user`、`external-client`、`connector-host` 的 token claim 形态；`internal-service` 是服务间授权命名维度，落地前不得作为匿名信任通道使用。
+当前 access token 基线已覆盖 `user`、`external-client`、`connector-host` 的 token claim 形态；`internal-service` 已作为服务间认证入口落地在 Ops、FileStorage、Notification 的非 health 内部 API 上。服务间调用必须携带 `Authorization: Bearer <InternalService:BearerToken>`，Development 环境使用本地默认 token，非 Development 环境必须显式配置 `InternalService:BearerToken`。该 bearer token 只证明调用方属于平台内部服务，不替代最终用户、Connector Host 或外部客户端的 IAM 授权事实。
 
 ## resource scope 维度
 

@@ -1,4 +1,6 @@
+using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
@@ -8,6 +10,9 @@ public sealed class OpsCodeAnalysisEndpointTests(WebApplicationFactory<Program> 
     public async Task CodeAnalysis_returns_html_with_ops_flow_types()
     {
         var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            InternalServiceAuthentication.DefaultDevelopmentBearerToken);
 
         using var response = await client.GetAsync("/code-analysis");
 

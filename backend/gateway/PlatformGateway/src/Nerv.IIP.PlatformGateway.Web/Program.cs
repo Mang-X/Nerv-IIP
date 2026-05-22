@@ -15,6 +15,7 @@ using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;
 using NetCorePal.Extensions.AspNetCore;
 using System.Net;
 using Microsoft.Extensions.Http.Resilience;
+using Nerv.IIP.ServiceAuth;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services
@@ -29,6 +30,7 @@ builder.Services
     });
 builder.Services.AddNervIipCaching(builder.Configuration, "platform-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "platform-gateway");
+builder.Services.AddNervIipInternalServiceTokenProvider(builder.Configuration, builder.Environment);
 builder.Services.Configure<GatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.AddHttpClient<IAppHubClient, HttpAppHubClient>(client =>
 {

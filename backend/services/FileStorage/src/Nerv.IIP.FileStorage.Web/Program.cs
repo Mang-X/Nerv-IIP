@@ -5,10 +5,12 @@ using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using Nerv.IIP.Observability;
+using Nerv.IIP.ServiceAuth;
 
 var builder = WebApplication.CreateBuilder(args);
 var usePostgreSql = string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase);
 builder.Services.AddFastEndpoints();
+builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<ILocalTusFileStoreAccessor, LocalTusFileStoreAccessor>();
 builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>
     string.Equals(services.GetRequiredService<IConfiguration>()["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
@@ -36,6 +38,8 @@ if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigra
 }
 
 app.UseNervIipCorrelation();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseFastEndpoints();
 app.Run();
 

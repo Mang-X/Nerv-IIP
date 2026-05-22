@@ -5,6 +5,7 @@
     <ProjectReference Include="..\Nerv.IIP.Notification.Infrastructure\Nerv.IIP.Notification.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Notification\Nerv.IIP.Contracts.Notification.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
+    <ProjectReference Include="..\..\..\..\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
   </ItemGroup>
 
   <ItemGroup>

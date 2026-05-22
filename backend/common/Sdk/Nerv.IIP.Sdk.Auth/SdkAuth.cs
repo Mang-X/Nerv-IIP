@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using Nerv.IIP.Sdk.Core;
 
 namespace Nerv.IIP.Sdk.Auth;
@@ -13,7 +12,6 @@ public static class ConnectorHostAuthentication
         request.Headers.Add("X-Connector-Secret", credential.Secret);
         request.Headers.Add("X-Organization-Id", credential.OrganizationId);
         request.Headers.Add("X-Environment-Id", credential.EnvironmentId);
-        request.Headers.Authorization = new AuthenticationHeaderValue("ConnectorHost", credential.ConnectorHostId);
     }
 
     public static PlatformApiResult<ConnectorHostCredential> Validate(ConnectorHostCredential credential)

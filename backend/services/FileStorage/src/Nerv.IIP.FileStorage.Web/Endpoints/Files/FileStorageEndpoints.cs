@@ -2,12 +2,13 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Web.Application.Files;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.FileStorage.Web.Endpoints.Files;
 
 [Tags("Files")]
 [HttpPost("/api/files/v1/upload-sessions")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class CreateUploadSessionEndpoint(IFileStorageService files)
     : Endpoint<CreateUploadSessionRequest, CreateUploadSessionResponse>
 {
@@ -19,7 +20,7 @@ public sealed class CreateUploadSessionEndpoint(IFileStorageService files)
 
 [Tags("Files")]
 [HttpPost("/api/files/v1/upload-sessions/{uploadSessionId}/complete")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class CompleteUploadSessionEndpoint(IFileStorageService files)
     : Endpoint<CompleteUploadSessionRequest, FileMetadataResponse>
 {
@@ -31,7 +32,7 @@ public sealed class CompleteUploadSessionEndpoint(IFileStorageService files)
 
 [Tags("Files")]
 [HttpGet("/api/files/v1/files/{fileId}")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class GetFileMetadataEndpoint(IFileStorageService files)
     : EndpointWithoutRequest<FileMetadataResponse>
 {
@@ -43,7 +44,7 @@ public sealed class GetFileMetadataEndpoint(IFileStorageService files)
 
 [Tags("Files")]
 [HttpPost("/api/files/v1/files/{fileId}/download-grants")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class CreateDownloadGrantEndpoint(IFileStorageService files)
     : Endpoint<CreateDownloadGrantRequest, DownloadGrantResponse>
 {

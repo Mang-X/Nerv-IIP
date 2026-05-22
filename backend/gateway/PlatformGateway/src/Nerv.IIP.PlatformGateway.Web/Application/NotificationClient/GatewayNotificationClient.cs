@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.PlatformGateway.Web.Application.NotificationClient;
 
@@ -50,7 +51,7 @@ public interface IGatewayNotificationClient
         CancellationToken cancellationToken);
 }
 
-public sealed class HttpGatewayNotificationClient(HttpClient httpClient) : IGatewayNotificationClient
+public sealed class HttpGatewayNotificationClient(HttpClient httpClient, IInternalServiceTokenProvider internalServiceToken) : IGatewayNotificationClient
 {
     public Task<NotificationMessageListResponse> ListMessagesAsync(
         GatewayNotificationRequestContext context,
@@ -110,7 +111,7 @@ public sealed class HttpGatewayNotificationClient(HttpClient httpClient) : IGate
         {
             using var request = new HttpRequestMessage(method, context.RequestUri);
             request.Content = contentFactory();
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.BearerToken);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalServiceToken.BearerToken);
             request.Headers.TryAddWithoutValidation("X-Organization-Id", context.OrganizationId);
             request.Headers.TryAddWithoutValidation("X-Environment-Id", context.EnvironmentId);
             if (!string.IsNullOrWhiteSpace(context.CorrelationId))
