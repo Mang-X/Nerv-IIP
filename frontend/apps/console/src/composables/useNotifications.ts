@@ -263,7 +263,7 @@ function isReadMessage(message: NotificationMessageResponse) {
 
 function disabledNotificationQueryOptions<TData>(id: string) {
   return {
-    key: [{ _id: id, disabledReason: 'missing-auth-context' }],
+    key: [{ _id: id, disabledReason: 'missing-org-env-context' }],
     query: async (): Promise<TData> => {
       throw new Error(CONTEXT_UNAVAILABLE_MESSAGE)
     },

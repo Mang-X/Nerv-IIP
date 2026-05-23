@@ -9,8 +9,8 @@ using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
-using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
+using QualityNcrEndpointContracts = Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports.QualityEndpointContracts;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
@@ -26,7 +26,7 @@ public static class PublicBusinessEndpointCatalog
         .. ErpProcurementEndpointContracts.All.Select(x => Endpoint("BusinessErp", x.HttpMethod, x.Route, x.OperationId)),
         .. ErpSalesEndpointContracts.All.Select(x => Endpoint("BusinessErp", x.HttpMethod, x.Route, x.OperationId)),
         .. ErpFinanceEndpointContracts.All.Select(x => Endpoint("BusinessErp", x.HttpMethod, x.Route, x.OperationId)),
-        .. QualityEndpointContracts.All.Select(x => Endpoint("BusinessQuality", x.HttpMethod, x.Route, x.OperationId)),
+        .. QualityNcrEndpointContracts.All.Select(x => Endpoint("BusinessQuality", x.HttpMethod, x.Route, x.OperationId)),
         .. QualityInspectionEndpointContracts.All.Select(x => Endpoint("BusinessQuality", x.HttpMethod, x.Route, x.OperationId)),
         .. WmsEndpointContracts.All.Select(x => Endpoint("BusinessWms", x.HttpMethod, x.Route, x.OperationId)),
         .. InventoryEndpointContracts.All.Select(x => Endpoint("BusinessInventory", x.HttpMethod, x.Route, x.OperationId)),

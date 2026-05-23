@@ -126,7 +126,7 @@ describe('IAM users page', () => {
       .findAll('[data-slot="badge"]')
       .find((badge) => badge.text() === 'Enabled')
 
-    expect(enabledBadge?.attributes('data-variant')).toBe('outline')
+    expect(enabledBadge?.attributes('data-variant')).toBe('success')
     expect(enabledBadge?.classes()).toContain('border-emerald-200')
     expect(enabledBadge?.classes()).toContain('text-emerald-700')
   })

@@ -30,7 +30,7 @@ if (-not $SkipRestore) {
     Invoke-DotNet -Name "business-full-chain-acceptance-restore" -WorkingDirectory $root -Arguments @(
         "restore",
         $acceptanceProject
-    ) | Out-Null
+    )
 }
 
 $testArguments = @(
@@ -39,6 +39,6 @@ $testArguments = @(
     "--no-restore"
 )
 
-Invoke-DotNet -Name "business-full-chain-acceptance-test" -WorkingDirectory $root -Arguments $testArguments | Out-Null
+Invoke-DotNet -Name "business-full-chain-acceptance-test" -WorkingDirectory $root -Arguments $testArguments
 
 Write-Host "Business full-chain acceptance #77 harness baseline verified. This is not the final #77 full-chain HTTP acceptance gate."

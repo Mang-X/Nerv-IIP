@@ -186,6 +186,29 @@ describe('useNotifications', () => {
     ])
   })
 
+  it('marks notification queries disabled when org or environment context is missing', () => {
+    useAuthStore().principal = {
+      principalId: 'user-admin',
+      principalType: 'user',
+      loginName: 'admin',
+    }
+
+    useNotifications()
+
+    expect(coladaState.queryOptionsById.get('listConsoleNotificationMessages')?.key).toEqual([
+      {
+        _id: 'listConsoleNotificationMessages',
+        disabledReason: 'missing-org-env-context',
+      },
+    ])
+    expect(coladaState.queryOptionsById.get('listConsoleNotificationTasks')?.key).toEqual([
+      {
+        _id: 'listConsoleNotificationTasks',
+        disabledReason: 'missing-org-env-context',
+      },
+    ])
+  })
+
   it('marks a single message read and refreshes notification queries', async () => {
     const { markRead } = useNotifications()
 
