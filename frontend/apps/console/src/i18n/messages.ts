@@ -24,6 +24,7 @@ export const messages = {
       platform: '平台',
       instances: '实例',
       notifications: '通知',
+      business: '业务平台',
       iam: '身份与访问',
       users: '用户',
       roles: '角色',
@@ -33,6 +34,7 @@ export const messages = {
     },
     routes: {
       instances: '实例',
+      business: '业务平台状态',
       login: '登录',
     },
     home: {
@@ -65,6 +67,7 @@ export const messages = {
       platform: 'Platform',
       instances: 'Instances',
       notifications: 'Notifications',
+      business: 'Business',
       iam: 'IAM',
       users: 'Users',
       roles: 'Roles',
@@ -74,6 +77,7 @@ export const messages = {
     },
     routes: {
       instances: 'Instances',
+      business: 'Business status',
       login: 'Sign in',
     },
     home: {

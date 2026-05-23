@@ -9,7 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@nerv-iip/ui'
-import { BellIcon, LayersIcon, ShieldIcon } from 'lucide-vue-next'
+import { BellIcon, Building2Icon, LayersIcon, ShieldIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -20,6 +20,7 @@ const { t, te } = useI18n()
 const navItems = computed<NavItem[]>(() => [
   { title: t('nav.instances'), icon: LayersIcon, to: { name: '/' } },
   { title: t('nav.notifications'), icon: BellIcon, to: { path: '/notifications' } },
+  { title: t('nav.business'), icon: Building2Icon, to: { path: '/business' } },
   {
     title: t('nav.iam'),
     icon: ShieldIcon,

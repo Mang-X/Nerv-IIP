@@ -5,18 +5,26 @@ import {
   markConsoleNotificationMessagesReadMutationOptions,
   type MarkNotificationMessageReadEnvelope,
   type MarkNotificationMessagesReadEnvelope,
+  type NotificationIntentEnvelope,
   type NotificationMessageListEnvelope,
   type NotificationMessageResponse,
   type NotificationTaskListEnvelope,
   type NotificationTaskResponse,
+  type SubmitNotificationIntentRequest,
+  submitConsoleNotificationIntentMutationOptions,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { computed, shallowRef } from 'vue'
 
-const AUTH_UNAVAILABLE_MESSAGE = 'Console authentication context is unavailable.'
+const CONTEXT_UNAVAILABLE_MESSAGE = 'Console organization and environment context is unavailable.'
 const ignoreBackgroundError = (_error: unknown) => {}
+
+interface ConsoleContext {
+  environmentId: string
+  organizationId: string
+}
 
 function isNotificationEntry(entry: UseQueryEntry) {
   const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
@@ -34,28 +42,64 @@ function isNotificationEntry(entry: UseQueryEntry) {
 
 export function useNotifications() {
   const auth = useAuthStore()
-  const { isAuthenticated } = storeToRefs(auth)
+  const { principal } = storeToRefs(auth)
   const queryCache = useQueryCache()
   const actionError = shallowRef<Error>()
+  const consoleContext = computed<ConsoleContext | undefined>(() => {
+    const organizationId = principal.value?.organizationId
+    const environmentId = principal.value?.environmentId
+
+    if (!isNonEmptyString(organizationId) || !isNonEmptyString(environmentId)) {
+      return undefined
+    }
+
+    return {
+      environmentId,
+      organizationId,
+    }
+  })
 
   const messagesQuery = useQuery(() => {
-    if (!isAuthenticated.value) {
+    const context = consoleContext.value
+
+    if (!context) {
       return disabledNotificationQueryOptions<NotificationMessageListEnvelope>(
         'listConsoleNotificationMessages',
       )
     }
 
-    return listConsoleNotificationMessagesQueryOptions()
+    return withConsoleContextQueryKey(
+      listConsoleNotificationMessagesQueryOptions({
+        headers: consoleContextHeaders(context),
+      } as Parameters<typeof listConsoleNotificationMessagesQueryOptions>[0]),
+      context,
+    )
   })
 
   const tasksQuery = useQuery(() => {
-    if (!isAuthenticated.value) {
+    const context = consoleContext.value
+
+    if (!context) {
       return disabledNotificationQueryOptions<NotificationTaskListEnvelope>(
         'listConsoleNotificationTasks',
       )
     }
 
-    return listConsoleNotificationTasksQueryOptions()
+    return withConsoleContextQueryKey(
+      listConsoleNotificationTasksQueryOptions({
+        headers: consoleContextHeaders(context),
+      } as Parameters<typeof listConsoleNotificationTasksQueryOptions>[0]),
+      context,
+    )
+  })
+
+  const intentMutation = useMutation({
+    ...submitConsoleNotificationIntentMutationOptions(),
+    onSuccess(result) {
+      if (isSuccessfulEnvelope(result)) {
+        void invalidateNotifications(queryCache)
+      }
+    },
   })
 
   const markReadMutation = useMutation({
@@ -101,6 +145,7 @@ export function useNotifications() {
       tasksEnvelopeError.value ??
       markReadMutation.error.value ??
       batchReadMutation.error.value ??
+      intentMutation.error.value ??
       actionError.value,
   )
 
@@ -120,12 +165,17 @@ export function useNotifications() {
 
     actionError.value = undefined
     try {
+      const context = getRequiredConsoleContext(consoleContext.value)
+
       return requireResponseData(
         (await markReadMutation.mutateAsync({
+          headers: consoleContextHeaders(context),
           path: {
             messageId,
           },
-        } as Parameters<typeof markReadMutation.mutateAsync>[0])) as MarkNotificationMessageReadEnvelope,
+        } as Parameters<
+          typeof markReadMutation.mutateAsync
+        >[0])) as MarkNotificationMessageReadEnvelope,
         'Unable to mark notification read.',
       )
     } catch (error) {
@@ -145,16 +195,39 @@ export function useNotifications() {
 
     actionError.value = undefined
     try {
+      const context = getRequiredConsoleContext(consoleContext.value)
+
       return requireResponseData(
         (await batchReadMutation.mutateAsync({
           body: {
             messageIds,
           },
-        } as Parameters<typeof batchReadMutation.mutateAsync>[0])) as MarkNotificationMessagesReadEnvelope,
+          headers: consoleContextHeaders(context),
+        } as Parameters<
+          typeof batchReadMutation.mutateAsync
+        >[0])) as MarkNotificationMessagesReadEnvelope,
         'Unable to mark notifications read.',
       )
     } catch (error) {
       actionError.value = toError(error, 'Unable to mark notifications read.')
+      throw actionError.value
+    }
+  }
+
+  async function submitIntent(request: SubmitNotificationIntentRequest) {
+    actionError.value = undefined
+    try {
+      const context = getRequiredConsoleContext(consoleContext.value)
+
+      return requireResponseData(
+        (await intentMutation.mutateAsync({
+          body: request,
+          headers: consoleContextHeaders(context),
+        } as Parameters<typeof intentMutation.mutateAsync>[0])) as NotificationIntentEnvelope,
+        'Unable to submit notification intent.',
+      )
+    } catch (error) {
+      actionError.value = toError(error, 'Unable to submit notification intent.')
       throw actionError.value
     }
   }
@@ -174,6 +247,9 @@ export function useNotifications() {
     openTasks,
     readMessages,
     refreshNotifications,
+    submitError: intentMutation.error,
+    submitIntent,
+    submitPending: intentMutation.isLoading,
     tasks,
     tasksError: tasksQuery.error,
     tasksPending: tasksQuery.isLoading,
@@ -189,9 +265,42 @@ function disabledNotificationQueryOptions<TData>(id: string) {
   return {
     key: [{ _id: id, disabledReason: 'missing-auth-context' }],
     query: async (): Promise<TData> => {
-      throw new Error(AUTH_UNAVAILABLE_MESSAGE)
+      throw new Error(CONTEXT_UNAVAILABLE_MESSAGE)
     },
     enabled: false,
+  }
+}
+
+function getRequiredConsoleContext(context: ConsoleContext | undefined) {
+  if (!context) {
+    throw new Error(CONTEXT_UNAVAILABLE_MESSAGE)
+  }
+
+  return context
+}
+
+function consoleContextHeaders(context: ConsoleContext) {
+  return {
+    'X-Organization-Id': context.organizationId,
+    'X-Environment-Id': context.environmentId,
+  }
+}
+
+function withConsoleContextQueryKey<TOptions extends { key: unknown }>(
+  options: TOptions,
+  context: ConsoleContext,
+): TOptions {
+  const keyPart = Array.isArray(options.key) && isRecord(options.key[0]) ? options.key[0] : {}
+
+  return {
+    ...options,
+    key: [
+      {
+        ...keyPart,
+        environmentId: context.environmentId,
+        organizationId: context.organizationId,
+      },
+    ],
   }
 }
 
@@ -201,9 +310,7 @@ function invalidateNotifications(queryCache: ReturnType<typeof useQueryCache>) {
     .catch(ignoreBackgroundError)
 }
 
-function unwrapResponseData<T>(
-  envelope: ResponseEnvelope<T> | undefined,
-): T | undefined {
+function unwrapResponseData<T>(envelope: ResponseEnvelope<T> | undefined): T | undefined {
   if (!envelope?.success) {
     return undefined
   }

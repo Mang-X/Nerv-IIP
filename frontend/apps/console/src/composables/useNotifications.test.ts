@@ -8,6 +8,7 @@ import {
   listConsoleNotificationTasksQueryOptions,
   markConsoleNotificationMessageReadMutationOptions,
   markConsoleNotificationMessagesReadMutationOptions,
+  submitConsoleNotificationIntentMutationOptions,
 } from '@nerv-iip/api-client'
 import { useNotifications } from './useNotifications'
 
@@ -16,6 +17,8 @@ const coladaState = vi.hoisted(() => ({
   refetchError: undefined as Error | undefined,
   singleMutationResult: undefined as unknown,
   batchMutationResult: undefined as unknown,
+  intentMutationResult: undefined as unknown,
+  queryOptionsById: new Map<string, { key?: unknown }>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -33,6 +36,9 @@ vi.mock('@nerv-iip/api-client', () => ({
   markConsoleNotificationMessagesReadMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async () => coladaState.batchMutationResult),
   })),
+  submitConsoleNotificationIntentMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async () => coladaState.intentMutationResult),
+  })),
 }))
 
 vi.mock('@pinia/colada', () => ({
@@ -48,39 +54,43 @@ vi.mock('@pinia/colada', () => ({
   useQuery: vi.fn((optionsFactory) => {
     const options = optionsFactory()
     const id = Array.isArray(options.key) ? options.key[0]?._id : undefined
+    if (typeof id === 'string') {
+      coladaState.queryOptionsById.set(id, { key: options.key })
+    }
 
     return {
       data: shallowRef({
         success: true,
         data: {
-          items: id === 'listConsoleNotificationTasks'
-            ? [
-                {
-                  taskId: 'task-1',
-                  messageId: 'msg-1',
-                  taskType: 'acknowledge',
-                  status: 'open',
-                  createdAtUtc: '2026-05-21T00:10:00Z',
-                },
-              ]
-            : [
-                {
-                  messageId: 'msg-1',
-                  status: 'unread',
-                  severity: 'warning',
-                  title: 'Disk pressure',
-                  summary: 'Node A is above threshold',
-                  createdAtUtc: '2026-05-21T00:00:00Z',
-                },
-                {
-                  messageId: 'msg-2',
-                  status: 'read',
-                  severity: 'info',
-                  title: 'Deployment complete',
-                  createdAtUtc: '2026-05-20T23:00:00Z',
-                  readAtUtc: '2026-05-21T00:05:00Z',
-                },
-              ],
+          items:
+            id === 'listConsoleNotificationTasks'
+              ? [
+                  {
+                    taskId: 'task-1',
+                    messageId: 'msg-1',
+                    taskType: 'acknowledge',
+                    status: 'open',
+                    createdAtUtc: '2026-05-21T00:10:00Z',
+                  },
+                ]
+              : [
+                  {
+                    messageId: 'msg-1',
+                    status: 'unread',
+                    severity: 'warning',
+                    title: 'Disk pressure',
+                    summary: 'Node A is above threshold',
+                    createdAtUtc: '2026-05-21T00:00:00Z',
+                  },
+                  {
+                    messageId: 'msg-2',
+                    status: 'read',
+                    severity: 'info',
+                    title: 'Deployment complete',
+                    createdAtUtc: '2026-05-20T23:00:00Z',
+                    readAtUtc: '2026-05-21T00:05:00Z',
+                  },
+                ],
         },
       }),
       error: shallowRef(),
@@ -120,6 +130,15 @@ describe('useNotifications', () => {
         },
       ],
     }
+    coladaState.intentMutationResult = {
+      success: true,
+      data: {
+        intentId: 'intent-1',
+        duplicate: false,
+        messages: [],
+      },
+    }
+    coladaState.queryOptionsById.clear()
 
     useAuthStore().$patch({
       accessToken: 'access-token',
@@ -139,8 +158,32 @@ describe('useNotifications', () => {
     expect(notifications.unreadMessages.value).toHaveLength(1)
     expect(notifications.readMessages.value).toHaveLength(1)
     expect(notifications.openTasks.value).toHaveLength(1)
-    expect(listConsoleNotificationMessagesQueryOptions).toHaveBeenCalled()
-    expect(listConsoleNotificationTasksQueryOptions).toHaveBeenCalled()
+    expect(listConsoleNotificationMessagesQueryOptions).toHaveBeenCalledWith({
+      headers: {
+        'X-Organization-Id': 'org-customer',
+        'X-Environment-Id': 'env-prod',
+      },
+    })
+    expect(listConsoleNotificationTasksQueryOptions).toHaveBeenCalledWith({
+      headers: {
+        'X-Organization-Id': 'org-customer',
+        'X-Environment-Id': 'env-prod',
+      },
+    })
+    expect(coladaState.queryOptionsById.get('listConsoleNotificationMessages')?.key).toEqual([
+      {
+        _id: 'listConsoleNotificationMessages',
+        environmentId: 'env-prod',
+        organizationId: 'org-customer',
+      },
+    ])
+    expect(coladaState.queryOptionsById.get('listConsoleNotificationTasks')?.key).toEqual([
+      {
+        _id: 'listConsoleNotificationTasks',
+        environmentId: 'env-prod',
+        organizationId: 'org-customer',
+      },
+    ])
   })
 
   it('marks a single message read and refreshes notification queries', async () => {
@@ -152,6 +195,10 @@ describe('useNotifications', () => {
     expect(
       vi.mocked(markConsoleNotificationMessageReadMutationOptions).mock.results[0]?.value.mutation,
     ).toHaveBeenCalledWith({
+      headers: {
+        'X-Organization-Id': 'org-customer',
+        'X-Environment-Id': 'env-prod',
+      },
       path: {
         messageId: 'msg-1',
       },
@@ -181,6 +228,44 @@ describe('useNotifications', () => {
     ).toHaveBeenCalledWith({
       body: {
         messageIds: ['msg-1'],
+      },
+      headers: {
+        'X-Organization-Id': 'org-customer',
+        'X-Environment-Id': 'env-prod',
+      },
+    })
+  })
+
+  it('submits notification intents with the logged-in principal context headers', async () => {
+    const { submitIntent } = useNotifications()
+
+    await submitIntent({
+      sourceService: 'ops',
+      sourceEventType: 'operation.failed',
+      sourceEventId: 'evt-1',
+      intentType: 'ops.operation.failed',
+      severity: 'warning',
+      dedupeKey: 'ops:evt-1',
+      title: 'Operation failed',
+      suggestedRecipientRefs: ['user-admin'],
+    })
+
+    expect(
+      vi.mocked(submitConsoleNotificationIntentMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      body: {
+        sourceService: 'ops',
+        sourceEventType: 'operation.failed',
+        sourceEventId: 'evt-1',
+        intentType: 'ops.operation.failed',
+        severity: 'warning',
+        dedupeKey: 'ops:evt-1',
+        title: 'Operation failed',
+        suggestedRecipientRefs: ['user-admin'],
+      },
+      headers: {
+        'X-Organization-Id': 'org-customer',
+        'X-Environment-Id': 'env-prod',
       },
     })
   })

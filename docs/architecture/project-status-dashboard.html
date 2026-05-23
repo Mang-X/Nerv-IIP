@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nerv-IIP 项目状态看板</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #5c6b82;
+      --line: #d9e1ec;
+      --blue: #2563eb;
+      --green: #168257;
+      --amber: #b46b10;
+      --red: #b42318;
+      --violet: #6d4aff;
+      --cyan: #0e7490;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: 34px;
+    }
+
+    h2 {
+      margin-top: 36px;
+      font-size: 24px;
+    }
+
+    h3 {
+      font-size: 17px;
+    }
+
+    p {
+      margin: 10px 0 0;
+      color: var(--muted);
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    code {
+      padding: 2px 6px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #f2f5f9;
+      color: #27364f;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 14px 36px rgba(21, 36, 66, 0.08);
+    }
+
+    .hero-copy {
+      padding: 28px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .pill.green {
+      border-color: rgba(22, 130, 87, 0.25);
+      background: rgba(22, 130, 87, 0.08);
+      color: var(--green);
+    }
+
+    .pill.amber {
+      border-color: rgba(180, 107, 16, 0.28);
+      background: rgba(180, 107, 16, 0.09);
+      color: var(--amber);
+    }
+
+    .pill.red {
+      border-color: rgba(180, 35, 24, 0.25);
+      background: rgba(180, 35, 24, 0.08);
+      color: var(--red);
+    }
+
+    .hero-kpis {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 18px;
+    }
+
+    .kpi {
+      min-height: 116px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+    }
+
+    .kpi strong {
+      display: block;
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .kpi span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .section-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .section-card ul {
+      margin: 12px 0 0;
+      padding-left: 20px;
+    }
+
+    .section-card li {
+      margin: 7px 0;
+      color: var(--muted);
+    }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .layer {
+      min-height: 210px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .layer-title {
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .node {
+      margin-top: 8px;
+      padding: 9px 10px;
+      border-radius: 7px;
+      background: #eef4ff;
+      color: #1d4ed8;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .node.green {
+      background: rgba(22, 130, 87, 0.1);
+      color: var(--green);
+    }
+
+    .node.amber {
+      background: rgba(180, 107, 16, 0.1);
+      color: var(--amber);
+    }
+
+    .node.cyan {
+      background: rgba(14, 116, 144, 0.1);
+      color: var(--cyan);
+    }
+
+    table {
+      width: 100%;
+      margin-top: 16px;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      background: #f1f5fb;
+      color: #304057;
+      font-size: 13px;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status.done {
+      background: rgba(22, 130, 87, 0.1);
+      color: var(--green);
+    }
+
+    .status.next {
+      background: rgba(37, 99, 235, 0.1);
+      color: var(--blue);
+    }
+
+    .status.gap {
+      background: rgba(180, 107, 16, 0.11);
+      color: var(--amber);
+    }
+
+    .lane {
+      border-left: 4px solid var(--blue);
+    }
+
+    .lane.green {
+      border-left-color: var(--green);
+    }
+
+    .lane.amber {
+      border-left-color: var(--amber);
+    }
+
+    .lane.violet {
+      border-left-color: var(--violet);
+    }
+
+    .source-list {
+      columns: 2;
+      column-gap: 28px;
+      margin-top: 12px;
+      padding-left: 20px;
+      color: var(--muted);
+    }
+
+    .source-list li {
+      break-inside: avoid;
+      margin: 6px 0;
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .grid-3,
+      .grid-2,
+      .architecture {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .source-list {
+        columns: 1;
+      }
+    }
+
+    @media (max-width: 560px) {
+      main {
+        padding: 20px 14px 44px;
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+
+      .hero-copy {
+        padding: 20px;
+      }
+
+      .hero-kpis {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div class="panel hero-copy">
+        <div class="meta">
+          <span class="pill green">业务 MVP 后端已成形</span>
+          <span class="pill amber">#77 是下一主线</span>
+          <span class="pill red">#78 甘特/RFC 已排除</span>
+        </div>
+        <h1>Nerv-IIP 项目状态看板</h1>
+        <p>
+          生成时间：2026-05-23。基于 <code>implementation-readiness.md</code>、代码目录、验证脚本、
+          GitHub issue 与 3 个只读 worker 核查结果。当前判断：平台控制面和业务服务骨架已经越过“纸面规划”，
+          接下来应把业务 MVP 的跨服务验收与基础能力补洞并行推进。
+        </p>
+      </div>
+      <div class="panel hero-kpis" aria-label="项目关键指标">
+        <div class="kpi"><strong>12</strong><span>业务服务已存在 Domain / Infrastructure / Web / tests</span></div>
+        <div class="kpi"><strong>5107-5118</strong><span>业务服务本地端口已纳入 Aspire AppHost</span></div>
+        <div class="kpi"><strong>7</strong><span>#77 计划覆盖的全链路验收场景</span></div>
+        <div class="kpi"><strong>3</strong><span>#141 / #142 / #143 仍是基础一期开放子项</span></div>
+      </div>
+    </section>
+
+    <h2>一句话结论</h2>
+    <div class="grid-3">
+      <article class="section-card lane green">
+        <h3>已经有业务 MVP 后端底座</h3>
+        <p>MasterData、ProductEngineering、Inventory、Quality、MES、DemandPlanning、BarcodeLabel、Approval、WMS、IndustrialTelemetry、Maintenance、ERP 都有代码与验证入口。</p>
+      </article>
+      <article class="section-card lane">
+        <h3>现在缺的是跨域成链</h3>
+        <p><code>backend/tests/Nerv.IIP.Business.Acceptance.Tests</code> 和 <code>scripts/verify-business-full-chain-acceptance.ps1</code> 已补 baseline 入口；#77 仍需继续扩展为真实 HTTP 全链路验收。</p>
+      </article>
+      <article class="section-card lane amber">
+        <h3>基础能力要贴着业务补</h3>
+        <p>FileStorage 上传、业务控制台组件、Notification 上下文、IAM/部署/观测应和 #77 并行，避免后端能力无人能用、问题无人能查。</p>
+      </article>
+    </div>
+
+    <h2>架构现状</h2>
+    <div class="architecture" aria-label="架构分层">
+      <section class="layer">
+        <div class="layer-title">Console / BFF</div>
+        <div class="node">Vue Console：实例、Ops、IAM、Notifications</div>
+        <div class="node">PlatformGateway：Console facade + permission enforcement</div>
+        <div class="node amber">业务控制台页面尚未展开</div>
+      </section>
+      <section class="layer">
+        <div class="layer-title">Platform Control Plane</div>
+        <div class="node green">IAM：用户、角色、权限、会话</div>
+        <div class="node green">AppHub：应用与实例事实</div>
+        <div class="node green">Ops：低风险动作闭环</div>
+        <div class="node green">Notification：站内消息/任务</div>
+        <div class="node green">FileStorage：metadata、SDK、本地 tus</div>
+      </section>
+      <section class="layer">
+        <div class="layer-title">Business Platform</div>
+        <div class="node green">Layer 0：MasterData</div>
+        <div class="node green">Engineering / Inventory / Quality / MES</div>
+        <div class="node green">Planning / Barcode / Approval / WMS</div>
+        <div class="node green">Telemetry / Maintenance / ERP</div>
+      </section>
+      <section class="layer">
+        <div class="layer-title">Integration / Infra</div>
+        <div class="node cyan">Connector Host + Docker Connector</div>
+        <div class="node cyan">Aspire AppHost 单一拓扑入口</div>
+        <div class="node cyan">PostgreSQL / Redis / MinIO / OTel</div>
+        <div class="node amber">Compose / 安装包 / 生产发布仍待补齐</div>
+      </section>
+    </div>
+
+    <h2>业务能力盘点</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>服务</th>
+          <th>当前 MVP 能力</th>
+          <th>状态</th>
+          <th>下一步增强</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>MasterData</td><td>SKU、UOM、组织、人员技能、工厂、产线、班次、工作中心、设备、参考数据</td><td><span class="status done">已实现</span></td><td>作为 #77 fixture 与公共 resolve/validate 基础</td></tr>
+        <tr><td>ProductEngineering</td><td>工程文档、工程物料、EBOM、MBOM、Routing、ECO/ECN、ProductionVersion</td><td><span class="status done">已实现</span></td><td>与 MES / MRP 的 release facts 验收成链</td></tr>
+        <tr><td>Inventory</td><td>库存地点、台账、移动、盘点任务与调整</td><td><span class="status done">已实现</span></td><td>预留/冻结、批次谱系、成本候选联动</td></tr>
+        <tr><td>Quality</td><td>NCR、InspectionPlan、InspectionRecord、收货/工序/终检事实</td><td><span class="status done">已实现</span></td><td>采购入库、生产报工后的检验验收</td></tr>
+        <tr><td>MES</td><td>工单、工序任务、报工、完工入库请求、排产结果</td><td><span class="status done">已实现</span></td><td>补足公开查询面，支撑验收断言</td></tr>
+        <tr><td>DemandPlanning</td><td>需求源、MPS/MRP、pegging、计划采购/工单建议</td><td><span class="status done">已实现</span></td><td>建议 accept 后对 ERP/MES downstream reference 成链</td></tr>
+        <tr><td>BarcodeLabel</td><td>条码规则、标签模板、打印批次、扫码记录</td><td><span class="status done">已实现</span></td><td>接入 WMS/MES/质检场景的 scan proof</td></tr>
+        <tr><td>Approval</td><td>审批模板、审批链、审批步骤与审批结果事件</td><td><span class="status done">已实现</span></td><td>和高风险动作、业务单据审批区分边界</td></tr>
+        <tr><td>WMS</td><td>入库、出库、仓库任务、盘点执行、WCS adapter 边界</td><td><span class="status done">已实现</span></td><td>真实 Inventory posting adapter 与公共事件契约</td></tr>
+        <tr><td>IndustrialTelemetry</td><td>Tag、设备状态快照、报警、采集汇总</td><td><span class="status done">已实现</span></td><td>保持控制命令与凭据在外部边界</td></tr>
+        <tr><td>Maintenance</td><td>维修工单、保养计划、点检、停机原因、备件行</td><td><span class="status done">已实现</span></td><td>报警触发开单幂等、资产不可用/恢复事件验收</td></tr>
+        <tr><td>ERP</td><td>采购、销售、应收应付、凭证、成本候选</td><td><span class="status done">已实现</span></td><td>完整总账月结、税务/银行/发布 bundle 后置</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Issue 与剩余工作</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Issue</th>
+          <th>判断</th>
+          <th>建议动作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>#77 Full-chain acceptance</td><td><span class="status next">下一主线</span></td><td>创建业务验收测试项目、7 条链路测试、聚合 verify 脚本；完成后业务 MVP 才算真正可演示。</td></tr>
+        <tr><td>#141 FileStorage tus hardening</td><td><span class="status gap">并行基础</span></td><td>补 size、checksum、expiration、协议兼容；优先级高于 #142。</td></tr>
+        <tr><td>#143 Business console component readiness</td><td><span class="status gap">并行基础</span></td><td>补 Tabs、Sheet、Date/Range、Chart、FileUpload、Progress、ScrollArea，先入 <code>@nerv-iip/ui</code>。</td></tr>
+        <tr><td>#142 MinIO/S3 multipart</td><td><span class="status gap">后置基础</span></td><td>生产对象存储直传前再做，不阻塞业务 MVP。</td></tr>
+        <tr><td>#71 基础设施二期</td><td><span class="status gap">需拆分</span></td><td>拆成 integration-events/outbox、IAM/security、deployment、performance 四条 issue 线。</td></tr>
+        <tr><td>#73 / #74 / #75</td><td><span class="status gap">Epic 状态待清理</span></td><td>子 issue 已关闭且代码存在，建议更新 issue 正文并关闭或改为验收跟踪。</td></tr>
+        <tr><td>#78 甘特/RFC</td><td><span class="status gap">本轮排除</span></td><td>只保留技术方案评估，不进入本轮业务后端与基础能力实施。</td></tr>
+      </tbody>
+    </table>
+
+    <h2>下一阶段并行路线</h2>
+    <div class="grid-2">
+      <article class="section-card lane green">
+        <h3>业务 MVP 主线：#77</h3>
+        <ul>
+          <li>Worker A：验收 harness、fixture、event recorder、<code>verify-business-full-chain-acceptance.ps1</code>。</li>
+          <li>Worker B：工程到制造、计划到采购/生产链路。</li>
+          <li>Worker C：采购到库存到应付、订单到交付到应收、生产到成本链路。</li>
+          <li>Worker D：设备到维护到产能、WMS-WCS adapter 链路。</li>
+        </ul>
+      </article>
+      <article class="section-card lane">
+        <h3>基础能力并行</h3>
+        <ul>
+          <li>FileStorage：Gateway/Console facade、FileUpload wrapper、tus 硬化。</li>
+          <li>Design System：业务页面所需组件先进入 <code>@nerv-iip/ui</code>。</li>
+          <li>Notification：修复组织/环境 headers，再做偏好、订阅、限流与 provider。</li>
+          <li>IAM / Ops / Observability：生产暴露策略、高风险动作审批、诊断附件与日志入口。</li>
+        </ul>
+      </article>
+      <article class="section-card lane amber">
+        <h3>业务控制台切入点</h3>
+        <ul>
+          <li>先做信息架构与模块导航，不急着把所有业务页一次铺开。</li>
+          <li>第一屏建议选 MasterData + Inventory + Quality + MES 的列表/详情/创建流。</li>
+          <li>附件、证据、照片、CAD 包统一走 FileStorage 与 FileUpload，不直连对象存储。</li>
+        </ul>
+      </article>
+      <article class="section-card lane violet">
+        <h3>治理与验证</h3>
+        <ul>
+          <li>每条业务链只通过公开 HTTP API 与 IntegrationEvent 可见事实断言。</li>
+          <li>不跨 schema FK，不引用其它服务 Domain / Infrastructure。</li>
+          <li>新脚本必须 dot-source <code>scripts/lib/ScriptAutomation.ps1</code> 并过治理检查。</li>
+        </ul>
+      </article>
+    </div>
+
+    <h2>已知风险</h2>
+    <div class="grid-3">
+      <article class="section-card">
+        <h3>验收断言可能缺查询面</h3>
+        <p>MES、WMS、Maintenance 等服务可能需要补少量只读 API，才能让 #77 不靠数据库直读。</p>
+      </article>
+      <article class="section-card">
+        <h3>Notification 页面上下文缺口</h3>
+        <p>worker 核到前端调用 Notification facade 时未显式传 <code>X-Organization-Id</code> / <code>X-Environment-Id</code>，运行时可能 400。</p>
+      </article>
+      <article class="section-card">
+        <h3>业务界面落后于后端</h3>
+        <p>目前 Console 已有平台实例、Ops、IAM、Notifications，但业务服务还没有相应的业务控制台页面。</p>
+      </article>
+    </div>
+
+    <h2>事实来源</h2>
+    <ul class="source-list">
+      <li><code>docs/architecture/implementation-readiness.md</code></li>
+      <li><code>docs/architecture/context-map.md</code></li>
+      <li><code>docs/architecture/repo-layout.md</code></li>
+      <li><code>docs/superpowers/plans/2026-05-23-business-full-chain-acceptance.md</code></li>
+      <li><code>frontend/DESIGN/roadmaps/business-console-readiness.md</code></li>
+      <li><code>infra/aspire/Nerv.IIP.AppHost/Program.cs</code></li>
+      <li><code>backend/services/Business/*</code></li>
+      <li><code>scripts/verify-business-*.ps1</code></li>
+      <li><code>gh issue list --state all</code>，核对 #70/#71/#73/#74/#75/#77/#141/#142/#143。</li>
+    </ul>
+  </main>
+</body>
+</html>
