@@ -33,14 +33,15 @@
 27. Messaging provider 已与 persistence provider 解耦：AppHub、Ops、Notification、BusinessMasterData 和 BusinessQuality 的 PostgreSQL profile 默认使用 `Messaging:Provider=InMemory` + CAP InMemory message queue；显式设置 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ broker。平台级 AppHost 默认不创建 RabbitMQ resource，`scripts/verify-second-slice-ops.ps1 -UsePostgres` 默认也不再依赖 RabbitMQ。
 28. 业务平台 GitHub issue roadmap 已完成重整：#70、#71、#73、#74、#75、#76 和 #77 保留为事实对齐后的 epic，新增 #131 到 #143 作为可执行子 issue；#72 维持已关闭状态，#78 是甘特/RFC 参考，不进入本轮后端与领域实施路线图。
 29. 业务平台 Wave 1 agent handoff 已补齐：#127、#131、#132、#135 和 #140 分别有 session 级 plan，Inventory 与 Quality inspection 另有独立 spec；并行开发前先读 `docs/superpowers/specs/2026-05-23-business-wave-1-agent-session-design.md`，再进入对应 issue 的 plan。
+30. ProductEngineering MVP 已补齐 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN 和 ProductionVersion 的 Domain/Infrastructure/Web/API contract/schema convention 测试；服务已加入 `backend/Nerv.IIP.sln` 和 Aspire AppHost，IAM seed、权限矩阵、schema catalog 与 `scripts/verify-business-product-engineering-mvp.ps1` 已同步。
 
 ### 业务平台代码事实与 issue 映射
 
 | 服务/能力 | 当前代码事实 | GitHub 跟踪 |
 | --- | --- | --- |
 | BusinessMasterData | 已有 Domain/Infrastructure/Web、PostgreSQL migration、测试与 `scripts/verify-business-master-data-realignment.ps1`；realignment 已补齐 UOM、资源、设备、resolve/list/create endpoint 和变更事件 payload。 | #72 已关闭；下游接线由 #127、#131 到 #143 承接 |
-| ProductEngineering | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；当前主要完成 ProductionVersion，EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN 仍需补齐。 | #127 |
 | Quality | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；当前已完成 NonconformanceReport，并在 #132 补齐 InspectionPlan、InspectionRecord、收货/工序/终检等检验事实、API、事件和 schema 门禁。 | #73、#132 |
+| ProductEngineering | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN、ProductionVersion，服务已纳入 solution/AppHost/IAM seed/schema catalog，并提供 `scripts/verify-business-product-engineering-mvp.ps1`。 | #127 |
 | MES | 当前只有 Web 层与 Web 测试，排产、插单和重排仍是 in-memory；缺 Domain、Infrastructure、PostgreSQL migration 与持久化执行模型。 | #74、#135 |
 | Inventory | 尚无服务目录。 | #73、#131 |
 | BarcodeLabel | 尚无服务目录。 | #73、#133 |
@@ -50,7 +51,7 @@
 | ERP | 尚无服务目录；拆分 Procurement、Sales、Finance 三个执行子 issue。 | #76、#137、#138、#139 |
 | IndustrialTelemetry | 尚无服务目录；依赖 MasterData device reference，并保持 PLC/DCS/SCADA 外部边界。 | #129 |
 | Maintenance | 尚无服务目录；已有 `Contracts.Maintenance` 和 MES planned work order handler 先行代码，报警触发维修工单依赖 IndustrialTelemetry。 | #130 |
-| 业务服务注册与验收 | Business 服务尚未纳入平台级 AppHost；MasterData realignment 和 Quality inspection MVP 已有专用 verify 脚本。 | #77、#140 |
+| 业务服务注册与验收 | ProductEngineering 已纳入平台级 AppHost 并提供专用 verify 脚本；MasterData realignment 和 Quality inspection MVP 也有专用 verify 脚本。其余业务服务仍需随各自 MVP 接入。 | #77、#140 |
 
 ### 业务平台 Wave 1 agent handoff
 

@@ -1,4 +1,3 @@
-using MediatR;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
@@ -17,7 +16,7 @@ public sealed record CreateRushWorkOrderCommand(
     string OperationTaskId,
     int OperationSequence,
     TimeSpan Duration,
-    DateTimeOffset RequestedAtUtc) : IRequest<CreateRushWorkOrderResponse>;
+    DateTimeOffset RequestedAtUtc) : ICommand<CreateRushWorkOrderResponse>;
 
 public sealed record CreateRushWorkOrderResponse(
     string WorkOrderId,
@@ -25,15 +24,15 @@ public sealed record CreateRushWorkOrderResponse(
     IReadOnlyCollection<string> AffectedWorkOrderIds);
 
 public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, RuleScheduler scheduler)
-    : IRequestHandler<CreateRushWorkOrderCommand, CreateRushWorkOrderResponse>
+    : ICommandHandler<CreateRushWorkOrderCommand, CreateRushWorkOrderResponse>
 {
     private const int RushPriority = 1000;
 
-    public Task<CreateRushWorkOrderResponse> Handle(CreateRushWorkOrderCommand request, CancellationToken cancellationToken)
+    public async Task<CreateRushWorkOrderResponse> Handle(CreateRushWorkOrderCommand request, CancellationToken cancellationToken)
     {
         var baselinePlan = scheduler.Schedule(
-            store.GetScheduleOperations(request.OrganizationId, request.EnvironmentId),
-            store.Unavailabilities);
+            await store.GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
+            await store.GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
 
         store.AddWorkOrder(new PlannedWorkOrder(
             request.OrganizationId,
@@ -52,19 +51,24 @@ public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, R
             request.WorkCenterId,
             [],
             request.RequestedAtUtc,
-            request.Duration));
+            request.Duration,
+            null,
+            null,
+            request.OrganizationId,
+            request.EnvironmentId));
 
         var plan = scheduler.Schedule(
-            store.GetScheduleOperations(request.OrganizationId, request.EnvironmentId),
-            store.Unavailabilities);
-        var schedule = store.AddScheduleResult(
+            await store.GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
+            await store.GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
+        var schedule = await store.AddScheduleResultAsync(
             RescheduleTrigger.RushOrder,
             request.RequestedAtUtc,
             plan,
-            baselinePlan.Assignments);
-        return Task.FromResult(new CreateRushWorkOrderResponse(
+            baselinePlan.Assignments,
+            cancellationToken);
+        return new CreateRushWorkOrderResponse(
             request.WorkOrderId,
             schedule,
-            schedule.AffectedWorkOrderIds));
+            schedule.AffectedWorkOrderIds);
     }
 }

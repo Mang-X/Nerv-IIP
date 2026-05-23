@@ -158,8 +158,14 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `business.masterdata.resources.manage` | `user` / `external-client` | organization / environment + resource | 管理工作中心、工作日历、设备资产和人员业务属性。 |
 | `business.engineering.documents.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 CAD、图纸、工艺文件等工程文件引用和版本。 |
 | `business.engineering.documents.manage` | `user` / `external-client` | environment + resource | 注册、归档和关联工程文件；文件本体仍归 File Storage。 |
-| `business.engineering.boms.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 EBOM、MBOM 和工艺路线版本。 |
-| `business.engineering.boms.manage` | `user` / `external-client` | environment + resource | 创建、修改、发布 EBOM、MBOM 和工艺路线。 |
+| `business.engineering.items.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工程物料及其版本状态。 |
+| `business.engineering.items.manage` | `user` / `external-client` | environment + resource | 创建和发布工程物料版本。 |
+| `business.engineering.boms.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 EBOM 与 MBOM 版本。 |
+| `business.engineering.boms.manage` | `user` / `external-client` | environment + resource | 创建、修改、发布 EBOM 与 MBOM。 |
+| `business.engineering.routings.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工艺路线版本及工序。 |
+| `business.engineering.routings.manage` | `user` / `external-client` | environment + resource | 创建、修改、发布工艺路线版本。 |
+| `business.engineering.production-versions.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看和解析 SKU 可用生产版本绑定。 |
+| `business.engineering.production-versions.manage` | `user` / `external-client` | environment + resource | 创建、调整和归档生产版本绑定。 |
 | `business.engineering.changes.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 ECO/ECN、影响范围和发布记录。 |
 | `business.engineering.changes.manage` | `user` / `external-client` | environment + resource | 发起、审批后发布工程变更。 |
 | `business.planning.demands.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看销售订单、预测、安全库存等需求来源。 |

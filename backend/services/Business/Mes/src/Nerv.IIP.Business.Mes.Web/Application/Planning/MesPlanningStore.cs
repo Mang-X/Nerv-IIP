@@ -23,7 +23,9 @@ public sealed record PlannedOperationTask(
     DateTimeOffset EarliestStartUtc,
     TimeSpan Duration,
     DateTimeOffset? ExistingStartUtc = null,
-    DateTimeOffset? ExistingEndUtc = null);
+    DateTimeOffset? ExistingEndUtc = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record MesScheduleResult(
     int ScheduleVersion,
@@ -34,30 +36,55 @@ public sealed record MesScheduleResult(
 
 public interface IMesPlanningStore
 {
-    IReadOnlyCollection<PlannedWorkOrder> WorkOrders { get; }
-    IReadOnlyCollection<PlannedOperationTask> OperationTasks { get; }
-    IReadOnlyCollection<WorkCenterUnavailability> Unavailabilities { get; }
-    IReadOnlyCollection<MesScheduleResult> ScheduleResults { get; }
-
     void AddWorkOrder(PlannedWorkOrder workOrder);
 
     void AddOperationTask(PlannedOperationTask operationTask);
 
     void AddUnavailability(WorkCenterUnavailability unavailability);
 
-    void CloseUnavailability(string deviceAssetId, DateTimeOffset restoredAtUtc);
-
     void MapDeviceAssetToWorkCenter(string deviceAssetId, string workCenterId);
 
-    string ResolveWorkCenterId(string deviceAssetId);
+    Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default);
 
-    MesScheduleResult AddScheduleResult(
+    Task<IReadOnlyCollection<PlannedOperationTask>> GetOperationTasksAsync(CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<MesScheduleResult>> GetScheduleResultsAsync(CancellationToken cancellationToken = default);
+
+    Task CloseUnavailabilityAsync(string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default);
+
+    Task CloseUnavailabilityAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset restoredAtUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<string> ResolveWorkCenterIdAsync(string deviceAssetId, CancellationToken cancellationToken = default);
+
+    Task<string> ResolveWorkCenterIdAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        CancellationToken cancellationToken = default);
+
+    Task<MesScheduleResult> AddScheduleResultAsync(
         RescheduleTrigger trigger,
         DateTimeOffset scheduledAtUtc,
         RuleSchedulePlan plan,
-        IReadOnlyCollection<ScheduledOperation>? compareAssignments = null);
+        IReadOnlyCollection<ScheduledOperation>? compareAssignments = null,
+        CancellationToken cancellationToken = default);
 
-    IReadOnlyCollection<ScheduleOperation> GetScheduleOperations(string organizationId, string environmentId);
+    Task<IReadOnlyCollection<ScheduleOperation>> GetScheduleOperationsAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -179,6 +206,109 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
             .ToList();
     }
 
+    public Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(WorkOrders);
+    }
+
+    public Task<IReadOnlyCollection<PlannedOperationTask>> GetOperationTasksAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(OperationTasks);
+    }
+
+    public Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Unavailabilities);
+    }
+
+    public Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var scoped = _unavailabilities
+            .Where(x => IsInScope(x, organizationId, environmentId))
+            .ToList();
+        return Task.FromResult<IReadOnlyCollection<WorkCenterUnavailability>>(scoped);
+    }
+
+    public Task<IReadOnlyCollection<MesScheduleResult>> GetScheduleResultsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(ScheduleResults);
+    }
+
+    public Task CloseUnavailabilityAsync(string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CloseUnavailability(deviceAssetId, restoredAtUtc);
+        return Task.CompletedTask;
+    }
+
+    public Task CloseUnavailabilityAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset restoredAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var index = _unavailabilities.FindIndex(x =>
+            IsInScope(x, organizationId, environmentId)
+            && string.Equals(x.DeviceAssetId, deviceAssetId, StringComparison.OrdinalIgnoreCase)
+            && x.ToUtc is null);
+
+        if (index >= 0)
+        {
+            var current = _unavailabilities[index];
+            _unavailabilities[index] = current with { ToUtc = restoredAtUtc };
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<string> ResolveWorkCenterIdAsync(string deviceAssetId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(ResolveWorkCenterId(deviceAssetId));
+    }
+
+    public Task<string> ResolveWorkCenterIdAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        CancellationToken cancellationToken = default)
+    {
+        _ = organizationId;
+        _ = environmentId;
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(ResolveWorkCenterId(deviceAssetId));
+    }
+
+    public Task<MesScheduleResult> AddScheduleResultAsync(
+        RescheduleTrigger trigger,
+        DateTimeOffset scheduledAtUtc,
+        RuleSchedulePlan plan,
+        IReadOnlyCollection<ScheduledOperation>? compareAssignments = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(AddScheduleResult(trigger, scheduledAtUtc, plan, compareAssignments));
+    }
+
+    public Task<IReadOnlyCollection<ScheduleOperation>> GetScheduleOperationsAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(GetScheduleOperations(organizationId, environmentId));
+    }
+
     private IReadOnlyCollection<string> FindAffectedWorkOrders(
         RuleSchedulePlan plan,
         IReadOnlyCollection<ScheduledOperation>? compareAssignments)
@@ -196,5 +326,14 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static bool IsInScope(WorkCenterUnavailability unavailability, string organizationId, string environmentId)
+    {
+        var organizationMatches = unavailability.OrganizationId is null
+            || string.Equals(unavailability.OrganizationId, organizationId, StringComparison.Ordinal);
+        var environmentMatches = unavailability.EnvironmentId is null
+            || string.Equals(unavailability.EnvironmentId, environmentId, StringComparison.Ordinal);
+        return organizationMatches && environmentMatches;
     }
 }
