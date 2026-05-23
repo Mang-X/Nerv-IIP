@@ -92,6 +92,30 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public void Create_inspection_plan_validator_rejects_blank_characteristic_codes()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+
+        var result = validator.Validate(new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-RECEIVING-001",
+            "receiving",
+            "SKU-RM-1000",
+            null,
+            null,
+            null,
+            "purchase-receipt",
+            [
+                new InspectionPlanCharacteristicInput(null!, "Appearance", "visual", "critical", true, "zero-defect"),
+                new InspectionPlanCharacteristicInput(" ", "COA", "document", "major", true, "certificate-match"),
+            ]));
+
+        Assert.False(result.IsValid);
+        Assert.Equal(2, result.Errors.Count);
+    }
+
+    [Fact]
     public void Create_inspection_record_validator_requires_disposition_reason_for_non_passed_lines()
     {
         var validator = new CreateInspectionRecordCommandValidator();

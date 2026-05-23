@@ -32,6 +32,14 @@ public sealed class CreateInspectionPlanCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.PlanCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Category).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Characteristics).NotEmpty();
+        RuleForEach(x => x.Characteristics).ChildRules(characteristic =>
+        {
+            characteristic.RuleFor(x => x.CharacteristicCode).NotEmpty().MaximumLength(100);
+            characteristic.RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+            characteristic.RuleFor(x => x.Method).NotEmpty().MaximumLength(100);
+            characteristic.RuleFor(x => x.Severity).NotEmpty().MaximumLength(50);
+            characteristic.RuleFor(x => x.SamplingRule).NotEmpty().MaximumLength(200);
+        });
         RuleFor(x => x.Characteristics)
             .Must(HaveUniqueCharacteristicCodes)
             .WithMessage("Inspection characteristic codes must be unique.");

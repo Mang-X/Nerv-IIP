@@ -20,6 +20,7 @@ public sealed class QualityOpenApiTests
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["ConnectionStrings:Redis"] = "localhost:6379",
+                        // Program.cs reads this key. Swagger generation builds EF metadata but does not open a DB connection.
                         ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_quality_openapi;Username=nerv;Password=nerv",
                     }));
             });

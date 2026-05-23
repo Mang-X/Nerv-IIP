@@ -31,7 +31,12 @@ public static class IamPermissionCatalog
         ["notifications.intents.submit"] = "Submit notification intents.",
         ["notifications.messages.read"] = "Read notification messages.",
         ["notifications.messages.mark-read"] = "Mark notification messages as read.",
-        ["notifications.tasks.read"] = "Read notification tasks."
+        ["notifications.tasks.read"] = "Read notification tasks.",
+        ["business.quality.inspection-plans.manage"] = "Create, activate and supersede quality inspection plans.",
+        ["business.quality.inspection-records.create"] = "Create quality inspection records.",
+        ["business.quality.inspection-records.read"] = "Read quality inspection plans and records.",
+        ["business.quality.ncr.read"] = "Read quality nonconformance reports.",
+        ["business.quality.ncr.manage"] = "Create, disposition and close quality nonconformance reports."
     };
 
     private static readonly HashSet<string> SeedCodes = NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal);

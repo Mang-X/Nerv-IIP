@@ -40,7 +40,7 @@
 | --- | --- | --- |
 | BusinessMasterData | 已有 Domain/Infrastructure/Web、PostgreSQL migration、测试与 `scripts/verify-business-master-data-realignment.ps1`；realignment 已补齐 UOM、资源、设备、resolve/list/create endpoint 和变更事件 payload。 | #72 已关闭；下游接线由 #127、#131 到 #143 承接 |
 | ProductEngineering | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；当前主要完成 ProductionVersion，EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN 仍需补齐。 | #127 |
-| Quality | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；当前主要完成 NonconformanceReport，InspectionPlan、InspectionRecord 与收货/工序检验仍需补齐。 | #73、#132 |
+| Quality | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；当前已完成 NonconformanceReport，并在 #132 补齐 InspectionPlan、InspectionRecord、收货/工序/终检等检验事实、API、事件和 schema 门禁。 | #73、#132 |
 | MES | 当前只有 Web 层与 Web 测试，排产、插单和重排仍是 in-memory；缺 Domain、Infrastructure、PostgreSQL migration 与持久化执行模型。 | #74、#135 |
 | Inventory | 尚无服务目录。 | #73、#131 |
 | BarcodeLabel | 尚无服务目录。 | #73、#133 |
@@ -50,7 +50,7 @@
 | ERP | 尚无服务目录；拆分 Procurement、Sales、Finance 三个执行子 issue。 | #76、#137、#138、#139 |
 | IndustrialTelemetry | 尚无服务目录；依赖 MasterData device reference，并保持 PLC/DCS/SCADA 外部边界。 | #129 |
 | Maintenance | 尚无服务目录；已有 `Contracts.Maintenance` 和 MES planned work order handler 先行代码，报警触发维修工单依赖 IndustrialTelemetry。 | #130 |
-| 业务服务注册与验收 | Business 服务尚未纳入平台级 AppHost；只有 MasterData realignment 有专用 verify 脚本。 | #77、#140 |
+| 业务服务注册与验收 | Business 服务尚未纳入平台级 AppHost；MasterData realignment 和 Quality inspection MVP 已有专用 verify 脚本。 | #77、#140 |
 
 ### 业务平台 Wave 1 agent handoff
 
@@ -58,7 +58,7 @@
 | --- | --- | --- |
 | #127 ProductEngineering | `docs/superpowers/plans/2026-05-23-product-engineering-gap-completion.md` | 从现有 ProductionVersion 代码事实出发补齐工程文档、EBOM、MBOM、Routing 和 ECO/ECN。 |
 | #131 Inventory | `docs/superpowers/specs/2026-05-23-inventory-mvp-design.md`、`docs/superpowers/plans/2026-05-23-inventory-mvp.md` | 新建库存事实源服务，稳定后解锁 DemandPlanning、WMS 和 ERP。 |
-| #132 Quality inspection | `docs/superpowers/specs/2026-05-23-quality-inspection-mvp-design.md`、`docs/superpowers/plans/2026-05-23-quality-inspection-mvp.md` | 在现有 Quality NCR 上增量补 InspectionPlan 和 InspectionRecord。 |
+| #132 Quality inspection | `docs/superpowers/specs/2026-05-23-quality-inspection-mvp-design.md`、`docs/superpowers/plans/2026-05-23-quality-inspection-mvp.md` | 已在现有 Quality NCR 上增量落地 InspectionPlan、InspectionRecord、NCR-from-inspection、集成事件和验证脚本基线。 |
 | #135 MES persistence | `docs/superpowers/plans/2026-05-23-mes-cleanddd-persistence.md` | 保留现有 Web/in-memory 行为，迁移到 Domain、Infrastructure 和 PostgreSQL。 |
 | #140 Registration/readiness | `docs/superpowers/plans/2026-05-23-business-service-registration-verify-readiness.md` | 统一收口 solution、AppHost、verify scripts、权限矩阵、schema catalog 和 readiness。 |
 
@@ -281,13 +281,14 @@
 12. 运行 `pwsh scripts/check-script-compatibility.ps1` 可在 macOS/Linux 上记录脚本兼容门禁证据；Windows 本地只能使用 `-AllowWindows -FastOnly` 做 smoke，不作为兼容性声明依据。
 13. 运行 AppHub/Ops/IAM/FileStorage schema convention tests 可验证当前已迁移服务的 schema metadata 门禁。
 14. 运行 `pwsh scripts/verify-business-master-data-realignment.ps1` 可验证 BusinessMasterData realignment 的 Domain、Web、schema convention 和 IAM seed 基线。
-15. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
-16. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
-17. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
-18. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
-19. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-20. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、Notification 站内消息/任务纵切与 Console facade、BusinessMasterData Layer 0 realignment，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批、Notification 外部通道 provider 或 MinIO/S3 multipart。
-21. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
+15. 运行 `pwsh scripts/verify-business-quality-inspection-mvp.ps1` 可验证 BusinessQuality inspection MVP 的 Domain、Web、contracts 和 IAM seed 权限基线。
+16. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
+17. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
+18. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
+19. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
+20. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
+21. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、Notification 站内消息/任务纵切与 Console facade、BusinessMasterData Layer 0 realignment，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批、Notification 外部通道 provider 或 MinIO/S3 multipart。
+22. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
 

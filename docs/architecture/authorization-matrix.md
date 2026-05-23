@@ -176,8 +176,9 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `business.barcodes.print` | `user` / `external-client` | environment + resource | 生成或打印标签。 |
 | `business.approvals.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看业务审批链、审批记录和待办状态。 |
 | `business.approvals.manage` | `user` / `external-client` / `internal-service` | organization / environment + resource | 创建审批链并处理业务审批步骤；不适用于 Ops 运维审批。 |
-| `business.quality.inspections.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看检验标准、检验计划、检验记录和处置结果。 |
-| `business.quality.inspections.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建检验计划、记录检验值和完成不合格处置。 |
+| `business.quality.inspection-plans.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建、激活和版本化检验计划与检验特性。 |
+| `business.quality.inspection-records.create` | `user` / `external-client` / `internal-service` | environment + resource | 记录收货、工序、终检、维修或客退检验结果。 |
+| `business.quality.inspection-records.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看检验计划和检验记录。 |
 | `business.quality.ncr.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看不合格品报告、处置方案和关闭结果。 |
 | `business.quality.ncr.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建不合格品报告、提交处置方案并记录关闭所需的外部执行引用。 |
 | `business.erp.procurement.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看采购申请、询价、供应商报价、采购订单、收货和退货。 |
