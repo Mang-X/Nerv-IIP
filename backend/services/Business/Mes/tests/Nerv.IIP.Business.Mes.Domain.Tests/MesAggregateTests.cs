@@ -70,6 +70,7 @@ public sealed class MesAggregateTests
         var second = ScheduleResult.Create(1, ScheduleTrigger.Manual, scheduledAt, assignments, []);
 
         Assert.Equal(first.AssignmentsJson, second.AssignmentsJson);
+        Assert.Contains("\"_v\":1", first.AssignmentsJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -106,5 +107,65 @@ public sealed class MesAggregateTests
         Assert.Equal("SKU-001", request.SkuId);
         Assert.Equal(9m, request.Quantity);
         Assert.Equal("PCS", request.UomCode);
+    }
+
+    [Fact]
+    public void ProductionReport_rejects_negative_or_empty_quantities()
+    {
+        var reportedAt = DateTimeOffset.Parse("2026-05-23T09:00:00Z");
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            -1m,
+            0m,
+            false,
+            reportedAt));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            0m,
+            0m,
+            false,
+            reportedAt));
+    }
+
+    [Fact]
+    public void Aggregates_reject_blank_organization_id()
+    {
+        var dueUtc = DateTimeOffset.Parse("2026-05-23T10:00:00Z");
+
+        Assert.Throws<ArgumentException>(() => WorkOrder.Create("", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 10, dueUtc));
+        Assert.Throws<ArgumentException>(() => OperationTask.Queue("", "env-dev", "WO-001", "OP-10", 10, "WC-A", [], dueUtc, TimeSpan.FromMinutes(30)));
+        Assert.Throws<ArgumentException>(() => ProductionReport.Record("", "env-dev", "WO-001", "OP-10", 1m, 0m, true, dueUtc));
+        Assert.Throws<ArgumentException>(() => FinishedGoodsReceiptRequest.Create("", "env-dev", "WO-001", "SKU-001", 1m, "PCS", dueUtc));
+    }
+
+    [Fact]
+    public void WorkOrder_cannot_be_released_twice()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-003",
+            "SKU-001",
+            "PV-001",
+            5m,
+            10,
+            DateTimeOffset.Parse("2026-05-23T10:00:00Z"));
+        var routingSteps = new[]
+        {
+            new RoutingStepSnapshot("OP-10", 10, "WC-A", [], TimeSpan.FromMinutes(30)),
+        };
+
+        _ = workOrder.Release(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), routingSteps);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            workOrder.Release(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), routingSteps));
     }
 }

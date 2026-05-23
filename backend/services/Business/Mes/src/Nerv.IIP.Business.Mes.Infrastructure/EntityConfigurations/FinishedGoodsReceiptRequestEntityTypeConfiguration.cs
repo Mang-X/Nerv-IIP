@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 
 namespace Nerv.IIP.Business.Mes.Infrastructure.EntityConfigurations;
 
@@ -17,6 +18,16 @@ public sealed class FinishedGoodsReceiptRequestEntityTypeConfiguration : IEntity
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).IsRequired().HasComment("Finished goods quantity requested for receipt.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("MasterData unit of measure code for the receipt quantity.");
         builder.Property(x => x.RequestedAtUtc).HasColumnName("requested_at_utc").IsRequired().HasComment("UTC time when MES requested finished goods receipt.");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.SkuId, x.RequestedAtUtc });
+        builder.HasOne<WorkOrder>()
+            .WithMany()
+            .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })
+            .HasForeignKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId })
+            .HasConstraintName("fk_receipt_requests_work_orders")
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => x.WorkOrderId).HasDatabaseName("ix_receipt_requests_work_order_id");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId })
+            .HasDatabaseName("ix_receipt_requests_scope_work_order_fk");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.SkuId, x.RequestedAtUtc })
+            .HasDatabaseName("ix_receipt_requests_scope_work_order_sku_time");
     }
 }

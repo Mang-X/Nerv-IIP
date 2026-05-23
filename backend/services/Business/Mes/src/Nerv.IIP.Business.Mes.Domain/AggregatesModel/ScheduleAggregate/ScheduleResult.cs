@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 
@@ -27,6 +28,8 @@ public sealed record ScheduledOperationSnapshot(
 public sealed class ScheduleResult : Entity<ScheduleResultId>, IAggregateRoot
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private IReadOnlyCollection<ScheduledOperationSnapshot>? assignments;
+    private IReadOnlyCollection<string>? affectedWorkOrderIds;
 
     private ScheduleResult()
     {
@@ -42,21 +45,21 @@ public sealed class ScheduleResult : Entity<ScheduleResultId>, IAggregateRoot
         ScheduleVersion = scheduleVersion > 0 ? scheduleVersion : throw new ArgumentOutOfRangeException(nameof(scheduleVersion));
         Trigger = trigger;
         ScheduledAtUtc = scheduledAtUtc;
-        AssignmentsJson = JsonSerializer.Serialize(assignments.OrderBy(x => x.StartUtc).ThenBy(x => x.OperationTaskId), SerializerOptions);
-        AffectedWorkOrderIdsJson = JsonSerializer.Serialize(affectedWorkOrderIds.Order(StringComparer.OrdinalIgnoreCase), SerializerOptions);
+        AssignmentsJson = SerializeVersioned(assignments.OrderBy(x => x.StartUtc).ThenBy(x => x.OperationTaskId).ToList());
+        AffectedWorkOrderIdsJson = SerializeVersioned(affectedWorkOrderIds.Order(StringComparer.OrdinalIgnoreCase).ToList());
     }
 
     public int ScheduleVersion { get; private set; }
     public ScheduleTrigger Trigger { get; private set; }
     public DateTimeOffset ScheduledAtUtc { get; private set; }
-    public string AssignmentsJson { get; private set; } = "[]";
-    public string AffectedWorkOrderIdsJson { get; private set; } = "[]";
+    public string AssignmentsJson { get; private set; } = """{"_v":1,"items":[]}""";
+    public string AffectedWorkOrderIdsJson { get; private set; } = """{"_v":1,"items":[]}""";
 
     public IReadOnlyCollection<ScheduledOperationSnapshot> Assignments =>
-        JsonSerializer.Deserialize<IReadOnlyCollection<ScheduledOperationSnapshot>>(AssignmentsJson, SerializerOptions) ?? [];
+        assignments ??= DeserializeVersioned<ScheduledOperationSnapshot>(AssignmentsJson);
 
     public IReadOnlyCollection<string> AffectedWorkOrderIds =>
-        JsonSerializer.Deserialize<IReadOnlyCollection<string>>(AffectedWorkOrderIdsJson, SerializerOptions) ?? [];
+        affectedWorkOrderIds ??= DeserializeVersioned<string>(AffectedWorkOrderIdsJson);
 
     public static ScheduleResult Create(
         int scheduleVersion,
@@ -69,6 +72,32 @@ public sealed class ScheduleResult : Entity<ScheduleResultId>, IAggregateRoot
         ArgumentNullException.ThrowIfNull(affectedWorkOrderIds);
         return new ScheduleResult(scheduleVersion, trigger, scheduledAtUtc, assignments, affectedWorkOrderIds);
     }
+
+    private static string SerializeVersioned<T>(IReadOnlyCollection<T> items)
+    {
+        return JsonSerializer.Serialize(new VersionedJson<T>(1, items), SerializerOptions);
+    }
+
+    private static IReadOnlyCollection<T> DeserializeVersioned<T>(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind == JsonValueKind.Array)
+        {
+            return JsonSerializer.Deserialize<IReadOnlyCollection<T>>(json, SerializerOptions) ?? [];
+        }
+
+        var payload = JsonSerializer.Deserialize<VersionedJson<T>>(json, SerializerOptions);
+        return payload?.Items ?? [];
+    }
+
+    private sealed record VersionedJson<T>(
+        [property: JsonPropertyName("_v")] int Version,
+        IReadOnlyCollection<T> Items);
 }
 
 public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId>, IAggregateRoot
@@ -88,10 +117,10 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
     {
         OrganizationId = string.IsNullOrWhiteSpace(organizationId) ? null : organizationId.Trim();
         EnvironmentId = string.IsNullOrWhiteSpace(environmentId) ? null : environmentId.Trim();
-        WorkCenterId = Required(workCenterId);
+        WorkCenterId = DomainGuard.Required(workCenterId, nameof(workCenterId));
         FromUtc = fromUtc;
         ToUtc = toUtc;
-        Reason = Required(reason);
+        Reason = DomainGuard.Required(reason, nameof(reason));
         DeviceAssetId = string.IsNullOrWhiteSpace(deviceAssetId) ? null : deviceAssetId.Trim();
     }
 
@@ -120,10 +149,6 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
         ToUtc = restoredAtUtc;
     }
 
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
-    }
 }
 
 public sealed class DeviceAssetWorkCenterMapping : Entity<DeviceAssetWorkCenterMappingId>, IAggregateRoot
@@ -136,8 +161,8 @@ public sealed class DeviceAssetWorkCenterMapping : Entity<DeviceAssetWorkCenterM
     {
         OrganizationId = string.IsNullOrWhiteSpace(organizationId) ? null : organizationId.Trim();
         EnvironmentId = string.IsNullOrWhiteSpace(environmentId) ? null : environmentId.Trim();
-        DeviceAssetId = Required(deviceAssetId);
-        WorkCenterId = Required(workCenterId);
+        DeviceAssetId = DomainGuard.Required(deviceAssetId, nameof(deviceAssetId));
+        WorkCenterId = DomainGuard.Required(workCenterId, nameof(workCenterId));
     }
 
     public string? OrganizationId { get; private set; }
@@ -157,11 +182,6 @@ public sealed class DeviceAssetWorkCenterMapping : Entity<DeviceAssetWorkCenterM
 
     public void Remap(string workCenterId)
     {
-        WorkCenterId = Required(workCenterId);
-    }
-
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+        WorkCenterId = DomainGuard.Required(workCenterId, nameof(workCenterId));
     }
 }

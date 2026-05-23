@@ -14,6 +14,9 @@ public sealed record RoutingStepSnapshot(
 
 public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 {
+    public const string CreatedStatus = "created";
+    public const string ReleasedStatus = "released";
+
     private WorkOrder()
     {
     }
@@ -28,14 +31,15 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         int priority,
         DateTimeOffset dueUtc)
     {
-        OrganizationId = Required(organizationId);
-        EnvironmentId = Required(environmentId);
-        WorkOrderIdValue = Required(workOrderId);
-        SkuId = Required(skuId);
+        OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
+        EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
+        WorkOrderIdValue = DomainGuard.Required(workOrderId, nameof(workOrderId));
+        SkuId = DomainGuard.Required(skuId, nameof(skuId));
         ProductionVersionId = string.IsNullOrWhiteSpace(productionVersionId) ? null : productionVersionId.Trim();
-        Quantity = quantity > 0 ? quantity : throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be positive.");
+        Quantity = DomainGuard.Positive(quantity, nameof(quantity));
         Priority = priority;
         DueUtc = dueUtc;
+        Status = CreatedStatus;
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -47,6 +51,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public decimal Quantity { get; private set; }
     public int Priority { get; private set; }
     public DateTimeOffset DueUtc { get; private set; }
+    public string Status { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public string WorkOrderId => WorkOrderIdValue;
@@ -84,6 +89,11 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new ArgumentException("At least one routing step is required.", nameof(routingSteps));
         }
 
+        if (Status == ReleasedStatus)
+        {
+            throw new InvalidOperationException("Work order has already been released.");
+        }
+
         var tasks = routingSteps
             .OrderBy(x => x.OperationSequence)
             .Select(step => OperationTask.Queue(
@@ -97,12 +107,9 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
                 earliestStartUtc,
                 step.Duration))
             .ToList();
+        Status = ReleasedStatus;
         AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks));
         return tasks;
     }
 
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
-    }
 }

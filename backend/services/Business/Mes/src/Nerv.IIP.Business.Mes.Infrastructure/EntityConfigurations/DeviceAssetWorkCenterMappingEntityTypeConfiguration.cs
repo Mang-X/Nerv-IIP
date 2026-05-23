@@ -14,6 +14,8 @@ public sealed class DeviceAssetWorkCenterMappingEntityTypeConfiguration : IEntit
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").HasMaxLength(100).HasComment("Environment id; null means the mapping is global.");
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").IsRequired().HasMaxLength(100).HasComment("Maintenance device asset public id.");
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(100).HasComment("MasterData work center public id used by MES scheduling.");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId })
+            .IsUnique()
+            .HasDatabaseName("ix_asset_wc_mapping_scope_asset");
     }
 }

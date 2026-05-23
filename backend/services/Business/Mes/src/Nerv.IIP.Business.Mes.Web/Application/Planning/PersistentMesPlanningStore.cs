@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using DeviceAssetWorkCenterMapping = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.DeviceAssetWorkCenterMapping;
@@ -13,16 +14,8 @@ using ScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAgg
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Planning;
 
-public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) : IMesPlanningStore
+public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext, IOperationTaskRepository operationTaskRepository) : IMesPlanningStore
 {
-    public IReadOnlyCollection<PlannedWorkOrder> WorkOrders => GetWorkOrdersAsync().GetAwaiter().GetResult();
-
-    public IReadOnlyCollection<PlannedOperationTask> OperationTasks => GetOperationTasksAsync().GetAwaiter().GetResult();
-
-    public IReadOnlyCollection<WorkCenterUnavailability> Unavailabilities => GetUnavailabilitiesAsync().GetAwaiter().GetResult();
-
-    public IReadOnlyCollection<MesScheduleResult> ScheduleResults => GetScheduleResultsAsync().GetAwaiter().GetResult();
-
     public void AddWorkOrder(PlannedWorkOrder workOrder)
     {
         ArgumentNullException.ThrowIfNull(workOrder);
@@ -80,11 +73,6 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
             unavailability.DeviceAssetId));
     }
 
-    public void CloseUnavailability(string deviceAssetId, DateTimeOffset restoredAtUtc)
-    {
-        CloseUnavailabilityAsync(deviceAssetId, restoredAtUtc).GetAwaiter().GetResult();
-    }
-
     public void MapDeviceAssetToWorkCenter(string deviceAssetId, string workCenterId)
     {
         var existing = dbContext.DeviceAssetWorkCenterMappings.Local
@@ -96,25 +84,6 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
         }
 
         dbContext.DeviceAssetWorkCenterMappings.Add(DeviceAssetWorkCenterMapping.Create(deviceAssetId, workCenterId));
-    }
-
-    public string ResolveWorkCenterId(string deviceAssetId)
-    {
-        return ResolveWorkCenterIdAsync(deviceAssetId).GetAwaiter().GetResult();
-    }
-
-    public MesScheduleResult AddScheduleResult(
-        RescheduleTrigger trigger,
-        DateTimeOffset scheduledAtUtc,
-        RuleSchedulePlan plan,
-        IReadOnlyCollection<ScheduledOperation>? compareAssignments = null)
-    {
-        return AddScheduleResultAsync(trigger, scheduledAtUtc, plan, compareAssignments).GetAwaiter().GetResult();
-    }
-
-    public IReadOnlyCollection<ScheduleOperation> GetScheduleOperations(string organizationId, string environmentId)
-    {
-        return GetScheduleOperationsAsync(organizationId, environmentId).GetAwaiter().GetResult();
     }
 
     public async Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default)
@@ -334,13 +303,11 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
             .ToDictionary(x => x.Key, x => x.Last(), StringComparer.OrdinalIgnoreCase);
 
         var workOrderIds = workOrders.Keys.ToList();
-        var persistedOperationTasks = await dbContext.OperationTasks
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                workOrderIds.Contains(x.WorkOrderId))
-            .ToListAsync(cancellationToken);
+        var persistedOperationTasks = await operationTaskRepository.GetByScopeWorkOrdersAsync(
+            organizationId,
+            environmentId,
+            workOrderIds,
+            cancellationToken);
         var persistedOperationTaskIds = persistedOperationTasks.Select(x => x.Id).ToHashSet();
         var operationTasks = persistedOperationTasks
             .Concat(dbContext.OperationTasks.Local.Where(x =>

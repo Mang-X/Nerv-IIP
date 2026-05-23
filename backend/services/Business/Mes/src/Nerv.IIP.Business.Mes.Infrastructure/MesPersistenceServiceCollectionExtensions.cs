@@ -33,6 +33,8 @@ public static class MesPersistenceServiceCollectionExtensions
         services.AddRepositories(typeof(ApplicationDbContext).Assembly);
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<IWorkOrderRepository, WorkOrderRepository>();
+        services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();
+        services.AddScoped<IProductionReportRepository, ProductionReportRepository>();
         return services;
     }
 }

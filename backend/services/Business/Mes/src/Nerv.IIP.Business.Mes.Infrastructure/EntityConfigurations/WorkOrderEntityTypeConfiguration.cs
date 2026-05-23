@@ -19,8 +19,12 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).IsRequired().HasComment("Planned production quantity.");
         builder.Property(x => x.Priority).HasColumnName("priority").IsRequired().HasComment("Scheduling priority; rush work orders use a high priority value.");
         builder.Property(x => x.DueUtc).HasColumnName("due_utc").IsRequired().HasComment("UTC due time used by the deterministic rule scheduler.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("MES work order lifecycle status.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the MES work order fact was created.");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue }).IsUnique();
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SkuId, x.DueUtc });
+        builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })
+            .HasName("ak_work_orders_scope_work_order");
+        builder.HasIndex(x => x.WorkOrderIdValue).HasDatabaseName("ix_work_orders_work_order_id");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SkuId, x.DueUtc })
+            .HasDatabaseName("ix_work_orders_scope_sku_due");
     }
 }

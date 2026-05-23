@@ -36,30 +36,13 @@ public sealed record MesScheduleResult(
 
 public interface IMesPlanningStore
 {
-    IReadOnlyCollection<PlannedWorkOrder> WorkOrders { get; }
-    IReadOnlyCollection<PlannedOperationTask> OperationTasks { get; }
-    IReadOnlyCollection<WorkCenterUnavailability> Unavailabilities { get; }
-    IReadOnlyCollection<MesScheduleResult> ScheduleResults { get; }
-
     void AddWorkOrder(PlannedWorkOrder workOrder);
 
     void AddOperationTask(PlannedOperationTask operationTask);
 
     void AddUnavailability(WorkCenterUnavailability unavailability);
 
-    void CloseUnavailability(string deviceAssetId, DateTimeOffset restoredAtUtc);
-
     void MapDeviceAssetToWorkCenter(string deviceAssetId, string workCenterId);
-
-    string ResolveWorkCenterId(string deviceAssetId);
-
-    MesScheduleResult AddScheduleResult(
-        RescheduleTrigger trigger,
-        DateTimeOffset scheduledAtUtc,
-        RuleSchedulePlan plan,
-        IReadOnlyCollection<ScheduledOperation>? compareAssignments = null);
-
-    IReadOnlyCollection<ScheduleOperation> GetScheduleOperations(string organizationId, string environmentId);
 
     Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default);
 

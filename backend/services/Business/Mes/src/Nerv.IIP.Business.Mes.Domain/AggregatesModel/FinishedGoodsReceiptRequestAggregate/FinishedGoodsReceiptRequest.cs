@@ -17,12 +17,12 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         string uomCode,
         DateTimeOffset requestedAtUtc)
     {
-        OrganizationId = Required(organizationId);
-        EnvironmentId = Required(environmentId);
-        WorkOrderId = Required(workOrderId);
-        SkuId = Required(skuId);
-        Quantity = quantity > 0 ? quantity : throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be positive.");
-        UomCode = Required(uomCode);
+        OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
+        EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
+        WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
+        SkuId = DomainGuard.Required(skuId, nameof(skuId));
+        Quantity = DomainGuard.Positive(quantity, nameof(quantity));
+        UomCode = DomainGuard.Required(uomCode, nameof(uomCode));
         RequestedAtUtc = requestedAtUtc;
     }
 
@@ -53,8 +53,4 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
             requestedAtUtc);
     }
 
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
-    }
 }

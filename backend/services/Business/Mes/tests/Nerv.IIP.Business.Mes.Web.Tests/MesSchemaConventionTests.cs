@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -53,8 +54,58 @@ public sealed class MesSchemaConventionTests
                 new JsonColumnRule(typeof(ScheduleResult), nameof(ScheduleResult.AffectedWorkOrderIdsJson)),
             ]));
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, MesFacts.ServiceName, MesFacts.Schema));
+        failures.AddRange(ForeignKeysAreConfigured(fixture.DbContext));
+        failures.AddRange(IndexNamesAreExplicit(fixture.DbContext, businessEntities));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    private static IReadOnlyCollection<string> ForeignKeysAreConfigured(ApplicationDbContext dbContext)
+    {
+        var model = dbContext.Model;
+        var failures = new List<string>();
+        AssertForeignKey(model, typeof(OperationTask), "fk_operation_tasks_work_orders", failures);
+        AssertForeignKey(model, typeof(ProductionReport), "fk_production_reports_work_orders", failures);
+        AssertForeignKey(model, typeof(ProductionReport), "fk_production_reports_operation_tasks", failures);
+        AssertForeignKey(model, typeof(FinishedGoodsReceiptRequest), "fk_receipt_requests_work_orders", failures);
+        return failures;
+    }
+
+    private static IReadOnlyCollection<string> IndexNamesAreExplicit(ApplicationDbContext dbContext, IEnumerable<Type> businessEntities)
+    {
+        var failures = new List<string>();
+        foreach (var entityType in businessEntities.Select(x => dbContext.Model.FindEntityType(x)).OfType<IEntityType>())
+        {
+            foreach (var index in entityType.GetIndexes())
+            {
+                var databaseName = index.GetDatabaseName();
+                if (string.IsNullOrWhiteSpace(databaseName))
+                {
+                    failures.Add($"{MesFacts.ServiceName}: index on {entityType.ClrType.Name} is missing an explicit database name.");
+                }
+                else if (databaseName.Contains("~", StringComparison.Ordinal))
+                {
+                    failures.Add($"{MesFacts.ServiceName}: index '{databaseName}' appears truncated.");
+                }
+            }
+        }
+
+        return failures;
+    }
+
+    private static void AssertForeignKey(IModel model, Type entityType, string constraintName, List<string> failures)
+    {
+        var entity = model.FindEntityType(entityType);
+        if (entity is null)
+        {
+            failures.Add($"{MesFacts.ServiceName}: missing entity type {entityType.Name}.");
+            return;
+        }
+
+        if (entity.GetForeignKeys().All(x => x.GetConstraintName() != constraintName))
+        {
+            failures.Add($"{MesFacts.ServiceName}: missing foreign key constraint '{constraintName}' on {entityType.Name}.");
+        }
     }
 
     private static SchemaFixture CreateFixture()

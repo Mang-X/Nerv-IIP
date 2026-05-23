@@ -17,7 +17,7 @@ public sealed class ScheduleResultEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.ScheduledAtUtc).HasColumnName("scheduled_at_utc").IsRequired().HasComment("UTC time requested for the schedule run.");
         builder.Property(x => x.AssignmentsJson).HasColumnName("assignments_json").IsRequired().HasColumnType("text").HasComment("JSON schedule assignments produced by MES scheduler; producer is MES, consumers are MES/WMS/read APIs, compatibility is append-only fields.");
         builder.Property(x => x.AffectedWorkOrderIdsJson).HasColumnName("affected_work_order_ids_json").IsRequired().HasColumnType("text").HasComment("JSON affected work order id list produced by MES scheduler; producer is MES, consumers are MES/WMS/read APIs, compatibility is append-only fields.");
-        builder.HasIndex(x => x.ScheduleVersion).IsUnique();
-        builder.HasIndex(x => new { x.Trigger, x.ScheduledAtUtc });
+        builder.HasIndex(x => x.ScheduleVersion).IsUnique().HasDatabaseName("ix_schedule_results_version");
+        builder.HasIndex(x => new { x.Trigger, x.ScheduledAtUtc }).HasDatabaseName("ix_schedule_results_trigger_time");
     }
 }

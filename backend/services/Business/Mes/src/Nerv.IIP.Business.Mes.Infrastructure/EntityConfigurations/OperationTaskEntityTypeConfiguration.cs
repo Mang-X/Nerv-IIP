@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 
 namespace Nerv.IIP.Business.Mes.Infrastructure.EntityConfigurations;
 
@@ -26,7 +27,18 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.ExistingStartUtc).HasColumnName("existing_start_utc").HasComment("Existing UTC start time for in-progress operation preservation.");
         builder.Property(x => x.ExistingEndUtc).HasColumnName("existing_end_utc").HasComment("Existing UTC end time for in-progress operation preservation.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the operation task fact was created.");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskIdValue }).IsUnique();
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OperationSequence });
+        builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskIdValue })
+            .HasName("ak_operation_tasks_scope_task");
+        builder.HasOne<WorkOrder>()
+            .WithMany()
+            .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })
+            .HasForeignKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId })
+            .HasConstraintName("fk_operation_tasks_work_orders")
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => x.WorkOrderId).HasDatabaseName("ix_operation_tasks_work_order_id");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId })
+            .HasDatabaseName("ix_operation_tasks_scope_work_order_fk");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OperationSequence })
+            .HasDatabaseName("ix_operation_tasks_scope_work_order_seq");
     }
 }

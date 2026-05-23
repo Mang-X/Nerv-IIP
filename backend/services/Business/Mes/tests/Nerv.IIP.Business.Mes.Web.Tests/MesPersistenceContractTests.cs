@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
@@ -48,9 +49,9 @@ public sealed class MesPersistenceContractTests
         using var recreatedScope = services.CreateScope();
         var store = recreatedScope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
 
-        Assert.Contains(store.WorkOrders, x => x.WorkOrderId == "WO-PERSISTED");
-        Assert.Contains(store.OperationTasks, x => x.OperationTaskId == "OP-10");
-        Assert.Contains(store.ScheduleResults, x => x.Trigger == RescheduleTrigger.RushOrder);
+        Assert.Contains(await store.GetWorkOrdersAsync(), x => x.WorkOrderId == "WO-PERSISTED");
+        Assert.Contains(await store.GetOperationTasksAsync(), x => x.OperationTaskId == "OP-10");
+        Assert.Contains(await store.GetScheduleResultsAsync(), x => x.Trigger == RescheduleTrigger.RushOrder);
     }
 
     [Fact]
@@ -112,11 +113,11 @@ public sealed class MesPersistenceContractTests
 
         using var recreatedScope = services.CreateScope();
         var recreatedStore = recreatedScope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-        var window = Assert.Single(recreatedStore.Unavailabilities);
+        var window = Assert.Single(await recreatedStore.GetUnavailabilitiesAsync());
         Assert.Equal("WC-A", window.WorkCenterId);
         Assert.Equal("ASSET-CNC-01", window.DeviceAssetId);
         Assert.Null(window.ToUtc);
-        Assert.Equal(RescheduleTrigger.AssetUnavailable, Assert.Single(recreatedStore.ScheduleResults).Trigger);
+        Assert.Equal(RescheduleTrigger.AssetUnavailable, Assert.Single(await recreatedStore.GetScheduleResultsAsync()).Trigger);
     }
 
     [Fact]
@@ -202,6 +203,7 @@ public sealed class MesPersistenceContractTests
         services.AddLogging();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();
         services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
         services.AddSingleton<RuleScheduler>();
         return services.BuildServiceProvider();

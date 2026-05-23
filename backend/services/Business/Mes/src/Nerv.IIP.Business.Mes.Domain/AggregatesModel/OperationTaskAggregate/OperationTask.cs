@@ -30,13 +30,13 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         DateTimeOffset? existingStartUtc,
         DateTimeOffset? existingEndUtc)
     {
-        OrganizationId = Required(organizationId);
-        EnvironmentId = Required(environmentId);
-        WorkOrderId = Required(workOrderId);
-        OperationTaskIdValue = Required(operationTaskId);
+        OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
+        EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
+        WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
+        OperationTaskIdValue = DomainGuard.Required(operationTaskId, nameof(operationTaskId));
         Status = status;
         OperationSequence = operationSequence;
-        WorkCenterId = Required(workCenterId);
+        WorkCenterId = DomainGuard.Required(workCenterId, nameof(workCenterId));
         AlternativeWorkCenterIds = NormalizeAlternatives(alternativeWorkCenterIds);
         EarliestStartUtc = earliestStartUtc;
         DurationTicks = duration > TimeSpan.Zero
@@ -123,11 +123,6 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             duration,
             existingStartUtc,
             existingEndUtc);
-    }
-
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
     }
 
     private static string NormalizeAlternatives(IReadOnlyCollection<string> values)

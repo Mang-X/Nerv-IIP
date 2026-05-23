@@ -18,12 +18,17 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         bool completesOperation,
         DateTimeOffset reportedAtUtc)
     {
-        OrganizationId = Required(organizationId);
-        EnvironmentId = Required(environmentId);
-        WorkOrderId = Required(workOrderId);
-        OperationTaskId = Required(operationTaskId);
-        GoodQuantity = NonNegative(goodQuantity, nameof(goodQuantity));
-        ScrapQuantity = NonNegative(scrapQuantity, nameof(scrapQuantity));
+        OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
+        EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
+        WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
+        OperationTaskId = DomainGuard.Required(operationTaskId, nameof(operationTaskId));
+        GoodQuantity = DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
+        ScrapQuantity = DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
+        if (GoodQuantity + ScrapQuantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(goodQuantity), "At least one reported quantity must be positive.");
+        }
+
         CompletesOperation = completesOperation;
         ReportedAtUtc = reportedAtUtc;
     }
@@ -58,13 +63,4 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             reportedAtUtc);
     }
 
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
-    }
-
-    private static decimal NonNegative(decimal value, string parameterName)
-    {
-        return value >= 0 ? value : throw new ArgumentOutOfRangeException(parameterName, "Quantity cannot be negative.");
-    }
 }
