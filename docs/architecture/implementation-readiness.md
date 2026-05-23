@@ -31,6 +31,36 @@
 25. BusinessMasterData realignment 已开始落地：MasterData Domain 增加 UOM、UOM conversion、Site、ProductionLine、Shift、ReferenceDataCode 和扩展 SKU/WorkCenter/DeviceAsset 属性；Infrastructure 已生成 `RealignBusinessMasterData` migration；Web 层已提供 MasterData 变更 IntegrationEvent payload、批量 resolve/validate query、统一 list query，并补齐 SKU、UOM、UOM conversion、伙伴、部门、团队、人员技能、工厂、产线、班次、日历、工作中心、设备和参考数据的 create endpoints；API 合同测试已覆盖稳定 operationId、路由、权限码、创建成功和重复业务键；IAM seed 已加入 `business.masterdata.*` 六个权限。可通过 `scripts/verify-business-master-data-realignment.ps1` 做本地验证。
 26. FileStorage MVP 已交付公开 contracts、`Sdk.FileStorage` HTTP client、server-proxy metadata API 子集、PostgreSQL-backed API service、`filestorage` PostgreSQL schema baseline、初始 migration、schema convention tests 和本地 tus `HEAD`/`PATCH` 上传 endpoint；当前不包含 MinIO/S3 multipart 或 Gateway/Console facade。
 27. Messaging provider 已与 persistence provider 解耦：AppHub、Ops、Notification、BusinessMasterData 和 BusinessQuality 的 PostgreSQL profile 默认使用 `Messaging:Provider=InMemory` + CAP InMemory message queue；显式设置 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ broker。平台级 AppHost 默认不创建 RabbitMQ resource，`scripts/verify-second-slice-ops.ps1 -UsePostgres` 默认也不再依赖 RabbitMQ。
+28. 业务平台 GitHub issue roadmap 已完成重整：#70、#71、#73、#74、#75、#76 和 #77 保留为事实对齐后的 epic，新增 #131 到 #143 作为可执行子 issue；#72 维持已关闭状态，#78 是甘特/RFC 参考，不进入本轮后端与领域实施路线图。
+29. 业务平台 Wave 1 agent handoff 已补齐：#127、#131、#132、#135 和 #140 分别有 session 级 plan，Inventory 与 Quality inspection 另有独立 spec；并行开发前先读 `docs/superpowers/specs/2026-05-23-business-wave-1-agent-session-design.md`，再进入对应 issue 的 plan。
+
+### 业务平台代码事实与 issue 映射
+
+| 服务/能力 | 当前代码事实 | GitHub 跟踪 |
+| --- | --- | --- |
+| BusinessMasterData | 已有 Domain/Infrastructure/Web、PostgreSQL migration、测试与 `scripts/verify-business-master-data-realignment.ps1`；realignment 已补齐 UOM、资源、设备、resolve/list/create endpoint 和变更事件 payload。 | #72 已关闭；下游接线由 #127、#131 到 #143 承接 |
+| ProductEngineering | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；当前主要完成 ProductionVersion，EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN 仍需补齐。 | #127 |
+| Quality | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；当前主要完成 NonconformanceReport，InspectionPlan、InspectionRecord 与收货/工序检验仍需补齐。 | #73、#132 |
+| MES | 当前只有 Web 层与 Web 测试，排产、插单和重排仍是 in-memory；缺 Domain、Infrastructure、PostgreSQL migration 与持久化执行模型。 | #74、#135 |
+| Inventory | 尚无服务目录。 | #73、#131 |
+| BarcodeLabel | 尚无服务目录。 | #73、#133 |
+| BusinessApproval | 尚无服务目录。 | #73、#134 |
+| DemandPlanning | 尚无服务目录；依赖 ProductEngineering 发布的 MBOM/Routing/ProductionVersion resolve 契约与 Inventory 可用量查询。 | #128 |
+| WMS | 尚无服务目录；依赖 Inventory stock movement/availability 契约。 | #75、#136 |
+| ERP | 尚无服务目录；拆分 Procurement、Sales、Finance 三个执行子 issue。 | #76、#137、#138、#139 |
+| IndustrialTelemetry | 尚无服务目录；依赖 MasterData device reference，并保持 PLC/DCS/SCADA 外部边界。 | #129 |
+| Maintenance | 尚无服务目录；已有 `Contracts.Maintenance` 和 MES planned work order handler 先行代码，报警触发维修工单依赖 IndustrialTelemetry。 | #130 |
+| 业务服务注册与验收 | Business 服务尚未纳入平台级 AppHost；只有 MasterData realignment 有专用 verify 脚本。 | #77、#140 |
+
+### 业务平台 Wave 1 agent handoff
+
+| Issue | Handoff docs | 说明 |
+| --- | --- | --- |
+| #127 ProductEngineering | `docs/superpowers/plans/2026-05-23-product-engineering-gap-completion.md` | 从现有 ProductionVersion 代码事实出发补齐工程文档、EBOM、MBOM、Routing 和 ECO/ECN。 |
+| #131 Inventory | `docs/superpowers/specs/2026-05-23-inventory-mvp-design.md`、`docs/superpowers/plans/2026-05-23-inventory-mvp.md` | 新建库存事实源服务，稳定后解锁 DemandPlanning、WMS 和 ERP。 |
+| #132 Quality inspection | `docs/superpowers/specs/2026-05-23-quality-inspection-mvp-design.md`、`docs/superpowers/plans/2026-05-23-quality-inspection-mvp.md` | 在现有 Quality NCR 上增量补 InspectionPlan 和 InspectionRecord。 |
+| #135 MES persistence | `docs/superpowers/plans/2026-05-23-mes-cleanddd-persistence.md` | 保留现有 Web/in-memory 行为，迁移到 Domain、Infrastructure 和 PostgreSQL。 |
+| #140 Registration/readiness | `docs/superpowers/plans/2026-05-23-business-service-registration-verify-readiness.md` | 统一收口 solution、AppHost、verify scripts、权限矩阵、schema catalog 和 readiness。 |
 
 ## 环境前置
 
@@ -256,7 +286,7 @@
 17. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
 18. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
 19. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-20. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、BusinessMasterData Layer 0 realignment，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批或 MinIO/S3 multipart。
+20. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、Notification 站内消息/任务纵切与 Console facade、BusinessMasterData Layer 0 realignment，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批、Notification 外部通道 provider 或 MinIO/S3 multipart。
 21. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
@@ -265,7 +295,7 @@
 2. 高风险动作审批、人工确认 UI、权限 scope 和通知联动。
 3. Sdk.Observability 的完整实现和诊断附件链路。
 4. AI Integration 与 Knowledge 的具体代码骨架。
-5. Notification 的具体代码骨架、站内通知纵切和外部通道 provider；边界口径应遵守 docs/architecture/notification-baseline.md。
+5. Notification 的偏好/订阅、外部通道 provider、限流和模板映射；边界口径应遵守 docs/architecture/notification-baseline.md。
 6. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
 7. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
 8. 超出 Console Auth + shadcn-vue Baseline 的前端视觉系统、组件皮肤、主题和导航策略；需要先按 docs/architecture/frontend-design-system-planning.md 的 Future Spec Triggers 创建独立设计规格。
