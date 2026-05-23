@@ -11,6 +11,10 @@ namespace Nerv.IIP.Ops.Web.Endpoints.Diagnostics;
 [Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class CodeAnalysisEndpoint : EndpointWithoutRequest
 {
+    private const int VisualizationCanvasWidth = 1000;
+    private const int VisualizationCanvasHeight = 200;
+    private const string HtmlContentType = "text/html; charset=utf-8";
+
     public override async Task HandleAsync(CancellationToken ct)
     {
         var analysis = CodeFlowAnalysisHelper.GetResultFromAssemblies(
@@ -19,9 +23,15 @@ public sealed class CodeAnalysisEndpoint : EndpointWithoutRequest
             typeof(ApplicationDbContext).Assembly,
             typeof(OperationTask).Assembly
         ]);
-        var html = VisualizationHtmlBuilder.GenerateVisualizationHtml(analysis, "Ops Code Analysis", 1000, 200, false, []);
+        var html = VisualizationHtmlBuilder.GenerateVisualizationHtml(
+            analysis,
+            "Ops Code Analysis",
+            VisualizationCanvasWidth,
+            VisualizationCanvasHeight,
+            false,
+            []);
 
-        HttpContext.Response.ContentType = "text/html";
+        HttpContext.Response.ContentType = HtmlContentType;
         await HttpContext.Response.WriteAsync(html, ct);
     }
 }

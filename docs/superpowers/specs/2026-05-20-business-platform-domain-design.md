@@ -362,13 +362,13 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `POST /api/business/v1/master-data/device-assets` | RegisterDeviceAssetCommand | `business.masterdata.resources.manage` | code 唯一；不保存控制密钥。 |
 | `GET /api/business/v1/master-data/resources` | ListResourcesQuery | `business.masterdata.resources.read` | 聚合资源查询。 |
 | `POST /api/business/v1/engineering/documents` | RegisterEngineeringDocumentCommand | `business.engineering.documents.manage` | fileId+version。 |
-| `GET /api/business/v1/engineering/documents` | ListEngineeringDocumentsQuery | `business.engineering.documents.read` | 只读分页查询。 |
-| `POST /api/business/v1/engineering/eboms/{ebomId}/release` | ReleaseEngineeringBomCommand | `business.engineering.boms.manage` | item+version。 |
-| `POST /api/business/v1/engineering/mboms/{mbomId}/release` | ReleaseManufacturingBomCommand | `business.engineering.boms.manage` | sku+version。 |
-| `POST /api/business/v1/engineering/routings/{routingId}/release` | ReleaseRoutingCommand | `business.engineering.boms.manage` | sku+version。 |
-| `GET /api/business/v1/engineering/eboms` | ListEngineeringBomsQuery | `business.engineering.boms.read` | 只读分页查询。 |
-| `POST /api/business/v1/engineering/changes/{changeId}/release` | ReleaseEngineeringChangeCommand | `business.engineering.changes.manage` | changeId。 |
-| `GET /api/business/v1/engineering/changes/{changeId}` | GetEngineeringChangeQuery | `business.engineering.changes.read` | 只读详情。 |
+| `POST /api/business/v1/engineering/items` | RegisterEngineeringItemCommand | `business.engineering.items.manage` | sku+revision。 |
+| `POST /api/business/v1/engineering/engineering-boms/release` | ReleaseEngineeringBomCommand | `business.engineering.boms.manage` | item+version。 |
+| `POST /api/business/v1/engineering/manufacturing-boms/release` | ReleaseManufacturingBomCommand | `business.engineering.boms.manage` | sku+version。 |
+| `POST /api/business/v1/engineering/routings/release` | ReleaseRoutingCommand | `business.engineering.routings.manage` | sku+version。 |
+| `POST /api/business/v1/engineering/engineering-changes/release` | ReleaseEngineeringChangeCommand | `business.engineering.changes.manage` | change refs。 |
+| `GET /api/business/v1/engineering/engineering-boms` | ListEngineeringBomsQuery | `business.engineering.boms.read` | 只读分页查询。 |
+| `GET /api/business/v1/engineering/routings` | ListRoutingsQuery | `business.engineering.routings.read` | 只读分页查询。 |
 | `POST /api/business/v1/planning/demands` | CreateDemandSourceCommand | `business.planning.demands.manage` | sourceType+sourceRef 幂等。 |
 | `GET /api/business/v1/planning/demands` | ListDemandSourcesQuery | `business.planning.demands.read` | 只读分页查询。 |
 | `POST /api/business/v1/planning/mrp-runs` | RunMrpCommand | `business.planning.mrp.run` | runId。 |

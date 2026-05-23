@@ -13,6 +13,7 @@ public sealed class AppHubCodeAnalysisEndpointTests(WebApplicationFactory<Progra
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("utf-8", response.Content.Headers.ContentType?.CharSet);
         var body = await response.Content.ReadAsStringAsync();
         Assert.False(string.IsNullOrWhiteSpace(body));
         Assert.Contains("RegisterApplicationCommand", body);

@@ -16,8 +16,8 @@ using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Context.CAP;
-using NetCorePal.Extensions.CodeAnalysis;
 using NetCorePal.Extensions.NewtonsoftJson;
 using Newtonsoft.Json;
 using Prometheus;
@@ -54,14 +54,22 @@ try
         builder.Services.AddDataProtection().PersistKeysToStackExchangeRedis(redis, "DataProtection-Keys");
     }
 
-    builder.Services.AddAuthentication().AddJwtBearer(options =>
-    {
-        options.RequireHttpsMetadata = false;
-        options.TokenValidationParameters.ValidAudience = "netcorepal";
-        options.TokenValidationParameters.ValidateAudience = true;
-        options.TokenValidationParameters.ValidIssuer = "netcorepal";
-        options.TokenValidationParameters.ValidateIssuer = true;
-    });
+    builder.Services
+        .AddAuthentication(options =>
+        {
+            options.DefaultScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultAuthenticateScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
+        })
+        .AddJwtBearer(options =>
+        {
+            options.RequireHttpsMetadata = false;
+            options.TokenValidationParameters.ValidAudience = "netcorepal";
+            options.TokenValidationParameters.ValidateAudience = true;
+            options.TokenValidationParameters.ValidIssuer = "netcorepal";
+            options.TokenValidationParameters.ValidateIssuer = true;
+        });
+    builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, builder.Environment);
 
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
@@ -131,7 +139,13 @@ try
     }
 
     var app = builder.Build();
-    if (app.Environment.IsDevelopment())
+    var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
+    if (autoMigrate && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for BusinessQuality in Development. Use an explicit migrator, release script or migration bundle outside Development.");
+    }
+
+    if (autoMigrate)
     {
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -162,14 +176,6 @@ try
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");
     app.MapMetrics();
-    app.MapGet("/code-analysis", () =>
-    {
-        var html = VisualizationHtmlBuilder.GenerateVisualizationHtml(
-            CodeFlowAnalysisHelper.GetResultFromAssemblies(typeof(Program).Assembly,
-                typeof(ApplicationDbContext).Assembly,
-                typeof(QualityFacts).Assembly));
-        return Results.Content(html, "text/html; charset=utf-8");
-    });
 
     if (!isTesting)
     {

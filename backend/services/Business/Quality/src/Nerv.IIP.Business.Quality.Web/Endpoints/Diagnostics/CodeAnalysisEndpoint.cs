@@ -1,9 +1,9 @@
 using FastEndpoints;
-using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
+using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.CodeAnalysis;
 
-namespace Nerv.IIP.Business.Inventory.Web.Endpoints.Diagnostics;
+namespace Nerv.IIP.Business.Quality.Web.Endpoints.Diagnostics;
 
 public sealed class CodeAnalysisEndpoint : EndpointWithoutRequest
 {
@@ -20,14 +20,12 @@ public sealed class CodeAnalysisEndpoint : EndpointWithoutRequest
     public override async Task HandleAsync(CancellationToken ct)
     {
         var analysis = CodeFlowAnalysisHelper.GetResultFromAssemblies(
-        [
             typeof(Program).Assembly,
             typeof(ApplicationDbContext).Assembly,
-            typeof(StockLedger).Assembly,
-        ]);
+            typeof(QualityFacts).Assembly);
         var html = VisualizationHtmlBuilder.GenerateVisualizationHtml(
             analysis,
-            "Business Inventory Code Analysis",
+            "Business Quality Code Analysis",
             VisualizationCanvasWidth,
             VisualizationCanvasHeight,
             false,

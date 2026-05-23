@@ -28,7 +28,7 @@
 1. 确认 release id、git commit、服务版本、目标 environment、数据库 profile 和连接串来源。
 2. 确认目标数据库是预期库，不是开发默认库、共享验证库或误连客户生产库。
 3. 确认 PostgreSQL、Redis、对象存储和观测依赖版本满足当前 release 要求；仅当 release profile 设置 `Messaging:Provider=RabbitMQ` 时确认 RabbitMQ 版本和连通性。
-4. 确认安装脚本不会直接拼 SQL 写业务表，不会调用 `EnsureCreated()`。
+4. 确认安装脚本不会直接拼 SQL 写业务表，也不会使用绕过 EF migrations history 的建表路径。
 5. 确认待执行服务清单和顺序。当前 AppHub/Ops/IAM 可独立迁移；后续 FileStorage、Notification、Knowledge、AI Integration、Observability 必须在各自 catalog 和迁移准备完成后加入顺序。
 6. 确认备份或快照已完成，并记录备份位置、时间、校验方式和恢复负责人。
 7. 确认本次 release 的 seed 清单、幂等键、默认管理员/凭据处理方式和重复执行语义。

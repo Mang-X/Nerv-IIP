@@ -75,8 +75,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
             "cad-drawing"));
 
         Assert.False(documentResult.IsValid);
-        Assert.Contains(documentResult.Errors, x => x.PropertyName == nameof(RegisterEngineeringDocumentCommand.OrganizationId));
-        Assert.Contains(documentResult.Errors, x => x.PropertyName == nameof(RegisterEngineeringDocumentCommand.FileId));
+        Assert.Contains(documentResult.Errors, x => IsValidationFailureFor(x, nameof(RegisterEngineeringDocumentCommand.OrganizationId)));
+        Assert.Contains(documentResult.Errors, x => IsValidationFailureFor(x, nameof(RegisterEngineeringDocumentCommand.FileId)));
 
         var bomValidator = new ReleaseEngineeringBomCommandValidator();
         var bomResult = bomValidator.Validate(new ReleaseEngineeringBomCommand(
@@ -89,8 +89,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
             []));
 
         Assert.False(bomResult.IsValid);
-        Assert.Contains(bomResult.Errors, x => x.PropertyName == nameof(ReleaseEngineeringBomCommand.EnvironmentId));
-        Assert.Contains(bomResult.Errors, x => x.PropertyName == nameof(ReleaseEngineeringBomCommand.Lines));
+        Assert.Contains(bomResult.Errors, x => IsValidationFailureFor(x, nameof(ReleaseEngineeringBomCommand.EnvironmentId)));
+        Assert.Contains(bomResult.Errors, x => IsValidationFailureFor(x, nameof(ReleaseEngineeringBomCommand.Lines)));
     }
 
     [Fact]
@@ -167,5 +167,15 @@ public sealed class ProductEngineeringReleaseApiContractTests
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseInMemoryDatabase($"product-engineering-release-contract-{Guid.NewGuid():N}"));
         return services.BuildServiceProvider();
+    }
+
+    private static bool IsValidationFailureFor(FluentValidation.Results.ValidationFailure failure, string propertyName)
+    {
+        return NormalizeValidationPropertyName(failure.PropertyName) == NormalizeValidationPropertyName(propertyName);
+    }
+
+    private static string NormalizeValidationPropertyName(string propertyName)
+    {
+        return propertyName.Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
     }
 }

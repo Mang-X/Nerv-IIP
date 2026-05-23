@@ -150,7 +150,7 @@ Add Wave 1 permissions from the service specs and plans. Minimum entries:
 3. `business.engineering.changes.manage`
 4. `business.inventory.locations.manage`
 5. `business.inventory.movements.create`
-6. `business.inventory.availability.read`
+6. `business.inventory.ledger.read`
 7. `business.inventory.counts.manage`
 8. `business.quality.inspection-plans.manage`
 9. `business.quality.inspection-records.create`

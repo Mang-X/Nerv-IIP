@@ -20,6 +20,7 @@ public sealed class MasterDataOpenApiTests
                     {
                         ["ConnectionStrings:Redis"] = "localhost:6379",
                         ["ConnectionStrings:PostgreSQL"] = "Host=localhost;Database=nerv_iip_masterdata_openapi;Username=nerv;Password=nerv",
+                        ["InternalService:BearerToken"] = "test-internal-service-token",
                     }));
             });
         using var client = factory.CreateClient();

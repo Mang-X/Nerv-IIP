@@ -82,7 +82,7 @@
 
 ## 迁移与发布
 
-1. 生产、PoC 和可交付环境不得使用 `EnsureCreated()` 创建或升级业务库。
+1. 生产、PoC 和可交付环境不得使用绕过 EF migrations history 的建表路径创建或升级业务库。
 2. Web/Worker 默认启动不得自动迁移；本地/dev 验证可通过 `Persistence:AutoMigrate=true` 显式开启。
 3. migration 文件属于服务 Infrastructure 项目或明确 migrations 项目，不放在 Web 项目。
 4. 修改实体配置后必须检查 pending model changes，并生成/调整 migration。

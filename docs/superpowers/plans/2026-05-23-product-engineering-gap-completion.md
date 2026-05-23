@@ -185,13 +185,14 @@ Create `ProductEngineeringReleaseApiContractTests.cs` and assert:
 
 Add FastEndpoints under the endpoint folders listed in the Files section. Required endpoints:
 
-1. `POST /api/product-engineering/v1/documents`
-2. `POST /api/product-engineering/v1/engineering-boms/release`
-3. `POST /api/product-engineering/v1/manufacturing-boms/release`
-4. `POST /api/product-engineering/v1/routings/release`
-5. `POST /api/product-engineering/v1/engineering-changes/release`
-6. `GET /api/product-engineering/v1/engineering-boms`
-7. `GET /api/product-engineering/v1/routings`
+1. `POST /api/business/v1/engineering/documents`
+2. `POST /api/business/v1/engineering/items`
+3. `POST /api/business/v1/engineering/engineering-boms/release`
+4. `POST /api/business/v1/engineering/manufacturing-boms/release`
+5. `POST /api/business/v1/engineering/routings/release`
+6. `POST /api/business/v1/engineering/engineering-changes/release`
+7. `GET /api/business/v1/engineering/engineering-boms`
+8. `GET /api/business/v1/engineering/routings`
 
 - [ ] **Step 3: Run Web tests**
 
