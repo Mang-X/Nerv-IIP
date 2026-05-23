@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.CodeAnalysis;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
 using Nerv.IIP.Localization;
 using Newtonsoft.Json;
@@ -68,6 +70,7 @@ try
 
     builder.Services.AddProductEngineeringPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<IProductEngineeringIntegrationEventContextAccessor, HttpProductEngineeringIntegrationEventContextAccessor>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
@@ -112,9 +115,16 @@ try
     app.UseFastEndpoints(c =>
     {
         c.Endpoints.NameGenerator = ctx =>
-            ProductionVersionEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (ProductionVersionEndpointContracts.TryGet(ctx.EndpointType, out var productionVersionContract))
+            {
+                return productionVersionContract.OperationId;
+            }
+
+            return ProductEngineeringEndpointContracts.TryGet(ctx.EndpointType, out var productEngineeringContract)
+                ? productEngineeringContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
 
     app.UseHttpMetrics();
