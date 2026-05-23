@@ -22,27 +22,31 @@ public sealed class AssetUnavailableIntegrationEventHandlerForReschedule(
 {
     public const string ConsumerName = "business-mes.asset-unavailable";
 
-    public Task HandleAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    public async Task HandleAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
         var payload = integrationEvent.Payload;
-        var workCenterId = store.ResolveWorkCenterId(payload.DeviceAssetId);
+        var workCenterId = await store.ResolveWorkCenterIdAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.DeviceAssetId,
+            cancellationToken);
         store.AddUnavailability(new WorkCenterUnavailability(
             workCenterId,
             payload.FromUtc,
             null,
             payload.Reason,
-            payload.DeviceAssetId));
+            payload.DeviceAssetId,
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId));
 
         if (options.AutoRescheduleOnAssetUnavailable)
         {
             var plan = scheduler.Schedule(
-                store.GetScheduleOperations(integrationEvent.OrganizationId, integrationEvent.EnvironmentId),
-                store.Unavailabilities);
-            store.AddScheduleResult(RescheduleTrigger.AssetUnavailable, integrationEvent.OccurredAtUtc, plan);
+                await store.GetScheduleOperationsAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken),
+                await store.GetUnavailabilitiesAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken));
+            await store.AddScheduleResultAsync(RescheduleTrigger.AssetUnavailable, integrationEvent.OccurredAtUtc, plan, cancellationToken: cancellationToken);
         }
-
-        return Task.CompletedTask;
     }
 }
 
@@ -55,20 +59,23 @@ public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
 {
     public const string ConsumerName = "business-mes.asset-restored";
 
-    public Task HandleAsync(AssetRestoredIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    public async Task HandleAsync(AssetRestoredIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
         var payload = integrationEvent.Payload;
-        store.CloseUnavailability(payload.DeviceAssetId, payload.RestoredAtUtc);
+        await store.CloseUnavailabilityAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.DeviceAssetId,
+            payload.RestoredAtUtc,
+            cancellationToken);
 
         if (options.AutoRescheduleOnAssetRestored)
         {
             var plan = scheduler.Schedule(
-                store.GetScheduleOperations(integrationEvent.OrganizationId, integrationEvent.EnvironmentId),
-                store.Unavailabilities);
-            store.AddScheduleResult(RescheduleTrigger.AssetRestored, integrationEvent.OccurredAtUtc, plan);
+                await store.GetScheduleOperationsAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken),
+                await store.GetUnavailabilitiesAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken));
+            await store.AddScheduleResultAsync(RescheduleTrigger.AssetRestored, integrationEvent.OccurredAtUtc, plan, cancellationToken: cancellationToken);
         }
-
-        return Task.CompletedTask;
     }
 }

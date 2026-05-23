@@ -1,4 +1,3 @@
-using MediatR;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 
@@ -16,17 +15,16 @@ public sealed record RescheduleCommand(
     string OrganizationId,
     string EnvironmentId,
     RescheduleTrigger Trigger,
-    DateTimeOffset RequestedAtUtc) : IRequest<MesScheduleResult>;
+    DateTimeOffset RequestedAtUtc) : ICommand<MesScheduleResult>;
 
 public sealed class RescheduleCommandHandler(IMesPlanningStore store, RuleScheduler scheduler)
-    : IRequestHandler<RescheduleCommand, MesScheduleResult>
+    : ICommandHandler<RescheduleCommand, MesScheduleResult>
 {
-    public Task<MesScheduleResult> Handle(RescheduleCommand request, CancellationToken cancellationToken)
+    public async Task<MesScheduleResult> Handle(RescheduleCommand request, CancellationToken cancellationToken)
     {
         var plan = scheduler.Schedule(
-            store.GetScheduleOperations(request.OrganizationId, request.EnvironmentId),
-            store.Unavailabilities);
-        var result = store.AddScheduleResult(request.Trigger, request.RequestedAtUtc, plan);
-        return Task.FromResult(result);
+            await store.GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
+            await store.GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
+        return await store.AddScheduleResultAsync(request.Trigger, request.RequestedAtUtc, plan, cancellationToken: cancellationToken);
     }
 }
