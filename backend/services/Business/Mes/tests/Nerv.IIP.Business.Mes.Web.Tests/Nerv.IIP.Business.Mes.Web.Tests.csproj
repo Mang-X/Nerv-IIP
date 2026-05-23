@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
@@ -21,7 +22,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Nerv.IIP.Business.Mes.Web\Nerv.IIP.Business.Mes.Web.csproj" />
+    <ProjectReference Include="..\..\src\Nerv.IIP.Business.Mes.Infrastructure\Nerv.IIP.Business.Mes.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Maintenance\Nerv.IIP.Contracts.Maintenance.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
   </ItemGroup>
 
 </Project>
