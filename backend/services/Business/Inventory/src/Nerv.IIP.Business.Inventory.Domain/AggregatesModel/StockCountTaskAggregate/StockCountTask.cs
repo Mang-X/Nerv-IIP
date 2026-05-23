@@ -29,20 +29,20 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         string? ownerId,
         long expectedLedgerVersion)
     {
-        OrganizationId = StockMovement.Required(organizationId);
-        EnvironmentId = StockMovement.Required(environmentId);
-        CountTaskCode = StockMovement.Required(countTaskCode);
-        LedgerOrganizationId = StockMovement.Required(ledgerOrganizationId);
-        LedgerEnvironmentId = StockMovement.Required(ledgerEnvironmentId);
-        SkuCode = StockMovement.Required(skuCode);
-        UomCode = StockMovement.Required(uomCode);
-        SiteCode = StockMovement.Required(siteCode);
-        LocationCode = StockMovement.Required(locationCode);
-        LotNo = StockMovement.Optional(lotNo);
-        SerialNo = StockMovement.Optional(serialNo);
-        QualityStatus = StockMovement.Required(qualityStatus).ToLowerInvariant();
-        OwnerType = StockMovement.Required(ownerType).ToLowerInvariant();
-        OwnerId = StockMovement.Optional(ownerId);
+        OrganizationId = InventoryText.Required(organizationId);
+        EnvironmentId = InventoryText.Required(environmentId);
+        CountTaskCode = InventoryText.Required(countTaskCode);
+        LedgerOrganizationId = InventoryText.Required(ledgerOrganizationId);
+        LedgerEnvironmentId = InventoryText.Required(ledgerEnvironmentId);
+        SkuCode = InventoryText.Required(skuCode);
+        UomCode = InventoryText.Required(uomCode);
+        SiteCode = InventoryText.Required(siteCode);
+        LocationCode = InventoryText.Required(locationCode);
+        LotNo = InventoryText.Optional(lotNo);
+        SerialNo = InventoryText.Optional(serialNo);
+        QualityStatus = InventoryText.Required(qualityStatus).ToLowerInvariant();
+        OwnerType = InventoryText.Required(ownerType).ToLowerInvariant();
+        OwnerId = InventoryText.Optional(ownerId);
         ExpectedLedgerVersion = expectedLedgerVersion;
         Status = "open";
         CreatedAtUtc = DateTime.UtcNow;

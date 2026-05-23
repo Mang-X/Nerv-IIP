@@ -64,6 +64,8 @@ public sealed class GetStockAvailabilityQueryValidator : AbstractValidator<GetSt
 public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetStockAvailabilityQuery, StockAvailabilityResponse>
 {
+    public const int MaxResultLines = 1000;
+
     public async Task<StockAvailabilityResponse> Handle(GetStockAvailabilityQuery request, CancellationToken cancellationToken)
     {
         var qualityStatus = Normalize(request.QualityStatus);
@@ -108,6 +110,9 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
 
         var items = await query
             .GroupBy(x => new { x.LocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId })
+            .OrderBy(group => group.Key.LocationCode)
+            .ThenBy(group => group.Key.LotNo)
+            .ThenBy(group => group.Key.SerialNo)
             .Select(group => new StockAvailabilityLineResponse(
                 group.Key.LocationCode,
                 group.Key.LotNo,
@@ -118,14 +123,15 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
                 group.Sum(x => x.OnHandQuantity),
                 group.Sum(x => x.ReservedQuantity),
                 group.Sum(x => x.OnHandQuantity) - group.Sum(x => x.ReservedQuantity)))
+            .Take(MaxResultLines + 1)
             .ToListAsync(cancellationToken);
+        if (items.Count > MaxResultLines)
+        {
+            throw new KnownException($"Inventory availability query returned more than {MaxResultLines} dimension lines. Add location, lot, serial, quality, or owner filters to narrow the request.");
+        }
+
         var onHand = items.Sum(x => x.OnHandQuantity);
         var reserved = items.Sum(x => x.ReservedQuantity);
-        var orderedItems = items
-            .OrderBy(x => x.LocationCode, StringComparer.Ordinal)
-            .ThenBy(x => x.LotNo, StringComparer.Ordinal)
-            .ThenBy(x => x.SerialNo, StringComparer.Ordinal)
-            .ToArray();
         return new StockAvailabilityResponse(
             request.OrganizationId,
             request.EnvironmentId,
@@ -141,7 +147,7 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
             onHand,
             reserved,
             onHand - reserved,
-            orderedItems);
+            items);
     }
 
     private static string? Normalize(string? value)

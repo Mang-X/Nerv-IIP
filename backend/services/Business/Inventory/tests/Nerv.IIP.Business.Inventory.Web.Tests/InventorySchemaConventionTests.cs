@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Inventory.Domain;
@@ -51,6 +53,56 @@ public sealed class InventorySchemaConventionTests
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, InventoryFacts.ServiceName, InventoryFacts.Schema));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void Inventory_key_codes_have_database_format_check_constraints()
+    {
+        using var fixture = CreateFixture();
+
+        var expected = new Dictionary<Type, string[]>
+        {
+            [typeof(StockLocation)] =
+            [
+                "ck_stock_locations_location_code_format",
+                "ck_stock_locations_site_code_format",
+            ],
+            [typeof(StockLedger)] =
+            [
+                "ck_stock_ledgers_location_code_format",
+                "ck_stock_ledgers_sku_code_format",
+                "ck_stock_ledgers_site_code_format",
+            ],
+            [typeof(StockMovement)] =
+            [
+                "ck_stock_movements_location_code_format",
+                "ck_stock_movements_sku_code_format",
+                "ck_stock_movements_site_code_format",
+            ],
+            [typeof(StockCountTask)] =
+            [
+                "ck_stock_count_tasks_location_code_format",
+                "ck_stock_count_tasks_sku_code_format",
+                "ck_stock_count_tasks_site_code_format",
+            ],
+            [typeof(StockCountAdjustment)] =
+            [
+                "ck_stock_count_adjustments_location_code_format",
+                "ck_stock_count_adjustments_sku_code_format",
+                "ck_stock_count_adjustments_site_code_format",
+            ],
+        };
+
+        foreach (var (entityType, constraintNames) in expected)
+        {
+            var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+            var constraints = model.FindEntityType(entityType)!.GetCheckConstraints().ToArray();
+            foreach (var constraintName in constraintNames)
+            {
+                var constraint = Assert.Single(constraints, x => x.Name == constraintName);
+                Assert.Contains("~ '^[A-Za-z0-9_.:-]+$'", constraint.Sql, StringComparison.Ordinal);
+            }
+        }
     }
 
     private static SchemaFixture CreateFixture()

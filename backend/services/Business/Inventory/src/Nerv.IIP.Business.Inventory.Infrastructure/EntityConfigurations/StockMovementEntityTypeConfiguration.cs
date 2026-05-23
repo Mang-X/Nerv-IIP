@@ -7,7 +7,12 @@ public sealed class StockMovementEntityTypeConfiguration : IEntityTypeConfigurat
     public void Configure(EntityTypeBuilder<StockMovement> builder)
     {
         builder.ToTable("stock_movements", tableBuilder =>
-            tableBuilder.HasComment("Append-only Inventory stock movement facts with source document and idempotency key."));
+        {
+            tableBuilder.HasComment("Append-only Inventory stock movement facts with source document and idempotency key.");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_movements_location_code_format", "location_code");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_movements_sku_code_format", "sku_code");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_movements_site_code_format", "site_code");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Stock movement aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the movement.");

@@ -7,7 +7,12 @@ public sealed class StockCountAdjustmentEntityTypeConfiguration : IEntityTypeCon
     public void Configure(EntityTypeBuilder<StockCountAdjustment> builder)
     {
         builder.ToTable("stock_count_adjustments", tableBuilder =>
-            tableBuilder.HasComment("Inventory stock count adjustment facts generated from confirmed count variances."));
+        {
+            tableBuilder.HasComment("Inventory stock count adjustment facts generated from confirmed count variances.");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_adjustments_location_code_format", "location_code");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_adjustments_sku_code_format", "sku_code");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_adjustments_site_code_format", "site_code");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Stock count adjustment aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the count adjustment.");

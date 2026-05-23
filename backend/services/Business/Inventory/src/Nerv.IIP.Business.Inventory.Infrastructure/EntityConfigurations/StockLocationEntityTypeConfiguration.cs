@@ -7,7 +7,11 @@ public sealed class StockLocationEntityTypeConfiguration : IEntityTypeConfigurat
     public void Configure(EntityTypeBuilder<StockLocation> builder)
     {
         builder.ToTable("stock_locations", tableBuilder =>
-            tableBuilder.HasComment("Inventory stock locations such as warehouse, zone, bin or logical stock area."));
+        {
+            tableBuilder.HasComment("Inventory stock locations such as warehouse, zone, bin or logical stock area.");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_locations_location_code_format", "location_code");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_locations_site_code_format", "site_code");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Stock location aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the location.");

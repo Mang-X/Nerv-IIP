@@ -64,6 +64,9 @@ public sealed record PostStockMovementRequest(
     string? OwnerId,
     decimal Quantity);
 
+/// <summary>
+/// Posted movement result. For an idempotency replay whose movement exists but whose ledger row is absent, quantities are returned as zero and no empty ledger is created.
+/// </summary>
 public sealed record PostStockMovementResponse(string MovementId, decimal OnHandQuantity, decimal AvailableQuantity);
 
 public sealed record GetStockAvailabilityRequest(

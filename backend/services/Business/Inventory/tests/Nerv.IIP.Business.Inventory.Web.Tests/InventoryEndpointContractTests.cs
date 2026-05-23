@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Globalization;
 using Microsoft.AspNetCore.Hosting;
 using MediatR;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -161,6 +162,49 @@ public sealed class InventoryEndpointContractTests
         Assert.Equal(2, response.Items.Count);
         Assert.Contains(response.Items, x => x.LocationCode == "LOC-A-01" && x.AvailableQuantity == 18m);
         Assert.Contains(response.Items, x => x.LocationCode == "LOC-B-01" && x.AvailableQuantity == 7m);
+    }
+
+    [Fact]
+    public async Task Availability_query_rejects_unbounded_dimension_results()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        for (var index = 0; index <= GetStockAvailabilityQueryHandler.MaxResultLines; index++)
+        {
+            var ledger = StockLedger.Create(
+                "org-001",
+                "env-dev",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                $"LOC-{index:0000}",
+                $"LOT-{index:0000}",
+                null,
+                "qualified",
+                "company",
+                "owner-001");
+            ledger.ApplyMovement(DomainMovementFactory.InboundForLocation($"LOC-{index:0000}", $"LOT-{index:0000}", 1m));
+            dbContext.StockLedgers.Add(ledger);
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new GetStockAvailabilityQueryHandler(dbContext).Handle(new GetStockAvailabilityQuery(
+                "org-001",
+                "env-dev",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                null,
+                null,
+                null,
+                "qualified",
+                "company",
+                "owner-001"), CancellationToken.None));
+
+        Assert.Contains(GetStockAvailabilityQueryHandler.MaxResultLines.ToString(CultureInfo.InvariantCulture), exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

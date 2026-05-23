@@ -26,17 +26,17 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         string ownerType,
         string? ownerId)
     {
-        OrganizationId = StockMovement.Required(organizationId);
-        EnvironmentId = StockMovement.Required(environmentId);
-        SkuCode = StockMovement.Required(skuCode);
-        UomCode = StockMovement.Required(uomCode);
-        SiteCode = StockMovement.Required(siteCode);
-        LocationCode = StockMovement.Required(locationCode);
-        LotNo = StockMovement.Optional(lotNo);
-        SerialNo = StockMovement.Optional(serialNo);
-        QualityStatus = StockMovement.Required(qualityStatus).ToLowerInvariant();
-        OwnerType = StockMovement.Required(ownerType).ToLowerInvariant();
-        OwnerId = StockMovement.Optional(ownerId);
+        OrganizationId = InventoryText.Required(organizationId);
+        EnvironmentId = InventoryText.Required(environmentId);
+        SkuCode = InventoryText.Required(skuCode);
+        UomCode = InventoryText.Required(uomCode);
+        SiteCode = InventoryText.Required(siteCode);
+        LocationCode = InventoryText.Required(locationCode);
+        LotNo = InventoryText.Optional(lotNo);
+        SerialNo = InventoryText.Optional(serialNo);
+        QualityStatus = InventoryText.Required(qualityStatus).ToLowerInvariant();
+        OwnerType = InventoryText.Required(ownerType).ToLowerInvariant();
+        OwnerId = InventoryText.Optional(ownerId);
         UpdatedAtUtc = DateTime.UtcNow;
     }
 

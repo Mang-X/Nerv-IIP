@@ -38,22 +38,22 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         string? ownerId,
         decimal quantity)
     {
-        OrganizationId = Required(organizationId);
-        EnvironmentId = Required(environmentId);
-        MovementType = Supported(movementType, SupportedMovementTypes, nameof(movementType));
-        SourceService = Required(sourceService);
-        SourceDocumentId = Required(sourceDocumentId);
-        SourceDocumentLineId = Optional(sourceDocumentLineId);
-        IdempotencyKey = Required(idempotencyKey);
-        SkuCode = Required(skuCode);
-        UomCode = Required(uomCode);
-        SiteCode = Required(siteCode);
-        LocationCode = Required(locationCode);
-        LotNo = Optional(lotNo);
-        SerialNo = Optional(serialNo);
-        QualityStatus = Required(qualityStatus).ToLowerInvariant();
-        OwnerType = Required(ownerType).ToLowerInvariant();
-        OwnerId = Optional(ownerId);
+        OrganizationId = InventoryText.Required(organizationId);
+        EnvironmentId = InventoryText.Required(environmentId);
+        MovementType = InventoryText.Supported(movementType, SupportedMovementTypes, nameof(movementType));
+        SourceService = InventoryText.Required(sourceService);
+        SourceDocumentId = InventoryText.Required(sourceDocumentId);
+        SourceDocumentLineId = InventoryText.Optional(sourceDocumentLineId);
+        IdempotencyKey = InventoryText.Required(idempotencyKey);
+        SkuCode = InventoryText.Required(skuCode);
+        UomCode = InventoryText.Required(uomCode);
+        SiteCode = InventoryText.Required(siteCode);
+        LocationCode = InventoryText.Required(locationCode);
+        LotNo = InventoryText.Optional(lotNo);
+        SerialNo = InventoryText.Optional(serialNo);
+        QualityStatus = InventoryText.Required(qualityStatus).ToLowerInvariant();
+        OwnerType = InventoryText.Required(ownerType).ToLowerInvariant();
+        OwnerId = InventoryText.Optional(ownerId);
         Quantity = NonZero(quantity, nameof(quantity));
         PostedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new StockMovementPostedDomainEvent(this));
@@ -136,21 +136,6 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
             && OwnerType == other.OwnerType
             && OwnerId == other.OwnerId
             && Quantity == other.Quantity;
-    }
-
-    internal static string Required(string value)
-    {
-        return InventoryText.Required(value);
-    }
-
-    internal static string? Optional(string? value)
-    {
-        return InventoryText.Optional(value);
-    }
-
-    internal static string Supported(string value, HashSet<string> supportedValues, string parameterName)
-    {
-        return InventoryText.Supported(value, supportedValues, parameterName);
     }
 
     private static decimal NonZero(decimal value, string parameterName)

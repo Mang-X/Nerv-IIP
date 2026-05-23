@@ -13,21 +13,21 @@ public sealed class StockCountAdjustment : Entity<StockCountAdjustmentId>, IAggr
 
     private StockCountAdjustment(StockCountTask task, StockMovement movement, string idempotencyKey)
     {
-        CountTaskCode = StockMovement.Required(task.CountTaskCode);
-        OrganizationId = StockMovement.Required(task.OrganizationId);
-        EnvironmentId = StockMovement.Required(task.EnvironmentId);
-        IdempotencyKey = StockMovement.Required(idempotencyKey);
+        CountTaskCode = InventoryText.Required(task.CountTaskCode);
+        OrganizationId = InventoryText.Required(task.OrganizationId);
+        EnvironmentId = InventoryText.Required(task.EnvironmentId);
+        IdempotencyKey = InventoryText.Required(idempotencyKey);
         MovementId = movement.Id?.ToString()
             ?? throw new ArgumentException("Stock movement id must be assigned before recording a count adjustment.", nameof(movement));
-        SkuCode = StockMovement.Required(task.SkuCode);
-        UomCode = StockMovement.Required(task.UomCode);
-        SiteCode = StockMovement.Required(task.SiteCode);
-        LocationCode = StockMovement.Required(task.LocationCode);
-        LotNo = StockMovement.Optional(task.LotNo);
-        SerialNo = StockMovement.Optional(task.SerialNo);
-        QualityStatus = StockMovement.Required(task.QualityStatus);
-        OwnerType = StockMovement.Required(task.OwnerType);
-        OwnerId = StockMovement.Optional(task.OwnerId);
+        SkuCode = InventoryText.Required(task.SkuCode);
+        UomCode = InventoryText.Required(task.UomCode);
+        SiteCode = InventoryText.Required(task.SiteCode);
+        LocationCode = InventoryText.Required(task.LocationCode);
+        LotNo = InventoryText.Optional(task.LotNo);
+        SerialNo = InventoryText.Optional(task.SerialNo);
+        QualityStatus = InventoryText.Required(task.QualityStatus);
+        OwnerType = InventoryText.Required(task.OwnerType);
+        OwnerId = InventoryText.Optional(task.OwnerId);
         CountedQuantity = task.CountedQuantity ?? throw new InvalidOperationException("Count task has no counted quantity.");
         VarianceQuantity = task.VarianceQuantity ?? throw new InvalidOperationException("Count task has no variance quantity.");
         ConfirmedAtUtc = DateTime.UtcNow;

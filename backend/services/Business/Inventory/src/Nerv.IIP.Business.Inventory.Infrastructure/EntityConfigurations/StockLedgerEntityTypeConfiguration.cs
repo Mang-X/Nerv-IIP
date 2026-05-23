@@ -7,7 +7,12 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
     public void Configure(EntityTypeBuilder<StockLedger> builder)
     {
         builder.ToTable("stock_ledgers", tableBuilder =>
-            tableBuilder.HasComment("Inventory current stock ledger balances by SKU, UOM, site, location, lot, serial, quality and owner dimensions."));
+        {
+            tableBuilder.HasComment("Inventory current stock ledger balances by SKU, UOM, site, location, lot, serial, quality and owner dimensions.");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_location_code_format", "location_code");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_sku_code_format", "sku_code");
+            InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_site_code_format", "site_code");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Stock ledger aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the ledger balance.");
