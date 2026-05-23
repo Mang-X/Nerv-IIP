@@ -27,6 +27,28 @@ public sealed class BarcodeLabelAggregateTests
     }
 
     [Fact]
+    public void Barcode_label_timestamps_are_offset_utc_values()
+    {
+        var rule = ActiveRule();
+        var template = LabelTemplate.Create(
+            "org-001",
+            "env-dev",
+            "FG_BOX",
+            "Finished goods box",
+            "tpl-file-001",
+            """{"sku":"string"}""",
+            "active");
+        var batch = NewPrintBatch(rule, "idem-print-001", "ASN-001", 1);
+        var scan = NewScan("idem-scan-001", "BC001");
+
+        Assert.Equal(TimeSpan.Zero, rule.CreatedAtUtc.Offset);
+        Assert.Equal(TimeSpan.Zero, template.CreatedAtUtc.Offset);
+        Assert.Equal(TimeSpan.Zero, batch.CreatedAtUtc.Offset);
+        Assert.Equal(TimeSpan.Zero, batch.Items.Single().CreatedAtUtc.Offset);
+        Assert.Equal(TimeSpan.Zero, scan.ScannedAtUtc.Offset);
+    }
+
+    [Fact]
     public void Label_template_stores_filestorage_file_id_only()
     {
         var template = LabelTemplate.Create(

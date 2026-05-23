@@ -31,6 +31,7 @@ public sealed class MaintenanceIntegrationEventTests
     public void Asset_restored_and_local_work_order_events_use_required_event_types()
     {
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "planned maintenance");
         workOrder.Complete("fixed", "minor-stop", 5, []);
 
         var restored = new AssetRestoredIntegrationEventConverter().Convert(new AssetRestoredDomainEvent(workOrder, workOrder.CompletedAtUtc!.Value));

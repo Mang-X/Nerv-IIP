@@ -39,7 +39,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             ? throw new ArgumentOutOfRangeException(nameof(requestedQuantity), "Requested quantity must be positive.")
             : requestedQuantity;
         Status = "completed";
-        CreatedAtUtc = DateTime.UtcNow;
+        CreatedAtUtc = DateTimeOffset.UtcNow;
         CompletedAtUtc = CreatedAtUtc;
 
         for (var sequence = 1; sequence <= requestedQuantity; sequence++)
@@ -61,8 +61,8 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     public string LabelValuesJson { get; private set; } = string.Empty;
     public int RequestedQuantity { get; private set; }
     public string Status { get; private set; } = string.Empty;
-    public DateTime CreatedAtUtc { get; private set; }
-    public DateTime? CompletedAtUtc { get; private set; }
+    public DateTimeOffset CreatedAtUtc { get; private set; }
+    public DateTimeOffset? CompletedAtUtc { get; private set; }
     public List<LabelPrintItem> Items { get; private set; } = [];
 
     public static LabelPrintBatch Create(
@@ -113,14 +113,14 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
         SequenceNo = sequenceNo;
         LabelValue = BarcodeLabelText.Required(labelValue, nameof(labelValue));
         FileId = BarcodeLabelText.Optional(fileId);
-        CreatedAtUtc = DateTime.UtcNow;
+        CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
     public LabelPrintBatchId LabelPrintBatchId { get; private set; } = null!;
     public int SequenceNo { get; private set; }
     public string LabelValue { get; private set; } = string.Empty;
     public string? FileId { get; private set; }
-    public DateTime CreatedAtUtc { get; private set; }
+    public DateTimeOffset CreatedAtUtc { get; private set; }
 
     internal static LabelPrintItem Create(int sequenceNo, string labelValue, string? fileId)
     {

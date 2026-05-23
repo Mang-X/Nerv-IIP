@@ -30,9 +30,8 @@ public sealed record PostInventoryMovementResult(string InventoryMovementId);
 
 public sealed class NoopInventoryMovementClient : IInventoryMovementClient
 {
-    public Task<PostInventoryMovementResult> PostMovementAsync(PostInventoryMovementRequest request, CancellationToken cancellationToken)
+    public Task<PostInventoryMovementResult> PostMovementAsync(PostInventoryMovementRequest request, CancellationToken _)
     {
-        _ = cancellationToken;
         return Task.FromResult(new PostInventoryMovementResult($"pending-{request.MovementType}-{request.IdempotencyKey}"));
     }
 }

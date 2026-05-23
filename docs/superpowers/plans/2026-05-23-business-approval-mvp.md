@@ -119,6 +119,7 @@ Verify event names:
 2. `businessApproval.StepResolved`
 3. `businessApproval.ApprovalApproved`
 4. `businessApproval.ApprovalRejected`
+5. `businessApproval.ApprovalReturned`
 
 ## Task 4: Add API Surface
 
@@ -166,4 +167,3 @@ dotnet test backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.
 ```
 
 Expected: both commands pass.
-

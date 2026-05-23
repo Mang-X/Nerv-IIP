@@ -6,6 +6,7 @@ public static class ApprovalIntegrationEventTypes
     public const string StepResolved = "businessApproval.StepResolved";
     public const string ApprovalApproved = "businessApproval.ApprovalApproved";
     public const string ApprovalRejected = "businessApproval.ApprovalRejected";
+    public const string ApprovalReturned = "businessApproval.ApprovalReturned";
 }
 
 public static class ApprovalIntegrationEventSources

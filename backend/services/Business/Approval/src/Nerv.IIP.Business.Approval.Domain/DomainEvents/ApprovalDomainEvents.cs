@@ -16,3 +16,7 @@ public sealed record ApprovalApprovedDomainEvent(
 public sealed record ApprovalRejectedDomainEvent(
     ApprovalChain Chain,
     ApprovalDecision Decision) : IDomainEvent;
+
+public sealed record ApprovalReturnedDomainEvent(
+    ApprovalChain Chain,
+    ApprovalDecision Decision) : IDomainEvent;

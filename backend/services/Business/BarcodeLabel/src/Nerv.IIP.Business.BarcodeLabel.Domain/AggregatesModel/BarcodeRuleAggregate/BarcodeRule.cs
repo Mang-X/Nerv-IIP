@@ -43,7 +43,7 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
         }
 
         Status = BarcodeLabelText.Supported(status, SupportedStatuses, nameof(status));
-        CreatedAtUtc = DateTime.UtcNow;
+        CreatedAtUtc = DateTimeOffset.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
     }
 
@@ -56,8 +56,8 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
     public string ChecksumRule { get; private set; } = string.Empty;
     public List<string> AllowedSourceDocumentTypes { get; private set; } = [];
     public string Status { get; private set; } = string.Empty;
-    public DateTime CreatedAtUtc { get; private set; }
-    public DateTime UpdatedAtUtc { get; private set; }
+    public DateTimeOffset CreatedAtUtc { get; private set; }
+    public DateTimeOffset UpdatedAtUtc { get; private set; }
 
     public static BarcodeRule Create(
         string organizationId,
@@ -84,7 +84,7 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
             .Distinct(StringComparer.Ordinal)
             .ToList();
         Status = BarcodeLabelText.Supported(status, SupportedStatuses, nameof(status));
-        UpdatedAtUtc = DateTime.UtcNow;
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 
     public string GenerateValue(string sourceDocumentType, string sourceDocumentId, int sequence)

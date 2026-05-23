@@ -34,7 +34,7 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
         IdempotencyKey = BarcodeLabelText.Required(idempotencyKey, nameof(idempotencyKey));
         Result = BarcodeLabelText.Supported(result, SupportedResults, nameof(result));
         RejectionReason = BarcodeLabelText.Optional(rejectionReason);
-        ScannedAtUtc = DateTime.UtcNow;
+        ScannedAtUtc = DateTimeOffset.UtcNow;
 
         if (Result == "rejected")
         {
@@ -55,7 +55,7 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
     public string IdempotencyKey { get; private set; } = string.Empty;
     public string Result { get; private set; } = string.Empty;
     public string? RejectionReason { get; private set; }
-    public DateTime ScannedAtUtc { get; private set; }
+    public DateTimeOffset ScannedAtUtc { get; private set; }
 
     public static ScanRecord Record(
         string organizationId,

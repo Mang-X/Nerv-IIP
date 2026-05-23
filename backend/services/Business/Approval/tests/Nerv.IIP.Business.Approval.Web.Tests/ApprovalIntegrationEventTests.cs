@@ -70,6 +70,20 @@ public sealed class ApprovalIntegrationEventTests
         Assert.Equal("u-engineering", integrationEvent.Payload.ActorRef);
     }
 
+    [Fact]
+    public void Approval_returned_event_uses_required_event_type()
+    {
+        var chain = NewChain();
+        var decision = chain.ResolveStep(1, "user", "u-engineering", "return", "needs changes");
+        var converter = new ApprovalReturnedIntegrationEventConverter();
+
+        var integrationEvent = converter.Convert(new ApprovalReturnedDomainEvent(chain, decision));
+
+        Assert.Equal(ApprovalIntegrationEventTypes.ApprovalReturned, integrationEvent.EventType);
+        Assert.Equal(ApprovalChainStatuses.Returned, integrationEvent.Payload.Result);
+        Assert.Equal("u-engineering", integrationEvent.Payload.ActorRef);
+    }
+
     private static ApprovalChain NewChain()
     {
         return ApprovalChain.Start(ApprovalEndpointContractTests.NewTemplate(), ApprovalEndpointContractTests.NewDocument(), "system:eco");

@@ -75,6 +75,15 @@ public sealed class ApprovalRejectedIntegrationEventConverter
     }
 }
 
+public sealed class ApprovalReturnedIntegrationEventConverter
+    : IIntegrationEventConverter<ApprovalReturnedDomainEvent, ApprovalCompletedIntegrationEvent>
+{
+    public ApprovalCompletedIntegrationEvent Convert(ApprovalReturnedDomainEvent domainEvent)
+    {
+        return ApprovalIntegrationEventConverterHelpers.ToCompletedEvent(domainEvent.Chain, domainEvent.Decision, ApprovalIntegrationEventTypes.ApprovalReturned, ApprovalChainStatuses.Returned);
+    }
+}
+
 internal static class ApprovalIntegrationEventConverterHelpers
 {
     public static ApprovalDocumentReferencePayload ToPayload(ApprovalDocumentReference documentReference)

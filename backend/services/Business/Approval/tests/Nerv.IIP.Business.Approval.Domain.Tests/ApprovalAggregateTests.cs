@@ -85,6 +85,20 @@ public sealed class ApprovalAggregateTests
     }
 
     [Fact]
+    public void Returned_chain_is_terminal_and_emits_returned_event()
+    {
+        var chain = NewChain();
+        chain.ResolveStep(1, "user", "u-engineering", "return", "needs changes");
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            chain.ResolveStep(2, "user", "u-quality", "approve", "ok"));
+
+        Assert.Equal("returned", chain.Status);
+        Assert.Contains("terminal", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(chain.GetDomainEvents(), x => x is ApprovalReturnedDomainEvent);
+    }
+
+    [Fact]
     public void Approved_chain_emits_approved_event_after_last_required_step()
     {
         var chain = NewChain();
@@ -122,6 +136,29 @@ public sealed class ApprovalAggregateTests
 
         Assert.Contains("sequence", premature.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("approved", chain.Status);
+    }
+
+    [Fact]
+    public void Parallel_group_key_is_metadata_and_same_step_still_requires_all_approvers()
+    {
+        var template = ApprovalTemplate.Create(
+            "org-001",
+            "env-dev",
+            "COUNT-VARIANCE",
+            "inventory-count-variance",
+            1,
+            true,
+            [
+                new ApprovalTemplateStepDefinition(1, "Finance review", "finance-qc", "user", "u-finance", 24),
+                new ApprovalTemplateStepDefinition(1, "Quality review", "finance-qc", "user", "u-quality", 24),
+                new ApprovalTemplateStepDefinition(2, "Manager review", null, "user", "u-manager", 24),
+            ]);
+        var chain = ApprovalChain.Start(template, NewDocument(), "system:inventory");
+
+        chain.ResolveStep(1, "user", "u-finance", "approve", "ok");
+
+        Assert.All(chain.Steps.Where(x => x.StepNo == 1), x => Assert.Equal("finance-qc", x.ParallelGroupKey));
+        Assert.Throws<InvalidOperationException>(() => chain.ResolveStep(2, "user", "u-manager", "approve", "ok"));
     }
 
     [Fact]

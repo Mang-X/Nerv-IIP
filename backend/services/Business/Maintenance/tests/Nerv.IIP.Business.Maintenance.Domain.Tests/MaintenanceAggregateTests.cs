@@ -27,6 +27,17 @@ public sealed class MaintenanceAggregateTests
             x => Assert.IsType<AssetRestoredDomainEvent>(x));
     }
 
+    [Fact]
+    public void Manual_work_order_completion_does_not_emit_asset_restored_when_asset_was_not_unavailable()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+
+        workOrder.Complete("fixed", "minor-stop", 5, []);
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Completed, workOrder.Status);
+        Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is AssetRestoredDomainEvent);
+    }
+
     [Theory]
     [InlineData("", "equipment-failure", 10)]
     [InlineData("fixed", "", 10)]

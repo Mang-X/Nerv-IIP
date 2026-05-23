@@ -58,6 +58,7 @@ public sealed record CalculatedPeggingLink(
 
 public static class MrpCalculator
 {
+    // MVP scope: deterministic daily buckets with single-level MBOM explosion; recursive multi-level expansion is a later planning slice.
     public static IReadOnlyCollection<CalculatedPlanningSuggestion> Calculate(MrpCalculationInput input)
     {
         ArgumentNullException.ThrowIfNull(input);

@@ -110,7 +110,10 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         Status = MaintenanceWorkOrderStatus.Completed;
         CompletedAtUtc = DateTimeOffset.UtcNow;
         this.AddDomainEvent(new MaintenanceWorkOrderCompletedDomainEvent(this));
-        this.AddDomainEvent(new AssetRestoredDomainEvent(this, CompletedAtUtc.Value));
+        if (AssetUnavailable)
+        {
+            this.AddDomainEvent(new AssetRestoredDomainEvent(this, CompletedAtUtc.Value));
+        }
     }
 
     private void EnsureOpen()

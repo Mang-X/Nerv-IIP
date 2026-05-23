@@ -19,7 +19,7 @@ public sealed record ScanRecordSummary(
     string SourceDocumentId,
     string Result,
     string? RejectionReason,
-    DateTime ScannedAtUtc);
+    DateTimeOffset ScannedAtUtc);
 
 public sealed class ListScansQueryValidator : AbstractValidator<ListScansQuery>
 {

@@ -51,7 +51,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("checksum_rule")
                         .HasComment("Checksum policy name for generated barcode values.");
 
-                    b.Property<DateTime>("CreatedAtUtc")
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the rule was created.");
@@ -96,7 +96,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("Rule lifecycle status: active or inactive.");
 
-                    b.Property<DateTime>("UpdatedAtUtc")
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at_utc")
                         .HasComment("UTC time when the rule was last changed.");
@@ -124,12 +124,12 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("barcode_rule_id")
                         .HasComment("Barcode rule id used for deterministic label generation.");
 
-                    b.Property<DateTime?>("CompletedAtUtc")
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at_utc")
                         .HasComment("UTC time when the print batch finished generation.");
 
-                    b.Property<DateTime>("CreatedAtUtc")
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the print batch was created.");
@@ -212,7 +212,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Label print item id.");
 
-                    b.Property<DateTime>("CreatedAtUtc")
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the print item was generated.");
@@ -260,7 +260,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Label template aggregate id.");
 
-                    b.Property<DateTime>("CreatedAtUtc")
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the template was created.");
@@ -307,7 +307,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("template_name")
                         .HasComment("Human readable label template name.");
 
-                    b.Property<DateTime>("UpdatedAtUtc")
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at_utc")
                         .HasComment("UTC time when the template was last changed.");
@@ -379,7 +379,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("result")
                         .HasComment("Scan result: accepted or rejected.");
 
-                    b.Property<DateTime>("ScannedAtUtc")
+                    b.Property<DateTimeOffset>("ScannedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("scanned_at_utc")
                         .HasComment("UTC time when the scan was recorded.");

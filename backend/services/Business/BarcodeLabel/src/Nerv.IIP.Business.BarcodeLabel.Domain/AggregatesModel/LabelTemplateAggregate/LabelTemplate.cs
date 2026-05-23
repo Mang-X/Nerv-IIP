@@ -29,7 +29,7 @@ public sealed class LabelTemplate : Entity<LabelTemplateId>, IAggregateRoot
         TemplateFileId = CleanFileId(templateFileId);
         VariableSchemaJson = BarcodeLabelText.Required(variableSchemaJson, nameof(variableSchemaJson));
         Status = BarcodeLabelText.Supported(status, SupportedStatuses, nameof(status));
-        CreatedAtUtc = DateTime.UtcNow;
+        CreatedAtUtc = DateTimeOffset.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
     }
 
@@ -40,8 +40,8 @@ public sealed class LabelTemplate : Entity<LabelTemplateId>, IAggregateRoot
     public string TemplateFileId { get; private set; } = string.Empty;
     public string VariableSchemaJson { get; private set; } = string.Empty;
     public string Status { get; private set; } = string.Empty;
-    public DateTime CreatedAtUtc { get; private set; }
-    public DateTime UpdatedAtUtc { get; private set; }
+    public DateTimeOffset CreatedAtUtc { get; private set; }
+    public DateTimeOffset UpdatedAtUtc { get; private set; }
 
     public static LabelTemplate Create(
         string organizationId,
@@ -61,7 +61,7 @@ public sealed class LabelTemplate : Entity<LabelTemplateId>, IAggregateRoot
         TemplateFileId = CleanFileId(templateFileId);
         VariableSchemaJson = BarcodeLabelText.Required(variableSchemaJson, nameof(variableSchemaJson));
         Status = BarcodeLabelText.Supported(status, SupportedStatuses, nameof(status));
-        UpdatedAtUtc = DateTime.UtcNow;
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 
     private static string CleanFileId(string templateFileId)

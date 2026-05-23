@@ -42,10 +42,10 @@ BusinessApproval does not own:
 
 1. Approval chains are created from active templates.
 2. A chain references a source service and business document reference; it does not copy the source document payload.
-3. Steps resolve in configured order unless the template explicitly marks a parallel step group.
+3. Steps resolve in configured order. In the MVP, `parallelGroupKey` is carried as template/query metadata for grouping same-numbered steps; it does not implement any-one approval semantics, and every pending approver in the same `stepNo` must approve before the next step can resolve.
 4. Duplicate approver actions are idempotent only when the same actor repeats the same decision payload.
 5. A conflicting duplicate action from the same actor is rejected.
-6. A rejected chain is terminal unless a future version adds reopen behavior.
+6. A rejected or returned chain is terminal unless a future version adds reopen behavior.
 7. Business services consume approval result events and update their own document state.
 8. ApprovalTemplate may reference IAM user IDs, groups or permission codes, but BusinessApproval does not copy IAM roles or memberships.
 
@@ -57,6 +57,7 @@ BusinessApproval publishes ADR 0011 envelope events:
 2. `businessApproval.StepResolved`
 3. `businessApproval.ApprovalApproved`
 4. `businessApproval.ApprovalRejected`
+5. `businessApproval.ApprovalReturned`
 
 Events carry public approval IDs, source document references, actor references and result status. They do not carry IAM role internals or full business document payloads.
 
@@ -89,6 +90,5 @@ Acceptance requires:
 2. Domain tests for duplicate and conflicting approver actions.
 3. Web tests for route shape, authorization, validation and operation IDs.
 4. Schema convention tests using `Nerv.IIP.Testing`.
-5. Integration event converter/serialization tests for started, step resolved, approved and rejected events.
+5. Integration event converter/serialization tests for started, step resolved, approved, rejected and returned events.
 6. Tests proving Ops types are not referenced by BusinessApproval Domain or Infrastructure.
-

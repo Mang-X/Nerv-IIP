@@ -115,6 +115,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         {
             Status = ApprovalChainStatuses.Returned;
             CompletedAtUtc = decidedAtUtc;
+            this.AddDomainEvent(new ApprovalReturnedDomainEvent(this, approvalDecision));
             return approvalDecision;
         }
 
@@ -150,6 +151,7 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
     public ApprovalChainId ChainId { get; private set; } = null!;
     public int StepNo { get; private set; }
     public string StepName { get; private set; } = string.Empty;
+    // MVP metadata for UI/group reporting; approval progression still requires every step in the same StepNo to be approved.
     public string? ParallelGroupKey { get; private set; }
     public string ApproverType { get; private set; } = string.Empty;
     public string ApproverRef { get; private set; } = string.Empty;

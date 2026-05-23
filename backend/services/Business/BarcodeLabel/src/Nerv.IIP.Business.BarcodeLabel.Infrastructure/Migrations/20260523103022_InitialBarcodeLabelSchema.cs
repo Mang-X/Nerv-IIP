@@ -31,8 +31,8 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     checksum_rule = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false, comment: "Checksum policy name for generated barcode values."),
                     allowed_source_document_types = table.Column<List<string>>(type: "text[]", nullable: false, comment: "Allowed source document types for this barcode rule."),
                     status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false, comment: "Rule lifecycle status: active or inactive."),
-                    created_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the rule was created."),
-                    updated_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the rule was last changed.")
+                    created_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the rule was created."),
+                    updated_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the rule was last changed.")
                 },
                 constraints: table =>
                 {
@@ -111,8 +111,8 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     label_values_json = table.Column<string>(type: "text", nullable: false, comment: "Label variable values JSON captured for repeatable printing."),
                     requested_quantity = table.Column<int>(type: "integer", nullable: false, comment: "Requested number of labels generated for the batch."),
                     status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false, comment: "Print batch status such as completed."),
-                    created_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the print batch was created."),
-                    completed_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true, comment: "UTC time when the print batch finished generation.")
+                    created_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the print batch was created."),
+                    completed_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true, comment: "UTC time when the print batch finished generation.")
                 },
                 constraints: table =>
                 {
@@ -133,8 +133,8 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     template_file_id = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false, comment: "FileStorage file id for the template asset; object keys are not stored publicly."),
                     variable_schema_json = table.Column<string>(type: "text", nullable: false, comment: "Template variable schema JSON consumed by print clients."),
                     status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false, comment: "Template lifecycle status: active or inactive."),
-                    created_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the template was created."),
-                    updated_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the template was last changed.")
+                    created_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the template was created."),
+                    updated_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the template was last changed.")
                 },
                 constraints: table =>
                 {
@@ -157,7 +157,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     idempotency_key = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, comment: "Client supplied idempotency key for scan creation."),
                     result = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false, comment: "Scan result: accepted or rejected."),
                     rejection_reason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true, comment: "Reason for rejected scans."),
-                    scanned_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the scan was recorded.")
+                    scanned_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the scan was recorded.")
                 },
                 constraints: table =>
                 {
@@ -175,7 +175,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     sequence_no = table.Column<int>(type: "integer", nullable: false, comment: "Generated label sequence number within the print batch."),
                     label_value = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false, comment: "Generated deterministic barcode or label value."),
                     file_id = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: true, comment: "Optional FileStorage file id for rendered label output."),
-                    created_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the print item was generated.")
+                    created_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time when the print item was generated.")
                 },
                 constraints: table =>
                 {
