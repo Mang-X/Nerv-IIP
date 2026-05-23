@@ -26,11 +26,13 @@ public sealed class NonconformanceReportEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.ReworkWorkOrderId).HasColumnName("rework_work_order_id").HasMaxLength(150).HasComment("MES rework work order id produced by downstream service.");
         builder.Property(x => x.ScrapMovementId).HasColumnName("scrap_movement_id").HasMaxLength(150).HasComment("Inventory scrap movement id produced by downstream service.");
         builder.Property(x => x.ReturnDocumentId).HasColumnName("return_document_id").HasMaxLength(150).HasComment("ERP supplier return document id produced by downstream service.");
+        builder.Property(x => x.SourceInspectionRecordId).HasColumnName("source_inspection_record_id").HasComment("Optional Quality inspection record id that opened this NCR.");
         builder.PrimitiveCollection(x => x.AttachmentFileIds).HasColumnName("attachment_file_ids").HasComment("File Storage attachment ids.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the NCR was opened.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the NCR was last changed.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.NcrCode }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceDocumentId });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceInspectionRecordId });
     }
 }

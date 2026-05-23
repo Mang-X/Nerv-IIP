@@ -135,16 +135,19 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         catalogResponse.EnsureSuccessStatusCode();
         var catalog = await ReadResponseDataAsync<PermissionCatalogResponse>(catalogResponse);
         Assert.Contains(catalog!.Items, item => item.Code == "iam.roles.manage" && item.Domain == "iam");
+        Assert.Contains(catalog.Items, item => item.Code == "business.quality.inspection-records.create"
+            && item.Domain == "business"
+            && item.Seeded);
 
         var create = await _client.PostAsJsonAsync(
             "/api/iam/v1/roles",
-            new { roleName = "Operator", permissionCodes = new[] { "apphub.instances.read", "ops.tasks.read" } });
+            new { roleName = "Operator", permissionCodes = new[] { "apphub.instances.read", "business.quality.inspection-records.create" } });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var created = await ReadResponseDataAsync<RoleResponse>(create);
 
         Assert.StartsWith("role-", created!.RoleId, StringComparison.Ordinal);
         Assert.Equal("Operator", created.RoleName);
-        Assert.Equal(["apphub.instances.read", "ops.tasks.read"], created.PermissionCodes.Order().ToArray());
+        Assert.Equal(["apphub.instances.read", "business.quality.inspection-records.create"], created.PermissionCodes.Order().ToArray());
 
         var patch = await _client.PatchAsJsonAsync(
             $"/api/iam/v1/roles/{created.RoleId}/permissions",

@@ -2,6 +2,8 @@ namespace Nerv.IIP.Contracts.Quality;
 
 public static class QualityIntegrationEventTypes
 {
+    public const string InspectionPassed = "quality.InspectionPassed";
+    public const string InspectionRejected = "quality.InspectionRejected";
     public const string NcrOpened = "quality.NcrOpened";
     public const string DispositionDecided = "quality.DispositionDecided";
     public const string NcrClosed = "quality.NcrClosed";
@@ -58,6 +60,33 @@ public sealed record NcrClosedIntegrationEvent(
     string Actor,
     string IdempotencyKey,
     NcrClosedPayload Payload);
+
+public sealed record InspectionResultIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    InspectionResultPayload Payload);
+
+public sealed record InspectionResultPayload(
+    string InspectionRecordId,
+    string? InspectionPlanId,
+    string SourceType,
+    string SourceService,
+    string SourceDocumentId,
+    string SkuCode,
+    decimal InspectedQuantity,
+    string Result,
+    string? DispositionReason,
+    IReadOnlyCollection<string> DispositionAttachmentFileIds,
+    DateTimeOffset RecordedAtUtc);
 
 public sealed record NcrOpenedPayload(
     string NcrId,
