@@ -1,7 +1,8 @@
 # Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Runs .NET restore, build, and test commands only
+#     - Runs focused ProductEngineering domain, web, and contract test commands
+#     - Runs .NET restore and AppHost build commands when -SkipRestore is not set
 #   Writes:
 #     - bin/ and obj/ build outputs under tested .NET projects
 #   Cleanup:
