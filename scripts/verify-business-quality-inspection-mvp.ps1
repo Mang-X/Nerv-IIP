@@ -10,6 +10,11 @@
 #     - PowerShell 7
 #     - .NET SDK 10
 
+[CmdletBinding()]
+param(
+    [switch] $SkipRestore
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -17,10 +22,12 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
 . (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
 
-Invoke-DotNet -Name "business-quality-restore" -WorkingDirectory $root -Arguments @(
-    "restore",
-    "backend/Nerv.IIP.sln"
-) | Out-Null
+if (-not $SkipRestore) {
+    Invoke-DotNet -Name "business-quality-restore" -WorkingDirectory $root -Arguments @(
+        "restore",
+        "backend/Nerv.IIP.sln"
+    ) | Out-Null
+}
 
 Invoke-DotNet -Name "business-quality-domain-tests" -WorkingDirectory $root -Arguments @(
     "test",

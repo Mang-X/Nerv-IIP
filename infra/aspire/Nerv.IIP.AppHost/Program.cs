@@ -14,7 +14,11 @@ var appHubDatabase = postgres.AddDatabase("apphub-db", "nerv_iip_apphub");
 var iamDatabase = postgres.AddDatabase("iam-db", "nerv_iip_iam");
 var opsDatabase = postgres.AddDatabase("ops-db", "nerv_iip_ops");
 var notificationDatabase = postgres.AddDatabase("notification-db", "nerv_iip_notification");
-var productEngineeringDatabase = postgres.AddDatabase("product-engineering-db", "nerv_iip_product_engineering");
+var businessMasterDataDatabase = postgres.AddDatabase("business-master-data-db", "nerv_iip_business_masterdata");
+var businessProductEngineeringDatabase = postgres.AddDatabase("business-product-engineering-db", "nerv_iip_product_engineering");
+var businessInventoryDatabase = postgres.AddDatabase("business-inventory-db", "nerv_iip_inventory");
+var businessQualityDatabase = postgres.AddDatabase("business-quality-db", "nerv_iip_quality");
+var businessMesDatabase = postgres.AddDatabase("business-mes-db", "nerv_iip_mes");
 var redis = builder.AddRedis("redis")
     .WithDataVolume("nerv-iip-redis");
 var rabbitmq = useRabbitMq
@@ -114,18 +118,86 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var productEngineering = builder.AddProject<Projects.Nerv_IIP_Business_ProductEngineering_Web>("product-engineering")
+var businessMasterData = builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>("business-master-data")
     .WithHttpEndpoint(port: 5107, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
-    .WithReference(productEngineeringDatabase, "PostgreSQL")
-    .WaitFor(productEngineeringDatabase)
+    .WithReference(businessMasterDataDatabase, "PostgreSQL")
+    .WithReference(redis)
+    .WaitFor(businessMasterDataDatabase)
+    .WaitFor(redis)
     .WaitFor(otelCollector);
 if (rabbitmq is not null)
 {
-    productEngineering = productEngineering
+    businessMasterData = businessMasterData
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
+var businessProductEngineering = builder.AddProject<Projects.Nerv_IIP_Business_ProductEngineering_Web>("business-product-engineering")
+    .WithHttpEndpoint(port: 5108, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessProductEngineeringDatabase, "PostgreSQL")
+    .WaitFor(businessProductEngineeringDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessProductEngineering = businessProductEngineering
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
+var businessInventory = builder.AddProject<Projects.Nerv_IIP_Business_Inventory_Web>("business-inventory")
+    .WithHttpEndpoint(port: 5109, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessInventoryDatabase, "PostgreSQL")
+    .WaitFor(businessInventoryDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessInventory = businessInventory
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
+var businessQuality = builder.AddProject<Projects.Nerv_IIP_Business_Quality_Web>("business-quality")
+    .WithHttpEndpoint(port: 5110, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessQualityDatabase, "PostgreSQL")
+    .WithReference(redis)
+    .WaitFor(businessQualityDatabase)
+    .WaitFor(redis)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessQuality = businessQuality
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
+var businessMes = builder.AddProject<Projects.Nerv_IIP_Business_Mes_Web>("business-mes")
+    .WithHttpEndpoint(port: 5111, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessMesDatabase, "PostgreSQL")
+    .WaitFor(businessMesDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessMes = businessMes
         .WithReference(rabbitmq)
         .WaitFor(rabbitmq);
 }
@@ -137,21 +209,24 @@ var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway
     .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
-    .WithEnvironment("ProductEngineering__BaseUrl", productEngineering.GetEndpoint("http"))
+    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithReference(apphub)
     .WithReference(iam)
     .WithReference(ops)
     .WithReference(notification)
-    .WithReference(productEngineering)
     .WithReference(fileStorage)
+    .WithReference(businessMasterData)
+    .WithReference(businessProductEngineering)
+    .WithReference(businessInventory)
+    .WithReference(businessQuality)
+    .WithReference(businessMes)
     .WithReference(redis)
     .WaitFor(apphub)
     .WaitFor(iam)
     .WaitFor(ops)
     .WaitFor(notification)
-    .WaitFor(productEngineering)
     .WaitFor(fileStorage)
     .WaitFor(redis);
 

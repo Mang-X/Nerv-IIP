@@ -43,6 +43,12 @@ Platform services:
   5103 Ops
   5104 FileStorage
   5105 Console
+  5106 Notification
+  5107 BusinessMasterData
+  5108 BusinessProductEngineering
+  5109 BusinessInventory
+  5110 BusinessQuality
+  5111 BusinessMES
 
 Infrastructure services:
   15432 PostgreSQL

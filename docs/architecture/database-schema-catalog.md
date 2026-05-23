@@ -2,7 +2,7 @@
 
 本文档记录当前 Nerv-IIP 已落地和计划落地的数据库 schema。物理结构仍以 EF Core migrations 和 EntityConfigurations 为准；本文档负责解释业务语义、边界、索引意图和可视化上下文。
 
-当前 catalog 覆盖第五阶段已经迁移验证通过、并在第六阶段完成 schema governance hardening 的 AppHub 与 Ops，第七阶段已经落地 IAM Persistent Auth Foundation 的 IAM，以及 BusinessProductEngineering 和 FileStorage 第一阶段 MVP 的 schema 基线。Notification、Knowledge、AI Integration 和 Observability 索引在真正建表前必须补充相同粒度的条目和 convention tests。
+当前 catalog 覆盖第五阶段已经迁移验证通过、并在第六阶段完成 schema governance hardening 的 AppHub 与 Ops，第七阶段已经落地 IAM Persistent Auth Foundation 的 IAM，以及 BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES 和 FileStorage 第一阶段 MVP 的 schema 基线。Notification、Knowledge、AI Integration 和 Observability 索引在真正建表前必须补充相同粒度的条目和 convention tests。
 
 ## 读法
 
@@ -114,6 +114,67 @@ Source:
 Known gaps:
 
 1. CAP system tables 当前只在 catalog 中标记 system-owned，后续可补 table comment 便于数据库工具展示。
+
+## BusinessInventory Schema
+
+Schema: `inventory`
+
+Owner: `backend/services/Business/Inventory`
+
+Source:
+
+1. `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/ApplicationDbContext.cs`
+2. `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/InventoryPersistenceServiceCollectionExtensions.cs`
+3. `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/*.cs`
+4. `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/Migrations/20260523020521_InitialInventorySchema.cs`
+5. `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/Migrations/20260523064153_AddInventoryCodeCheckConstraints.cs`
+
+| Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
+| --- | --- | --- | --- | --- | --- |
+| `stock_locations` | business | Inventory 拥有的仓库、库区、库位或逻辑库存地点事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + location_code` 是业务唯一键；`site_code` 是 MasterData 站点业务引用。 | 唯一索引保护库存地点编码；`organization_id + environment_id + site_code + status` 支持按站点列可用库位。 | 创建后保留；状态字段表达启停，不物理删除。 |
+| `stock_ledgers` | business | Inventory 拥有的当前库存余额事实，按 SKU、UOM、站点、地点、批次、序列号、质量状态和 owner 维度聚合。 | `id` 为 Guid v7 强类型 ID；`on_hand_quantity`、`reserved_quantity`、`ledger_version` 和 `row_version` 维护余额与并发控制。 | 唯一索引保护同一库存维度只有一条余额；维度索引用于可用量查询。 | 由库存移动和盘点调整驱动更新；不由 WMS、MES 或 ERP 平行维护余额。 |
+| `stock_movements` | business | 追加式库存移动事实，记录来源服务、来源单据、幂等键和有符号数量。 | `id` 为 Guid v7 强类型 ID；`source_service + source_document_id + idempotency_key` 保护外部调用幂等；`quantity` 为正负移动量。 | 幂等唯一索引防重复入账；SKU/site/location 索引用于追踪库存历史。 | 创建后不可变；余额变化通过 ledger 更新体现。 |
+| `stock_count_tasks` | business | 库存盘点任务事实，记录盘点范围、期望 ledger version、盘点数量、差异和状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + count_task_code` 是业务唯一键。 | 状态与库存维度索引支持待盘点任务查询。 | 创建后进入盘点生命周期；确认后产生调整事实。 |
+| `stock_count_adjustments` | business | 盘点差异确认事实，记录盘点任务、幂等键、差异数量和生成的库存移动 ID。 | `id` 为 Guid v7 强类型 ID；`idempotency_key` 保护确认幂等；`movement_id` 指向库存移动业务 ID。 | 盘点任务和库存维度索引用于差异追踪。 | 确认后作为审计事实保留，不直接覆盖历史移动。 |
+| `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于消费幂等、分组扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | 主键用于 CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `__EFMigrationsHistory` | system | EF Core migration history table，记录 BusinessInventory 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `inventory` schema；业务代码不直接读写。 |
+
+Known gaps:
+
+1. Inventory MVP 已覆盖库存地点、余额、移动和盘点；预留/冻结、批次谱系、WMS 作业单和 ERP 成本闭环仍归后续业务切片补齐。
+
+## BusinessMES Schema
+
+Schema: `mes`
+
+Owner: `backend/services/Business/Mes`
+
+Source:
+
+1. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/ApplicationDbContext.cs`
+2. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/MesPersistenceServiceCollectionExtensions.cs`
+3. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/EntityConfigurations/*.cs`
+4. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260523025528_InitialMesExecutionSchema.cs`
+
+| Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
+| --- | --- | --- | --- | --- | --- |
+| `work_orders` | business | MES 持久化工单事实，记录 SKU、生产版本引用、计划数量、优先级、交期和执行状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + work_order_id` 是业务唯一键；`production_version_id` 是 ProductEngineering 业务引用。 | 唯一约束保护同一组织/环境内工单号；SKU/交期索引用于排产扫描。 | 工单创建后进入 MES 执行生命周期，历史保留用于报工、入库请求和成本追踪。 |
+| `operation_tasks` | business | MES 工序任务事实，保存工序顺序、工作中心、可选工作中心、持续时间和执行窗口。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + operation_task_id` 是业务唯一键。 | 工单/工序顺序索引用于按工单加载工序；外键索引用于报工与工单追踪。 | 随工单创建或执行调整保留；状态表达排产和执行进度。 |
+| `production_reports` | business | MES 报工事实，记录工单/工序的良品数、报废数、完工标记和报工时间。 | `id` 为 Guid v7 强类型 ID；`work_order_id` 与 `operation_task_id` 为 MES 业务引用。 | 工单/工序/时间索引用于执行时间线查询。 | 报工创建后作为执行历史保留，不直接修改 Inventory、Quality 或 ERP 事实。 |
+| `finished_goods_receipt_requests` | business | MES 完工入库请求事实，向 WMS/Inventory 边界表达成品收货意图。 | `id` 为 Guid v7 强类型 ID；记录 `work_order_id`、`sku_id`、`quantity`、`uom_code` 和请求时间。 | 工单/SKU/时间索引用于入库请求追踪。 | 创建后由下游库存/仓储服务消费并回写自身事实；MES 只保存请求事实。 |
+| `schedule_results` | business | MES 规则排产结果事实，保存排产版本、触发原因、排产时间和 JSON assignment 结果。 | `schedule_version` 唯一；`assignments_json` 和 `affected_work_order_ids_json` 是 append-only JSON。 | 版本唯一索引支持读取当前/历史版本；触发源/时间索引用于诊断。 | 每次排产生成一条版本化结果，历史版本保留。 |
+| `work_center_unavailabilities` | business | MES 工作中心不可用窗口事实，来自维修或手工约束，用于排产避让。 | `work_center_id`、`from_utc`、`to_utc` 定义不可用窗口；`device_asset_id` 记录可选设备来源。 | 工作中心窗口索引用于排产查询；asset open 索引用于设备恢复处理。 | 打开窗口以 `to_utc = null` 表示仍不可用，关闭后保留历史。 |
+| `device_asset_work_center_mappings` | business | MES 本地设备资产到工作中心映射，用于把 Maintenance 设备事件转换为 MES 排产约束。 | `organization_id + environment_id + device_asset_id` 唯一；`work_center_id` 是 MasterData 工作中心公开 ID。 | 唯一索引防止同一设备映射到多个 MES 工作中心。 | 映射作为本地配置事实保留。 |
+| `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于消费幂等、分组扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | 主键用于 CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `__EFMigrationsHistory` | system | EF Core migration history table，记录 BusinessMES 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `mes` schema；业务代码不直接读写。 |
+
+Known gaps:
+
+1. MES 当前完成持久化执行 MVP，仍需后续扩展工艺路线完整快照、物料消耗、批次谱系、停机/OEE 和与 Inventory/WMS/Quality/ERP 的事件闭环。
 
 ## AppHub Schema
 
@@ -254,6 +315,11 @@ Known gaps:
 | --- | --- | --- | --- | --- | --- | --- |
 | IAM | `iam` | Implemented | Yes | Yes | No | 已有 PostgreSQL `iam` schema、初始 migration、schema convention tests、idempotent seed、登录/refresh/logout/`/me` 和 Connector Host credential validation；客户 release bundle 仍待后续。 |
 | FileStorage | `filestorage` | Implemented baseline | Yes | Yes | No | 已有 `stored_files`、`upload_sessions`、`download_grants` 初始 migration、schema convention tests、PostgreSQL-backed API service、server-proxy metadata API 和本地 tus MVP 传输能力；客户 release bundle 仍待后续；MinIO/S3 multipart 为 post-MVP 部署联调项。 |
+| BusinessMasterData | `business_masterdata` | Implemented | Yes | Yes | No | 已有 Layer 0 realignment schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessProductEngineering | `product_engineering` | Implemented | Yes | Yes | No | 已有 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN、ProductionVersion schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessInventory | `inventory` | Implemented | Yes | Yes | No | 已有库存地点、库存台账、库存移动、盘点任务和盘点调整 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessQuality | `quality` | Implemented | Yes | Yes | No | 已有 NCR、InspectionPlan、InspectionRecord schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessMES | `mes` | Implemented | Yes | Yes | No | 已有工单、工序任务、报工、完工入库请求、排产结果、工作中心不可用窗口和设备映射 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | Notification | `notification` | Planned only | No | No | No | 通知模板、投递任务、收件人、渠道、重试和用户可见状态。 |
 | Knowledge | `knowledge` | Planned only | No | No | No | 知识源、文档、分片、索引状态、向量/全文索引边界和重建策略；关系库保存索引元数据，外部向量库保存可重建索引。 |
 | AI Integration | `ai` or `ai_integration` | Planned only | No | No | No | 模型/provider 配置、工具授权、调用审计、配额周期、prompt/version 归档、审批挂点和敏感信息边界。 |
