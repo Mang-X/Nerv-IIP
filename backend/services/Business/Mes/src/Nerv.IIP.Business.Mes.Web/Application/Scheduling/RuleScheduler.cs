@@ -13,7 +13,9 @@ public sealed record WorkCenterUnavailability(
     DateTimeOffset FromUtc,
     DateTimeOffset? ToUtc,
     string Reason,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record ScheduleOperation(
     string WorkOrderId,
