@@ -13,7 +13,7 @@ public sealed class StockCountAdjustmentEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the count adjustment.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id where the count adjustment was confirmed.");
         builder.Property(x => x.CountTaskCode).HasColumnName("count_task_code").IsRequired().HasMaxLength(100).HasComment("Business count task code that produced the adjustment.");
-        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(150).HasComment("Idempotency key supplied when confirming the count variance.");
+        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(128).HasComment("Idempotency key supplied when confirming the count variance; expected to be a UUID-like or producer-stable token.");
         builder.Property(x => x.MovementId).HasColumnName("movement_id").IsRequired().HasMaxLength(150).HasComment("Stock movement id generated for the count variance.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("MasterData SKU code.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("MasterData unit of measure code for counted quantity.");

@@ -5,11 +5,11 @@ using NetCorePal.Extensions.CodeAnalysis;
 
 namespace Nerv.IIP.Business.Inventory.Web.Endpoints.Diagnostics;
 
-[HttpGet("/code-analysis")]
 public sealed class CodeAnalysisEndpoint : EndpointWithoutRequest
 {
     public override void Configure()
     {
+        Get("/code-analysis");
         Policies(InternalServiceAuthorizationPolicy.Name);
     }
 

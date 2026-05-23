@@ -34,6 +34,18 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.ConfigureConventions(configurationBuilder);
     }
 
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new KnownException("Inventory stock balance was updated concurrently. Retry the command with the latest ledger state.");
+        }
+    }
+
     private static void ConfigureCapStorage(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<PublishedMessage>().ToTable("cap_published_messages").HasKey(x => x.Id);

@@ -8,3 +8,4 @@ global using NetCorePal.Extensions.Dto;
 global using NetCorePal.Extensions.Primitives;
 global using Nerv.IIP.Business.Inventory.Domain;
 global using Nerv.IIP.Business.Inventory.Infrastructure;
+global using Nerv.IIP.Business.Inventory.Web.Application.Validation;

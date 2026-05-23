@@ -47,11 +47,17 @@ public sealed class GetStockAvailabilityQueryValidator : AbstractValidator<GetSt
 {
     public GetStockAvailabilityQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OrganizationId).RequiredInventoryCode(100);
+        RuleFor(x => x.EnvironmentId).RequiredInventoryCode(100);
+        RuleFor(x => x.SkuCode).RequiredInventoryCode(100);
+        RuleFor(x => x.UomCode).RequiredInventoryCode(50);
+        RuleFor(x => x.SiteCode).RequiredInventoryCode(100);
+        RuleFor(x => x.LocationCode).OptionalInventoryCode(100);
+        RuleFor(x => x.LotNo).OptionalInventoryCode(100);
+        RuleFor(x => x.SerialNo).OptionalInventoryCode(100);
+        RuleFor(x => x.QualityStatus).OptionalInventoryCode(50);
+        RuleFor(x => x.OwnerType).OptionalInventoryCode(50);
+        RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
     }
 }
 
@@ -100,26 +106,22 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
             query = query.Where(x => x.OwnerId == request.OwnerId);
         }
 
-        var rows = await query.ToListAsync(cancellationToken);
-        var onHand = rows.Sum(x => x.OnHandQuantity);
-        var reserved = rows.Sum(x => x.ReservedQuantity);
-        var items = rows
+        var items = await query
             .GroupBy(x => new { x.LocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId })
-            .Select(group =>
-            {
-                var groupOnHand = group.Sum(x => x.OnHandQuantity);
-                var groupReserved = group.Sum(x => x.ReservedQuantity);
-                return new StockAvailabilityLineResponse(
-                    group.Key.LocationCode,
-                    group.Key.LotNo,
-                    group.Key.SerialNo,
-                    group.Key.QualityStatus,
-                    group.Key.OwnerType,
-                    group.Key.OwnerId,
-                    groupOnHand,
-                    groupReserved,
-                    groupOnHand - groupReserved);
-            })
+            .Select(group => new StockAvailabilityLineResponse(
+                group.Key.LocationCode,
+                group.Key.LotNo,
+                group.Key.SerialNo,
+                group.Key.QualityStatus,
+                group.Key.OwnerType,
+                group.Key.OwnerId,
+                group.Sum(x => x.OnHandQuantity),
+                group.Sum(x => x.ReservedQuantity),
+                group.Sum(x => x.OnHandQuantity) - group.Sum(x => x.ReservedQuantity)))
+            .ToListAsync(cancellationToken);
+        var onHand = items.Sum(x => x.OnHandQuantity);
+        var reserved = items.Sum(x => x.ReservedQuantity);
+        var orderedItems = items
             .OrderBy(x => x.LocationCode, StringComparer.Ordinal)
             .ThenBy(x => x.LotNo, StringComparer.Ordinal)
             .ThenBy(x => x.SerialNo, StringComparer.Ordinal)
@@ -139,7 +141,7 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
             onHand,
             reserved,
             onHand - reserved,
-            items);
+            orderedItems);
     }
 
     private static string? Normalize(string? value)

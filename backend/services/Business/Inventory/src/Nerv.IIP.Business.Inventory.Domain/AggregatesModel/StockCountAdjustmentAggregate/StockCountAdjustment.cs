@@ -17,7 +17,8 @@ public sealed class StockCountAdjustment : Entity<StockCountAdjustmentId>, IAggr
         OrganizationId = StockMovement.Required(task.OrganizationId);
         EnvironmentId = StockMovement.Required(task.EnvironmentId);
         IdempotencyKey = StockMovement.Required(idempotencyKey);
-        MovementId = movement.Id?.ToString() ?? string.Empty;
+        MovementId = movement.Id?.ToString()
+            ?? throw new ArgumentException("Stock movement id must be assigned before recording a count adjustment.", nameof(movement));
         SkuCode = StockMovement.Required(task.SkuCode);
         UomCode = StockMovement.Required(task.UomCode);
         SiteCode = StockMovement.Required(task.SiteCode);

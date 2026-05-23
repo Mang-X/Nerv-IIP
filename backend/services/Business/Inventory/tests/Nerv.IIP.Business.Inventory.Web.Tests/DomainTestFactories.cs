@@ -27,10 +27,20 @@ internal static class DomainMovementFactory
 {
     public static StockMovement Inbound(decimal quantity)
     {
-        return InboundForLocation("LOC-A-01", "LOT-001", quantity);
+        return InboundWithIdempotency("idem-in-001", quantity);
+    }
+
+    public static StockMovement InboundWithIdempotency(string idempotencyKey, decimal quantity)
+    {
+        return New("LOC-A-01", "LOT-001", idempotencyKey, quantity);
     }
 
     public static StockMovement InboundForLocation(string locationCode, string lotNo, decimal quantity)
+    {
+        return New(locationCode, lotNo, "idem-in-001", quantity);
+    }
+
+    private static StockMovement New(string locationCode, string lotNo, string idempotencyKey, decimal quantity)
     {
         return StockMovement.Post(
             "org-001",
@@ -39,7 +49,7 @@ internal static class DomainMovementFactory
             "wms",
             "DOC-001",
             "LINE-001",
-            "idem-in-001",
+            idempotencyKey,
             "SKU-FG-1000",
             "kg",
             "SITE-01",

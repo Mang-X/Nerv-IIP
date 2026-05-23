@@ -60,10 +60,10 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                     b.Property<string>("IdempotencyKey")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
                         .HasColumnName("idempotency_key")
-                        .HasComment("Idempotency key supplied when confirming the count variance.");
+                        .HasComment("Idempotency key supplied when confirming the count variance; expected to be a UUID-like or producer-stable token.");
 
                     b.Property<string>("LocationCode")
                         .IsRequired()
@@ -521,10 +521,10 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                     b.Property<string>("IdempotencyKey")
                         .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
                         .HasColumnName("idempotency_key")
-                        .HasComment("Idempotency key unique within organization, environment, source service and source document.");
+                        .HasComment("Idempotency key unique within organization, environment, source service and source document; expected to be a UUID-like or producer-stable token.");
 
                     b.Property<string>("LocationCode")
                         .IsRequired()

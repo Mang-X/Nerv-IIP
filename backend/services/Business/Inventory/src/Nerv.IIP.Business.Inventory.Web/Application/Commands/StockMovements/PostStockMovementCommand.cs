@@ -29,18 +29,22 @@ public sealed class PostStockMovementCommandValidator : AbstractValidator<PostSt
 {
     public PostStockMovementCommandValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.MovementType).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.SourceService).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OrganizationId).RequiredInventoryCode(100);
+        RuleFor(x => x.EnvironmentId).RequiredInventoryCode(100);
+        RuleFor(x => x.MovementType).RequiredInventoryCode(50);
+        RuleFor(x => x.SourceService).RequiredInventoryCode(100);
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.LocationCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.QualityStatus).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.OwnerType).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.SourceDocumentLineId).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).RequiredInventoryCode(InventoryValidationRules.IdempotencyKeyMaxLength);
+        RuleFor(x => x.SkuCode).RequiredInventoryCode(100);
+        RuleFor(x => x.UomCode).RequiredInventoryCode(50);
+        RuleFor(x => x.SiteCode).RequiredInventoryCode(100);
+        RuleFor(x => x.LocationCode).RequiredInventoryCode(100);
+        RuleFor(x => x.LotNo).OptionalInventoryCode(100);
+        RuleFor(x => x.SerialNo).OptionalInventoryCode(100);
+        RuleFor(x => x.QualityStatus).RequiredInventoryCode(50);
+        RuleFor(x => x.OwnerType).RequiredInventoryCode(50);
+        RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
         RuleFor(x => x.Quantity).NotEqual(0);
     }
 }
@@ -75,7 +79,6 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
                 && x.SourceDocumentId == movement.SourceDocumentId
                 && x.IdempotencyKey == movement.IdempotencyKey,
             cancellationToken);
-        var ledger = await GetOrCreateLedgerAsync(movement, cancellationToken);
         if (existingMovement is not null)
         {
             if (!existingMovement.HasSamePayload(movement))
@@ -83,9 +86,14 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
                 throw new KnownException("Stock movement idempotency key conflicts with an existing movement payload.");
             }
 
-            return new PostStockMovementResult(existingMovement.Id, ledger.OnHandQuantity, ledger.AvailableQuantity);
+            var existingLedger = await FindLedgerAsync(existingMovement, cancellationToken);
+            return new PostStockMovementResult(
+                existingMovement.Id,
+                existingLedger?.OnHandQuantity ?? 0m,
+                existingLedger?.AvailableQuantity ?? 0m);
         }
 
+        var ledger = await GetOrCreateLedgerAsync(movement, cancellationToken);
         var applied = ledger.ApplyMovement(movement);
         if (ReferenceEquals(applied, movement))
         {
@@ -95,9 +103,9 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
         return new PostStockMovementResult(applied.Id, ledger.OnHandQuantity, ledger.AvailableQuantity);
     }
 
-    private async Task<StockLedger> GetOrCreateLedgerAsync(StockMovement movement, CancellationToken cancellationToken)
+    private Task<StockLedger?> FindLedgerAsync(StockMovement movement, CancellationToken cancellationToken)
     {
-        var ledger = await dbContext.StockLedgers.SingleOrDefaultAsync(
+        return dbContext.StockLedgers.SingleOrDefaultAsync(
             x => x.OrganizationId == movement.OrganizationId
                 && x.EnvironmentId == movement.EnvironmentId
                 && x.SkuCode == movement.SkuCode
@@ -110,6 +118,11 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
                 && x.OwnerType == movement.OwnerType
                 && x.OwnerId == movement.OwnerId,
             cancellationToken);
+    }
+
+    private async Task<StockLedger> GetOrCreateLedgerAsync(StockMovement movement, CancellationToken cancellationToken)
+    {
+        var ledger = await FindLedgerAsync(movement, cancellationToken);
         if (ledger is not null)
         {
             return ledger;

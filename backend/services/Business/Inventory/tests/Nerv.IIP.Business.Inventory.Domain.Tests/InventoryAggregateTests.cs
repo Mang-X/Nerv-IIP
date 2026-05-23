@@ -72,36 +72,84 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
+    public void Zero_quantity_movement_is_rejected()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => NewMovement("inbound", 0m, "idem-zero-001"));
+    }
+
+    [Fact]
+    public void Movement_with_mismatched_dimensions_is_rejected()
+    {
+        var ledger = NewLedger();
+        var movement = StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "DOC-001",
+            "LINE-001",
+            "idem-other-location-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            1m);
+
+        Assert.Throws<InvalidOperationException>(() => ledger.ApplyMovement(movement));
+    }
+
+    [Fact]
+    public void Count_task_rejects_duplicate_confirmation()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+
+        task.ConfirmAdjustment(ledger, countedQuantity: 7.5m, "idem-count-001");
+
+        Assert.Throws<InvalidOperationException>(() => task.ConfirmAdjustment(ledger, countedQuantity: 7m, "idem-count-002"));
+    }
+
+    [Fact]
+    public void Decimal_quantity_supports_six_fractional_digits()
+    {
+        var ledger = NewLedger();
+        var movement = NewMovement("inbound", 0.000001m, "idem-decimal-001");
+
+        ledger.ApplyMovement(movement);
+
+        Assert.Equal(0.000001m, ledger.OnHandQuantity);
+    }
+
+    [Fact]
     public void Count_adjustment_creates_adjustment_movement_and_updates_ledger_quantity()
     {
         var ledger = NewLedger();
         ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
-        var task = StockCountTask.Create(
-            "org-001",
-            "env-dev",
-            "COUNT-001",
-            ledger.OrganizationId,
-            ledger.EnvironmentId,
-            ledger.SkuCode,
-            ledger.UomCode,
-            ledger.SiteCode,
-            ledger.LocationCode,
-            ledger.LotNo,
-            ledger.SerialNo,
-            ledger.QualityStatus,
-            ledger.OwnerType,
-            ledger.OwnerId,
-            ledger.LedgerVersion);
+        var task = NewCountTask(ledger);
 
         var adjustment = task.ConfirmAdjustment(ledger, countedQuantity: 7.5m, "idem-count-001");
-        var adjustmentFact = StockCountAdjustment.Record(task, adjustment, "idem-count-001");
 
         Assert.Equal("count-adjustment", adjustment.MovementType);
         Assert.Equal(-2.5m, adjustment.Quantity);
-        Assert.Equal(-2.5m, adjustmentFact.VarianceQuantity);
-        Assert.Equal(7.5m, adjustmentFact.CountedQuantity);
         Assert.Equal(7.5m, ledger.OnHandQuantity);
         Assert.IsType<StockCountVarianceConfirmedDomainEvent>(task.GetDomainEvents().Single());
+    }
+
+    [Fact]
+    public void Count_adjustment_fact_requires_assigned_movement_id()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+        var movement = task.ConfirmAdjustment(ledger, countedQuantity: 7.5m, "idem-count-001");
+
+        Assert.Throws<ArgumentException>(() => StockCountAdjustment.Record(task, movement, "idem-count-001"));
     }
 
     private static StockLedger NewLedger()
@@ -140,5 +188,25 @@ public sealed class InventoryAggregateTests
             "company",
             "owner-001",
             quantity);
+    }
+
+    private static StockCountTask NewCountTask(StockLedger ledger)
+    {
+        return StockCountTask.Create(
+            "org-001",
+            "env-dev",
+            "COUNT-001",
+            ledger.OrganizationId,
+            ledger.EnvironmentId,
+            ledger.SkuCode,
+            ledger.UomCode,
+            ledger.SiteCode,
+            ledger.LocationCode,
+            ledger.LotNo,
+            ledger.SerialNo,
+            ledger.QualityStatus,
+            ledger.OwnerType,
+            ledger.OwnerId,
+            ledger.LedgerVersion);
     }
 }

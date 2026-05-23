@@ -18,12 +18,13 @@ public sealed class CreateStockLocationCommandValidator : AbstractValidator<Crea
 {
     public CreateStockLocationCommandValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.LocationCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.LocationType).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Status).NotEmpty().MaximumLength(30);
+        RuleFor(x => x.OrganizationId).RequiredInventoryCode(100);
+        RuleFor(x => x.EnvironmentId).RequiredInventoryCode(100);
+        RuleFor(x => x.LocationCode).RequiredInventoryCode(100);
+        RuleFor(x => x.LocationType).RequiredInventoryCode(50);
+        RuleFor(x => x.SiteCode).RequiredInventoryCode(100);
+        RuleFor(x => x.ParentLocationCode).OptionalInventoryCode(100);
+        RuleFor(x => x.Status).RequiredInventoryCode(30);
     }
 }
 

@@ -1,3 +1,5 @@
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
+
 namespace Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 
 public partial record StockLocationId : IGuidStronglyTypedId;
@@ -17,13 +19,13 @@ public sealed class StockLocation : Entity<StockLocationId>, IAggregateRoot
         string? parentLocationCode,
         string status)
     {
-        OrganizationId = Required(organizationId);
-        EnvironmentId = Required(environmentId);
-        LocationCode = Required(locationCode);
-        LocationType = Required(locationType).ToLowerInvariant();
-        SiteCode = Required(siteCode);
-        ParentLocationCode = Optional(parentLocationCode);
-        Status = Required(status).ToLowerInvariant();
+        OrganizationId = InventoryText.Required(organizationId);
+        EnvironmentId = InventoryText.Required(environmentId);
+        LocationCode = InventoryText.Required(locationCode);
+        LocationType = InventoryText.Required(locationType).ToLowerInvariant();
+        SiteCode = InventoryText.Required(siteCode);
+        ParentLocationCode = InventoryText.Optional(parentLocationCode);
+        Status = InventoryText.Required(status).ToLowerInvariant();
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
     }
@@ -66,20 +68,10 @@ public sealed class StockLocation : Entity<StockLocationId>, IAggregateRoot
 
     private void Update(string locationType, string siteCode, string? parentLocationCode, string status)
     {
-        LocationType = Required(locationType).ToLowerInvariant();
-        SiteCode = Required(siteCode);
-        ParentLocationCode = Optional(parentLocationCode);
-        Status = Required(status).ToLowerInvariant();
+        LocationType = InventoryText.Required(locationType).ToLowerInvariant();
+        SiteCode = InventoryText.Required(siteCode);
+        ParentLocationCode = InventoryText.Optional(parentLocationCode);
+        Status = InventoryText.Required(status).ToLowerInvariant();
         UpdatedAtUtc = DateTime.UtcNow;
-    }
-
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
-    }
-
-    private static string? Optional(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 }

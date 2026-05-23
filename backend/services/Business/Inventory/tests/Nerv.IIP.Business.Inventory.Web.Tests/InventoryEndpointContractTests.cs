@@ -1,9 +1,16 @@
+using System.Net;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using MediatR;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Auth;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockLocations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
@@ -157,6 +164,69 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Inventory_http_endpoints_reject_anonymous_callers_before_persistence()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/inventory/v1/movements", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            movementType = "inbound",
+            sourceService = "wms",
+            sourceDocumentId = "DOC-001",
+            sourceDocumentLineId = "LINE-001",
+            idempotencyKey = "idem-in-001",
+            skuCode = "SKU-FG-1000",
+            uomCode = "kg",
+            siteCode = "SITE-01",
+            locationCode = "LOC-A-01",
+            lotNo = "LOT-001",
+            serialNo = (string?)null,
+            qualityStatus = "qualified",
+            ownerType = "company",
+            ownerId = "owner-001",
+            quantity = 5m,
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public void Validators_reject_non_code_characters_for_inventory_codes()
+    {
+        var locationResult = new CreateStockLocationCommandValidator().Validate(
+            new CreateStockLocationCommand("org-001", "env-dev", "LOC;DROP", "storage", "SITE-01", null, "active"));
+        var movementResult = new PostStockMovementCommandValidator().Validate(
+            NewPostMovementCommand("idem-in-001", 5m) with { SkuCode = "SKU#1" });
+
+        Assert.False(locationResult.IsValid);
+        Assert.Contains(locationResult.Errors, x => x.ErrorMessage.Contains("underscore", StringComparison.OrdinalIgnoreCase));
+        Assert.False(movementResult.IsValid);
+        Assert.Contains(movementResult.Errors, x => x.ErrorMessage.Contains("underscore", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Validators_limit_idempotency_keys_to_128_characters()
+    {
+        var movementResult = new PostStockMovementCommandValidator().Validate(
+            NewPostMovementCommand(new string('a', 129), 5m));
+        var adjustmentResult = new ConfirmStockCountAdjustmentCommandValidator().Validate(
+            new ConfirmStockCountAdjustmentCommand(new StockCountTaskId(Guid.CreateVersion7()), 5m, new string('a', 129)));
+
+        Assert.False(movementResult.IsValid);
+        Assert.Contains(movementResult.Errors, x => x.ErrorMessage.Contains("128", StringComparison.OrdinalIgnoreCase));
+        Assert.False(adjustmentResult.IsValid);
+        Assert.Contains(adjustmentResult.Errors, x => x.ErrorMessage.Contains("128", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Post_movement_command_returns_existing_movement_for_duplicate_idempotency_key_with_same_payload()
     {
         await using var provider = CreateInMemoryProvider();
@@ -177,6 +247,43 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Post_movement_command_does_not_create_empty_ledger_for_duplicate_existing_movement()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.StockMovements.Add(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "DOC-001",
+            "LINE-001",
+            "idem-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            5m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        using var secondScope = provider.CreateScope();
+        var secondDbContext = secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var duplicate = await new PostStockMovementCommandHandler(secondDbContext).Handle(
+            NewPostMovementCommand("idem-in-001", 5m),
+            CancellationToken.None);
+        await secondDbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(0m, duplicate.OnHandQuantity);
+        Assert.Empty(secondDbContext.StockLedgers);
+    }
+
+    [Fact]
     public async Task Post_movement_command_rejects_duplicate_idempotency_key_with_conflicting_payload()
     {
         await using var provider = CreateInMemoryProvider();
@@ -192,6 +299,34 @@ public sealed class InventoryEndpointContractTests
             new PostStockMovementCommandHandler(secondDbContext).Handle(NewPostMovementCommand("idem-in-001", 6m), CancellationToken.None));
 
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Stock_ledger_concurrent_updates_are_rejected()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await using (var seedScope = provider.CreateAsyncScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ledger = DomainLedgerFactory.NewLedger();
+            ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+            dbContext.StockLedgers.Add(ledger);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var firstScope = provider.CreateAsyncScope();
+        await using var secondScope = provider.CreateAsyncScope();
+        var firstDbContext = firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var secondDbContext = secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var firstLedger = await firstDbContext.StockLedgers.SingleAsync(CancellationToken.None);
+        var secondLedger = await secondDbContext.StockLedgers.SingleAsync(CancellationToken.None);
+
+        firstLedger.ApplyMovement(DomainMovementFactory.InboundWithIdempotency("idem-concurrent-001", 2m));
+        secondLedger.ApplyMovement(DomainMovementFactory.InboundWithIdempotency("idem-concurrent-002", 3m));
+        await firstDbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => secondDbContext.SaveChangesAsync(CancellationToken.None));
+        Assert.Contains("concurrent", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

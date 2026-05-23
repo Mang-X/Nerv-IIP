@@ -23,15 +23,18 @@ public sealed class CreateStockCountTaskCommandValidator : AbstractValidator<Cre
 {
     public CreateStockCountTaskCommandValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.CountTaskCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.LocationCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.QualityStatus).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.OwnerType).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.OrganizationId).RequiredInventoryCode(100);
+        RuleFor(x => x.EnvironmentId).RequiredInventoryCode(100);
+        RuleFor(x => x.CountTaskCode).RequiredInventoryCode(100);
+        RuleFor(x => x.SkuCode).RequiredInventoryCode(100);
+        RuleFor(x => x.UomCode).RequiredInventoryCode(50);
+        RuleFor(x => x.SiteCode).RequiredInventoryCode(100);
+        RuleFor(x => x.LocationCode).RequiredInventoryCode(100);
+        RuleFor(x => x.LotNo).OptionalInventoryCode(100);
+        RuleFor(x => x.SerialNo).OptionalInventoryCode(100);
+        RuleFor(x => x.QualityStatus).RequiredInventoryCode(50);
+        RuleFor(x => x.OwnerType).RequiredInventoryCode(50);
+        RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
     }
 }
 

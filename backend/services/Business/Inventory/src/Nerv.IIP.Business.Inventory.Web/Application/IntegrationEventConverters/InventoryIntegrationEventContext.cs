@@ -28,16 +28,24 @@ public sealed class HttpInventoryIntegrationEventContextAccessor(IHttpContextAcc
             httpContext?.Request.Headers["x-causation-id"].FirstOrDefault(),
             Activity.Current?.SpanId.ToString(),
             $"cause-{Guid.CreateVersion7():N}");
-        var actor = FirstNonBlank(
-            httpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier),
-            httpContext?.User.Identity?.Name,
-            $"system:{InventoryIntegrationEventSources.BusinessInventory}");
+        var actor = ResolveActor(httpContext);
 
         return new InventoryIntegrationEventContext(correlationId, causationId, actor);
     }
 
+    private static string ResolveActor(HttpContext? httpContext)
+    {
+        var userActor = FirstNonBlank(
+            httpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier),
+            httpContext?.User.Identity?.Name);
+
+        return string.IsNullOrWhiteSpace(userActor)
+            ? $"system:{InventoryIntegrationEventSources.BusinessInventory}"
+            : $"user:{userActor}";
+    }
+
     private static string FirstNonBlank(params string?[] values)
     {
-        return values.First(value => !string.IsNullOrWhiteSpace(value))!;
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
     }
 }

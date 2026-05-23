@@ -140,20 +140,17 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
 
     internal static string Required(string value)
     {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+        return InventoryText.Required(value);
     }
 
     internal static string? Optional(string? value)
     {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        return InventoryText.Optional(value);
     }
 
     internal static string Supported(string value, HashSet<string> supportedValues, string parameterName)
     {
-        var normalized = Required(value).ToLowerInvariant();
-        return supportedValues.Contains(normalized)
-            ? normalized
-            : throw new ArgumentException($"Unsupported value '{value}'.", parameterName);
+        return InventoryText.Supported(value, supportedValues, parameterName);
     }
 
     private static decimal NonZero(decimal value, string parameterName)

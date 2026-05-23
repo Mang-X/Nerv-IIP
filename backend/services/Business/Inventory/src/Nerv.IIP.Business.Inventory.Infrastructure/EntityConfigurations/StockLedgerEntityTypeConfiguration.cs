@@ -25,7 +25,7 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.ReservedQuantity).HasColumnName("reserved_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current reserved quantity; always zero in Inventory MVP.");
         builder.Ignore(x => x.AvailableQuantity);
         builder.Property(x => x.LedgerVersion).HasColumnName("ledger_version").IsRequired().HasComment("Monotonic ledger version incremented when movements are applied.");
-        builder.Property(x => x.RowVersion).HasColumnName("row_version").HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version for concurrent stock balance updates.");
+        builder.Property(x => x.RowVersion).HasColumnName("row_version").HasConversion(x => x.VersionNumber, x => new RowVersion(x)).IsConcurrencyToken().HasComment("Optimistic row version for concurrent stock balance updates.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the ledger was last changed.");
         builder.Ignore(x => x.AppliedMovements);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SkuCode, x.UomCode, x.SiteCode, x.LocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId }).IsUnique();

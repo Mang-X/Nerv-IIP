@@ -18,7 +18,7 @@ public sealed class ConfirmStockCountAdjustmentCommandValidator : AbstractValida
     {
         RuleFor(x => x.CountTaskId).NotEmpty();
         RuleFor(x => x.CountedQuantity).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).RequiredInventoryCode(InventoryValidationRules.IdempotencyKeyMaxLength);
     }
 }
 
