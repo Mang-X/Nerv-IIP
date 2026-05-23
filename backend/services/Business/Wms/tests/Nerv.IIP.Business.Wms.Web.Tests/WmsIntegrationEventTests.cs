@@ -4,7 +4,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters;
-using Nerv.IIP.Business.Wms.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -20,6 +20,7 @@ public sealed class WmsIntegrationEventTests
         var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
         Assert.Equal(WmsIntegrationEventTypes.InboundOrderCompleted, integrationEvent.EventType);
+        Assert.Equal("Nerv.IIP.Contracts.Wms", typeof(WmsIntegrationEvent).Assembly.GetName().Name);
         Assert.Contains("\"eventType\":\"wms.InboundOrderCompleted\"", json, StringComparison.Ordinal);
     }
 

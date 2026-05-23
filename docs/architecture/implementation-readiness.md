@@ -40,6 +40,8 @@
 34. 前端组件缺口 #143 归入 Design System 范畴，设计事实来源为 `frontend/DESIGN/roadmaps/business-console-readiness.md`；Superpowers plan 只作为执行清单，不替代 DESIGN 组件契约。
 35. Business Wave 2 execution closure 已完成共享接入：BusinessDemandPlanning、BarcodeLabel、BusinessApproval 和 WMS 均纳入 `backend/Nerv.IIP.sln`、平台级 Aspire AppHost、IAM seed/catalog、schema catalog、readiness 映射和 `scripts/verify-business-wave2-execution.ps1` 聚合验证；本地端口固定为 5112-5115。
 36. Equipment Reliability / Wave 2.5 closure 已完成共享接入：BusinessIndustrialTelemetry (#129) 和 BusinessMaintenance (#130) 均纳入 `backend/Nerv.IIP.sln`、平台级 Aspire AppHost、IAM seed/catalog、schema catalog、readiness 映射和 `scripts/verify-business-equipment-reliability.ps1` 聚合验证；本地端口固定为 5116-5117。IndustrialTelemetry 报警事件已抽入 `Nerv.IIP.Contracts.IndustrialTelemetry`，Maintenance 通过该公共契约消费 `industrialTelemetry.AlarmRaised`，不引用 IndustrialTelemetry 的 Domain/Infrastructure/Web 项目。
+37. Business Wave 3/Wave 4 规划入口已补齐：ERP #137/#138/#139 使用 `docs/superpowers/specs/2026-05-23-business-wave-3-agent-session-design.md`、`docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md` 和三份 ERP 子计划推进；#77 Full-chain acceptance 使用 `docs/superpowers/specs/2026-05-23-business-full-chain-acceptance-design.md` 和 `docs/superpowers/plans/2026-05-23-business-full-chain-acceptance.md`。
+38. Business Wave 3 ERP 已落地：BusinessERP 已纳入 `backend/Nerv.IIP.sln`、平台级 Aspire AppHost、IAM seed/catalog、schema catalog、readiness 映射和 `scripts/verify-business-erp-procurement-sales-finance-mvp.ps1` 聚合验证；本地端口固定为 5118。WMS 已抽出 `Nerv.IIP.Contracts.Wms` 公共事件契约，并默认通过 HTTP client 向 Inventory posting 库存移动。
 
 ### 业务平台代码事实与 issue 映射
 
@@ -54,7 +56,7 @@
 | BusinessApproval | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖审批模板、审批链、审批步骤和审批决定，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-approval-mvp.ps1`。 | #73、#134 |
 | DemandPlanning | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖需求来源、MPS、MRP run、pegging 和计划建议，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-demand-planning-mrp-mvp.ps1`。 | #128 |
 | WMS | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖入库、出库、仓库任务、盘点执行、WCS 任务和 Inventory movement request 元数据，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-wms-execution-mvp.ps1`。 | #75、#136 |
-| ERP | 尚无服务目录；拆分 Procurement、Sales、Finance 三个执行子 issue。 | #76、#137、#138、#139 |
+| ERP | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖 Procurement（采购申请、RFQ、供应商报价、采购订单、采购收货）、Sales（商机、报价、销售订单、发货请求）和 Finance（AP、AR、凭证、成本候选），并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-erp-procurement-sales-finance-mvp.ps1`。 | #76、#137、#138、#139 |
 | IndustrialTelemetry | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖 TelemetryTag、DeviceStateSnapshot、AlarmEvent 和 TelemetrySummary，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-industrial-telemetry-mvp.ps1`；保持 PLC/DCS/SCADA 控制命令和凭据在外部边界。 | #129 |
 | Maintenance | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖维修工单、保养计划、点检、停机原因和备件行，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-maintenance-mvp.ps1`；报警开单通过 `Nerv.IIP.Contracts.IndustrialTelemetry` 消费 IndustrialTelemetry 公共事件。 | #130 |
 | 业务服务注册与验收 | BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality 和 BusinessMES 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-wave1-foundation.ps1`；BusinessDemandPlanning、BarcodeLabel、BusinessApproval 和 WMS 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-wave2-execution.ps1`；BusinessIndustrialTelemetry 和 BusinessMaintenance 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-equipment-reliability.ps1`；端口矩阵与 readiness 已同步到 5107-5117。 | #77、#140 |
@@ -87,6 +89,16 @@
 | #129 IndustrialTelemetry | issue worker implementation + `scripts/verify-business-industrial-telemetry-mvp.ps1` | 已完成 tag 映射、设备状态快照、报警 raise/clear 和采集汇总；公开报警事件契约位于 `backend/common/Contracts/Nerv.IIP.Contracts.IndustrialTelemetry`。 |
 | #130 Maintenance | issue worker implementation + `scripts/verify-business-maintenance-mvp.ps1` | 已完成维修工单、保养计划、点检、停机原因、备件行和 `maintenance.AssetUnavailable`/`maintenance.AssetRestored` 事件；报警触发开单消费 #129 公共事件契约。 |
 | Equipment Reliability registration | `scripts/verify-business-equipment-reliability.ps1` | 已统一补齐 solution、AppHost、verify scripts、schema catalog、authorization matrix 和 readiness；聚合验证入口为 `scripts/verify-business-equipment-reliability.ps1`。 |
+
+### 业务平台 Wave 3 / Wave 4 planning
+
+| Issue | Handoff docs | 说明 |
+| --- | --- | --- |
+| #137 ERP Procurement | `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md`、`docs/superpowers/plans/2026-05-23-erp-procurement-mvp.md` | 已创建 ERP 服务骨架并落地采购申请、RFQ、供应商报价、采购订单和采购收货；ERP 不拥有库存余额或 WMS 执行事实。 |
+| #138 ERP Sales | `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md`、`docs/superpowers/plans/2026-05-23-erp-sales-mvp.md` | 已在 ERP 服务中落地商机、报价、销售订单和发货请求；WMS 仍拥有出库执行。 |
+| #139 ERP Finance | `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md`、`docs/superpowers/plans/2026-05-23-erp-finance-mvp.md` | 已在 ERP 服务中落地 AP、AR、凭证和成本候选；凭证必须借贷平衡，完整总账月结后置。 |
+| ERP registration | `docs/superpowers/plans/2026-05-23-business-wave-3-erp-registration-verify-readiness.md` | 已统一补齐 ERP solution、AppHost、IAM seed、schema catalog、readiness、README 和 verify scripts；本地端口为 5118。 |
+| #77 Full-chain acceptance | `docs/superpowers/specs/2026-05-23-business-full-chain-acceptance-design.md`、`docs/superpowers/plans/2026-05-23-business-full-chain-acceptance.md` | Wave 4 下一步启动；验收项目只通过公开 API 和 IntegrationEvent 可见事实断言。 |
 
 ## 环境前置
 

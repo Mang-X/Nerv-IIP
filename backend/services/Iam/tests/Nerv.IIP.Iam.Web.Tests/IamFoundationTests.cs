@@ -141,6 +141,15 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Contains(catalog.Items, item => item.Code == "business.inventory.ledger.read"
             && item.Domain == "business"
             && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.erp.procurement.manage"
+            && item.Domain == "business"
+            && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.erp.sales.manage"
+            && item.Domain == "business"
+            && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.erp.finance.manage"
+            && item.Domain == "business"
+            && item.Seeded);
 
         var create = await _client.PostAsJsonAsync(
             "/api/iam/v1/roles",

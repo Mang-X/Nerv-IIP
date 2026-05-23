@@ -25,6 +25,7 @@ var businessApprovalDatabase = postgres.AddDatabase("business-approval-db", "ner
 var businessWmsDatabase = postgres.AddDatabase("business-wms-db", "nerv_iip_wms");
 var businessIndustrialTelemetryDatabase = postgres.AddDatabase("business-industrial-telemetry-db", "nerv_iip_industrial_telemetry");
 var businessMaintenanceDatabase = postgres.AddDatabase("business-maintenance-db", "nerv_iip_maintenance");
+var businessErpDatabase = postgres.AddDatabase("business-erp-db", "nerv_iip_erp");
 var redis = builder.AddRedis("redis")
     .WithDataVolume("nerv-iip-redis");
 var rabbitmq = useRabbitMq
@@ -260,10 +261,13 @@ var businessWms = builder.AddProject<Projects.Nerv_IIP_Business_Wms_Web>("busine
     .WithHttpEndpoint(port: 5115, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithReference(businessWmsDatabase, "PostgreSQL")
+    .WithReference(businessInventory)
     .WaitFor(businessWmsDatabase)
+    .WaitFor(businessInventory)
     .WaitFor(otelCollector);
 if (rabbitmq is not null)
 {
@@ -304,6 +308,24 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+var businessErp = builder.AddProject<Projects.Nerv_IIP_Business_Erp_Web>("business-erp")
+    .WithHttpEndpoint(port: 5118, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessErpDatabase, "PostgreSQL")
+    .WithReference(iam)
+    .WaitFor(businessErpDatabase)
+    .WaitFor(iam)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessErp = businessErp
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
 var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")
     .WithHttpEndpoint(port: 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
@@ -330,6 +352,7 @@ var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway
     .WithReference(businessWms)
     .WithReference(businessIndustrialTelemetry)
     .WithReference(businessMaintenance)
+    .WithReference(businessErp)
     .WithReference(redis)
     .WaitFor(apphub)
     .WaitFor(iam)

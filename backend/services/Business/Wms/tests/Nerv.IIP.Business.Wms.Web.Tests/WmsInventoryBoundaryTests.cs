@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
@@ -60,6 +61,27 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Single(fake.Requests);
         Assert.Equal("outbound", fake.Requests[0].MovementType);
         Assert.Equal("idem-out-001", fake.Requests[0].IdempotencyKey);
+        Assert.Equal(-4m, fake.Requests[0].Quantity);
+    }
+
+    [Fact]
+    public async Task Complete_count_execution_posts_count_adjustment_payload_with_variance_quantity()
+    {
+        await using var dbContext = CreateContext();
+        var count = CountExecution.Create("org-001", "env-dev", "COUNT-001", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 10m);
+        dbContext.CountExecutions.Add(count);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var fake = new RecordingInventoryMovementClient();
+
+        var result = await new CompleteCountExecutionCommandHandler(dbContext, fake).Handle(
+            new CompleteCountExecutionCommand(count.Id, 7.5m, "idem-count-001"),
+            CancellationToken.None);
+
+        Assert.Equal("posted-count-adjustment-idem-count-001", result.InventoryMovementId);
+        Assert.Single(fake.Requests);
+        Assert.Equal("count-adjustment", fake.Requests[0].MovementType);
+        Assert.Equal(-2.5m, fake.Requests[0].Quantity);
+        Assert.Equal("idem-count-001", fake.Requests[0].IdempotencyKey);
     }
 
     private static ApplicationDbContext CreateContext()

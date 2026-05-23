@@ -1,5 +1,10 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
@@ -9,6 +14,8 @@ using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
+using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
@@ -36,6 +43,28 @@ public sealed class ProductEngineeringReleaseApiContractTests
             Assert.Matches("^[a-z][A-Za-z0-9]*$", contract.OperationId);
             Assert.Contains("Business", contract.OperationId, StringComparison.Ordinal);
         });
+    }
+
+    [Fact]
+    public void Product_engineering_business_endpoints_require_internal_service_authorization_policy()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var endpoints = factory.Services.GetRequiredService<IEnumerable<EndpointDataSource>>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToArray();
+        var contracts = ProductEngineeringEndpointContracts.All
+            .Select(contract => (contract.EndpointType, contract.Route))
+            .Concat(ProductionVersionEndpointContracts.All.Select(contract => (contract.EndpointType, contract.Route)))
+            .ToArray();
+
+        var failures = contracts
+            .Where(contract => !HasInternalServicePolicy(endpoints, contract.Route))
+            .Select(contract => $"{contract.EndpointType.Name} is missing {InternalServiceAuthorizationPolicy.Name}.")
+            .ToArray();
+
+        Assert.Empty(failures);
     }
 
     [Theory]
@@ -172,6 +201,31 @@ public sealed class ProductEngineeringReleaseApiContractTests
     private static bool IsValidationFailureFor(FluentValidation.Results.ValidationFailure failure, string propertyName)
     {
         return NormalizeValidationPropertyName(failure.PropertyName) == NormalizeValidationPropertyName(propertyName);
+    }
+
+    private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)
+    {
+        return endpoints
+            .Where(endpoint => string.Equals(endpoint.RoutePattern.RawText, route, StringComparison.Ordinal))
+            .SelectMany(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>())
+            .Any(authorizeData => string.Equals(authorizeData.Policy, InternalServiceAuthorizationPolicy.Name, StringComparison.Ordinal));
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory()
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_product_engineering_policy;Username=nerv;Password=nerv",
+            ["InternalService:BearerToken"] = "test-internal-service-token",
+        };
+
+        return new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(settings));
+            });
     }
 
     private static string NormalizeValidationPropertyName(string propertyName)

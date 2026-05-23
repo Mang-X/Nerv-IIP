@@ -1,5 +1,7 @@
 # Business Full Chain Acceptance Implementation Plan
 
+> Historical input only. As of 2026-05-23, use `docs/superpowers/specs/2026-05-23-business-full-chain-acceptance-design.md` and `docs/superpowers/plans/2026-05-23-business-full-chain-acceptance.md`. This older plan predates Wave 1/2/2.5 completion and references prerequisite script names that have since changed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add end-to-end acceptance coverage for the seven critical Business Platform chains after Slice 1 through Slice 9 are implemented.

@@ -4,6 +4,7 @@ using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands.ProductionVersions;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries.ProductionVersions;
 using Nerv.IIP.Contracts.ProductEngineering;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Dto;
 using System.Diagnostics.CodeAnalysis;
 
@@ -30,6 +31,7 @@ public abstract class ProductionVersionEndpoint<TRequest, TResponse> : Endpoint<
         }
 
         Tags("Business ProductEngineering");
+        Policies(InternalServiceAuthorizationPolicy.Name);
         Permissions(contract.PermissionCode);
     }
 }

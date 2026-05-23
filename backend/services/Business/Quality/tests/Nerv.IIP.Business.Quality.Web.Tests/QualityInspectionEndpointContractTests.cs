@@ -1,5 +1,10 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
@@ -10,6 +15,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
@@ -45,6 +51,24 @@ public sealed class QualityInspectionEndpointContractTests
             && x.Route == "/api/business/v1/quality/inspection-records"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
             && x.OperationId == "listBusinessQualityInspectionRecords");
+    }
+
+    [Fact]
+    public void Inspection_business_endpoints_require_internal_service_authorization_policy()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var endpoints = factory.Services.GetRequiredService<IEnumerable<EndpointDataSource>>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToArray();
+
+        var failures = QualityInspectionEndpointContracts.All
+            .Where(contract => !HasInternalServicePolicy(endpoints, contract.Route))
+            .Select(contract => $"{contract.EndpointType.Name} is missing {InternalServiceAuthorizationPolicy.Name}.")
+            .ToArray();
+
+        Assert.Empty(failures);
     }
 
     [Theory]
@@ -187,6 +211,31 @@ public sealed class QualityInspectionEndpointContractTests
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseInMemoryDatabase($"quality-inspection-api-contract-{Guid.NewGuid():N}"));
         return services.BuildServiceProvider();
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory()
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_quality_inspection_policy;Username=nerv;Password=nerv",
+            ["InternalService:BearerToken"] = "test-internal-service-token",
+        };
+
+        return new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(settings));
+            });
+    }
+
+    private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)
+    {
+        return endpoints
+            .Where(endpoint => string.Equals(endpoint.RoutePattern.RawText, route, StringComparison.Ordinal))
+            .SelectMany(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>())
+            .Any(authorizeData => string.Equals(authorizeData.Policy, InternalServiceAuthorizationPolicy.Name, StringComparison.Ordinal));
     }
 
     private sealed class FixedNonconformanceReportCodeGenerator : INonconformanceReportCodeGenerator

@@ -269,11 +269,43 @@ Source:
 | `warehouse_tasks` | business | 上架和拣货任务事实，记录任务类型、库位、数量和状态。 | `id` 为 Guid v7 强类型 ID；记录 warehouse task id、任务类型和关联单据。 | 任务 id 唯一索引防重复；状态索引用于任务队列。 | 任务被完成或取消后保留执行历史。 |
 | `count_executions` | business | WMS 盘点执行和差异输出事实。 | `id` 为 Guid v7 强类型 ID；记录 count execution id、库位/SKU/差异数量。 | execution id 唯一索引防重复；状态/仓库索引用于盘点列表。 | 完成后产生差异事实，后续由 Inventory 盘点调整边界承接。 |
 | `wcs_tasks` | business | WCS adapter 任务映射、状态和外部任务诊断。 | `id` 为 Guid v7 强类型 ID；记录 warehouse task id、external task id、状态和失败原因。 | external task id 索引用于外部设备回调；状态索引用于自动化队列。 | 由 dispatch/complete/fail 推进，保留自动化执行诊断。 |
-| `inventory_movement_requests` | business | WMS 向 Inventory 请求库存移动的本地元数据。 | `id` 为 Guid v7 强类型 ID；记录业务来源、幂等键、movement type 和 posting 状态。 | 幂等键索引用于防重复 posting；状态索引用于补偿扫描。 | 当前由 NoopInventoryMovementClient 占位，真实 HTTP posting 留给后续集成。 |
+| `inventory_movement_requests` | business | WMS 向 Inventory 请求库存移动的本地元数据。 | `id` 为 Guid v7 强类型 ID；记录业务来源、幂等键、movement type 和 posting 状态。 | 幂等键索引用于防重复 posting；状态索引用于补偿扫描。 | 默认通过 HTTP client posting 到 Inventory，测试环境可用 noop/fake client 替换。 |
 | `CAPLock` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPPublishedMessage` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPReceivedMessage` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 WMS 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `wms` schema；业务代码不直接读写。 |
+
+## ERP Schema
+
+Schema: `erp`
+
+Owner: `backend/services/Business/Erp`
+
+Source:
+
+1. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
+2. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/*.cs`
+3. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/*_InitialErpProcurementSalesFinanceSchema.cs`
+
+| Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
+| --- | --- | --- | --- | --- | --- |
+| `purchase_requisitions` | business | ERP 采购申请，承接 DemandPlanning 建议或手工采购需求。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + suggestion_id` 幂等唯一。 | suggestion/requisition no 唯一索引用于防重复下游单据。 | 创建后进入采购流；ERP 不拥有计划建议状态。 |
+| `request_for_quotations` / `request_for_quotation_lines` / `request_for_quotation_suppliers` | business | RFQ 头、行和邀请供应商引用。 | RFQ id 归属头；行和供应商通过 owning FK 加载。 | RFQ no 唯一索引用于采购过程追踪。 | 创建后接收供应商报价；供应商主数据仍由 MasterData 拥有。 |
+| `supplier_quotations` / `supplier_quotation_lines` | business | 供应商报价事实，记录数量、单价和承诺日期。 | `quotation_no` 是业务编号；行归属报价。 | quotation no 唯一索引用于报价幂等。 | 接收后保留为采购比价事实。 |
+| `purchase_orders` / `purchase_order_lines` | business | 采购订单头和行，记录订单金额与已收数量。 | `purchase_order_no` 是业务编号；行记录 ordered/received quantity。 | PO no 唯一索引用于收货反查。 | release 后可被收货推进；不写 Inventory 余额。 |
+| `purchase_receipts` / `purchase_receipt_lines` | business | ERP 采购收货事实，记录质量状态摘要。 | `purchase_receipt_no` 是业务编号；行引用 PO line no。 | receipt no 唯一索引用于质量/WMS/AP 下游引用。 | 记录后不可变；质量检验、入库执行和 AP 候选由公开事件/API 接线。 |
+| `opportunities` | business | 销售商机事实。 | `opportunity_no` 是业务编号；`customer_code` 引用 MasterData 客户。 | opportunity no 唯一索引用于 CRM-lite 追踪。 | 创建后作为报价前置事实保留。 |
+| `quotations` / `quotation_lines` | business | 销售报价和报价行。 | `quotation_no` 是业务编号；行记录 SKU、数量、单价和交期。 | quotation no 唯一索引用于销售订单创建。 | 报价需显式 approve 才能创建销售订单。 |
+| `sales_orders` / `sales_order_lines` | business | 销售订单和行，记录已释放发货数量。 | `sales_order_no` 是业务编号；行记录 ordered/delivered quantity。 | SO no 唯一索引用于发货请求反查。 | ERP 只拥有订单事实，WMS 拥有出库执行。 |
+| `delivery_orders` / `delivery_order_lines` | business | ERP 发货请求，供 WMS outbound 执行。 | `delivery_order_no` 是业务编号；行引用 SO line no。 | delivery order no 唯一索引用于 WMS/AR 下游引用。 | release 后保留请求事实，不表达 WMS task state。 |
+| `account_payables` | business | 应付候选事实。 | `payable_no` 是业务编号；记录来源单据、供应商、金额和已付金额。 | AP no 唯一索引用于幂等生成。 | 支付推进不允许超过 open amount；完整总账月结后置。 |
+| `account_receivables` | business | 应收候选事实。 | `receivable_no` 是业务编号；记录来源单据、客户、金额和已收金额。 | AR no 唯一索引用于幂等生成。 | 收款推进不允许超过 open amount；完整收款核销后置。 |
+| `cost_candidates` | business | 成本候选事实，引用 MES、Inventory 或 WMS 公开事实。 | `candidate_no` 是业务编号；`source_type + source_document_no` 描述来源。 | candidate no 唯一索引用于成本候选幂等。 | 作为候选保留，不代表最终成本结转。 |
+| `journal_vouchers` / `journal_voucher_lines` | business | 平衡凭证事实和借贷行。 | `voucher_no` 是业务编号；行记录 account code、debit/credit。 | voucher no 唯一索引用于凭证审计。 | posted 后不可变，借贷必须平衡。 |
+| `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `__EFMigrationsHistory` | system | EF Core migration history table，记录 ERP 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `erp` schema；业务代码不直接读写。 |
 
 ## BusinessIndustrialTelemetry Schema
 
@@ -470,6 +502,7 @@ Known gaps:
 | BarcodeLabel | `barcode` | Implemented | Yes | Yes | No | 已有条码规则、标签模板、打印批次、打印项和扫码记录 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessApproval | `business_approval` | Implemented | Yes | Yes | No | 已有审批模板、审批链、审批步骤和审批决定 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | WMS | `wms` | Implemented | Yes | Yes | No | 已有入库、出库、仓库任务、盘点执行、WCS 任务和库存移动请求元数据 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| ERP | `erp` | Implemented | Yes | Yes | No | 已有 Procurement、Sales 和 Finance MVP schema、migration、schema convention tests 和 verify scripts；客户 release bundle、完整总账月结和银行/税务对账仍待后续。 |
 | BusinessIndustrialTelemetry | `industrial_telemetry` | Implemented | Yes | Yes | No | 已有 tag、设备状态快照、报警事件和采集汇总 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessMaintenance | `maintenance` | Implemented | Yes | Yes | No | 已有维修工单、保养计划、点检、停机原因和备件行 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | Notification | `notification` | Planned only | No | No | No | 通知模板、投递任务、收件人、渠道、重试和用户可见状态。 |

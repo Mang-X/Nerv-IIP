@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggre
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
+using Nerv.IIP.ServiceAuth;
 using static Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports.NonconformanceReportEndpointMapping;
 
 namespace Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
@@ -54,6 +55,7 @@ public abstract class QualityEndpoint<TRequest, TResponse> : Endpoint<TRequest, 
         }
 
         Tags("Business Quality");
+        Policies(InternalServiceAuthorizationPolicy.Name);
         Permissions(contract.PermissionCode);
     }
 }

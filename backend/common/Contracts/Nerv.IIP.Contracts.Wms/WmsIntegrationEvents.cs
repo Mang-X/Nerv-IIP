@@ -1,4 +1,4 @@
-namespace Nerv.IIP.Business.Wms.Web.Application.IntegrationEvents;
+namespace Nerv.IIP.Contracts.Wms;
 
 public static class WmsIntegrationEventTypes
 {
@@ -7,6 +7,11 @@ public static class WmsIntegrationEventTypes
     public const string CountExecutionCompleted = "wms.CountExecutionCompleted";
     public const string WcsTaskDispatched = "wms.WcsTaskDispatched";
     public const string WcsTaskFailed = "wms.WcsTaskFailed";
+}
+
+public static class WmsIntegrationEventVersions
+{
+    public const int V1 = 1;
 }
 
 public static class WmsIntegrationEventSources

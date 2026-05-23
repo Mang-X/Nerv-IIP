@@ -21,4 +21,9 @@ public static class WmsText
     {
         return value <= 0 ? throw new ArgumentOutOfRangeException(parameterName, value, $"{parameterName} must be positive.") : value;
     }
+
+    public static decimal NonZero(decimal value, string parameterName)
+    {
+        return value == 0 ? throw new ArgumentOutOfRangeException(parameterName, value, $"{parameterName} cannot be zero.") : value;
+    }
 }

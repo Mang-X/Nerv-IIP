@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore.Design;
+using Nerv.IIP.Business.ProductEngineering.Domain;
 
 namespace Nerv.IIP.Business.ProductEngineering.Infrastructure;
 
@@ -9,7 +10,13 @@ public sealed class DesignTimeApplicationDbContextFactory : IDesignTimeDbContext
     {
         _ = args;
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql("Host=localhost;Database=nerv_iip_product_engineering_design;Username=nerv;Password=nerv")
+            .UseNpgsql(
+                "Host=localhost;Database=nerv_iip_product_engineering_design;Username=nerv;Password=nerv",
+                builder =>
+                {
+                    builder.MigrationsAssembly(typeof(DesignTimeApplicationDbContextFactory).Assembly.FullName);
+                    builder.MigrationsHistoryTable("__EFMigrationsHistory", ProductEngineeringFacts.Schema);
+                })
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }

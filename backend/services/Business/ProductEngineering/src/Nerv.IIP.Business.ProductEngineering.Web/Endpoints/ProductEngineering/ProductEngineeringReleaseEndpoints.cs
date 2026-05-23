@@ -3,6 +3,7 @@ using FastEndpoints;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 
@@ -24,6 +25,7 @@ public abstract class ProductEngineeringEndpoint<TRequest, TResponse> : Endpoint
         }
 
         Tags("Business ProductEngineering");
+        Policies(InternalServiceAuthorizationPolicy.Name);
         Permissions(contract.PermissionCode);
     }
 }

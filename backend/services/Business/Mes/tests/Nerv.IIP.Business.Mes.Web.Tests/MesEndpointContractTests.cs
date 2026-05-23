@@ -22,6 +22,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/work-orders/rush"
             && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
             && x.OperationId == "createBusinessMesRushWorkOrder");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/work-orders"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "listBusinessMesWorkOrders");
 
         Assert.All(MesEndpointContracts.All, contract =>
             Assert.Contains(contract.PermissionCode, MesPermissionCodes.All));
@@ -48,6 +53,19 @@ public sealed class MesEndpointContractTests
             workCenterId = "WC-A",
             durationMinutes = 60
         });
+
+        Assert.True(
+            response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
+            $"Expected auth failure but received {(int)response.StatusCode}.");
+    }
+
+    [Fact]
+    public async Task Mes_work_order_query_endpoint_requires_internal_service_authentication()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
 
         Assert.True(
             response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,

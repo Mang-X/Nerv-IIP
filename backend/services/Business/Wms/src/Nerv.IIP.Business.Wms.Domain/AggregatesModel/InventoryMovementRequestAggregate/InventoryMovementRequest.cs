@@ -48,7 +48,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         QualityStatus = WmsText.Required(qualityStatus, nameof(qualityStatus)).ToLowerInvariant();
         OwnerType = WmsText.Required(ownerType, nameof(ownerType)).ToLowerInvariant();
         OwnerId = WmsText.Optional(ownerId);
-        Quantity = WmsText.Positive(quantity, nameof(quantity));
+        Quantity = WmsText.NonZero(quantity, nameof(quantity));
         Status = InventoryMovementRequestStatus.Pending;
         CreatedAtUtc = DateTime.UtcNow;
     }
@@ -68,6 +68,10 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
     public string QualityStatus { get; private set; } = string.Empty;
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
+    /// <summary>
+    /// Signed movement quantity sent to Inventory. Inbound increases stock, outbound decreases stock,
+    /// and count-adjustment uses the counted-minus-expected variance.
+    /// </summary>
     public decimal Quantity { get; private set; }
     public InventoryMovementRequestStatus Status { get; private set; }
     public string? InventoryMovementId { get; private set; }

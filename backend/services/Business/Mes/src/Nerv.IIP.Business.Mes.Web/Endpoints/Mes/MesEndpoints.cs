@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
 
@@ -27,6 +28,12 @@ public sealed record CreateRushWorkOrderRequest(
     int? OperationSequence,
     int DurationMinutes);
 
+public sealed record ListMesWorkOrdersRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    int Take = 100);
+
 public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
@@ -34,6 +41,9 @@ public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
     {
         switch (contract.HttpMethod)
         {
+            case "GET":
+                Get(contract.Route);
+                break;
             case "POST":
                 Post(contract.Route);
                 break;
@@ -93,6 +103,23 @@ public sealed class CreateRushWorkOrderEndpoint(ISender sender, TimeProvider tim
     }
 }
 
+public sealed class ListMesWorkOrdersEndpoint(ISender sender)
+    : MesEndpoint<ListMesWorkOrdersRequest, ListMesWorkOrdersResponse>
+{
+    public override void Configure()
+    {
+        ConfigureMesContract(MesEndpointContracts.Get<ListMesWorkOrdersEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new ListMesWorkOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Take),
+            ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed record MesEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -106,6 +133,7 @@ public static class MesEndpointContracts
     [
         new(typeof(RunScheduleEndpoint), "POST", "/api/business/v1/mes/schedules/run", MesPermissionCodes.SchedulesManage, "runBusinessMesSchedule"),
         new(typeof(CreateRushWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/rush", MesPermissionCodes.WorkOrdersManage, "createBusinessMesRushWorkOrder"),
+        new(typeof(ListMesWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders", MesPermissionCodes.WorkOrdersManage, "listBusinessMesWorkOrders"),
     ];
 
     public static MesEndpointContract Get<TEndpoint>()

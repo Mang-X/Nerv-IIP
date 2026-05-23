@@ -49,7 +49,7 @@ public sealed record CreatePickingTaskRequest(OutboundOrderId OutboundOrderId, s
 public sealed record CompleteOutboundOrderRequest(OutboundOrderId OutboundOrderId, string PackReviewNo, bool Passed, string IdempotencyKey);
 public sealed record CreateCountExecutionRequest(string OrganizationId, string EnvironmentId, string CountNo, string SkuCode, string UomCode, string SiteCode, string LocationCode, decimal ExpectedQuantity);
 public sealed record CreateCountExecutionResponse(CountExecutionId CountExecutionId);
-public sealed record CompleteCountExecutionRequest(CountExecutionId CountExecutionId, decimal CountedQuantity);
+public sealed record CompleteCountExecutionRequest(CountExecutionId CountExecutionId, decimal CountedQuantity, string IdempotencyKey);
 public sealed record DispatchWcsTaskRequest(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson);
 public sealed record DispatchWcsTaskResponse(WcsTaskId WcsTaskId);
 public sealed record CompleteWcsTaskRequest(string ExternalTaskId, string CompletionPayloadJson);
@@ -145,13 +145,13 @@ public sealed class CreateCountExecutionEndpoint(ISender sender) : WmsEndpoint<C
     }
 }
 
-public sealed class CompleteCountExecutionEndpoint(ISender sender) : WmsEndpoint<CompleteCountExecutionRequest, ResponseData<object>>
+public sealed class CompleteCountExecutionEndpoint(ISender sender) : WmsEndpoint<CompleteCountExecutionRequest, ResponseData<CompleteMovementResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteCountExecutionEndpoint>());
     public override async Task HandleAsync(CompleteCountExecutionRequest req, CancellationToken ct)
     {
-        await sender.Send(new CompleteCountExecutionCommand(req.CountExecutionId, req.CountedQuantity), ct);
-        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+        var result = await sender.Send(new CompleteCountExecutionCommand(req.CountExecutionId, req.CountedQuantity, req.IdempotencyKey), ct);
+        await Send.OkAsync(new CompleteMovementResponse(result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }
 

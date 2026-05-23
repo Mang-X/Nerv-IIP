@@ -1,0 +1,106 @@
+using Nerv.IIP.Business.Erp.Domain.DomainEvents;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
+using static Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters.ErpIntegrationEventConverterHelpers;
+
+namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
+
+public sealed class PurchaseRequisitionCreatedIntegrationEventConverter
+    : IIntegrationEventConverter<PurchaseRequisitionCreatedDomainEvent, ErpIntegrationEvent<PurchaseRequisitionCreatedPayload>>
+{
+    public ErpIntegrationEvent<PurchaseRequisitionCreatedPayload> Convert(PurchaseRequisitionCreatedDomainEvent domainEvent)
+    {
+        var requisition = domainEvent.PurchaseRequisition;
+        return Envelope(
+            ErpIntegrationEventTypes.PurchaseRequisitionCreated,
+            requisition.OrganizationId,
+            requisition.EnvironmentId,
+            EventIds.Idempotency("purchase-requisition-created", requisition.OrganizationId, requisition.EnvironmentId, requisition.SuggestionId),
+            new PurchaseRequisitionCreatedPayload(
+                PublicId(requisition.Id),
+                requisition.RequisitionNo,
+                requisition.SuggestionId,
+                requisition.SkuCode,
+                requisition.UomCode,
+                requisition.SiteCode,
+                requisition.Quantity,
+                requisition.RequiredDate));
+    }
+}
+
+public sealed class PurchaseOrderReleasedIntegrationEventConverter
+    : IIntegrationEventConverter<PurchaseOrderReleasedDomainEvent, ErpIntegrationEvent<PurchaseOrderReleasedPayload>>
+{
+    public ErpIntegrationEvent<PurchaseOrderReleasedPayload> Convert(PurchaseOrderReleasedDomainEvent domainEvent)
+    {
+        var order = domainEvent.PurchaseOrder;
+        return Envelope(
+            ErpIntegrationEventTypes.PurchaseOrderReleased,
+            order.OrganizationId,
+            order.EnvironmentId,
+            EventIds.Idempotency("purchase-order-released", order.OrganizationId, order.EnvironmentId, order.PurchaseOrderNo),
+            new PurchaseOrderReleasedPayload(
+                PublicId(order.Id),
+                order.PurchaseOrderNo,
+                order.SupplierCode,
+                order.SiteCode,
+                order.TotalAmount));
+    }
+}
+
+public sealed class PurchaseReceiptRecordedIntegrationEventConverter
+    : IIntegrationEventConverter<PurchaseReceiptRecordedDomainEvent, ErpIntegrationEvent<PurchaseReceiptRecordedPayload>>
+{
+    public ErpIntegrationEvent<PurchaseReceiptRecordedPayload> Convert(PurchaseReceiptRecordedDomainEvent domainEvent)
+    {
+        var receipt = domainEvent.PurchaseReceipt;
+        return Envelope(
+            ErpIntegrationEventTypes.PurchaseReceiptRecorded,
+            receipt.OrganizationId,
+            receipt.EnvironmentId,
+            EventIds.Idempotency("purchase-receipt-recorded", receipt.OrganizationId, receipt.EnvironmentId, receipt.PurchaseReceiptNo),
+            new PurchaseReceiptRecordedPayload(
+                PublicId(receipt.Id),
+                receipt.PurchaseReceiptNo,
+                receipt.PurchaseOrderNo,
+                receipt.SupplierCode,
+                receipt.SiteCode,
+                receipt.QualityStatus));
+    }
+}
+
+internal static class ErpIntegrationEventConverterHelpers
+{
+    public static ErpIntegrationEvent<TPayload> Envelope<TPayload>(
+        string eventType,
+        string organizationId,
+        string environmentId,
+        string idempotencyKey,
+        TPayload payload)
+    {
+        return new ErpIntegrationEvent<TPayload>(
+            EventIds.New(),
+            eventType,
+            1,
+            DateTimeOffset.UtcNow,
+            ErpIntegrationEventSources.BusinessErp,
+            "system:erp",
+            "system:erp",
+            organizationId,
+            environmentId,
+            "system:erp",
+            idempotencyKey,
+            payload);
+    }
+
+    public static string PublicId(object? stronglyTypedId)
+    {
+        return stronglyTypedId?.ToString() ?? "unassigned";
+    }
+}
+
+internal static class EventIds
+{
+    public static string New() => $"evt-{Guid.CreateVersion7():N}";
+
+    public static string Idempotency(params string[] parts) => $"erp:{string.Join(':', parts)}";
+}
