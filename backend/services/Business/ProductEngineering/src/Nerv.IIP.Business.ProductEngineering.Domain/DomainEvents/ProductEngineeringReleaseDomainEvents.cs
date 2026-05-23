@@ -9,6 +9,7 @@ namespace Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
 
 public sealed record EngineeringDocumentRegisteredDomainEvent(EngineeringDocument Document) : IDomainEvent;
 
+// Domain-only in the MVP; add an integration converter when external consumers need item revision notifications.
 public sealed record EngineeringItemRevisionCreatedDomainEvent(EngineeringItem Item) : IDomainEvent;
 
 public sealed record EngineeringBomReleasedDomainEvent(EngineeringBom Bom) : IDomainEvent;
