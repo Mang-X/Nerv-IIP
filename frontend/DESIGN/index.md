@@ -52,6 +52,8 @@ See `components/install-backlog.md` for full list and install commands.
 | `Command` | Combobox / searchable Select for large datasets |
 | `Calendar` | Date/range pickers for scheduling and telemetry |
 | `Toggle` / `ToggleGroup` | View mode switches, filter pill groups |
+| `Chart` | Business dashboards and metrics once installed through `@nerv-iip/ui` |
+| `FileUpload` | FileStorage-backed uploads; see `roadmaps/business-console-readiness.md` |
 
 ---
 
@@ -68,6 +70,12 @@ See `components/install-backlog.md` for full list and install commands.
 | Search + filter + primary action bar | Toolbar | `patterns/blocks/toolbar.md` |
 | Data table with loading/empty states | Data Table | `patterns/blocks/data-table.md` |
 | Paginated table footer | Pagination Bar | `patterns/blocks/pagination-bar.md` |
+
+## Roadmaps
+
+| Scenario | File |
+|---|---|
+| Business console component readiness (#143) | `roadmaps/business-console-readiness.md` |
 
 ---
 

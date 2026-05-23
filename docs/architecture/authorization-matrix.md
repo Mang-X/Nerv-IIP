@@ -97,7 +97,7 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 
 ## 待落地服务权限命名
 
-以下权限码用于冻结后续服务的命名口径。它们尚未进入当前 `NervIipSeedPermissions.All`，后续实现对应服务时必须通过迁移、seed 和端点授权检查一起落地。
+以下权限码用于冻结后续服务和业务扩展的命名口径。已实现服务的权限必须进入 `NervIipSeedPermissions.All` 与端点授权检查；尚未实现的服务在落地时必须按本节命名进入 IAM seed、OpenAPI 测试和权限测试。
 
 ### Notification
 
@@ -146,7 +146,7 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 
 ### Business Platform
 
-业务平台权限码用于 ADR 0012 定义的关键链路领域扩展。BusinessMasterData、BusinessProductEngineering 和 BusinessQuality 权限已随对应 MVP 进入 IAM seed；BusinessInventory 与 BusinessMES 当前先落地服务内权限码、Endpoint 契约测试和内部服务授权入口，后续暴露用户或外部客户端入口时再进入 IAM seed。其他业务域权限在实现对应服务时，必须按本表进入 IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。
+业务平台权限码用于 ADR 0012 定义的关键链路领域扩展。BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry 和 BusinessMaintenance 权限已随对应 MVP 进入 IAM seed 或服务授权基线。其他业务域权限在实现对应服务时，必须按本表进入 IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。
 
 | 权限码 | 建议 principalType | 建议 scope | 说明 |
 | --- | --- | --- | --- |

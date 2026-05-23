@@ -161,10 +161,10 @@ Expected: event converter tests pass.
 Create `QualityInspectionEndpointContractTests.cs` for:
 
 1. Inspection endpoints require internal service authorization.
-2. `POST /api/quality/v1/inspection-plans` creates a plan.
-3. `POST /api/quality/v1/inspection-plans/{inspectionPlanId}/activate` activates a plan.
-4. `POST /api/quality/v1/inspection-records` records pass and reject outcomes.
-5. `POST /api/quality/v1/inspection-records/{inspectionRecordId}/failures/ncr` opens an NCR.
+2. `POST /api/business/v1/quality/inspection-plans` creates a plan.
+3. `POST /api/business/v1/quality/inspection-plans/{inspectionPlanId}/activate` activates a plan.
+4. `POST /api/business/v1/quality/inspection-records` records pass and reject outcomes.
+5. `POST /api/business/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr` opens an NCR.
 6. OpenAPI operation IDs are stable.
 7. Existing NCR endpoint tests still pass.
 

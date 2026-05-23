@@ -1,0 +1,159 @@
+using System.Diagnostics.CodeAnalysis;
+using FastEndpoints;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
+using Nerv.IIP.ServiceAuth;
+
+namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
+
+public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
+    where TRequest : notnull
+{
+    protected void ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContract contract)
+    {
+        switch (contract.HttpMethod)
+        {
+            case "GET":
+                Get(contract.Route);
+                break;
+            case "POST":
+                Post(contract.Route);
+                break;
+            default:
+                throw new NotSupportedException($"HTTP method '{contract.HttpMethod}' is not supported by IndustrialTelemetry endpoints.");
+        }
+
+        Tags("Business IndustrialTelemetry");
+        Policies(contract.AuthorizationPolicy);
+        Permissions(contract.PermissionCode);
+    }
+}
+
+public sealed record CreateTelemetryTagRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey, string ValueType, string UnitCode, string SamplingPolicy);
+public sealed record CreateTelemetryTagResponse(TelemetryTagId TelemetryTagId);
+public sealed record ListTelemetryTagsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId);
+public sealed record RecordTelemetrySampleRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string TagKey,
+    DateTimeOffset BucketStartUtc,
+    DateTimeOffset BucketEndUtc,
+    int SampleCount,
+    decimal MinValue,
+    decimal MaxValue,
+    decimal AverageValue,
+    string SourceSequence,
+    string? DeviceState,
+    DateTimeOffset? StateOccurredAtUtc);
+public sealed record RecordTelemetrySampleResponse(TelemetrySummaryId? TelemetrySummaryId, DeviceStateSnapshotId? DeviceStateSnapshotId);
+public sealed record PostAlarmEventRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string AlarmCode,
+    string Severity,
+    DateTimeOffset RaisedAtUtc,
+    string ExternalAlarmId,
+    DateTimeOffset? ClearedAtUtc,
+    string? ClearedBy,
+    string? ClearReason);
+public sealed record PostAlarmEventResponse(AlarmEventId AlarmEventId);
+public sealed record ListAlarmEventsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status);
+public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
+
+public sealed class CreateTelemetryTagEndpoint(ISender sender) : IndustrialTelemetryEndpoint<CreateTelemetryTagRequest, ResponseData<CreateTelemetryTagResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<CreateTelemetryTagEndpoint>());
+
+    public override async Task HandleAsync(CreateTelemetryTagRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new CreateTelemetryTagCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.ValueType, req.UnitCode, req.SamplingPolicy), ct);
+        await Send.OkAsync(new CreateTelemetryTagResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListTelemetryTagsEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListTelemetryTagsRequest, ResponseData<IReadOnlyCollection<TelemetryTagListItem>>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ListTelemetryTagsEndpoint>());
+
+    public override async Task HandleAsync(ListTelemetryTagsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListTelemetryTagsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class RecordTelemetrySampleEndpoint(ISender sender) : IndustrialTelemetryEndpoint<RecordTelemetrySampleRequest, ResponseData<RecordTelemetrySampleResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<RecordTelemetrySampleEndpoint>());
+
+    public override async Task HandleAsync(RecordTelemetrySampleRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new RecordTelemetrySampleCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.BucketStartUtc, req.BucketEndUtc, req.SampleCount, req.MinValue, req.MaxValue, req.AverageValue, req.SourceSequence, req.DeviceState, req.StateOccurredAtUtc), ct);
+        await Send.OkAsync(new RecordTelemetrySampleResponse(result.TelemetrySummaryId, result.DeviceStateSnapshotId).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class PostAlarmEventEndpoint(ISender sender) : IndustrialTelemetryEndpoint<PostAlarmEventRequest, ResponseData<PostAlarmEventResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<PostAlarmEventEndpoint>());
+
+    public override async Task HandleAsync(PostAlarmEventRequest req, CancellationToken ct)
+    {
+        var id = req.ClearedAtUtc is null
+            ? await sender.Send(new RaiseAlarmCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AlarmCode, req.Severity, req.RaisedAtUtc, req.ExternalAlarmId), ct)
+            : await sender.Send(new ClearAlarmCommand(req.OrganizationId, req.EnvironmentId, req.ExternalAlarmId, req.ClearedAtUtc.Value, req.ClearedBy ?? string.Empty, req.ClearReason), ct);
+        await Send.OkAsync(new PostAlarmEventResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListAlarmEventsEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListAlarmEventsRequest, ResponseData<IReadOnlyCollection<AlarmEventListItem>>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ListAlarmEventsEndpoint>());
+
+    public override async Task HandleAsync(ListAlarmEventsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListAlarmEventsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Status), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class QueryDeviceTimelineEndpoint(ISender sender) : IndustrialTelemetryEndpoint<QueryDeviceTimelineRequest, ResponseData<IReadOnlyCollection<DeviceTimelineItem>>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<QueryDeviceTimelineEndpoint>());
+
+    public override async Task HandleAsync(QueryDeviceTimelineRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new QueryDeviceStateTimelineQuery(req.DeviceAssetId, req.OrganizationId, req.EnvironmentId, req.FromUtc, req.ToUtc), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed record IndustrialTelemetryEndpointContract(Type EndpointType, string HttpMethod, string Route, string PermissionCode, string AuthorizationPolicy, string OperationId);
+
+public static class IndustrialTelemetryEndpointContracts
+{
+    public static readonly IReadOnlyCollection<IndustrialTelemetryEndpointContract> All =
+    [
+        new(typeof(CreateTelemetryTagEndpoint), "POST", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotTelemetryTag"),
+        new(typeof(ListTelemetryTagsEndpoint), "GET", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotTelemetryTags"),
+        new(typeof(RecordTelemetrySampleEndpoint), "POST", "/api/business/v1/iiot/samples", IndustrialTelemetryPermissionCodes.TelemetryWrite, InternalServiceAuthorizationPolicy.Name, "recordBusinessIiotTelemetrySample"),
+        new(typeof(PostAlarmEventEndpoint), "POST", "/api/business/v1/iiot/alarms", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "raiseBusinessIiotAlarm"),
+        new(typeof(ListAlarmEventsEndpoint), "GET", "/api/business/v1/iiot/alarms", IndustrialTelemetryPermissionCodes.AlarmsRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotAlarms"),
+        new(typeof(QueryDeviceTimelineEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/timeline", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotDeviceTimeline"),
+    ];
+
+    public static IndustrialTelemetryEndpointContract Get<TEndpoint>() => All.Single(x => x.EndpointType == typeof(TEndpoint));
+
+    public static bool TryGet(Type endpointType, [NotNullWhen(true)] out IndustrialTelemetryEndpointContract? contract)
+    {
+        contract = All.SingleOrDefault(x => x.EndpointType == endpointType);
+        return contract is not null;
+    }
+}

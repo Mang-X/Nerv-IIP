@@ -140,10 +140,11 @@ Use schema `inventory` and routes:
 
 | Route | Permission |
 | --- | --- |
-| `POST /api/business/v1/inventory/locations` | `business.inventory.locations.manage` |
-| `GET /api/business/v1/inventory/balances` | `business.inventory.ledger.read` |
-| `POST /api/business/v1/inventory/movements` | `business.inventory.movements.create` |
-| `POST /api/business/v1/inventory/counts` | `business.inventory.counts.manage` |
+| `POST /api/inventory/v1/locations` | `business.inventory.locations.manage` |
+| `POST /api/inventory/v1/movements` | `business.inventory.movements.create` |
+| `GET /api/inventory/v1/availability` | `business.inventory.ledger.read` |
+| `POST /api/inventory/v1/count-tasks` | `business.inventory.counts.manage` |
+| `POST /api/inventory/v1/count-tasks/{countTaskId}/adjustments` | `business.inventory.counts.manage` |
 
 Run:
 
@@ -188,9 +189,9 @@ Use schema `quality`, events `InspectionPassedDomainEvent`, `InspectionRejectedD
 
 | Route | Permission |
 | --- | --- |
-| `POST /api/business/v1/quality/inspection-plans` | `business.quality.inspections.manage` |
-| `POST /api/business/v1/quality/inspection-plans/{planId}/records` | `business.quality.inspections.manage` |
-| `GET /api/business/v1/quality/inspection-records` | `business.quality.inspections.read` |
+| `POST /api/business/v1/quality/inspection-plans` | `business.quality.inspection-plans.manage` |
+| `POST /api/business/v1/quality/inspection-records` | `business.quality.inspection-records.create` |
+| `GET /api/business/v1/quality/inspection-records` | `business.quality.inspection-records.read` |
 
 - [ ] **Step 3: Run tests and commit**
 

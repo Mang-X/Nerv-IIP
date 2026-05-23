@@ -30,11 +30,16 @@
 24. BusinessMasterData 作为业务平台 Layer 0 基石已经完成审查重裁决：原 `2026-05-20-business-master-data-foundation.md` 只作为最小骨架，继续 Task 4/5 或下游业务域前必须先执行 `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`，并遵守 `docs/adr/0013-business-master-data-governance.md`、`docs/architecture/business-master-data-field-matrix.md` 和 `docs/architecture/business-master-data-process-manufacturing-supplement.md`。
 25. BusinessMasterData realignment 已开始落地：MasterData Domain 增加 UOM、UOM conversion、Site、ProductionLine、Shift、ReferenceDataCode 和扩展 SKU/WorkCenter/DeviceAsset 属性；Infrastructure 已生成 `RealignBusinessMasterData` migration；Web 层已提供 MasterData 变更 IntegrationEvent payload、批量 resolve/validate query、统一 list query，并补齐 SKU、UOM、UOM conversion、伙伴、部门、团队、人员技能、工厂、产线、班次、日历、工作中心、设备和参考数据的 create endpoints；API 合同测试已覆盖稳定 operationId、路由、权限码、创建成功和重复业务键；IAM seed 已加入 `business.masterdata.*` 六个权限。可通过 `scripts/verify-business-master-data-realignment.ps1` 做本地验证。
 26. FileStorage MVP 已交付公开 contracts、`Sdk.FileStorage` HTTP client、server-proxy metadata API 子集、PostgreSQL-backed API service、`filestorage` PostgreSQL schema baseline、初始 migration、schema convention tests 和本地 tus `HEAD`/`PATCH` 上传 endpoint；当前不包含 MinIO/S3 multipart 或 Gateway/Console facade。
-27. Messaging provider 已与 persistence provider 解耦：AppHub、Ops、Notification、BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality 和 BusinessMES 的 PostgreSQL profile 默认使用 `Messaging:Provider=InMemory` + CAP InMemory message queue；显式设置 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ broker。平台级 AppHost 默认不创建 RabbitMQ resource，`scripts/verify-second-slice-ops.ps1 -UsePostgres` 默认也不再依赖 RabbitMQ。
+27. Messaging provider 已与 persistence provider 解耦：AppHub、Ops、Notification、BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry 和 BusinessMaintenance 的 PostgreSQL profile 默认使用 `Messaging:Provider=InMemory` + CAP InMemory message queue；显式设置 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ broker。平台级 AppHost 默认不创建 RabbitMQ resource，`scripts/verify-second-slice-ops.ps1 -UsePostgres` 默认也不再依赖 RabbitMQ。
 28. 业务平台 GitHub issue roadmap 已完成重整：#70、#71、#73、#74、#75、#76 和 #77 保留为事实对齐后的 epic，新增 #131 到 #143 作为可执行子 issue；#72 维持已关闭状态，#78 是甘特/RFC 参考，不进入本轮后端与领域实施路线图。
 29. 业务平台 Wave 1 agent handoff 已补齐：#127、#131、#132、#135 和 #140 分别有 session 级 plan，Inventory 与 Quality inspection 另有独立 spec；并行开发前先读 `docs/superpowers/specs/2026-05-23-business-wave-1-agent-session-design.md`，再进入对应 issue 的 plan。
 30. ProductEngineering MVP 已补齐 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN 和 ProductionVersion 的 Domain/Infrastructure/Web/API contract/schema convention 测试；服务已加入 `backend/Nerv.IIP.sln` 和 Aspire AppHost，IAM seed、权限矩阵、schema catalog 与 `scripts/verify-business-product-engineering-mvp.ps1` 已同步。
 31. Business Wave 1 closure 已完成代码事实对齐：BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality 和 BusinessMES 均纳入 `backend/Nerv.IIP.sln`、平台级 Aspire AppHost、schema catalog、readiness 映射和 `scripts/verify-business-wave1-foundation.ps1` 聚合验证；本地端口固定为 5107-5111。
+32. 业务平台 Wave 2 agent handoff 已补齐：#128、#133、#134 和 #136 分别有 session 级 spec/plan，统一入口为 `docs/superpowers/specs/2026-05-23-business-wave-2-agent-session-design.md`，共享注册/验证由 `docs/superpowers/plans/2026-05-23-business-wave-2-registration-verify-readiness.md` 收口。
+33. FileStorage MinIO/S3 multipart #142 明确后置：当前业务 MVP 只依赖 FileStorage `fileId`/`FileReference`、metadata API、SDK 和本地 tus/server-proxy 能力；对象存储直传作为 Upload Provider adapter 后续接入，不阻塞 Wave 2 业务服务。
+34. 前端组件缺口 #143 归入 Design System 范畴，设计事实来源为 `frontend/DESIGN/roadmaps/business-console-readiness.md`；Superpowers plan 只作为执行清单，不替代 DESIGN 组件契约。
+35. Business Wave 2 execution closure 已完成共享接入：BusinessDemandPlanning、BarcodeLabel、BusinessApproval 和 WMS 均纳入 `backend/Nerv.IIP.sln`、平台级 Aspire AppHost、IAM seed/catalog、schema catalog、readiness 映射和 `scripts/verify-business-wave2-execution.ps1` 聚合验证；本地端口固定为 5112-5115。
+36. Equipment Reliability / Wave 2.5 closure 已完成共享接入：BusinessIndustrialTelemetry (#129) 和 BusinessMaintenance (#130) 均纳入 `backend/Nerv.IIP.sln`、平台级 Aspire AppHost、IAM seed/catalog、schema catalog、readiness 映射和 `scripts/verify-business-equipment-reliability.ps1` 聚合验证；本地端口固定为 5116-5117。IndustrialTelemetry 报警事件已抽入 `Nerv.IIP.Contracts.IndustrialTelemetry`，Maintenance 通过该公共契约消费 `industrialTelemetry.AlarmRaised`，不引用 IndustrialTelemetry 的 Domain/Infrastructure/Web 项目。
 
 ### 业务平台代码事实与 issue 映射
 
@@ -45,14 +50,14 @@
 | ProductEngineering | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN、ProductionVersion，服务已纳入 solution/AppHost/IAM seed/schema catalog，并提供 `scripts/verify-business-product-engineering-mvp.ps1`。 | #127 |
 | MES | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖工单、工序任务、报工、完工入库请求、规则排产结果、工作中心不可用窗口和设备资产映射；服务已纳入 solution/AppHost/Wave 1 verify，并提供 `scripts/verify-business-mes-execution-mvp.ps1`。 | #74、#135 |
 | Inventory | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖库存地点、库存台账、库存移动、盘点任务和盘点调整；服务已纳入 solution/AppHost/Wave 1 verify，并提供 `scripts/verify-business-inventory-mvp.ps1`。 | #73、#131 |
-| BarcodeLabel | 尚无服务目录。 | #73、#133 |
-| BusinessApproval | 尚无服务目录。 | #73、#134 |
-| DemandPlanning | 尚无服务目录；依赖 ProductEngineering 发布的 MBOM/Routing/ProductionVersion resolve 契约与 Inventory 可用量查询。 | #128 |
-| WMS | 尚无服务目录；依赖 Inventory stock movement/availability 契约。 | #75、#136 |
+| BarcodeLabel | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖条码规则、标签模板、打印批次、打印项和扫码记录，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-barcode-label-mvp.ps1`。 | #73、#133 |
+| BusinessApproval | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖审批模板、审批链、审批步骤和审批决定，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-approval-mvp.ps1`。 | #73、#134 |
+| DemandPlanning | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖需求来源、MPS、MRP run、pegging 和计划建议，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-demand-planning-mrp-mvp.ps1`。 | #128 |
+| WMS | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖入库、出库、仓库任务、盘点执行、WCS 任务和 Inventory movement request 元数据，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-wms-execution-mvp.ps1`。 | #75、#136 |
 | ERP | 尚无服务目录；拆分 Procurement、Sales、Finance 三个执行子 issue。 | #76、#137、#138、#139 |
-| IndustrialTelemetry | 尚无服务目录；依赖 MasterData device reference，并保持 PLC/DCS/SCADA 外部边界。 | #129 |
-| Maintenance | 尚无服务目录；已有 `Contracts.Maintenance` 和 MES planned work order handler 先行代码，报警触发维修工单依赖 IndustrialTelemetry。 | #130 |
-| 业务服务注册与验收 | BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality 和 BusinessMES 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-wave1-foundation.ps1`；端口矩阵与 readiness 已同步到 5107-5111。 | #77、#140 |
+| IndustrialTelemetry | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖 TelemetryTag、DeviceStateSnapshot、AlarmEvent 和 TelemetrySummary，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-industrial-telemetry-mvp.ps1`；保持 PLC/DCS/SCADA 控制命令和凭据在外部边界。 | #129 |
+| Maintenance | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖维修工单、保养计划、点检、停机原因和备件行，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-maintenance-mvp.ps1`；报警开单通过 `Nerv.IIP.Contracts.IndustrialTelemetry` 消费 IndustrialTelemetry 公共事件。 | #130 |
+| 业务服务注册与验收 | BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality 和 BusinessMES 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-wave1-foundation.ps1`；BusinessDemandPlanning、BarcodeLabel、BusinessApproval 和 WMS 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-wave2-execution.ps1`；BusinessIndustrialTelemetry 和 BusinessMaintenance 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-equipment-reliability.ps1`；端口矩阵与 readiness 已同步到 5107-5117。 | #77、#140 |
 
 ### 业务平台 Wave 1 agent handoff
 
@@ -63,6 +68,25 @@
 | #132 Quality inspection | `docs/superpowers/specs/2026-05-23-quality-inspection-mvp-design.md`、`docs/superpowers/plans/2026-05-23-quality-inspection-mvp.md` | 已在现有 Quality NCR 上增量落地 InspectionPlan、InspectionRecord、NCR-from-inspection、集成事件和验证脚本基线。 |
 | #135 MES persistence | `docs/superpowers/plans/2026-05-23-mes-cleanddd-persistence.md` | 已保留 Web/API contract 并迁移到 Domain、Infrastructure 和 PostgreSQL，补齐持久化执行模型与 verify script。 |
 | #140 Registration/readiness | `docs/superpowers/plans/2026-05-23-business-service-registration-verify-readiness.md` | 本收口 PR 统一补齐 Wave 1 solution、AppHost、verify scripts、端口矩阵、schema catalog 和 readiness。 |
+
+### 业务平台 Wave 2 agent handoff
+
+| Issue | Handoff docs | 说明 |
+| --- | --- | --- |
+| #128 DemandPlanning | `docs/superpowers/specs/2026-05-23-demand-planning-mrp-mvp-design.md`、`docs/superpowers/plans/2026-05-23-demand-planning-mrp-mvp.md` | 已完成需求来源、MPS/MRP、计划采购建议、计划工单建议和 pegging；不创建正式 ERP/MES 单据，已接入 solution/AppHost/verify/readiness。 |
+| #133 BarcodeLabel | `docs/superpowers/specs/2026-05-23-barcode-label-mvp-design.md`、`docs/superpowers/plans/2026-05-23-barcode-label-mvp.md` | 已完成条码规则、标签模板、打印批次和扫码记录；不拥有库存数量或业务单据状态，已接入 solution/AppHost/verify/readiness。 |
+| #134 BusinessApproval | `docs/superpowers/specs/2026-05-23-business-approval-mvp-design.md`、`docs/superpowers/plans/2026-05-23-business-approval-mvp.md` | 已完成业务审批模板、审批链、审批步骤和审批结果事件；不替代 Ops 运维审批，已接入 solution/AppHost/verify/readiness。 |
+| #136 WMS | `docs/superpowers/specs/2026-05-23-wms-execution-mvp-design.md`、`docs/superpowers/plans/2026-05-23-wms-execution-mvp.md` | 已完成入库、出库、上架、拣货、盘点和 WCS adapter 边界；当前 Inventory posting 使用可替换 client，占位实现不阻塞共享接入。 |
+| Wave 2 registration | `docs/superpowers/plans/2026-05-23-business-wave-2-registration-verify-readiness.md` | 已统一补齐 solution、AppHost、verify scripts、schema catalog、authorization matrix 和 readiness；聚合验证入口为 `scripts/verify-business-wave2-execution.ps1`。 |
+| #143 Design System | `frontend/DESIGN/roadmaps/business-console-readiness.md`、`docs/superpowers/plans/2026-05-23-frontend-business-console-component-readiness.md` | Tabs、Sheet、Date、Chart、FileUpload 等组件先入 DESIGN 契约，再进入 `@nerv-iip/ui` 导出。 |
+
+### Equipment Reliability / Wave 2.5 handoff
+
+| Issue | Handoff docs | 说明 |
+| --- | --- | --- |
+| #129 IndustrialTelemetry | issue worker implementation + `scripts/verify-business-industrial-telemetry-mvp.ps1` | 已完成 tag 映射、设备状态快照、报警 raise/clear 和采集汇总；公开报警事件契约位于 `backend/common/Contracts/Nerv.IIP.Contracts.IndustrialTelemetry`。 |
+| #130 Maintenance | issue worker implementation + `scripts/verify-business-maintenance-mvp.ps1` | 已完成维修工单、保养计划、点检、停机原因、备件行和 `maintenance.AssetUnavailable`/`maintenance.AssetRestored` 事件；报警触发开单消费 #129 公共事件契约。 |
+| Equipment Reliability registration | `scripts/verify-business-equipment-reliability.ps1` | 已统一补齐 solution、AppHost、verify scripts、schema catalog、authorization matrix 和 readiness；聚合验证入口为 `scripts/verify-business-equipment-reliability.ps1`。 |
 
 ## 环境前置
 
@@ -198,7 +222,7 @@
 2. PostgreSQL 使用服务级 database 与 schema：AppHub 默认连接 `nerv_iip_apphub` 并使用 `apphub` schema，Ops 默认连接 `nerv_iip_ops` 并使用 `ops` schema；provider 选择只留在 Infrastructure/profile/test/deployment 层。
 3. AppHub/Ops 已暴露 `/code-analysis`，用于查看 netcorepal 识别的命令、查询、聚合、事件和处理器流向。
 4. `scripts/verify-fourth-slice-real-infra.ps1` 已作为第四阶段验收入口，默认通过 `infra/docker-compose.dev.yml` 拉起 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector；本机 PostgreSQL 默认端口为 `15432`，避免撞到本机已有 `5432`。RabbitMQ 是第四阶段历史验证资源，当前常规 PostgreSQL + 单机 messaging profile 可不依赖 RabbitMQ。
-5. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，覆盖 PlatformGateway、AppHub、IAM、Ops、FileStorage、Notification、BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、Connector Host、Console、PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector；RabbitMQ 仅在 `Messaging:Provider=RabbitMQ` 时加入拓扑。AppHost 当前 build 通过，并为 AppHub/IAM/Ops/Notification 与 Business Wave 1 服务使用独立 database resource。
+5. 平台级 AppHost 已落到 `infra/aspire/Nerv.IIP.AppHost`，覆盖 PlatformGateway、AppHub、IAM、Ops、FileStorage、Notification、BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry、BusinessMaintenance、Connector Host、Console、PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector；RabbitMQ 仅在 `Messaging:Provider=RabbitMQ` 时加入拓扑。AppHost 当前 build 通过，并为 AppHub/IAM/Ops/Notification 与 Business Wave 1/Wave 2/Equipment Reliability 服务使用独立 database resource。
 6. PlatformGateway、Connector Host、Contracts/SDK 和 frontend console 不强行套完整 netcorepal 三项目模型；IAM 完整授权、FileStorage 上传下载、CAP outbox、通知和审批不进入本阶段实现范围。
 7. `pwsh scripts/verify-fourth-slice-real-infra.ps1` 已在 Docker Desktop 环境下通过，最终输出 `Fourth vertical slice real infrastructure verified.`。
 
@@ -270,7 +294,7 @@
 ### 当前初步使用方式
 
 1. 根目录 `.\nerv.ps1 dev` 已成为主平台本地联调入口；`.\nerv.ps1 ports` 输出标准本地端口矩阵。
-2. 平台 HTTP 服务端口收敛到 `5100-5111`，其中 Console 使用 `5105` 而不是 Vite 默认 `5173`，Business Wave 1 服务使用 `5107-5111`。
+2. 平台 HTTP 服务端口收敛到 `5100-5117`，其中 Console 使用 `5105` 而不是 Vite 默认 `5173`，Business Wave 1 服务使用 `5107-5111`，Business Wave 2 服务使用 `5112-5115`：DemandPlanning `5112`、BarcodeLabel `5113`、BusinessApproval `5114`、WMS `5115`；Equipment Reliability 服务使用 `5116-5117`：IndustrialTelemetry `5116`、Maintenance `5117`。
 3. 本地 MinIO 运行镜像使用 `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`。
 4. 运行 `pwsh scripts/verify-first-slice.ps1` 可验证 backend 与 connector-hosts 的 restore、build、test，以及 AppHub 到 PlatformGateway 的第一条本地纵切。
 5. 运行 `pwsh scripts/verify-second-slice-ops.ps1` 可验证 Gateway、Ops、Connector Host 和 Docker Connector 的低风险 restart 闭环。
@@ -288,13 +312,21 @@
 17. 运行 `pwsh scripts/verify-business-quality-inspection-mvp.ps1` 可验证 BusinessQuality inspection MVP 的 Domain、Web、contracts 和 IAM seed 权限基线。
 18. 运行 `pwsh scripts/verify-business-mes-execution-mvp.ps1` 可验证 BusinessMES persistence MVP 的 Domain、Web、schema convention 和 API contract 基线。
 19. 运行 `pwsh scripts/verify-business-wave1-foundation.ps1` 可一次性验证 Business Wave 1 五个业务服务专用脚本和平台级 AppHost 编译。
-20. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
-21. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
-22. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
-23. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
-24. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-25. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、Notification 站内消息/任务纵切与 Console facade、BusinessMasterData Layer 0 realignment、BusinessProductEngineering release facts、BusinessInventory MVP、BusinessQuality inspection MVP、BusinessMES persistence MVP，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批、Notification 外部通道 provider 或 MinIO/S3 multipart。
-26. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
+20. 运行 `pwsh scripts/verify-business-demand-planning-mrp-mvp.ps1` 可验证 BusinessDemandPlanning MRP MVP 的 Domain、Web、schema convention 和 API contract 基线。
+21. 运行 `pwsh scripts/verify-business-barcode-label-mvp.ps1` 可验证 BarcodeLabel MVP 的 Domain、Web、schema convention 和 API contract 基线。
+22. 运行 `pwsh scripts/verify-business-approval-mvp.ps1` 可验证 BusinessApproval MVP 的 Domain、Web、schema convention 和 API contract 基线。
+23. 运行 `pwsh scripts/verify-business-wms-execution-mvp.ps1` 可验证 WMS execution MVP 的 Domain、Web、schema convention 和 API contract 基线。
+24. 运行 `pwsh scripts/verify-business-wave2-execution.ps1` 可一次性验证 Business Wave 2 四个业务服务专用脚本和平台级 AppHost 编译。
+25. 运行 `pwsh scripts/verify-business-industrial-telemetry-mvp.ps1` 可验证 BusinessIndustrialTelemetry MVP 的 Domain、Web、schema convention 和 API contract 基线。
+26. 运行 `pwsh scripts/verify-business-maintenance-mvp.ps1` 可验证 BusinessMaintenance MVP 的 Domain、Web、schema convention 和 API contract 基线。
+27. 运行 `pwsh scripts/verify-business-equipment-reliability.ps1` 可一次性验证 Equipment Reliability 两个业务服务专用脚本和平台级 AppHost 编译。
+28. 运行 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore` 可验证平台级 AppHost 编译。
+29. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
+30. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
+31. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
+32. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
+33. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、Notification 站内消息/任务纵切与 Console facade、BusinessMasterData Layer 0 realignment、BusinessProductEngineering release facts、BusinessInventory MVP、BusinessQuality inspection MVP、BusinessMES persistence MVP、BusinessDemandPlanning MRP MVP、BarcodeLabel MVP、BusinessApproval MVP、WMS execution MVP、BusinessIndustrialTelemetry MVP、BusinessMaintenance MVP，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批、Notification 外部通道 provider 或 MinIO/S3 multipart。
+34. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
 
