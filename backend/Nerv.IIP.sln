@@ -386,6 +386,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Business.Erp.Domai
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Business.Erp.Web.Tests", "services\Business\Erp\tests\Nerv.IIP.Business.Erp.Web.Tests\Nerv.IIP.Business.Erp.Web.Tests.csproj", "{C66B4A17-607C-4F3E-B86E-21DDA5883150}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Business.Acceptance.Tests", "tests\Nerv.IIP.Business.Acceptance.Tests\Nerv.IIP.Business.Acceptance.Tests.csproj", "{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -1896,6 +1898,18 @@ Global
 		{C66B4A17-607C-4F3E-B86E-21DDA5883150}.Release|x64.Build.0 = Release|Any CPU
 		{C66B4A17-607C-4F3E-B86E-21DDA5883150}.Release|x86.ActiveCfg = Release|Any CPU
 		{C66B4A17-607C-4F3E-B86E-21DDA5883150}.Release|x86.Build.0 = Release|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Debug|x64.Build.0 = Debug|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Debug|x86.Build.0 = Debug|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Release|x64.ActiveCfg = Release|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Release|x64.Build.0 = Release|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Release|x86.ActiveCfg = Release|Any CPU
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -2089,5 +2103,6 @@ Global
 		{53DBFEA6-7AFA-D595-D8F4-606EED8E9D14} = {30523EF1-6F2C-E654-4B62-88C1A74EA4E2}
 		{004B9149-67A8-43D1-9E59-E3CDEA4866D5} = {53DBFEA6-7AFA-D595-D8F4-606EED8E9D14}
 		{C66B4A17-607C-4F3E-B86E-21DDA5883150} = {53DBFEA6-7AFA-D595-D8F4-606EED8E9D14}
+		{3B18BEA2-01CB-4F57-B117-9E4717C36AE7} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

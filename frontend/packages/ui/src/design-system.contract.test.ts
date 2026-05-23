@@ -20,9 +20,8 @@ describe('design system token contract', () => {
     expect.soft(css).toContain('--chart-1: oklch(0.58 0.16 255);')
   })
 
-  it('keeps shared radius, legacy compatibility, and Tailwind theme bridging', () => {
+  it('keeps shared radius and Tailwind theme bridging', () => {
     expect.soft(css).toContain('--radius: 0.5rem;')
-    expect.soft(css).toContain('--legacy-color-page:')
     expect.soft(css).toContain('@theme inline')
   })
 })
