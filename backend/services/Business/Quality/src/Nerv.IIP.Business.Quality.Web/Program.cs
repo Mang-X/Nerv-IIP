@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -147,9 +148,16 @@ try
     app.UseFastEndpoints(c =>
     {
         c.Endpoints.NameGenerator = ctx =>
-            QualityEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (QualityEndpointContracts.TryGet(ctx.EndpointType, out var ncrContract))
+            {
+                return ncrContract.OperationId;
+            }
+
+            return QualityInspectionEndpointContracts.TryGet(ctx.EndpointType, out var inspectionContract)
+                ? inspectionContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

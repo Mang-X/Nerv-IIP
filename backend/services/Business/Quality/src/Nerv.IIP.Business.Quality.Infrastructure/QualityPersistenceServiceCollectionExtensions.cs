@@ -33,6 +33,8 @@ public static class QualityPersistenceServiceCollectionExtensions
         services.AddRepositories(typeof(ApplicationDbContext).Assembly);
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<INonconformanceReportRepository, NonconformanceReportRepository>();
+        services.AddScoped<IInspectionPlanRepository, InspectionPlanRepository>();
+        services.AddScoped<IInspectionRecordRepository, InspectionRecordRepository>();
         return services;
     }
 }

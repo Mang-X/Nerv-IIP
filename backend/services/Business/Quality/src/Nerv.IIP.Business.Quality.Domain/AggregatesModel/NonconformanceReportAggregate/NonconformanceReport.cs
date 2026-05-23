@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 
 namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 
@@ -40,6 +41,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         string? serialNo,
         IReadOnlyCollection<string> attachmentFileIds)
     {
+        Id = new NonconformanceReportId(Guid.CreateVersion7());
         OrganizationId = Required(organizationId);
         EnvironmentId = Required(environmentId);
         NcrCode = Required(ncrCode);
@@ -73,6 +75,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     public string? ReworkWorkOrderId { get; private set; }
     public string? ScrapMovementId { get; private set; }
     public string? ReturnDocumentId { get; private set; }
+    public InspectionRecordId? SourceInspectionRecordId { get; private set; }
     public List<string> AttachmentFileIds { get; private set; } = [];
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
@@ -102,6 +105,35 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             batchNo,
             serialNo,
             attachmentFileIds);
+    }
+
+    public static NonconformanceReport OpenFromInspection(
+        string ncrCode,
+        InspectionRecord inspectionRecord,
+        string defectReason,
+        IReadOnlyCollection<string> attachmentFileIds)
+    {
+        ArgumentNullException.ThrowIfNull(inspectionRecord);
+        if (inspectionRecord.Result == InspectionRecordResults.Passed)
+        {
+            throw new InvalidOperationException("Passed inspections cannot open an NCR.");
+        }
+
+        var sourceType = inspectionRecord.SourceType == "operation" ? "in-process" : inspectionRecord.SourceType;
+        var ncr = new NonconformanceReport(
+            inspectionRecord.OrganizationId,
+            inspectionRecord.EnvironmentId,
+            ncrCode,
+            sourceType,
+            inspectionRecord.SourceDocumentId,
+            inspectionRecord.SkuCode,
+            inspectionRecord.FailedQuantity() > 0 ? inspectionRecord.FailedQuantity() : inspectionRecord.InspectedQuantity,
+            defectReason,
+            inspectionRecord.BatchNo,
+            inspectionRecord.SerialNo,
+            attachmentFileIds);
+        ncr.SourceInspectionRecordId = inspectionRecord.Id;
+        return ncr;
     }
 
     public void SubmitDisposition(

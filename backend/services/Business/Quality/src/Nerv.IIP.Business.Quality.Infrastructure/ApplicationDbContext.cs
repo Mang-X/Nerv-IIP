@@ -1,5 +1,7 @@
 using MediatR;
 using Nerv.IIP.Business.Quality.Domain;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
@@ -9,6 +11,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
     public DbSet<NonconformanceReport> NonconformanceReports => Set<NonconformanceReport>();
+    public DbSet<InspectionPlan> InspectionPlans => Set<InspectionPlan>();
+    public DbSet<InspectionRecord> InspectionRecords => Set<InspectionRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
