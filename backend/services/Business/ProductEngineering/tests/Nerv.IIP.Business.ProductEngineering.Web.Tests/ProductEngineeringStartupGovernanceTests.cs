@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 
@@ -26,7 +27,7 @@ public sealed class ProductEngineeringStartupGovernanceTests
             await client.GetAsync("/health");
         });
 
-        Assert.Contains(Flatten(exception), x =>
+        Assert.Contains(exception.Flatten(), x =>
             x is InvalidOperationException
             && x.Message.Contains("Persistence:AutoMigrate=true", StringComparison.Ordinal));
     }
@@ -55,6 +56,7 @@ public sealed class ProductEngineeringStartupGovernanceTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.StartsWith("text/html", response.Content.Headers.ContentType?.MediaType, StringComparison.Ordinal);
+        Assert.Equal("utf-8", response.Content.Headers.ContentType?.CharSet);
     }
 
     [Fact]
@@ -95,28 +97,4 @@ public sealed class ProductEngineeringStartupGovernanceTests
             });
     }
 
-    private static IEnumerable<Exception> Flatten(Exception? exception)
-    {
-        if (exception is null)
-        {
-            yield break;
-        }
-
-        yield return exception;
-        if (exception is AggregateException aggregateException)
-        {
-            foreach (var innerException in aggregateException.InnerExceptions.SelectMany(Flatten))
-            {
-                yield return innerException;
-            }
-        }
-
-        if (exception.InnerException is not null)
-        {
-            foreach (var innerException in Flatten(exception.InnerException))
-            {
-                yield return innerException;
-            }
-        }
-    }
 }

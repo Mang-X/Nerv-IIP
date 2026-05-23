@@ -36,7 +36,11 @@ public static class IamPermissionCatalog
         ["business.quality.inspection-records.create"] = "Create quality inspection records.",
         ["business.quality.inspection-records.read"] = "Read quality inspection plans and records.",
         ["business.quality.ncr.read"] = "Read quality nonconformance reports.",
-        ["business.quality.ncr.manage"] = "Create, disposition and close quality nonconformance reports."
+        ["business.quality.ncr.manage"] = "Create, disposition and close quality nonconformance reports.",
+        ["business.inventory.locations.manage"] = "Create and manage inventory locations.",
+        ["business.inventory.movements.create"] = "Create inventory stock movements.",
+        ["business.inventory.ledger.read"] = "Read inventory ledger balances and reports.",
+        ["business.inventory.counts.manage"] = "Create and complete inventory counts."
     };
 
     private static readonly HashSet<string> SeedCodes = NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal);

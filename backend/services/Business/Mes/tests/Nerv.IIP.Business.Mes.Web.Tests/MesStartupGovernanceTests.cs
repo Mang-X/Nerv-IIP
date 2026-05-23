@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesStartupGovernanceTests
 {
+    // MES has no code-analysis endpoint yet; this test only covers startup migration governance.
     [Fact]
     public async Task AutoMigrate_true_outside_development_is_rejected()
     {
@@ -28,33 +30,8 @@ public sealed class MesStartupGovernanceTests
             await client.GetAsync("/swagger/v1/swagger.json");
         });
 
-        Assert.Contains(Flatten(exception), x =>
+        Assert.Contains(exception.Flatten(), x =>
             x is InvalidOperationException
             && x.Message.Contains("Persistence:AutoMigrate=true", StringComparison.Ordinal));
-    }
-
-    private static IEnumerable<Exception> Flatten(Exception? exception)
-    {
-        if (exception is null)
-        {
-            yield break;
-        }
-
-        yield return exception;
-        if (exception is AggregateException aggregateException)
-        {
-            foreach (var innerException in aggregateException.InnerExceptions.SelectMany(Flatten))
-            {
-                yield return innerException;
-            }
-        }
-
-        if (exception.InnerException is not null)
-        {
-            foreach (var innerException in Flatten(exception.InnerException))
-            {
-                yield return innerException;
-            }
-        }
     }
 }

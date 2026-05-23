@@ -18,6 +18,7 @@ public sealed class OpsCodeAnalysisEndpointTests(WebApplicationFactory<Program> 
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("utf-8", response.Content.Headers.ContentType?.CharSet);
         var body = await response.Content.ReadAsStringAsync();
         Assert.False(string.IsNullOrWhiteSpace(body));
         Assert.Contains("CreateOperationTaskCommand", body);

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -26,32 +27,44 @@ public static class InternalServiceAuthentication
         return services;
     }
 
+    /// <summary>
+    /// Registers internal-service authentication as the default authentication scheme.
+    /// </summary>
     public static IServiceCollection AddNervIipInternalServiceAuthentication(
         this IServiceCollection services,
         IConfiguration configuration,
         IHostEnvironment environment)
-    {
-        services.AddNervIipInternalServiceTokenProvider(configuration, environment);
-        services
-            .AddAuthentication(SchemeName)
-            .AddScheme<InternalServiceAuthenticationOptions, InternalServiceAuthenticationHandler>(
-                SchemeName,
-                options => options.BearerToken = ResolveBearerToken(configuration, environment));
-        AddInternalServicePolicy(services);
-        return services;
-    }
+        => AddNervIipInternalServiceCore(services, configuration, environment, useAsDefaultScheme: true);
 
+    /// <summary>
+    /// Adds the internal-service scheme and policy without replacing the service's existing default scheme.
+    /// </summary>
     public static IServiceCollection AddNervIipInternalServiceAuthorization(
         this IServiceCollection services,
         IConfiguration configuration,
         IHostEnvironment environment)
+        => AddNervIipInternalServiceCore(services, configuration, environment, useAsDefaultScheme: false);
+
+    private static IServiceCollection AddNervIipInternalServiceCore(
+        IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        bool useAsDefaultScheme)
     {
         services.AddNervIipInternalServiceTokenProvider(configuration, environment);
-        services
-            .AddAuthentication()
-            .AddScheme<InternalServiceAuthenticationOptions, InternalServiceAuthenticationHandler>(
+
+        var builder = useAsDefaultScheme
+            ? services.AddAuthentication(SchemeName)
+            : services.AddAuthentication();
+
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(InternalServiceAuthenticationSchemeRegistration)))
+        {
+            services.TryAddSingleton<InternalServiceAuthenticationSchemeRegistration>();
+            builder.AddScheme<InternalServiceAuthenticationOptions, InternalServiceAuthenticationHandler>(
                 SchemeName,
                 options => options.BearerToken = ResolveBearerToken(configuration, environment));
+        }
+
         AddInternalServicePolicy(services);
         return services;
     }
@@ -82,6 +95,8 @@ public static class InternalServiceAuthentication
 
         throw new InvalidOperationException("InternalService:BearerToken is required outside Development.");
     }
+
+    private sealed class InternalServiceAuthenticationSchemeRegistration;
 }
 
 public interface IInternalServiceTokenProvider
