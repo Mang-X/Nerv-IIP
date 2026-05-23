@@ -14,6 +14,7 @@ The previous local `UiButton`, `UiPanel` and `UiBadge` primitives were migrated 
 2. Do not introduce a second UI registry, competing token system, unrelated CSS framework or page-specific component skin without a new design-system spec.
 3. Do not add large product workflows as incidental backend work; create a focused frontend/product spec when the workflow changes information architecture, navigation, authorization, or visual density.
 4. API client generation and frontend quality gates remain allowed when backend OpenAPI changes require them.
+5. Business console component readiness is tracked in `frontend/DESIGN/roadmaps/business-console-readiness.md`; #143 must update DESIGN component contracts before adding new shadcn-vue primitives or FileUpload wrappers.
 
 ## Phase 8 Current Baseline
 
@@ -32,6 +33,8 @@ Tailwind v4 `@theme inline` remains required so semantic utilities such as `bg-p
 shadcn-vue components are managed through the CLI and reviewed after generation. Generated files may be adjusted for this workspace's package-local import paths, but teams should not hand-roll parallel versions of registry components or fork visual variants inside console pages.
 
 The `@nerv-iip/ui` barrel is the public boundary for console applications. New shadcn primitives should be exported there before application code consumes them, keeping registry churn and import path changes inside the UI package.
+
+For FileUpload, the visual shell belongs to Nerv-IIP and should be composed from `@nerv-iip/ui`. Uppy core/headless with `@uppy/tus` is the preferred resumable upload engine when pause/resume, retry and tus compatibility are required; the Uppy Dashboard visual skin is not the design baseline. FileUpload must consume FileStorage upload-session and tus/download-grant contracts and must not expose MinIO object keys or direct object-storage URLs.
 
 ## IAM Admin Patterns
 

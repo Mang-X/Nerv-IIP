@@ -19,6 +19,12 @@ var businessProductEngineeringDatabase = postgres.AddDatabase("business-product-
 var businessInventoryDatabase = postgres.AddDatabase("business-inventory-db", "nerv_iip_inventory");
 var businessQualityDatabase = postgres.AddDatabase("business-quality-db", "nerv_iip_quality");
 var businessMesDatabase = postgres.AddDatabase("business-mes-db", "nerv_iip_mes");
+var businessDemandPlanningDatabase = postgres.AddDatabase("business-demand-planning-db", "nerv_iip_demand_planning");
+var businessBarcodeLabelDatabase = postgres.AddDatabase("business-barcode-label-db", "nerv_iip_barcode");
+var businessApprovalDatabase = postgres.AddDatabase("business-approval-db", "nerv_iip_business_approval");
+var businessWmsDatabase = postgres.AddDatabase("business-wms-db", "nerv_iip_wms");
+var businessIndustrialTelemetryDatabase = postgres.AddDatabase("business-industrial-telemetry-db", "nerv_iip_industrial_telemetry");
+var businessMaintenanceDatabase = postgres.AddDatabase("business-maintenance-db", "nerv_iip_maintenance");
 var redis = builder.AddRedis("redis")
     .WithDataVolume("nerv-iip-redis");
 var rabbitmq = useRabbitMq
@@ -202,6 +208,102 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+var businessDemandPlanning = builder.AddProject<Projects.Nerv_IIP_Business_DemandPlanning_Web>("business-demand-planning")
+    .WithHttpEndpoint(port: 5112, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessDemandPlanningDatabase, "PostgreSQL")
+    .WaitFor(businessDemandPlanningDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessDemandPlanning = businessDemandPlanning
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
+var businessBarcodeLabel = builder.AddProject<Projects.Nerv_IIP_Business_BarcodeLabel_Web>("business-barcode-label")
+    .WithHttpEndpoint(port: 5113, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessBarcodeLabelDatabase, "PostgreSQL")
+    .WaitFor(businessBarcodeLabelDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessBarcodeLabel = businessBarcodeLabel
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
+var businessApproval = builder.AddProject<Projects.Nerv_IIP_Business_Approval_Web>("business-approval")
+    .WithHttpEndpoint(port: 5114, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessApprovalDatabase, "PostgreSQL")
+    .WaitFor(businessApprovalDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessApproval = businessApproval
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
+var businessWms = builder.AddProject<Projects.Nerv_IIP_Business_Wms_Web>("business-wms")
+    .WithHttpEndpoint(port: 5115, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessWmsDatabase, "PostgreSQL")
+    .WaitFor(businessWmsDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessWms = businessWms
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
+var businessIndustrialTelemetry = builder.AddProject<Projects.Nerv_IIP_Business_IndustrialTelemetry_Web>("business-industrial-telemetry")
+    .WithHttpEndpoint(port: 5116, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessIndustrialTelemetryDatabase, "PostgreSQL")
+    .WaitFor(businessIndustrialTelemetryDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessIndustrialTelemetry = businessIndustrialTelemetry
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
+var businessMaintenance = builder.AddProject<Projects.Nerv_IIP_Business_Maintenance_Web>("business-maintenance")
+    .WithHttpEndpoint(port: 5117, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(businessMaintenanceDatabase, "PostgreSQL")
+    .WaitFor(businessMaintenanceDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessMaintenance = businessMaintenance
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
 var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")
     .WithHttpEndpoint(port: 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
@@ -222,6 +324,12 @@ var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway
     .WithReference(businessInventory)
     .WithReference(businessQuality)
     .WithReference(businessMes)
+    .WithReference(businessDemandPlanning)
+    .WithReference(businessBarcodeLabel)
+    .WithReference(businessApproval)
+    .WithReference(businessWms)
+    .WithReference(businessIndustrialTelemetry)
+    .WithReference(businessMaintenance)
     .WithReference(redis)
     .WaitFor(apphub)
     .WaitFor(iam)

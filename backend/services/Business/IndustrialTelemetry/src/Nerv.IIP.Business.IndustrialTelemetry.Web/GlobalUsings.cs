@@ -1,0 +1,10 @@
+global using FluentValidation;
+global using MediatR;
+global using Nerv.IIP.Business.IndustrialTelemetry.Domain;
+global using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
+global using NetCorePal.Extensions.AspNetCore;
+global using NetCorePal.Extensions.DependencyInjection;
+global using NetCorePal.Extensions.DistributedTransactions;
+global using NetCorePal.Extensions.Dto;
+global using NetCorePal.Extensions.Domain;
+global using NetCorePal.Extensions.Primitives;

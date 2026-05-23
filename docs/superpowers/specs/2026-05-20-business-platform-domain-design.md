@@ -381,14 +381,14 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `GET /api/business/v1/planning/mrp-runs/{runId}/pegging` | GetMrpPeggingQuery | `business.planning.mrp.read` | 只读。 |
 | `GET /api/business/v1/planning/suggestions` | ListPlanningSuggestionsQuery | `business.planning.mrp.read` | 只读分页查询。 |
 | `POST /api/business/v1/planning/suggestions/{suggestionId}/accept` | AcceptPlanningSuggestionCommand | `business.planning.suggestions.manage` | suggestionId。 |
-| `POST /api/business/v1/inventory/locations` | CreateStockLocationCommand | `business.inventory.locations.manage` | warehouse+location code 唯一。 |
-| `GET /api/business/v1/inventory/balances` | ListStockBalancesQuery | `business.inventory.ledger.read` | 只读库存余额。 |
-| `POST /api/business/v1/inventory/movements` | PostStockMovementCommand | `business.inventory.movements.create` | `Idempotency-Key` 必填。 |
-| `POST /api/business/v1/inventory/counts` | CreateStockCountTaskCommand | `business.inventory.counts.manage` | countNo 唯一。 |
-| `GET /api/business/v1/inventory/reports` | GetInventoryReportQuery | `business.inventory.ledger.read` | asOfDate 只读报表。 |
-| `POST /api/business/v1/quality/inspection-plans` | CreateInspectionPlanCommand | `business.quality.inspections.manage` | source document 幂等。 |
-| `POST /api/business/v1/quality/inspection-plans/{planId}/records` | RecordInspectionResultCommand | `business.quality.inspections.manage` | planId+sequence。 |
-| `GET /api/business/v1/quality/inspection-records` | ListInspectionRecordsQuery | `business.quality.inspections.read` | 只读分页查询。 |
+| `POST /api/inventory/v1/locations` | CreateStockLocationCommand | `business.inventory.locations.manage` | organization+environment+location code 唯一。 |
+| `POST /api/inventory/v1/movements` | PostStockMovementCommand | `business.inventory.movements.create` | `idempotencyKey` 必填。 |
+| `GET /api/inventory/v1/availability` | GetStockAvailabilityQuery | `business.inventory.ledger.read` | 返回 on-hand/reserved/available。 |
+| `POST /api/inventory/v1/count-tasks` | CreateStockCountTaskCommand | `business.inventory.counts.manage` | countTaskCode 唯一。 |
+| `POST /api/inventory/v1/count-tasks/{countTaskId}/adjustments` | ConfirmStockCountAdjustmentCommand | `business.inventory.counts.manage` | 生成盘点调整库存移动。 |
+| `POST /api/business/v1/quality/inspection-plans` | CreateInspectionPlanCommand | `business.quality.inspection-plans.manage` | source document 幂等。 |
+| `POST /api/business/v1/quality/inspection-records` | RecordInspectionResultCommand | `business.quality.inspection-records.create` | inspectionRecordId 幂等由实现计划冻结。 |
+| `GET /api/business/v1/quality/inspection-records` | ListInspectionRecordsQuery | `business.quality.inspection-records.read` | 只读分页查询。 |
 | `POST /api/business/v1/quality/ncrs` | CreateNonconformanceReportCommand | `business.quality.ncr.manage` | 创建独立 NCR 并自动编号。 |
 | `GET /api/business/v1/quality/ncrs` | ListNonconformanceReportsQuery | `business.quality.ncr.read` | 按状态、来源、SKU 查询。 |
 | `GET /api/business/v1/quality/ncrs/{ncrId}` | GetNonconformanceReportQuery | `business.quality.ncr.read` | NCR 详情。 |

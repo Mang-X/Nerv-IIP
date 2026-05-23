@@ -49,6 +49,12 @@ Platform services:
   5109 BusinessInventory
   5110 BusinessQuality
   5111 BusinessMES
+  5112 BusinessDemandPlanning
+  5113 BusinessBarcodeLabel
+  5114 BusinessApproval
+  5115 BusinessWMS
+  5116 BusinessIndustrialTelemetry
+  5117 BusinessMaintenance
 
 Infrastructure services:
   15432 PostgreSQL

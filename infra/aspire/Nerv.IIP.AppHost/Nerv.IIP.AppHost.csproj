@@ -29,6 +29,12 @@
     <ProjectReference Include="..\..\..\backend\services\Business\Inventory\src\Nerv.IIP.Business.Inventory.Web\Nerv.IIP.Business.Inventory.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\services\Business\Quality\src\Nerv.IIP.Business.Quality.Web\Nerv.IIP.Business.Quality.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\services\Business\Mes\src\Nerv.IIP.Business.Mes.Web\Nerv.IIP.Business.Mes.Web.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\..\backend\services\Business\DemandPlanning\src\Nerv.IIP.Business.DemandPlanning.Web\Nerv.IIP.Business.DemandPlanning.Web.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\..\backend\services\Business\BarcodeLabel\src\Nerv.IIP.Business.BarcodeLabel.Web\Nerv.IIP.Business.BarcodeLabel.Web.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\..\backend\services\Business\Approval\src\Nerv.IIP.Business.Approval.Web\Nerv.IIP.Business.Approval.Web.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\..\backend\services\Business\Wms\src\Nerv.IIP.Business.Wms.Web\Nerv.IIP.Business.Wms.Web.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\..\backend\services\Business\IndustrialTelemetry\src\Nerv.IIP.Business.IndustrialTelemetry.Web\Nerv.IIP.Business.IndustrialTelemetry.Web.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\..\backend\services\Business\Maintenance\src\Nerv.IIP.Business.Maintenance.Web\Nerv.IIP.Business.Maintenance.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\gateway\PlatformGateway\src\Nerv.IIP.PlatformGateway.Web\Nerv.IIP.PlatformGateway.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\connector-hosts\src\Nerv.IIP.ConnectorHost.Host\Nerv.IIP.ConnectorHost.Host.csproj" IsAspireProjectResource="true" />
   </ItemGroup>

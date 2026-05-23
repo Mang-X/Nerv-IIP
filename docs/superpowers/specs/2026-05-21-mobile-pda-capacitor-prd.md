@@ -354,7 +354,7 @@ PDA 首批复用现有业务权限码：
 | WMS 收货/上架 | `business.wms.receipts.read`、`business.wms.receipts.manage` |
 | WMS 拣货/复核 | `business.wms.shipments.read`、`business.wms.shipments.manage` |
 | MES 工单/报工 | `business.mes.work-orders.read`、`business.mes.reporting.write` |
-| 质检 | `business.quality.inspections.read`、`business.quality.inspections.manage` |
+| 质检 | `business.quality.inspection-records.read`、`business.quality.inspection-records.create` |
 | 维修 | `business.maintenance.work-orders.read`、`business.maintenance.work-orders.manage` |
 
 平台级移动设备管理权限使用 [authorization-matrix.md](../../architecture/authorization-matrix.md) 中预留的 `mobile.*` 命名空间，包括 `mobile.devices.read`、`mobile.devices.manage`、`mobile.diagnostics.write`；它们区别于 `business.*` 业务执行权限，后续实现时必须进入 IAM seed 和 BusinessGateway enforcement。

@@ -30,12 +30,12 @@ Quality does not own:
 
 | API | Purpose | Notes |
 | --- | --- | --- |
-| `POST /api/quality/v1/inspection-plans` | Create an inspection plan. | Supports receiving, operation, final and maintenance inspection categories. |
-| `POST /api/quality/v1/inspection-plans/{inspectionPlanId}/activate` | Activate a draft plan. | Activated plans are versioned and immutable for execution fields. |
-| `GET /api/quality/v1/inspection-plans` | List active and draft plans. | Filter by category, SKU, partner, work center and status. |
-| `POST /api/quality/v1/inspection-records` | Record an inspection execution. | References a source service and source document ID. |
-| `POST /api/quality/v1/inspection-records/{inspectionRecordId}/failures/ncr` | Open an NCR from a failed record. | Reuses existing NCR aggregate and keeps the source inspection link. |
-| `GET /api/quality/v1/inspection-records` | List inspection records. | Filter by source document, SKU, category and result. |
+| `POST /api/business/v1/quality/inspection-plans` | Create an inspection plan. | Supports receiving, operation, final and maintenance inspection categories. |
+| `POST /api/business/v1/quality/inspection-plans/{inspectionPlanId}/activate` | Activate a draft plan. | Activated plans are versioned and immutable for execution fields. |
+| `GET /api/business/v1/quality/inspection-plans` | List active and draft plans. | Filter by category, SKU, partner, work center and status. |
+| `POST /api/business/v1/quality/inspection-records` | Record an inspection execution. | References a source service and source document ID. |
+| `POST /api/business/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr` | Open an NCR from a failed record. | Reuses existing NCR aggregate and keeps the source inspection link. |
+| `GET /api/business/v1/quality/inspection-records` | List inspection records. | Filter by source document, SKU, category and result. |
 
 ## Plan Rules
 
@@ -71,7 +71,7 @@ Initial permission codes:
 1. `business.quality.inspection-plans.manage`
 2. `business.quality.inspection-records.create`
 3. `business.quality.inspection-records.read`
-4. `business.quality.ncrs.manage`
+4. `business.quality.ncr.manage`
 
 ## Persistence
 
