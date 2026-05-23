@@ -1,5 +1,7 @@
 # Business Issue Roadmap Design
 
+> Historical issue-cleanup record. The issue split remains useful, but the `Source Facts` section reflects 2026-05-22 pre-Wave-1 code facts. For current service status, ports, verify scripts and issue state, use `docs/architecture/implementation-readiness.md`.
+
 ## Context
 
 The business-platform GitHub issues currently mix old epic-style scope, completed work, partially completed infrastructure, and newer slice-specific issues. This makes it hard to decide what to execute next because the issue list no longer matches the code and documentation facts.

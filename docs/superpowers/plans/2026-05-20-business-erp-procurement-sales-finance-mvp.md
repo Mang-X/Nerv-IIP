@@ -1,5 +1,7 @@
 # Business ERP Procurement Sales Finance MVP Implementation Plan
 
+> Historical input only. As of 2026-05-23, ERP is split into #137 Procurement, #138 Sales and #139 Finance. Use `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md` plus the three 2026-05-23 ERP plans instead of executing this older combined plan directly.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build ERP MVP covering Procurement/SRM-lite, Sales/CRM-lite/OMS-lite and Finance MVP.

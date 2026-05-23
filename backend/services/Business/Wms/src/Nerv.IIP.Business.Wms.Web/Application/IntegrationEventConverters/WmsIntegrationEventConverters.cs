@@ -1,5 +1,5 @@
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
-using Nerv.IIP.Business.Wms.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters;
 
@@ -92,7 +92,7 @@ internal static class WmsIntegrationEventFactory
         return new WmsIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             eventType,
-            1,
+            WmsIntegrationEventVersions.V1,
             DateTimeOffset.UtcNow,
             WmsIntegrationEventSources.BusinessWms,
             organizationId,
@@ -101,4 +101,3 @@ internal static class WmsIntegrationEventFactory
             payload);
     }
 }
-

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.ProductEngineering.Domain;
@@ -16,6 +17,23 @@ namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 
 public sealed class ProductEngineeringSchemaConventionTests
 {
+    [Fact]
+    public void Design_time_PostgreSQL_factory_configures_migrations_history_schema_and_assembly()
+    {
+        using var dbContext = new DesignTimeApplicationDbContextFactory().CreateDbContext([]);
+        var failures = SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(
+            dbContext,
+            ProductEngineeringFacts.ServiceName,
+            ProductEngineeringFacts.Schema);
+        var relationalOptions = dbContext.GetService<IDbContextOptions>()
+            .Extensions
+            .OfType<RelationalOptionsExtension>()
+            .LastOrDefault();
+
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+        Assert.Equal(typeof(DesignTimeApplicationDbContextFactory).Assembly.FullName, relationalOptions?.MigrationsAssembly);
+    }
+
     [Fact]
     public void Runtime_PostgreSQL_profile_configures_migrations_history_schema()
     {

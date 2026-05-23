@@ -1,10 +1,17 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
@@ -38,6 +45,24 @@ public sealed class QualityEndpointContractTests
     }
 
     [Fact]
+    public void Ncr_business_endpoints_require_internal_service_authorization_policy()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var endpoints = factory.Services.GetRequiredService<IEnumerable<EndpointDataSource>>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToArray();
+
+        var failures = QualityEndpointContracts.All
+            .Where(contract => !HasInternalServicePolicy(endpoints, contract.Route))
+            .Select(contract => $"{contract.EndpointType.Name} is missing {InternalServiceAuthorizationPolicy.Name}.")
+            .ToArray();
+
+        Assert.Empty(failures);
+    }
+
+    [Fact]
     public async Task Ncr_code_generator_includes_scope_tokens_and_guid_v7_suffix()
     {
         var generator = new NonconformanceReportCodeGenerator();
@@ -65,5 +90,30 @@ public sealed class QualityEndpointContractTests
         Assert.False(string.IsNullOrWhiteSpace(context.CorrelationId));
         Assert.False(string.IsNullOrWhiteSpace(context.CausationId));
         Assert.Equal($"system:{QualityIntegrationEventSources.BusinessQuality}", context.Actor);
+    }
+
+    private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)
+    {
+        return endpoints
+            .Where(endpoint => string.Equals(endpoint.RoutePattern.RawText, route, StringComparison.Ordinal))
+            .SelectMany(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>())
+            .Any(authorizeData => string.Equals(authorizeData.Policy, InternalServiceAuthorizationPolicy.Name, StringComparison.Ordinal));
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory()
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_quality_policy;Username=nerv;Password=nerv",
+            ["InternalService:BearerToken"] = "test-internal-service-token",
+        };
+
+        return new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(settings));
+            });
     }
 }

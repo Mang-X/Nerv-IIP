@@ -1,13 +1,16 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Maintenance;
 
@@ -195,6 +198,47 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(9m, report.GoodQuantity);
         Assert.Equal("WO-001", receiptRequest.WorkOrderId);
         Assert.Equal("PCS", receiptRequest.UomCode);
+    }
+
+    [Fact]
+    public async Task List_work_orders_query_returns_scoped_persisted_work_orders_with_tasks()
+    {
+        var services = CreateServices(nameof(List_work_orders_query_returns_scoped_persisted_work_orders_with_tasks));
+        var now = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-a", "env-dev", "WO-A", "SKU-A", "PV-A", 10m, 20, now.AddDays(1)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-a",
+            "env-dev",
+            "WO-A",
+            "OP-A-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-A",
+            ["WC-B"],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-b", "env-dev", "WO-B", "SKU-B", null, 1m, 5, now.AddDays(2)));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ListMesWorkOrdersQueryHandler(dbContext);
+        var response = await handler.Handle(
+            new ListMesWorkOrdersQuery("org-a", "env-dev", null, 100),
+            CancellationToken.None);
+
+        var workOrder = Assert.Single(response.Items);
+        Assert.Equal("WO-A", workOrder.WorkOrderId);
+        Assert.Equal("SKU-A", workOrder.SkuId);
+        Assert.Equal("PV-A", workOrder.ProductionVersionId);
+        Assert.Equal("created", workOrder.Status);
+        var task = Assert.Single(workOrder.OperationTasks);
+        Assert.Equal("OP-A-10", task.OperationTaskId);
+        Assert.Equal("Queued", task.Status);
+        Assert.Equal("WC-A", task.WorkCenterId);
     }
 
     private static ServiceProvider CreateServices(string databaseName)

@@ -1,0 +1,98 @@
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.DomainEvents;
+
+namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
+
+public partial record PurchaseReceiptId : IGuidStronglyTypedId;
+public partial record PurchaseReceiptLineId : IGuidStronglyTypedId;
+
+public enum PurchaseReceiptStatus
+{
+    Recorded = 0,
+}
+
+public sealed record PurchaseReceiptLineDraft(
+    string PurchaseOrderLineNo,
+    decimal ReceivedQuantity,
+    string QualityStatus);
+
+public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
+{
+    private readonly List<PurchaseReceiptLine> lines = [];
+
+    private PurchaseReceipt()
+    {
+    }
+
+    private PurchaseReceipt(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lineDrafts)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        OrganizationId = order.OrganizationId;
+        EnvironmentId = order.EnvironmentId;
+        PurchaseReceiptNo = ErpText.Required(purchaseReceiptNo, nameof(purchaseReceiptNo));
+        PurchaseOrderNo = order.PurchaseOrderNo;
+        SupplierCode = order.SupplierCode;
+        SiteCode = order.SiteCode;
+        Status = PurchaseReceiptStatus.Recorded;
+        RecordedAtUtc = DateTime.UtcNow;
+        foreach (var draft in lineDrafts)
+        {
+            order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity);
+            lines.Add(PurchaseReceiptLine.Create(draft));
+        }
+
+        if (lines.Count == 0)
+        {
+            throw new ArgumentException("At least one purchase receipt line is required.", nameof(lineDrafts));
+        }
+
+        var qualityStatuses = lines.Select(x => x.QualityStatus).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        QualityStatus = qualityStatuses.Length == 1 ? qualityStatuses[0] : "mixed";
+        this.AddDomainEvent(new PurchaseReceiptRecordedDomainEvent(this));
+    }
+
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
+    public string PurchaseReceiptNo { get; private set; } = string.Empty;
+    public string PurchaseOrderNo { get; private set; } = string.Empty;
+    public string SupplierCode { get; private set; } = string.Empty;
+    public string SiteCode { get; private set; } = string.Empty;
+    public string QualityStatus { get; private set; } = string.Empty;
+    public PurchaseReceiptStatus Status { get; private set; }
+    public DateTime RecordedAtUtc { get; private set; }
+    public IReadOnlyCollection<PurchaseReceiptLine> Lines => lines;
+
+    public static PurchaseReceipt Record(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lines)
+    {
+        return new PurchaseReceipt(order, purchaseReceiptNo, lines);
+    }
+
+    public void Cancel()
+    {
+        throw new InvalidOperationException("Recorded purchase receipts are immutable.");
+    }
+}
+
+public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
+{
+    private PurchaseReceiptLine()
+    {
+    }
+
+    private PurchaseReceiptLine(PurchaseReceiptLineDraft draft)
+    {
+        PurchaseOrderLineNo = ErpText.Required(draft.PurchaseOrderLineNo, nameof(draft.PurchaseOrderLineNo));
+        ReceivedQuantity = ErpText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
+        QualityStatus = ErpText.Required(draft.QualityStatus, nameof(draft.QualityStatus)).ToLowerInvariant();
+    }
+
+    public string PurchaseOrderLineNo { get; private set; } = string.Empty;
+    public decimal ReceivedQuantity { get; private set; }
+    public string QualityStatus { get; private set; } = string.Empty;
+
+    public static PurchaseReceiptLine Create(PurchaseReceiptLineDraft draft)
+    {
+        return new PurchaseReceiptLine(draft);
+    }
+}

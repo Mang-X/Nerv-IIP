@@ -1,5 +1,10 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
@@ -8,6 +13,7 @@ using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
@@ -81,6 +87,24 @@ public sealed class MasterDataApiContractTests
             Assert.Contains(contract.HttpMethod, new[] { "GET", "POST" });
             Assert.Contains(contract.PermissionCode, NervIipBusinessMasterDataPermissionSet);
         });
+    }
+
+    [Fact]
+    public void MasterData_business_endpoints_require_internal_service_authorization_policy()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var endpoints = factory.Services.GetRequiredService<IEnumerable<EndpointDataSource>>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToArray();
+
+        var failures = MasterDataEndpointContracts.All
+            .Where(contract => !HasInternalServicePolicy(endpoints, contract.Route))
+            .Select(contract => $"{contract.EndpointType.Name} is missing {InternalServiceAuthorizationPolicy.Name}.")
+            .ToArray();
+
+        Assert.Empty(failures);
     }
 
     [Fact]
@@ -258,6 +282,31 @@ public sealed class MasterDataApiContractTests
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseInMemoryDatabase($"master-data-api-contract-{Guid.NewGuid():N}"));
         return services.BuildServiceProvider();
+    }
+
+    private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)
+    {
+        return endpoints
+            .Where(endpoint => string.Equals(endpoint.RoutePattern.RawText, route, StringComparison.Ordinal))
+            .SelectMany(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>())
+            .Any(authorizeData => string.Equals(authorizeData.Policy, InternalServiceAuthorizationPolicy.Name, StringComparison.Ordinal));
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory()
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_masterdata_policy;Username=nerv;Password=nerv",
+            ["InternalService:BearerToken"] = "test-internal-service-token",
+        };
+
+        return new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(settings));
+            });
     }
 
     private static readonly string[] NervIipBusinessMasterDataPermissionSet =

@@ -3,6 +3,7 @@ using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using NetCorePal.Extensions.Dto;
+using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
 using static Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData.MasterDataEndpointMapping;
 
@@ -36,6 +37,7 @@ public abstract class MasterDataEndpoint<TRequest, TResponse> : Endpoint<TReques
         }
 
         Tags("Business MasterData");
+        Policies(InternalServiceAuthorizationPolicy.Name);
         Permissions(contract.PermissionCode);
     }
 }

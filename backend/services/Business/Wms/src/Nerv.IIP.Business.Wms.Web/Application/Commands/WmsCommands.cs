@@ -196,16 +196,38 @@ public sealed class CreateCountExecutionCommandHandler(ApplicationDbContext dbCo
     }
 }
 
-public sealed record CompleteCountExecutionCommand(CountExecutionId CountExecutionId, decimal CountedQuantity) : ICommand;
+public sealed record CompleteCountExecutionCommand(CountExecutionId CountExecutionId, decimal CountedQuantity, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
-public sealed class CompleteCountExecutionCommandHandler(ApplicationDbContext dbContext)
-    : ICommandHandler<CompleteCountExecutionCommand>
+public sealed class CompleteCountExecutionCommandHandler(ApplicationDbContext dbContext, IInventoryMovementClient inventoryClient)
+    : ICommandHandler<CompleteCountExecutionCommand, CompleteWmsMovementResult>
 {
-    public async Task Handle(CompleteCountExecutionCommand request, CancellationToken cancellationToken)
+    public async Task<CompleteWmsMovementResult> Handle(CompleteCountExecutionCommand request, CancellationToken cancellationToken)
     {
         var count = await dbContext.CountExecutions.SingleOrDefaultAsync(x => x.Id == request.CountExecutionId, cancellationToken)
             ?? throw new KnownException($"Count execution was not found: {request.CountExecutionId}");
         count.Complete(request.CountedQuantity);
+        var varianceQuantity = count.VarianceQuantity
+            ?? throw new KnownException("Count execution variance was not calculated.");
+        var movementRequest = InventoryMovementRequest.Create(
+            count.OrganizationId,
+            count.EnvironmentId,
+            "count-adjustment",
+            count.CountNo,
+            null,
+            request.IdempotencyKey,
+            count.SkuCode,
+            count.UomCode,
+            count.SiteCode,
+            count.LocationCode,
+            null,
+            null,
+            "qualified",
+            "company",
+            null,
+            varianceQuantity);
+        dbContext.InventoryMovementRequests.Add(movementRequest);
+        var posted = await CompleteInboundOrderCommandHandler.PostMovementAsync(inventoryClient, movementRequest, cancellationToken);
+        return new CompleteWmsMovementResult(movementRequest.Id, posted.InventoryMovementId);
     }
 }
 
