@@ -28,6 +28,7 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the inspection record was last changed.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceService, x.SourceDocumentId });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.Result });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Result });
         builder.HasMany(x => x.ResultLines)
             .WithOne()
             .HasForeignKey(x => x.InspectionRecordId)

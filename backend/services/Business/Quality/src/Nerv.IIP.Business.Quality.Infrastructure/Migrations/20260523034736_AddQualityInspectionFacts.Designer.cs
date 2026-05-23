@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260523015115_AddQualityInspectionFacts")]
+    [Migration("20260523034736_AddQualityInspectionFacts")]
     partial class AddQualityInspectionFacts
     {
         /// <inheritdoc />
@@ -128,6 +128,8 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "PlanCode")
                         .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Status");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Category", "Status");
 
@@ -308,6 +310,8 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasComment("UTC time when the inspection record was last changed.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Result");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceService", "SourceDocumentId");
 

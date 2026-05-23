@@ -61,21 +61,7 @@ public sealed record NcrClosedIntegrationEvent(
     string IdempotencyKey,
     NcrClosedPayload Payload);
 
-public sealed record InspectionPassedIntegrationEvent(
-    string EventId,
-    string EventType,
-    int EventVersion,
-    DateTimeOffset OccurredAtUtc,
-    string SourceService,
-    string CorrelationId,
-    string CausationId,
-    string OrganizationId,
-    string EnvironmentId,
-    string Actor,
-    string IdempotencyKey,
-    InspectionResultPayload Payload);
-
-public sealed record InspectionRejectedIntegrationEvent(
+public sealed record InspectionResultIntegrationEvent(
     string EventId,
     string EventType,
     int EventVersion,

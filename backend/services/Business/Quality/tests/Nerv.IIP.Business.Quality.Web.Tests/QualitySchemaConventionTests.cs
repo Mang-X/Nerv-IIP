@@ -34,6 +34,19 @@ public sealed class QualitySchemaConventionTests
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
+    [Fact]
+    public void Quality_inspection_models_include_query_indexes()
+    {
+        using var fixture = CreateFixture();
+
+        AssertEntityHasIndex<InspectionPlan>(
+            fixture.DbContext,
+            [nameof(InspectionPlan.OrganizationId), nameof(InspectionPlan.EnvironmentId), nameof(InspectionPlan.Status)]);
+        AssertEntityHasIndex<InspectionRecord>(
+            fixture.DbContext,
+            [nameof(InspectionRecord.OrganizationId), nameof(InspectionRecord.EnvironmentId), nameof(InspectionRecord.Result)]);
+    }
+
     private static SchemaFixture CreateFixture()
     {
         var services = new ServiceCollection();
@@ -42,9 +55,17 @@ public sealed class QualitySchemaConventionTests
         {
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
         });
-        services.AddQualityPostgreSqlPersistence("Host=localhost;Database=nerv_iip_schema_conventions;Username=nerv;Password=nerv");
+        services.AddQualityPostgreSqlPersistence("Host=unused;Database=nerv_iip_schema_conventions;Username=nerv;Password=nerv");
 
         return new SchemaFixture(services.BuildServiceProvider());
+    }
+
+    private static void AssertEntityHasIndex<TEntity>(ApplicationDbContext dbContext, IReadOnlyCollection<string> propertyNames)
+    {
+        var entityType = dbContext.Model.FindEntityType(typeof(TEntity));
+        Assert.NotNull(entityType);
+        Assert.Contains(entityType.GetIndexes(), index =>
+            index.Properties.Select(property => property.Name).SequenceEqual(propertyNames, StringComparer.Ordinal));
     }
 
     private sealed class SchemaFixture : IDisposable

@@ -40,6 +40,16 @@ public sealed class CreateInspectionRecordCommandValidator : AbstractValidator<C
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.InspectedQuantity).GreaterThan(0);
         RuleFor(x => x.ResultLines).NotEmpty();
+        RuleFor(x => x.DispositionReason)
+            .NotEmpty()
+            .When(HasNonPassedResultLine)
+            .WithMessage("Disposition reason is required when any inspection result line is rejected or conditionally released.");
+    }
+
+    private static bool HasNonPassedResultLine(CreateInspectionRecordCommand command)
+    {
+        return command.ResultLines?.Any(line =>
+            !string.Equals(line.Result, InspectionLineResults.Passed, StringComparison.OrdinalIgnoreCase)) == true;
     }
 }
 

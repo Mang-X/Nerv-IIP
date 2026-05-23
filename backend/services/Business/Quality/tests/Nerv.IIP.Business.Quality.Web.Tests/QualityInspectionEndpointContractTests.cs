@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
@@ -63,6 +64,56 @@ public sealed class QualityInspectionEndpointContractTests
             .ToArray();
 
         Assert.Contains(typeof(ISender), parameterTypes);
+    }
+
+    [Fact]
+    public void Create_inspection_plan_validator_rejects_duplicate_characteristic_codes()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+
+        var result = validator.Validate(new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-RECEIVING-001",
+            "receiving",
+            "SKU-RM-1000",
+            null,
+            null,
+            null,
+            "purchase-receipt",
+            [
+                new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect"),
+                new InspectionPlanCharacteristicInput(" APPEARANCE ", "Appearance duplicate", "visual", "critical", true, "zero-defect"),
+            ]));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.PropertyName == nameof(CreateInspectionPlanCommand.Characteristics)
+            && error.ErrorMessage.Contains("unique", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Create_inspection_record_validator_requires_disposition_reason_for_non_passed_lines()
+    {
+        var validator = new CreateInspectionRecordCommandValidator();
+
+        var result = validator.Validate(new CreateInspectionRecordCommand(
+            "org-001",
+            "env-dev",
+            null,
+            "receiving",
+            "purchase-receipt",
+            "RCV-001",
+            "SKU-RM-1000",
+            10m,
+            "BATCH-001",
+            null,
+            [new InspectionResultLineCommandInput("coa", "mismatch", null, InspectionLineResults.Failed, "wrong-spec", 10m, [])],
+            null,
+            []));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error =>
+            error.ErrorMessage.Contains("Disposition", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

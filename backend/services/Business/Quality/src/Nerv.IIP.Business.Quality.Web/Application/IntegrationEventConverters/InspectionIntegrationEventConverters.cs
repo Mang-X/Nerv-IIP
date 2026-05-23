@@ -5,45 +5,43 @@ using Nerv.IIP.Contracts.Quality;
 namespace Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 
 public sealed class InspectionPassedIntegrationEventConverter(IQualityIntegrationEventContextAccessor contextAccessor)
-    : IIntegrationEventConverter<InspectionPassedDomainEvent, InspectionPassedIntegrationEvent>
+    : IIntegrationEventConverter<InspectionPassedDomainEvent, InspectionResultIntegrationEvent>
 {
-    public InspectionPassedIntegrationEvent Convert(InspectionPassedDomainEvent domainEvent)
+    public InspectionResultIntegrationEvent Convert(InspectionPassedDomainEvent domainEvent)
     {
-        var record = domainEvent.InspectionRecord;
-        var occurredAtUtc = DateTimeOffset.UtcNow;
-        var context = contextAccessor.GetContext();
-        return new InspectionPassedIntegrationEvent(
-            EventIds.New(),
+        return InspectionResultIntegrationEvents.Create(
+            domainEvent.InspectionRecord,
             QualityIntegrationEventTypes.InspectionPassed,
-            QualityIntegrationEventVersions.V1,
-            occurredAtUtc,
-            QualityIntegrationEventSources.BusinessQuality,
-            context.CorrelationId,
-            context.CausationId,
-            record.OrganizationId,
-            record.EnvironmentId,
-            context.Actor,
-            EventIds.Idempotency("inspection-passed", record.OrganizationId, record.EnvironmentId, record.SourceService, record.SourceDocumentId),
-            ToPayload(record, occurredAtUtc));
-    }
-
-    private static InspectionResultPayload ToPayload(InspectionRecord record, DateTimeOffset occurredAtUtc)
-    {
-        return InspectionIntegrationEventPayloads.ToPayload(record, occurredAtUtc);
+            "inspection-passed",
+            contextAccessor.GetContext());
     }
 }
 
 public sealed class InspectionRejectedIntegrationEventConverter(IQualityIntegrationEventContextAccessor contextAccessor)
-    : IIntegrationEventConverter<InspectionRejectedDomainEvent, InspectionRejectedIntegrationEvent>
+    : IIntegrationEventConverter<InspectionRejectedDomainEvent, InspectionResultIntegrationEvent>
 {
-    public InspectionRejectedIntegrationEvent Convert(InspectionRejectedDomainEvent domainEvent)
+    public InspectionResultIntegrationEvent Convert(InspectionRejectedDomainEvent domainEvent)
     {
-        var record = domainEvent.InspectionRecord;
-        var occurredAtUtc = DateTimeOffset.UtcNow;
-        var context = contextAccessor.GetContext();
-        return new InspectionRejectedIntegrationEvent(
-            EventIds.New(),
+        return InspectionResultIntegrationEvents.Create(
+            domainEvent.InspectionRecord,
             QualityIntegrationEventTypes.InspectionRejected,
+            "inspection-rejected",
+            contextAccessor.GetContext());
+    }
+}
+
+internal static class InspectionResultIntegrationEvents
+{
+    public static InspectionResultIntegrationEvent Create(
+        InspectionRecord record,
+        string eventType,
+        string idempotencyPrefix,
+        QualityIntegrationEventContext context)
+    {
+        var occurredAtUtc = DateTimeOffset.UtcNow;
+        return new InspectionResultIntegrationEvent(
+            EventIds.New(),
+            eventType,
             QualityIntegrationEventVersions.V1,
             occurredAtUtc,
             QualityIntegrationEventSources.BusinessQuality,
@@ -52,7 +50,7 @@ public sealed class InspectionRejectedIntegrationEventConverter(IQualityIntegrat
             record.OrganizationId,
             record.EnvironmentId,
             context.Actor,
-            EventIds.Idempotency("inspection-rejected", record.OrganizationId, record.EnvironmentId, record.SourceService, record.SourceDocumentId),
+            EventIds.Idempotency(idempotencyPrefix, record.OrganizationId, record.EnvironmentId, record.SourceService, record.SourceDocumentId),
             InspectionIntegrationEventPayloads.ToPayload(record, occurredAtUtc));
     }
 }

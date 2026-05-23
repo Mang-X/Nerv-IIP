@@ -235,6 +235,11 @@ public sealed class InspectionResultLine : Entity<InspectionResultLineId>
         {
             throw new ArgumentException("Failed or conditional-release lines must preserve a defect or disposition reason.", nameof(defectReason));
         }
+
+        if (Result == InspectionLineResults.ConditionalRelease && defectQuantity is null or <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(defectQuantity), "Conditional-release lines must provide a positive defect quantity.");
+        }
     }
 
     public InspectionRecordId InspectionRecordId { get; private set; } = null!;
@@ -293,9 +298,10 @@ public sealed record InspectionResultLineInput(
         string characteristicCode,
         string observedValue,
         string defectReason,
+        decimal defectQuantity,
         IReadOnlyCollection<string> attachmentFileIds)
     {
-        return new InspectionResultLineInput(characteristicCode, observedValue, null, InspectionLineResults.ConditionalRelease, defectReason, null, attachmentFileIds);
+        return new InspectionResultLineInput(characteristicCode, observedValue, null, InspectionLineResults.ConditionalRelease, defectReason, defectQuantity, attachmentFileIds);
     }
 }
 

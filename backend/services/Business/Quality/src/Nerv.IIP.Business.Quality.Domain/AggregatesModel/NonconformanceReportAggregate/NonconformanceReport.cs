@@ -119,7 +119,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             throw new InvalidOperationException("Passed inspections cannot open an NCR.");
         }
 
-        var sourceType = inspectionRecord.SourceType == "operation" ? "in-process" : inspectionRecord.SourceType;
+        var sourceType = ToNcrSourceType(inspectionRecord.SourceType);
         var ncr = new NonconformanceReport(
             inspectionRecord.OrganizationId,
             inspectionRecord.EnvironmentId,
@@ -134,6 +134,18 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             attachmentFileIds);
         ncr.SourceInspectionRecordId = inspectionRecord.Id;
         return ncr;
+    }
+
+    private static string ToNcrSourceType(string inspectionSourceType)
+    {
+        return inspectionSourceType switch
+        {
+            "receiving" => "receiving",
+            "operation" => "in-process",
+            "final" => "final",
+            "customer-return" => "customer-return",
+            _ => throw new InvalidOperationException($"Inspection source type '{inspectionSourceType}' cannot open an NCR."),
+        };
     }
 
     public void SubmitDisposition(

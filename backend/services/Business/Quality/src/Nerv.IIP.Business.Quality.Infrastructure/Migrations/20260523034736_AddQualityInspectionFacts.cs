@@ -165,6 +165,18 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_inspection_plans_organization_id_environment_id_status",
+                schema: "quality",
+                table: "inspection_plans",
+                columns: new[] { "organization_id", "environment_id", "status" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_inspection_records_organization_id_environment_id_result",
+                schema: "quality",
+                table: "inspection_records",
+                columns: new[] { "organization_id", "environment_id", "result" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_inspection_records_organization_id_environment_id_source_se~",
                 schema: "quality",
                 table: "inspection_records",

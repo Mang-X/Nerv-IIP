@@ -114,14 +114,43 @@ public sealed class InspectionAggregateTests
             5m,
             "BATCH-002",
             null,
-            [InspectionResultLineInput.ConditionalRelease("torque", "slightly below target", "waiver-approved", ["file-waiver-001"])],
+            [InspectionResultLineInput.ConditionalRelease("torque", "slightly below target", "waiver-approved", 1m, ["file-waiver-001"])],
             "Released by MRB waiver",
             ["file-waiver-001"]);
 
         Assert.Equal("conditional-release", record.Result);
         Assert.Equal("Released by MRB waiver", record.DispositionReason);
         Assert.Equal(["file-waiver-001"], record.DispositionAttachmentFileIds);
+        Assert.Equal(1m, record.FailedQuantity());
         Assert.IsType<InspectionRejectedDomainEvent>(record.GetDomainEvents().Single());
+    }
+
+    [Fact]
+    public void Conditional_release_line_requires_positive_defect_quantity()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "operation",
+            "mes-operation",
+            "OP-REPORT-001",
+            "SKU-FG-1000",
+            5m,
+            "BATCH-002",
+            null,
+            [
+                new InspectionResultLineInput(
+                    "torque",
+                    "slightly below target",
+                    null,
+                    InspectionLineResults.ConditionalRelease,
+                    "waiver-approved",
+                    null,
+                    ["file-waiver-001"]),
+            ],
+            "Released by MRB waiver",
+            ["file-waiver-001"]));
     }
 
     [Fact]
@@ -153,6 +182,60 @@ public sealed class InspectionAggregateTests
         Assert.Equal("RCV-001", ncr.SourceDocumentId);
         Assert.Equal("SKU-RM-1000", ncr.SkuCode);
         Assert.Equal(3m, ncr.DefectQuantity);
+    }
+
+    [Fact]
+    public void Operation_inspection_opens_in_process_ncr_source_type()
+    {
+        var record = InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "operation",
+            "mes-operation",
+            "OP-REPORT-001",
+            "SKU-FG-1000",
+            5m,
+            "BATCH-002",
+            null,
+            [InspectionResultLineInput.Fail("torque", "below target", "out-of-tolerance", 2m, [])],
+            "Torque below target",
+            []);
+
+        var ncr = NonconformanceReport.OpenFromInspection(
+            "NCR-INS-002",
+            record,
+            "Torque below target",
+            []);
+
+        Assert.Equal("in-process", ncr.SourceType);
+        Assert.Equal("OP-REPORT-001", ncr.SourceDocumentId);
+    }
+
+    [Fact]
+    public void Maintenance_inspection_cannot_open_ncr_without_explicit_source_mapping()
+    {
+        var record = InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "maintenance",
+            "maintenance",
+            "MAINT-001",
+            "ASSET-001",
+            1m,
+            null,
+            "SER-001",
+            [InspectionResultLineInput.Fail("alignment", "misaligned", "out-of-tolerance", 1m, [])],
+            "Maintenance inspection failed",
+            []);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => NonconformanceReport.OpenFromInspection(
+            "NCR-INS-003",
+            record,
+            "Maintenance inspection failed",
+            []));
+        Assert.Contains("maintenance", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static InspectionPlan NewPlan()

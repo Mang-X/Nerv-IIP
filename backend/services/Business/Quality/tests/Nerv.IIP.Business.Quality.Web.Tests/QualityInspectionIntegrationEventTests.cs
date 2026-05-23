@@ -9,7 +9,7 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 public sealed class QualityInspectionIntegrationEventTests
 {
     [Fact]
-    public void Inspection_passed_event_uses_stable_adr0011_envelope_shape()
+    public void Inspection_passed_event_uses_unified_stable_adr0011_envelope_shape()
     {
         var record = NewPassedRecord();
         var converter = new InspectionPassedIntegrationEventConverter(new StubQualityIntegrationEventContextAccessor());
@@ -17,6 +17,7 @@ public sealed class QualityInspectionIntegrationEventTests
         var integrationEvent = converter.Convert(new InspectionPassedDomainEvent(record));
         var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
+        Assert.IsType<InspectionResultIntegrationEvent>(integrationEvent);
         Assert.Equal(QualityIntegrationEventTypes.InspectionPassed, integrationEvent.EventType);
         Assert.Equal(1, integrationEvent.EventVersion);
         Assert.Equal(QualityIntegrationEventSources.BusinessQuality, integrationEvent.SourceService);
@@ -38,12 +39,27 @@ public sealed class QualityInspectionIntegrationEventTests
         var integrationEvent = converter.Convert(new InspectionRejectedDomainEvent(record));
 
         Assert.Equal(QualityIntegrationEventTypes.InspectionRejected, integrationEvent.EventType);
+        Assert.IsType<InspectionResultIntegrationEvent>(integrationEvent);
         Assert.Equal("corr-quality-001", integrationEvent.CorrelationId);
         Assert.Equal("cmd-record-inspection-001", integrationEvent.CausationId);
         Assert.Equal("user:qa-001", integrationEvent.Actor);
         Assert.Equal("rejected", integrationEvent.Payload.Result);
         Assert.Equal("Supplier certificate mismatch", integrationEvent.Payload.DispositionReason);
         Assert.Equal(["file-mrb-001"], integrationEvent.Payload.DispositionAttachmentFileIds);
+    }
+
+    [Fact]
+    public void Inspection_result_event_idempotency_key_is_deterministic_for_same_record_result()
+    {
+        var record = NewRejectedRecord();
+        var converter = new InspectionRejectedIntegrationEventConverter(new StubQualityIntegrationEventContextAccessor());
+
+        var first = converter.Convert(new InspectionRejectedDomainEvent(record));
+        var second = converter.Convert(new InspectionRejectedDomainEvent(record));
+
+        Assert.NotEqual(first.EventId, second.EventId);
+        Assert.Equal(first.IdempotencyKey, second.IdempotencyKey);
+        Assert.Equal("quality:inspection-rejected:org-001:env-dev:purchase-receipt:RCV-001", first.IdempotencyKey);
     }
 
     private static InspectionRecord NewPassedRecord()

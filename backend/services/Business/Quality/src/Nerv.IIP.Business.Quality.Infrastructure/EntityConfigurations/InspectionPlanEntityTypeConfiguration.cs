@@ -27,6 +27,7 @@ public sealed class InspectionPlanEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the plan was last changed.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.PlanCode }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Category, x.Status });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status });
         builder.HasMany(x => x.Characteristics)
             .WithOne()
             .HasForeignKey(x => x.InspectionPlanId)

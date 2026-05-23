@@ -20,7 +20,7 @@ public sealed class QualityOpenApiTests
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["ConnectionStrings:Redis"] = "localhost:6379",
-                        ["ConnectionStrings:QualityDb"] = "Host=localhost;Database=nerv_iip_quality_openapi;Username=nerv;Password=nerv",
+                        ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_quality_openapi;Username=nerv;Password=nerv",
                     }));
             });
         using var client = factory.CreateClient();
