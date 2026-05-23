@@ -27,13 +27,19 @@ public sealed class BusinessFullChainAcceptanceHarnessBaselineTests
     }
 
     [Fact]
-    public void Issue77_harness_baseline_catalog_includes_quality_ncr_contracts()
+    public void Issue77_harness_baseline_catalog_includes_quality_contract_groups()
     {
         var qualityOperationIds = PublicBusinessEndpointCatalog.All
             .Where(endpoint => endpoint.Service == "BusinessQuality")
             .Select(endpoint => endpoint.OperationId)
             .ToArray();
 
+        Assert.Contains("createBusinessQualityInspectionPlan", qualityOperationIds);
+        Assert.Contains("activateBusinessQualityInspectionPlan", qualityOperationIds);
+        Assert.Contains("listBusinessQualityInspectionPlans", qualityOperationIds);
+        Assert.Contains("createBusinessQualityInspectionRecord", qualityOperationIds);
+        Assert.Contains("openBusinessQualityNcrFromInspection", qualityOperationIds);
+        Assert.Contains("listBusinessQualityInspectionRecords", qualityOperationIds);
         Assert.Contains("createBusinessQualityNcr", qualityOperationIds);
         Assert.Contains("listBusinessQualityNcrs", qualityOperationIds);
         Assert.Contains("getBusinessQualityNcr", qualityOperationIds);
