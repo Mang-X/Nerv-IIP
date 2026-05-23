@@ -37,6 +37,27 @@ public static class InternalServiceAuthentication
             .AddScheme<InternalServiceAuthenticationOptions, InternalServiceAuthenticationHandler>(
                 SchemeName,
                 options => options.BearerToken = ResolveBearerToken(configuration, environment));
+        AddInternalServicePolicy(services);
+        return services;
+    }
+
+    public static IServiceCollection AddNervIipInternalServiceAuthorization(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment environment)
+    {
+        services.AddNervIipInternalServiceTokenProvider(configuration, environment);
+        services
+            .AddAuthentication()
+            .AddScheme<InternalServiceAuthenticationOptions, InternalServiceAuthenticationHandler>(
+                SchemeName,
+                options => options.BearerToken = ResolveBearerToken(configuration, environment));
+        AddInternalServicePolicy(services);
+        return services;
+    }
+
+    private static void AddInternalServicePolicy(IServiceCollection services)
+    {
         services.AddAuthorization(options =>
             options.AddPolicy(PolicyName, policy =>
             {
@@ -44,7 +65,6 @@ public static class InternalServiceAuthentication
                 policy.RequireAuthenticatedUser();
                 policy.RequireClaim("token_type", "internal_service");
             }));
-        return services;
     }
 
     internal static string ResolveBearerToken(IConfiguration configuration, IHostEnvironment environment)

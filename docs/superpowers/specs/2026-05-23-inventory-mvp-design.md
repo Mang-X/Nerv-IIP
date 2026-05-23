@@ -68,7 +68,7 @@ Initial permission codes:
 
 1. `business.inventory.locations.manage`
 2. `business.inventory.movements.create`
-3. `business.inventory.availability.read`
+3. `business.inventory.ledger.read`
 4. `business.inventory.counts.manage`
 
 ## Persistence

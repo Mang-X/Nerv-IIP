@@ -41,7 +41,13 @@ builder.Services.AddSingleton(new MesRescheduleOptions
 });
 
 var app = builder.Build();
-if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Persistence:AutoMigrate"))
+var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
+if (autoMigrate && !app.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for BusinessMES in Development. Use an explicit migrator, release script or migration bundle outside Development.");
+}
+
+if (autoMigrate)
 {
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

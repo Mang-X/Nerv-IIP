@@ -255,18 +255,18 @@ Cover:
 | Route | Permission |
 | --- | --- |
 | `POST /api/business/v1/engineering/documents` | `business.engineering.documents.manage` |
-| `GET /api/business/v1/engineering/documents` | `business.engineering.documents.read` |
-| `POST /api/business/v1/engineering/eboms/{ebomId}/release` | `business.engineering.boms.manage` |
-| `POST /api/business/v1/engineering/mboms/{mbomId}/release` | `business.engineering.boms.manage` |
-| `POST /api/business/v1/engineering/routings/{routingId}/release` | `business.engineering.boms.manage` |
-| `GET /api/business/v1/engineering/eboms` | `business.engineering.boms.read` |
+| `POST /api/business/v1/engineering/items` | `business.engineering.items.manage` |
+| `POST /api/business/v1/engineering/engineering-boms/release` | `business.engineering.boms.manage` |
+| `POST /api/business/v1/engineering/manufacturing-boms/release` | `business.engineering.boms.manage` |
+| `POST /api/business/v1/engineering/routings/release` | `business.engineering.routings.manage` |
+| `POST /api/business/v1/engineering/engineering-changes/release` | `business.engineering.changes.manage` |
+| `GET /api/business/v1/engineering/engineering-boms` | `business.engineering.boms.read` |
+| `GET /api/business/v1/engineering/routings` | `business.engineering.routings.read` |
 | `GET /api/business/v1/engineering/production-versions` | `business.engineering.production-versions.read` |
 | `GET /api/business/v1/engineering/production-versions/resolve` | `business.engineering.production-versions.read` |
 | `POST /api/business/v1/engineering/production-versions` | `business.engineering.production-versions.manage` |
 | `PUT /api/business/v1/engineering/production-versions/{productionVersionId}` | `business.engineering.production-versions.manage` |
 | `POST /api/business/v1/engineering/production-versions/{productionVersionId}/archive` | `business.engineering.production-versions.manage` |
-| `POST /api/business/v1/engineering/changes/{changeId}/release` | `business.engineering.changes.manage` |
-| `GET /api/business/v1/engineering/changes/{changeId}` | `business.engineering.changes.read` |
 
 Tests must assert released versions cannot be changed through the API.
 

@@ -42,6 +42,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.ProductEngineering\Nerv.IIP.Contracts.ProductEngineering.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Localization\Nerv.IIP.Localization\Nerv.IIP.Localization.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Business.ProductEngineering.Domain\Nerv.IIP.Business.ProductEngineering.Domain.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Business.ProductEngineering.Infrastructure\Nerv.IIP.Business.ProductEngineering.Infrastructure.csproj" />
   </ItemGroup>
