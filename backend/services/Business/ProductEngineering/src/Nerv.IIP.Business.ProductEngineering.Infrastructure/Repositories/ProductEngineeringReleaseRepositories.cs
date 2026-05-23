@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringDocumentAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringItemAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
@@ -21,6 +22,25 @@ public sealed class EngineeringDocumentRepository(ApplicationDbContext context)
             x.OrganizationId == organizationId &&
             x.EnvironmentId == environmentId &&
             x.DocumentNumber == documentNumber &&
+            x.Revision == revision,
+            cancellationToken);
+    }
+}
+
+public interface IEngineeringItemRepository : IRepository<EngineeringItem, EngineeringItemId>
+{
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string itemCode, string revision, CancellationToken cancellationToken = default);
+}
+
+public sealed class EngineeringItemRepository(ApplicationDbContext context)
+    : RepositoryBase<EngineeringItem, EngineeringItemId, ApplicationDbContext>(context), IEngineeringItemRepository
+{
+    public async Task<bool> ExistsAsync(string organizationId, string environmentId, string itemCode, string revision, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.EngineeringItems.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.ItemCode == itemCode &&
             x.Revision == revision,
             cancellationToken);
     }
@@ -47,37 +67,39 @@ public sealed class EngineeringBomRepository(ApplicationDbContext context)
 
 public interface IManufacturingBomRepository : IRepository<ManufacturingBom, ManufacturingBomId>
 {
-    Task<EngineeringVersionStatus> GetStatusByBusinessKeyAsync(string organizationId, string environmentId, string bomCode, string revision, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string bomCode, string revision, CancellationToken cancellationToken = default);
 }
 
 public sealed class ManufacturingBomRepository(ApplicationDbContext context)
     : RepositoryBase<ManufacturingBom, ManufacturingBomId, ApplicationDbContext>(context), IManufacturingBomRepository
 {
-    public async Task<EngineeringVersionStatus> GetStatusByBusinessKeyAsync(string organizationId, string environmentId, string bomCode, string revision, CancellationToken cancellationToken = default)
+    public async Task<bool> ExistsAsync(string organizationId, string environmentId, string bomCode, string revision, CancellationToken cancellationToken = default)
     {
-        var status = await DbContext.ManufacturingBoms
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.BomCode == bomCode && x.Revision == revision)
-            .Select(x => (EngineeringVersionStatus?)x.Status)
-            .SingleOrDefaultAsync(cancellationToken);
-        return status ?? EngineeringVersionStatus.Draft;
+        return await DbContext.ManufacturingBoms.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.BomCode == bomCode &&
+            x.Revision == revision,
+            cancellationToken);
     }
 }
 
 public interface IRoutingRepository : IRepository<Routing, RoutingId>
 {
-    Task<EngineeringVersionStatus> GetStatusByBusinessKeyAsync(string organizationId, string environmentId, string routingCode, string revision, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string routingCode, string revision, CancellationToken cancellationToken = default);
 }
 
 public sealed class RoutingRepository(ApplicationDbContext context)
     : RepositoryBase<Routing, RoutingId, ApplicationDbContext>(context), IRoutingRepository
 {
-    public async Task<EngineeringVersionStatus> GetStatusByBusinessKeyAsync(string organizationId, string environmentId, string routingCode, string revision, CancellationToken cancellationToken = default)
+    public async Task<bool> ExistsAsync(string organizationId, string environmentId, string routingCode, string revision, CancellationToken cancellationToken = default)
     {
-        var status = await DbContext.Routings
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.RoutingCode == routingCode && x.Revision == revision)
-            .Select(x => (EngineeringVersionStatus?)x.Status)
-            .SingleOrDefaultAsync(cancellationToken);
-        return status ?? EngineeringVersionStatus.Draft;
+        return await DbContext.Routings.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.RoutingCode == routingCode &&
+            x.Revision == revision,
+            cancellationToken);
     }
 }
 

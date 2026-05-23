@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
+using static Nerv.IIP.Business.ProductEngineering.Domain.ProductEngineeringGuards;
 
 namespace Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 
@@ -203,10 +204,5 @@ public sealed class ProductionVersion : Entity<ProductionVersionId>, IAggregateR
         {
             throw new ArgumentException("LotSizeMin must be less than or equal to LotSizeMax.", nameof(lotSizeMax));
         }
-    }
-
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
     }
 }

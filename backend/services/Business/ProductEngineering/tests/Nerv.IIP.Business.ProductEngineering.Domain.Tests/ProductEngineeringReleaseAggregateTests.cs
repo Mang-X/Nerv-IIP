@@ -52,6 +52,7 @@ public sealed class ProductEngineeringReleaseAggregateTests
         Assert.Equal("ENG-1000", item.ItemCode);
         Assert.Equal("A", item.Revision);
         Assert.Equal(EngineeringVersionStatus.Published, item.Status);
+        Assert.IsType<EngineeringItemRevisionCreatedDomainEvent>(item.GetDomainEvents().Single());
         Assert.Throws<InvalidOperationException>(() => item.Rename("Renamed Pump"));
     }
 

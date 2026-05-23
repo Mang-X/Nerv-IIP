@@ -55,6 +55,29 @@ public sealed class RegisterEngineeringDocumentEndpoint(ISender sender)
     }
 }
 
+public sealed record CreateEngineeringItemRevisionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ItemCode,
+    string Revision,
+    string Name,
+    bool Release);
+
+public sealed class CreateEngineeringItemRevisionEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<CreateEngineeringItemRevisionRequest, ResponseData<EntityResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<CreateEngineeringItemRevisionEndpoint>());
+    }
+
+    public override async Task HandleAsync(CreateEngineeringItemRevisionRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new CreateEngineeringItemRevisionCommand(req.OrganizationId, req.EnvironmentId, req.ItemCode, req.Revision, req.Name, req.Release), ct);
+        await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
+    }
+}
+
 public sealed record ReleaseEngineeringBomRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -200,12 +223,13 @@ public static class ProductEngineeringEndpointContracts
     public static readonly IReadOnlyCollection<ProductEngineeringEndpointContract> All =
     [
         new(typeof(RegisterEngineeringDocumentEndpoint), "POST", "/api/business/v1/engineering/documents", EngineeringPermissionCodes.DocumentsManage, "registerBusinessEngineeringDocument"),
+        new(typeof(CreateEngineeringItemRevisionEndpoint), "POST", "/api/business/v1/engineering/items", EngineeringPermissionCodes.ItemsManage, "createBusinessEngineeringItemRevision"),
         new(typeof(ReleaseEngineeringBomEndpoint), "POST", "/api/business/v1/engineering/engineering-boms/release", EngineeringPermissionCodes.BomsManage, "releaseBusinessEngineeringBom"),
         new(typeof(ReleaseManufacturingBomEndpoint), "POST", "/api/business/v1/engineering/manufacturing-boms/release", EngineeringPermissionCodes.BomsManage, "releaseBusinessManufacturingBom"),
-        new(typeof(ReleaseRoutingEndpoint), "POST", "/api/business/v1/engineering/routings/release", EngineeringPermissionCodes.BomsManage, "releaseBusinessRouting"),
+        new(typeof(ReleaseRoutingEndpoint), "POST", "/api/business/v1/engineering/routings/release", EngineeringPermissionCodes.RoutingsManage, "releaseBusinessRouting"),
         new(typeof(ReleaseEngineeringChangeEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/release", EngineeringPermissionCodes.ChangesManage, "releaseBusinessEngineeringChange"),
         new(typeof(ListEngineeringBomsEndpoint), "GET", "/api/business/v1/engineering/engineering-boms", EngineeringPermissionCodes.BomsRead, "listBusinessEngineeringBoms"),
-        new(typeof(ListRoutingsEndpoint), "GET", "/api/business/v1/engineering/routings", EngineeringPermissionCodes.BomsRead, "listBusinessRoutings"),
+        new(typeof(ListRoutingsEndpoint), "GET", "/api/business/v1/engineering/routings", EngineeringPermissionCodes.RoutingsRead, "listBusinessRoutings"),
     ];
 
     public static ProductEngineeringEndpointContract Get<TEndpoint>()

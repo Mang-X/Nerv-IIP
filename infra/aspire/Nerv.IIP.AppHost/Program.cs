@@ -14,6 +14,7 @@ var appHubDatabase = postgres.AddDatabase("apphub-db", "nerv_iip_apphub");
 var iamDatabase = postgres.AddDatabase("iam-db", "nerv_iip_iam");
 var opsDatabase = postgres.AddDatabase("ops-db", "nerv_iip_ops");
 var notificationDatabase = postgres.AddDatabase("notification-db", "nerv_iip_notification");
+var productEngineeringDatabase = postgres.AddDatabase("product-engineering-db", "nerv_iip_product_engineering");
 var redis = builder.AddRedis("redis")
     .WithDataVolume("nerv-iip-redis");
 var rabbitmq = useRabbitMq
@@ -113,6 +114,22 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+var productEngineering = builder.AddProject<Projects.Nerv_IIP_Business_ProductEngineering_Web>("product-engineering")
+    .WithHttpEndpoint(port: 5107, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(productEngineeringDatabase, "PostgreSQL")
+    .WaitFor(productEngineeringDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    productEngineering = productEngineering
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
 var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")
     .WithHttpEndpoint(port: 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
@@ -120,18 +137,21 @@ var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway
     .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
+    .WithEnvironment("ProductEngineering__BaseUrl", productEngineering.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithReference(apphub)
     .WithReference(iam)
     .WithReference(ops)
     .WithReference(notification)
+    .WithReference(productEngineering)
     .WithReference(fileStorage)
     .WithReference(redis)
     .WaitFor(apphub)
     .WaitFor(iam)
     .WaitFor(ops)
     .WaitFor(notification)
+    .WaitFor(productEngineering)
     .WaitFor(fileStorage)
     .WaitFor(redis);
 

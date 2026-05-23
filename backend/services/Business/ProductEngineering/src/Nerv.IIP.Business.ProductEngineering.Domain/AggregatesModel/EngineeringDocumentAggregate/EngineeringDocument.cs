@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
+using static Nerv.IIP.Business.ProductEngineering.Domain.ProductEngineeringGuards;
 
 namespace Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringDocumentAggregate;
 
@@ -62,10 +63,5 @@ public sealed class EngineeringDocument : Entity<EngineeringDocumentId>, IAggreg
             documentType);
         document.AddDomainEvent(new EngineeringDocumentRegisteredDomainEvent(document));
         return document;
-    }
-
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
     }
 }

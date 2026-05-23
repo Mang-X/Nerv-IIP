@@ -32,6 +32,12 @@ public static class ProductEngineeringPersistenceServiceCollectionExtensions
         });
         services.AddRepositories(typeof(ApplicationDbContext).Assembly);
         services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddScoped<IEngineeringDocumentRepository, EngineeringDocumentRepository>();
+        services.AddScoped<IEngineeringItemRepository, EngineeringItemRepository>();
+        services.AddScoped<IEngineeringBomRepository, EngineeringBomRepository>();
+        services.AddScoped<IManufacturingBomRepository, ManufacturingBomRepository>();
+        services.AddScoped<IRoutingRepository, RoutingRepository>();
+        services.AddScoped<IEngineeringChangeRepository, EngineeringChangeRepository>();
         services.AddScoped<IProductionVersionRepository, ProductionVersionRepository>();
         return services;
     }

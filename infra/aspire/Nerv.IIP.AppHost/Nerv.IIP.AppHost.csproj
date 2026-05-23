@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\..\backend\services\AppHub\src\Nerv.IIP.AppHub.Web\Nerv.IIP.AppHub.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\services\Ops\src\Nerv.IIP.Ops.Web\Nerv.IIP.Ops.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\services\Notification\src\Nerv.IIP.Notification.Web\Nerv.IIP.Notification.Web.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\..\backend\services\Business\ProductEngineering\src\Nerv.IIP.Business.ProductEngineering.Web\Nerv.IIP.Business.ProductEngineering.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\gateway\PlatformGateway\src\Nerv.IIP.PlatformGateway.Web\Nerv.IIP.PlatformGateway.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\connector-hosts\src\Nerv.IIP.ConnectorHost.Host\Nerv.IIP.ConnectorHost.Host.csproj" IsAspireProjectResource="true" />
   </ItemGroup>

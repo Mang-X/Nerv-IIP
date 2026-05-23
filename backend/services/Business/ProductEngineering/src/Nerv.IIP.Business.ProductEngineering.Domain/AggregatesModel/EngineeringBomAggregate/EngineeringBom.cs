@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
+using static Nerv.IIP.Business.ProductEngineering.Domain.ProductEngineeringGuards;
 
 namespace Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 
@@ -80,16 +81,6 @@ public sealed class EngineeringBom : Entity<EngineeringBomId>, IAggregateRoot
     private void Touch()
     {
         UpdatedAtUtc = DateTime.UtcNow;
-    }
-
-    private static decimal Positive(decimal value, string parameterName)
-    {
-        return value > 0 ? value : throw new ArgumentOutOfRangeException(parameterName, "Quantity must be positive.");
-    }
-
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
     }
 }
 

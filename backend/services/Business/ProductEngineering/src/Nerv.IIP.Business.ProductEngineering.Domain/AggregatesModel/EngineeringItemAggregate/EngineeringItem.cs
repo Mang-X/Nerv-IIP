@@ -1,4 +1,6 @@
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
+using static Nerv.IIP.Business.ProductEngineering.Domain.ProductEngineeringGuards;
 
 namespace Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringItemAggregate;
 
@@ -45,13 +47,15 @@ public sealed class EngineeringItem : Entity<EngineeringItemId>, IAggregateRoot
         string name,
         bool release)
     {
-        return new EngineeringItem(
+        var item = new EngineeringItem(
             organizationId,
             environmentId,
             itemCode,
             revision,
             name,
             release ? EngineeringVersionStatus.Published : EngineeringVersionStatus.Draft);
+        item.AddDomainEvent(new EngineeringItemRevisionCreatedDomainEvent(item));
+        return item;
     }
 
     public void Rename(string name)
@@ -67,10 +71,5 @@ public sealed class EngineeringItem : Entity<EngineeringItemId>, IAggregateRoot
         {
             throw new InvalidOperationException("Released or archived engineering item cannot be changed directly.");
         }
-    }
-
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
     }
 }

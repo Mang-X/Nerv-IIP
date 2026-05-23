@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringDocumentAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringItemAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
@@ -56,6 +57,48 @@ public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocume
             request.DocumentType);
         await repository.AddAsync(document, cancellationToken);
         return new EntityCommandResult(document.DocumentNumber);
+    }
+}
+
+public sealed record CreateEngineeringItemRevisionCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ItemCode,
+    string Revision,
+    string Name,
+    bool Release) : ICommand<EntityCommandResult>;
+
+public sealed class CreateEngineeringItemRevisionCommandValidator : AbstractValidator<CreateEngineeringItemRevisionCommand>
+{
+    public CreateEngineeringItemRevisionCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ItemCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(255);
+    }
+}
+
+public sealed class CreateEngineeringItemRevisionCommandHandler(IEngineeringItemRepository repository)
+    : ICommandHandler<CreateEngineeringItemRevisionCommand, EntityCommandResult>
+{
+    public async Task<EntityCommandResult> Handle(CreateEngineeringItemRevisionCommand request, CancellationToken cancellationToken)
+    {
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, request.ItemCode, request.Revision, cancellationToken))
+        {
+            throw new KnownException($"Engineering item '{request.ItemCode}' revision '{request.Revision}' already exists.");
+        }
+
+        var item = EngineeringItem.CreateRevision(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ItemCode,
+            request.Revision,
+            request.Name,
+            request.Release);
+        await repository.AddAsync(item, cancellationToken);
+        return new EntityCommandResult(item.ItemCode);
     }
 }
 
@@ -149,6 +192,11 @@ public sealed class ReleaseManufacturingBomCommandHandler(
 {
     public async Task<EntityCommandResult> Handle(ReleaseManufacturingBomCommand request, CancellationToken cancellationToken)
     {
+        if (await manufacturingBomRepository.ExistsAsync(request.OrganizationId, request.EnvironmentId, request.BomCode, request.Revision, cancellationToken))
+        {
+            throw new KnownException($"Manufacturing BOM '{request.BomCode}' revision '{request.Revision}' already exists.");
+        }
+
         var ebom = await engineeringBomRepository.GetByBusinessKeyAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -168,7 +216,7 @@ public sealed class ReleaseManufacturingBomCommandHandler(
             bom.AddRecipeLine(line.ParameterCode, line.TargetValue, line.UnitOfMeasureCode);
         }
 
-        bom.ReleaseFromEngineeringBom(ebom.BomCode, ebom.Status, request.EffectiveDate);
+        bom.ReleaseFromEngineeringBom($"{ebom.BomCode}:{ebom.Revision}", ebom.Status, request.EffectiveDate);
         await manufacturingBomRepository.AddAsync(bom, cancellationToken);
         return new EntityCommandResult(bom.BomCode);
     }
@@ -203,6 +251,11 @@ public sealed class ReleaseRoutingCommandHandler(IRoutingRepository repository)
 {
     public async Task<EntityCommandResult> Handle(ReleaseRoutingCommand request, CancellationToken cancellationToken)
     {
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, request.RoutingCode, request.Revision, cancellationToken))
+        {
+            throw new KnownException($"Routing '{request.RoutingCode}' revision '{request.Revision}' already exists.");
+        }
+
         var routing = Routing.CreateDraft(request.OrganizationId, request.EnvironmentId, request.RoutingCode, request.Revision, request.SkuCode);
         foreach (var operation in request.Operations)
         {

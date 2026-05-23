@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
+using static Nerv.IIP.Business.ProductEngineering.Domain.ProductEngineeringGuards;
 
 namespace Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
 
@@ -89,11 +90,6 @@ public sealed class Routing : Entity<RoutingId>, IAggregateRoot
     private void Touch()
     {
         UpdatedAtUtc = DateTime.UtcNow;
-    }
-
-    private static string Required(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
     }
 }
 
