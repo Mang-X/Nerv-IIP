@@ -1,14 +1,14 @@
 # Date Picker
 
-Date controls are design-system components exported from `@nerv-iip/ui`. They compose `Popover`, `Calendar`, and `RangeCalendar` so business pages do not create page-local calendar styling.
+Date controls are design-system components exported from `@nerv-iip/ui`. The current #143 baseline composes `Popover` with compact native date inputs for reliable MVP form and filter workflows. `Calendar` and `RangeCalendar` are exported as low-level Reka root primitives only; they are not yet styled, full calendar-grid components.
 
 ## Exports
 
 - `DatePicker`
 - `DateRangePicker`
 - `DateRangeValue`
-- `Calendar` and public calendar parts
-- `RangeCalendar` and public range-calendar parts
+- `Calendar` low-level Reka root
+- `RangeCalendar` low-level Reka root
 - `Popover` and public popover parts
 
 ## Contract
@@ -19,6 +19,7 @@ Date controls are design-system components exported from `@nerv-iip/ui`. They co
 4. Range selection uses explicit `Apply`, `Cancel`, and `Clear` actions.
 5. Triggers are compact outline buttons suitable for toolbar filters and form fields.
 6. Disabled and clearable states are handled by props; pages should not reimplement clear buttons.
+7. App pages should use `DatePicker` and `DateRangePicker` for product UI. Direct `Calendar` and `RangeCalendar` usage is reserved for future design-system work until styled parts are added.
 
 ## Usage
 

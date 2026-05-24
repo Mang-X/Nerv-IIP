@@ -1,4 +1,6 @@
-export type FileUploadStatus = 'queued' | 'uploading' | 'completed' | 'failed' | 'rejected'
+export type FileUploadStatus = 'queued' | 'uploading' | 'paused' | 'completed' | 'failed' | 'rejected'
+export type FileUploadMode = 'server-proxy' | 'tus'
+export type FileUploadProvider = 'server-proxy' | 'tus'
 
 export interface FileUploadOwner {
   ownerService: string
@@ -28,8 +30,8 @@ export interface FileUploadCompleteSessionRequest {
 export interface FileUploadSession {
   uploadSessionId: string
   fileId: string
-  uploadMode: 'server-proxy' | 'tus' | string
-  provider: 'server-proxy' | 'tus' | string
+  uploadMode: FileUploadMode
+  provider: FileUploadProvider
   expiresAtUtc: string
   upload: {
     url: string
@@ -66,4 +68,15 @@ export interface FileUploadRow {
   progress: number
   fileId: string | null
   error: string | null
+  uploadSession: FileUploadSession | null
+}
+
+export interface FileUploadExpose {
+  addFiles: (files: File[]) => Promise<void>
+  uploadQueued: () => Promise<void>
+  pauseAll: () => void
+  resumeAll: () => Promise<void>
+  retryFailed: () => Promise<void>
+  clear: () => void
+  browse: () => void
 }

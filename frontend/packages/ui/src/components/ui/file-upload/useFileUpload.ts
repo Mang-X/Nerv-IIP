@@ -5,6 +5,7 @@ import type {
   FileUploadRejectedFile,
   FileUploadRow,
   FileUploadSession,
+  FileUploadStatus,
   FileUploadTransport,
 } from './types'
 import { computed, reactive } from 'vue'
@@ -19,6 +20,7 @@ interface UseFileUploadOptions {
   acceptedContentTypes: string[]
   maxFileSizeBytes?: number
   maxFiles: number
+  autoUpload: boolean
   createUploadSession: (request: FileUploadCreateSessionRequest) => Promise<FileUploadSession>
   completeUploadSession: (
     uploadSessionId: string,
@@ -32,16 +34,23 @@ interface UseFileUploadOptions {
 
 export function useFileUpload(options: UseFileUploadOptions) {
   const rows = reactive<FileUploadRow[]>([])
+  const controllers = new Map<string, AbortController>()
 
   const completedFiles = computed(() =>
     rows
-      .filter((row) => row.status === 'completed' && row.fileId)
+      .filter((row) => row.status === 'completed' && row.fileId !== null)
       .map((row) => ({ fileId: row.fileId!, fileName: row.fileName })),
   )
   const isUploading = computed(() => rows.some((row) => row.status === 'uploading'))
+  const occupiedSlotCount = computed(() => rows.filter(isSlotOccupyingRow).length)
+
+  function appendRow(row: FileUploadRow) {
+    rows.push(row)
+    return rows[rows.length - 1]!
+  }
 
   async function addFiles(files: File[]) {
-    const availableSlots = Math.max(options.maxFiles - rows.length, 0)
+    const availableSlots = Math.max(options.maxFiles - occupiedSlotCount.value, 0)
     const acceptedRows: FileUploadRow[] = []
     const rejectedFiles: FileUploadRejectedFile[] = []
 
@@ -54,8 +63,7 @@ export function useFileUpload(options: UseFileUploadOptions) {
         continue
       }
 
-      const row = createRow(file, 'queued')
-      rows.push(row)
+      const row = appendRow(createRow(file, 'queued'))
       acceptedRows.push(row)
     }
 
@@ -67,16 +75,28 @@ export function useFileUpload(options: UseFileUploadOptions) {
       options.onRejected(rejectedFiles)
     }
 
-    await Promise.all(acceptedRows.map(uploadRow))
+    if (options.autoUpload) {
+      await uploadRows(acceptedRows)
+    }
+  }
+
+  async function uploadQueued() {
+    await uploadRows(rows.filter((row) => row.status === 'queued'))
+  }
+
+  async function uploadRows(uploadRows: FileUploadRow[]) {
+    await Promise.all(uploadRows.map(uploadRow))
   }
 
   async function uploadRow(row: FileUploadRow) {
     row.status = 'uploading'
     row.progress = 1
     row.error = null
+    const controller = new AbortController()
+    controllers.set(row.id, controller)
 
     try {
-      const session = await options.createUploadSession({
+      const session = row.uploadSession ?? await options.createUploadSession({
         organizationId: options.organizationId,
         environmentId: options.environmentId,
         owner: {
@@ -90,6 +110,7 @@ export function useFileUpload(options: UseFileUploadOptions) {
         expectedSizeBytes: row.sizeBytes,
         checksum: null,
       })
+      row.uploadSession = session
 
       await options.transport({
         file: row.file,
@@ -97,6 +118,7 @@ export function useFileUpload(options: UseFileUploadOptions) {
         onProgress: (progress) => {
           row.progress = clampProgress(progress)
         },
+        signal: controller.signal,
       })
 
       const completed = await options.completeUploadSession(session.uploadSessionId, {
@@ -107,19 +129,31 @@ export function useFileUpload(options: UseFileUploadOptions) {
         sizeBytes: row.sizeBytes,
       })
 
-      row.fileId = completed.fileId || session.fileId
+      row.fileId = completed.fileId ?? session.fileId
       row.status = 'completed'
       row.progress = 100
       options.onCompleted(completedFiles.value)
     }
     catch (error) {
+      if (isAbortError(error) && getRowStatus(row) === 'paused') {
+        row.error = null
+        return
+      }
+
       row.status = 'failed'
       row.error = error instanceof Error ? error.message : 'Upload failed.'
       options.onFailed(row)
     }
+    finally {
+      if (controllers.get(row.id) === controller) {
+        controllers.delete(row.id)
+      }
+    }
   }
 
   function removeRow(id: string) {
+    controllers.get(id)?.abort()
+    controllers.delete(id)
     const index = rows.findIndex((row) => row.id === id)
 
     if (index >= 0) {
@@ -128,12 +162,79 @@ export function useFileUpload(options: UseFileUploadOptions) {
     }
   }
 
+  function pauseRow(id: string) {
+    const row = rows.find((item) => item.id === id)
+
+    if (!row || row.status !== 'uploading') {
+      return
+    }
+
+    row.status = 'paused'
+    row.error = null
+    controllers.get(id)?.abort()
+  }
+
+  async function resumeRow(id: string) {
+    const row = rows.find((item) => item.id === id)
+
+    if (!row || row.status !== 'paused') {
+      return
+    }
+
+    await uploadRow(row)
+  }
+
+  async function retryRow(id: string) {
+    const row = rows.find((item) => item.id === id)
+
+    if (!row || row.status !== 'failed') {
+      return
+    }
+
+    row.error = null
+    await uploadRow(row)
+  }
+
+  function pauseAll() {
+    for (const row of rows) {
+      if (row.status === 'uploading') {
+        pauseRow(row.id)
+      }
+    }
+  }
+
+  async function resumeAll() {
+    await uploadRows(rows.filter((row) => row.status === 'paused'))
+  }
+
+  async function retryFailed() {
+    await uploadRows(rows.filter((row) => row.status === 'failed'))
+  }
+
+  function clear() {
+    for (const controller of controllers.values()) {
+      controller.abort()
+    }
+
+    controllers.clear()
+    rows.splice(0)
+    options.onCompleted(completedFiles.value)
+  }
+
   return {
     rows,
     completedFiles,
     isUploading,
     addFiles,
+    uploadQueued,
     removeRow,
+    pauseRow,
+    resumeRow,
+    retryRow,
+    pauseAll,
+    resumeAll,
+    retryFailed,
+    clear,
   }
 }
 
@@ -152,6 +253,7 @@ function createRow(
     progress: 0,
     fileId: null,
     error,
+    uploadSession: null,
   }
 }
 
@@ -187,4 +289,19 @@ function clampProgress(progress: number) {
   }
 
   return Math.min(Math.max(Math.round(progress), 0), 100)
+}
+
+function getRowStatus(row: FileUploadRow): FileUploadStatus {
+  return row.status
+}
+
+function isSlotOccupyingRow(row: FileUploadRow) {
+  return row.status !== 'rejected' && row.status !== 'failed'
+}
+
+function isAbortError(error: unknown) {
+  return typeof error === 'object'
+    && error !== null
+    && 'name' in error
+    && error.name === 'AbortError'
 }

@@ -12,7 +12,7 @@ Business console readiness is design-system work first and implementation work s
 | --- | --- | --- |
 | Tabs | shadcn-vue `tabs` style and public parts. | Delivered in `@nerv-iip/ui`; used for dense detail pages such as order, work order, device and SKU detail. |
 | Sheet | shadcn-vue `sheet` style and public parts. | Delivered in `@nerv-iip/ui`; used for slide-in inspection/detail/edit panels from list pages. |
-| Date and range pickers | Popover-backed compact DateOnly controls. | Delivered in `@nerv-iip/ui`; keep business date ranges compact and form-friendly. |
+| Date and range pickers | Popover-backed compact DateOnly controls. | Delivered in `@nerv-iip/ui`; current UI uses native date inputs, with `Calendar`/`RangeCalendar` exported only as low-level Reka roots until styled calendar-grid parts are added. |
 | Charts | shadcn-style chart shell with semantic token bridge. | Delivered in `@nerv-iip/ui`; page-level chart engines remain adapters, not a second design system. |
 | File upload | Nerv-IIP FileUpload wrapper with shadcn structure and FileStorage semantics. | Delivered in `@nerv-iip/ui`; UI talks to FileStorage upload sessions and tus/server-proxy transport, never MinIO directly. |
 | Progress | shadcn-vue `progress` style. | Delivered in `@nerv-iip/ui`; used by FileUpload and execution progress indicators. |
@@ -21,6 +21,8 @@ Business console readiness is design-system work first and implementation work s
 ## FileUpload Direction
 
 The #143 baseline uses a small native FileStorage transport with a pluggable `transport` prop. It supports the current FileStorage `tus` `HEAD`/`PATCH` path and `server-proxy` binary `PUT` instructions without adding Uppy dependency weight to the design-system package.
+
+The current wrapper includes drag-and-drop, per-row progress, pause/resume through `AbortController`, retry after failed transport attempts, readable file-family labels for common Office/PDF/media formats and light row/drop feedback animations through Vue transitions plus Tailwind semantic classes. It supports both automatic upload and manual queue mode through `autoUpload=false` plus a deliberately small exposed component API for form-level submission orchestration. Large queues switch to a fixed-height virtualized scroll container so bulk attachment workflows do not render every row at once.
 
 Uppy core/headless plus `@uppy/tus` remains the preferred adapter when uploads need richer resumability controls, retry policy, pause/resume UI, source providers or broader tus protocol coverage. It should sit behind the same Nerv-IIP wrapper contract.
 
@@ -34,10 +36,14 @@ The first FileUpload primitive should expose:
 
 1. `purpose`, `ownerService`, `ownerType`, `ownerId`, `organizationId`, `environmentId`.
 2. Accepted content types, max file size and max file count.
-3. Current upload rows with file name, size, status, progress and error.
+3. Current upload rows with file name, size, matched file family, status, progress and error.
 4. Completed `fileId` values only; no object keys, bucket names or long-lived URLs.
 5. Transport adapter support for FileStorage `server-proxy` and `tus` modes.
-6. Error states for rejected size/type, expired session, checksum mismatch and upload interruption.
+6. Pause/resume, retry and remove actions at row level.
+7. Manual queue mode through `autoUpload=false` and exposed `addFiles`, `uploadQueued`, `pauseAll`, `resumeAll`, `retryFailed`, `clear` and `browse` methods.
+8. Rejected and failed rows stay visible without consuming available upload slots.
+9. Virtualized row rendering for large queues, with configurable threshold, row height and list height.
+10. Error states for rejected size/type, expired session, checksum mismatch and upload interruption.
 
 ## Chart Contract
 
@@ -53,11 +59,11 @@ Charts should:
 
 Date controls should:
 
-1. Use Popover + Calendar/RangeCalendar composition.
+1. Use Popover-backed compact controls for MVP forms and filters.
 2. Support clear, apply and cancel behavior for range filters.
 3. Return typed `DateOnly`-compatible ISO date strings at API boundaries.
 4. Use compact triggers suitable for toolbar filters and form fields.
-5. Avoid page-local calendar styling.
+5. Avoid page-local calendar styling; app pages should not directly use the low-level `Calendar`/`RangeCalendar` roots until styled design-system parts exist.
 
 ## Sheet And Tabs Contract
 
