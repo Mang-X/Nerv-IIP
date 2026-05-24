@@ -14,3 +14,5 @@ public sealed record CountExecutionCompletedDomainEvent(CountExecution CountExec
 public sealed record WcsTaskDispatchedDomainEvent(WcsTask WcsTask) : IDomainEvent;
 
 public sealed record WcsTaskFailedDomainEvent(WcsTask WcsTask) : IDomainEvent;
+
+public sealed record WcsTaskCompletedDomainEvent(WcsTask WcsTask) : IDomainEvent;

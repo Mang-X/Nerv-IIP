@@ -26,6 +26,7 @@ public static class CommercialFinanceAcceptanceData
         Endpoint("BusinessInventory", "POST", "/api/inventory/v1/movements", "postInventoryMovement"),
         Endpoint("BusinessInventory", "GET", "/api/inventory/v1/availability", "getInventoryAvailability"),
         Endpoint("BusinessErp", "POST", "/api/business/v1/erp/finance/payables", "createErpAccountPayable"),
+        Endpoint("BusinessErp", "GET", "/api/business/v1/erp/finance/payables/by-source", "getErpPayableBySourceDocument"),
         Endpoint("BusinessErp", "GET", "/api/business/v1/erp/finance/summary", "getErpFinanceSummary"),
     ];
 
@@ -41,18 +42,24 @@ public static class CommercialFinanceAcceptanceData
         Endpoint("BusinessInventory", "POST", "/api/inventory/v1/movements", "postInventoryMovement"),
         Endpoint("BusinessInventory", "GET", "/api/inventory/v1/availability", "getInventoryAvailability"),
         Endpoint("BusinessErp", "POST", "/api/business/v1/erp/finance/receivables", "createErpAccountReceivable"),
+        Endpoint("BusinessErp", "GET", "/api/business/v1/erp/finance/receivables/by-source", "getErpReceivableBySourceDocument"),
         Endpoint("BusinessErp", "GET", "/api/business/v1/erp/finance/summary", "getErpFinanceSummary"),
     ];
 
     public static IReadOnlyCollection<EndpointSurface> ProductionToCostEndpoints { get; } =
     [
         Endpoint("BusinessMes", "POST", "/api/business/v1/mes/work-orders/rush", "createBusinessMesRushWorkOrder"),
+        Endpoint("BusinessMes", "POST", "/api/business/v1/mes/production-reports", "recordBusinessMesProductionReport"),
+        Endpoint("BusinessMes", "GET", "/api/business/v1/mes/production-reports", "listBusinessMesProductionReports"),
+        Endpoint("BusinessMes", "POST", "/api/business/v1/mes/finished-goods-receipt-requests", "createBusinessMesFinishedGoodsReceiptRequest"),
+        Endpoint("BusinessMes", "GET", "/api/business/v1/mes/finished-goods-receipt-requests", "listBusinessMesFinishedGoodsReceiptRequests"),
         Endpoint("BusinessQuality", "POST", "/api/business/v1/quality/inspection-records", "createBusinessQualityInspectionRecord"),
         Endpoint("BusinessWms", "POST", "/api/business/v1/wms/inbound-orders", "createWmsInboundOrder"),
         Endpoint("BusinessWms", "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete", "completeWmsInboundOrder"),
         Endpoint("BusinessInventory", "POST", "/api/inventory/v1/movements", "postInventoryMovement"),
         Endpoint("BusinessInventory", "GET", "/api/inventory/v1/availability", "getInventoryAvailability"),
         Endpoint("BusinessErp", "POST", "/api/business/v1/erp/finance/cost-candidates", "createErpCostCandidate"),
+        Endpoint("BusinessErp", "GET", "/api/business/v1/erp/finance/cost-candidates/by-source", "getErpCostCandidateBySourceDocument"),
         Endpoint("BusinessErp", "GET", "/api/business/v1/erp/finance/summary", "getErpFinanceSummary"),
     ];
 

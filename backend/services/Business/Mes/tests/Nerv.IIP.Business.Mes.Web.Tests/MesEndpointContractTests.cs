@@ -1,7 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -11,6 +16,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
+        Assert.Equal(8, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/schedules/run"
@@ -27,9 +33,94 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/work-orders"
             && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
             && x.OperationId == "listBusinessMesWorkOrders");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/production-reports"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "recordBusinessMesProductionReport");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/production-reports"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "listBusinessMesProductionReports");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/finished-goods-receipt-requests"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "createBusinessMesFinishedGoodsReceiptRequest");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/finished-goods-receipt-requests"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "listBusinessMesFinishedGoodsReceiptRequests");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/capacity-impacts"
+            && x.PermissionCode == MesPermissionCodes.SchedulesManage
+            && x.OperationId == "listBusinessMesCapacityImpacts");
 
         Assert.All(MesEndpointContracts.All, contract =>
             Assert.Contains(contract.PermissionCode, MesPermissionCodes.All));
+    }
+
+    [Theory]
+    [MemberData(nameof(EndpointTypes))]
+    public void Mes_endpoints_route_through_mediator(Type endpointType)
+    {
+        var parameterTypes = endpointType
+            .GetConstructors()
+            .Single()
+            .GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .ToArray();
+
+        Assert.Contains(typeof(ISender), parameterTypes);
+    }
+
+    [Fact]
+    public async Task Mes_public_production_queries_return_reports_receipt_requests_and_capacity_impacts()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var reportedAt = DateTimeOffset.Parse("2026-05-24T08:00:00Z");
+        await new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 9m, 1m, true, reportedAt),
+            CancellationToken.None);
+        await new CreateFinishedGoodsReceiptRequestCommandHandler(dbContext).Handle(
+            new CreateFinishedGoodsReceiptRequestCommand("org-001", "env-dev", "WO-001", "SKU-FG-1000", 9m, "PCS", reportedAt.AddMinutes(15)),
+            CancellationToken.None);
+        dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
+            "org-001",
+            "env-dev",
+            "WC-MIX-01",
+            reportedAt,
+            null,
+            "maintenance",
+            "ASSET-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var reports = await new ListProductionReportsQueryHandler(dbContext).Handle(
+            new ListProductionReportsQuery("org-001", "env-dev", "WO-001"),
+            CancellationToken.None);
+        var receipts = await new ListFinishedGoodsReceiptRequestsQueryHandler(dbContext).Handle(
+            new ListFinishedGoodsReceiptRequestsQuery("org-001", "env-dev", "WO-001"),
+            CancellationToken.None);
+        var capacity = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
+            new ListCapacityImpactsQuery("org-001", "env-dev", "ASSET-001"),
+            CancellationToken.None);
+
+        var report = Assert.Single(reports.Items);
+        Assert.Equal("WO-001", report.WorkOrderId);
+        Assert.Equal("OP-10", report.OperationTaskId);
+        Assert.Equal(9m, report.GoodQuantity);
+        var receipt = Assert.Single(receipts.Items);
+        Assert.Equal("SKU-FG-1000", receipt.SkuId);
+        Assert.Equal(9m, receipt.Quantity);
+        var impact = Assert.Single(capacity.Items);
+        Assert.Equal("ASSET-001", impact.DeviceAssetId);
+        Assert.Equal("WC-MIX-01", impact.WorkCenterId);
+        Assert.Null(impact.ToUtc);
     }
 
     [Theory]
@@ -70,5 +161,56 @@ public sealed class MesEndpointContractTests
         Assert.True(
             response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
             $"Expected auth failure but received {(int)response.StatusCode}.");
+    }
+
+    public static IEnumerable<object[]> EndpointTypes()
+    {
+        return MesEndpointContracts.All.Select(x => new object[] { x.EndpointType });
+    }
+}
+
+internal static class MesTestProvider
+{
+    public static ServiceProvider CreateInMemoryProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IMediator, NoopMediator>();
+        services.AddDbContext<Infrastructure.ApplicationDbContext>(options =>
+            options.UseInMemoryDatabase($"mes-production-contract-{Guid.NewGuid():N}"));
+        return services.BuildServiceProvider();
+    }
+}
+
+internal sealed class NoopMediator : IMediator
+{
+    public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+        where TNotification : INotification => Task.CompletedTask;
+
+    public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("No-op mediator cannot send requests.");
+    }
+
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IRequest
+    {
+        throw new NotSupportedException("No-op mediator cannot send requests.");
+    }
+
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("No-op mediator cannot send requests.");
+    }
+
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("No-op mediator cannot stream requests.");
+    }
+
+    public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("No-op mediator cannot stream requests.");
     }
 }

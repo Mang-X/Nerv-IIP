@@ -153,6 +153,7 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         builder.ToTable("wcs_tasks", table => table.HasComment("WCS adapter task mapping, lifecycle and diagnostics."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("WCS task id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
         builder.Property(x => x.WarehouseTaskId).HasColumnName("warehouse_task_id").IsRequired().HasComment("WMS warehouse task id.");
         builder.Property(x => x.AdapterType).HasColumnName("adapter_type").IsRequired().HasMaxLength(100).HasComment("WCS adapter type.");
         builder.Property(x => x.ExternalTaskId).HasColumnName("external_task_id").IsRequired().HasMaxLength(150).HasComment("External WCS task id.");
@@ -167,6 +168,7 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         builder.Property(x => x.FailedAtUtc).HasColumnName("failed_at_utc").HasComment("UTC failure time.");
         builder.HasIndex(x => new { x.WarehouseTaskId, x.AdapterType }).IsUnique();
         builder.HasIndex(x => x.ExternalTaskId).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ExternalTaskId });
     }
 }
 

@@ -54,6 +54,7 @@ public sealed record DispatchWcsTaskRequest(WarehouseTaskId WarehouseTaskId, str
 public sealed record DispatchWcsTaskResponse(WcsTaskId WcsTaskId);
 public sealed record CompleteWcsTaskRequest(string ExternalTaskId, string CompletionPayloadJson);
 public sealed record FailWcsTaskRequest(string ExternalTaskId, string FailureCode, string FailureMessage);
+public sealed record ListWcsTasksRequest(string OrganizationId, string EnvironmentId, string? ExternalTaskId, WarehouseTaskId? WarehouseTaskId);
 
 public sealed class CreateInboundOrderEndpoint(ISender sender) : WmsEndpoint<CreateInboundOrderRequest, ResponseData<CreateInboundOrderResponse>>
 {
@@ -185,6 +186,16 @@ public sealed class FailWcsTaskEndpoint(ISender sender) : WmsEndpoint<FailWcsTas
     }
 }
 
+public sealed class ListWcsTasksEndpoint(ISender sender) : WmsEndpoint<ListWcsTasksRequest, ResponseData<ListWcsTasksResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListWcsTasksEndpoint>());
+    public override async Task HandleAsync(ListWcsTasksRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListWcsTasksQuery(req.OrganizationId, req.EnvironmentId, req.ExternalTaskId, req.WarehouseTaskId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record WmsEndpointContract(Type EndpointType, string HttpMethod, string Route, string PermissionCode, string AuthorizationPolicy, string OperationId);
 
 public static class WmsEndpointContracts
@@ -204,6 +215,7 @@ public static class WmsEndpointContracts
         new(typeof(DispatchWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "dispatchWmsWcsTask"),
         new(typeof(CompleteWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "completeWmsWcsTask"),
         new(typeof(FailWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "failWmsWcsTask"),
+        new(typeof(ListWcsTasksEndpoint), "GET", "/api/business/v1/wms/wcs-tasks", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "listWmsWcsTasks"),
     ];
 
     public static WmsEndpointContract Get<TEndpoint>() => All.Single(x => x.EndpointType == typeof(TEndpoint));

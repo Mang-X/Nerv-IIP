@@ -34,6 +34,9 @@ public sealed record CreateCostCandidateResponse(CostCandidateId CostCandidateId
 public sealed record PostJournalVoucherRequest(string OrganizationId, string EnvironmentId, string VoucherNo, DateOnly PostingDate, IReadOnlyCollection<JournalVoucherCommandLine> Lines);
 public sealed record PostJournalVoucherResponse(JournalVoucherId JournalVoucherId);
 public sealed record GetFinanceSummaryRequest(string OrganizationId, string EnvironmentId);
+public sealed record GetAccountPayableBySourceDocumentRequest(string OrganizationId, string EnvironmentId, string SourceDocumentNo);
+public sealed record GetAccountReceivableBySourceDocumentRequest(string OrganizationId, string EnvironmentId, string SourceDocumentNo);
+public sealed record GetCostCandidateBySourceDocumentRequest(string OrganizationId, string EnvironmentId, string? SourceType, string SourceDocumentNo);
 
 public sealed class OpenOpportunityEndpoint(ISender sender) : ErpEndpoint<OpenOpportunityRequest, ResponseData<OpenOpportunityResponse>>
 {
@@ -156,6 +159,39 @@ public sealed class GetFinanceSummaryEndpoint(ISender sender) : ErpEndpoint<GetF
     }
 }
 
+public sealed class GetAccountPayableBySourceDocumentEndpoint(ISender sender) : ErpEndpoint<GetAccountPayableBySourceDocumentRequest, ResponseData<AccountPayableSourceDocumentResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<GetAccountPayableBySourceDocumentEndpoint>());
+
+    public override async Task HandleAsync(GetAccountPayableBySourceDocumentRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetAccountPayableBySourceDocumentQuery(req.OrganizationId, req.EnvironmentId, req.SourceDocumentNo), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetAccountReceivableBySourceDocumentEndpoint(ISender sender) : ErpEndpoint<GetAccountReceivableBySourceDocumentRequest, ResponseData<AccountReceivableSourceDocumentResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<GetAccountReceivableBySourceDocumentEndpoint>());
+
+    public override async Task HandleAsync(GetAccountReceivableBySourceDocumentRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetAccountReceivableBySourceDocumentQuery(req.OrganizationId, req.EnvironmentId, req.SourceDocumentNo), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetCostCandidateBySourceDocumentEndpoint(ISender sender) : ErpEndpoint<GetCostCandidateBySourceDocumentRequest, ResponseData<CostCandidateSourceDocumentResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<GetCostCandidateBySourceDocumentEndpoint>());
+
+    public override async Task HandleAsync(GetCostCandidateBySourceDocumentRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetCostCandidateBySourceDocumentQuery(req.OrganizationId, req.EnvironmentId, req.SourceType, req.SourceDocumentNo), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public static class ErpSalesEndpointContracts
 {
     public static readonly IReadOnlyCollection<ErpEndpointContract> All =
@@ -180,6 +216,9 @@ public static class ErpFinanceEndpointContracts
         new(typeof(CreateCostCandidateEndpoint), "POST", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpCostCandidate"),
         new(typeof(PostJournalVoucherEndpoint), "POST", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "postErpJournalVoucher"),
         new(typeof(GetFinanceSummaryEndpoint), "GET", "/api/business/v1/erp/finance/summary", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpFinanceSummary"),
+        new(typeof(GetAccountPayableBySourceDocumentEndpoint), "GET", "/api/business/v1/erp/finance/payables/by-source", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpPayableBySourceDocument"),
+        new(typeof(GetAccountReceivableBySourceDocumentEndpoint), "GET", "/api/business/v1/erp/finance/receivables/by-source", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpReceivableBySourceDocument"),
+        new(typeof(GetCostCandidateBySourceDocumentEndpoint), "GET", "/api/business/v1/erp/finance/cost-candidates/by-source", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpCostCandidateBySourceDocument"),
     ];
 
     public static ErpEndpointContract Get<TEndpoint>() => All.Single(x => x.EndpointType == typeof(TEndpoint));

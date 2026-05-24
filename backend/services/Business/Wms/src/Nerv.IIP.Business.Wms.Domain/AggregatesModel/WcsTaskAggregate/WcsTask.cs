@@ -18,8 +18,10 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
     {
     }
 
-    private WcsTask(WarehouseTaskId warehouseTaskId, string adapterType, string externalTaskId, string payloadJson)
+    private WcsTask(string organizationId, string environmentId, WarehouseTaskId warehouseTaskId, string adapterType, string externalTaskId, string payloadJson)
     {
+        OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
+        EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
         WarehouseTaskId = warehouseTaskId;
         AdapterType = WmsText.Required(adapterType, nameof(adapterType)).ToLowerInvariant();
         ExternalTaskId = WmsText.Required(externalTaskId, nameof(externalTaskId));
@@ -30,6 +32,8 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
         this.AddDomainEvent(new WcsTaskDispatchedDomainEvent(this));
     }
 
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
     public WarehouseTaskId WarehouseTaskId { get; private set; } = default!;
     public string AdapterType { get; private set; } = string.Empty;
     public string ExternalTaskId { get; private set; } = string.Empty;
@@ -43,9 +47,9 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
     public DateTime? CompletedAtUtc { get; private set; }
     public DateTime? FailedAtUtc { get; private set; }
 
-    public static WcsTask Dispatch(WarehouseTaskId warehouseTaskId, string adapterType, string externalTaskId, string payloadJson)
+    public static WcsTask Dispatch(string organizationId, string environmentId, WarehouseTaskId warehouseTaskId, string adapterType, string externalTaskId, string payloadJson)
     {
-        return new WcsTask(warehouseTaskId, adapterType, externalTaskId, payloadJson);
+        return new WcsTask(organizationId, environmentId, warehouseTaskId, adapterType, externalTaskId, payloadJson);
     }
 
     public bool IsSameDispatch(WcsTask other)
@@ -63,6 +67,7 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
         CompletionPayloadJson = WmsText.Required(completionPayloadJson, nameof(completionPayloadJson));
         Status = WcsTaskStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new WcsTaskCompletedDomainEvent(this));
     }
 
     public void Fail(string failureCode, string failureMessage)

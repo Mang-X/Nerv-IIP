@@ -82,9 +82,7 @@ public static class BusinessFullChainAcceptanceSurface
                 VisibleFact("wms-inbound-completion", "BusinessWms", "Inbound order completion id, source receipt and completed quantity are visible through WMS public endpoints or event payloads."),
                 VisibleFact("inventory-availability", "BusinessInventory", "Stock availability is asserted through /api/inventory/v1/availability, not by reading the Inventory database."),
                 VisibleFact("finance-summary", "BusinessErp", "Finance totals are asserted through /api/business/v1/erp/finance/summary, not by reading ERP tables."),
-            ],
-            [
-                Risk("erp-finance-source-document-payable-query", "BusinessErp", "ERP currently exposes payable creation and finance summary, but no source-document-level payable public query for acceptance drill-down."),
+                VisibleFact("account-payable-source-document", "BusinessErp", "AP candidate amount and source receipt are asserted through /api/business/v1/erp/finance/payables/by-source."),
             ]),
         Chain(
             "#77 harness baseline: Order to cash",
@@ -104,9 +102,7 @@ public static class BusinessFullChainAcceptanceSurface
                 VisibleFact("wms-outbound-completion", "BusinessWms", "Outbound order completion id, source delivery order and shipped quantity are visible through WMS public endpoints or event payloads."),
                 VisibleFact("inventory-availability", "BusinessInventory", "Stock availability is asserted through /api/inventory/v1/availability, not by reading the Inventory database."),
                 VisibleFact("finance-summary", "BusinessErp", "Finance totals are asserted through /api/business/v1/erp/finance/summary, not by reading ERP tables."),
-            ],
-            [
-                Risk("erp-finance-source-document-receivable-query", "BusinessErp", "ERP currently exposes receivable creation and finance summary, but no source-document-level receivable public query for acceptance drill-down."),
+                VisibleFact("account-receivable-source-document", "BusinessErp", "AR candidate amount and source delivery are asserted through /api/business/v1/erp/finance/receivables/by-source."),
             ]),
         Chain(
             "#77 harness baseline: Production to cost",
@@ -123,11 +119,10 @@ public static class BusinessFullChainAcceptanceSurface
                 VisibleFact("wms-inbound-completion", "BusinessWms", "Inbound completion id, source work order and completed quantity are visible through WMS public endpoints or event payloads."),
                 VisibleFact("inventory-movement", "BusinessInventory", "Inventory movement id, source work order and posted quantity are visible through Inventory public endpoint responses or event payloads."),
                 VisibleFact("inventory-availability", "BusinessInventory", "Stock availability is asserted through /api/inventory/v1/availability, not by reading the Inventory database."),
-                VisibleFact("cost-candidate", "BusinessErp", "Cost candidate creation is visible through ERP public endpoint response or event payloads."),
+                VisibleFact("production-report", "BusinessMes", "Production report quantity and operation completion are visible through MES public production report endpoints."),
+                VisibleFact("finished-goods-receipt-request", "BusinessMes", "Finished-goods receipt request references are visible through MES public receipt request endpoints."),
+                VisibleFact("cost-candidate", "BusinessErp", "Cost candidate creation and source document drill-down are visible through ERP public finance endpoints."),
                 VisibleFact("finance-summary", "BusinessErp", "Finance totals are asserted through /api/business/v1/erp/finance/summary, not by reading ERP tables."),
-            ],
-            [
-                Risk("erp-finance-source-document-cost-candidate-query", "BusinessErp", "ERP currently exposes cost candidate creation and finance summary, but no source-document-level cost candidate public query for acceptance drill-down."),
             ]),
         Chain("#77 harness baseline: Equipment to maintenance", [
             Endpoint("BusinessMasterData", "POST", "/api/business/v1/master-data/device-assets", "registerBusinessMasterDataDeviceAsset"),
@@ -140,6 +135,7 @@ public static class BusinessFullChainAcceptanceSurface
             Endpoint("BusinessMaintenance", "GET", "/api/business/v1/maintenance/work-orders", "listMaintenanceWorkOrders"),
             Endpoint("BusinessMaintenance", "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", "completeMaintenanceWorkOrder"),
             Endpoint("BusinessMes", "POST", "/api/business/v1/mes/schedules/run", "runBusinessMesSchedule"),
+            Endpoint("BusinessMes", "GET", "/api/business/v1/mes/capacity-impacts", "listBusinessMesCapacityImpacts"),
         ],
             [
                 EventFact("BusinessIndustrialTelemetry", "industrialTelemetry.AlarmRaised", "alarm-raised"),
@@ -150,10 +146,7 @@ public static class BusinessFullChainAcceptanceSurface
                 VisibleFact("alarm-raised", "BusinessIndustrialTelemetry", "AlarmRaised is asserted through the public alarm list and device timeline, not by reading IIoT tables."),
                 VisibleFact("asset-unavailable", "BusinessMaintenance", "AssetUnavailable is asserted through the public maintenance work-order list and event recorder."),
                 VisibleFact("asset-restored", "BusinessMaintenance", "AssetRestored is asserted through the public maintenance work-order list and event recorder."),
-                VisibleFact("mes-capacity-impact", "BusinessMes", "MES capacity impact is asserted by schedule-run behavior after maintenance events, not by cross-service database reads."),
-            ],
-            [
-                Risk("mes-capacity-public-ledger", "BusinessMes", "MES schedule-run is the current public assertion point for capacity impact; there is no dedicated capacity ledger query yet."),
+                VisibleFact("mes-capacity-impact", "BusinessMes", "MES capacity impact is asserted by public capacity impact query after maintenance events, not by cross-service database reads."),
             ]),
         Chain("#77 harness baseline: WCS adapter", [
             Endpoint("BusinessWms", "POST", "/api/business/v1/wms/inbound-orders", "createWmsInboundOrder"),
@@ -167,6 +160,7 @@ public static class BusinessFullChainAcceptanceSurface
             Endpoint("BusinessWms", "POST", "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", "dispatchWmsWcsTask"),
             Endpoint("BusinessWms", "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail", "failWmsWcsTask"),
             Endpoint("BusinessWms", "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete", "completeWmsWcsTask"),
+            Endpoint("BusinessWms", "GET", "/api/business/v1/wms/wcs-tasks", "listWmsWcsTasks"),
             Endpoint("BusinessInventory", "GET", "/api/inventory/v1/availability", "getInventoryAvailability"),
             Endpoint("BusinessInventory", "POST", "/api/inventory/v1/movements", "postInventoryMovement"),
         ],
@@ -178,13 +172,9 @@ public static class BusinessFullChainAcceptanceSurface
             ],
             [
                 VisibleFact("wcs-dispatch", "BusinessWms", "WCS dispatch is asserted through the public dispatch command surface and event recorder."),
-                VisibleFact("wcs-failure", "BusinessWms", "WCS failure diagnostics are asserted through the public fail command surface and event recorder."),
-                VisibleFact("wcs-completion", "BusinessWms", "WCS completion is asserted through the public complete command surface and event recorder."),
+                VisibleFact("wcs-failure", "BusinessWms", "WCS failure diagnostics are asserted through the public WCS task query and event recorder."),
+                VisibleFact("wcs-completion", "BusinessWms", "WCS completion is asserted through the public WCS task query and event recorder."),
                 VisibleFact("inventory-movement-gate", "BusinessInventory", "Inventory availability is asserted unchanged before WMS completion and changed only after inbound/outbound completion posts movement."),
-            ],
-            [
-                Risk("wcs-diagnostics-public-query", "BusinessWms", "WMS exposes fail diagnostics through the command surface and event payloads, but no dedicated public WCS diagnostics query exists yet."),
-                Risk("wcs-completed-public-event", "BusinessWms", "WMS exposes WCS completion through the command surface; the public WMS event contract currently lacks a dedicated WCS completed event."),
             ]),
     ];
 

@@ -28,6 +28,7 @@ public sealed class EquipmentToMaintenanceAcceptanceTests
             new EndpointSurface("BusinessMaintenance", "GET", "/api/business/v1/maintenance/work-orders", "listMaintenanceWorkOrders"),
             new EndpointSurface("BusinessMaintenance", "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", "completeMaintenanceWorkOrder"),
             new EndpointSurface("BusinessMes", "POST", "/api/business/v1/mes/schedules/run", "runBusinessMesSchedule"),
+            new EndpointSurface("BusinessMes", "GET", "/api/business/v1/mes/capacity-impacts", "listBusinessMesCapacityImpacts"),
         ]);
     }
 
@@ -41,11 +42,7 @@ public sealed class EquipmentToMaintenanceAcceptanceTests
             facts,
             fact => AssertVisibleFact(fact, "AlarmRaised", "industrialTelemetry.AlarmRaised", catalogOperationIds),
             fact => AssertVisibleFact(fact, "AssetUnavailable", "maintenance.AssetUnavailable", catalogOperationIds),
-            fact =>
-            {
-                AssertVisibleFact(fact, "AssetRestored", "maintenance.AssetRestored", catalogOperationIds);
-                Assert.Contains("MES capacity", fact.RiskNote, StringComparison.Ordinal);
-            });
+            fact => AssertVisibleFact(fact, "AssetRestored", "maintenance.AssetRestored", catalogOperationIds));
     }
 
     [Fact]
