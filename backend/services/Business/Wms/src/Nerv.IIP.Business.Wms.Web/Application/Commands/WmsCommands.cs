@@ -241,6 +241,11 @@ public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext
         var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(x => x.WarehouseTaskId == request.WarehouseTaskId && x.AdapterType == request.AdapterType.ToLower(), cancellationToken);
         if (existing is not null)
         {
+            if (existing.Status == WcsTaskStatus.Failed)
+            {
+                existing.Retry(request.ExternalTaskId, request.PayloadJson);
+            }
+
             return existing.Id;
         }
 

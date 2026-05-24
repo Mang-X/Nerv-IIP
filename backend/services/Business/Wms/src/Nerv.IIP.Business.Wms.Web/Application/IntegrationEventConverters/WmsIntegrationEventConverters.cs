@@ -80,6 +80,21 @@ public sealed class WcsTaskFailedIntegrationEventConverter
     }
 }
 
+public sealed class WcsTaskCompletedIntegrationEventConverter
+    : IIntegrationEventConverter<WcsTaskCompletedDomainEvent, WmsIntegrationEvent>
+{
+    public WmsIntegrationEvent Convert(WcsTaskCompletedDomainEvent domainEvent)
+    {
+        var task = domainEvent.WcsTask;
+        return WmsIntegrationEventFactory.NewEvent(
+            WmsIntegrationEventTypes.WcsTaskCompleted,
+            "system",
+            "system",
+            $"wms:wcs-completed:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
+            new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), null, null));
+    }
+}
+
 internal static class WmsIntegrationEventFactory
 {
     public static WmsIntegrationEvent NewEvent(

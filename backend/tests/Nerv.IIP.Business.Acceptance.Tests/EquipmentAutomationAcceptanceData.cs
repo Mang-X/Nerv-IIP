@@ -23,8 +23,8 @@ public static class EquipmentAutomationAcceptanceData
             "AssetRestored",
             "BusinessMaintenance",
             "maintenance.AssetRestored",
-            "listMaintenanceWorkOrders",
-            "MES capacity impact is asserted through schedule-run behavior only; there is no dedicated public capacity ledger yet."),
+            "listBusinessMesCapacityImpacts",
+            "MES capacity impact is visible through the public capacity impact query."),
     ];
 
     public static IReadOnlyCollection<VisibleFactMetadata> WcsAdapterVisibleFacts { get; } =
@@ -41,15 +41,15 @@ public static class EquipmentAutomationAcceptanceData
             "WcsTaskFailed",
             "BusinessWms",
             "wms.WcsTaskFailed",
-            "failWmsWcsTask",
-            "Failure diagnostics are command-visible, but there is no dedicated public WCS diagnostics query yet."),
+            "listWmsWcsTasks",
+            "Failure diagnostics are visible through the public WCS task query."),
         new(
             "#77 harness baseline: WCS adapter",
             "WcsTaskCompleted",
             "BusinessWms",
             "wms.WcsTaskCompleted",
-            "completeWmsWcsTask",
-            "Completion is command-visible; the current public event contract lacks a dedicated WCS completed event."),
+            "listWmsWcsTasks",
+            "Completion is visible through the public WCS task query and common WMS event contract."),
         new(
             "#77 harness baseline: WCS adapter",
             "InventoryMovementGateBeforeWarehouseCompletion",

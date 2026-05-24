@@ -29,6 +29,7 @@ public sealed class WcsAdapterAcceptanceTests
             new EndpointSurface("BusinessWms", "POST", "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", "dispatchWmsWcsTask"),
             new EndpointSurface("BusinessWms", "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail", "failWmsWcsTask"),
             new EndpointSurface("BusinessWms", "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete", "completeWmsWcsTask"),
+            new EndpointSurface("BusinessWms", "GET", "/api/business/v1/wms/wcs-tasks", "listWmsWcsTasks"),
             new EndpointSurface("BusinessInventory", "GET", "/api/inventory/v1/availability", "getInventoryAvailability"),
             new EndpointSurface("BusinessInventory", "POST", "/api/inventory/v1/movements", "postInventoryMovement"),
         ]);
@@ -43,16 +44,8 @@ public sealed class WcsAdapterAcceptanceTests
         Assert.Collection(
             facts,
             fact => AssertVisibleFact(fact, "WcsTaskDispatched", "wms.WcsTaskDispatched", catalogOperationIds),
-            fact =>
-            {
-                AssertVisibleFact(fact, "WcsTaskFailed", "wms.WcsTaskFailed", catalogOperationIds);
-                Assert.Contains("diagnostics query", fact.RiskNote, StringComparison.Ordinal);
-            },
-            fact =>
-            {
-                AssertVisibleFact(fact, "WcsTaskCompleted", "wms.WcsTaskCompleted", catalogOperationIds);
-                Assert.Contains("lacks a dedicated WCS completed event", fact.RiskNote, StringComparison.Ordinal);
-            },
+            fact => AssertVisibleFact(fact, "WcsTaskFailed", "wms.WcsTaskFailed", catalogOperationIds),
+            fact => AssertVisibleFact(fact, "WcsTaskCompleted", "wms.WcsTaskCompleted", catalogOperationIds),
             fact =>
             {
                 AssertVisibleFact(fact, "InventoryMovementGateBeforeWarehouseCompletion", "inventory.StockAvailabilityChanged", catalogOperationIds);

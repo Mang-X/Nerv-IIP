@@ -37,14 +37,14 @@ public sealed class OrderToCashAcceptanceTests
     }
 
     [Fact]
-    public void Order_to_cash_documents_public_query_gap_for_source_document_level_receivables()
+    public void Order_to_cash_has_source_document_level_receivable_drill_down()
     {
         var chain = GetChain();
 
-        Assert.Contains(chain.KnownRisks, risk =>
-            risk.RiskId == "erp-finance-source-document-receivable-query"
-            && risk.Service == "BusinessErp"
-            && risk.Statement.Contains("receivable", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(chain.KnownRisks, risk => risk.RiskId == "erp-finance-source-document-receivable-query");
+        Assert.Contains(
+            new EndpointSurface("BusinessErp", "GET", "/api/business/v1/erp/finance/receivables/by-source", "getErpReceivableBySourceDocument"),
+            chain.RequiredEndpoints);
     }
 
     private static BusinessChainAcceptanceSurface GetChain()

@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Queries;
 
@@ -39,5 +41,59 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
             .Select(x => new OutboundOrderListItem(x.Id, x.OutboundOrderNo, x.Status.ToString(), x.CreatedAtUtc))
             .Take(100)
             .ToArrayAsync(cancellationToken);
+    }
+}
+
+public sealed record ListWcsTasksQuery(string? ExternalTaskId, WarehouseTaskId? WarehouseTaskId = null) : IQuery<ListWcsTasksResponse>;
+
+public sealed record ListWcsTasksResponse(IReadOnlyCollection<WcsTaskFact> Items);
+
+public sealed record WcsTaskFact(
+    WcsTaskId WcsTaskId,
+    WarehouseTaskId WarehouseTaskId,
+    string AdapterType,
+    string ExternalTaskId,
+    string Status,
+    int AttemptCount,
+    string? FailureCode,
+    string? FailureMessage,
+    DateTime DispatchedAtUtc,
+    DateTime? FailedAtUtc,
+    DateTime? CompletedAtUtc);
+
+public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListWcsTasksQuery, ListWcsTasksResponse>
+{
+    public async Task<ListWcsTasksResponse> Handle(ListWcsTasksQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.WcsTasks.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(request.ExternalTaskId))
+        {
+            query = query.Where(x => x.ExternalTaskId == request.ExternalTaskId);
+        }
+
+        if (request.WarehouseTaskId is not null)
+        {
+            query = query.Where(x => x.WarehouseTaskId == request.WarehouseTaskId);
+        }
+
+        var items = await query
+            .OrderByDescending(x => x.DispatchedAtUtc)
+            .Take(100)
+            .Select(x => new WcsTaskFact(
+                x.Id,
+                x.WarehouseTaskId,
+                x.AdapterType,
+                x.ExternalTaskId,
+                x.Status.ToString(),
+                x.AttemptCount,
+                x.FailureCode,
+                x.FailureMessage,
+                x.DispatchedAtUtc,
+                x.FailedAtUtc,
+                x.CompletedAtUtc))
+            .ToArrayAsync(cancellationToken);
+        return new ListWcsTasksResponse(items);
     }
 }

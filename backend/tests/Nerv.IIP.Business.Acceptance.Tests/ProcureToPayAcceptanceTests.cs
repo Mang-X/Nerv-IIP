@@ -41,14 +41,14 @@ public sealed class ProcureToPayAcceptanceTests
     }
 
     [Fact]
-    public void Procure_to_pay_documents_public_query_gap_for_source_document_level_payables()
+    public void Procure_to_pay_has_source_document_level_payable_drill_down()
     {
         var chain = GetChain();
 
-        Assert.Contains(chain.KnownRisks, risk =>
-            risk.RiskId == "erp-finance-source-document-payable-query"
-            && risk.Service == "BusinessErp"
-            && risk.Statement.Contains("payable", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(chain.KnownRisks, risk => risk.RiskId == "erp-finance-source-document-payable-query");
+        Assert.Contains(
+            new EndpointSurface("BusinessErp", "GET", "/api/business/v1/erp/finance/payables/by-source", "getErpPayableBySourceDocument"),
+            chain.RequiredEndpoints);
     }
 
     private static BusinessChainAcceptanceSurface GetChain()

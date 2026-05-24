@@ -63,6 +63,7 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
         CompletionPayloadJson = WmsText.Required(completionPayloadJson, nameof(completionPayloadJson));
         Status = WcsTaskStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new WcsTaskCompletedDomainEvent(this));
     }
 
     public void Fail(string failureCode, string failureMessage)

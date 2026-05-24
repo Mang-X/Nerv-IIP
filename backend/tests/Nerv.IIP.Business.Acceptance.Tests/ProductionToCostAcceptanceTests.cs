@@ -36,14 +36,20 @@ public sealed class ProductionToCostAcceptanceTests
     }
 
     [Fact]
-    public void Production_to_cost_documents_public_query_gap_for_source_document_level_cost_candidates()
+    public void Production_to_cost_has_mes_production_surface_and_source_document_level_cost_drill_down()
     {
         var chain = GetChain();
 
-        Assert.Contains(chain.KnownRisks, risk =>
-            risk.RiskId == "erp-finance-source-document-cost-candidate-query"
-            && risk.Service == "BusinessErp"
-            && risk.Statement.Contains("cost candidate", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(chain.KnownRisks, risk => risk.RiskId == "erp-finance-source-document-cost-candidate-query");
+        Assert.Contains(
+            new EndpointSurface("BusinessMes", "POST", "/api/business/v1/mes/production-reports", "recordBusinessMesProductionReport"),
+            chain.RequiredEndpoints);
+        Assert.Contains(
+            new EndpointSurface("BusinessMes", "POST", "/api/business/v1/mes/finished-goods-receipt-requests", "createBusinessMesFinishedGoodsReceiptRequest"),
+            chain.RequiredEndpoints);
+        Assert.Contains(
+            new EndpointSurface("BusinessErp", "GET", "/api/business/v1/erp/finance/cost-candidates/by-source", "getErpCostCandidateBySourceDocument"),
+            chain.RequiredEndpoints);
     }
 
     private static BusinessChainAcceptanceSurface GetChain()
