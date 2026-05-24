@@ -47,6 +47,7 @@ export { Alert, AlertDescription, AlertTitle } from './components/ui/alert'
 export { Avatar, AvatarFallback, AvatarImage } from './components/ui/avatar'
 export { Badge } from './components/ui/badge'
 export { Button, buttonVariants } from './components/ui/button'
+export { Calendar } from './components/ui/calendar'
 export {
   Card,
   CardAction,
@@ -56,7 +57,18 @@ export {
   CardHeader,
   CardTitle,
 } from './components/ui/card'
+export {
+  ChartContainer,
+  ChartLegendContent,
+  ChartTooltipContent,
+  type ChartConfig,
+} from './components/ui/chart'
 export { Checkbox } from './components/ui/checkbox'
+export {
+  DatePicker,
+  DateRangePicker,
+  type DateRangeValue,
+} from './components/ui/date-picker'
 export {
   Dialog,
   DialogClose,
@@ -110,7 +122,26 @@ export {
   PaginationNext,
   PaginationPrevious,
 } from './components/ui/pagination'
+export {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from './components/ui/popover'
 export { Separator } from './components/ui/separator'
+export {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from './components/ui/sheet'
 export {
   Select,
   SelectContent,
@@ -124,8 +155,12 @@ export {
   SelectTrigger,
   SelectValue,
 } from './components/ui/select'
+export { Progress } from './components/ui/progress'
+export { RangeCalendar } from './components/ui/range-calendar'
+export { ScrollArea, ScrollBar } from './components/ui/scroll-area'
 export { Skeleton } from './components/ui/skeleton'
 export { Spinner } from './components/ui/spinner'
+export { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 export { Toaster } from './components/ui/sonner'
 export { toast } from 'vue-sonner'
 export {
@@ -145,3 +180,16 @@ export {
   TableHeader,
   TableRow,
 } from './components/ui/table'
+export {
+  FileUpload,
+  uploadWithNativeFileStorageTransport,
+  useFileUpload,
+  type FileUploadCompletedFile,
+  type FileUploadCompleteSessionRequest,
+  type FileUploadCreateSessionRequest,
+  type FileUploadRejectedFile,
+  type FileUploadRow,
+  type FileUploadSession,
+  type FileUploadTransport,
+  type FileUploadTransportContext,
+} from './components/ui/file-upload'

@@ -8,23 +8,25 @@ Business console readiness is design-system work first and implementation work s
 
 ## Immediate Component Set
 
-| Capability | Design-System Direction | Notes |
+| Capability | Design-System Direction | #143 Status |
 | --- | --- | --- |
-| Tabs | Install shadcn-vue `tabs` and export all public parts. | Used for dense detail pages such as order, work order, device and SKU detail. |
-| Sheet | Install shadcn-vue `sheet` and export all public parts. | Used for slide-in inspection/detail/edit panels from list pages. |
-| Date and range pickers | Compose shadcn-vue `popover`, `calendar` and `range-calendar`. | Keep business date ranges compact and form-friendly. |
-| Charts | Use shadcn-vue `chart` as the base primitive and wrap domain-specific chart shells in `@nerv-iip/ui` only when repeated usage appears. | Chart examples are references, not page-local visual systems. |
-| File upload | Build a Nerv-IIP FileUpload wrapper with shadcn structure and FileStorage semantics. | UI talks to FileStorage upload sessions and tus/download endpoints, never MinIO directly. |
-| Progress | Install shadcn-vue `progress` when upload, batch or operation progress appears. | Used by FileUpload and execution progress indicators. |
-| Scroll area | Install shadcn-vue `scroll-area` for constrained task/detail lists. | Avoid page-local scrollbar styling. |
+| Tabs | shadcn-vue `tabs` style and public parts. | Delivered in `@nerv-iip/ui`; used for dense detail pages such as order, work order, device and SKU detail. |
+| Sheet | shadcn-vue `sheet` style and public parts. | Delivered in `@nerv-iip/ui`; used for slide-in inspection/detail/edit panels from list pages. |
+| Date and range pickers | Popover-backed compact DateOnly controls. | Delivered in `@nerv-iip/ui`; keep business date ranges compact and form-friendly. |
+| Charts | shadcn-style chart shell with semantic token bridge. | Delivered in `@nerv-iip/ui`; page-level chart engines remain adapters, not a second design system. |
+| File upload | Nerv-IIP FileUpload wrapper with shadcn structure and FileStorage semantics. | Delivered in `@nerv-iip/ui`; UI talks to FileStorage upload sessions and tus/server-proxy transport, never MinIO directly. |
+| Progress | shadcn-vue `progress` style. | Delivered in `@nerv-iip/ui`; used by FileUpload and execution progress indicators. |
+| Scroll area | shadcn-vue `scroll-area` style. | Delivered in `@nerv-iip/ui`; avoids page-local scrollbar styling. |
 
 ## FileUpload Direction
 
-Prefer Uppy core/headless plus `@uppy/tus` behind a Nerv-IIP shadcn-styled wrapper when uploads need resumability, retry, pause/resume, progress and protocol compatibility. Uppy provides Vue integration, headless/custom UI options and a tus plugin, so it lets the design system own visuals while avoiding a hand-written tus client.
+The #143 baseline uses a small native FileStorage transport with a pluggable `transport` prop. It supports the current FileStorage `tus` `HEAD`/`PATCH` path and `server-proxy` binary `PUT` instructions without adding Uppy dependency weight to the design-system package.
+
+Uppy core/headless plus `@uppy/tus` remains the preferred adapter when uploads need richer resumability controls, retry policy, pause/resume UI, source providers or broader tus protocol coverage. It should sit behind the same Nerv-IIP wrapper contract.
 
 Do not use Uppy Dashboard as the default visual baseline. Its behavior can inspire interaction details, but the rendered shell should remain Calm Control Plane and use `@nerv-iip/ui` primitives.
 
-A custom tus client is acceptable only for a narrow, single-file local upload path where dependency weight is more important than protocol coverage. It should not become the default for business attachments, CAD packages, quality evidence or maintenance photos.
+A custom tus client is acceptable for the current narrow FileStorage transport path where dependency weight is more important than full protocol coverage. It should remain replaceable by an Uppy-backed adapter before expanding to large CAD packages or heavy media workflows.
 
 ## FileUpload Contract
 
@@ -75,4 +77,3 @@ Sheets should be used for adjacent detail or edit surfaces that preserve list co
 2. Do not create a second charting design system.
 3. Do not expose FileStorage object keys or direct object-storage URLs.
 4. Do not create page-specific upload, chart, date, sheet or tabs styling outside `@nerv-iip/ui`.
-
