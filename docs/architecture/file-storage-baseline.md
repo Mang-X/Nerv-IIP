@@ -52,12 +52,12 @@ GET  /api/files/v1/files/{fileId}
 POST /api/files/v1/files/{fileId}/download-grants
 ```
 
-当前默认实现仍返回 `uploadMode = server-proxy`、`provider = server-proxy` 的平台控制 placeholder 上传/下载路径；设置 `FileStorage:UploadProvider=tus` 后，创建上传会话会返回 `uploadMode = tus`、`provider = tus` 和 `/api/files/v1/tus/{uploadSessionId}` 上传指令。FileStorage 已新增 PostgreSQL `filestorage` schema 的 `stored_files`、`upload_sessions`、`download_grants` 初始 migration 和 schema convention tests；设置 `Persistence:Provider=PostgreSQL` 时可启用 PostgreSQL-backed API service。当前 tus MVP 提供 FileStorage-owned 本地传输入口：`HEAD /api/files/v1/tus/{uploadSessionId}` 查询当前 `Upload-Offset`，`PATCH /api/files/v1/tus/{uploadSessionId}` 按 offset 追加字节，客户端可通过停止发送并再次 `HEAD` 后继续 `PATCH` 实现暂停/续传；download grant content endpoint 可读取本地 tus 字节。字节存放在本地 `FileStorage:Tus:RootPath`，暂不接 MinIO/S3 multipart。`object_key` 只允许出现在 FileStorage 持久化/内部实现中，公开 API response、SDK DTO、Gateway facade 和 Console generated client 均不得暴露。
+当前默认实现仍返回 `uploadMode = server-proxy`、`provider = server-proxy` 的平台控制 placeholder 上传/下载路径；设置 `FileStorage:UploadProvider=tus` 后，创建上传会话会返回 `uploadMode = tus`、`provider = tus` 和 `/api/files/v1/tus/{uploadSessionId}` 上传指令。FileStorage 已新增 PostgreSQL `filestorage` schema 的 `stored_files`、`upload_sessions`、`download_grants` 初始 migration 和 schema convention tests；设置 `Persistence:Provider=PostgreSQL` 时可启用 PostgreSQL-backed API service。当前 tus MVP 提供 FileStorage-owned 本地传输入口：`HEAD /api/files/v1/tus/{uploadSessionId}` 查询当前 `Upload-Offset`、`Upload-Length` 和 `Upload-Expires`，`PATCH /api/files/v1/tus/{uploadSessionId}` 按 offset 追加字节，客户端可通过停止发送并再次 `HEAD` 后继续 `PATCH` 实现暂停/续传；`PATCH` 会拒绝超过上传会话声明大小的内容，支持 tus `Upload-Checksum: sha256 <base64>` chunk 校验，不匹配时返回 `460` 且不推进 offset；过期未完成的本地 tus 字节会在后续 `HEAD`/`PATCH` 访问时确定性拒绝并清理，但当前 MVP 不含后台定时清理任务，彻底放弃且不再访问的本地临时字节需后续清扫能力兜底；complete 时会再次校验本地实际大小和可选 checksum，若本地 tus store 配置不可用会返回服务端错误而非客户端请求错误。download grant content endpoint 可读取本地 tus 字节。字节存放在本地 `FileStorage:Tus:RootPath`，上传会话 TTL 可用 `FileStorage:UploadSessionTtlSeconds` 覆盖用于测试或部署调优（秒数，可接受小数），暂不接 MinIO/S3 multipart。当前 `PATCH` 为了进行 chunk checksum 校验会在 endpoint 内短暂缓冲单个 chunk，生产级大 chunk 流式限额写入/低 LOH 压力优化随对象存储 adapter 或后续传输优化处理。`object_key` 只允许出现在 FileStorage 持久化/内部实现中，公开 API response、SDK DTO、Gateway facade 和 Console generated client 均不得暴露。
 
 MVP 后续顺序保持为：
 
 1. server-proxy metadata stub、contracts/SDK、PostgreSQL-backed service 和本地 tus endpoint：稳定 API、schema、SDK DTO、上传 offset 和下载内容消费形状。
-2. tus hardening：在当前本地 endpoint 上补齐 size/checksum 强校验、清理任务和更完整协议兼容，并作为 FileStorage MVP 的完整传输路径。
+2. tus hardening：已在当前本地 endpoint 上补齐 size/checksum 强校验、过期未完成字节清理和基础协议兼容，作为 FileStorage MVP 的完整本地传输路径。
 3. MinIO/S3 multipart：不进入 MVP，放到后续对象存储部署联调阶段；接入时只作为基础设施 adapter，只发短期指令或预签名 URL。
 
 ## 推荐接口
@@ -109,7 +109,7 @@ VerifyUploadedObject
 
 provider 能力建议：
 
-1. `TusUploadProvider`：当前已生成 tus 上传指令形状，并提供本地 `HEAD`/`PATCH` offset endpoint、基础 tus header 校验、按 session 串行追加和 download grant content 读取；生产入口需要由 Gateway/auth 层保护，后续继续补齐 size/checksum 强校验、过期清理和更完整 tus 兼容性。
+1. `TusUploadProvider`：当前已生成 tus 上传指令形状，并提供本地 `HEAD`/`PATCH` offset endpoint、基础 tus header 校验、按 session 串行追加、size/checksum 校验、过期未完成上传清理和 download grant content 读取；生产入口需要由 Gateway/auth 层保护，更完整的 tus creation/OPTIONS discovery 可后续补齐。
 2. `ServerProxyUploadProvider`：保留平台中转上传路径，用于小文件、内网限制或需要服务端扫描的场景。
 3. `S3MultipartUploadProvider`：对接 MinIO/S3，生成 multipart uploadId、part presigned urls，完成后校验 ETag、size 和 checksum；该 provider 放在 post-MVP 的对象存储部署联调阶段。
 
