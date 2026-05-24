@@ -5,6 +5,18 @@ using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.MasterData;
 
 [Tags("Business Console MasterData")]
+[HttpGet("/api/business-console/v1/master-data/resources")]
+[BusinessGatewayOperationId("listBusinessConsoleMasterDataResources")]
+[AllowAnonymous]
+public sealed class ListBusinessConsoleMasterDataResourcesEndpoint : EndpointWithoutRequest
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
+    }
+}
+
+[Tags("Business Console MasterData")]
 [HttpGet("/api/business-console/v1/master-data/skus")]
 [BusinessGatewayOperationId("listBusinessConsoleSkus")]
 [AllowAnonymous]
