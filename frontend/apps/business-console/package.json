@@ -1,0 +1,16 @@
+{
+  "name": "@nerv-iip/business-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev --host 127.0.0.1 --port 5125",
+    "build": "vue-tsc --noEmit -p tsconfig.json && vp build .",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nerv-iip/ui": "workspace:*",
+    "vue": "3.5.34",
+    "vue-router": "5.0.7"
+  }
+}

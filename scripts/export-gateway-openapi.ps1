@@ -104,13 +104,7 @@ function Export-GatewayOpenApi {
   }
   finally {
     if ($managedProcess) {
-      Stop-ProcessTree -ProcessId $managedProcess.ProcessId -Reason "OpenAPI export completed for $Name" | Out-Null
-      try {
-        $managedProcess.Stop.Invoke("OpenAPI export completed for $Name")
-      }
-      catch {
-        Write-Diagnostic -Level "WARN" -Message "Gateway process log finalization reported a non-fatal cleanup issue for ${Name}: $($_.Exception.Message)"
-      }
+      $managedProcess.Stop.Invoke("OpenAPI export completed for $Name")
     }
   }
 }

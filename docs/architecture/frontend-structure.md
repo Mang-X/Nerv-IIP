@@ -31,7 +31,7 @@ frontend/
 
 第三迭代只创建控制台纵切必需包：`api-client`、`ui`、`app-shell`。`layer-base`、`layer-platform`、`auth`、`shared-types` 是已冻结的长期边界，等第二个应用或跨包复用真正出现时再创建，避免首批脚手架提前空转。
 
-Business Console MVP 是第二个真实应用入口：`frontend/apps/business-console` 承载 #166 到 #169 的 MasterData、Inventory、Quality 和 MES 业务页面。它消费 BusinessGateway 的 `/api/business-console/v1/**` facade，不直接调用业务服务 URL，也不把业务 CRUD 页面放回主平台 `frontend/apps/console`。
+Business Console MVP 是第二个真实应用入口：`frontend/apps/business-console` 使用 Vite Plus + Vue 3 建立独立 app shell，承载 #166 到 #169 的 MasterData、Inventory、Quality 和 MES 业务页面。它消费 BusinessGateway 的 `/api/business-console/v1/**` facade，不直接调用业务服务 URL，也不把业务 CRUD 页面放回主平台 `frontend/apps/console`。
 
 Console Auth + shadcn-vue Baseline 当前采用“app 内 auth”方案：`frontend/apps/console/src/stores/auth.ts` 管理会话状态，`src/api/auth.ts` 包装 Gateway Auth facade，路由守卫位于 app 内。完整 `frontend/packages/auth` 独立包方案留作后续参考；当 Console 之外出现第二个应用、插件宿主或跨包登录复用时再抽取，边界应包含 Gateway auth DTO mapping、storage adapter、refresh orchestration、logout/session revoke 组合、unauthorized handler 和 app-agnostic route helper，不直接耦合某个页面或 app shell。
 
@@ -54,6 +54,8 @@ Console Auth + shadcn-vue Baseline 当前采用“app 内 auth”方案：`front
 - frontend/apps/business-console/package.json：业务控制台应用脚本，开发端口在 implementation-readiness 和端口矩阵中登记后固定。
 - frontend/apps/business-console/vite.config.ts：沿用 Vue、Vue Router 官方文件路由插件、alias 和构建配置。
 - frontend/apps/business-console/tsconfig.json：纳入业务控制台 typed routes 相关类型。
+
+根级 `pnpm -C frontend build` 必须同时构建 `@nerv-iip/console` 和 `@nerv-iip/business-console`，避免新增业务 app 后只验证主平台 console。
 
 ### 包级配置
 

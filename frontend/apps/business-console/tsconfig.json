@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src/**/*.ts", "src/**/*.vue", "typed-router.d.ts"],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "../..",
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@/*": ["src/*"],
+      "@nerv-iip/ui": ["../../packages/ui/src/index.ts"]
+    }
+  },
+  "vueCompilerOptions": {
+    "plugins": ["vue-router/volar/sfc-route-blocks", "vue-router/volar/sfc-typed-router"]
+  }
+}
