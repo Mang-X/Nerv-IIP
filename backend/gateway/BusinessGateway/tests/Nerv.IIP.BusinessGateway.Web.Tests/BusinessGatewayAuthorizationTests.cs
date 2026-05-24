@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -60,10 +62,17 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
-    public async Task Business_console_endpoint_returns_empty_resource_list_when_permission_is_allowed()
+    public async Task Business_console_endpoint_returns_resource_list_when_permission_is_allowed()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
@@ -73,8 +82,8 @@ public sealed class BusinessGatewayAuthorizationTests
         await using var body = await response.Content.ReadAsStreamAsync();
         using var document = await JsonDocument.ParseAsync(body);
         var data = document.RootElement.GetProperty("data");
-        Assert.Equal(0, data.GetProperty("total").GetInt32());
-        Assert.Empty(data.GetProperty("resources").EnumerateArray());
+        Assert.Equal(1, data.GetProperty("total").GetInt32());
+        Assert.Equal("SKU-001", data.GetProperty("resources")[0].GetProperty("code").GetString());
         Assert.Equal(1, auth.CallCount);
     }
 
@@ -141,7 +150,9 @@ public sealed class BusinessGatewayAuthorizationTests
         return routes;
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(FakeBusinessGatewayAuthorizationClient auth) =>
+    private static WebApplicationFactory<Program> CreateFactory(
+        FakeBusinessGatewayAuthorizationClient auth,
+        Action<IServiceCollection>? configureServices = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
@@ -151,8 +162,11 @@ public sealed class BusinessGatewayAuthorizationTests
             {
                 services.RemoveAll<IBusinessGatewayAuthorizationClient>();
                 services.AddSingleton<IBusinessGatewayAuthorizationClient>(auth);
+                configureServices?.Invoke(services);
             });
         });
+
+    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }
 
 internal sealed class FakeBusinessGatewayAuthorizationClient(bool allowed) : IBusinessGatewayAuthorizationClient

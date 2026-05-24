@@ -1,26 +1,10 @@
 using FastEndpoints;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.MasterData;
-
-public sealed class BusinessConsoleResourceListRequest
-{
-    public string OrganizationId { get; set; } = string.Empty;
-
-    public string EnvironmentId { get; set; } = string.Empty;
-
-    public int? Take { get; set; }
-}
-
-public sealed record BusinessConsoleResourceListResponse(
-    IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
-    int Total);
-
-public sealed record BusinessConsoleResourceItem(
-    string ResourceId,
-    string Code,
-    string Name);
 
 [Tags("Business Console MasterData")]
 [HttpGet("/api/business-console/v1/master-data/resources")]
@@ -31,20 +15,31 @@ public sealed class ListBusinessConsoleMasterDataResourcesEndpoint(IBusinessGate
 [Tags("Business Console MasterData")]
 [HttpGet("/api/business-console/v1/master-data/skus")]
 [BusinessGatewayOperationId("listBusinessConsoleSkus")]
-public sealed class ListBusinessConsoleSkusEndpoint(IBusinessGatewayAuthorizationClient auth)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleResourceListRequest, BusinessConsoleResourceListResponse>(
+public sealed class ListBusinessConsoleSkusEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleListSkusRequest, BusinessConsoleResourceListResponse>(
         auth,
         BusinessGatewayPermissions.MasterDataProductsRead)
 {
-    protected override string OrganizationId(BusinessConsoleResourceListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleListSkusRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleResourceListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleListSkusRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleResourceListResponse> ForwardAsync(
-        BusinessConsoleResourceListRequest request,
+        BusinessConsoleListSkusRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsoleResourceListResponse([], 0));
+        masterData.ListResourcesAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleListResourcesRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                "sku",
+                request.IncludeDisabled,
+                request.Take),
+            cancellationToken);
 }
 
 [Tags("Business Console MasterData")]

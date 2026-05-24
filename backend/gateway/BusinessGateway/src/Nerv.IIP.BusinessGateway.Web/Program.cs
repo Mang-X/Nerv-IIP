@@ -3,6 +3,7 @@ using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.Extensions.Http.Resilience;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
+using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.Caching;
@@ -32,6 +33,22 @@ builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddHttpClient<IBusinessGatewayAuthorizationClient, HttpBusinessGatewayAuthorizationClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102");
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<IBusinessMasterDataClient, HttpBusinessMasterDataClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["MasterData:BaseUrl"] ?? "http://localhost:5107");
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<IBusinessInventoryClient, HttpBusinessInventoryClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Inventory:BaseUrl"] ?? "http://localhost:5109");
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<IBusinessQualityClient, HttpBusinessQualityClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Quality:BaseUrl"] ?? "http://localhost:5110");
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Mes:BaseUrl"] ?? "http://localhost:5111");
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddBusinessGatewayAuthentication(builder.Configuration, builder.Environment);
 
