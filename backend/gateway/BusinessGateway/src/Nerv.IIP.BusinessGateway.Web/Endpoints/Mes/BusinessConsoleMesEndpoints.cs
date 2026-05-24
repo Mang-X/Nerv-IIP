@@ -1,5 +1,4 @@
 using FastEndpoints;
-using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 
@@ -8,47 +7,23 @@ namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Mes;
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/work-orders")]
 [BusinessGatewayOperationId("listBusinessConsoleMesWorkOrders")]
-[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
-public sealed class ListBusinessConsoleMesWorkOrdersEndpoint : EndpointWithoutRequest
-{
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
-    }
-}
+public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessStubEndpoint(auth, BusinessGatewayPermissions.MesWorkOrdersRead);
 
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/work-orders/rush")]
 [BusinessGatewayOperationId("createBusinessConsoleMesRushWorkOrder")]
-[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
-public sealed class CreateBusinessConsoleMesRushWorkOrderEndpoint : EndpointWithoutRequest
-{
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
-    }
-}
+public sealed class CreateBusinessConsoleMesRushWorkOrderEndpoint(IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessStubEndpoint(auth, BusinessGatewayPermissions.MesWorkOrdersManage);
 
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/schedules/run")]
 [BusinessGatewayOperationId("runBusinessConsoleMesSchedule")]
-[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
-public sealed class RunBusinessConsoleMesScheduleEndpoint : EndpointWithoutRequest
-{
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
-    }
-}
+public sealed class RunBusinessConsoleMesScheduleEndpoint(IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessStubEndpoint(auth, BusinessGatewayPermissions.MesSchedulesManage);
 
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/production-reports")]
 [BusinessGatewayOperationId("recordBusinessConsoleMesProductionReport")]
-[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
-public sealed class RecordBusinessConsoleMesProductionReportEndpoint : EndpointWithoutRequest
-{
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
-    }
-}
+public sealed class RecordBusinessConsoleMesProductionReportEndpoint(IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessStubEndpoint(auth, BusinessGatewayPermissions.MesReportingWrite);

@@ -1,5 +1,4 @@
 using FastEndpoints;
-using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 
@@ -13,48 +12,26 @@ public sealed class ConfirmBusinessConsoleInventoryCountAdjustmentRequest
 [Tags("Business Console Inventory")]
 [HttpGet("/api/business-console/v1/inventory/availability")]
 [BusinessGatewayOperationId("getBusinessConsoleInventoryAvailability")]
-[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
-public sealed class GetBusinessConsoleInventoryAvailabilityEndpoint : EndpointWithoutRequest
-{
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
-    }
-}
+public sealed class GetBusinessConsoleInventoryAvailabilityEndpoint(IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessStubEndpoint(auth, BusinessGatewayPermissions.InventoryLedgerRead);
 
 [Tags("Business Console Inventory")]
 [HttpPost("/api/business-console/v1/inventory/movements")]
 [BusinessGatewayOperationId("postBusinessConsoleInventoryMovement")]
-[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
-public sealed class PostBusinessConsoleInventoryMovementEndpoint : EndpointWithoutRequest
-{
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
-    }
-}
+public sealed class PostBusinessConsoleInventoryMovementEndpoint(IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessStubEndpoint(auth, BusinessGatewayPermissions.InventoryMovementsCreate);
 
 [Tags("Business Console Inventory")]
 [HttpPost("/api/business-console/v1/inventory/count-tasks")]
 [BusinessGatewayOperationId("createBusinessConsoleInventoryCountTask")]
-[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
-public sealed class CreateBusinessConsoleInventoryCountTaskEndpoint : EndpointWithoutRequest
-{
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
-    }
-}
+public sealed class CreateBusinessConsoleInventoryCountTaskEndpoint(IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessStubEndpoint(auth, BusinessGatewayPermissions.InventoryCountsManage);
 
 [Tags("Business Console Inventory")]
 [HttpPost("/api/business-console/v1/inventory/count-tasks/{countTaskId}/adjustments")]
 [BusinessGatewayOperationId("confirmBusinessConsoleInventoryCountAdjustment")]
-[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class ConfirmBusinessConsoleInventoryCountAdjustmentEndpoint
-    : Endpoint<ConfirmBusinessConsoleInventoryCountAdjustmentRequest>
-{
-    public override async Task HandleAsync(ConfirmBusinessConsoleInventoryCountAdjustmentRequest req, CancellationToken ct)
-    {
-        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
-    }
-}
+    (IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessStubEndpoint<ConfirmBusinessConsoleInventoryCountAdjustmentRequest>(
+        auth,
+        BusinessGatewayPermissions.InventoryCountsManage);

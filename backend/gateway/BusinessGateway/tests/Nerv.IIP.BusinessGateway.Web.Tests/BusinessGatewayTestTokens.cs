@@ -6,7 +6,9 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 internal static class BusinessGatewayTestTokens
 {
-    private const string SigningKey = "business-gateway-test-signing-key-32";
+    public const string SigningKey = "business-gateway-test-signing-key-32";
+    public const string Issuer = "nerv-iip-iam-test";
+    public const string Audience = "nerv-iip-business-gateway-test";
 
     public static string ValidAccessToken(
         string organizationId = "org-001",
@@ -16,8 +18,8 @@ internal static class BusinessGatewayTestTokens
         var header = Base64UrlEncode("""{"alg":"HS256","typ":"JWT"}"""u8.ToArray());
         var payload = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
         {
-            ["iss"] = "nerv-iip-iam",
-            ["aud"] = "nerv-iip-api",
+            ["iss"] = Issuer,
+            ["aud"] = Audience,
             ["sub"] = "user-admin",
             ["sessionId"] = "session-001",
             ["principalType"] = "user",

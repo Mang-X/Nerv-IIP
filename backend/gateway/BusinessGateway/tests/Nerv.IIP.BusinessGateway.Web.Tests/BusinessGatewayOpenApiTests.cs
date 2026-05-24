@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -8,7 +9,12 @@ public sealed class BusinessGatewayOpenApiTests
     [Fact]
     public async Task Business_gateway_exports_openapi_document_with_stable_business_console_operation_ids()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
+            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
+            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
+        });
         var client = factory.CreateClient();
 
         var json = await client.GetStringAsync("/swagger/v1/swagger.json");

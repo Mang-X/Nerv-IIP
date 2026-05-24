@@ -1,5 +1,4 @@
 using FastEndpoints;
-using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 
@@ -26,14 +25,8 @@ public sealed record BusinessConsoleResourceItem(
 [Tags("Business Console MasterData")]
 [HttpGet("/api/business-console/v1/master-data/resources")]
 [BusinessGatewayOperationId("listBusinessConsoleMasterDataResources")]
-[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
-public sealed class ListBusinessConsoleMasterDataResourcesEndpoint : EndpointWithoutRequest
-{
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
-    }
-}
+public sealed class ListBusinessConsoleMasterDataResourcesEndpoint(IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessStubEndpoint(auth, BusinessGatewayPermissions.MasterDataResourcesRead);
 
 [Tags("Business Console MasterData")]
 [HttpGet("/api/business-console/v1/master-data/skus")]
@@ -57,11 +50,5 @@ public sealed class ListBusinessConsoleSkusEndpoint(IBusinessGatewayAuthorizatio
 [Tags("Business Console MasterData")]
 [HttpPost("/api/business-console/v1/master-data/skus")]
 [BusinessGatewayOperationId("createBusinessConsoleSku")]
-[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
-public sealed class CreateBusinessConsoleSkuEndpoint : EndpointWithoutRequest
-{
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status501NotImplemented, "not-implemented", ct);
-    }
-}
+public sealed class CreateBusinessConsoleSkuEndpoint(IBusinessGatewayAuthorizationClient auth)
+    : AuthorizedBusinessStubEndpoint(auth, BusinessGatewayPermissions.MasterDataProductsManage);

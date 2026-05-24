@@ -11,22 +11,19 @@ public static class BusinessGatewayPolicies
 
 public static class BusinessGatewayAuthentication
 {
-    private const string DevelopmentSigningKey = "nerv-iip-iam-development-signing-key-local-only-0001";
-    private const string TestingSigningKey = "business-gateway-test-signing-key-32";
-    private const string DefaultIssuer = "nerv-iip-iam";
-    private const string DefaultAudience = "nerv-iip-api";
-
     public static IServiceCollection AddBusinessGatewayAuthentication(
         this IServiceCollection services,
         IConfiguration configuration,
         IHostEnvironment environment)
     {
+        var jwtSettings = BusinessGatewayJwtSettings.FromConfiguration(configuration);
+
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
                 options.SaveToken = true;
-                options.TokenValidationParameters = CreateValidationParameters(configuration, environment);
+                options.TokenValidationParameters = CreateValidationParameters(jwtSettings);
                 options.Events = new JwtBearerEvents
                 {
                     OnAuthenticationFailed = context =>
@@ -97,42 +94,36 @@ public static class BusinessGatewayAuthentication
         return services;
     }
 
-    private static TokenValidationParameters CreateValidationParameters(
-        IConfiguration configuration,
-        IHostEnvironment environment) =>
+    private static TokenValidationParameters CreateValidationParameters(BusinessGatewayJwtSettings settings) =>
         new()
         {
             ValidateIssuer = true,
-            ValidIssuer = configuration["Iam:Jwt:Issuer"] ?? DefaultIssuer,
+            ValidIssuer = settings.Issuer,
             ValidateAudience = true,
-            ValidAudience = configuration["Iam:Jwt:Audience"] ?? DefaultAudience,
+            ValidAudience = settings.Audience,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = CreateSigningKey(configuration, environment),
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.SigningKey)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
         };
 
-    private static SymmetricSecurityKey CreateSigningKey(
-        IConfiguration configuration,
-        IHostEnvironment environment)
+    private sealed record BusinessGatewayJwtSettings(string SigningKey, string Issuer, string Audience)
     {
-        var signingKey = configuration["Iam:Jwt:SigningKey"];
-        if (string.IsNullOrWhiteSpace(signingKey))
-        {
-            if (environment.IsEnvironment("Testing"))
-            {
-                signingKey = TestingSigningKey;
-            }
-            else if (environment.IsDevelopment())
-            {
-                signingKey = DevelopmentSigningKey;
-            }
-            else
-            {
-                throw new InvalidOperationException("Iam:Jwt:SigningKey is required for BusinessGateway JWT validation outside Development and Testing.");
-            }
-        }
+        public static BusinessGatewayJwtSettings FromConfiguration(IConfiguration configuration) =>
+            new(
+                Require(configuration, "Iam:Jwt:SigningKey"),
+                Require(configuration, "Iam:Jwt:Issuer"),
+                Require(configuration, "Iam:Jwt:Audience"));
 
-        return new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
+        private static string Require(IConfiguration configuration, string key)
+        {
+            var value = configuration[key];
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                throw new InvalidOperationException($"{key} is required for BusinessGateway JWT validation.");
+            }
+
+            return value;
+        }
     }
 }
