@@ -146,7 +146,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             request,
             tusStoreAccessor,
             cancellationToken);
-        if (!tusValidation.IsValid)
+        if (tusValidation is not null)
         {
             return FileStorageResult<FileMetadataResponse>.Failure(tusValidation.StatusCode, tusValidation.Message);
         }

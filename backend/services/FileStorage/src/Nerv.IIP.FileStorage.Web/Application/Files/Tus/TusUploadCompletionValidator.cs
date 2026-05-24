@@ -6,7 +6,7 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 
 internal static class TusUploadCompletionValidator
 {
-    public static async Task<TusUploadCompletionValidationResult> ValidateAsync(
+    public static async Task<TusUploadCompletionValidationFailure?> ValidateAsync(
         string provider,
         string uploadSessionId,
         long expectedSizeBytes,
@@ -17,18 +17,18 @@ internal static class TusUploadCompletionValidator
     {
         if (!string.Equals(provider, TusUploadProvider.Name, StringComparison.Ordinal))
         {
-            return TusUploadCompletionValidationResult.Valid;
+            return null;
         }
 
         if (tusStoreAccessor is null || !tusStoreAccessor.TryGet(out var store))
         {
-            return TusUploadCompletionValidationResult.ServiceUnavailable("Tus upload store is unavailable.");
+            return TusUploadCompletionValidationFailure.ServiceUnavailable("Tus upload store is unavailable.");
         }
 
         var actualSize = store.GetOffset(uploadSessionId);
         if (actualSize != expectedSizeBytes || (request.SizeBytes is not null && request.SizeBytes != actualSize))
         {
-            return TusUploadCompletionValidationResult.BadRequest("Tus upload size does not match the upload session.");
+            return TusUploadCompletionValidationFailure.BadRequest("Tus upload size does not match the upload session.");
         }
 
         var expectedChecksum = request.Checksum ?? sessionChecksum;
@@ -37,11 +37,11 @@ internal static class TusUploadCompletionValidator
             var actualChecksum = await store.ComputeSha256HexAsync(uploadSessionId, cancellationToken);
             if (!ChecksumMatchesSha256Hex(expectedChecksum, actualChecksum))
             {
-                return TusUploadCompletionValidationResult.BadRequest("Tus upload checksum does not match the upload session.");
+                return TusUploadCompletionValidationFailure.BadRequest("Tus upload checksum does not match the upload session.");
             }
         }
 
-        return TusUploadCompletionValidationResult.Valid;
+        return null;
     }
 
     private static bool ChecksumMatchesSha256Hex(string expectedChecksum, string actualSha256Hex)
@@ -54,17 +54,15 @@ internal static class TusUploadCompletionValidator
     }
 }
 
-internal sealed record TusUploadCompletionValidationResult(bool IsValid, int StatusCode, string Message)
+internal sealed record TusUploadCompletionValidationFailure(int StatusCode, string Message)
 {
-    public static readonly TusUploadCompletionValidationResult Valid = new(true, StatusCodes.Status200OK, string.Empty);
-
-    public static TusUploadCompletionValidationResult BadRequest(string message)
+    public static TusUploadCompletionValidationFailure BadRequest(string message)
     {
-        return new(false, StatusCodes.Status400BadRequest, message);
+        return new(StatusCodes.Status400BadRequest, message);
     }
 
-    public static TusUploadCompletionValidationResult ServiceUnavailable(string message)
+    public static TusUploadCompletionValidationFailure ServiceUnavailable(string message)
     {
-        return new(false, StatusCodes.Status503ServiceUnavailable, message);
+        return new(StatusCodes.Status503ServiceUnavailable, message);
     }
 }

@@ -116,7 +116,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             request,
             tusStoreAccessor,
             cancellationToken);
-        if (!tusValidation.IsValid)
+        if (tusValidation is not null)
         {
             return FileStorageResult<FileMetadataResponse>.Failure(tusValidation.StatusCode, tusValidation.Message);
         }
