@@ -361,6 +361,32 @@ var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway
     .WaitFor(fileStorage)
     .WaitFor(redis);
 
+var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")
+    .WithHttpEndpoint(port: 5119, name: "http")
+    .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
+    .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
+    .WithEnvironment("Iam__Jwt__Issuer", "nerv-iip-iam")
+    .WithEnvironment("Iam__Jwt__Audience", "nerv-iip-api")
+    .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
+    .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
+    .WithEnvironment("Quality__BaseUrl", businessQuality.GetEndpoint("http"))
+    .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithReference(iam)
+    .WithReference(businessMasterData)
+    .WithReference(businessInventory)
+    .WithReference(businessQuality)
+    .WithReference(businessMes)
+    .WithReference(redis)
+    .WaitFor(iam)
+    .WaitFor(businessMasterData)
+    .WaitFor(businessInventory)
+    .WaitFor(businessQuality)
+    .WaitFor(businessMes)
+    .WaitFor(redis)
+    .WaitFor(otelCollector);
+
 var connectorHost = builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")
     .WithEnvironment("ConnectorHost__CycleSeconds", "1")
     .WithEnvironment("ConnectorHost__ConnectorSecret", iamSeedConnectorHostSecret)
@@ -380,5 +406,15 @@ builder.AddViteApp("console", "../../../frontend/apps/console")
     .WithReference(gateway)
     .WaitFor(gateway)
     .WaitFor(connectorHost);
+
+builder.AddViteApp("business-console", "../../../frontend/apps/business-console")
+    .WithHttpEndpoint(port: 5125, name: "http")
+    .WithPnpm()
+    .WithEnvironment("NERV_IIP_PLATFORM_GATEWAY_URL", gateway.GetEndpoint("http"))
+    .WithEnvironment("NERV_IIP_BUSINESS_GATEWAY_URL", businessGateway.GetEndpoint("http"))
+    .WithReference(gateway)
+    .WithReference(businessGateway)
+    .WaitFor(gateway)
+    .WaitFor(businessGateway);
 
 builder.Build().Run();

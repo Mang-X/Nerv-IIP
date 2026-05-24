@@ -43,6 +43,7 @@
 37. Business Wave 3/Wave 4 规划入口已补齐：ERP #137/#138/#139 使用 `docs/superpowers/specs/2026-05-23-business-wave-3-agent-session-design.md`、`docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md` 和三份 ERP 子计划推进；#77 Full-chain acceptance 使用 `docs/superpowers/specs/2026-05-23-business-full-chain-acceptance-design.md` 和 `docs/superpowers/plans/2026-05-23-business-full-chain-acceptance.md`。
 38. Business Wave 3 ERP 已落地：BusinessERP 已纳入 `backend/Nerv.IIP.sln`、平台级 Aspire AppHost、IAM seed/catalog、schema catalog、readiness 映射和 `scripts/verify-business-erp-procurement-sales-finance-mvp.ps1` 聚合验证；本地端口固定为 5118。WMS 已抽出 `Nerv.IIP.Contracts.Wms` 公共事件契约，并默认通过 HTTP client 向 Inventory posting 库存移动。
 39. #77 Full-chain acceptance 已从 contract metadata baseline 升级为 live public-surface 验收：WMS completion 使用 HTTP Inventory movement client 并提供 WCS failure/retry/complete 查询与 `wms.WcsTaskCompleted` 公共事件类型；MES 暴露生产报工、完工入库请求和维护产能影响查询；ERP Finance 暴露 AP/AR/Cost candidate source-document drill-down。`backend/tests/Nerv.IIP.Business.Acceptance.Tests` 继续提供统一 fixture/correlation/event recorder/HTTP envelope helper，`scripts/verify-business-full-chain-acceptance.ps1` 会覆盖 WMS/MES/ERP 支撑 surface 与七条链路验收；当前仍不启动 Docker/PostgreSQL 或外部设备。
+40. Business Console MVP 的基础接入已开始落地：`backend/gateway/BusinessGateway` 纳入平台级 Aspire AppHost，本地端口固定为 5119，并通过 IAM、MasterData、Inventory、Quality 和 MES 的 HTTP 边界聚合业务控制台 API；`frontend/apps/business-console` 作为独立 Vite app 入口预留在 AppHost，本地端口固定为 5125。OpenAPI 导出脚本会同时写入 PlatformGateway 和 BusinessGateway 的快照。
 
 ### 业务平台代码事实与 issue 映射
 
@@ -60,7 +61,7 @@
 | ERP | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖 Procurement（采购申请、RFQ、供应商报价、采购订单、采购收货）、Sales（商机、报价、销售订单、发货请求）和 Finance（AP、AR、凭证、成本候选）；#77 所需 AP/AR/Cost source-document drill-down query 已补齐，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-erp-procurement-sales-finance-mvp.ps1`。 | #76、#137、#138、#139、#164 |
 | IndustrialTelemetry | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖 TelemetryTag、DeviceStateSnapshot、AlarmEvent 和 TelemetrySummary，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-industrial-telemetry-mvp.ps1`；保持 PLC/DCS/SCADA 控制命令和凭据在外部边界。 | #129 |
 | Maintenance | 已有 Domain/Infrastructure/Web、PostgreSQL migration 和测试；已覆盖维修工单、保养计划、点检、停机原因和备件行，并接入 solution/AppHost/IAM seed/schema catalog，提供 `scripts/verify-business-maintenance-mvp.ps1`；报警开单通过 `Nerv.IIP.Contracts.IndustrialTelemetry` 消费 IndustrialTelemetry 公共事件。 | #130 |
-| 业务服务注册与验收 | BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality 和 BusinessMES 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-wave1-foundation.ps1`；BusinessDemandPlanning、BarcodeLabel、BusinessApproval 和 WMS 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-wave2-execution.ps1`；BusinessIndustrialTelemetry 和 BusinessMaintenance 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-equipment-reliability.ps1`；端口矩阵与 readiness 已同步到 5107-5117。 | #77、#140 |
+| 业务服务注册与验收 | BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality 和 BusinessMES 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-wave1-foundation.ps1`；BusinessDemandPlanning、BarcodeLabel、BusinessApproval 和 WMS 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-wave2-execution.ps1`；BusinessIndustrialTelemetry 和 BusinessMaintenance 已纳入平台级 AppHost、`backend/Nerv.IIP.sln` 和聚合 `scripts/verify-business-equipment-reliability.ps1`；BusinessERP 已纳入 Wave 3 验证；端口矩阵与 readiness 已同步到 5107-5119，并预留 BusinessConsole 5125。 | #77、#140 |
 
 ### 业务平台 Wave 1 agent handoff
 
@@ -307,7 +308,7 @@
 ### 当前初步使用方式
 
 1. 根目录 `.\nerv.ps1 dev` 已成为主平台本地联调入口；`.\nerv.ps1 ports` 输出标准本地端口矩阵。
-2. 平台 HTTP 服务端口收敛到 `5100-5117`，其中 Console 使用 `5105` 而不是 Vite 默认 `5173`，Business Wave 1 服务使用 `5107-5111`，Business Wave 2 服务使用 `5112-5115`：DemandPlanning `5112`、BarcodeLabel `5113`、BusinessApproval `5114`、WMS `5115`；Equipment Reliability 服务使用 `5116-5117`：IndustrialTelemetry `5116`、Maintenance `5117`。
+2. 平台 HTTP 服务端口收敛到 `5100-5125`，其中 PlatformGateway 使用 `5100`，Console 使用 `5105` 而不是 Vite 默认 `5173`；Business Wave 1 服务使用 `5107-5111`，Business Wave 2 服务使用 `5112-5115`：DemandPlanning `5112`、BarcodeLabel `5113`、BusinessApproval `5114`、WMS `5115`；Equipment Reliability 服务使用 `5116-5117`：IndustrialTelemetry `5116`、Maintenance `5117`；BusinessERP 使用 `5118`；BusinessGateway 使用 `5119`；BusinessConsole 使用 `5125`。
 3. 本地 MinIO 运行镜像使用 `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`。
 4. 运行 `pwsh scripts/verify-first-slice.ps1` 可验证 backend 与 connector-hosts 的 restore、build、test，以及 AppHub 到 PlatformGateway 的第一条本地纵切。
 5. 运行 `pwsh scripts/verify-second-slice-ops.ps1` 可验证 Gateway、Ops、Connector Host 和 Docker Connector 的低风险 restart 闭环。
@@ -337,9 +338,9 @@
 29. 运行 `pwsh scripts/verify-business-full-chain-acceptance.ps1` 可验证 #77 live full-chain acceptance：WMS/MES/ERP 支撑 public-surface focused tests、七条链路公开 API contract surface、统一 fixture/correlation、event recorder 和 HTTP response envelope helper；该脚本使用 governed `ScriptAutomation.ps1` helper，当前不启动 Docker/PostgreSQL 或外部设备。
 30. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
 31. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
-32. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
+32. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。BusinessGateway 当前提供 Business Console MasterData、Inventory、Quality 和 MES facade，使用用户 bearer token 到 IAM 做权限校验，并使用 internal service token 调用业务服务。
 33. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-34. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、Notification 站内消息/任务纵切与 Console facade、BusinessMasterData Layer 0 realignment、BusinessProductEngineering release facts、BusinessInventory MVP、BusinessQuality inspection MVP、BusinessMES persistence MVP、BusinessDemandPlanning MRP MVP、BarcodeLabel MVP、BusinessApproval MVP、WMS execution MVP、BusinessIndustrialTelemetry MVP、BusinessMaintenance MVP，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批、Notification 外部通道 provider 或 MinIO/S3 multipart。
+34. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、Notification 站内消息/任务纵切与 Console facade、BusinessMasterData Layer 0 realignment、BusinessProductEngineering release facts、BusinessInventory MVP、BusinessQuality inspection MVP、BusinessMES persistence MVP、BusinessDemandPlanning MRP MVP、BarcodeLabel MVP、BusinessApproval MVP、WMS execution MVP、BusinessIndustrialTelemetry MVP、BusinessMaintenance MVP、BusinessERP MVP、BusinessGateway 控制台 facade，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批、Notification 外部通道 provider、BusinessConsole 页面实现或 MinIO/S3 multipart。
 35. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项

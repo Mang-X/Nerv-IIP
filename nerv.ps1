@@ -55,6 +55,9 @@ Platform services:
   5115 BusinessWMS
   5116 BusinessIndustrialTelemetry
   5117 BusinessMaintenance
+  5118 BusinessERP
+  5119 BusinessGateway
+  5125 BusinessConsole
 
 Infrastructure services:
   15432 PostgreSQL

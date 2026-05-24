@@ -1372,6 +1372,10 @@
             "type": "integer",
             "format": "int32"
           },
+          "leaseDurationSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
           "maxAttempts": {
             "type": "integer",
             "format": "int32"
