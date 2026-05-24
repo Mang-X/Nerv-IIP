@@ -159,6 +159,9 @@ describe('business inventory composables', () => {
       qualityStatus: 'available',
       ownerType: 'owned',
     })
+
+    expect(coladaState.invalidateQueries).not.toHaveBeenCalled()
+
     await confirmAdjustment('count-1', {
       countedQuantity: 9,
       idempotencyKey: 'adjust-1',
@@ -189,6 +192,9 @@ describe('business inventory composables', () => {
         countedQuantity: 9,
         idempotencyKey: 'adjust-1',
       },
+    })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({
+      predicate: expect.any(Function),
     })
   })
 })

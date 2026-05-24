@@ -137,10 +137,16 @@ export function useInventoryMovement() {
 
 export function useInventoryCounts() {
   const filters = defaultActionContext()
+  const queryCache = useQueryCache()
   const createCountTaskMutation = useMutation(createBusinessConsoleInventoryCountTaskMutationOptions())
-  const confirmAdjustmentMutation = useMutation(
-    confirmBusinessConsoleInventoryCountAdjustmentMutationOptions(),
-  )
+  const confirmAdjustmentMutation = useMutation({
+    ...confirmBusinessConsoleInventoryCountAdjustmentMutationOptions(),
+    onSuccess() {
+      void queryCache
+        .invalidateQueries({ predicate: isBusinessQuery('getBusinessConsoleInventoryAvailability') })
+        .catch(ignoreBackgroundError)
+    },
+  })
 
   return {
     confirmAdjustment: (
