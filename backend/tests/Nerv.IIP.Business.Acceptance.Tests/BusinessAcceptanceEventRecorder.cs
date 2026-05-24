@@ -33,9 +33,7 @@ public sealed class BusinessAcceptanceFixtureEventRecorder
 
     public void Reset()
     {
-        while (_events.TryDequeue(out _))
-        {
-        }
+        _events.Clear();
     }
 }
 

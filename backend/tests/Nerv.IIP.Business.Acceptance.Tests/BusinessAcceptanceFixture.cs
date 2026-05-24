@@ -66,19 +66,20 @@ public sealed class BusinessAcceptanceHarnessInfrastructureTests
     [Fact]
     public async Task Event_recorder_supports_parallel_recording_and_explicit_reset()
     {
+        var localRecorder = new BusinessAcceptanceFixtureEventRecorder();
         var correlation = _fixture.BeginCorrelation("parallel-recorder");
 
         await Parallel.ForAsync(0, 24, (index, _) =>
         {
-            _fixture.Events.Record("BusinessMes", "mes.OperationReported", correlation, new { Operation = index });
+            localRecorder.Record("BusinessMes", "mes.OperationReported", correlation, new { Operation = index });
             return ValueTask.CompletedTask;
         });
 
-        Assert.Equal(24, _fixture.Events.ForCorrelation(correlation.CorrelationId).Count);
+        Assert.Equal(24, localRecorder.ForCorrelation(correlation.CorrelationId).Count);
 
-        _fixture.Events.Reset();
+        localRecorder.Reset();
 
-        Assert.Empty(_fixture.Events.ForCorrelation(correlation.CorrelationId));
+        Assert.Empty(localRecorder.ForCorrelation(correlation.CorrelationId));
     }
 
     [Fact]

@@ -86,10 +86,18 @@ public sealed class PlanToProcureProduceAcceptanceTests
         var workOrderSuggestionFacts = EngineeringPlanningAcceptanceData.VisibleFacts(workOrderSuggestion);
         var workOrderFacts = EngineeringPlanningAcceptanceData.VisibleFacts(workOrder);
 
-        Assert.Equal(acceptedFacts["SuggestionId"], requisitionFacts["SuggestionId"]);
-        Assert.Equal(acceptedFacts["DownstreamDocumentId"], requisitionFacts["PurchaseRequisitionNo"]);
-        Assert.Equal(workOrderSuggestionFacts["SuggestionId"], workOrderFacts["SuggestionId"]);
-        Assert.Equal(workOrderSuggestionFacts["ProductionVersionId"], workOrderFacts["ProductionVersionId"]);
+        Assert.Equal(
+            AcceptanceAssert.RequiredFact(acceptedFacts, "SuggestionId", "demandPlanning.PlanningSuggestionAccepted"),
+            AcceptanceAssert.RequiredFact(requisitionFacts, "SuggestionId", "erp.PurchaseRequisitionCreated"));
+        Assert.Equal(
+            AcceptanceAssert.RequiredFact(acceptedFacts, "DownstreamDocumentId", "demandPlanning.PlanningSuggestionAccepted"),
+            AcceptanceAssert.RequiredFact(requisitionFacts, "PurchaseRequisitionNo", "erp.PurchaseRequisitionCreated"));
+        Assert.Equal(
+            AcceptanceAssert.RequiredFact(workOrderSuggestionFacts, "SuggestionId", "demandPlanning.PlannedWorkOrderSuggested"),
+            AcceptanceAssert.RequiredFact(workOrderFacts, "SuggestionId", "mes.WorkOrderCreated"));
+        Assert.Equal(
+            AcceptanceAssert.RequiredFact(workOrderSuggestionFacts, "ProductionVersionId", "demandPlanning.PlannedWorkOrderSuggested"),
+            AcceptanceAssert.RequiredFact(workOrderFacts, "ProductionVersionId", "mes.WorkOrderCreated"));
     }
 
     private static BusinessChainAcceptanceSurface FindChain(string chainName)

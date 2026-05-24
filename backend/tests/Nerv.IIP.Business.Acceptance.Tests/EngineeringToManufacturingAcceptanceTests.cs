@@ -66,16 +66,16 @@ public sealed class EngineeringToManufacturingAcceptanceTests
 
         Assert.Equal(
             EngineeringPlanningAcceptanceData.MbomVersionId,
-            RequiredFact(productionVersionFacts, "MbomVersionId", "productEngineering.ProductionVersionCreated"));
+            AcceptanceAssert.RequiredFact(productionVersionFacts, "MbomVersionId", "productEngineering.ProductionVersionCreated"));
         Assert.Equal(
             EngineeringPlanningAcceptanceData.RoutingVersionId,
-            RequiredFact(productionVersionFacts, "RoutingVersionId", "productEngineering.ProductionVersionCreated"));
+            AcceptanceAssert.RequiredFact(productionVersionFacts, "RoutingVersionId", "productEngineering.ProductionVersionCreated"));
         Assert.Equal(
-            RequiredFact(productionVersionFacts, "ProductionVersionId", "productEngineering.ProductionVersionCreated"),
-            RequiredFact(workOrderFacts, "ProductionVersionId", "mes.WorkOrderCreated"));
+            AcceptanceAssert.RequiredFact(productionVersionFacts, "ProductionVersionId", "productEngineering.ProductionVersionCreated"),
+            AcceptanceAssert.RequiredFact(workOrderFacts, "ProductionVersionId", "mes.WorkOrderCreated"));
         Assert.Equal(
-            RequiredFact(productionVersionFacts, "SkuCode", "productEngineering.ProductionVersionCreated"),
-            RequiredFact(workOrderFacts, "SkuCode", "mes.WorkOrderCreated"));
+            AcceptanceAssert.RequiredFact(productionVersionFacts, "SkuCode", "productEngineering.ProductionVersionCreated"),
+            AcceptanceAssert.RequiredFact(workOrderFacts, "SkuCode", "mes.WorkOrderCreated"));
     }
 
     private static BusinessChainAcceptanceSurface FindChain(string chainName)
@@ -96,15 +96,4 @@ public sealed class EngineeringToManufacturingAcceptanceTests
         return Assert.Single(events, x => x.Service == service && x.EventType == eventType);
     }
 
-    private static string RequiredFact(
-        IReadOnlyDictionary<string, string> facts,
-        string key,
-        string eventType)
-    {
-        Assert.True(
-            facts.TryGetValue(key, out var value),
-            $"Acceptance event '{eventType}' must expose visible fact '{key}'.");
-
-        return value!;
-    }
 }
