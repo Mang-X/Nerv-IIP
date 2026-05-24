@@ -12,14 +12,11 @@ import type {
 } from './types'
 import { useVirtualList } from '@vueuse/core'
 import { computed, shallowRef, useTemplateRef } from 'vue'
-import { PauseIcon, PlayIcon, RotateCcwIcon, UploadCloudIcon, XIcon } from 'lucide-vue-next'
+import { UploadCloudIcon } from 'lucide-vue-next'
 import { cn } from '../../../lib/utils'
-import { Badge } from '../badge'
-import { Button } from '../button'
-import { Progress } from '../progress'
-import { getFileKind } from './fileKind'
+import FileUploadRowItem from './FileUploadRowItem.vue'
 import { uploadWithNativeFileStorageTransport } from './nativeTransport'
-import { useFileUpload } from './useFileUpload'
+import { isSlotOccupyingRow, useFileUpload } from './useFileUpload'
 
 const props = withDefaults(defineProps<{
   purpose: string
@@ -159,26 +156,6 @@ async function handleDrop(event: DragEvent) {
   }
 }
 
-function rowKind(row: FileUploadRow) {
-  return getFileKind(row.fileName, row.contentType)
-}
-
-function isSlotOccupyingRow(row: FileUploadRow) {
-  return row.status !== 'rejected' && row.status !== 'failed'
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`
-  }
-
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
 defineExpose<FileUploadExpose>({
   addFiles,
   uploadQueued,
@@ -232,82 +209,16 @@ defineExpose<FileUploadExpose>({
       class="overflow-y-auto overscroll-contain pr-2"
     >
       <div v-bind="virtualWrapperProps" class="flex flex-col gap-2">
-        <div
+        <FileUploadRowItem
           v-for="virtualRow in virtualRows"
           :key="virtualRow.data.id"
-          data-slot="file-upload-row"
-          :style="virtualRowStyle"
-          class="border-border bg-card flex items-center gap-3 rounded-lg border p-3 transition-colors"
-        >
-          <div class="bg-muted flex size-9 shrink-0 items-center justify-center rounded-md">
-            <component
-              :is="rowKind(virtualRow.data).icon"
-              class="text-muted-foreground"
-              aria-hidden="true"
-            />
-          </div>
-
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <span class="truncate text-sm font-medium">{{ virtualRow.data.fileName }}</span>
-              <Badge variant="secondary">
-                {{ virtualRow.data.status }}
-              </Badge>
-            </div>
-            <div class="text-muted-foreground mt-1 text-xs">
-              {{ rowKind(virtualRow.data).label }} - {{ formatFileSize(virtualRow.data.sizeBytes) }}
-            </div>
-            <Progress
-              v-if="virtualRow.data.status === 'uploading' || virtualRow.data.status === 'paused' || virtualRow.data.status === 'completed'"
-              :model-value="virtualRow.data.progress"
-              class="mt-2"
-            />
-            <p v-if="virtualRow.data.error" class="text-destructive mt-2 text-xs">
-              {{ virtualRow.data.error }}
-            </p>
-          </div>
-
-          <Button
-            v-if="virtualRow.data.status === 'uploading'"
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            :aria-label="`Pause ${virtualRow.data.fileName}`"
-            @click="pauseRow(virtualRow.data.id)"
-          >
-            <PauseIcon />
-          </Button>
-          <Button
-            v-else-if="virtualRow.data.status === 'paused'"
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            :aria-label="`Resume ${virtualRow.data.fileName}`"
-            @click="resumeRow(virtualRow.data.id)"
-          >
-            <PlayIcon />
-          </Button>
-          <Button
-            v-else-if="virtualRow.data.status === 'failed'"
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            :aria-label="`Retry ${virtualRow.data.fileName}`"
-            @click="retryRow(virtualRow.data.id)"
-          >
-            <RotateCcwIcon />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            :aria-label="`Remove ${virtualRow.data.fileName}`"
-            @click="removeRow(virtualRow.data.id)"
-          >
-            <XIcon />
-            <span class="sr-only">Remove {{ virtualRow.data.fileName }}</span>
-          </Button>
-        </div>
+          :row="virtualRow.data"
+          :row-style="virtualRowStyle"
+          @pause="pauseRow"
+          @resume="resumeRow"
+          @retry="retryRow"
+          @remove="removeRow"
+        />
       </div>
     </div>
 
@@ -321,81 +232,15 @@ defineExpose<FileUploadExpose>({
       leave-to-class="translate-y-1 scale-[0.99] opacity-0"
       move-class="transition-transform duration-200"
     >
-      <div
+      <FileUploadRowItem
         v-for="row in rows"
         :key="row.id"
-        data-slot="file-upload-row"
-        class="border-border bg-card flex items-center gap-3 rounded-lg border p-3 transition-colors"
-      >
-        <div class="bg-muted flex size-9 shrink-0 items-center justify-center rounded-md">
-          <component
-            :is="rowKind(row).icon"
-            class="text-muted-foreground"
-            aria-hidden="true"
-          />
-        </div>
-
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <span class="truncate text-sm font-medium">{{ row.fileName }}</span>
-            <Badge variant="secondary">
-              {{ row.status }}
-            </Badge>
-          </div>
-          <div class="text-muted-foreground mt-1 text-xs">
-            {{ rowKind(row).label }} - {{ formatFileSize(row.sizeBytes) }}
-          </div>
-          <Progress
-            v-if="row.status === 'uploading' || row.status === 'paused' || row.status === 'completed'"
-            :model-value="row.progress"
-            class="mt-2"
-          />
-          <p v-if="row.error" class="text-destructive mt-2 text-xs">
-            {{ row.error }}
-          </p>
-        </div>
-
-        <Button
-          v-if="row.status === 'uploading'"
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          :aria-label="`Pause ${row.fileName}`"
-          @click="pauseRow(row.id)"
-        >
-          <PauseIcon />
-        </Button>
-        <Button
-          v-else-if="row.status === 'paused'"
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          :aria-label="`Resume ${row.fileName}`"
-          @click="resumeRow(row.id)"
-        >
-          <PlayIcon />
-        </Button>
-        <Button
-          v-else-if="row.status === 'failed'"
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          :aria-label="`Retry ${row.fileName}`"
-          @click="retryRow(row.id)"
-        >
-          <RotateCcwIcon />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          :aria-label="`Remove ${row.fileName}`"
-          @click="removeRow(row.id)"
-        >
-          <XIcon />
-          <span class="sr-only">Remove {{ row.fileName }}</span>
-        </Button>
-      </div>
+        :row="row"
+        @pause="pauseRow"
+        @resume="resumeRow"
+        @retry="retryRow"
+        @remove="removeRow"
+      />
     </TransitionGroup>
   </div>
 </template>

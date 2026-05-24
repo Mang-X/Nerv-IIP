@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import type { DateRangeValue } from './types'
 import { CalendarRangeIcon, XIcon } from 'lucide-vue-next'
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { cn } from '../../../lib/utils'
 import { Button } from '../button'
 import { Input } from '../input'
@@ -29,6 +29,7 @@ const draft = reactive<DateRangeValue>({
   from: props.modelValue?.from ?? null,
   to: props.modelValue?.to ?? null,
 })
+const open = shallowRef(false)
 
 watch(() => props.modelValue, (value) => {
   draft.from = value?.from ?? null
@@ -51,12 +52,15 @@ function apply() {
   const value = draft.from || draft.to ? { from: draft.from, to: draft.to } : null
   emits('update:modelValue', value)
   emits('apply', value)
+  open.value = false
 }
 
 function cancel() {
   draft.from = props.modelValue?.from ?? null
   draft.to = props.modelValue?.to ?? null
+  emits('update:modelValue', props.modelValue ?? null)
   emits('cancel')
+  open.value = false
 }
 
 function clear() {
@@ -64,11 +68,12 @@ function clear() {
   draft.to = null
   emits('update:modelValue', null)
   emits('clear')
+  open.value = false
 }
 </script>
 
 <template>
-  <Popover>
+  <Popover v-model:open="open">
     <PopoverTrigger as-child>
       <Button
         type="button"

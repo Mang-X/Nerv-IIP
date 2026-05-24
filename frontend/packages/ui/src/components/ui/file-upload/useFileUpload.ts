@@ -5,10 +5,10 @@ import type {
   FileUploadRejectedFile,
   FileUploadRow,
   FileUploadSession,
-  FileUploadStatus,
   FileUploadTransport,
 } from './types'
 import { computed, reactive } from 'vue'
+import { getFileKind } from './fileKind'
 
 interface UseFileUploadOptions {
   purpose: string
@@ -135,7 +135,7 @@ export function useFileUpload(options: UseFileUploadOptions) {
       options.onCompleted(completedFiles.value)
     }
     catch (error) {
-      if (isAbortError(error) && getRowStatus(row) === 'paused') {
+      if (isAbortError(error) && isPausedRow(row)) {
         row.error = null
         return
       }
@@ -218,7 +218,6 @@ export function useFileUpload(options: UseFileUploadOptions) {
 
     controllers.clear()
     rows.splice(0)
-    options.onCompleted(completedFiles.value)
   }
 
   return {
@@ -291,12 +290,28 @@ function clampProgress(progress: number) {
   return Math.min(Math.max(Math.round(progress), 0), 100)
 }
 
-function getRowStatus(row: FileUploadRow): FileUploadStatus {
-  return row.status
+export function isSlotOccupyingRow(row: FileUploadRow) {
+  return row.status !== 'rejected' && row.status !== 'failed'
 }
 
-function isSlotOccupyingRow(row: FileUploadRow) {
-  return row.status !== 'rejected' && row.status !== 'failed'
+export function rowKind(row: FileUploadRow) {
+  return getFileKind(row.fileName, row.contentType)
+}
+
+export function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`
+  }
+
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  }
+
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
 }
 
 function isAbortError(error: unknown) {
@@ -304,4 +319,8 @@ function isAbortError(error: unknown) {
     && error !== null
     && 'name' in error
     && error.name === 'AbortError'
+}
+
+function isPausedRow(row: FileUploadRow) {
+  return row.status === 'paused'
 }

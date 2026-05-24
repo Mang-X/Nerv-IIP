@@ -24,7 +24,7 @@
 1. Props include `purpose`, `ownerService`, `ownerType`, `ownerId`, `organizationId`, `environmentId`, accepted content types, max file size, max file count, `autoUpload`, `virtualizeThreshold`, `virtualRowHeight` and `virtualListHeight`.
 2. The component emits completed `fileId` values only; it never exposes bucket names, object keys or long-lived object-storage URLs.
 3. The default native transport supports FileStorage `tus` `HEAD`/`PATCH` and `server-proxy` binary `PUT` instructions.
-4. Rows show status, progress, retryable failure errors, pause/resume controls while uploading and readable file-family labels for Word, Excel, PowerPoint, PDF, image, audio and video files.
+4. Rows show status, progress, retryable failure errors, pause/resume controls while uploading, readable file-family labels for Word, Excel, PowerPoint, PDF, image, audio and video files, and human-readable size labels through GB.
 5. `autoUpload` defaults to `true`; when set to `false`, selected or dropped files remain queued until `uploadQueued()` is called through the exposed component API.
 6. Exposed imperative methods are limited to upload workflow control: `browse`, `addFiles`, `uploadQueued`, `pauseAll`, `resumeAll`, `retryFailed` and `clear`.
 7. Drag-and-drop and browse entry points share the same validation and FileStorage session flow.

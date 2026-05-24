@@ -3,6 +3,7 @@ import type { ProgressRootProps } from 'reka-ui'
 import type { HTMLAttributes } from 'vue'
 import { reactiveOmit } from '@vueuse/core'
 import { ProgressIndicator, ProgressRoot } from 'reka-ui'
+import { computed } from 'vue'
 import { cn } from '../../../lib/utils'
 
 const props = withDefaults(
@@ -13,6 +14,9 @@ const props = withDefaults(
 )
 
 const delegatedProps = reactiveOmit(props, 'class')
+const indicatorStyle = computed(() => ({
+  transform: `translateX(-${100 - (props.modelValue ?? 0)}%)`,
+}))
 </script>
 
 <template>
@@ -24,7 +28,7 @@ const delegatedProps = reactiveOmit(props, 'class')
     <ProgressIndicator
       data-slot="progress-indicator"
       class="bg-primary size-full flex-1 transition-all"
-      :style="`transform: translateX(-${100 - (props.modelValue ?? 0)}%);`"
+      :style="indicatorStyle"
     />
   </ProgressRoot>
 </template>

@@ -188,6 +188,25 @@ describe('FileUpload', () => {
     expect(wrapper.text()).toContain('Video')
   })
 
+  it('formats very large files with a GB label', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+    const file = new File(['cad'], 'plant-model.step', { type: 'application/step' })
+    Object.defineProperty(file, 'size', {
+      configurable: true,
+      value: 3 * 1024 * 1024 * 1024,
+    })
+
+    await upload.addFiles([file])
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('3.0 GB')
+  })
+
   it('can pause and resume an uploading file without completing the session while paused', async () => {
     const deferred = createDeferredTransport()
     const completeUploadSession = vi.fn().mockResolvedValue({ fileId: 'file_1' })
@@ -351,6 +370,24 @@ describe('FileUpload', () => {
     expect(wrapper.emitted('completed')?.[0]).toEqual([
       [{ fileId: 'file_1', fileName: 'external-evidence.txt' }],
     ])
+  })
+
+  it('clears rows without emitting a synthetic empty completed event', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+
+    await upload.addFiles([
+      new File(['hello'], 'queued-evidence.txt', { type: 'text/plain' }),
+    ])
+    upload.clear()
+    await flushPromises()
+
+    expect(wrapper.find('[data-slot="file-upload-row"]').exists()).toBe(false)
+    expect(wrapper.emitted('completed')).toBeUndefined()
   })
 
   it('does not count rejected or failed rows against available slots', async () => {
