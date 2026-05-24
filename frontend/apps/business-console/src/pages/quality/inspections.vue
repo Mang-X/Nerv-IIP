@@ -12,6 +12,7 @@ import {
   Badge,
   Button,
   Field,
+  FieldDescription,
   FieldGroup,
   FieldLabel,
   Input,
@@ -79,6 +80,10 @@ const recordForm = reactive({
 
 const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
 const createErrorMessage = computed(() => formatError(createInspectionRecordError.value))
+const inspectedQuantity = computed(() => toOptionalNumber(recordForm.inspectedQuantity))
+const requiresDispositionReason = computed(() =>
+  recordForm.resultLines.some((line) => line.result === 'failed' || line.result === 'conditional-release'),
+)
 const validResultLines = computed(() =>
   recordForm.resultLines.filter(
     (line) =>
@@ -96,7 +101,9 @@ const canCreateRecord = computed(
     isNonEmpty(recordForm.sourceService) &&
     isNonEmpty(recordForm.sourceDocumentId) &&
     isNonEmpty(recordForm.skuCode) &&
-    toOptionalNumber(recordForm.inspectedQuantity) !== undefined &&
+    inspectedQuantity.value !== undefined &&
+    inspectedQuantity.value > 0 &&
+    (!requiresDispositionReason.value || isNonEmpty(recordForm.dispositionReason)) &&
     validResultLines.value.length > 0,
 )
 
@@ -143,7 +150,7 @@ async function submitInspectionRecord() {
     sourceService: recordForm.sourceService.trim(),
     sourceDocumentId: recordForm.sourceDocumentId.trim(),
     skuCode: recordForm.skuCode.trim(),
-    inspectedQuantity: toOptionalNumber(recordForm.inspectedQuantity),
+    inspectedQuantity: inspectedQuantity.value,
     batchNo: optionalText(recordForm.batchNo),
     serialNo: optionalText(recordForm.serialNo),
     resultLines: toCharacteristicResults(),
@@ -370,6 +377,7 @@ function isNonEmpty(value: string) {
                 id="record-quantity"
                 v-model="recordForm.inspectedQuantity"
                 inputmode="decimal"
+                min="0.000001"
                 required
                 type="number"
               />
@@ -449,8 +457,13 @@ function isNonEmpty(value: string) {
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
-              <FieldLabel for="record-disposition">Disposition reason</FieldLabel>
-              <Input id="record-disposition" v-model="recordForm.dispositionReason" />
+              <FieldLabel for="record-disposition">
+                Disposition reason{{ requiresDispositionReason ? ' *' : '' }}
+              </FieldLabel>
+              <Input id="record-disposition" v-model="recordForm.dispositionReason" :required="requiresDispositionReason" />
+              <FieldDescription v-if="requiresDispositionReason">
+                Required when any characteristic is failed or conditional release.
+              </FieldDescription>
             </Field>
             <Field>
               <FieldLabel for="record-files">Attachment file IDs</FieldLabel>

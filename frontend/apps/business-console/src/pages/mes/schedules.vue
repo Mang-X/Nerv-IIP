@@ -47,11 +47,8 @@ const runForm = reactive({
   organizationId: 'org-001',
   environmentId: 'env-dev',
   trigger: 'Manual',
-  scheduleDate: toDateInput(new Date()),
-  workCenterId: 'WC-001',
 })
 
-const scheduleContext = computed(() => `${runForm.scheduleDate.trim()} / ${runForm.workCenterId.trim()}`)
 const assignments = computed(() => lastSchedule.value?.assignments ?? [])
 const affectedWorkOrderIds = computed(() => lastSchedule.value?.affectedWorkOrderIds ?? [])
 const errorMessage = computed(() => formatError(runScheduleError.value))
@@ -59,9 +56,7 @@ const canRunSchedule = computed(
   () =>
     isNonEmpty(runForm.organizationId) &&
     isNonEmpty(runForm.environmentId) &&
-    isNonEmpty(runForm.trigger) &&
-    isNonEmpty(runForm.scheduleDate) &&
-    isNonEmpty(runForm.workCenterId),
+    isNonEmpty(runForm.trigger),
 )
 
 async function submitScheduleRun() {
@@ -87,10 +82,6 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
-function toDateInput(date: Date) {
-  return date.toISOString().slice(0, 10)
-}
-
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? 'Request failed.' : ''
 }
@@ -112,7 +103,7 @@ function isNonEmpty(value: string) {
       <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitScheduleRun">
         <BusinessFormStatus :error="errorMessage" :success="runSuccess" />
 
-        <FieldGroup class="grid gap-3 md:grid-cols-5">
+        <FieldGroup class="grid gap-3 md:grid-cols-3">
           <Field>
             <FieldLabel for="schedule-org">Organization</FieldLabel>
             <Input id="schedule-org" v-model="runForm.organizationId" required />
@@ -135,20 +126,10 @@ function isNonEmpty(value: string) {
               </SelectContent>
             </Select>
           </Field>
-          <Field>
-            <FieldLabel for="schedule-date">Schedule date</FieldLabel>
-            <Input id="schedule-date" v-model="runForm.scheduleDate" required type="date" />
-          </Field>
-          <Field>
-            <FieldLabel for="schedule-work-center">Work center</FieldLabel>
-            <Input id="schedule-work-center" v-model="runForm.workCenterId" required />
-          </Field>
         </FieldGroup>
 
         <div class="flex items-center justify-between gap-3 rounded-lg border p-3">
-          <span class="min-w-0 truncate text-sm text-muted-foreground">
-            {{ runForm.trigger }} / {{ scheduleContext }}
-          </span>
+          <span class="min-w-0 truncate text-sm text-muted-foreground">{{ runForm.trigger }}</span>
           <Button type="submit" :disabled="runSchedulePending || !canRunSchedule">
             <Spinner v-if="runSchedulePending" data-icon="inline-start" />
             <PlayIcon v-else data-icon="inline-start" />

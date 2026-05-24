@@ -14,6 +14,7 @@ import {
   Button,
   Checkbox,
   Field,
+  FieldDescription,
   FieldGroup,
   FieldLabel,
   Input,
@@ -90,6 +91,14 @@ const rushErrorMessage = computed(() => formatError(createRushWorkOrderError.val
 const reportErrorMessage = computed(() => formatError(recordProductionReportError.value))
 const reportGoodQuantity = computed(() => toOptionalNumber(reportForm.goodQuantity))
 const reportScrapQuantity = computed(() => toOptionalNumber(reportForm.scrapQuantity))
+const reportQuantitiesAreValid = computed(
+  () =>
+    reportGoodQuantity.value !== undefined &&
+    reportScrapQuantity.value !== undefined &&
+    reportGoodQuantity.value >= 0 &&
+    reportScrapQuantity.value >= 0 &&
+    reportGoodQuantity.value + reportScrapQuantity.value > 0,
+)
 const openOrderCount = computed(
   () => workOrders.value.filter((order) => (order.status ?? '').toLowerCase() !== 'closed').length,
 )
@@ -113,9 +122,7 @@ const canRecordReport = computed(
     isNonEmpty(reportForm.environmentId) &&
     isNonEmpty(reportForm.workOrderId) &&
     isNonEmpty(reportForm.operationTaskId) &&
-    reportGoodQuantity.value !== undefined &&
-    reportScrapQuantity.value !== undefined &&
-    reportGoodQuantity.value + reportScrapQuantity.value > 0 &&
+    reportQuantitiesAreValid.value &&
     isNonEmpty(reportForm.reportedAtUtc),
 )
 
@@ -430,11 +437,12 @@ function isNonEmpty(value: string) {
             </Field>
             <Field>
               <FieldLabel for="report-good">Good quantity</FieldLabel>
-              <Input id="report-good" v-model="reportForm.goodQuantity" inputmode="decimal" required type="number" />
+              <Input id="report-good" v-model="reportForm.goodQuantity" inputmode="decimal" min="0" required type="number" />
             </Field>
             <Field>
               <FieldLabel for="report-scrap">Scrap quantity</FieldLabel>
-              <Input id="report-scrap" v-model="reportForm.scrapQuantity" inputmode="decimal" required type="number" />
+              <Input id="report-scrap" v-model="reportForm.scrapQuantity" inputmode="decimal" min="0" required type="number" />
+              <FieldDescription>Good and scrap must be non-negative, with a total greater than zero.</FieldDescription>
             </Field>
             <Field>
               <FieldLabel for="report-time">Reported at</FieldLabel>
