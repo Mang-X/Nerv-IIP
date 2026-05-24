@@ -1,5 +1,6 @@
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
+// Metadata-only acceptance surface checks; this chain does not need shared fixture state yet.
 public sealed class ProductionToCostAcceptanceTests
 {
     [Fact]

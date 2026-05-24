@@ -39,9 +39,11 @@ public sealed class BusinessAcceptanceHarnessInfrastructureTests
     public void Event_recorder_keeps_events_grouped_by_correlation()
     {
         var correlation = _fixture.BeginCorrelation("plan-to-produce");
+        var otherCorrelation = _fixture.BeginCorrelation("plan-to-produce");
 
         _fixture.Events.Record("BusinessDemandPlanning", "planning.MrpRunCompleted", correlation, new { RunId = "mrp-001" });
         _fixture.Events.Record("BusinessMes", "mes.WorkOrderCreated", correlation, new { WorkOrderId = "wo-001" });
+        _fixture.Events.Record("BusinessMes", "mes.WorkOrderCreated", otherCorrelation, new { WorkOrderId = "wo-002" });
 
         var events = _fixture.Events.ForCorrelation(correlation.CorrelationId);
 
@@ -59,6 +61,24 @@ public sealed class BusinessAcceptanceHarnessInfrastructureTests
                 Assert.Equal("mes.WorkOrderCreated", second.EventType);
                 Assert.Equal(correlation.CorrelationId, second.CorrelationId);
             });
+    }
+
+    [Fact]
+    public async Task Event_recorder_supports_parallel_recording_and_explicit_reset()
+    {
+        var correlation = _fixture.BeginCorrelation("parallel-recorder");
+
+        await Parallel.ForAsync(0, 24, (index, _) =>
+        {
+            _fixture.Events.Record("BusinessMes", "mes.OperationReported", correlation, new { Operation = index });
+            return ValueTask.CompletedTask;
+        });
+
+        Assert.Equal(24, _fixture.Events.ForCorrelation(correlation.CorrelationId).Count);
+
+        _fixture.Events.Reset();
+
+        Assert.Empty(_fixture.Events.ForCorrelation(correlation.CorrelationId));
     }
 
     [Fact]
@@ -126,6 +146,7 @@ public sealed class BusinessAcceptanceFixture : IDisposable
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(correlation);
 
+        // Keep fixture-level defaults aligned with per-request acceptance headers.
         client.DefaultRequestHeaders.Remove("X-Correlation-Id");
         client.DefaultRequestHeaders.Add("X-Correlation-Id", correlation.CorrelationId);
         client.DefaultRequestHeaders.Remove("X-Organization-Id");

@@ -71,6 +71,7 @@ public static class BusinessAcceptanceHttp
 
     private static void ApplyCorrelationHeaders(HttpRequestMessage message, BusinessAcceptanceCorrelation correlation)
     {
+        // Request headers make correlation explicit even when a reused client has fixture defaults.
         message.Headers.Remove("X-Correlation-Id");
         message.Headers.Add("X-Correlation-Id", correlation.CorrelationId);
         message.Headers.Remove("X-Organization-Id");

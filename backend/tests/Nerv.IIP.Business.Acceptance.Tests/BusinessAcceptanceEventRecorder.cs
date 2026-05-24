@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
+
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
 public sealed class BusinessAcceptanceFixtureEventRecorder
 {
-    private readonly List<BusinessAcceptanceRecordedEvent> _events = [];
+    private readonly ConcurrentQueue<BusinessAcceptanceRecordedEvent> _events = new();
 
     public void Record(string service, string eventType, BusinessAcceptanceCorrelation correlation, object payload)
     {
@@ -11,7 +13,7 @@ public sealed class BusinessAcceptanceFixtureEventRecorder
         ArgumentNullException.ThrowIfNull(correlation);
         ArgumentNullException.ThrowIfNull(payload);
 
-        _events.Add(new BusinessAcceptanceRecordedEvent(
+        _events.Enqueue(new BusinessAcceptanceRecordedEvent(
             service,
             eventType,
             correlation.CorrelationId,
@@ -27,6 +29,13 @@ public sealed class BusinessAcceptanceFixtureEventRecorder
         return _events
             .Where(x => string.Equals(x.CorrelationId, correlationId, StringComparison.Ordinal))
             .ToArray();
+    }
+
+    public void Reset()
+    {
+        while (_events.TryDequeue(out _))
+        {
+        }
     }
 }
 
