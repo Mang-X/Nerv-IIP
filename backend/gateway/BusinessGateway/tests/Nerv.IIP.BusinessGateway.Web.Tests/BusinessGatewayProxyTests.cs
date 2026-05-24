@@ -57,6 +57,102 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Inventory_availability_uses_internal_service_token_for_downstream_business_service()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/inventory/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", inventory.LastInternalToken);
+        Assert.Equal("SKU-001", inventory.LastAvailabilityRequest!.SkuCode);
+        Assert.Equal("S1", inventory.LastAvailabilityRequest.SiteCode);
+    }
+
+    [Fact]
+    public async Task Quality_ncr_list_uses_internal_service_token_for_downstream_business_service()
+    {
+        var quality = new RecordingQualityClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev&status=open&take=20");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", quality.LastInternalToken);
+        Assert.Equal(new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", 20), quality.LastNcrListRequest);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_list_uses_internal_service_token_for_downstream_business_service()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&take=15");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "released", 15), mes.LastWorkOrderListRequest);
+    }
+
+    [Theory]
+    [InlineData("/api/business-console/v1/inventory/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1", "inventory")]
+    [InlineData("/api/business-console/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev", "quality")]
+    [InlineData("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev", "mes")]
+    public async Task New_domain_facade_endpoints_do_not_call_downstream_when_iam_denies_permission(
+        string path,
+        string domain)
+    {
+        var inventory = new RecordingInventoryClient();
+        var quality = new RecordingQualityClient();
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Forbidden(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains(domain, new[] { "inventory", "quality", "mes" });
+        Assert.Equal(0, inventory.AvailabilityCallCount);
+        Assert.Equal(0, quality.NcrListCallCount);
+        Assert.Equal(0, mes.WorkOrderListCallCount);
+    }
+
+    [Fact]
     public async Task List_skus_maps_downstream_service_error_to_gateway_error_response()
     {
         var masterData = new RecordingMasterDataClient
@@ -139,6 +235,114 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&includeDisabled=true&take=12", request.RequestUri!.PathAndQuery);
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.Equal("internal-token-001", request.Headers.Authorization.Parameter);
+    }
+
+    [Fact]
+    public async Task Inventory_http_client_sends_internal_bearer_token_and_builds_downstream_query()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                skuCode = "SKU-HTTP",
+                uomCode = "EA",
+                siteCode = "S1",
+                locationCode = (string?)null,
+                lotNo = (string?)null,
+                serialNo = (string?)null,
+                qualityStatus = "available",
+                ownerType = "owned",
+                ownerId = (string?)null,
+                onHandQuantity = 10,
+                reservedQuantity = 2,
+                availableQuantity = 8,
+                items = Array.Empty<object>(),
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://inventory.local") };
+        var client = new HttpBusinessInventoryClient(httpClient);
+
+        var response = await client.GetAvailabilityAsync(
+            "internal-token-001",
+            new BusinessConsoleInventoryAvailabilityRequest("org-001", "env-dev", "SKU-HTTP", "EA", "S1", null, null, null, "available", "owned", null),
+            CancellationToken.None);
+
+        Assert.Equal(8, response.AvailableQuantity);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/inventory/v1/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-HTTP&uomCode=EA&siteCode=S1&qualityStatus=available&ownerType=owned", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_sends_internal_bearer_token_and_builds_downstream_query()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new { id = "ncr-001", code = "NCR-001", status = "open", summary = "Defect" },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.ListNcrsAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", 12),
+            CancellationToken.None);
+
+        Assert.Equal("ncr-001", response.Items.Single().Id);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/business/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev&status=open&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Mes_http_client_sends_internal_bearer_token_and_builds_downstream_body()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            items = new[]
+            {
+                new
+                {
+                    workOrderId = "WO-HTTP",
+                    skuId = "SKU-001",
+                    productionVersionId = (string?)null,
+                    quantity = 10,
+                    priority = 0,
+                    dueUtc = DateTimeOffset.Parse("2026-05-24T00:00:00Z"),
+                    status = "released",
+                    operationTasks = Array.Empty<object>(),
+                },
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var response = await client.ListWorkOrdersAsync(
+            "internal-token-001",
+            new BusinessConsoleMesListRequest("org-001", "env-dev", "released", 12),
+            CancellationToken.None);
+
+        Assert.Equal("WO-HTTP", response.Items.Single().WorkOrderId);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
     [Fact]
@@ -289,6 +493,159 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleResourceItem> CreateSkuAsync(
         string internalBearerToken,
         BusinessConsoleCreateSkuRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleResourceItem("sku", request.Code, request.Name, true, "v1"));
+    }
+}
+
+internal sealed class RecordingInventoryClient : IBusinessInventoryClient
+{
+    public int AvailabilityCallCount { get; private set; }
+
+    public string? LastInternalToken { get; private set; }
+
+    public BusinessConsoleInventoryAvailabilityRequest? LastAvailabilityRequest { get; private set; }
+
+    public Task<BusinessConsoleInventoryAvailabilityResponse> GetAvailabilityAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryAvailabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        AvailabilityCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastAvailabilityRequest = request;
+        return Task.FromResult(new BusinessConsoleInventoryAvailabilityResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.LocationCode,
+            request.LotNo,
+            request.SerialNo,
+            request.QualityStatus,
+            request.OwnerType,
+            request.OwnerId,
+            10,
+            2,
+            8,
+            []));
+    }
+
+    public Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
+        string internalBearerToken,
+        BusinessConsolePostStockMovementRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsolePostStockMovementResponse("move-001", 10, 8));
+
+    public Task<BusinessConsoleCreateStockCountTaskResponse> CreateCountTaskAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateStockCountTaskRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleCreateStockCountTaskResponse("count-001", 1));
+
+    public Task<BusinessConsoleConfirmStockCountAdjustmentResponse> ConfirmCountAdjustmentAsync(
+        string internalBearerToken,
+        string countTaskId,
+        BusinessConsoleConfirmStockCountAdjustmentRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11));
+}
+
+internal sealed class RecordingQualityClient : IBusinessQualityClient
+{
+    public int NcrListCallCount { get; private set; }
+
+    public string? LastInternalToken { get; private set; }
+
+    public BusinessConsoleQualityListRequest? LastNcrListRequest { get; private set; }
+
+    public Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityListRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleQualityListResponse([]));
+
+    public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateInspectionRecordRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleCreateInspectionRecordResponse("inspection-001"));
+
+    public Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityListRequest request,
+        CancellationToken cancellationToken)
+    {
+        NcrListCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastNcrListRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityListResponse(
+            [new BusinessConsoleQualityItem("ncr-001", "NCR-001", "open", "Defect")]));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
+        string internalBearerToken,
+        string ncrId,
+        BusinessConsoleNcrDispositionRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+
+    public Task<BusinessConsoleAcceptedResponse> CloseNcrAsync(
+        string internalBearerToken,
+        string ncrId,
+        BusinessConsoleNcrCloseRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+}
+
+internal sealed class RecordingMesClient : IBusinessMesClient
+{
+    public int WorkOrderListCallCount { get; private set; }
+
+    public string? LastInternalToken { get; private set; }
+
+    public BusinessConsoleMesListRequest? LastWorkOrderListRequest { get; private set; }
+
+    public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken)
+    {
+        WorkOrderListCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastWorkOrderListRequest = request;
+        return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(
+            [
+                new BusinessConsoleMesWorkOrderItem(
+                    "wo-001",
+                    "SKU-001",
+                    null,
+                    10,
+                    0,
+                    DateTimeOffset.Parse("2026-05-24T00:00:00Z"),
+                    "released",
+                    []),
+            ]));
+    }
+
+    public Task<BusinessConsoleCreateRushWorkOrderResponse> CreateRushWorkOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateRushWorkOrderRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
+        string internalBearerToken,
+        BusinessConsoleRunScheduleRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordProductionReportRequest request,
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 }
