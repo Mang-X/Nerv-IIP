@@ -35,18 +35,6 @@ public interface ILocalFileContentIndex
     Task<string?> GetUploadSessionIdForDownloadGrantAsync(string downloadGrantId, CancellationToken cancellationToken);
 }
 
-public interface ILocalTusUploadSessionIndex
-{
-    Task<bool> CanAcceptTusUploadAsync(string uploadSessionId, CancellationToken cancellationToken);
-    Task<LocalTusUploadSession?> GetTusUploadSessionAsync(string uploadSessionId, CancellationToken cancellationToken);
-}
-
-public sealed record LocalTusUploadSession(
-    string UploadSessionId,
-    long ExpectedSizeBytes,
-    string? Checksum,
-    DateTimeOffset ExpiresAtUtc);
-
 public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
 {
     private readonly ConcurrentDictionary<string, UploadSession> uploadSessions = new(StringComparer.Ordinal);
@@ -150,10 +138,17 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
         }
 
-        var tusValidation = await ValidateTusCompletionAsync(session, request, cancellationToken);
+        var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
+            session.Provider,
+            session.UploadSessionId,
+            session.ExpectedSizeBytes,
+            session.Checksum,
+            request,
+            tusStoreAccessor,
+            cancellationToken);
         if (!tusValidation.IsValid)
         {
-            return FileStorageResult<FileMetadataResponse>.BadRequest(tusValidation.Message);
+            return FileStorageResult<FileMetadataResponse>.Failure(tusValidation.StatusCode, tusValidation.Message);
         }
 
         var completedSession = session with { Completed = true };
@@ -274,40 +269,6 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         return Task.FromResult(localSession);
     }
 
-    private async Task<(bool IsValid, string Message)> ValidateTusCompletionAsync(
-        UploadSession session,
-        CompleteUploadSessionRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (!string.Equals(session.Provider, TusUploadProvider.Name, StringComparison.Ordinal))
-        {
-            return (true, string.Empty);
-        }
-
-        if (tusStoreAccessor is null || !tusStoreAccessor.TryGet(out var store))
-        {
-            return (false, "Tus upload store is unavailable.");
-        }
-
-        var actualSize = store.GetOffset(session.UploadSessionId);
-        if (actualSize != session.ExpectedSizeBytes || (request.SizeBytes is not null && request.SizeBytes != actualSize))
-        {
-            return (false, "Tus upload size does not match the upload session.");
-        }
-
-        var expectedChecksum = request.Checksum ?? session.Checksum;
-        if (!string.IsNullOrWhiteSpace(expectedChecksum))
-        {
-            var actualChecksum = await store.ComputeSha256HexAsync(session.UploadSessionId, cancellationToken);
-            if (!ChecksumMatchesSha256Hex(expectedChecksum, actualChecksum))
-            {
-                return (false, "Tus upload checksum does not match the upload session.");
-            }
-        }
-
-        return (true, string.Empty);
-    }
-
     private bool TryGetTusUploadSession(string uploadSessionId, out UploadSession session)
     {
         return uploadSessions.TryGetValue(uploadSessionId, out session!)
@@ -315,18 +276,9 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             && !session.Completed;
     }
 
-    private static bool ChecksumMatchesSha256Hex(string expectedChecksum, string actualSha256Hex)
-    {
-        var normalized = expectedChecksum.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
-            ? expectedChecksum["sha256:".Length..]
-            : expectedChecksum;
-
-        return string.Equals(normalized, actualSha256Hex, StringComparison.OrdinalIgnoreCase);
-    }
-
     private static TimeSpan ResolveUploadSessionTtl(IConfiguration? configuration)
     {
-        var ttlSeconds = configuration?.GetValue<int?>("FileStorage:UploadSessionTtlSeconds");
+        var ttlSeconds = configuration?.GetValue<double?>("FileStorage:UploadSessionTtlSeconds");
         return ttlSeconds is > 0
             ? TimeSpan.FromSeconds(ttlSeconds.Value)
             : TimeSpan.FromMinutes(15);
@@ -388,6 +340,8 @@ public sealed record FileStorageResult<T>(T? Value, FileStorageError? Error, int
     public static FileStorageResult<T> Ok(T value) => new(value, null, StatusCodes.Status200OK);
     public static FileStorageResult<T> BadRequest(string message) => new(default, new FileStorageError(message), StatusCodes.Status400BadRequest);
     public static FileStorageResult<T> NotFound(string message) => new(default, new FileStorageError(message), StatusCodes.Status404NotFound);
+    public static FileStorageResult<T> ServiceUnavailable(string message) => new(default, new FileStorageError(message), StatusCodes.Status503ServiceUnavailable);
+    internal static FileStorageResult<T> Failure(int statusCode, string message) => new(default, new FileStorageError(message), statusCode);
 }
 
 internal static class FileMetadataMapping

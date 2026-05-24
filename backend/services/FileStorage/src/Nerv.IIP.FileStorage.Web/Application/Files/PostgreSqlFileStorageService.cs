@@ -108,10 +108,17 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
         }
 
-        var tusValidation = await ValidateTusCompletionAsync(session, request, cancellationToken);
+        var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
+            session.Provider,
+            session.UploadSessionId,
+            session.ExpectedSizeBytes,
+            session.Checksum,
+            request,
+            tusStoreAccessor,
+            cancellationToken);
         if (!tusValidation.IsValid)
         {
-            return FileStorageResult<FileMetadataResponse>.BadRequest(tusValidation.Message);
+            return FileStorageResult<FileMetadataResponse>.Failure(tusValidation.StatusCode, tusValidation.Message);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -241,49 +248,6 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 x.Checksum,
                 x.ExpiresAtUtc))
             .SingleOrDefaultAsync(cancellationToken);
-    }
-
-    private async Task<(bool IsValid, string Message)> ValidateTusCompletionAsync(
-        UploadSessionRecord session,
-        CompleteUploadSessionRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (!string.Equals(session.Provider, TusUploadProvider.Name, StringComparison.Ordinal))
-        {
-            return (true, string.Empty);
-        }
-
-        if (tusStoreAccessor is null || !tusStoreAccessor.TryGet(out var store))
-        {
-            return (false, "Tus upload store is unavailable.");
-        }
-
-        var actualSize = store.GetOffset(session.UploadSessionId);
-        if (actualSize != session.ExpectedSizeBytes || (request.SizeBytes is not null && request.SizeBytes != actualSize))
-        {
-            return (false, "Tus upload size does not match the upload session.");
-        }
-
-        var expectedChecksum = request.Checksum ?? session.Checksum;
-        if (!string.IsNullOrWhiteSpace(expectedChecksum))
-        {
-            var actualChecksum = await store.ComputeSha256HexAsync(session.UploadSessionId, cancellationToken);
-            if (!ChecksumMatchesSha256Hex(expectedChecksum, actualChecksum))
-            {
-                return (false, "Tus upload checksum does not match the upload session.");
-            }
-        }
-
-        return (true, string.Empty);
-    }
-
-    private static bool ChecksumMatchesSha256Hex(string expectedChecksum, string actualSha256Hex)
-    {
-        var normalized = expectedChecksum.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
-            ? expectedChecksum["sha256:".Length..]
-            : expectedChecksum;
-
-        return string.Equals(normalized, actualSha256Hex, StringComparison.OrdinalIgnoreCase);
     }
 
     private static FileMetadataResponse ToResponse(StoredFileRecord file)

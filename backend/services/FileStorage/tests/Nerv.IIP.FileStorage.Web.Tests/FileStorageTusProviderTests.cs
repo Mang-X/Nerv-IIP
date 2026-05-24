@@ -54,6 +54,22 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
+    public async Task CompleteUploadSession_TusStoreUnavailable_ReturnsServiceUnavailable()
+    {
+        var service = new InMemoryFileStorageService(new TusUploadProvider());
+        var created = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
+
+        var result = await service.CompleteUploadSessionAsync(
+            created.UploadSessionId,
+            new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, 4096),
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
+        Assert.Null(result.Value);
+        Assert.Equal("Tus upload store is unavailable.", result.Error?.Message);
+    }
+
+    [Fact]
     public async Task TusUploadEndpoint_HeadAndPatch_TracksOffset()
     {
         var rootPath = CreateTempDirectory();
@@ -243,11 +259,11 @@ public sealed class FileStorageTusProviderTests
         var rootPath = CreateTempDirectory();
         try
         {
-            await using var factory = CreateFactoryWithTusProvider(rootPath, uploadSessionTtlSeconds: 1);
+            await using var factory = CreateFactoryWithTusProvider(rootPath, uploadSessionTtlSeconds: 0.1);
             var client = CreateInternalServiceClient(factory);
             var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 5);
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
-            await Task.Delay(TimeSpan.FromMilliseconds(1200));
+            await Task.Delay(TimeSpan.FromMilliseconds(300));
 
             var response = await SendTusHeadAsync(client, created.Upload.Url);
 
@@ -435,7 +451,7 @@ public sealed class FileStorageTusProviderTests
 
     private static WebApplicationFactory<Program> CreateFactoryWithTusProvider(
         string? rootPath = null,
-        int? uploadSessionTtlSeconds = null)
+        double? uploadSessionTtlSeconds = null)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
