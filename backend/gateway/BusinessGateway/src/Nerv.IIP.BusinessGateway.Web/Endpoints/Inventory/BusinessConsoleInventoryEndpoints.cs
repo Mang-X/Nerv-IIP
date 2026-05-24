@@ -1,5 +1,6 @@
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
+using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Inventory;
@@ -12,7 +13,7 @@ public sealed class ConfirmBusinessConsoleInventoryCountAdjustmentRequest
 [Tags("Business Console Inventory")]
 [HttpGet("/api/business-console/v1/inventory/availability")]
 [BusinessGatewayOperationId("getBusinessConsoleInventoryAvailability")]
-[AllowAnonymous]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class GetBusinessConsoleInventoryAvailabilityEndpoint : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -24,7 +25,7 @@ public sealed class GetBusinessConsoleInventoryAvailabilityEndpoint : EndpointWi
 [Tags("Business Console Inventory")]
 [HttpPost("/api/business-console/v1/inventory/movements")]
 [BusinessGatewayOperationId("postBusinessConsoleInventoryMovement")]
-[AllowAnonymous]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class PostBusinessConsoleInventoryMovementEndpoint : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -36,7 +37,7 @@ public sealed class PostBusinessConsoleInventoryMovementEndpoint : EndpointWitho
 [Tags("Business Console Inventory")]
 [HttpPost("/api/business-console/v1/inventory/count-tasks")]
 [BusinessGatewayOperationId("createBusinessConsoleInventoryCountTask")]
-[AllowAnonymous]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class CreateBusinessConsoleInventoryCountTaskEndpoint : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -48,7 +49,7 @@ public sealed class CreateBusinessConsoleInventoryCountTaskEndpoint : EndpointWi
 [Tags("Business Console Inventory")]
 [HttpPost("/api/business-console/v1/inventory/count-tasks/{countTaskId}/adjustments")]
 [BusinessGatewayOperationId("confirmBusinessConsoleInventoryCountAdjustment")]
-[AllowAnonymous]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class ConfirmBusinessConsoleInventoryCountAdjustmentEndpoint
     : Endpoint<ConfirmBusinessConsoleInventoryCountAdjustmentRequest>
 {

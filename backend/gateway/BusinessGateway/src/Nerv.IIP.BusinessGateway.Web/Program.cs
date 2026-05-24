@@ -1,6 +1,9 @@
 using System.Net;
 using FastEndpoints;
 using FastEndpoints.Swagger;
+using Microsoft.Extensions.Http.Resilience;
+using Nerv.IIP.BusinessGateway.Web.Application.Auth;
+using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Localization;
@@ -23,11 +26,21 @@ builder.Services.AddNervIipCaching(builder.Configuration, "business-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "business-gateway");
 builder.Services.AddNervIipLocalization();
 builder.Services.AddNervIipInternalServiceTokenProvider(builder.Configuration, builder.Environment);
+builder.Services.Configure<BusinessGatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
+builder.Services.AddHttpClient<IBusinessGatewayAuthorizationClient, HttpBusinessGatewayAuthorizationClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102");
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddBusinessGatewayAuthentication(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 app.UseNervIipCorrelation();
 app.UseNervIipRequestLocalization();
 app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = HttpStatusCode.BadRequest });
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseFastEndpoints(c =>
 {
     c.Endpoints.NameGenerator = BusinessGatewayOperationIdConvention.Generate;

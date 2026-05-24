@@ -1,5 +1,6 @@
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
+using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Quality;
@@ -17,7 +18,7 @@ public sealed class CloseBusinessConsoleQualityNcrRequest
 [Tags("Business Console Quality")]
 [HttpGet("/api/business-console/v1/quality/inspection-plans")]
 [BusinessGatewayOperationId("listBusinessConsoleQualityInspectionPlans")]
-[AllowAnonymous]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class ListBusinessConsoleQualityInspectionPlansEndpoint : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -29,7 +30,7 @@ public sealed class ListBusinessConsoleQualityInspectionPlansEndpoint : Endpoint
 [Tags("Business Console Quality")]
 [HttpPost("/api/business-console/v1/quality/inspection-records")]
 [BusinessGatewayOperationId("createBusinessConsoleQualityInspectionRecord")]
-[AllowAnonymous]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class CreateBusinessConsoleQualityInspectionRecordEndpoint : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -41,7 +42,7 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordEndpoint : Endpo
 [Tags("Business Console Quality")]
 [HttpGet("/api/business-console/v1/quality/ncrs")]
 [BusinessGatewayOperationId("listBusinessConsoleQualityNcrs")]
-[AllowAnonymous]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class ListBusinessConsoleQualityNcrsEndpoint : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -53,7 +54,7 @@ public sealed class ListBusinessConsoleQualityNcrsEndpoint : EndpointWithoutRequ
 [Tags("Business Console Quality")]
 [HttpPost("/api/business-console/v1/quality/ncrs/{ncrId}/disposition")]
 [BusinessGatewayOperationId("submitBusinessConsoleQualityNcrDisposition")]
-[AllowAnonymous]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class SubmitBusinessConsoleQualityNcrDispositionEndpoint
     : Endpoint<SubmitBusinessConsoleQualityNcrDispositionRequest>
 {
@@ -66,7 +67,7 @@ public sealed class SubmitBusinessConsoleQualityNcrDispositionEndpoint
 [Tags("Business Console Quality")]
 [HttpPost("/api/business-console/v1/quality/ncrs/{ncrId}/close")]
 [BusinessGatewayOperationId("closeBusinessConsoleQualityNcr")]
-[AllowAnonymous]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class CloseBusinessConsoleQualityNcrEndpoint : Endpoint<CloseBusinessConsoleQualityNcrRequest>
 {
     public override async Task HandleAsync(CloseBusinessConsoleQualityNcrRequest req, CancellationToken ct)
