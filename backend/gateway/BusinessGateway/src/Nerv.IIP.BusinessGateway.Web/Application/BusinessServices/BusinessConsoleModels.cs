@@ -1,3 +1,5 @@
+using FastEndpoints;
+
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public sealed record BusinessConsoleResourceItem(
@@ -124,7 +126,9 @@ public sealed record BusinessConsoleCreateStockCountTaskResponse(
     long ExpectedLedgerVersion);
 
 public sealed record BusinessConsoleConfirmStockCountAdjustmentRequest(
-    string CountTaskId,
+    [property: RouteParam] string CountTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
     decimal CountedQuantity,
     string IdempotencyKey);
 
@@ -175,13 +179,17 @@ public sealed record BusinessConsoleInspectionCharacteristicResult(
 public sealed record BusinessConsoleCreateInspectionRecordResponse(string InspectionRecordId);
 
 public sealed record BusinessConsoleNcrDispositionRequest(
-    string NcrId,
+    [property: RouteParam] string NcrId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
     string DispositionType,
     string? DispositionApprovalChainId,
     IReadOnlyCollection<string>? AttachmentFileIds);
 
 public sealed record BusinessConsoleNcrCloseRequest(
-    string NcrId,
+    [property: RouteParam] string NcrId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId);

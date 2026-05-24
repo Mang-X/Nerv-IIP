@@ -84,10 +84,10 @@ public sealed class ConfirmBusinessConsoleInventoryCountAdjustmentEndpoint(
         BusinessGatewayPermissions.InventoryCountsManage)
 {
     protected override string OrganizationId(BusinessConsoleConfirmStockCountAdjustmentRequest request) =>
-        HttpContext.Request.Query["organizationId"].ToString();
+        request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleConfirmStockCountAdjustmentRequest request) =>
-        HttpContext.Request.Query["environmentId"].ToString();
+        request.EnvironmentId;
 
     protected override Task<BusinessConsoleConfirmStockCountAdjustmentResponse> ForwardAsync(
         BusinessConsoleConfirmStockCountAdjustmentRequest request,

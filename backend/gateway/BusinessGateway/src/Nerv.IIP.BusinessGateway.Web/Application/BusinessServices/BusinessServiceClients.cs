@@ -332,18 +332,27 @@ public sealed class HttpBusinessInventoryClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             $"/api/inventory/v1/count-tasks/{Uri.EscapeDataString(countTaskId)}/adjustments",
-            request,
+            new DownstreamConfirmStockCountAdjustmentRequest(
+                countTaskId,
+                request.CountedQuantity,
+                request.IdempotencyKey),
             cancellationToken);
+
+    private sealed record DownstreamConfirmStockCountAdjustmentRequest(
+        string CountTaskId,
+        decimal CountedQuantity,
+        string IdempotencyKey);
 }
 
 public sealed class HttpBusinessQualityClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessQualityClient
 {
-    public Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
+    public async Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleQualityListResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamInspectionPlanListResponse>(
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/quality/inspection-plans?" + Query(
@@ -353,6 +362,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("take", request.Take)),
             null,
             cancellationToken);
+        return new BusinessConsoleQualityListResponse(
+            response.Items.Select(ToConsoleItem).ToArray());
+    }
 
     public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordAsync(
         string internalBearerToken,
@@ -365,11 +377,12 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             request,
             cancellationToken);
 
-    public Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
+    public async Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleQualityListResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamNcrListResponse>(
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/quality/ncrs?" + Query(
@@ -379,6 +392,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("take", request.Take)),
             null,
             cancellationToken);
+        return new BusinessConsoleQualityListResponse(
+            response.Items.Select(ToConsoleItem).ToArray());
+    }
 
     public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
         string internalBearerToken,
@@ -389,7 +405,11 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/quality/ncrs/{Uri.EscapeDataString(ncrId)}/disposition",
-            request,
+            new DownstreamSubmitNcrDispositionRequest(
+                ncrId,
+                request.DispositionType,
+                request.DispositionApprovalChainId,
+                request.AttachmentFileIds),
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> CloseNcrAsync(
@@ -401,8 +421,93 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/quality/ncrs/{Uri.EscapeDataString(ncrId)}/close",
-            request,
+            new DownstreamCloseNcrRequest(
+                ncrId,
+                request.ReworkWorkOrderId,
+                request.ScrapMovementId,
+                request.ReturnDocumentId),
             cancellationToken);
+
+    private static BusinessConsoleQualityItem ToConsoleItem(DownstreamInspectionPlanItem item)
+    {
+        var summaryParts = new[]
+            {
+                item.Category,
+                item.SkuCode,
+                item.PartnerId,
+                item.WorkCenterId,
+                item.DeviceAssetId,
+                item.DocumentType,
+            }
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+
+        return new BusinessConsoleQualityItem(
+            item.InspectionPlanId,
+            item.PlanCode,
+            item.Status,
+            string.Join(" / ", summaryParts));
+    }
+
+    private static BusinessConsoleQualityItem ToConsoleItem(DownstreamNcrItem item)
+    {
+        var summaryParts = new[]
+            {
+                item.SourceType,
+                item.SourceDocumentId,
+                item.SkuCode,
+                item.DefectQuantity.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                item.DefectReason,
+            }
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+
+        return new BusinessConsoleQualityItem(
+            item.NcrId,
+            item.NcrCode,
+            item.Status,
+            string.Join(" / ", summaryParts));
+    }
+
+    private sealed record DownstreamInspectionPlanListResponse(
+        IReadOnlyCollection<DownstreamInspectionPlanItem> Items);
+
+    private sealed record DownstreamInspectionPlanItem(
+        string InspectionPlanId,
+        string PlanCode,
+        string Category,
+        string? SkuCode,
+        string? PartnerId,
+        string? WorkCenterId,
+        string? DeviceAssetId,
+        string? DocumentType,
+        int Version,
+        string Status);
+
+    private sealed record DownstreamNcrListResponse(
+        IReadOnlyCollection<DownstreamNcrItem> Items);
+
+    private sealed record DownstreamNcrItem(
+        string NcrId,
+        string NcrCode,
+        string SourceType,
+        string SourceDocumentId,
+        string SkuCode,
+        decimal DefectQuantity,
+        string DefectReason,
+        string? BatchNo,
+        string? SerialNo,
+        string Status);
+
+    private sealed record DownstreamSubmitNcrDispositionRequest(
+        string NcrId,
+        string DispositionType,
+        string? DispositionApprovalChainId,
+        IReadOnlyCollection<string>? AttachmentFileIds);
+
+    private sealed record DownstreamCloseNcrRequest(
+        string NcrId,
+        string? ReworkWorkOrderId,
+        string? ScrapMovementId,
+        string? ReturnDocumentId);
 }
 
 public sealed class HttpBusinessMesClient(HttpClient httpClient)

@@ -84,10 +84,10 @@ public sealed class SubmitBusinessConsoleQualityNcrDispositionEndpoint(
         BusinessGatewayPermissions.QualityNcrManage)
 {
     protected override string OrganizationId(BusinessConsoleNcrDispositionRequest request) =>
-        HttpContext.Request.Query["organizationId"].ToString();
+        request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleNcrDispositionRequest request) =>
-        HttpContext.Request.Query["environmentId"].ToString();
+        request.EnvironmentId;
 
     protected override string? ResourceType(BusinessConsoleNcrDispositionRequest request) => "ncr";
 
@@ -121,10 +121,10 @@ public sealed class CloseBusinessConsoleQualityNcrEndpoint(
         BusinessGatewayPermissions.QualityNcrManage)
 {
     protected override string OrganizationId(BusinessConsoleNcrCloseRequest request) =>
-        HttpContext.Request.Query["organizationId"].ToString();
+        request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleNcrCloseRequest request) =>
-        HttpContext.Request.Query["environmentId"].ToString();
+        request.EnvironmentId;
 
     protected override string? ResourceType(BusinessConsoleNcrCloseRequest request) => "ncr";
 

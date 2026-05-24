@@ -39,11 +39,46 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/schedules/run", "post", "runBusinessConsoleMesSchedule");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "post", "recordBusinessConsoleMesProductionReport");
         AssertOperationId(paths, "/health", "get", "HealthEndpoint");
+
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/inventory/count-tasks/{countTaskId}/adjustments",
+            "post",
+            "organizationId",
+            "environmentId");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/quality/ncrs/{ncrId}/disposition",
+            "post",
+            "organizationId",
+            "environmentId");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/quality/ncrs/{ncrId}/close",
+            "post",
+            "organizationId",
+            "environmentId");
     }
 
     private static void AssertOperationId(JsonElement paths, string path, string method, string operationId)
     {
         Assert.Equal(operationId, paths.GetProperty(path).GetProperty(method).GetProperty("operationId").GetString());
+    }
+
+    private static void AssertQueryParameters(JsonElement paths, string path, string method, params string[] names)
+    {
+        var parameters = paths.GetProperty(path)
+            .GetProperty(method)
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Where(parameter => parameter.GetProperty("in").GetString() == "query")
+            .Select(parameter => parameter.GetProperty("name").GetString())
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var name in names)
+        {
+            Assert.Contains(name, parameters);
+        }
     }
 
     private static void AssertOperationIdsAreUnique(JsonDocument document)

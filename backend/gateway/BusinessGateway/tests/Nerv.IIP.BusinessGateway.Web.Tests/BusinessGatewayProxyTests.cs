@@ -288,7 +288,17 @@ public sealed class BusinessGatewayProxyTests
             {
                 items = new[]
                 {
-                    new { id = "ncr-001", code = "NCR-001", status = "open", summary = "Defect" },
+                    new
+                    {
+                        ncrId = "ncr-001",
+                        ncrCode = "NCR-001",
+                        sourceType = "inspection",
+                        sourceDocumentId = "IR-001",
+                        skuCode = "SKU-001",
+                        defectQuantity = 1,
+                        defectReason = "Defect",
+                        status = "open",
+                    },
                 },
             },
             success = true,
@@ -308,6 +318,88 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/business/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev&status=open&take=12", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_maps_real_downstream_inspection_plan_payload_to_console_items()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        inspectionPlanId = "plan-001",
+                        planCode = "IP-001",
+                        category = "incoming",
+                        skuCode = "SKU-001",
+                        status = "active",
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.ListInspectionPlansAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityListRequest("org-001", "env-dev", "active", 12),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal("plan-001", item.Id);
+        Assert.Equal("IP-001", item.Code);
+        Assert.Equal("active", item.Status);
+        Assert.Contains("incoming", item.Summary, StringComparison.Ordinal);
+        Assert.Contains("SKU-001", item.Summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_maps_real_downstream_ncr_payload_to_console_items()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        ncrId = "ncr-001",
+                        ncrCode = "NCR-001",
+                        sourceType = "inspection",
+                        sourceDocumentId = "IR-001",
+                        skuCode = "SKU-001",
+                        defectQuantity = 3,
+                        defectReason = "dimension-out-of-spec",
+                        status = "open",
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.ListNcrsAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", 12),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal("ncr-001", item.Id);
+        Assert.Equal("NCR-001", item.Code);
+        Assert.Equal("open", item.Status);
+        Assert.Contains("inspection", item.Summary, StringComparison.Ordinal);
+        Assert.Contains("SKU-001", item.Summary, StringComparison.Ordinal);
+        Assert.Contains("dimension-out-of-spec", item.Summary, StringComparison.Ordinal);
     }
 
     [Fact]

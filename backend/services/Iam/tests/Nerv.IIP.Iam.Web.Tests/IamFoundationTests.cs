@@ -150,16 +150,28 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Contains(catalog.Items, item => item.Code == "business.erp.finance.manage"
             && item.Domain == "business"
             && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.mes.work-orders.read"
+            && item.Domain == "business"
+            && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.mes.work-orders.manage"
+            && item.Domain == "business"
+            && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.mes.reporting.write"
+            && item.Domain == "business"
+            && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.mes.schedules.manage"
+            && item.Domain == "business"
+            && item.Seeded);
 
         var create = await _client.PostAsJsonAsync(
             "/api/iam/v1/roles",
-            new { roleName = "Operator", permissionCodes = new[] { "apphub.instances.read", "business.inventory.ledger.read", "business.quality.inspection-records.create" } });
+            new { roleName = "Operator", permissionCodes = new[] { "apphub.instances.read", "business.inventory.ledger.read", "business.quality.inspection-records.create", "business.mes.work-orders.read" } });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var created = await ReadResponseDataAsync<RoleResponse>(create);
 
         Assert.StartsWith("role-", created!.RoleId, StringComparison.Ordinal);
         Assert.Equal("Operator", created.RoleName);
-        Assert.Equal(["apphub.instances.read", "business.inventory.ledger.read", "business.quality.inspection-records.create"], created.PermissionCodes.Order().ToArray());
+        Assert.Equal(["apphub.instances.read", "business.inventory.ledger.read", "business.mes.work-orders.read", "business.quality.inspection-records.create"], created.PermissionCodes.Order().ToArray());
 
         var patch = await _client.PatchAsJsonAsync(
             $"/api/iam/v1/roles/{created.RoleId}/permissions",
