@@ -26,15 +26,23 @@ A calm, professional enterprise control plane built on **Vue 3 + Tailwind CSS v4
 | `Input` | `@nerv-iip/ui` | Text entry | Selecting from a fixed list (use Select) |
 | `Select` + parts | `@nerv-iip/ui` | Fixed-option selection | Searching through large option sets (use Combobox) |
 | `Checkbox` | `@nerv-iip/ui` | Multi-select, permission toggles | Exclusive single-choice (use Select) |
+| `Tabs` + parts | `@nerv-iip/ui` | Peer sections inside a detail object | Primary app navigation |
+| `Sheet` + parts | `@nerv-iip/ui` | Slide-in detail/edit panels that preserve list context | Full-page workflows |
+| `DatePicker` / `DateRangePicker` | `@nerv-iip/ui` | DateOnly form fields and business date range filters | Date-time selection or timezone-specific timestamps |
+| `Chart` parts | `@nerv-iip/ui` | Business dashboards with semantic chart tokens | Decorative one-off visualizations |
+| `FileUpload` | `@nerv-iip/ui` | FileStorage-backed attachments and evidence uploads | Direct object-storage uploads |
 | `Avatar` + parts | `@nerv-iip/ui` | User identity display | Generic icons |
 | `DropdownMenu` + parts | `@nerv-iip/ui` | Contextual row actions, topbar user menu | Primary navigation |
 | `Pagination` + parts | `@nerv-iip/ui` | Server-side paginated lists (via IamPagination wrapper) | Client-side filtered lists |
 | `Skeleton` | `@nerv-iip/ui` | Initial data load placeholder | Refresh over existing data (use Spinner) |
 | `Spinner` | `@nerv-iip/ui` | Button/inline loading indicator | Full-section initial load (use Skeleton) |
+| `Progress` | `@nerv-iip/ui` | Upload, batch, or operation progress | Binary status labels |
+| `ScrollArea` + `ScrollBar` | `@nerv-iip/ui` | Constrained task/detail lists | Whole-page scrolling |
 | `Separator` | `@nerv-iip/ui` | Visual section dividers | Layout spacing (use `gap-*`) |
 | `Toaster` / `toast` | `@nerv-iip/ui` | Transient success/error feedback | Persistent errors (use Alert) |
 | `Breadcrumb` + parts | `@nerv-iip/ui` | Deep hierarchy navigation (plant → line → device) | Flat single-level pages |
 | `Tooltip` + parts | `@nerv-iip/ui` | Icon-only button labels, status descriptions | Long-form help text (use Popover) |
+| `Popover` + parts | `@nerv-iip/ui` | Date pickers and compact advanced filter panels | Modal workflows (use Dialog/Sheet) |
 | `Sidebar` + parts | `@nerv-iip/ui` | App shell collapsible sidebar layout | — (only used by `AppShell`) |
 
 ### Not yet installed — install as needed
@@ -43,17 +51,9 @@ See `components/install-backlog.md` for full list and install commands.
 
 | Component | When you need it |
 |---|---|
-| `Tabs` | Detail pages with multiple content sections |
-| `Sheet` | Slide-in detail panel (replaces InstanceDetailPanel) |
-| `Popover` | Date pickers, advanced filter panels |
-| `Progress` | Operation task %, batch progress bars |
 | `Collapsible` | Timeline entries, config section groups (available via `reka-ui` directly) |
-| `ScrollArea` | Constrained-height scrollable lists |
 | `Command` | Combobox / searchable Select for large datasets |
-| `Calendar` | Date/range pickers for scheduling and telemetry |
 | `Toggle` / `ToggleGroup` | View mode switches, filter pill groups |
-| `Chart` | Business dashboards and metrics once installed through `@nerv-iip/ui` |
-| `FileUpload` | FileStorage-backed uploads; see `roadmaps/business-console-readiness.md` |
 
 ---
 
