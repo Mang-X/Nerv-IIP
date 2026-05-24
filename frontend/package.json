@@ -9,7 +9,7 @@
     "fmt": "vp fmt --check .",
     "fmt:fix": "vp fmt --write .",
     "lint": "vp lint .",
-    "test": "vp test run",
+    "test": "vp run -w workspace:test",
     "typecheck": "vp run -w workspace:typecheck",
     "build": "vp run -w workspace:build"
   },

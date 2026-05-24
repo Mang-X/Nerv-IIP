@@ -89,6 +89,16 @@ export default defineConfig({
           'tsconfig.base.json',
         ],
       },
+      'workspace:test': {
+        command: 'pnpm -r --if-present test',
+        input: [
+          'apps/**/src/**',
+          'apps/**/vite.config.ts',
+          'packages/**/src/**',
+          'packages/**/tsconfig.json',
+          'tsconfig.base.json',
+        ],
+      },
       'workspace:build': {
         command:
           'pnpm --filter @nerv-iip/console --filter @nerv-iip/business-console build',

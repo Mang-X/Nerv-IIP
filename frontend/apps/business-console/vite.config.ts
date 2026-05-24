@@ -27,6 +27,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@nerv-iip/api-client': fileURLToPath(
+        new URL('../../packages/api-client/src/index.ts', import.meta.url),
+      ),
+      '@nerv-iip/app-shell': fileURLToPath(
+        new URL('../../packages/app-shell/src/index.ts', import.meta.url),
+      ),
       '@nerv-iip/ui': fileURLToPath(new URL('../../packages/ui/src/index.ts', import.meta.url)),
     },
   },
@@ -46,5 +52,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
   },
 })
