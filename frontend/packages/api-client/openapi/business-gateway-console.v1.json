@@ -1195,17 +1195,17 @@
           "characteristicCode": {
             "type": "string"
           },
-          "defectCode": {
+          "observedValue": {
             "type": "string"
           },
-          "measuredValue": {
+          "unitCode": {
             "type": "string",
             "nullable": true
           },
           "result": {
             "type": "string"
           },
-          "dispositionReason": {
+          "defectReason": {
             "type": "string",
             "nullable": true
           },

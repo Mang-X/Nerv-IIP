@@ -158,6 +158,8 @@ public sealed class BusinessServiceProxyException : Exception
 
 public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     protected async Task<TResponse> SendAsync<TResponse>(
         string internalBearerToken,
         HttpMethod method,
@@ -169,7 +171,7 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
         if (body is not null)
         {
-            request.Content = JsonContent.Create(body);
+            request.Content = JsonContent.Create(body, options: JsonOptions);
         }
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
@@ -374,7 +376,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/quality/inspection-records",
-            request,
+            ToDownstreamRequest(request),
             cancellationToken);
 
     public async Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
@@ -469,6 +471,58 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 
     private sealed record DownstreamInspectionPlanListResponse(
         IReadOnlyCollection<DownstreamInspectionPlanItem> Items);
+
+    private static DownstreamCreateInspectionRecordRequest ToDownstreamRequest(
+        BusinessConsoleCreateInspectionRecordRequest request) =>
+        new(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.InspectionPlanId,
+            request.SourceType,
+            request.SourceService,
+            request.SourceDocumentId,
+            request.SkuCode,
+            request.InspectedQuantity,
+            request.BatchNo,
+            request.SerialNo,
+            request.ResultLines?.Select(ToDownstreamLine).ToArray(),
+            request.DispositionReason,
+            request.DispositionAttachmentFileIds);
+
+    private static DownstreamInspectionResultLine ToDownstreamLine(
+        BusinessConsoleInspectionCharacteristicResult line) =>
+        new(
+            line.CharacteristicCode,
+            line.ObservedValue,
+            line.UnitCode,
+            line.Result,
+            line.DefectReason,
+            line.DefectQuantity,
+            line.AttachmentFileIds ?? []);
+
+    private sealed record DownstreamCreateInspectionRecordRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        string? InspectionPlanId,
+        string SourceType,
+        string SourceService,
+        string SourceDocumentId,
+        string SkuCode,
+        decimal InspectedQuantity,
+        string? BatchNo,
+        string? SerialNo,
+        IReadOnlyCollection<DownstreamInspectionResultLine>? ResultLines,
+        string? DispositionReason,
+        IReadOnlyCollection<string>? DispositionAttachmentFileIds);
+
+    private sealed record DownstreamInspectionResultLine(
+        string CharacteristicCode,
+        string ObservedValue,
+        string? UnitCode,
+        string Result,
+        string? DefectReason,
+        decimal? DefectQuantity,
+        IReadOnlyCollection<string> AttachmentFileIds);
 
     private sealed record DownstreamInspectionPlanItem(
         string InspectionPlanId,

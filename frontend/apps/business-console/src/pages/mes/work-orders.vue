@@ -88,6 +88,8 @@ const reportForm = reactive({
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
 const rushErrorMessage = computed(() => formatError(createRushWorkOrderError.value))
 const reportErrorMessage = computed(() => formatError(recordProductionReportError.value))
+const reportGoodQuantity = computed(() => toOptionalNumber(reportForm.goodQuantity))
+const reportScrapQuantity = computed(() => toOptionalNumber(reportForm.scrapQuantity))
 const openOrderCount = computed(
   () => workOrders.value.filter((order) => (order.status ?? '').toLowerCase() !== 'closed').length,
 )
@@ -111,8 +113,9 @@ const canRecordReport = computed(
     isNonEmpty(reportForm.environmentId) &&
     isNonEmpty(reportForm.workOrderId) &&
     isNonEmpty(reportForm.operationTaskId) &&
-    toOptionalNumber(reportForm.goodQuantity) !== undefined &&
-    toOptionalNumber(reportForm.scrapQuantity) !== undefined &&
+    reportGoodQuantity.value !== undefined &&
+    reportScrapQuantity.value !== undefined &&
+    reportGoodQuantity.value + reportScrapQuantity.value > 0 &&
     isNonEmpty(reportForm.reportedAtUtc),
 )
 
@@ -162,8 +165,8 @@ async function submitProductionReport() {
     environmentId: reportForm.environmentId.trim(),
     workOrderId: reportForm.workOrderId.trim(),
     operationTaskId: reportForm.operationTaskId.trim(),
-    goodQuantity: toOptionalNumber(reportForm.goodQuantity),
-    scrapQuantity: toOptionalNumber(reportForm.scrapQuantity),
+    goodQuantity: reportGoodQuantity.value,
+    scrapQuantity: reportScrapQuantity.value,
     completesOperation: reportForm.completesOperation,
     reportedAtUtc: toIsoFromLocalInput(reportForm.reportedAtUtc),
   }

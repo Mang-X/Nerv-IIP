@@ -403,6 +403,77 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_maps_inspection_record_to_real_downstream_request_shape()
+    {
+        string? requestBody = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    inspectionRecordId = "inspection-001",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.CreateInspectionRecordAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateInspectionRecordRequest(
+                "org-001",
+                "env-dev",
+                "plan-001",
+                "operation",
+                "mes-operation",
+                "OP-001",
+                "SKU-001",
+                10m,
+                "LOT-001",
+                null,
+                [
+                    new BusinessConsoleInspectionCharacteristicResult(
+                        "dimension",
+                        "10.2",
+                        "mm",
+                        "conditional-release",
+                        "within-waiver-limit",
+                        1m,
+                        ["file-001"]),
+                ],
+                "waiver approved",
+                ["disp-file-001"]),
+            CancellationToken.None);
+
+        Assert.Equal("inspection-001", response.InspectionRecordId);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/business/v1/quality/inspection-records", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+
+        Assert.NotNull(requestBody);
+        using var document = JsonDocument.Parse(requestBody);
+        var root = document.RootElement;
+        Assert.Equal("operation", root.GetProperty("sourceType").GetString());
+        Assert.Equal("mes-operation", root.GetProperty("sourceService").GetString());
+        var line = root.GetProperty("resultLines")[0];
+        Assert.Equal("dimension", line.GetProperty("characteristicCode").GetString());
+        Assert.Equal("10.2", line.GetProperty("observedValue").GetString());
+        Assert.Equal("mm", line.GetProperty("unitCode").GetString());
+        Assert.Equal("conditional-release", line.GetProperty("result").GetString());
+        Assert.Equal("within-waiver-limit", line.GetProperty("defectReason").GetString());
+        Assert.Equal(1m, line.GetProperty("defectQuantity").GetDecimal());
+        Assert.False(line.TryGetProperty("measuredValue", out _));
+        Assert.False(line.TryGetProperty("dispositionReason", out _));
+        Assert.False(line.TryGetProperty("defectCode", out _));
+    }
+
+    [Fact]
     public async Task Mes_http_client_sends_internal_bearer_token_and_builds_downstream_body()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new

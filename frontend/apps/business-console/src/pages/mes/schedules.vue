@@ -46,18 +46,12 @@ const runSuccess = shallowRef('')
 const runForm = reactive({
   organizationId: 'org-001',
   environmentId: 'env-dev',
-  ruleCode: 'finite-capacity',
+  trigger: 'Manual',
   scheduleDate: toDateInput(new Date()),
   workCenterId: 'WC-001',
 })
 
-const trigger = computed(() => {
-  return [
-    `rule=${runForm.ruleCode.trim()}`,
-    `date=${runForm.scheduleDate.trim()}`,
-    `workCenter=${runForm.workCenterId.trim()}`,
-  ].join(';')
-})
+const scheduleContext = computed(() => `${runForm.scheduleDate.trim()} / ${runForm.workCenterId.trim()}`)
 const assignments = computed(() => lastSchedule.value?.assignments ?? [])
 const affectedWorkOrderIds = computed(() => lastSchedule.value?.affectedWorkOrderIds ?? [])
 const errorMessage = computed(() => formatError(runScheduleError.value))
@@ -65,7 +59,7 @@ const canRunSchedule = computed(
   () =>
     isNonEmpty(runForm.organizationId) &&
     isNonEmpty(runForm.environmentId) &&
-    isNonEmpty(runForm.ruleCode) &&
+    isNonEmpty(runForm.trigger) &&
     isNonEmpty(runForm.scheduleDate) &&
     isNonEmpty(runForm.workCenterId),
 )
@@ -76,7 +70,7 @@ async function submitScheduleRun() {
   const body: BusinessConsoleRunScheduleRequest = {
     organizationId: runForm.organizationId.trim(),
     environmentId: runForm.environmentId.trim(),
-    trigger: trigger.value,
+    trigger: runForm.trigger.trim(),
   }
 
   const response = await runSchedule(body)
@@ -128,15 +122,16 @@ function isNonEmpty(value: string) {
             <Input id="schedule-env" v-model="runForm.environmentId" required />
           </Field>
           <Field>
-            <FieldLabel>Rule</FieldLabel>
-            <Select v-model="runForm.ruleCode">
-              <SelectTrigger aria-label="Schedule rule">
+            <FieldLabel>Trigger</FieldLabel>
+            <Select v-model="runForm.trigger">
+              <SelectTrigger aria-label="Schedule trigger">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="finite-capacity">Finite capacity</SelectItem>
-                <SelectItem value="earliest-due-date">Earliest due date</SelectItem>
-                <SelectItem value="rush-priority">Rush priority</SelectItem>
+                <SelectItem value="Manual">Manual</SelectItem>
+                <SelectItem value="RushOrder">Rush order</SelectItem>
+                <SelectItem value="AssetUnavailable">Asset unavailable</SelectItem>
+                <SelectItem value="AssetRestored">Asset restored</SelectItem>
               </SelectContent>
             </Select>
           </Field>
@@ -151,7 +146,9 @@ function isNonEmpty(value: string) {
         </FieldGroup>
 
         <div class="flex items-center justify-between gap-3 rounded-lg border p-3">
-          <span class="min-w-0 truncate text-sm text-muted-foreground">{{ trigger }}</span>
+          <span class="min-w-0 truncate text-sm text-muted-foreground">
+            {{ runForm.trigger }} / {{ scheduleContext }}
+          </span>
           <Button type="submit" :disabled="runSchedulePending || !canRunSchedule">
             <Spinner v-if="runSchedulePending" data-icon="inline-start" />
             <PlayIcon v-else data-icon="inline-start" />

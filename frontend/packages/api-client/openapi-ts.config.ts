@@ -16,12 +16,12 @@ const plugins = [
 export default defineConfig([
   {
     input: './openapi/platform-gateway.v1.json',
-    output: { path: './src/generated' },
+    output: { path: './src/generated', clean: false },
     plugins,
   },
   {
     input: './openapi/business-gateway-console.v1.json',
-    output: { path: './src/generated/business-console' },
+    output: { path: './src/generated/business-console', clean: false },
     plugins,
   },
 ])

@@ -56,8 +56,8 @@ const recordForm = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
   inspectionPlanId: '',
-  sourceType: 'manufacturing',
-  sourceService: 'business-console',
+  sourceType: 'operation',
+  sourceService: 'mes-operation',
   sourceDocumentId: '',
   skuCode: 'SKU-001',
   inspectedQuantity: '1',
@@ -68,8 +68,11 @@ const recordForm = reactive({
   resultLines: [
     {
       characteristicCode: '',
-      result: 'pass',
-      measuredValue: '',
+      result: 'passed',
+      observedValue: '',
+      unitCode: '',
+      defectReason: '',
+      defectQuantity: '',
     },
   ],
 })
@@ -78,7 +81,11 @@ const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
 const createErrorMessage = computed(() => formatError(createInspectionRecordError.value))
 const validResultLines = computed(() =>
   recordForm.resultLines.filter(
-    (line) => isNonEmpty(line.characteristicCode) && isNonEmpty(line.result),
+    (line) =>
+      isNonEmpty(line.characteristicCode) &&
+      isNonEmpty(line.observedValue) &&
+      isNonEmpty(line.result) &&
+      hasRequiredDefectContext(line),
   ),
 )
 const canCreateRecord = computed(
@@ -101,8 +108,11 @@ function syncContextFromFilters() {
 function addCharacteristicRow() {
   recordForm.resultLines.push({
     characteristicCode: '',
-    result: 'pass',
-    measuredValue: '',
+    result: 'passed',
+    observedValue: '',
+    unitCode: '',
+    defectReason: '',
+    defectQuantity: '',
   })
 }
 
@@ -110,8 +120,11 @@ function removeCharacteristicRow(index: number) {
   if (recordForm.resultLines.length === 1) {
     recordForm.resultLines[0] = {
       characteristicCode: '',
-      result: 'pass',
-      measuredValue: '',
+      result: 'passed',
+      observedValue: '',
+      unitCode: '',
+      defectReason: '',
+      defectQuantity: '',
     }
     return
   }
@@ -146,7 +159,10 @@ function toCharacteristicResults(): BusinessConsoleInspectionCharacteristicResul
   return validResultLines.value.map((line) => ({
     characteristicCode: line.characteristicCode.trim(),
     result: line.result.trim(),
-    measuredValue: optionalText(line.measuredValue),
+    observedValue: line.observedValue.trim(),
+    unitCode: optionalText(line.unitCode),
+    defectReason: optionalText(line.defectReason),
+    defectQuantity: toOptionalNumber(line.defectQuantity),
   }))
 }
 
@@ -167,6 +183,18 @@ function splitCsv(value: string) {
 function toOptionalNumber(value: string) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function hasRequiredDefectContext(line: { result: string; defectReason: string; defectQuantity: string }) {
+  if (line.result === 'passed') {
+    return true
+  }
+
+  if (!isNonEmpty(line.defectReason)) {
+    return false
+  }
+
+  return line.result !== 'conditional-release' || (toOptionalNumber(line.defectQuantity) ?? 0) > 0
 }
 
 function rowKey(item: BusinessConsoleQualityItem, index: number) {
@@ -301,17 +329,33 @@ function isNonEmpty(value: string) {
                 <SelectTrigger aria-label="Source type">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="manufacturing">Manufacturing</SelectItem>
-                  <SelectItem value="receiving">Receiving</SelectItem>
-                  <SelectItem value="final">Final</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="record-source-service">Source service</FieldLabel>
-              <Input id="record-source-service" v-model="recordForm.sourceService" required />
-            </Field>
+                  <SelectContent>
+                    <SelectItem value="operation">Operation</SelectItem>
+                    <SelectItem value="receiving">Receiving</SelectItem>
+                    <SelectItem value="final">Final</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                    <SelectItem value="customer-return">Customer return</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel>Source service</FieldLabel>
+                <Select v-model="recordForm.sourceService">
+                  <SelectTrigger aria-label="Source service">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mes-operation">MES operation</SelectItem>
+                    <SelectItem value="inventory">Inventory</SelectItem>
+                    <SelectItem value="wms">WMS</SelectItem>
+                    <SelectItem value="mes">MES</SelectItem>
+                    <SelectItem value="erp">ERP</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                    <SelectItem value="purchase-receipt">Purchase receipt</SelectItem>
+                    <SelectItem value="customer-return">Customer return</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
             <Field>
               <FieldLabel for="record-source-document">Source document</FieldLabel>
               <Input id="record-source-document" v-model="recordForm.sourceDocumentId" required />
@@ -353,7 +397,7 @@ function isNonEmpty(value: string) {
               <div
                 v-for="(line, index) in recordForm.resultLines"
                 :key="index"
-                class="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_130px_1fr_auto]"
+                class="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_140px_1fr_110px_auto]"
               >
                 <Field>
                   <FieldLabel :for="`characteristic-code-${index}`">Characteristic code</FieldLabel>
@@ -366,15 +410,32 @@ function isNonEmpty(value: string) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="pass">Pass</SelectItem>
-                      <SelectItem value="fail">Fail</SelectItem>
-                      <SelectItem value="hold">Hold</SelectItem>
+                      <SelectItem value="passed">Passed</SelectItem>
+                      <SelectItem value="failed">Failed</SelectItem>
+                      <SelectItem value="conditional-release">Conditional release</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
                 <Field>
-                  <FieldLabel :for="`measured-value-${index}`">Measured value</FieldLabel>
-                  <Input :id="`measured-value-${index}`" v-model="line.measuredValue" />
+                  <FieldLabel :for="`observed-value-${index}`">Observed value</FieldLabel>
+                  <Input :id="`observed-value-${index}`" v-model="line.observedValue" required />
+                </Field>
+                <Field>
+                  <FieldLabel :for="`unit-code-${index}`">Unit</FieldLabel>
+                  <Input :id="`unit-code-${index}`" v-model="line.unitCode" />
+                </Field>
+                <Field class="md:col-span-2">
+                  <FieldLabel :for="`defect-reason-${index}`">Defect reason</FieldLabel>
+                  <Input :id="`defect-reason-${index}`" v-model="line.defectReason" />
+                </Field>
+                <Field>
+                  <FieldLabel :for="`defect-quantity-${index}`">Defect qty</FieldLabel>
+                  <Input
+                    :id="`defect-quantity-${index}`"
+                    v-model="line.defectQuantity"
+                    inputmode="decimal"
+                    type="number"
+                  />
                 </Field>
                 <div class="flex items-end justify-end">
                   <Button size="icon-sm" variant="ghost" type="button" @click="removeCharacteristicRow(index)">

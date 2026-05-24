@@ -169,10 +169,10 @@ public sealed record BusinessConsoleCreateInspectionRecordRequest(
 
 public sealed record BusinessConsoleInspectionCharacteristicResult(
     string CharacteristicCode,
-    string DefectCode,
-    string? MeasuredValue,
+    string ObservedValue,
+    string? UnitCode,
     string Result,
-    string? DispositionReason,
+    string? DefectReason,
     decimal? DefectQuantity,
     IReadOnlyCollection<string>? AttachmentFileIds);
 

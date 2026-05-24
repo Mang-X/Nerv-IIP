@@ -56,10 +56,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult = {
     characteristicCode?: string;
-    defectCode?: string;
-    measuredValue?: string | null;
+    observedValue?: string;
+    unitCode?: string | null;
     result?: string;
-    dispositionReason?: string | null;
+    defectReason?: string | null;
     defectQuantity?: number | null;
     attachmentFileIds?: Array<string> | null;
 };
