@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.ServiceAuth;
+using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTask;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -79,19 +80,25 @@ public sealed class WmsEndpointContractTests
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var warehouseTaskId = new Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId(Guid.CreateVersion7());
+        var warehouseTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-001", "IN-001", "10", "SKU-FG-1000", "kg", "SITE-01", "RECV-01", "STAGE-01", 10m);
+        var otherTenantTask = WarehouseTask.CreatePutaway("org-002", "env-dev", "WT-001", "IN-002", "10", "SKU-FG-1000", "kg", "SITE-01", "RECV-01", "STAGE-01", 10m);
+        dbContext.WarehouseTasks.AddRange(warehouseTask, otherTenantTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
         var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext);
-        await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTaskId, "agv", "EXT-001", """{"step":1}"""), CancellationToken.None);
+        await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", "EXT-001", """{"step":1}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new Application.Commands.FailWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.FailWcsTaskCommand("EXT-001", "PLC_TIMEOUT", "PLC timeout"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTaskId, "agv", "EXT-002", """{"step":2}"""), CancellationToken.None);
+        await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", "EXT-002", """{"step":2}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.CompleteWcsTaskCommand("EXT-002", """{"ok":true}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(otherTenantTask.Id, "agv", "EXT-003", """{"step":3}"""), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListWcsTasksQueryHandler(dbContext).Handle(
-            new ListWcsTasksQuery("EXT-002"),
+            new ListWcsTasksQuery("org-001", "env-dev", null),
             CancellationToken.None);
 
         var fact = Assert.Single(result.Items);
@@ -100,6 +107,8 @@ public sealed class WmsEndpointContractTests
         Assert.Equal(2, fact.AttemptCount);
         Assert.Equal("PLC_TIMEOUT", fact.FailureCode);
         Assert.Equal("PLC timeout", fact.FailureMessage);
+        Assert.Equal("org-001", fact.OrganizationId);
+        Assert.Equal("env-dev", fact.EnvironmentId);
         Assert.NotNull(fact.CompletedAtUtc);
     }
 

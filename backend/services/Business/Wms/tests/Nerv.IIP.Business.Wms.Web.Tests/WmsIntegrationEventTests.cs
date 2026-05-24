@@ -31,7 +31,7 @@ public sealed class WmsIntegrationEventTests
         outbound.CompletePackReview("PACK-001", true, "idem-out-001");
         var count = CountExecution.Create("org-001", "env-dev", "COUNT-001", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 10m);
         count.Complete(8m);
-        var wcs = WcsTask.Dispatch(new WarehouseTaskId(Guid.CreateVersion7()), "agv", "EXT-001", "{}");
+        var wcs = WcsTask.Dispatch("org-001", "env-dev", new WarehouseTaskId(Guid.CreateVersion7()), "agv", "EXT-001", "{}");
         wcs.Fail("E001", "blocked");
 
         Assert.Equal(WmsIntegrationEventTypes.OutboundOrderCompleted, new OutboundOrderCompletedIntegrationEventConverter().Convert(new OutboundOrderCompletedDomainEvent(outbound)).EventType);
@@ -42,6 +42,10 @@ public sealed class WmsIntegrationEventTests
         wcs.Retry("EXT-002", "{}");
         wcs.Complete("{}");
 
-        Assert.Equal(WmsIntegrationEventTypes.WcsTaskCompleted, new WcsTaskCompletedIntegrationEventConverter().Convert(new WcsTaskCompletedDomainEvent(wcs)).EventType);
+        var completedEvent = new WcsTaskCompletedIntegrationEventConverter().Convert(new WcsTaskCompletedDomainEvent(wcs));
+
+        Assert.Equal(WmsIntegrationEventTypes.WcsTaskCompleted, completedEvent.EventType);
+        Assert.Equal("org-001", completedEvent.OrganizationId);
+        Assert.Equal("env-dev", completedEvent.EnvironmentId);
     }
 }

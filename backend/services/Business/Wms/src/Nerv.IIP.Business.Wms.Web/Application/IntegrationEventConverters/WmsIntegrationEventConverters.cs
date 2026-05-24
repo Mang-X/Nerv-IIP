@@ -58,9 +58,9 @@ public sealed class WcsTaskDispatchedIntegrationEventConverter
         var task = domainEvent.WcsTask;
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.WcsTaskDispatched,
-            "system",
-            "system",
-            $"wms:wcs-dispatched:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
+            task.OrganizationId,
+            task.EnvironmentId,
+            $"wms:wcs-dispatched:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
             new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), null, null));
     }
 }
@@ -73,9 +73,9 @@ public sealed class WcsTaskFailedIntegrationEventConverter
         var task = domainEvent.WcsTask;
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.WcsTaskFailed,
-            "system",
-            "system",
-            $"wms:wcs-failed:{task.AdapterType}:{task.ExternalTaskId}:{task.FailureCode}",
+            task.OrganizationId,
+            task.EnvironmentId,
+            $"wms:wcs-failed:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.FailureCode}",
             new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), task.FailureCode, task.FailureMessage));
     }
 }
@@ -88,9 +88,9 @@ public sealed class WcsTaskCompletedIntegrationEventConverter
         var task = domainEvent.WcsTask;
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.WcsTaskCompleted,
-            "system",
-            "system",
-            $"wms:wcs-completed:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
+            task.OrganizationId,
+            task.EnvironmentId,
+            $"wms:wcs-completed:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
             new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), null, null));
     }
 }

@@ -44,12 +44,14 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
     }
 }
 
-public sealed record ListWcsTasksQuery(string? ExternalTaskId, WarehouseTaskId? WarehouseTaskId = null) : IQuery<ListWcsTasksResponse>;
+public sealed record ListWcsTasksQuery(string OrganizationId, string EnvironmentId, string? ExternalTaskId, WarehouseTaskId? WarehouseTaskId = null) : IQuery<ListWcsTasksResponse>;
 
 public sealed record ListWcsTasksResponse(IReadOnlyCollection<WcsTaskFact> Items);
 
 public sealed record WcsTaskFact(
     WcsTaskId WcsTaskId,
+    string OrganizationId,
+    string EnvironmentId,
     WarehouseTaskId WarehouseTaskId,
     string AdapterType,
     string ExternalTaskId,
@@ -66,7 +68,10 @@ public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<ListWcsTasksResponse> Handle(ListWcsTasksQuery request, CancellationToken cancellationToken)
     {
-        var query = dbContext.WcsTasks.AsNoTracking();
+        var query = dbContext.WcsTasks
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.ExternalTaskId))
         {
@@ -83,6 +88,8 @@ public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
             .Take(100)
             .Select(x => new WcsTaskFact(
                 x.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
                 x.WarehouseTaskId,
                 x.AdapterType,
                 x.ExternalTaskId,

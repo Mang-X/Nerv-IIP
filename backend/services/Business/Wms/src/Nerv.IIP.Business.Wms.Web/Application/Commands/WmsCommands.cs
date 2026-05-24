@@ -238,7 +238,10 @@ public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext
 {
     public async Task<WcsTaskId> Handle(DispatchWcsTaskCommand request, CancellationToken cancellationToken)
     {
-        var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(x => x.WarehouseTaskId == request.WarehouseTaskId && x.AdapterType == request.AdapterType.ToLower(), cancellationToken);
+        var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == request.WarehouseTaskId, cancellationToken)
+            ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
+        var adapterType = request.AdapterType.ToLowerInvariant();
+        var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(x => x.WarehouseTaskId == request.WarehouseTaskId && x.AdapterType == adapterType, cancellationToken);
         if (existing is not null)
         {
             if (existing.Status == WcsTaskStatus.Failed)
@@ -249,7 +252,7 @@ public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext
             return existing.Id;
         }
 
-        var task = WcsTask.Dispatch(request.WarehouseTaskId, request.AdapterType, request.ExternalTaskId, request.PayloadJson);
+        var task = WcsTask.Dispatch(warehouseTask.OrganizationId, warehouseTask.EnvironmentId, request.WarehouseTaskId, adapterType, request.ExternalTaskId, request.PayloadJson);
         dbContext.WcsTasks.Add(task);
         return task.Id;
     }

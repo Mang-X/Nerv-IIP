@@ -54,7 +54,7 @@ public sealed record DispatchWcsTaskRequest(WarehouseTaskId WarehouseTaskId, str
 public sealed record DispatchWcsTaskResponse(WcsTaskId WcsTaskId);
 public sealed record CompleteWcsTaskRequest(string ExternalTaskId, string CompletionPayloadJson);
 public sealed record FailWcsTaskRequest(string ExternalTaskId, string FailureCode, string FailureMessage);
-public sealed record ListWcsTasksRequest(string? ExternalTaskId, WarehouseTaskId? WarehouseTaskId);
+public sealed record ListWcsTasksRequest(string OrganizationId, string EnvironmentId, string? ExternalTaskId, WarehouseTaskId? WarehouseTaskId);
 
 public sealed class CreateInboundOrderEndpoint(ISender sender) : WmsEndpoint<CreateInboundOrderRequest, ResponseData<CreateInboundOrderResponse>>
 {
@@ -191,7 +191,7 @@ public sealed class ListWcsTasksEndpoint(ISender sender) : WmsEndpoint<ListWcsTa
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListWcsTasksEndpoint>());
     public override async Task HandleAsync(ListWcsTasksRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListWcsTasksQuery(req.ExternalTaskId, req.WarehouseTaskId), ct);
+        var response = await sender.Send(new ListWcsTasksQuery(req.OrganizationId, req.EnvironmentId, req.ExternalTaskId, req.WarehouseTaskId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
