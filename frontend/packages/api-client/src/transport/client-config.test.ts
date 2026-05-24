@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { client as businessConsoleClient } from '../generated/business-console/client.gen'
 import { client } from '../generated/client.gen'
 import { getApiBaseUrl } from './base-url'
 import { configureApiClient } from './client-config'
@@ -265,6 +266,62 @@ describe('configureApiClient', () => {
     })
 
     await client.get({ url: '/secure' })
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('configures the Business Console generated client with auth, locale, and unauthorized handling', async () => {
+    const requests: Request[] = []
+    const onUnauthorized = vi.fn()
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      requests.push(request)
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 401,
+      })
+    })
+
+    configureApiClient({
+      accessTokenProvider: () => 'business-token',
+      baseUrl: 'https://business-gateway.example.test',
+      fetch,
+      localeProvider: () => 'zh-CN',
+      onUnauthorized,
+    })
+
+    await businessConsoleClient.get({ url: '/api/business-console/v1/master-data/skus' })
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(requests[0]?.url).toBe(
+      'https://business-gateway.example.test/api/business-console/v1/master-data/skus',
+    )
+    expect(requests[0]?.headers.get('Authorization')).toBe('Bearer business-token')
+    expect(requests[0]?.headers.get('Accept-Language')).toBe('zh-CN')
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('replaces Business Console response interceptors on repeated configuration', async () => {
+    const onUnauthorized = vi.fn()
+    const fetch = vi.fn(async () => {
+      return new Response('{}', {
+        headers: { 'content-type': 'application/json' },
+        status: 401,
+      })
+    })
+
+    configureApiClient({
+      baseUrl: 'https://business-gateway.example.test',
+      fetch,
+      onUnauthorized: vi.fn(),
+    })
+    configureApiClient({
+      baseUrl: 'https://business-gateway.example.test',
+      fetch,
+      onUnauthorized,
+    })
+
+    await businessConsoleClient.get({ url: '/api/business-console/v1/master-data/skus' })
 
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })

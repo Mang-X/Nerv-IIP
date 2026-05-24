@@ -9,6 +9,14 @@ import {
   submitConsoleNotificationIntentMutationOptions,
 } from './console'
 import {
+  createBusinessConsoleSkuMutationOptions,
+  getBusinessConsoleInventoryAvailabilityQueryOptions,
+  listBusinessConsoleMesWorkOrdersQueryOptions,
+  listBusinessConsoleQualityNcrsQueryOptions,
+  listBusinessConsoleSkusQueryOptions,
+  postBusinessConsoleInventoryMovementMutationOptions,
+} from './business-console'
+import {
   createConsoleIamRoleMutationOptions,
   createConsoleIamUserMutationOptions,
   disableConsoleIamUserMutationOptions,
@@ -64,5 +72,14 @@ describe('generated API client contract', () => {
     expect(submitConsoleNotificationIntentMutationOptions).toBeTypeOf('function')
     expect(markConsoleNotificationMessageReadMutationOptions).toBeTypeOf('function')
     expect(markConsoleNotificationMessagesReadMutationOptions).toBeTypeOf('function')
+  })
+
+  it('exports Business Console generated operations through stable api-client entry points', () => {
+    expect(listBusinessConsoleSkusQueryOptions).toBeTypeOf('function')
+    expect(createBusinessConsoleSkuMutationOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleInventoryAvailabilityQueryOptions).toBeTypeOf('function')
+    expect(postBusinessConsoleInventoryMovementMutationOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleQualityNcrsQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesWorkOrdersQueryOptions).toBeTypeOf('function')
   })
 })

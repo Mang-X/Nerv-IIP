@@ -74,6 +74,7 @@ export default defineConfig({
         input: [
           'packages/api-client/openapi-ts.config.ts',
           'packages/api-client/openapi/platform-gateway.v1.json',
+          'packages/api-client/openapi/business-gateway-console.v1.json',
         ],
         output: ['packages/api-client/src/generated/**'],
       },
