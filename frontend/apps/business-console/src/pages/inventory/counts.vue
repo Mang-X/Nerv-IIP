@@ -59,7 +59,8 @@ const canCreateTask = computed(
     isNonEmpty(taskForm.countTaskCode) &&
     isNonEmpty(taskForm.skuCode) &&
     isNonEmpty(taskForm.uomCode) &&
-    isNonEmpty(taskForm.siteCode),
+    isNonEmpty(taskForm.siteCode) &&
+    isNonEmpty(taskForm.locationCode),
 )
 const canConfirmAdjustment = computed(
   () =>
@@ -80,7 +81,7 @@ async function submitTask() {
     skuCode: taskForm.skuCode.trim(),
     uomCode: taskForm.uomCode.trim(),
     siteCode: taskForm.siteCode.trim(),
-    locationCode: optionalText(taskForm.locationCode),
+    locationCode: taskForm.locationCode.trim(),
     lotNo: optionalText(taskForm.lotNo),
     serialNo: optionalText(taskForm.serialNo),
     qualityStatus: optionalText(taskForm.qualityStatus),
@@ -175,7 +176,7 @@ function isNonEmpty(value: string) {
             </Field>
             <Field>
               <FieldLabel for="count-task-location">Location</FieldLabel>
-              <Input id="count-task-location" v-model="taskForm.locationCode" />
+              <Input id="count-task-location" v-model="taskForm.locationCode" required />
             </Field>
             <Field>
               <FieldLabel for="count-task-quality">Quality</FieldLabel>

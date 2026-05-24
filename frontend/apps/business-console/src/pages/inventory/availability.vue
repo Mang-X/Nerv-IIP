@@ -11,6 +11,11 @@ import {
   FieldGroup,
   FieldLabel,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Table,
   TableBody,
   TableCell,
@@ -120,6 +125,20 @@ function formatError(error: unknown) {
           <Field>
             <FieldLabel for="availability-quality">Quality</FieldLabel>
             <Input id="availability-quality" v-model="filters.qualityStatus" />
+          </Field>
+          <Field>
+            <FieldLabel>Owner type</FieldLabel>
+            <Select v-model="filters.ownerType">
+              <SelectTrigger aria-label="Owner type">
+                <SelectValue placeholder="Owner type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="owned">Owned</SelectItem>
+                <SelectItem value="customer">Customer</SelectItem>
+                <SelectItem value="supplier">Supplier</SelectItem>
+                <SelectItem value="consignment">Consignment</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
           <Field>
             <FieldLabel for="availability-owner">Owner</FieldLabel>

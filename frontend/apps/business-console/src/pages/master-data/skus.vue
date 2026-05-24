@@ -84,7 +84,8 @@ const canCreateSku = computed(
     isNonEmpty(createForm.environmentId) &&
     isNonEmpty(createForm.code) &&
     isNonEmpty(createForm.name) &&
-    isNonEmpty(createForm.baseUomCode),
+    isNonEmpty(createForm.baseUomCode) &&
+    isNonEmpty(createForm.category),
 )
 
 function optionalText(value: string) {
@@ -125,7 +126,7 @@ async function submitSku() {
     code: createForm.code.trim(),
     name: createForm.name.trim(),
     baseUomCode: createForm.baseUomCode.trim(),
-    category: optionalText(createForm.category),
+    category: createForm.category.trim(),
     materialType: optionalText(createForm.materialType),
     batchTrackingPolicy: optionalText(createForm.batchTrackingPolicy),
     serialTrackingPolicy: optionalText(createForm.serialTrackingPolicy),
@@ -221,7 +222,7 @@ function isNonEmpty(value: string) {
                   </Field>
                   <Field>
                     <FieldLabel for="sku-category">Category</FieldLabel>
-                    <Input id="sku-category" v-model="createForm.category" />
+                    <Input id="sku-category" v-model="createForm.category" required />
                   </Field>
                   <Field>
                     <FieldLabel>Material type</FieldLabel>
