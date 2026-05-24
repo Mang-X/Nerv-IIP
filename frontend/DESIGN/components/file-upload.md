@@ -24,13 +24,13 @@
 1. Props include `purpose`, `ownerService`, `ownerType`, `ownerId`, `organizationId`, `environmentId`, accepted content types, max file size, max file count, `autoUpload`, `virtualizeThreshold`, `virtualRowHeight` and `virtualListHeight`.
 2. The component emits completed `fileId` values only; it never exposes bucket names, object keys or long-lived object-storage URLs.
 3. The default native transport supports FileStorage `tus` `HEAD`/`PATCH` and `server-proxy` binary `PUT` instructions.
-4. Rows show status, progress, retryable failure errors, pause/resume controls while uploading, readable file-family labels for Word, Excel, PowerPoint, PDF, image, audio and video files, and human-readable size labels through GB.
+4. Rows show status, semantic status badges, progress, retryable failure errors, pause/resume controls while uploading, readable file-family labels for Word, Excel, PowerPoint, PDF, image, audio and video files, and human-readable size labels through GB.
 5. `autoUpload` defaults to `true`; when set to `false`, selected or dropped files remain queued until `uploadQueued()` is called through the exposed component API.
 6. Exposed imperative methods are limited to upload workflow control: `browse`, `addFiles`, `uploadQueued`, `pauseAll`, `resumeAll`, `retryFailed` and `clear`.
 7. Drag-and-drop and browse entry points share the same validation and FileStorage session flow.
 8. Row entry/removal and drag-over feedback use Vue transition classes and Tailwind semantic tokens; no `motion-vue` dependency is required for the current primitive.
 9. A future Uppy adapter may replace the transport for richer retry policy, source-provider workflows or broader tus protocol coverage without changing the visual contract.
-10. Rejected size/type, expired session, checksum mismatch and interrupted upload errors are surfaced as row-level status.
+10. Rejected size/type, expired session, checksum mismatch and interrupted upload errors are surfaced as row-level status; retrying an expired failed session creates a fresh upload session before transport starts.
 11. Rejected and failed rows remain visible for feedback or retry, but they do not consume available upload slots.
 12. Large queues switch from animated full rendering to a fixed-height virtualized scroll container after `virtualizeThreshold` rows; small queues keep row entry/removal transitions.
 

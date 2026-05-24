@@ -24,6 +24,7 @@ const emits = defineEmits<{
 }>()
 
 const draftValue = shallowRef(props.modelValue ?? '')
+const open = shallowRef(false)
 const label = computed(() => props.modelValue || props.placeholder)
 
 watch(() => props.modelValue, (value) => {
@@ -34,17 +35,19 @@ function apply() {
   const value = draftValue.value || null
   emits('update:modelValue', value)
   emits('apply', value)
+  open.value = false
 }
 
 function clear() {
   draftValue.value = ''
   emits('update:modelValue', null)
   emits('clear')
+  open.value = false
 }
 </script>
 
 <template>
-  <Popover>
+  <Popover v-model:open="open">
     <PopoverTrigger as-child>
       <Button
         type="button"

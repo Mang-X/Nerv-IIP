@@ -298,6 +298,64 @@ describe('FileUpload', () => {
     expect(transport).toHaveBeenCalledTimes(2)
   })
 
+  it('creates a new upload session when retrying an expired failed session', async () => {
+    let attempt = 0
+    const createUploadSession = vi.fn()
+      .mockResolvedValueOnce({
+        uploadSessionId: 'ups_expired',
+        fileId: 'file_expired',
+        uploadMode: 'tus',
+        provider: 'tus',
+        expiresAtUtc: '2000-01-01T00:00:00Z',
+        upload: {
+          url: '/api/files/v1/tus/ups_expired',
+          headers: { 'x-nerv-upload-mode': 'tus' },
+        },
+      })
+      .mockResolvedValueOnce({
+        uploadSessionId: 'ups_fresh',
+        fileId: 'file_fresh',
+        uploadMode: 'tus',
+        provider: 'tus',
+        expiresAtUtc: '2099-01-01T00:00:00Z',
+        upload: {
+          url: '/api/files/v1/tus/ups_fresh',
+          headers: { 'x-nerv-upload-mode': 'tus' },
+        },
+      })
+    const completeUploadSession = vi.fn().mockResolvedValue({ fileId: 'file_fresh' })
+    const transport = vi.fn().mockImplementation(({ onProgress }) => {
+      attempt += 1
+
+      if (attempt === 1) {
+        return Promise.reject(new Error('Upload session expired.'))
+      }
+
+      onProgress(100)
+      return Promise.resolve()
+    })
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        createUploadSession,
+        completeUploadSession,
+        transport,
+      }),
+    })
+
+    await selectFiles(wrapper, [new File(['hello'], 'expired-session.txt', { type: 'text/plain' })])
+    await waitForAssertion(() => {
+      expect(wrapper.text()).toContain('Upload session expired.')
+    })
+
+    await wrapper.get('button[aria-label="Retry expired-session.txt"]').trigger('click')
+    await waitForAssertion(() => {
+      expect(wrapper.text()).toContain('completed')
+    })
+
+    expect(createUploadSession).toHaveBeenCalledTimes(2)
+    expect(completeUploadSession).toHaveBeenCalledWith('ups_fresh', expect.any(Object))
+  })
+
   it('queues files without creating sessions when automatic upload is disabled', async () => {
     const createUploadSession = vi.fn().mockResolvedValue({
       uploadSessionId: 'ups_1',
@@ -388,6 +446,46 @@ describe('FileUpload', () => {
 
     expect(wrapper.find('[data-slot="file-upload-row"]').exists()).toBe(false)
     expect(wrapper.emitted('completed')).toBeUndefined()
+  })
+
+  it('does not emit completed when removing a non-completed row', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+
+    await upload.addFiles([
+      new File(['hello'], 'queued-evidence.txt', { type: 'text/plain' }),
+    ])
+    await wrapper.get('button[aria-label="Remove queued-evidence.txt"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-slot="file-upload-row"]').exists()).toBe(false)
+    expect(wrapper.emitted('completed')).toBeUndefined()
+  })
+
+  it('uses semantic badge variants for completed and rejected rows', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        acceptedContentTypes: ['application/pdf'],
+        maxFiles: 3,
+        transport: vi.fn().mockResolvedValue(undefined),
+      }),
+    })
+
+    await selectFiles(wrapper, [
+      new File(['pdf'], 'inspection.pdf', { type: 'application/pdf' }),
+      new File(['hello'], 'wrong-type.txt', { type: 'text/plain' }),
+    ])
+    await flushPromises()
+
+    const variants = wrapper.findAll('[data-slot="badge"]')
+      .map(badge => badge.attributes('data-variant'))
+
+    expect(variants).toContain('success')
+    expect(variants).toContain('destructive')
   })
 
   it('does not count rejected or failed rows against available slots', async () => {

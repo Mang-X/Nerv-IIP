@@ -157,8 +157,12 @@ export function useFileUpload(options: UseFileUploadOptions) {
     const index = rows.findIndex((row) => row.id === id)
 
     if (index >= 0) {
+      const removed = rows[index]!
       rows.splice(index, 1)
-      options.onCompleted(completedFiles.value)
+
+      if (removed.status === 'completed') {
+        options.onCompleted(completedFiles.value)
+      }
     }
   }
 
@@ -192,6 +196,9 @@ export function useFileUpload(options: UseFileUploadOptions) {
     }
 
     row.error = null
+    if (row.uploadSession && isUploadSessionExpired(row.uploadSession)) {
+      row.uploadSession = null
+    }
     await uploadRow(row)
   }
 
@@ -323,4 +330,14 @@ function isAbortError(error: unknown) {
 
 function isPausedRow(row: FileUploadRow) {
   return row.status === 'paused'
+}
+
+function isUploadSessionExpired(session: FileUploadSession) {
+  const expiresAt = Date.parse(session.expiresAtUtc)
+
+  if (Number.isNaN(expiresAt)) {
+    return false
+  }
+
+  return expiresAt <= Date.now()
 }

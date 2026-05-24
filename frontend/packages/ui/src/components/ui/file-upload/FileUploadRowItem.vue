@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { StyleValue } from 'vue'
+import type { BadgeVariants } from '../badge'
 import type { FileUploadRow } from './types'
 import { computed } from 'vue'
 import { PauseIcon, PlayIcon, RotateCcwIcon, XIcon } from 'lucide-vue-next'
@@ -21,6 +22,21 @@ const emits = defineEmits<{
 }>()
 
 const kind = computed(() => rowKind(props.row))
+const badgeVariant = computed<BadgeVariants['variant']>(() => {
+  switch (props.row.status) {
+    case 'completed':
+      return 'success'
+    case 'failed':
+    case 'rejected':
+      return 'destructive'
+    case 'paused':
+      return 'warning'
+    case 'queued':
+      return 'secondary'
+    case 'uploading':
+      return 'default'
+  }
+})
 const showProgress = computed(() =>
   props.row.status === 'uploading'
   || props.row.status === 'paused'
@@ -45,7 +61,7 @@ const showProgress = computed(() =>
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2">
         <span class="truncate text-sm font-medium">{{ row.fileName }}</span>
-        <Badge variant="secondary">
+        <Badge :variant="badgeVariant">
           {{ row.status }}
         </Badge>
       </div>
