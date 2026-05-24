@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.ServiceAuth;
+using System.Globalization;
+using System.Security.Cryptography;
 
 namespace Nerv.IIP.FileStorage.Web.Endpoints.Files;
 
@@ -19,20 +21,34 @@ public sealed class GetTusUploadOffsetEndpoint(IFileStorageService files, ILocal
     public override async Task HandleAsync(CancellationToken ct)
     {
         var uploadSessionId = Route<string>("uploadSessionId")!;
-        if (!await CanAcceptTusUploadAsync(files, uploadSessionId, ct) || !storeAccessor.TryGet(out var store))
+        if (!storeAccessor.TryGet(out var store)
+            || await GetTusUploadSessionAsync(files, uploadSessionId, ct) is not { } session)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
 
+        if (IsExpired(session))
+        {
+            store.Delete(uploadSessionId);
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+
         var offset = store.GetOffset(uploadSessionId);
-        SetTusHeaders(HttpContext.Response, offset);
+        SetTusHeaders(HttpContext.Response, offset, session);
     }
 
-    internal static void SetTusHeaders(HttpResponse response, long offset)
+    internal static void SetTusHeaders(HttpResponse response, long offset, LocalTusUploadSession? session = null)
     {
         response.Headers["Tus-Resumable"] = "1.0.0";
-        response.Headers["Upload-Offset"] = offset.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        response.Headers["Upload-Offset"] = offset.ToString(CultureInfo.InvariantCulture);
+        if (session is not null)
+        {
+            response.Headers["Upload-Length"] = session.ExpectedSizeBytes.ToString(CultureInfo.InvariantCulture);
+            response.Headers["Upload-Expires"] = session.ExpiresAtUtc.ToString("R", CultureInfo.InvariantCulture);
+        }
+
         response.Headers.CacheControl = "no-store";
     }
 
@@ -44,6 +60,21 @@ public sealed class GetTusUploadOffsetEndpoint(IFileStorageService files, ILocal
         return files is ILocalTusUploadSessionIndex index
             ? index.CanAcceptTusUploadAsync(uploadSessionId, cancellationToken)
             : Task.FromResult(false);
+    }
+
+    internal static Task<LocalTusUploadSession?> GetTusUploadSessionAsync(
+        IFileStorageService files,
+        string uploadSessionId,
+        CancellationToken cancellationToken)
+    {
+        return files is ILocalTusUploadSessionIndex index
+            ? index.GetTusUploadSessionAsync(uploadSessionId, cancellationToken)
+            : Task.FromResult<LocalTusUploadSession?>(null);
+    }
+
+    internal static bool IsExpired(LocalTusUploadSession session)
+    {
+        return session.ExpiresAtUtc <= DateTimeOffset.UtcNow;
     }
 }
 
@@ -59,9 +90,16 @@ public sealed class PatchTusUploadEndpoint(IFileStorageService files, ILocalTusF
     public override async Task HandleAsync(CancellationToken ct)
     {
         var uploadSessionId = Route<string>("uploadSessionId")!;
-        if (!await GetTusUploadOffsetEndpoint.CanAcceptTusUploadAsync(files, uploadSessionId, ct)
-            || !storeAccessor.TryGet(out var store))
+        if (!storeAccessor.TryGet(out var store)
+            || await GetTusUploadOffsetEndpoint.GetTusUploadSessionAsync(files, uploadSessionId, ct) is not { } session)
         {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+
+        if (GetTusUploadOffsetEndpoint.IsExpired(session))
+        {
+            store.Delete(uploadSessionId);
             await Send.NotFoundAsync(ct);
             return;
         }
@@ -89,14 +127,39 @@ public sealed class PatchTusUploadEndpoint(IFileStorageService files, ILocalTusF
         var currentOffset = store.GetOffset(uploadSessionId);
         if (currentOffset != expectedOffset)
         {
-            GetTusUploadOffsetEndpoint.SetTusHeaders(HttpContext.Response, currentOffset);
+            GetTusUploadOffsetEndpoint.SetTusHeaders(HttpContext.Response, currentOffset, session);
             await SendStatusAsync(HttpContext.Response, StatusCodes.Status409Conflict, ct);
             return;
         }
 
-        var newOffset = await store.AppendAsync(uploadSessionId, expectedOffset, HttpContext.Request.Body, ct);
+        if (HttpContext.Request.ContentLength is { } contentLength
+            && expectedOffset + contentLength > session.ExpectedSizeBytes)
+        {
+            GetTusUploadOffsetEndpoint.SetTusHeaders(HttpContext.Response, currentOffset, session);
+            await SendStatusAsync(HttpContext.Response, StatusCodes.Status413PayloadTooLarge, ct);
+            return;
+        }
+
+        await using var body = new MemoryStream();
+        await HttpContext.Request.Body.CopyToAsync(body, ct);
+        if (expectedOffset + body.Length > session.ExpectedSizeBytes)
+        {
+            GetTusUploadOffsetEndpoint.SetTusHeaders(HttpContext.Response, currentOffset, session);
+            await SendStatusAsync(HttpContext.Response, StatusCodes.Status413PayloadTooLarge, ct);
+            return;
+        }
+
+        if (!IsUploadChecksumValid(HttpContext.Request, body.ToArray()))
+        {
+            GetTusUploadOffsetEndpoint.SetTusHeaders(HttpContext.Response, currentOffset, session);
+            await SendStatusAsync(HttpContext.Response, 460, ct);
+            return;
+        }
+
+        body.Position = 0;
+        var newOffset = await store.AppendAsync(uploadSessionId, expectedOffset, body, ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
-        GetTusUploadOffsetEndpoint.SetTusHeaders(HttpContext.Response, newOffset);
+        GetTusUploadOffsetEndpoint.SetTusHeaders(HttpContext.Response, newOffset, session);
     }
 
     private static bool HasTusVersion(HttpRequest request)
@@ -124,8 +187,25 @@ public sealed class PatchTusUploadEndpoint(IFileStorageService files, ILocalTusF
             return false;
         }
 
-        return long.TryParse(values.FirstOrDefault(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out offset)
+        return long.TryParse(values.FirstOrDefault(), NumberStyles.None, CultureInfo.InvariantCulture, out offset)
             && offset >= 0;
+    }
+
+    private static bool IsUploadChecksumValid(HttpRequest request, byte[] bytes)
+    {
+        if (!request.Headers.TryGetValue("Upload-Checksum", out var values))
+        {
+            return true;
+        }
+
+        var parts = values.FirstOrDefault()?.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        if (parts is not { Length: 2 }
+            || !string.Equals(parts[0], "sha256", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return string.Equals(parts[1], Convert.ToBase64String(SHA256.HashData(bytes)), StringComparison.Ordinal);
     }
 }
 

@@ -3,6 +3,7 @@ using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Domain;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
+using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using ContractOwnerReference = Nerv.IIP.Contracts.FileStorage.OwnerReference;
 
@@ -12,16 +13,21 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
 {
     private readonly ApplicationDbContext dbContext;
     private readonly IFileStorageUploadProvider uploadProvider;
+    private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
 
     public PostgreSqlFileStorageService(ApplicationDbContext dbContext)
         : this(dbContext, new ServerProxyUploadProvider())
     {
     }
 
-    public PostgreSqlFileStorageService(ApplicationDbContext dbContext, IFileStorageUploadProvider uploadProvider)
+    public PostgreSqlFileStorageService(
+        ApplicationDbContext dbContext,
+        IFileStorageUploadProvider uploadProvider,
+        ILocalTusFileStoreAccessor? tusStoreAccessor = null)
     {
         this.dbContext = dbContext;
         this.uploadProvider = uploadProvider;
+        this.tusStoreAccessor = tusStoreAccessor;
     }
 
     public async Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
@@ -100,6 +106,12 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             || !string.Equals(session.FilePurpose, request.FilePurpose, StringComparison.Ordinal))
         {
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
+        }
+
+        var tusValidation = await ValidateTusCompletionAsync(session, request, cancellationToken);
+        if (!tusValidation.IsValid)
+        {
+            return FileStorageResult<FileMetadataResponse>.BadRequest(tusValidation.Message);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -213,6 +225,65 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             && !x.Completed
             && x.ExpiresAtUtc > now,
             cancellationToken);
+    }
+
+    public async Task<LocalTusUploadSession?> GetTusUploadSessionAsync(
+        string uploadSessionId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.UploadSessions
+            .Where(x => x.UploadSessionId == uploadSessionId
+                && x.Provider == TusUploadProvider.Name
+                && !x.Completed)
+            .Select(x => new LocalTusUploadSession(
+                x.UploadSessionId,
+                x.ExpectedSizeBytes,
+                x.Checksum,
+                x.ExpiresAtUtc))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<(bool IsValid, string Message)> ValidateTusCompletionAsync(
+        UploadSessionRecord session,
+        CompleteUploadSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(session.Provider, TusUploadProvider.Name, StringComparison.Ordinal))
+        {
+            return (true, string.Empty);
+        }
+
+        if (tusStoreAccessor is null || !tusStoreAccessor.TryGet(out var store))
+        {
+            return (false, "Tus upload store is unavailable.");
+        }
+
+        var actualSize = store.GetOffset(session.UploadSessionId);
+        if (actualSize != session.ExpectedSizeBytes || (request.SizeBytes is not null && request.SizeBytes != actualSize))
+        {
+            return (false, "Tus upload size does not match the upload session.");
+        }
+
+        var expectedChecksum = request.Checksum ?? session.Checksum;
+        if (!string.IsNullOrWhiteSpace(expectedChecksum))
+        {
+            var actualChecksum = await store.ComputeSha256HexAsync(session.UploadSessionId, cancellationToken);
+            if (!ChecksumMatchesSha256Hex(expectedChecksum, actualChecksum))
+            {
+                return (false, "Tus upload checksum does not match the upload session.");
+            }
+        }
+
+        return (true, string.Empty);
+    }
+
+    private static bool ChecksumMatchesSha256Hex(string expectedChecksum, string actualSha256Hex)
+    {
+        var normalized = expectedChecksum.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
+            ? expectedChecksum["sha256:".Length..]
+            : expectedChecksum;
+
+        return string.Equals(normalized, actualSha256Hex, StringComparison.OrdinalIgnoreCase);
     }
 
     private static FileMetadataResponse ToResponse(StoredFileRecord file)

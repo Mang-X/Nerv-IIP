@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text;
 using Microsoft.AspNetCore.Http;
@@ -142,6 +143,124 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
+    public async Task TusUploadEndpoint_OversizedPatch_ReturnsPayloadTooLargeWithoutAdvancingOffset()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 5);
+            using var patchRequest = CreateTusPatchRequest(created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("toolarge"));
+
+            var response = await client.SendAsync(patchRequest);
+
+            Assert.Equal(StatusCodes.Status413PayloadTooLarge, (int)response.StatusCode);
+            var headAfter = await SendTusHeadAsync(client, created.Upload.Url);
+            Assert.Equal(0, GetUploadOffset(headAfter));
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_InvalidOffset_ReturnsConflictWithCurrentOffset()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 10);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
+            using var patchRequest = CreateTusPatchRequest(created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("!"));
+
+            var response = await client.SendAsync(patchRequest);
+
+            Assert.Equal(StatusCodes.Status409Conflict, (int)response.StatusCode);
+            Assert.Equal(5, GetUploadOffset(response));
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_ChecksumMismatch_ReturnsChecksumMismatchWithoutWritingBytes()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var bytes = Encoding.UTF8.GetBytes("hello");
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: bytes.Length);
+            using var patchRequest = CreateTusPatchRequest(created.Upload.Url, offset: 0, bytes);
+            patchRequest.Headers.Add("Upload-Checksum", $"sha256 {Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes("other")))}");
+
+            var response = await client.SendAsync(patchRequest);
+
+            Assert.Equal(460, (int)response.StatusCode);
+            var headAfter = await SendTusHeadAsync(client, created.Upload.Url);
+            Assert.Equal(0, GetUploadOffset(headAfter));
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_ChecksumMatch_AppendsBytes()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var bytes = Encoding.UTF8.GetBytes("hello");
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: bytes.Length);
+            using var patchRequest = CreateTusPatchRequest(created.Upload.Url, offset: 0, bytes);
+            patchRequest.Headers.Add("Upload-Checksum", $"sha256 {Convert.ToBase64String(SHA256.HashData(bytes))}");
+
+            var response = await client.SendAsync(patchRequest);
+
+            Assert.Equal(StatusCodes.Status204NoContent, (int)response.StatusCode);
+            Assert.Equal(bytes.Length, GetUploadOffset(response));
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_ExpiredIncompleteUpload_ReturnsNotFoundAndCleansLocalBytes()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath, uploadSessionTtlSeconds: 1);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 5);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
+            await Task.Delay(TimeSpan.FromMilliseconds(1200));
+
+            var response = await SendTusHeadAsync(client, created.Upload.Url);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)response.StatusCode);
+            Assert.Empty(Directory.EnumerateFiles(rootPath));
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
     public async Task TusUploadEndpoint_ServerProxySession_ReturnsNotFound()
     {
         await using var factory = new WebApplicationFactory<Program>();
@@ -193,6 +312,53 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
+    public async Task TusUploadEndpoint_CompleteBeforeExpectedSize_ReturnsBadRequest()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 5);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("he"));
+
+            var completeResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+                new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, 5));
+
+            Assert.Equal(StatusCodes.Status400BadRequest, (int)completeResponse.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_CompleteWithChecksumMismatch_ReturnsBadRequest()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            var client = CreateInternalServiceClient(factory);
+            var bytes = Encoding.UTF8.GetBytes("hello");
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: bytes.Length);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, bytes);
+
+            var completeResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+                new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:bad", bytes.Length));
+
+            Assert.Equal(StatusCodes.Status400BadRequest, (int)completeResponse.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
     public async Task DownloadGrantContentEndpoint_MissingLocalBytes_ReturnsNotFound()
     {
         var rootPath = CreateTempDirectory();
@@ -200,12 +366,18 @@ public sealed class FileStorageTusProviderTests
         {
             await using var factory = CreateFactoryWithTusProvider(rootPath);
             var client = CreateInternalServiceClient(factory);
-            var created = await CreateTusUploadSessionAsync(client);
+            var uploadedBytes = Encoding.UTF8.GetBytes("hello");
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
 
             var completeResponse = await client.PostAsJsonAsync(
                 $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
-                new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, 0));
+                new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, uploadedBytes.Length));
             completeResponse.EnsureSuccessStatusCode();
+            foreach (var path in Directory.EnumerateFiles(rootPath))
+            {
+                File.Delete(path);
+            }
 
             var grantResponse = await client.PostAsJsonAsync(
                 $"/api/files/v1/files/{created.FileId}/download-grants",
@@ -261,7 +433,9 @@ public sealed class FileStorageTusProviderTests
         AssertObjectKeyIsNotExposed(result.Value);
     }
 
-    private static WebApplicationFactory<Program> CreateFactoryWithTusProvider(string? rootPath = null)
+    private static WebApplicationFactory<Program> CreateFactoryWithTusProvider(
+        string? rootPath = null,
+        int? uploadSessionTtlSeconds = null)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -271,7 +445,8 @@ public sealed class FileStorageTusProviderTests
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["FileStorage:UploadProvider"] = "tus",
-                        ["FileStorage:Tus:RootPath"] = rootPath
+                        ["FileStorage:Tus:RootPath"] = rootPath,
+                        ["FileStorage:UploadSessionTtlSeconds"] = uploadSessionTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     });
                 });
             });
@@ -319,15 +494,21 @@ public sealed class FileStorageTusProviderTests
 
     private static async Task PatchTusBytesAsync(HttpClient client, string url, long offset, byte[] bytes)
     {
-        using var patchRequest = new HttpRequestMessage(HttpMethod.Patch, url)
+        using var patchRequest = CreateTusPatchRequest(url, offset, bytes);
+        var response = await client.SendAsync(patchRequest);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private static HttpRequestMessage CreateTusPatchRequest(string url, long offset, byte[] bytes)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Patch, url)
         {
             Content = new ByteArrayContent(bytes)
         };
-        patchRequest.Headers.Add("Tus-Resumable", "1.0.0");
-        patchRequest.Headers.Add("Upload-Offset", offset.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        patchRequest.Content.Headers.ContentType = new("application/offset+octet-stream");
-        var response = await client.SendAsync(patchRequest);
-        response.EnsureSuccessStatusCode();
+        request.Headers.Add("Tus-Resumable", "1.0.0");
+        request.Headers.Add("Upload-Offset", offset.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        request.Content.Headers.ContentType = new("application/offset+octet-stream");
+        return request;
     }
 
     private static Task<HttpResponseMessage> SendTusHeadAsync(HttpClient client, string url)
