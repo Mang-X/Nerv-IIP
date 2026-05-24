@@ -55,7 +55,7 @@ Console Auth + shadcn-vue Baseline 当前采用“app 内 auth”方案：`front
 - frontend/apps/business-console/vite.config.ts：沿用 Vue、Vue Router 官方文件路由插件、alias 和构建配置。
 - frontend/apps/business-console/tsconfig.json：纳入业务控制台 typed routes 相关类型。
 
-根级 `pnpm -C frontend build` 必须同时构建 `@nerv-iip/console` 和 `@nerv-iip/business-console`，避免新增业务 app 后只验证主平台 console。
+根级 `pnpm -C frontend test` 必须运行 workspace test task；根级 `pnpm -C frontend build` 必须同时构建 `@nerv-iip/console` 和 `@nerv-iip/business-console`，避免新增业务 app 后只验证主平台 console。
 
 ### 包级配置
 
@@ -191,6 +191,17 @@ Business Console 登录、刷新、退出和 `/me` 可以先复用 PlatformGatew
 | `/mes/schedules` | 规则排程运行和结果状态；不包含甘特。 | BusinessGateway MES facade。 |
 
 业务控制台的服务端状态统一放入 `src/composables/useBusinessMasterData.ts`、`useBusinessInventory.ts`、`useBusinessQuality.ts` 和 `useBusinessMes.ts`。这些 composable 只消费 `@nerv-iip/api-client` 的 business-console 稳定导出，不深 import generated，不手写业务服务 URL。
+
+Business Console focused verification commands:
+
+```powershell
+pnpm -C frontend --filter @nerv-iip/business-console typecheck
+pnpm -C frontend --filter @nerv-iip/business-console test
+pnpm -C frontend --filter @nerv-iip/business-console build
+pnpm -C frontend --filter @nerv-iip/business-console e2e -- business-console.spec.ts
+```
+
+当前 e2e smoke 覆盖桌面与移动视口下的 SKU、库存可用量、Quality NCR 和 MES 工单页面；本地缺少 Playwright managed Chromium 时，可临时设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指向已安装 Chrome/Chromium 后运行。
 
 ### Console IAM Admin
 
