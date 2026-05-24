@@ -3,6 +3,7 @@ using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Domain;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
+using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using ContractOwnerReference = Nerv.IIP.Contracts.FileStorage.OwnerReference;
 
@@ -12,16 +13,21 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
 {
     private readonly ApplicationDbContext dbContext;
     private readonly IFileStorageUploadProvider uploadProvider;
+    private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
 
     public PostgreSqlFileStorageService(ApplicationDbContext dbContext)
         : this(dbContext, new ServerProxyUploadProvider())
     {
     }
 
-    public PostgreSqlFileStorageService(ApplicationDbContext dbContext, IFileStorageUploadProvider uploadProvider)
+    public PostgreSqlFileStorageService(
+        ApplicationDbContext dbContext,
+        IFileStorageUploadProvider uploadProvider,
+        ILocalTusFileStoreAccessor? tusStoreAccessor = null)
     {
         this.dbContext = dbContext;
         this.uploadProvider = uploadProvider;
+        this.tusStoreAccessor = tusStoreAccessor;
     }
 
     public async Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
@@ -100,6 +106,19 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             || !string.Equals(session.FilePurpose, request.FilePurpose, StringComparison.Ordinal))
         {
             return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
+        }
+
+        var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
+            session.Provider,
+            session.UploadSessionId,
+            session.ExpectedSizeBytes,
+            session.Checksum,
+            request,
+            tusStoreAccessor,
+            cancellationToken);
+        if (tusValidation is not null)
+        {
+            return FileStorageResult<FileMetadataResponse>.Failure(tusValidation.StatusCode, tusValidation.Message);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -213,6 +232,22 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             && !x.Completed
             && x.ExpiresAtUtc > now,
             cancellationToken);
+    }
+
+    public async Task<LocalTusUploadSession?> GetTusUploadSessionAsync(
+        string uploadSessionId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.UploadSessions
+            .Where(x => x.UploadSessionId == uploadSessionId
+                && x.Provider == TusUploadProvider.Name
+                && !x.Completed)
+            .Select(x => new LocalTusUploadSession(
+                x.UploadSessionId,
+                x.ExpectedSizeBytes,
+                x.Checksum,
+                x.ExpiresAtUtc))
+            .SingleOrDefaultAsync(cancellationToken);
     }
 
     private static FileMetadataResponse ToResponse(StoredFileRecord file)

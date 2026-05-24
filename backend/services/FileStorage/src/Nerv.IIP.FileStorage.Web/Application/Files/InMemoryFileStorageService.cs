@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Configuration;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Domain;
+using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using ContractOwnerReference = Nerv.IIP.Contracts.FileStorage.OwnerReference;
 using DomainOwnerReference = Nerv.IIP.FileStorage.Domain.OwnerReference;
@@ -33,11 +35,6 @@ public interface ILocalFileContentIndex
     Task<string?> GetUploadSessionIdForDownloadGrantAsync(string downloadGrantId, CancellationToken cancellationToken);
 }
 
-public interface ILocalTusUploadSessionIndex
-{
-    Task<bool> CanAcceptTusUploadAsync(string uploadSessionId, CancellationToken cancellationToken);
-}
-
 public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
 {
     private readonly ConcurrentDictionary<string, UploadSession> uploadSessions = new(StringComparer.Ordinal);
@@ -45,15 +42,22 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     private readonly ConcurrentDictionary<string, string> fileUploadSessions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DownloadGrantIndexEntry> downloadGrantFiles = new(StringComparer.Ordinal);
     private readonly IFileStorageUploadProvider uploadProvider;
+    private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
+    private readonly TimeSpan uploadSessionTtl;
 
     public InMemoryFileStorageService()
         : this(new ServerProxyUploadProvider())
     {
     }
 
-    public InMemoryFileStorageService(IFileStorageUploadProvider uploadProvider)
+    public InMemoryFileStorageService(
+        IFileStorageUploadProvider uploadProvider,
+        IConfiguration? configuration = null,
+        ILocalTusFileStoreAccessor? tusStoreAccessor = null)
     {
         this.uploadProvider = uploadProvider;
+        this.tusStoreAccessor = tusStoreAccessor;
+        uploadSessionTtl = ResolveUploadSessionTtl(configuration);
     }
 
     public Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
@@ -88,7 +92,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             request.Checksum,
             uploadProvider.Provider,
             now,
-            now.AddMinutes(15),
+            now.Add(uploadSessionTtl),
             Completed: false);
 
         uploadSessions[session.UploadSessionId] = session;
@@ -105,7 +109,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         return Task.FromResult(FileStorageResult<CreateUploadSessionResponse>.Ok(response));
     }
 
-    public Task<FileStorageResult<FileMetadataResponse>> CompleteUploadSessionAsync(
+    public async Task<FileStorageResult<FileMetadataResponse>> CompleteUploadSessionAsync(
         string uploadSessionId,
         CompleteUploadSessionRequest request,
         CancellationToken cancellationToken)
@@ -114,30 +118,43 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
 
         if (!uploadSessions.TryGetValue(uploadSessionId, out var session))
         {
-            return Task.FromResult(FileStorageResult<FileMetadataResponse>.NotFound($"Upload session '{uploadSessionId}' was not found."));
+            return FileStorageResult<FileMetadataResponse>.NotFound($"Upload session '{uploadSessionId}' was not found.");
         }
 
         if (session.Completed)
         {
-            return Task.FromResult(FileStorageResult<FileMetadataResponse>.BadRequest("Upload session is already completed."));
+            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session is already completed.");
         }
 
         if (session.ExpiresAtUtc <= DateTimeOffset.UtcNow)
         {
-            return Task.FromResult(FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired."));
+            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session has expired.");
         }
 
         if (!string.Equals(session.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(session.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal)
             || !string.Equals(session.FilePurpose, request.FilePurpose, StringComparison.Ordinal))
         {
-            return Task.FromResult(FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match."));
+            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session context does not match.");
+        }
+
+        var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
+            session.Provider,
+            session.UploadSessionId,
+            session.ExpectedSizeBytes,
+            session.Checksum,
+            request,
+            tusStoreAccessor,
+            cancellationToken);
+        if (tusValidation is not null)
+        {
+            return FileStorageResult<FileMetadataResponse>.Failure(tusValidation.StatusCode, tusValidation.Message);
         }
 
         var completedSession = session with { Completed = true };
         if (!uploadSessions.TryUpdate(uploadSessionId, completedSession, session))
         {
-            return Task.FromResult(FileStorageResult<FileMetadataResponse>.BadRequest("Upload session could not be completed."));
+            return FileStorageResult<FileMetadataResponse>.BadRequest("Upload session could not be completed.");
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -159,7 +176,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
 
         files[file.FileId] = file;
         fileUploadSessions[file.FileId] = uploadSessionId;
-        return Task.FromResult(FileStorageResult<FileMetadataResponse>.Ok(file.ToResponse()));
+        return FileStorageResult<FileMetadataResponse>.Ok(file.ToResponse());
     }
 
     public Task<FileStorageResult<FileMetadataResponse>> GetFileMetadataAsync(
@@ -229,12 +246,42 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var canAccept = uploadSessions.TryGetValue(uploadSessionId, out var session)
-            && string.Equals(session.Provider, TusUploadProvider.Name, StringComparison.Ordinal)
-            && !session.Completed
+        var canAccept = TryGetTusUploadSession(uploadSessionId, out var session)
             && session.ExpiresAtUtc > DateTimeOffset.UtcNow;
 
         return Task.FromResult(canAccept);
+    }
+
+    public Task<LocalTusUploadSession?> GetTusUploadSessionAsync(
+        string uploadSessionId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var localSession = TryGetTusUploadSession(uploadSessionId, out var session)
+            ? new LocalTusUploadSession(
+                session.UploadSessionId,
+                session.ExpectedSizeBytes,
+                session.Checksum,
+                session.ExpiresAtUtc)
+            : null;
+
+        return Task.FromResult(localSession);
+    }
+
+    private bool TryGetTusUploadSession(string uploadSessionId, out UploadSession session)
+    {
+        return uploadSessions.TryGetValue(uploadSessionId, out session!)
+            && string.Equals(session.Provider, TusUploadProvider.Name, StringComparison.Ordinal)
+            && !session.Completed;
+    }
+
+    private static TimeSpan ResolveUploadSessionTtl(IConfiguration? configuration)
+    {
+        var ttlSeconds = configuration?.GetValue<double?>("FileStorage:UploadSessionTtlSeconds");
+        return ttlSeconds is > 0
+            ? TimeSpan.FromSeconds(ttlSeconds.Value)
+            : TimeSpan.FromMinutes(15);
     }
 
     private static string NewId(string prefix)
@@ -293,6 +340,8 @@ public sealed record FileStorageResult<T>(T? Value, FileStorageError? Error, int
     public static FileStorageResult<T> Ok(T value) => new(value, null, StatusCodes.Status200OK);
     public static FileStorageResult<T> BadRequest(string message) => new(default, new FileStorageError(message), StatusCodes.Status400BadRequest);
     public static FileStorageResult<T> NotFound(string message) => new(default, new FileStorageError(message), StatusCodes.Status404NotFound);
+    public static FileStorageResult<T> ServiceUnavailable(string message) => new(default, new FileStorageError(message), StatusCodes.Status503ServiceUnavailable);
+    internal static FileStorageResult<T> Failure(int statusCode, string message) => new(default, new FileStorageError(message), statusCode);
 }
 
 internal static class FileMetadataMapping
