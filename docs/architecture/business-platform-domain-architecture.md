@@ -83,7 +83,25 @@ BusinessMasterData 的治理和字段口径见 `docs/adr/0013-business-master-da
 | MES | `backend/services/Business/Mes` | `mes` | 工单、工序任务、报工、排产结果、完工入库请求、生产日报 | 库存余额、WMS 入库单、设备维护事实 | ProductEngineering、Planning、Inventory、WMS、Quality、Telemetry、Maintenance |
 | IndustrialTelemetry | `backend/services/Business/IndustrialTelemetry` | `industrial_telemetry` | tag 定义、采集点映射、设备状态快照、时序摘要、报警事件、OEE 输入事实 | PLC/DCS 控制、SCADA 画面、设备资产主数据 | Connector Host、MasterData、AppHub |
 | Maintenance | `backend/services/Business/Maintenance` | `maintenance` | 维修工单、保养计划、点检记录、故障、停机原因、备件需求 | 设备资产主数据、库存余额、生产工单状态 | MasterData、Telemetry、Inventory、MES |
-| BusinessGateway | `backend/gateway/BusinessGateway` 或业务服务内部 BFF | 无持久化默认值 | 业务页面聚合查询、业务前端 OpenAPI、上下文透传 | 领域规则、持久事实 | 业务服务 OpenAPI/Contracts、IAM |
+| BusinessGateway | `backend/gateway/BusinessGateway` | 无持久化默认值 | 业务页面聚合查询、业务前端 OpenAPI、上下文透传 | 领域规则、持久事实 | 业务服务 OpenAPI/Contracts、IAM |
+
+## 业务控制台边界
+
+#166 到 #169 的 Business Console MVP 采用独立 `frontend/apps/business-console`
+入口和 `backend/gateway/BusinessGateway` BFF。主平台 `frontend/apps/console` 可以保留业务平台状态页或应用入口链接，但不得承载 SKU 维护、库存移动、盘点、检验、NCR、工单或排程等真实业务 CRUD 和工作流页面。
+
+BusinessGateway 暴露 `/api/business-console/v1/**` 页面级 facade，负责用户认证、IAM 权限检查、组织/环境上下文透传、internal service token 下游调用和 OpenAPI 输出。BusinessGateway 不持久化业务事实，不计算库存可用量，不决定 NCR 状态机，不生成 MES 排程结果，也不引用业务服务的 Web、Domain 或 Infrastructure 项目。
+
+业务控制台首批路由围绕已落地服务能力收敛：
+
+| Issue | 页面范围 | BFF 下游 |
+| --- | --- | --- |
+| #166 | SKU 列表、创建、UOM/站点/产线/工作中心/设备等基础资源选择。 | BusinessMasterData |
+| #167 | 可用量查询、库存移动、盘点任务与调整确认。 | Inventory |
+| #168 | 检验计划、检验记录、NCR 列表、处置和关闭。 | Quality |
+| #169 | 工单、急单、规则排程、报工和完工入库请求可见性；不含甘特。 | MES |
+
+OpenAPI 快照写入 `frontend/packages/api-client/openapi/business-gateway-console.v1.json`，生成代码隔离在 `frontend/packages/api-client/src/generated/business-console/`，业务页面只通过 `@nerv-iip/api-client` 稳定 business-console 导出消费。
 
 ## 主平台边界
 

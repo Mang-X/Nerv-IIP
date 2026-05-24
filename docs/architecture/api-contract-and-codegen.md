@@ -51,6 +51,40 @@
 6. 新增或修改 Gateway 控制台接口时，必须先更新后端 Endpoint 与 OpenAPI 测试，再导出 OpenAPI 快照并重新生成前端 api-client。
 7. OpenAPI 是契约事实来源；导出的 JSON 快照是前端生成输入，不允许手改快照来绕过后端契约。
 
+### BusinessGateway Console OpenAPI
+
+业务控制台前端只直接消费 BusinessGateway 暴露的 `/api/business-console/v1/**` 接口，不直接调用 BusinessMasterData、Inventory、Quality、MES、IAM 或 FileStorage 的服务 URL。BusinessGateway 属于业务平台聚合入口，不属于 PlatformGateway；它可以执行用户鉴权、IAM 权限检查、上下文透传、internal token 下游调用和页面级响应整理，但不承载业务规则或持久事实。
+
+BusinessGateway Console OpenAPI 的生成链路固定为：
+
+1. BusinessGateway 通过 FastEndpoints.Swagger 输出 `/swagger/v1/swagger.json`。
+2. 导出脚本将 BusinessGateway Console OpenAPI 快照写入 `frontend/packages/api-client/openapi/business-gateway-console.v1.json`。
+3. `frontend/packages/api-client/openapi-ts.config.ts` 增加 business-console input，生成到 `frontend/packages/api-client/src/generated/business-console/`，与现有 PlatformGateway generated 文件和移动端 generated 文件隔离。
+4. `frontend/packages/api-client/src/business-console.ts` 提供业务控制台稳定导出；`src/index.ts` 可以重新导出业务控制台需要的类型、SDK 和 Pinia Colada query/mutation options。
+5. `frontend/apps/business-console` 只从 `@nerv-iip/api-client` 稳定入口消费，不深 import `src/generated/business-console/*`。
+6. OpenAPI 快照是生成输入，不允许手改；新增或修改 business-console endpoint 时必须先更新 BusinessGateway endpoint、OpenAPI/authorization/proxy tests，再导出快照并运行 `pnpm -C frontend generate:api`。
+
+Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` 语义前缀：
+
+| operationId | Route | 用途 |
+| --- | --- | --- |
+| `listBusinessConsoleSkus` | `GET /api/business-console/v1/master-data/skus` | SKU 列表和筛选。 |
+| `createBusinessConsoleSku` | `POST /api/business-console/v1/master-data/skus` | 创建 SKU。 |
+| `listBusinessConsoleMasterDataResources` | `GET /api/business-console/v1/master-data/resources` | 查询 UOM、站点、产线、工作中心、设备等基础资源。 |
+| `getBusinessConsoleInventoryAvailability` | `GET /api/business-console/v1/inventory/availability` | 查询库存可用量。 |
+| `postBusinessConsoleInventoryMovement` | `POST /api/business-console/v1/inventory/movements` | 提交库存移动。 |
+| `createBusinessConsoleInventoryCountTask` | `POST /api/business-console/v1/inventory/count-tasks` | 创建盘点任务。 |
+| `confirmBusinessConsoleInventoryCountAdjustment` | `POST /api/business-console/v1/inventory/count-tasks/{countTaskId}/adjustments` | 确认盘点调整。 |
+| `listBusinessConsoleQualityInspectionPlans` | `GET /api/business-console/v1/quality/inspection-plans` | 检验计划列表。 |
+| `createBusinessConsoleQualityInspectionRecord` | `POST /api/business-console/v1/quality/inspection-records` | 创建检验记录。 |
+| `listBusinessConsoleQualityNcrs` | `GET /api/business-console/v1/quality/ncrs` | NCR 列表。 |
+| `submitBusinessConsoleQualityNcrDisposition` | `POST /api/business-console/v1/quality/ncrs/{ncrId}/disposition` | 提交 NCR 处置。 |
+| `closeBusinessConsoleQualityNcr` | `POST /api/business-console/v1/quality/ncrs/{ncrId}/close` | 关闭 NCR。 |
+| `listBusinessConsoleMesWorkOrders` | `GET /api/business-console/v1/mes/work-orders` | 工单列表。 |
+| `createBusinessConsoleMesRushWorkOrder` | `POST /api/business-console/v1/mes/work-orders/rush` | 创建急单。 |
+| `runBusinessConsoleMesSchedule` | `POST /api/business-console/v1/mes/schedules/run` | 运行规则排程；不包含甘特。 |
+| `recordBusinessConsoleMesProductionReport` | `POST /api/business-console/v1/mes/production-reports` | 创建生产报工。 |
+
 ### BusinessGateway Mobile OpenAPI
 
 移动 PDA 前端只直接消费 BusinessGateway 暴露的 `/api/mobile/v1/**` 接口，不直接调用 WMS、Inventory、MES、Quality、Maintenance、IAM 或 FileStorage 的服务 URL。BusinessGateway 复用 PlatformGateway 已验证的 facade 口径，但它属于业务平台聚合入口，不应把 WMS/MES/Inventory 等移动聚合逻辑写入 PlatformGateway。
@@ -126,9 +160,11 @@ frontend/packages/api-client/
   openapi-ts.config.ts
   openapi/
     platform-gateway.v1.json
+    business-gateway-console.v1.json
     business-gateway-mobile.v1.json
   src/
     generated/
+      business-console/
       mobile/
     transport/
       base-url.ts
@@ -136,6 +172,7 @@ frontend/packages/api-client/
       error.ts
       client-config.ts
     console.ts
+    business-console.ts
     mobile.ts
     index.ts
 ```
@@ -145,12 +182,13 @@ frontend/packages/api-client/
 - 只放代码生成文件。
 - 推荐包含 client.gen.ts、sdk.gen.ts、types.gen.ts，以及 Colada 查询与变更生成文件。
 - 不允许手改。
-- Mobile generated 文件放在 `src/generated/mobile/`，避免与 PlatformGateway Console generated 文件在同一目录内发生 operationId 或类型名冲突。
+- Business Console generated 文件放在 `src/generated/business-console/`，Mobile generated 文件放在 `src/generated/mobile/`，避免与 PlatformGateway Console generated 文件在同一目录内发生 operationId 或类型名冲突。
 
 ### openapi
 
 - 保存由脚本从 Gateway 导出的版本化 OpenAPI 快照。
 - `platform-gateway.v1.json` 对应 PlatformGateway 当前主版本控制台 API。
+- `business-gateway-console.v1.json` 对应 BusinessGateway 当前主版本业务控制台 API。
 - `business-gateway-mobile.v1.json` 对应 BusinessGateway 当前主版本移动 PDA API。
 - 快照更新必须能追溯到后端 Endpoint、测试和文档变化。
 - 快照是生成产物输入，格式以导出脚本输出为准，不纳入 Vite+ formatter 检查。
@@ -168,6 +206,7 @@ frontend/packages/api-client/
 
 - 作为稳定导出入口。
 - 应用层只消费这里，而不消费 generated 深层路径。
+- `business-console.ts` 是业务控制台专用稳定导出入口；`frontend/apps/business-console` 不得绕过它深 import generated。
 - `mobile.ts` 是 PDA 专用稳定导出入口；`index.ts` 可以重新导出它，但页面不得绕过 `mobile.ts` 深 import generated。
 
 ## 生成链路
@@ -180,7 +219,7 @@ frontend/packages/api-client/
 6. 变更涉及 breaking change 时，必须同步更新对应页面、组合函数和文档。
 7. OpenAPI 导出和 api-client 写入属于 `generate` 类脚本副作用，必须按 docs/architecture/script-automation-governance.md 声明写入路径、日志、服务启动和清理策略；纯 `verify` 脚本不得隐式写生成产物。
 
-BusinessGateway mobile API 引入后，生成链路增加 `business-gateway-mobile.v1.json` 作为第二个 OpenAPI 输入；仍由同一个 `frontend/packages/api-client` 包输出，但 generated 目录和稳定导出入口必须与 PlatformGateway Console 隔离。
+BusinessGateway console API 引入后，生成链路增加 `business-gateway-console.v1.json` 作为第二个 OpenAPI 输入；BusinessGateway mobile API 引入后，再增加 `business-gateway-mobile.v1.json`。这些输入仍由同一个 `frontend/packages/api-client` 包输出，但 generated 目录和稳定导出入口必须与 PlatformGateway Console 隔离。
 
 第三迭代生成配置固定使用：
 

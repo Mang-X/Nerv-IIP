@@ -17,6 +17,8 @@ frontend/
   apps/
     console/
       src/
+    business-console/
+      src/
   packages/
     ui/
     app-shell/
@@ -28,6 +30,8 @@ frontend/
 ```
 
 第三迭代只创建控制台纵切必需包：`api-client`、`ui`、`app-shell`。`layer-base`、`layer-platform`、`auth`、`shared-types` 是已冻结的长期边界，等第二个应用或跨包复用真正出现时再创建，避免首批脚手架提前空转。
+
+Business Console MVP 是第二个真实应用入口：`frontend/apps/business-console` 承载 #166 到 #169 的 MasterData、Inventory、Quality 和 MES 业务页面。它消费 BusinessGateway 的 `/api/business-console/v1/**` facade，不直接调用业务服务 URL，也不把业务 CRUD 页面放回主平台 `frontend/apps/console`。
 
 Console Auth + shadcn-vue Baseline 当前采用“app 内 auth”方案：`frontend/apps/console/src/stores/auth.ts` 管理会话状态，`src/api/auth.ts` 包装 Gateway Auth facade，路由守卫位于 app 内。完整 `frontend/packages/auth` 独立包方案留作后续参考；当 Console 之外出现第二个应用、插件宿主或跨包登录复用时再抽取，边界应包含 Gateway auth DTO mapping、storage adapter、refresh orchestration、logout/session revoke 组合、unauthorized handler 和 app-agnostic route helper，不直接耦合某个页面或 app shell。
 
@@ -47,6 +51,9 @@ Console Auth + shadcn-vue Baseline 当前采用“app 内 auth”方案：`front
 - frontend/apps/console/package.json：控制台应用脚本。
 - frontend/apps/console/vite.config.ts：Vue、Vue Router 官方文件路由插件、alias 和构建配置。
 - frontend/apps/console/tsconfig.json：纳入 typed routes 相关类型。
+- frontend/apps/business-console/package.json：业务控制台应用脚本，开发端口在 implementation-readiness 和端口矩阵中登记后固定。
+- frontend/apps/business-console/vite.config.ts：沿用 Vue、Vue Router 官方文件路由插件、alias 和构建配置。
+- frontend/apps/business-console/tsconfig.json：纳入业务控制台 typed routes 相关类型。
 
 ### 包级配置
 
@@ -163,6 +170,25 @@ pnpm -C frontend build
 ### Console Auth
 
 Console 登录闭环通过 PlatformGateway Console Auth facade 调用 IAM。`stores/auth.ts` 只管理客户端会话状态，`api-client` 继续由 Gateway OpenAPI 生成 SDK 与 Pinia Colada options。路由守卫放在 `src/router/guards/auth.ts`，登录页和登录表单放在 `src/pages/login.vue` 与 `src/components/auth/LoginForm.vue`。
+
+### Business Console
+
+Business Console 登录、刷新、退出和 `/me` 可以先复用 PlatformGateway Console Auth facade 的契约，业务数据页只消费 BusinessGateway 生成客户端。首版允许 app-local auth 代码与主平台 console 保持结构一致；当两个应用的会话恢复、刷新编排、退出处理和 unauthorized handler 出现真实复用压力时，再抽取 `frontend/packages/auth`。
+
+业务页面按领域目录组织：
+
+| 路由 | 页面范围 | 数据入口 |
+| --- | --- | --- |
+| `/master-data/skus` | SKU 列表、创建和基础资源选择。 | BusinessGateway MasterData facade。 |
+| `/inventory/availability` | 可用量查询。 | BusinessGateway Inventory facade。 |
+| `/inventory/movements` | 库存移动提交。 | BusinessGateway Inventory facade。 |
+| `/inventory/counts` | 盘点任务与调整确认。 | BusinessGateway Inventory facade。 |
+| `/quality/inspections` | 检验计划列表和检验记录创建。 | BusinessGateway Quality facade。 |
+| `/quality/ncrs` | NCR 列表、处置和关闭。 | BusinessGateway Quality facade。 |
+| `/mes/work-orders` | 工单列表和急单创建。 | BusinessGateway MES facade。 |
+| `/mes/schedules` | 规则排程运行和结果状态；不包含甘特。 | BusinessGateway MES facade。 |
+
+业务控制台的服务端状态统一放入 `src/composables/useBusinessMasterData.ts`、`useBusinessInventory.ts`、`useBusinessQuality.ts` 和 `useBusinessMes.ts`。这些 composable 只消费 `@nerv-iip/api-client` 的 business-console 稳定导出，不深 import generated，不手写业务服务 URL。
 
 ### Console IAM Admin
 
