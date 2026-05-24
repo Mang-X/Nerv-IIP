@@ -61,7 +61,7 @@ public sealed class BusinessGatewayProxyTests
     {
         var masterData = new RecordingMasterDataClient
         {
-            Failure = new BusinessServiceProxyException(HttpStatusCode.BadGateway, "master-data-unavailable"),
+            Failure = BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadGateway, "master-data-unavailable"),
         };
         await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
@@ -79,6 +79,33 @@ public sealed class BusinessGatewayProxyTests
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.False(document.RootElement.GetProperty("success").GetBoolean());
         Assert.Equal("master-data-unavailable", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task List_skus_does_not_leak_raw_downstream_error_body_to_gateway_response()
+    {
+        var masterData = new RecordingMasterDataClient
+        {
+            Failure = new BusinessServiceProxyException(HttpStatusCode.BadGateway, "<html>secret stack trace</html>"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal("downstream-request-failed", document.RootElement.GetProperty("message").GetString());
+        Assert.DoesNotContain("secret stack trace", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<html>", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -171,6 +198,27 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
         Assert.Contains("invalid-resource-type", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_does_not_expose_plain_text_downstream_error_bodies()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("<html>secret stack trace</html>"),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListResourcesAsync(
+            "internal-token-001",
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, 100),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, ex.StatusCode);
+        Assert.Equal("downstream-request-failed", ex.Message);
+        Assert.DoesNotContain("secret stack trace", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<html>", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(

@@ -96,12 +96,64 @@ public interface IBusinessMesClient
         CancellationToken cancellationToken);
 }
 
-public sealed class BusinessServiceProxyException(
-    HttpStatusCode statusCode,
-    string message,
-    Exception? innerException = null) : Exception(message, innerException)
+public sealed class BusinessServiceProxyException : Exception
 {
-    public HttpStatusCode StatusCode { get; } = statusCode;
+    public const string DownstreamRequestFailedMessage = "downstream-request-failed";
+
+    public BusinessServiceProxyException(
+        HttpStatusCode statusCode,
+        string message,
+        Exception? innerException = null)
+        : base(DownstreamRequestFailedMessage, innerException)
+    {
+        _ = message;
+        StatusCode = statusCode;
+    }
+
+    private BusinessServiceProxyException(
+        HttpStatusCode statusCode,
+        string safeMessage,
+        Exception? innerException,
+        bool messageIsSafe)
+        : base(messageIsSafe ? safeMessage : DownstreamRequestFailedMessage, innerException)
+    {
+        StatusCode = statusCode;
+    }
+
+    public HttpStatusCode StatusCode { get; }
+
+    public static BusinessServiceProxyException FromSafeDownstreamMessage(
+        HttpStatusCode statusCode,
+        string? downstreamMessage,
+        Exception? innerException = null) =>
+        new(
+            statusCode,
+            IsSafeDownstreamMessage(downstreamMessage)
+                ? downstreamMessage!
+                : DownstreamRequestFailedMessage,
+            innerException,
+            messageIsSafe: true);
+
+    private static bool IsSafeDownstreamMessage(string? downstreamMessage)
+    {
+        if (string.IsNullOrWhiteSpace(downstreamMessage) || downstreamMessage.Length > 128)
+        {
+            return false;
+        }
+
+        var first = downstreamMessage[0];
+        if (!IsLowerAsciiLetter(first) && !char.IsAsciiDigit(first))
+        {
+            return false;
+        }
+
+        return downstreamMessage.All(static value =>
+            IsLowerAsciiLetter(value) ||
+            char.IsAsciiDigit(value) ||
+            value is '-' or '_' or '.');
+    }
+
+    private static bool IsLowerAsciiLetter(char value) => value is >= 'a' and <= 'z';
 }
 
 public abstract class BusinessServiceHttpClient(HttpClient httpClient)
@@ -123,9 +175,9 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            throw new BusinessServiceProxyException(
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 response.StatusCode,
-                await ReadErrorMessageAsync(response, cancellationToken));
+                await ReadDownstreamEnvelopeMessageAsync(response, cancellationToken));
         }
 
         try
@@ -134,34 +186,42 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         }
         catch (JsonException ex)
         {
-            throw new BusinessServiceProxyException(HttpStatusCode.BadGateway, "downstream-invalid-response", ex);
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response",
+                ex);
         }
         catch (InvalidOperationException ex)
         {
-            throw new BusinessServiceProxyException(HttpStatusCode.BadGateway, "downstream-invalid-response", ex);
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response",
+                ex);
         }
     }
 
-    private static async Task<string> ReadErrorMessageAsync(
+    private static async Task<string?> ReadDownstreamEnvelopeMessageAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
         var text = await response.Content.ReadAsStringAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(text))
         {
-            return response.ReasonPhrase ?? "downstream-request-failed";
+            return null;
         }
 
         try
         {
             using var document = JsonDocument.Parse(text);
-            return document.RootElement.TryGetProperty("message", out var message)
-                ? message.GetString() ?? text
-                : text;
+            return document.RootElement.ValueKind == JsonValueKind.Object &&
+                document.RootElement.TryGetProperty("message", out var message) &&
+                message.ValueKind == JsonValueKind.String
+                ? message.GetString()
+                : null;
         }
         catch (JsonException)
         {
-            return text;
+            return null;
         }
     }
 
