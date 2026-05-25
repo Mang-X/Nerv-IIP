@@ -14,6 +14,8 @@ public sealed class InMemoryIamStore
     private readonly List<MembershipFact> _memberships = [];
     private readonly List<UserSessionFact> _sessions = [];
     private readonly List<ConnectorHostCredentialFact> _connectorHostCredentials = [];
+    private readonly List<ExternalClientFact> _externalClients = [];
+    private readonly List<AuthorizationGrantFact> _authorizationGrants = [];
 
     public InMemoryIamStore()
     {
@@ -130,6 +132,51 @@ public sealed class InMemoryIamStore
         }
     }
 
+    public ExternalClientPrincipal IssueExternalClientToken(string clientId, string clientSecret, string? scope)
+    {
+        lock (_gate)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var client = _externalClients.SingleOrDefault(x =>
+                    x.ClientId == clientId
+                    && x.SecretHash == Hash(clientSecret)
+                    && x.Enabled
+                    && x.ValidFromUtc <= now
+                    && (x.ValidToUtc is null || x.ValidToUtc > now))
+                ?? throw new UnauthorizedAccessException("Invalid external client credential.");
+
+            var requestedPermissions = SplitScope(scope);
+            var grantedPermissions = _authorizationGrants
+                .Where(x => x.PrincipalType == "external-client"
+                    && x.PrincipalId == client.ClientId
+                    && x.OrganizationId == client.OrganizationId
+                    && x.EnvironmentId == client.EnvironmentId
+                    && x.ValidFromUtc <= now
+                    && (x.ValidToUtc is null || x.ValidToUtc > now)
+                    && x.RevokedAtUtc is null)
+                .Select(x => x.PermissionCode)
+                .Distinct(StringComparer.Ordinal)
+                .ToHashSet(StringComparer.Ordinal);
+
+            if (requestedPermissions.Count == 0)
+            {
+                requestedPermissions = grantedPermissions;
+            }
+            else if (!requestedPermissions.IsSubsetOf(grantedPermissions))
+            {
+                throw new UnauthorizedAccessException("Requested scope is not granted.");
+            }
+
+            return new ExternalClientPrincipal(
+                client.ClientId,
+                client.DisplayName,
+                client.OrganizationId,
+                client.EnvironmentId,
+                client.PermissionVersion,
+                requestedPermissions.Order(StringComparer.Ordinal).ToArray());
+        }
+    }
+
     public CurrentPrincipalSnapshot GetCurrentPrincipal(UserFact user)
     {
         lock (_gate)
@@ -173,6 +220,23 @@ public sealed class InMemoryIamStore
             return _roles
                 .Where(x => membership.RoleIds.Contains(x.RoleId))
                 .Any(x => x.PermissionCodes.Contains(permissionCode));
+        }
+    }
+
+    public bool ExternalClientHasPermission(string clientId, string organizationId, string environmentId, string permissionCode)
+    {
+        lock (_gate)
+        {
+            var now = DateTimeOffset.UtcNow;
+            return _authorizationGrants.Any(x =>
+                x.PrincipalType == "external-client"
+                && x.PrincipalId == clientId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.PermissionCode == permissionCode
+                && x.ValidFromUtc <= now
+                && (x.ValidToUtc is null || x.ValidToUtc > now)
+                && x.RevokedAtUtc is null);
         }
     }
 
@@ -349,6 +413,8 @@ public sealed class InMemoryIamStore
         _users.Add(new UserFact("user-admin", "admin", "admin@nerv-iip.local", Hash("Admin123!"), true, Guid.NewGuid().ToString("n"), 1));
         _memberships.Add(new MembershipFact("user-admin", "org-001", "env-dev", new HashSet<string> { "role-platform-admin" }));
         _connectorHostCredentials.Add(new ConnectorHostCredentialFact("connector-host-001", "org-001", "env-dev", new HashSet<string>(NervIipSeedPermissions.All.Where(x => x.StartsWith("connectors.", StringComparison.Ordinal))), Hash("local-connector-secret"), DateTimeOffset.UtcNow.AddDays(-1), null));
+        _externalClients.Add(new ExternalClientFact("external-client-demo", "Demo External Client", "org-001", "env-dev", Hash("external-client-secret"), true, 1, DateTimeOffset.UtcNow.AddDays(-1), null));
+        _authorizationGrants.Add(new AuthorizationGrantFact("external-client", "external-client-demo", "org-001", "env-dev", "ops.tasks.create", DateTimeOffset.UtcNow.AddDays(-1), null, null));
     }
 
     private void EnsureUserIsUnique(string? currentUserId, string loginName, string email)
@@ -381,6 +447,18 @@ public sealed class InMemoryIamStore
     }
 
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+
+    private static HashSet<string> SplitScope(string? scope)
+    {
+        if (string.IsNullOrWhiteSpace(scope))
+        {
+            return [];
+        }
+
+        return scope
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.Ordinal);
+    }
 }
 
 public sealed record AuthResult(
@@ -396,6 +474,13 @@ public sealed record AuthResult(
     string? OrganizationId,
     string? EnvironmentId);
 public sealed record ConnectorPrincipal(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
+public sealed record ExternalClientPrincipal(
+    string ClientId,
+    string DisplayName,
+    string OrganizationId,
+    string EnvironmentId,
+    int PermissionVersion,
+    IReadOnlyList<string> Scope);
 public sealed record CurrentPrincipalSnapshot(
     string UserId,
     string LoginName,
@@ -405,3 +490,22 @@ public sealed record CurrentPrincipalSnapshot(
     string EnvironmentId,
     int PermissionVersion,
     IReadOnlyList<string> PermissionCodes);
+public sealed record ExternalClientFact(
+    string ClientId,
+    string DisplayName,
+    string OrganizationId,
+    string EnvironmentId,
+    string SecretHash,
+    bool Enabled,
+    int PermissionVersion,
+    DateTimeOffset ValidFromUtc,
+    DateTimeOffset? ValidToUtc);
+public sealed record AuthorizationGrantFact(
+    string PrincipalType,
+    string PrincipalId,
+    string OrganizationId,
+    string EnvironmentId,
+    string PermissionCode,
+    DateTimeOffset ValidFromUtc,
+    DateTimeOffset? ValidToUtc,
+    DateTimeOffset? RevokedAtUtc);

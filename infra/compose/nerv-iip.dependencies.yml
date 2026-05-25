@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${NERV_IIP_POSTGRES_USER:-nerv}
+      POSTGRES_PASSWORD: ${NERV_IIP_POSTGRES_PASSWORD:?Set NERV_IIP_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${NERV_IIP_POSTGRES_DB:-nerv_iip}
+    ports:
+      - "${NERV_IIP_POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - nerv-iip-postgres:/var/lib/postgresql/data
+      - ../postgres/init-nerv-iip-databases.sql:/docker-entrypoint-initdb.d/20-nerv-iip-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NERV_IIP_POSTGRES_USER:-nerv} -d ${NERV_IIP_POSTGRES_DB:-nerv_iip}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "${NERV_IIP_REDIS_PORT:-6379}:6379"
+    volumes:
+      - nerv-iip-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    restart: unless-stopped
+    profiles: ["rabbitmq"]
+    ports:
+      - "${NERV_IIP_RABBITMQ_PORT:-5672}:5672"
+      - "${NERV_IIP_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-04-17T00-00-00Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${NERV_IIP_MINIO_ROOT_USER:?Set NERV_IIP_MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${NERV_IIP_MINIO_ROOT_PASSWORD:?Set NERV_IIP_MINIO_ROOT_PASSWORD}
+    ports:
+      - "${NERV_IIP_MINIO_API_PORT:-9000}:9000"
+      - "${NERV_IIP_MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - nerv-iip-minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.116.1
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    ports:
+      - "${NERV_IIP_OTEL_GRPC_PORT:-4317}:4317"
+      - "${NERV_IIP_OTEL_HTTP_PORT:-4318}:4318"
+    volumes:
+      - ../otel/otel-collector.dev.yaml:/etc/otelcol/config.yaml:ro
+      - nerv-iip-otel-queue:/var/lib/otelcol
+
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:10.0
+    restart: unless-stopped
+    profiles: ["aspire-dashboard"]
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "${NERV_IIP_ASPIRE_DASHBOARD_PORT:-18888}:18888"
+      - "${NERV_IIP_ASPIRE_DASHBOARD_OTLP_PORT:-18889}:18889"
+
+volumes:
+  nerv-iip-postgres:
+  nerv-iip-redis:
+  nerv-iip-minio:
+  nerv-iip-otel-queue:

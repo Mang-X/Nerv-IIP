@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Nerv.IIP.Iam.Infrastructure;
 
@@ -92,6 +93,52 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         var me = await _client.GetAsync("/api/iam/v1/me");
 
         me.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task External_client_credentials_issue_external_client_token_and_authorization_check_uses_grants()
+    {
+        var token = await _client.PostAsJsonAsync(
+            "/api/iam/v1/auth/client-token",
+            new { clientId = "external-client-demo", clientSecret = "external-client-secret", scope = "ops.tasks.create" });
+        token.EnsureSuccessStatusCode();
+        var auth = await ReadResponseDataAsync<ClientCredentialsTokenResponse>(token);
+
+        Assert.NotNull(auth);
+        Assert.False(string.IsNullOrWhiteSpace(auth.AccessToken));
+        Assert.Equal("Bearer", auth.TokenType);
+        Assert.True(auth.ExpiresAtUtc > DateTimeOffset.UtcNow);
+
+        var tokenHandler = new JwtSecurityTokenHandler { MapInboundClaims = false };
+        var principal = tokenHandler.ValidateToken(
+            auth.AccessToken,
+            CreateGatewayTokenValidationParameters(),
+            out _);
+
+        Assert.Equal("external-client-demo", principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value);
+        Assert.Equal("external-client", principal.FindFirst("principalType")?.Value);
+        Assert.Equal("org-001", principal.FindFirst("organizationId")?.Value);
+        Assert.Equal("env-dev", principal.FindFirst("environmentId")?.Value);
+        Assert.Equal("ops.tasks.create", principal.FindFirst("scope")?.Value);
+
+        _client.DefaultRequestHeaders.Authorization = new("Bearer", auth.AccessToken);
+        var me = await _client.GetAsync("/api/iam/v1/me");
+        me.EnsureSuccessStatusCode();
+        var current = await ReadResponseDataAsync<MeResponse>(me);
+        Assert.Equal("external-client-demo", current!.UserId);
+        Assert.Equal("external-client", current.PrincipalType);
+
+        var allowed = await _client.PostAsJsonAsync(
+            "/internal/iam/v1/authorization/check",
+            new { organizationId = "org-001", environmentId = "env-dev", permissionCode = "ops.tasks.create" });
+        allowed.EnsureSuccessStatusCode();
+
+        var denied = await _client.PostAsJsonAsync(
+            "/internal/iam/v1/authorization/check",
+            new { organizationId = "org-001", environmentId = "env-dev", permissionCode = "iam.users.manage" });
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+
+        _client.DefaultRequestHeaders.Authorization = null;
     }
 
     [Fact]
@@ -328,7 +375,50 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Contains("expired", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Production_iam_requires_explicit_jwt_signing_key_for_every_persistence_profile()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("Iam:Jwt:SigningKey", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Production_iam_rejects_short_jwt_signing_key()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Iam:Jwt:SigningKey", "short-key");
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("at least 32 bytes", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Production_iam_rejects_long_access_token_lifetime()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Iam:Jwt:SigningKey", "production-test-signing-key-that-is-long-enough");
+                builder.UseSetting("Iam:Jwt:AccessTokenMinutes", "120");
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("AccessTokenMinutes", exception.Message, StringComparison.Ordinal);
+    }
+
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+    private sealed record ClientCredentialsTokenResponse(string AccessToken, string TokenType, DateTimeOffset ExpiresAtUtc, string Scope);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
     private sealed record PagedListResponse<T>(int PageIndex, int PageSize, int TotalCount, IReadOnlyList<T> Items);
     private sealed record UserResponse(string UserId, string LoginName, string Email, bool Enabled);

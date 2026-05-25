@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -20,7 +21,8 @@ public sealed class MaintenanceEventHandlerTests
         var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
             store,
             new RuleScheduler(),
-            new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true });
+            new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+            new InMemoryIntegrationEventDeadLetterStore());
 
         await handler.HandleAsync(CreateUnavailableEvent(now), CancellationToken.None);
 
@@ -42,7 +44,8 @@ public sealed class MaintenanceEventHandlerTests
         var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
             store,
             new RuleScheduler(),
-            new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true });
+            new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
+            new InMemoryIntegrationEventDeadLetterStore());
 
         await handler.HandleAsync(CreateRestoredEvent(now.AddHours(2)), CancellationToken.None);
 
@@ -51,12 +54,60 @@ public sealed class MaintenanceEventHandlerTests
         Assert.Equal(RescheduleTrigger.AssetRestored, Assert.Single(store.ScheduleResults).Trigger);
     }
 
-    private static AssetUnavailableIntegrationEvent CreateUnavailableEvent(DateTimeOffset fromUtc)
+    [Fact]
+    public async Task AssetUnavailableHandler_DeadLettersUnsupportedEventVersionWithoutRescheduling()
+    {
+        var store = new InMemoryMesPlanningStore();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
+            store,
+            new RuleScheduler(),
+            new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+            deadLetterStore);
+
+        await handler.HandleAsync(CreateUnavailableEvent(DateTimeOffset.Parse("2026-05-22T08:00:00Z"), eventVersion: 2), CancellationToken.None);
+
+        Assert.Empty(store.Unavailabilities);
+        Assert.Empty(store.ScheduleResults);
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            AssetUnavailableIntegrationEventHandlerForReschedule.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("unsupported-version", deadLetter.FailureCode);
+        Assert.Equal(2, deadLetter.EventVersion);
+    }
+
+    [Fact]
+    public async Task AssetRestoredHandler_DeadLettersUnsupportedEventVersionWithoutClosingWindow()
+    {
+        var store = new InMemoryMesPlanningStore();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        store.AddUnavailability(new WorkCenterUnavailability("WC-A", now, null, "breakdown", "ASSET-CNC-01"));
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
+            store,
+            new RuleScheduler(),
+            new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
+            deadLetterStore);
+
+        await handler.HandleAsync(CreateRestoredEvent(now.AddHours(2), eventVersion: 2), CancellationToken.None);
+
+        Assert.Null(Assert.Single(store.Unavailabilities).ToUtc);
+        Assert.Empty(store.ScheduleResults);
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            AssetRestoredIntegrationEventHandlerForReschedule.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("unsupported-version", deadLetter.FailureCode);
+        Assert.Equal(2, deadLetter.EventVersion);
+    }
+
+    private static AssetUnavailableIntegrationEvent CreateUnavailableEvent(DateTimeOffset fromUtc, int eventVersion = MaintenanceIntegrationEventVersions.V1)
     {
         return new AssetUnavailableIntegrationEvent(
             "evt-001",
             MaintenanceIntegrationEventTypes.AssetUnavailable,
-            MaintenanceIntegrationEventVersions.V1,
+            eventVersion,
             fromUtc,
             MaintenanceIntegrationEventSources.Maintenance,
             "corr-001",
@@ -68,12 +119,12 @@ public sealed class MaintenanceEventHandlerTests
             new AssetUnavailablePayload("ASSET-CNC-01", "breakdown", fromUtc));
     }
 
-    private static AssetRestoredIntegrationEvent CreateRestoredEvent(DateTimeOffset restoredAtUtc)
+    private static AssetRestoredIntegrationEvent CreateRestoredEvent(DateTimeOffset restoredAtUtc, int eventVersion = MaintenanceIntegrationEventVersions.V1)
     {
         return new AssetRestoredIntegrationEvent(
             "evt-002",
             MaintenanceIntegrationEventTypes.AssetRestored,
-            MaintenanceIntegrationEventVersions.V1,
+            eventVersion,
             restoredAtUtc,
             MaintenanceIntegrationEventSources.Maintenance,
             "corr-001",

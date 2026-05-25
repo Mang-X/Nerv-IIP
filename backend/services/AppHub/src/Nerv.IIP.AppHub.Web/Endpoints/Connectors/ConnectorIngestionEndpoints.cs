@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -61,12 +63,31 @@ public sealed class RecordStateSnapshotEndpoint(IMediator mediator) : Endpoint<I
 
 internal static class ConnectorEndpointResults
 {
+    private const string DevelopmentConnectorSecret = "local-connector-secret";
+
     public static bool ConnectorHostAuthorized(HttpContext context, string connectorHostId)
     {
-        return context.Request.Headers.TryGetValue("X-Connector-Host-Id", out var hostId)
-            && context.Request.Headers.TryGetValue("X-Connector-Secret", out var secret)
-            && hostId == connectorHostId
-            && secret == "local-connector-secret";
+        if (!context.Request.Headers.TryGetValue("X-Connector-Host-Id", out var hostId)
+            || !context.Request.Headers.TryGetValue("X-Connector-Secret", out var secret)
+            || !string.Equals(hostId.ToString(), connectorHostId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var configuration = context.RequestServices.GetRequiredService<IConfiguration>();
+        var environment = context.RequestServices.GetRequiredService<IHostEnvironment>();
+        var expectedSecret = configuration["ConnectorHostCredential:Secret"];
+        if (string.IsNullOrWhiteSpace(expectedSecret))
+        {
+            if (!environment.IsDevelopment())
+            {
+                return false;
+            }
+
+            expectedSecret = DevelopmentConnectorSecret;
+        }
+
+        return SecretEquals(secret.ToString(), expectedSecret);
     }
 
     public static async Task WriteUnauthorizedAsync(HttpContext context, CancellationToken cancellationToken)
@@ -76,5 +97,13 @@ internal static class ConnectorEndpointResults
             StatusCodes.Status401Unauthorized,
             "Invalid Connector Host credential.",
             cancellationToken);
+    }
+
+    private static bool SecretEquals(string actual, string expected)
+    {
+        var actualBytes = Encoding.UTF8.GetBytes(actual);
+        var expectedBytes = Encoding.UTF8.GetBytes(expected);
+        return actualBytes.Length == expectedBytes.Length
+            && CryptographicOperations.FixedTimeEquals(actualBytes, expectedBytes);
     }
 }

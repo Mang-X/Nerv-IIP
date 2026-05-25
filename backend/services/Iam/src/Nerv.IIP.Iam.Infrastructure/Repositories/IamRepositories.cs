@@ -1,4 +1,5 @@
 using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
@@ -312,6 +313,75 @@ public sealed class ConnectorHostCredentialRepository(ApplicationDbContext conte
     {
         return await DbContext.ConnectorHostCredentials
             .SingleOrDefaultAsync(x => x.ConnectorHostId == connectorHostId && x.SecretHash == secretHash, cancellationToken);
+    }
+}
+
+public interface IExternalClientRepository : IRepository<ExternalClient, ExternalClientId>
+{
+    Task<ExternalClient?> GetByClientIdAsync(string clientId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<string>> ListActiveGrantPermissionCodesAsync(
+        string clientId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+    Task<bool> HasActiveGrantAsync(
+        string clientId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        string permissionCode,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class ExternalClientRepository(ApplicationDbContext context)
+    : RepositoryBase<ExternalClient, ExternalClientId, ApplicationDbContext>(context), IExternalClientRepository
+{
+    public async Task<ExternalClient?> GetByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.ExternalClients.SingleOrDefaultAsync(x => x.ClientId == clientId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<string>> ListActiveGrantPermissionCodesAsync(
+        string clientId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        return await ActiveGrantQuery(clientId, organizationId, environmentId, now)
+            .Select(x => x.PermissionCode)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> HasActiveGrantAsync(
+        string clientId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        string permissionCode,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        return await ActiveGrantQuery(clientId, organizationId, environmentId, now)
+            .AnyAsync(x => x.PermissionCode == permissionCode, cancellationToken);
+    }
+
+    private IQueryable<AuthorizationGrant> ActiveGrantQuery(
+        string clientId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        DateTimeOffset now)
+    {
+        return DbContext.AuthorizationGrants.Where(x =>
+            x.PrincipalType == "external-client"
+            && x.PrincipalId == clientId
+            && x.OrganizationId == organizationId
+            && x.EnvironmentId == environmentId
+            && x.ValidFromUtc <= now
+            && (x.ValidToUtc == null || x.ValidToUtc > now)
+            && x.RevokedAtUtc == null);
     }
 }
 

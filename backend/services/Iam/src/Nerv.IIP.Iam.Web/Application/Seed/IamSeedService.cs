@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
@@ -128,6 +129,48 @@ public sealed class IamSeedService(
             if (!SetEquals(credential.Capabilities.Select(x => x.CapabilityCode), connectorCapabilities))
             {
                 credential.ReplaceCapabilities(connectorCapabilities);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(seed.ExternalClientSecret))
+        {
+            var externalClientSecretHash = tokenService.HashSecret(seed.ExternalClientSecret);
+            var externalClient = await dbContext.ExternalClients
+                .SingleOrDefaultAsync(x => x.ClientId == seed.ExternalClientId, cancellationToken);
+            if (externalClient is null)
+            {
+                dbContext.ExternalClients.Add(new ExternalClient(
+                    new ExternalClientId(seed.ExternalClientId),
+                    seed.ExternalClientId,
+                    seed.ExternalClientDisplayName,
+                    organizationId,
+                    environmentId,
+                    externalClientSecretHash,
+                    true,
+                    1,
+                    now.AddDays(-1),
+                    null));
+            }
+            else if (!seedAlreadyApplied && !string.Equals(externalClient.SecretHash, externalClientSecretHash, StringComparison.Ordinal))
+            {
+                externalClient.ReplaceSecretHash(externalClientSecretHash);
+            }
+
+            foreach (var permissionCode in seed.ExternalClientPermissionCodes.Distinct(StringComparer.Ordinal))
+            {
+                var grantId = new AuthorizationGrantId($"external-client:{seed.ExternalClientId}:{seed.OrganizationId}:{seed.EnvironmentId}:{permissionCode}");
+                if (await dbContext.AuthorizationGrants.FindAsync([grantId], cancellationToken) is null)
+                {
+                    dbContext.AuthorizationGrants.Add(new AuthorizationGrant(
+                        grantId,
+                        "external-client",
+                        seed.ExternalClientId,
+                        organizationId,
+                        environmentId,
+                        permissionCode,
+                        now.AddDays(-1),
+                        null));
+                }
             }
         }
 

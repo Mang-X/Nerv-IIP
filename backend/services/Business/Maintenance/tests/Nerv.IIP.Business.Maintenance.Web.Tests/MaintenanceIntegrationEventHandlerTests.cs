@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
@@ -14,18 +15,9 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     public async Task Alarm_consumer_creates_one_work_order_per_source_alarm_id()
     {
         await using var dbContext = CreateDbContext();
-        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(new CommandOnlySender(dbContext));
-        var alarm = new AlarmRaisedIntegrationEvent(
-            "evt-alarm-001",
-            "industrialTelemetry.AlarmRaised",
-            "alarm-event-001",
-            "org-001",
-            "env-dev",
-            "DEV-CNC-01",
-            "OVER_TEMP",
-            "critical",
-            DateTimeOffset.UtcNow,
-            "alarm-001");
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(new CommandOnlySender(dbContext), deadLetterStore);
+        var alarm = CreateAlarmRaisedEvent();
 
         await handler.HandleAsync(alarm, CancellationToken.None);
         await handler.HandleAsync(alarm, CancellationToken.None);
@@ -34,6 +26,23 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         Assert.Single(workOrders);
         Assert.Equal("alarm-001", workOrders[0].SourceAlarmId);
         Assert.True(workOrders[0].AssetUnavailable);
+        Assert.Empty(await deadLetterStore.ListAsync(OpenWorkOrderWhenAlarmRaisedHandler.ConsumerName, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Alarm_consumer_dead_letters_unsupported_event_version_without_creating_work_order()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetterStore = new MaintenanceIntegrationEventDeadLetterStore(dbContext);
+        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(new CommandOnlySender(dbContext), deadLetterStore);
+
+        await handler.HandleAsync(CreateAlarmRaisedEvent(eventVersion: 2), CancellationToken.None);
+
+        Assert.Empty(await dbContext.MaintenanceWorkOrders.ToArrayAsync());
+        var deadLetter = Assert.Single(await dbContext.IntegrationEventDeadLetters.ToArrayAsync());
+        Assert.Equal("unsupported-version", deadLetter.FailureCode);
+        Assert.Equal(2, deadLetter.EventVersion);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Pending, deadLetter.Status);
     }
 
     private static ApplicationDbContext CreateDbContext()
@@ -42,6 +51,29 @@ public sealed class MaintenanceIntegrationEventHandlerTests
             .UseInMemoryDatabase($"maintenance-{Guid.CreateVersion7():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static AlarmRaisedIntegrationEvent CreateAlarmRaisedEvent(int eventVersion = 1)
+    {
+        return new AlarmRaisedIntegrationEvent(
+            "evt-alarm-001",
+            "industrialTelemetry.AlarmRaised",
+            eventVersion,
+            DateTimeOffset.UtcNow,
+            "industrialTelemetry",
+            "corr-alarm-001",
+            "alarm-event-001",
+            "org-001",
+            "env-dev",
+            "system:industrial-telemetry",
+            "industrialTelemetry:alarm-raised:org-001:env-dev:alarm-001",
+            new AlarmRaisedPayload(
+                "alarm-event-001",
+                "DEV-CNC-01",
+                "OVER_TEMP",
+                "critical",
+                DateTimeOffset.UtcNow,
+                "alarm-001"));
     }
 
     private sealed class CommandOnlySender(ApplicationDbContext dbContext) : ISender

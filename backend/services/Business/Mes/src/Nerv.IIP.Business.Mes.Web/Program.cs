@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -34,11 +35,14 @@ builder.Services.AddMesPostgreSqlPersistence(connectionString, builder.Environme
 builder.Services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
 builder.Services.AddSingleton<RuleScheduler>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
 builder.Services.AddSingleton(new MesRescheduleOptions
 {
     AutoRescheduleOnAssetUnavailable = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetUnavailable", true),
     AutoRescheduleOnAssetRestored = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetRestored", true),
 });
+builder.Services.AddScoped<AssetUnavailableIntegrationEventHandlerForReschedule>();
+builder.Services.AddScoped<AssetRestoredIntegrationEventHandlerForReschedule>();
 
 var app = builder.Build();
 var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");

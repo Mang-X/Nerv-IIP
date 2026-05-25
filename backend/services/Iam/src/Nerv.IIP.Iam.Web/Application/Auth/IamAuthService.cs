@@ -14,6 +14,7 @@ public sealed class PostgreSqlIamAuthService(
     IUserSessionRepository userSessionRepository,
     IMembershipRepository membershipRepository,
     IConnectorHostCredentialRepository connectorHostCredentialRepository,
+    IExternalClientRepository externalClientRepository,
     IamPasswordService passwordService,
     IamTokenService tokenService)
     : IIamAuthService
@@ -82,7 +83,33 @@ public sealed class PostgreSqlIamAuthService(
         var principal = tokenService.TryReadPrincipal(httpContext);
         if (principal is null)
         {
-            return null;
+            var externalClientPrincipal = tokenService.TryReadExternalClientPrincipal(httpContext);
+            if (externalClientPrincipal is null)
+            {
+                return null;
+            }
+
+            var externalClient = await externalClientRepository.GetByClientIdAsync(
+                externalClientPrincipal.ClientId,
+                cancellationToken);
+            if (externalClient is null
+                || !externalClient.Enabled
+                || externalClient.PermissionVersion != externalClientPrincipal.PermissionVersion
+                || !string.Equals(externalClient.OrganizationId.Id, externalClientPrincipal.OrganizationId, StringComparison.Ordinal)
+                || !string.Equals(externalClient.EnvironmentId.Id, externalClientPrincipal.EnvironmentId, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            return new CurrentPrincipalResponse(
+                externalClient.ClientId,
+                externalClient.DisplayName,
+                string.Empty,
+                "external-client",
+                externalClient.OrganizationId.Id,
+                externalClient.EnvironmentId.Id,
+                externalClient.PermissionVersion,
+                externalClientPrincipal.Scope);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -170,6 +197,77 @@ public sealed class PostgreSqlIamAuthService(
             credential.ConnectorHostId);
     }
 
+    public async Task<ClientCredentialsTokenResponse> IssueClientCredentialsTokenAsync(
+        string clientId,
+        string clientSecret,
+        string? scope,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var secretHash = tokenService.HashSecret(clientSecret);
+        var externalClient = await externalClientRepository.GetByClientIdAsync(clientId, cancellationToken);
+        if (externalClient is null || !externalClient.CanAuthenticate(secretHash, now))
+        {
+            throw Unauthorized();
+        }
+
+        var grantedPermissions = await externalClientRepository.ListActiveGrantPermissionCodesAsync(
+                externalClient.ClientId,
+                externalClient.OrganizationId,
+                externalClient.EnvironmentId,
+                now,
+                cancellationToken);
+
+        var requestedPermissions = SplitScope(scope);
+        if (requestedPermissions.Count == 0)
+        {
+            requestedPermissions = grantedPermissions.ToHashSet(StringComparer.Ordinal);
+        }
+        else if (!requestedPermissions.IsSubsetOf(grantedPermissions.ToHashSet(StringComparer.Ordinal)))
+        {
+            throw Unauthorized();
+        }
+
+        var orderedScope = requestedPermissions.Order(StringComparer.Ordinal).ToArray();
+        var accessToken = tokenService.CreateExternalClientAccessToken(
+            externalClient.ClientId,
+            externalClient.OrganizationId.Id,
+            externalClient.EnvironmentId.Id,
+            externalClient.PermissionVersion,
+            orderedScope);
+        return new ClientCredentialsTokenResponse(
+            accessToken,
+            "Bearer",
+            tokenService.GetAccessTokenExpiresAtUtc(now),
+            string.Join(' ', orderedScope));
+    }
+
+    public async Task<bool> PrincipalHasPermissionAsync(
+        CurrentPrincipalResponse principal,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(principal.PrincipalType, "user", StringComparison.Ordinal))
+        {
+            return await externalClientRepository.HasActiveGrantAsync(
+                    principal.UserId,
+                    new OrganizationId(organizationId),
+                    new IamEnvironmentId(environmentId),
+                    permissionCode,
+                    DateTimeOffset.UtcNow,
+                    cancellationToken);
+        }
+
+        return await UserHasPermissionAsync(
+            principal.UserId,
+            organizationId,
+            environmentId,
+            permissionCode,
+            cancellationToken);
+    }
+
     private async Task<AuthResponse> CreateSessionResponseAsync(
         User user,
         string? clientInfo,
@@ -205,5 +303,17 @@ public sealed class PostgreSqlIamAuthService(
     private static UnauthorizedAccessException Unauthorized()
     {
         return new UnauthorizedAccessException("Unauthorized.");
+    }
+
+    private static HashSet<string> SplitScope(string? scope)
+    {
+        if (string.IsNullOrWhiteSpace(scope))
+        {
+            return [];
+        }
+
+        return scope
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.Ordinal);
     }
 }

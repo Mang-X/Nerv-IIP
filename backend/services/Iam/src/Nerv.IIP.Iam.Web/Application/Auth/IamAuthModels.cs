@@ -4,7 +4,9 @@ public sealed record LoginRequest(string LoginName, string Password);
 public sealed record RefreshRequest(string RefreshToken);
 public sealed record LogoutRequest(string? SessionId);
 public sealed record ValidateConnectorCredentialRequest(string ConnectorHostId, string Secret);
+public sealed record ClientCredentialsTokenRequest(string ClientId, string ClientSecret, string? Scope);
 public sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+public sealed record ClientCredentialsTokenResponse(string AccessToken, string TokenType, DateTimeOffset ExpiresAtUtc, string Scope);
 public sealed record CurrentPrincipalResponse(
     string UserId,
     string LoginName,
@@ -47,5 +49,18 @@ public interface IIamAuthService
     Task<ConnectorPrincipalResponse> ValidateConnectorCredentialAsync(
         string connectorHostId,
         string secret,
+        CancellationToken cancellationToken);
+
+    Task<ClientCredentialsTokenResponse> IssueClientCredentialsTokenAsync(
+        string clientId,
+        string clientSecret,
+        string? scope,
+        CancellationToken cancellationToken);
+
+    Task<bool> PrincipalHasPermissionAsync(
+        CurrentPrincipalResponse principal,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
         CancellationToken cancellationToken);
 }

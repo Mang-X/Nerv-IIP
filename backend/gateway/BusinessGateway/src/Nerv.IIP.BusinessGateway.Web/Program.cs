@@ -1,6 +1,8 @@
 using System.Net;
+using System.Threading.RateLimiting;
 using FastEndpoints;
 using FastEndpoints.Swagger;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Http.Resilience;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
@@ -12,6 +14,7 @@ using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
 
+const string BusinessConsoleCorsPolicy = "business-console-cors";
 var builder = WebApplication.CreateBuilder(args);
 builder.Services
     .AddFastEndpoints()
@@ -51,11 +54,49 @@ builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client
     client.BaseAddress = new Uri(builder.Configuration["Mes:BaseUrl"] ?? "http://localhost:5111");
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddBusinessGatewayAuthentication(builder.Configuration, builder.Environment);
+var allowedCorsOrigins = ResolveGatewayCorsOrigins(builder.Configuration, builder.Environment);
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(BusinessConsoleCorsPolicy, policy =>
+        policy.WithOrigins(allowedCorsOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+});
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        // CORS preflight must not consume user/IP quota; actual API calls remain limited below.
+        if (HttpMethods.IsOptions(context.Request.Method))
+        {
+            return RateLimitPartition.GetNoLimiter("cors-preflight");
+        }
+
+        var key = context.User.Identity?.Name
+            ?? context.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("Security:RateLimit:PermitLimit", 300),
+            Window = TimeSpan.FromSeconds(builder.Configuration.GetValue("Security:RateLimit:WindowSeconds", 60)),
+            QueueLimit = 0
+        });
+    });
+});
 
 var app = builder.Build();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
+
 app.UseNervIipCorrelation();
 app.UseNervIipRequestLocalization();
 app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = HttpStatusCode.BadRequest });
+app.UseCors(BusinessConsoleCorsPolicy);
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints(c =>
@@ -63,5 +104,28 @@ app.UseFastEndpoints(c =>
     c.Endpoints.NameGenerator = BusinessGatewayOperationIdConvention.Generate;
 }).UseSwaggerGen();
 app.Run();
+
+// Keep this gateway-local until another gateway shares the same production security policy shape.
+static string[] ResolveGatewayCorsOrigins(IConfiguration configuration, IWebHostEnvironment environment)
+{
+    var origins = configuration.GetSection("Security:Cors:AllowedOrigins").Get<string[]>()
+        ?? SplitOrigins(configuration["Security:Cors:AllowedOrigins"]);
+    if (origins.Length > 0)
+    {
+        return origins;
+    }
+
+    if (environment.IsDevelopment())
+    {
+        return ["http://localhost:5105", "http://localhost:5125"];
+    }
+
+    throw new InvalidOperationException("Security:Cors:AllowedOrigins is required outside Development.");
+}
+
+static string[] SplitOrigins(string? value) =>
+    string.IsNullOrWhiteSpace(value)
+        ? []
+        : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
 public partial class Program;

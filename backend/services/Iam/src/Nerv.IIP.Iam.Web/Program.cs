@@ -57,11 +57,21 @@ if (usesPostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for IAM in Development. Use an explicit migrator, release script or migration bundle outside Development.");
 }
 
-if (usesPostgreSql
-    && !builder.Environment.IsDevelopment()
+if (!builder.Environment.IsDevelopment()
     && string.IsNullOrWhiteSpace(builder.Configuration["Iam:Jwt:SigningKey"]))
 {
-    throw new InvalidOperationException("Iam:Jwt:SigningKey is required for PostgreSQL persistence outside Development.");
+    throw new InvalidOperationException("Iam:Jwt:SigningKey is required outside Development.");
+}
+if (!builder.Environment.IsDevelopment()
+    && System.Text.Encoding.UTF8.GetByteCount(builder.Configuration["Iam:Jwt:SigningKey"] ?? string.Empty) < 32)
+{
+    throw new InvalidOperationException("Iam:Jwt:SigningKey must be at least 32 bytes outside Development.");
+}
+var configuredAccessTokenMinutes = builder.Configuration.GetValue("Iam:Jwt:AccessTokenMinutes", 15);
+if (!builder.Environment.IsDevelopment()
+    && (configuredAccessTokenMinutes < 1 || configuredAccessTokenMinutes > 60))
+{
+    throw new InvalidOperationException("Iam:Jwt:AccessTokenMinutes must be between 1 and 60 outside Development.");
 }
 
 var app = builder.Build();

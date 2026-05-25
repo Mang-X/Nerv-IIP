@@ -40,7 +40,8 @@ public sealed record AuditRecordFact(
     string Action,
     string Actor,
     DateTimeOffset OccurredAtUtc,
-    string CorrelationId);
+    string CorrelationId,
+    string IntegrityHash);
 
 public static class AuditRecordMapper
 {
@@ -52,7 +53,8 @@ public static class AuditRecordMapper
             auditRecord.Action,
             auditRecord.Actor,
             auditRecord.OccurredAtUtc,
-            auditRecord.CorrelationId);
+            auditRecord.CorrelationId,
+            auditRecord.IntegrityHash);
     }
 }
 
@@ -118,7 +120,8 @@ public static class OperationTaskMapper
                 x.Action,
                 x.Actor,
                 x.OccurredAtUtc,
-                x.CorrelationId))
+                x.CorrelationId,
+                x.IntegrityHash))
             .ToList();
 
         return new OperationTaskResponse(

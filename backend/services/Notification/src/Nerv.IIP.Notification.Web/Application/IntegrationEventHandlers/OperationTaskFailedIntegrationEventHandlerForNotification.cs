@@ -1,7 +1,9 @@
+using DotNetCore.CAP;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
@@ -13,13 +15,33 @@ namespace Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Ops.OperationTaskFailedIntegrationEvent", ConsumerName)]
 public sealed class OperationTaskFailedIntegrationEventHandlerForNotification(
     ISender sender,
-    ApplicationDbContext dbContext)
-    : IIntegrationEventHandler<OperationTaskFailedIntegrationEvent>
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<OperationTaskFailedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-task-failed";
     private const string DefaultRecipientRef = "role:ops-admin";
 
+    private readonly IntegrationEventConsumerGuard<OperationTaskFailedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            "ops.OperationTaskFailed",
+            1));
+
     public async Task HandleAsync(OperationTaskFailedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationTaskFailedIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(OperationTaskFailedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(OperationTaskFailedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
 

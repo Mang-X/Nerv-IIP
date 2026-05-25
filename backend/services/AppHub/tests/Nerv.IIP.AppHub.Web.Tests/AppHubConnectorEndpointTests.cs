@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.ConnectorProtocol;
@@ -67,6 +68,38 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal(scenario.InstanceKey, detail.InstanceKey);
         Assert.Equal("running", detail.ReportedStatus);
         Assert.Equal("healthy", detail.HealthStatus);
+    }
+
+    [Fact]
+    public async Task Connector_ingestion_uses_configured_connector_secret()
+    {
+        var scenario = CreateScenario("configured-secret");
+        var client = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("ConnectorHostCredential:Secret", "configured-connector-secret");
+        }).CreateClient();
+        client.DefaultRequestHeaders.Add("X-Connector-Host-Id", scenario.ConnectorHostId);
+        client.DefaultRequestHeaders.Add("X-Connector-Secret", "configured-connector-secret");
+
+        using var response = await client.PostAsJsonAsync("/api/connectors/v1/registrations", CreateRegistration(scenario));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Connector_ingestion_rejects_repo_default_secret_when_configuration_overrides_it()
+    {
+        var scenario = CreateScenario("reject-default-secret");
+        var client = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("ConnectorHostCredential:Secret", "configured-connector-secret");
+        }).CreateClient();
+        client.DefaultRequestHeaders.Add("X-Connector-Host-Id", scenario.ConnectorHostId);
+        client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
+
+        using var response = await client.PostAsJsonAsync("/api/connectors/v1/registrations", CreateRegistration(scenario));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     private static TestScenario CreateScenario(string label)

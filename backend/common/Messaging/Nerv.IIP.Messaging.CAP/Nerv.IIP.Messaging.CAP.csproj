@@ -4,4 +4,7 @@
     <PackageReference Include="Savorboard.CAP.InMemoryMessageQueue" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Contracts\Nerv.IIP.Contracts.IntegrationEvents\Nerv.IIP.Contracts.IntegrationEvents.csproj" />
+  </ItemGroup>
 </Project>

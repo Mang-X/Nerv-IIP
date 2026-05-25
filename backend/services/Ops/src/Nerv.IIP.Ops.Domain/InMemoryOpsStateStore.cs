@@ -151,7 +151,8 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                     x.Action,
                     x.Actor,
                     x.OccurredAtUtc,
-                    x.CorrelationId))
+                    x.CorrelationId,
+                    x.IntegrityHash))
                 .ToArray();
 
             return new AuditRecordListResponse(items);
@@ -456,13 +457,21 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
 
     private AuditRecordFact AddAudit(string operationTaskId, string action, string actor, DateTimeOffset occurredAtUtc, string correlationId)
     {
+        var auditRecordId = $"audit-{_auditRecords.Count + 1:000000}";
         var audit = new AuditRecordFact(
-            $"audit-{_auditRecords.Count + 1:000000}",
+            auditRecordId,
             operationTaskId,
             action,
             actor,
             occurredAtUtc,
-            correlationId);
+            correlationId,
+            AggregatesModel.OperationTaskAggregate.AuditRecord.ComputeIntegrityHash(
+                auditRecordId,
+                operationTaskId,
+                action,
+                actor,
+                occurredAtUtc,
+                correlationId));
         _auditRecords.Add(audit);
         return audit;
     }

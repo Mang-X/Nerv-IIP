@@ -1,8 +1,11 @@
+using MediatR;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
+using Nerv.IIP.AppHub.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.AppHub.Web.Tests;
 
@@ -166,5 +169,120 @@ public sealed class AppHubIntegrationEventTests
         Assert.Equal("docker-daemon-unavailable", instance.Metadata["ops.lastFailedOperationFailureCode"]);
         Assert.True(instance.Metadata.ContainsKey("ops.failed.ops:operation-task-failed:op-002:attempt-001"));
         Assert.IsType<InstanceStateSnapshotRecordedDomainEvent>(instance.GetDomainEvents().Last());
+    }
+
+    [Fact]
+    public async Task Operation_completed_consumer_dead_letters_unsupported_version_without_sending_command()
+    {
+        var sender = new RecordingSender();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(sender, deadLetterStore);
+
+        await handler.HandleAsync(CreateCompletedEvent(eventVersion: 2), CancellationToken.None);
+
+        Assert.Empty(sender.RequestTypes);
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("unsupported-version", deadLetter.FailureCode);
+        Assert.Equal(2, deadLetter.EventVersion);
+    }
+
+    [Fact]
+    public async Task Operation_failed_consumer_dead_letters_unsupported_version_without_sending_command()
+    {
+        var sender = new RecordingSender();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(sender, deadLetterStore);
+
+        await handler.HandleAsync(CreateFailedEvent(eventVersion: 2), CancellationToken.None);
+
+        Assert.Empty(sender.RequestTypes);
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("unsupported-version", deadLetter.FailureCode);
+        Assert.Equal(2, deadLetter.EventVersion);
+    }
+
+    private static OperationTaskCompletedIntegrationEvent CreateCompletedEvent(int eventVersion)
+    {
+        return new OperationTaskCompletedIntegrationEvent(
+            "evt-ops-completed-guard",
+            "ops.OperationTaskCompleted",
+            eventVersion,
+            DateTimeOffset.Parse("2026-05-15T00:00:02Z"),
+            "ops",
+            "corr-ops-guard",
+            "op-guard",
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "ops:operation-task-completed:op-guard:attempt-001",
+            new OperationTaskCompletedPayload(
+                "op-guard",
+                "attempt-001",
+                "docker-container-local-demo-001",
+                "lifecycle.restart",
+                DateTimeOffset.Parse("2026-05-15T00:00:02Z")));
+    }
+
+    private static OperationTaskFailedIntegrationEvent CreateFailedEvent(int eventVersion)
+    {
+        return new OperationTaskFailedIntegrationEvent(
+            "evt-ops-failed-guard",
+            "ops.OperationTaskFailed",
+            eventVersion,
+            DateTimeOffset.Parse("2026-05-15T00:00:03Z"),
+            "ops",
+            "corr-ops-failed-guard",
+            "op-guard",
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "ops:operation-task-failed:op-guard:attempt-001",
+            new OperationTaskFailedPayload(
+                "op-guard",
+                "attempt-001",
+                "docker-container-local-demo-001",
+                "lifecycle.restart",
+                DateTimeOffset.Parse("2026-05-15T00:00:03Z"),
+                "docker-daemon-unavailable"));
+    }
+
+    private sealed class RecordingSender : ISender
+    {
+        public List<Type> RequestTypes { get; } = [];
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            RequestTypes.Add(request.GetType());
+            return Task.FromResult(default(TResponse)!);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            RequestTypes.Add(request.GetType());
+            return Task.CompletedTask;
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            RequestTypes.Add(request.GetType());
+            return Task.FromResult<object?>(null);
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("Streams are not used by these tests.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("Streams are not used by these tests.");
+        }
     }
 }

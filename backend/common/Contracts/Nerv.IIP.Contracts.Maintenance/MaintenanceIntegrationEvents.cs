@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
 namespace Nerv.IIP.Contracts.Maintenance;
 
 public static class MaintenanceIntegrationEventTypes
@@ -28,7 +30,10 @@ public sealed record AssetUnavailableIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    AssetUnavailablePayload Payload);
+    AssetUnavailablePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record AssetUnavailablePayload(
     string DeviceAssetId,
@@ -47,7 +52,10 @@ public sealed record AssetRestoredIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    AssetRestoredPayload Payload);
+    AssetRestoredPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record AssetRestoredPayload(
     string DeviceAssetId,

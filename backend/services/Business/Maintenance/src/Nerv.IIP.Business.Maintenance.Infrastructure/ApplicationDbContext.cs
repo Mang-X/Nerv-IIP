@@ -16,6 +16,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<MaintenancePlan> MaintenancePlans => Set<MaintenancePlan>();
     public DbSet<MaintenanceInspection> MaintenanceInspections => Set<MaintenanceInspection>();
     public DbSet<DowntimeReason> DowntimeReasons => Set<DowntimeReason>();
+    public DbSet<IntegrationEventDeadLetter> IntegrationEventDeadLetters => Set<IntegrationEventDeadLetter>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

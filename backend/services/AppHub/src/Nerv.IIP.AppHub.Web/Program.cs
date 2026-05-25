@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using FastEndpoints;
 using Nerv.IIP.AppHub.Infrastructure;
+using Nerv.IIP.AppHub.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Localization;
@@ -39,7 +40,8 @@ if (usePostgreSql)
     builder.Services.AddIntegrationEvents(typeof(Program)).UseCap<ApplicationDbContext>(_ => { });
     builder.Services.AddCap(options =>
     {
-        options.UseNetCorePalStorage<ApplicationDbContext>();
+        options.Version = builder.Configuration["Cap:Version"] ?? "v1";
+        options.UseEntityFramework<ApplicationDbContext>();
         options.UseConfiguredTransport(builder.Configuration);
     });
 }
@@ -50,6 +52,9 @@ else
 }
 builder.Services.AddAppHubPersistence(builder.Configuration);
 builder.Services.AddNervIipLocalization();
+builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
+builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>();
+builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState>();
 if (usePostgreSql)
 {
     builder.Services.AddScoped<AppHubDatabaseMigrationRunner>();

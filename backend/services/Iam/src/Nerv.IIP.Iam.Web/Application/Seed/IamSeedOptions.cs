@@ -15,4 +15,8 @@ public sealed class IamSeedOptions
     public string ConnectorHostCredentialId { get; init; } = "credential-connector-host-001";
     public string ConnectorHostId { get; init; } = "connector-host-001";
     public string ConnectorHostSecret { get; init; } = string.Empty;
+    public string ExternalClientId { get; init; } = "external-client-demo";
+    public string ExternalClientDisplayName { get; init; } = "Demo External Client";
+    public string ExternalClientSecret { get; init; } = string.Empty;
+    public string[] ExternalClientPermissionCodes { get; init; } = ["ops.tasks.create"];
 }

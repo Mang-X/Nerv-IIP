@@ -5,6 +5,7 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application;
+using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
@@ -47,7 +48,8 @@ if (usePostgreSql)
     builder.Services.AddIntegrationEvents(typeof(Program)).UseCap<ApplicationDbContext>(_ => { });
     builder.Services.AddCap(options =>
     {
-        options.UseNetCorePalStorage<ApplicationDbContext>();
+        options.Version = builder.Configuration["Cap:Version"] ?? "v1";
+        options.UseEntityFramework<ApplicationDbContext>();
         options.UseConfiguredTransport(builder.Configuration);
     });
 }
@@ -59,6 +61,8 @@ else
 builder.Services.AddNotificationPersistence(builder.Configuration);
 builder.Services.AddNervIipObservability(builder.Configuration, "notification");
 builder.Services.AddNervIipLocalization();
+builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
+builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
 app.UseNervIipCorrelation();

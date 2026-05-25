@@ -78,7 +78,8 @@ public sealed class OpsSdkEnvelopeCompatibilityTests
             "manual.reviewed",
             "user:auditor",
             DateTimeOffset.Parse("2026-05-22T00:00:00Z"),
-            "corr-audit-001");
+            "corr-audit-001",
+            "sha256:contract-test");
         HttpRequestMessage? captured = null;
         using var httpClient = CreateHttpClient(request =>
         {

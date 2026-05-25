@@ -6,6 +6,8 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain;
+using Nerv.IIP.Business.Maintenance.Infrastructure;
+using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -48,6 +50,8 @@ try
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
+    builder.Services.AddScoped<IIntegrationEventDeadLetterStore, MaintenanceIntegrationEventDeadLetterStore>();
+    builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (isTesting && string.IsNullOrWhiteSpace(connectionString))
@@ -73,7 +77,8 @@ try
 
         builder.Services.AddCap(x =>
         {
-            x.UseNetCorePalStorage<ApplicationDbContext>();
+            x.Version = builder.Configuration["Cap:Version"] ?? "v1";
+            x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration);
             x.UseDashboard();

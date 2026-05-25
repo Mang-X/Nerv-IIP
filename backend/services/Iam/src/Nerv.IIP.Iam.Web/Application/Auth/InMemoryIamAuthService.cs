@@ -33,28 +33,42 @@ public sealed class InMemoryIamAuthService(InMemoryIamStore store, IamTokenServi
     public Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext httpContext, CancellationToken cancellationToken)
     {
         var user = ValidateBearer(httpContext);
-        if (user is null)
+        if (user is not null)
+        {
+            try
+            {
+                var currentPrincipal = store.GetCurrentPrincipal(user);
+                return Task.FromResult<CurrentPrincipalResponse?>(new CurrentPrincipalResponse(
+                    currentPrincipal.UserId,
+                    currentPrincipal.LoginName,
+                    currentPrincipal.Email,
+                    currentPrincipal.PrincipalType,
+                    currentPrincipal.OrganizationId,
+                    currentPrincipal.EnvironmentId,
+                    currentPrincipal.PermissionVersion,
+                    currentPrincipal.PermissionCodes));
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Task.FromResult<CurrentPrincipalResponse?>(null);
+            }
+        }
+
+        var externalClient = tokenService.TryReadExternalClientPrincipal(httpContext);
+        if (externalClient is null)
         {
             return Task.FromResult<CurrentPrincipalResponse?>(null);
         }
 
-        try
-        {
-            var currentPrincipal = store.GetCurrentPrincipal(user);
-            return Task.FromResult<CurrentPrincipalResponse?>(new CurrentPrincipalResponse(
-                currentPrincipal.UserId,
-                currentPrincipal.LoginName,
-                currentPrincipal.Email,
-                currentPrincipal.PrincipalType,
-                currentPrincipal.OrganizationId,
-                currentPrincipal.EnvironmentId,
-                currentPrincipal.PermissionVersion,
-                currentPrincipal.PermissionCodes));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Task.FromResult<CurrentPrincipalResponse?>(null);
-        }
+        return Task.FromResult<CurrentPrincipalResponse?>(new CurrentPrincipalResponse(
+            externalClient.ClientId,
+            externalClient.ClientId,
+            string.Empty,
+            "external-client",
+            externalClient.OrganizationId,
+            externalClient.EnvironmentId,
+            externalClient.PermissionVersion,
+            externalClient.Scope));
     }
 
     public Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
@@ -84,6 +98,45 @@ public sealed class InMemoryIamAuthService(InMemoryIamStore store, IamTokenServi
             principal.OrganizationId,
             principal.EnvironmentId,
             principal.ConnectorHostId));
+    }
+
+    public Task<ClientCredentialsTokenResponse> IssueClientCredentialsTokenAsync(
+        string clientId,
+        string clientSecret,
+        string? scope,
+        CancellationToken cancellationToken)
+    {
+        var principal = store.IssueExternalClientToken(clientId, clientSecret, scope);
+        var accessToken = tokenService.CreateExternalClientAccessToken(
+            principal.ClientId,
+            principal.OrganizationId,
+            principal.EnvironmentId,
+            principal.PermissionVersion,
+            principal.Scope);
+        return Task.FromResult(new ClientCredentialsTokenResponse(
+            accessToken,
+            "Bearer",
+            tokenService.GetAccessTokenExpiresAtUtc(DateTimeOffset.UtcNow),
+            string.Join(' ', principal.Scope)));
+    }
+
+    public Task<bool> PrincipalHasPermissionAsync(
+        CurrentPrincipalResponse principal,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        CancellationToken cancellationToken)
+    {
+        if (principal.PrincipalType == "external-client")
+        {
+            return Task.FromResult(store.ExternalClientHasPermission(
+                principal.UserId,
+                organizationId,
+                environmentId,
+                permissionCode));
+        }
+
+        return UserHasPermissionAsync(principal.UserId, organizationId, environmentId, permissionCode, cancellationToken);
     }
 
     private UserFact? ValidateBearer(HttpContext context)

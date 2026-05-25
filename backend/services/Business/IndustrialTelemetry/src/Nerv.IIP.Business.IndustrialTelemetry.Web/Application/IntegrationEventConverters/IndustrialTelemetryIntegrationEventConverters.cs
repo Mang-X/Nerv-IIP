@@ -13,13 +13,20 @@ public sealed class DeviceStateChangedIntegrationEventConverter
         return new DeviceStateChangedIntegrationEvent(
             EventIdFactory.New(),
             IndustrialTelemetryIntegrationEventTypes.DeviceStateChanged,
+            IndustrialTelemetryIntegrationEventVersions.V1,
+            snapshot.OccurredAtUtc,
+            IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
+            $"industrialTelemetry:device-state:{snapshot.OrganizationId}:{snapshot.EnvironmentId}:{snapshot.Id.Id:D}",
             snapshot.Id.Id.ToString("D"),
             snapshot.OrganizationId,
             snapshot.EnvironmentId,
-            snapshot.DeviceAssetId,
-            snapshot.State,
-            snapshot.OccurredAtUtc,
-            snapshot.SourceSequence);
+            "system:industrial-telemetry",
+            $"industrialTelemetry:device-state:{snapshot.OrganizationId}:{snapshot.EnvironmentId}:{snapshot.DeviceAssetId}:{snapshot.SourceSequence}",
+            new DeviceStateChangedPayload(
+                snapshot.Id.Id.ToString("D"),
+                snapshot.DeviceAssetId,
+                snapshot.State,
+                snapshot.SourceSequence));
     }
 }
 
@@ -32,14 +39,22 @@ public sealed class AlarmRaisedIntegrationEventConverter
         return new AlarmRaisedIntegrationEvent(
             EventIdFactory.New(),
             IndustrialTelemetryIntegrationEventTypes.AlarmRaised,
+            IndustrialTelemetryIntegrationEventVersions.V1,
+            alarm.RaisedAtUtc,
+            IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
+            $"industrialTelemetry:alarm:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.Id.Id:D}",
             alarm.Id.Id.ToString("D"),
             alarm.OrganizationId,
             alarm.EnvironmentId,
-            alarm.DeviceAssetId,
-            alarm.AlarmCode,
-            alarm.Severity,
-            alarm.RaisedAtUtc,
-            alarm.ExternalAlarmId);
+            "system:industrial-telemetry",
+            $"industrialTelemetry:alarm-raised:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.ExternalAlarmId}",
+            new AlarmRaisedPayload(
+                alarm.Id.Id.ToString("D"),
+                alarm.DeviceAssetId,
+                alarm.AlarmCode,
+                alarm.Severity,
+                alarm.RaisedAtUtc,
+                alarm.ExternalAlarmId));
     }
 }
 
@@ -52,15 +67,23 @@ public sealed class AlarmClearedIntegrationEventConverter
         return new AlarmClearedIntegrationEvent(
             EventIdFactory.New(),
             IndustrialTelemetryIntegrationEventTypes.AlarmCleared,
+            IndustrialTelemetryIntegrationEventVersions.V1,
+            alarm.ClearedAtUtc ?? throw new InvalidOperationException("Alarm clear event requires cleared time."),
+            IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
+            $"industrialTelemetry:alarm:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.Id.Id:D}",
             alarm.Id.Id.ToString("D"),
             alarm.OrganizationId,
             alarm.EnvironmentId,
-            alarm.DeviceAssetId,
-            alarm.AlarmCode,
-            alarm.Severity,
-            alarm.RaisedAtUtc,
-            alarm.ClearedAtUtc ?? throw new InvalidOperationException("Alarm clear event requires cleared time."),
-            alarm.ExternalAlarmId);
+            "system:industrial-telemetry",
+            $"industrialTelemetry:alarm-cleared:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.ExternalAlarmId}",
+            new AlarmClearedPayload(
+                alarm.Id.Id.ToString("D"),
+                alarm.DeviceAssetId,
+                alarm.AlarmCode,
+                alarm.Severity,
+                alarm.RaisedAtUtc,
+                alarm.ClearedAtUtc.Value,
+                alarm.ExternalAlarmId));
     }
 }
 
