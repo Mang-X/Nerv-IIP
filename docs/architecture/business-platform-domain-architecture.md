@@ -294,7 +294,7 @@ ADR 0012、本架构文档、业务 spec、README/repo layout/权限矩阵入口
 
 ## Issue Roadmap
 
-GitHub issue 是实施跟踪容器，不改变 ADR 0012/0013 与本文档冻结的领域边界。#78 是甘特/RFC 参考，当前后端与领域实施路线图不以 #78 作为执行 issue。
+GitHub issue 是实施跟踪容器，不改变 ADR 0012/0013 与本文档冻结的领域边界。#78 已收口为 `docs/architecture/gantt-scheduling-visualization-rfc.md`，当前后端、领域服务和 Console MVP 路线图不以 #78 作为执行 issue。
 
 | Slice / 能力 | GitHub 跟踪 | 当前处理 |
 | --- | --- | --- |

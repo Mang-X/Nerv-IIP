@@ -37,7 +37,7 @@ As of 2026-05-23:
 1. Do not start DemandPlanning #128 in Wave 1.
 2. Do not start WMS #136 or ERP #137 to #139 until ProductEngineering and Inventory contracts are stable.
 3. Do not implement BarcodeLabel #133 or BusinessApproval #134 in this first documentation batch.
-4. Do not include Gantt/RFC #78.
+4. Do not include Gantt implementation work from #78; the RFC archive remains outside Wave 1.
 5. Do not put business rules in PlatformGateway, IAM, AppHub or Ops.
 
 ## Session Boundaries

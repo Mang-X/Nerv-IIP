@@ -101,12 +101,12 @@ const businessServices = [
 
           <Card>
             <CardHeader>
-              <CardTitle>#78 Gantt/RFC reference is excluded</CardTitle>
+              <CardTitle>#78 Gantt/RFC archived</CardTitle>
               <CardDescription>Reference material only, not part of this backend/domain route.</CardDescription>
             </CardHeader>
             <CardContent class="text-sm text-muted-foreground">
-              #78 remains outside this Console MVP entry; no timeline editor, Gantt view or RFC
-              workflow is introduced here.
+              #78 is captured as an architecture RFC; no timeline editor, Gantt view or
+              scheduling workflow is introduced here.
             </CardContent>
           </Card>
         </div>

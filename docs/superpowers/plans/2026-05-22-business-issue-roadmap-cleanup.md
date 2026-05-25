@@ -251,7 +251,7 @@ Expected: both commands exit 0; `rg` shows the new roadmap/readiness facts.
 
 ## Self-Review Checklist
 
-1. #78 remains untouched.
+1. #78 remains outside the business-service roadmap; current RFC archival status is tracked in `docs/architecture/gantt-scheduling-visualization-rfc.md`.
 2. #72 remains closed and untouched.
 3. Old broad issues remain open only as epics.
 4. New child issues have clear parent issue references and acceptance criteria.
