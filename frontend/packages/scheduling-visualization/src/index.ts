@@ -1,6 +1,8 @@
 export { createMockGanttFixture, createMockScheduleFixture } from './model/fixtures'
 export { flattenGanttTasks } from './model/gantt'
 export { groupScheduleRows } from './model/schedule'
+export { buildGanttScene } from './renderers/buildGanttScene'
+export { buildScheduleScene } from './renderers/buildScheduleScene'
 export { createSchedulingCommandStack } from './state/useSchedulingCommands'
 export { useSchedulingSelection } from './state/useSchedulingSelection'
 export { createTimeScale } from './time-scale/timeScale'
@@ -33,6 +35,14 @@ export type {
   ScheduleRow,
   ScheduleSelection,
 } from './model/schedule'
+export type {
+  SchedulingScene,
+  SchedulingSceneElement,
+  SchedulingSceneElementKind,
+  SchedulingScenePoint,
+} from './canvas/sceneTypes'
+export type { BuildGanttSceneOptions } from './renderers/buildGanttScene'
+export type { BuildScheduleSceneOptions } from './renderers/buildScheduleScene'
 export type {
   SchedulingCommandStack,
   SchedulingPreviewCommand,
