@@ -1,13 +1,14 @@
 # Gantt And Scheduling Visualization RFC
 
-本文档收口 GitHub issue #78：基于 shadcn-vue + Leafer UI 构建甘特图与排产图的技术方案评估。
+本文档收口 GitHub issue #78：基于 shadcn-vue + Leafer UI 构建甘特图与排产图的技术方案评估，并记录 2026-05-25 的前端组件包 foundation 实施范围。
 
 ## 结论
 
 1. shadcn-vue 适合作为甘特/排产页面的表格、工具栏、筛选、弹窗、上下文菜单和反馈组件来源；在本仓库中必须通过 `@nerv-iip/ui` 稳定导出使用，不允许业务页面 deep-import shadcn 组件。
-2. Leafer UI 适合作为 Canvas 渲染候选：当前文档确认其具备 DOM view 初始化、`Rect`/`Text`/`Pen` 等绘制元素、`Group` 层级管理、pointer/drag/zoom/menu 事件以及 PNG/JPEG/SVG/JSON export 能力。
-3. #78 只完成技术方案归档，不进入当前业务后端、领域服务或 Console MVP 实施范围。仓库当前主线仍以 #77 full-chain acceptance 和已拆分业务服务 issue 为准。
-4. 甘特图/排产图进入实施前，必须另建独立 feature issue/spec，先冻结后端 APS 或 MES schedule 查询契约，再做前端组件包和页面。
+2. Leafer UI 作为 Canvas 渲染引擎已进入 `frontend/packages/scheduling-visualization`，但只通过本地 adapter 暴露给组件，不允许 Console 页面直接导入。
+3. 2026-05-25 foundation slice 已交付 mock-only 甘特图、排程图、toolbar、detail sheet、workspace、time-scale、command stack、scene renderer 和 package tests；不接真实后端。
+4. 当前仍不进入业务后端、领域服务或 Console MVP 路由范围。仓库主线继续以 #77 full-chain acceptance 和已拆分业务服务 issue 为准。
+5. 真实 Console 页面实施前，仍必须另建独立 feature issue/spec，先冻结后端 APS 或 MES schedule 查询契约，再接入 generated API client 和路由权限。
 
 ## 边界
 
@@ -20,7 +21,7 @@
 ### 当前不实施
 
 - 不在本轮 Console MVP 中新增甘特页面、时间轴编辑器或排产操作 UI。
-- 不在前端引入 `leafer-ui`、`@tanstack/vue-virtual`、Excel/PDF export 等新运行时依赖。
+- 不在 Console app 中直接引入 `leafer-ui`、`@tanstack/vue-virtual`、Excel/PDF export 等新运行时依赖。
 - 不在 MES、DemandPlanning 或 ERP 中补 APS 优化引擎。
 - 不改变 #77 full-chain acceptance 的验收范围。
 
@@ -39,7 +40,19 @@ frontend/apps/console
   +-- pages/business/...  # only imports stable package APIs
 ```
 
-shadcn-vue remains the UI shell; Leafer UI remains behind a local adapter so API churn is contained. The package should not own MES, DemandPlanning, Inventory, WMS or ERP facts. It consumes generated API clients and emits intent commands only.
+shadcn-vue remains the UI shell; Leafer UI remains behind a local adapter so API churn is contained. The package should not own MES, DemandPlanning, Inventory, WMS or ERP facts. The current slice consumes mock fixtures only; a future Console integration may consume generated API clients and emit intent commands after contracts are frozen.
+
+## 2026-05-25 Foundation Delivered
+
+`@nerv-iip/scheduling-visualization` now provides:
+
+1. Mock Gantt and schedule fixtures for package-local tests and demos.
+2. Task/resource models, row flattening/grouping, time-scale math and visible range helper.
+3. Undo/redo preview command state and typed selection state.
+4. Leafer scene builders plus `renderSceneToLeafer`.
+5. Vue components: `GanttChart`, `ScheduleChart`, `SchedulingToolbar`, `SchedulingDetailSheet` and `SchedulingWorkspace`.
+
+The package deliberately does not add a Console route, Gateway facade, OpenAPI contract, generated API client change, persistence schema, or backend scheduling engine.
 
 ## Phased Delivery
 

@@ -30,6 +30,7 @@ A calm, professional enterprise control plane built on **Vue 3 + Tailwind CSS v4
 | `Sheet` + parts | `@nerv-iip/ui` | Slide-in detail/edit panels that preserve list context | Full-page workflows |
 | `DatePicker` / `DateRangePicker` | `@nerv-iip/ui` | DateOnly form fields and business date range filters | Date-time selection or timezone-specific timestamps |
 | `Chart` parts | `@nerv-iip/ui` | Business dashboards with semantic chart tokens | Decorative one-off visualizations |
+| `Scheduling Visualization` | `@nerv-iip/scheduling-visualization` | Gantt and resource schedule visualization with mock or frozen schedule payloads | Generic charts, data tables, or unfrozen backend contracts |
 | `FileUpload` | `@nerv-iip/ui` | FileStorage-backed attachments and evidence uploads | Direct object-storage uploads |
 | `Avatar` + parts | `@nerv-iip/ui` | User identity display | Generic icons |
 | `DropdownMenu` + parts | `@nerv-iip/ui` | Contextual row actions, topbar user menu | Primary navigation |
@@ -70,6 +71,7 @@ See `components/install-backlog.md` for full list and install commands.
 | Search + filter + primary action bar | Toolbar | `patterns/blocks/toolbar.md` |
 | Data table with loading/empty states | Data Table | `patterns/blocks/data-table.md` |
 | Paginated table footer | Pagination Bar | `patterns/blocks/pagination-bar.md` |
+| Gantt + resource schedule workspace | Scheduling Workspace | `patterns/blocks/scheduling-workspace.md` |
 
 ## Roadmaps
 
@@ -91,3 +93,4 @@ See `components/install-backlog.md` for full list and install commands.
 8. **Icon rules**: `size-4` default, `aria-hidden="true"` on decorative, `aria-label` on icon-only buttons.
 9. **New shadcn components**: install via CLI → export from `index.ts` → write spec in `DESIGN/components/`.
 10. **Scoped CSS exception**: only the login page (`login.vue`) uses `<style scoped>` for the fluid `clamp()` heading. All other new components use Tailwind utilities only.
+11. **Scheduling visualization exception**: `@nerv-iip/scheduling-visualization` may use package-scoped CSS and renderer color constants because Leafer canvas nodes are not Tailwind DOM. Console pages still import only the package API and must not deep-import `leafer-ui`.

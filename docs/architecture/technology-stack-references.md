@@ -27,7 +27,7 @@
 | Hey API OpenAPI TypeScript | Required for generated frontend API client. | [Hey API openapi-ts docs](https://heyapi.dev/openapi-ts/get-started) | [hey-api/openapi-ts](https://github.com/hey-api/openapi-ts) |
 | VueUse | Frozen frontend planning baseline; introduce only when a real composable need appears. | [VueUse docs](https://vueuse.org/guide/) | [vueuse/vueuse](https://github.com/vueuse/vueuse) |
 | shadcn-vue | Required UI-system baseline for Console Auth and later console UI work; initialized in `frontend/packages/ui` with `reka-nova` style and stable `@nerv-iip/ui` exports. | [shadcn-vue docs](https://www.shadcn-vue.com/docs/) | [unovue/shadcn-vue](https://github.com/unovue/shadcn-vue) |
-| Leafer UI | Candidate rendering engine only for future Gantt/scheduling visualization work; not a current dependency. See [gantt-scheduling-visualization-rfc.md](gantt-scheduling-visualization-rfc.md). | [Leafer UI docs](https://www.leaferjs.com/ui/) | [leaferjs/leafer-ui](https://github.com/leaferjs/leafer-ui) |
+| Leafer UI | Current dependency only inside `frontend/packages/scheduling-visualization`, where it is hidden behind a local canvas adapter for mock Gantt/scheduling visualization. It is not imported by Console pages directly. See [gantt-scheduling-visualization-rfc.md](gantt-scheduling-visualization-rfc.md). | [Leafer UI docs](https://www.leaferjs.com/ui/) | [leaferjs/leafer-ui](https://github.com/leaferjs/leafer-ui) |
 | es-toolkit | Frozen utility-library planning baseline; introduce only when it replaces real local utility complexity. | [es-toolkit docs](https://es-toolkit.dev/) | [toss/es-toolkit](https://github.com/toss/es-toolkit) |
 
 ## Mobile PDA

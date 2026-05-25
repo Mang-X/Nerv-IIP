@@ -14,6 +14,7 @@ Business console readiness is design-system work first and implementation work s
 | Sheet | shadcn-vue `sheet` style and public parts. | Delivered in `@nerv-iip/ui`; used for slide-in inspection/detail/edit panels from list pages. |
 | Date and range pickers | Popover-backed compact DateOnly controls. | Delivered in `@nerv-iip/ui`; current UI uses native date inputs, with `Calendar`/`RangeCalendar` exported only as low-level Reka roots until styled calendar-grid parts are added. |
 | Charts | shadcn-style chart shell with semantic token bridge. | Delivered in `@nerv-iip/ui`; page-level chart engines remain adapters, not a second design system. |
+| Gantt and scheduling visualization | Standalone `@nerv-iip/scheduling-visualization` package with Leafer behind an adapter and `@nerv-iip/ui` controls. | Delivered as a mock-data component foundation for #78; no Console route and no real backend contract in this slice. |
 | File upload | Nerv-IIP FileUpload wrapper with shadcn structure and FileStorage semantics. | Delivered in `@nerv-iip/ui`; UI talks to FileStorage upload sessions and tus/server-proxy transport, never MinIO directly. |
 | Progress | shadcn-vue `progress` style. | Delivered in `@nerv-iip/ui`; used by FileUpload and execution progress indicators. |
 | Scroll area | shadcn-vue `scroll-area` style. | Delivered in `@nerv-iip/ui`; avoids page-local scrollbar styling. |
@@ -55,6 +56,17 @@ Charts should:
 4. Avoid decorative gradients or one-off palettes.
 5. Provide empty/loading/error states using existing `Empty`, `Skeleton`, `Alert` and `Spinner` primitives.
 
+## Scheduling Visualization Contract
+
+Gantt and scheduling visualization should:
+
+1. Live in `frontend/packages/scheduling-visualization` and export through `@nerv-iip/scheduling-visualization`.
+2. Keep `leafer-ui` behind `canvas/createLeaferSurface.ts` and renderer interfaces.
+3. Use `@nerv-iip/ui` for DOM controls such as buttons, badges, toolbar controls and detail actions.
+4. Render from mock fixtures or frozen schedule query DTOs; do not fetch directly from backend services.
+5. Emit typed selection and preview intent events; do not decide finite-capacity scheduling rules in frontend code.
+6. Stay package-local until a future Console page issue freezes route, permissions and API contracts.
+
 ## Date Picker Contract
 
 Date controls should:
@@ -83,3 +95,4 @@ Sheets should be used for adjacent detail or edit surfaces that preserve list co
 2. Do not create a second charting design system.
 3. Do not expose FileStorage object keys or direct object-storage URLs.
 4. Do not create page-specific upload, chart, date, sheet or tabs styling outside `@nerv-iip/ui`.
+5. Do not add a Console Gantt/scheduling route from the mock package foundation alone.
