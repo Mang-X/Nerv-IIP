@@ -94,6 +94,7 @@ let pendingScrollFrame: number | undefined
 let nextScrollTop = 0
 let nextScrollLeft = 0
 let nextViewportWidth = props.width
+let resizeObserver: ResizeObserver | undefined
 const activeDrag = shallowRef<{
   operationId: string
   startX: number
@@ -351,8 +352,24 @@ async function syncSurface() {
 }
 
 onMounted(() => {
-  if (viewport.value && viewport.value.clientWidth > 0) {
-    viewportWidth.value = viewport.value.clientWidth
+  const element = viewport.value
+  if (element && element.clientWidth > 0) {
+    viewportWidth.value = element.clientWidth
+    nextViewportWidth = element.clientWidth
+  }
+
+  if (element && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver((entries) => {
+      const width = Math.round(entries[0]?.contentRect.width ?? element.clientWidth)
+      if (width <= 0 || width === viewportWidth.value) {
+        return
+      }
+
+      viewportWidth.value = width
+      nextViewportWidth = width
+      void syncSurface()
+    })
+    resizeObserver.observe(element)
   }
   void syncSurface()
 })
@@ -363,6 +380,8 @@ onBeforeUnmount(() => {
   if (pendingScrollFrame !== undefined) {
     window.cancelAnimationFrame(pendingScrollFrame)
   }
+  resizeObserver?.disconnect()
+  resizeObserver = undefined
   surface.value?.dispose()
   surface.value = undefined
 })

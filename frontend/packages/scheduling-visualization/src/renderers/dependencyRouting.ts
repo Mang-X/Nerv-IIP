@@ -106,12 +106,11 @@ function dedupePoints(points: SchedulingScenePoint[]) {
   })
 }
 
-function hasForwardHorizontalSpace(
+function isForwardOrTouching(
   source: DependencyRouteRect,
   target: DependencyRouteRect,
-  clearance: number,
 ) {
-  return target.left - right(source) >= clearance * 2
+  return target.left >= right(source) - 1
 }
 
 function buildTopForwardRoute(
@@ -119,24 +118,18 @@ function buildTopForwardRoute(
   target: DependencyRouteRect,
   sourceSide: RouteSide,
   targetSide: RouteSide,
-  clearance: number,
   minimumX: number,
 ) {
   const sourcePort = topPortFor(source, sourceSide)
   const targetPort = topPortFor(target, targetSide)
 
-  if (source.top === target.top) {
+  if (source.top === target.top || sourcePort.x === targetPort.x) {
     return dedupePoints([sourcePort, targetPort])
   }
 
-  const laneY = Math.max(Math.min(source.top, target.top) - clearance, 0)
-  const sourceX = Math.max(sourcePort.x, minimumX)
-  const targetX = Math.max(targetPort.x, minimumX)
-
   return dedupePoints([
     sourcePort,
-    { x: sourceX, y: laneY },
-    { x: targetX, y: laneY },
+    { x: Math.max(targetPort.x, minimumX), y: sourcePort.y },
     targetPort,
   ])
 }
@@ -150,14 +143,13 @@ export function buildDependencyRoute(options: BuildDependencyRouteOptions): Sche
   if (
     sourceSide === 'right'
     && targetSide === 'left'
-    && hasForwardHorizontalSpace(options.source, options.target, clearance)
+    && isForwardOrTouching(options.source, options.target)
   ) {
     return buildTopForwardRoute(
       options.source,
       options.target,
       sourceSide,
       targetSide,
-      clearance,
       minimumX,
     )
   }
