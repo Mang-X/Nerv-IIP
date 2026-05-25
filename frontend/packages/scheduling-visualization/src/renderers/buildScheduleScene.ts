@@ -11,6 +11,7 @@ import { buildDependencyRoute } from './dependencyRouting'
 export interface BuildScheduleSceneOptions {
   fixture: ScheduleFixture
   width: number
+  scaleWidth?: number
   rowHeight: number
   zoom: SchedulingZoom
   dependencyMode: SchedulingLinkMode
@@ -71,7 +72,7 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
   const scale = createTimeScale({
     start: options.fixture.rangeStart,
     end: options.fixture.rangeEnd,
-    width: options.width - labelWidth,
+    width: options.scaleWidth ?? options.width - labelWidth,
     zoom: options.zoom,
   })
   const operationPositions = buildScheduleOperationPositions({
@@ -81,6 +82,7 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
     rowHeight: options.rowHeight,
     zoom: options.zoom,
     labelWidth,
+    scaleWidth: options.scaleWidth,
     previewById: options.previewById,
   })
   const positionByOperationId = new Map(

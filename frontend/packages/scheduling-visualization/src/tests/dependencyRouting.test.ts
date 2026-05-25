@@ -52,10 +52,21 @@ describe('dependency routing', () => {
     const target = { left: 446, top: 52, width: 268, height: 22 }
     const route = buildDependencyRoute({ source, target, type: 'finish-start' })
 
-    expect(route[0]).toEqual({ x: 420, y: 19 })
-    expect(route.at(-1)).toEqual({ x: 446, y: 63 })
-    expect(route.some((point) => point.y > source.top + source.height && point.y < target.top)).toBe(true)
+    expect(route[0]).toEqual({ x: 420, y: 8 })
+    expect(route.at(-1)).toEqual({ x: 446, y: 52 })
+    expect(route.some((point) => point.y < source.top)).toBe(true)
     expect(intermediateSegments(route).some((segment) => segmentCrossesRectInterior(segment, target))).toBe(false)
+  })
+
+  it('uses a compact top-edge route when forward tasks have enough horizontal space', () => {
+    const source = { left: 300, top: 52, width: 100, height: 22 }
+    const target = { left: 520, top: 52, width: 120, height: 22 }
+    const route = buildDependencyRoute({ source, target, type: 'finish-start' })
+
+    expect(route).toEqual([
+      { x: 400, y: 52 },
+      { x: 520, y: 52 },
+    ])
   })
 
   it('pushes route columns outside overlapping task rectangles before changing rows', () => {

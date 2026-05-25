@@ -12,6 +12,7 @@ export interface BuildGanttSceneOptions {
   fixture: GanttFixture
   expandedTaskIds: Set<string>
   width: number
+  scaleWidth?: number
   rowHeight: number
   zoom: SchedulingZoom
   dependencyMode: SchedulingLinkMode
@@ -97,7 +98,7 @@ function addGanttBaselines(
   const scale = createTimeScale({
     start: options.fixture.rangeStart,
     end: options.fixture.rangeEnd,
-    width: options.width - labelWidth,
+    width: options.scaleWidth ?? options.width - labelWidth,
     zoom: options.zoom,
   })
 
@@ -133,6 +134,7 @@ function addDependencies(
     rowHeight: options.rowHeight,
     zoom: options.zoom,
     labelWidth,
+    scaleWidth: options.scaleWidth,
     previewById: options.previewById,
   })
   const positionByTaskId = new Map(barPositions.map((position) => [position.task.id, position]))

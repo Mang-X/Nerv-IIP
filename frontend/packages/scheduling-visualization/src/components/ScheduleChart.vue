@@ -21,6 +21,7 @@ import {
   buildScheduleCalendarHighlightPositions,
   buildTimelineTicks,
   calculateTimelineContentWidth,
+  calculateTimelineScaleWidth,
   shiftWindowByPixels,
 } from '../time-scale/timelineLayout'
 import { calculateVisibleRowRange } from '../time-scale/visibleRange'
@@ -119,6 +120,13 @@ const chartWidth = computed(() =>
     minWidth: props.width,
   }),
 )
+const timelineScaleWidth = computed(() =>
+  calculateTimelineScaleWidth({
+    start: filteredFixture.value.rangeStart,
+    end: filteredFixture.value.rangeEnd,
+    zoom: props.zoom,
+  }),
+)
 const livePreviewById = computed<Record<string, SchedulingPreviewWindow>>(() => {
   const drag = activeDrag.value
   if (!drag) {
@@ -131,12 +139,13 @@ const livePreviewById = computed<Record<string, SchedulingPreviewWindow>>(() => 
       ...shiftWindowByPixels({
         start: drag.before.start,
         end: drag.before.end,
-        deltaX: drag.currentDeltaX,
-        rangeStart: filteredFixture.value.rangeStart,
-        rangeEnd: filteredFixture.value.rangeEnd,
-        width: chartWidth.value - labelWidth,
-        zoom: props.zoom,
-      }),
+      deltaX: drag.currentDeltaX,
+      rangeStart: filteredFixture.value.rangeStart,
+      rangeEnd: filteredFixture.value.rangeEnd,
+      width: chartWidth.value - labelWidth,
+      scaleWidth: timelineScaleWidth.value,
+      zoom: props.zoom,
+    }),
       resourceId: drag.currentResourceId,
     },
   }
@@ -145,6 +154,7 @@ const scene = computed(() =>
   buildScheduleScene({
     fixture: filteredFixture.value,
     width: chartWidth.value,
+    scaleWidth: timelineScaleWidth.value,
     rowHeight: props.rowHeight,
     zoom: props.zoom,
     dependencyMode: props.dependencyMode ?? (props.showDependencies ? 'all' : 'none'),
@@ -192,7 +202,7 @@ const timelineTicks = computed(() =>
   buildTimelineTicks({
     start: filteredFixture.value.rangeStart,
     end: filteredFixture.value.rangeEnd,
-    width: chartWidth.value - labelWidth,
+    width: timelineScaleWidth.value,
     labelWidth,
     zoom: props.zoom,
   }),
@@ -206,6 +216,7 @@ const operationPositions = computed(() => {
     rowHeight: props.rowHeight,
     zoom: props.zoom,
     labelWidth,
+    scaleWidth: timelineScaleWidth.value,
     previewById: livePreviewById.value,
   }).filter((position) => visibleResourceIds.has(position.resourceId))
 })
@@ -218,6 +229,7 @@ const calendarHighlightPositions = computed(() => {
     rowHeight: props.rowHeight,
     zoom: props.zoom,
     labelWidth,
+    scaleWidth: timelineScaleWidth.value,
   }).filter((position) => visibleResourceIds.has(position.resourceId))
 })
 
@@ -369,6 +381,7 @@ function onScroll(event: Event) {
     scrollLeft.value = nextScrollLeft
     viewportWidth.value = nextViewportWidth
     pendingScrollFrame = undefined
+    void syncSurface()
   })
 }
 
@@ -378,6 +391,7 @@ function resetHorizontalScroll() {
   }
 
   scrollLeft.value = 0
+  void syncSurface()
 }
 
 function startDrag(operation: ScheduleOperation, event: PointerEvent) {
@@ -474,6 +488,7 @@ function finishDrag(operation: ScheduleOperation, event: PointerEvent) {
         rangeStart: filteredFixture.value.rangeStart,
         rangeEnd: filteredFixture.value.rangeEnd,
         width: chartWidth.value - labelWidth,
+        scaleWidth: timelineScaleWidth.value,
         zoom: props.zoom,
       }),
       resourceId: finalDrag.currentResourceId,

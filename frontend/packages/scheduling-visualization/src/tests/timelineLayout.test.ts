@@ -5,6 +5,7 @@ import {
   buildScheduleCalendarHighlightPositions,
   buildScheduleOperationPositions,
   buildTimelineTicks,
+  calculateTimelineScaleWidth,
   calculateTimelineContentWidth,
   shiftWindowByPixels,
 } from '../time-scale/timelineLayout'
@@ -188,6 +189,45 @@ describe('timelineLayout', () => {
     expect(dayWidth).toBeGreaterThan(weekWidth)
     expect(weekWidth).toBeGreaterThan(monthWidth)
     expect(monthWidth).toBeGreaterThanOrEqual(960)
+  })
+
+  it('keeps task bar pixels tied to zoom even when the viewport min width is wider than the date range', () => {
+    const fixture = createMockGanttFixture()
+    const rows = flattenGanttTasks(fixture.tasks, new Set(['phase-engineering']))
+    const taskId = 'task-routing-review'
+
+    const dayScaleWidth = calculateTimelineScaleWidth({
+      start: fixture.rangeStart,
+      end: fixture.rangeEnd,
+      zoom: 'day',
+    })
+    const monthScaleWidth = calculateTimelineScaleWidth({
+      start: fixture.rangeStart,
+      end: fixture.rangeEnd,
+      zoom: 'month',
+    })
+    const dayPosition = buildGanttBarPositions({
+      fixture,
+      rows,
+      width: 1440,
+      scaleWidth: dayScaleWidth,
+      rowHeight: 44,
+      zoom: 'day',
+      labelWidth: 220,
+      previewById: {},
+    }).find((position) => position.task.id === taskId)
+    const monthPosition = buildGanttBarPositions({
+      fixture,
+      rows,
+      width: 1440,
+      scaleWidth: monthScaleWidth,
+      rowHeight: 44,
+      zoom: 'month',
+      labelWidth: 220,
+      previewById: {},
+    }).find((position) => position.task.id === taskId)
+
+    expect(dayPosition?.width).toBeGreaterThan(monthPosition?.width ?? 0)
   })
 
   it('keeps dragged windows at their original duration when clamped at the range edge', () => {

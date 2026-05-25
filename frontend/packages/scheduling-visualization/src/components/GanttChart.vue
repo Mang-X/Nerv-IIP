@@ -20,6 +20,7 @@ import {
   buildGanttBarPositions,
   buildTimelineTicks,
   calculateTimelineContentWidth,
+  calculateTimelineScaleWidth,
   shiftWindowByPixels,
 } from '../time-scale/timelineLayout'
 import { calculateVisibleRowRange } from '../time-scale/visibleRange'
@@ -111,6 +112,13 @@ const chartWidth = computed(() =>
     minWidth: props.width,
   }),
 )
+const timelineScaleWidth = computed(() =>
+  calculateTimelineScaleWidth({
+    start: filteredFixture.value.rangeStart,
+    end: filteredFixture.value.rangeEnd,
+    zoom: props.zoom,
+  }),
+)
 const livePreviewById = computed<Record<string, SchedulingPreviewWindow>>(() => {
   const drag = activeDrag.value
   if (!drag) {
@@ -126,6 +134,7 @@ const livePreviewById = computed<Record<string, SchedulingPreviewWindow>>(() => 
       rangeStart: filteredFixture.value.rangeStart,
       rangeEnd: filteredFixture.value.rangeEnd,
       width: chartWidth.value - labelWidth,
+      scaleWidth: timelineScaleWidth.value,
       zoom: props.zoom,
     }),
   }
@@ -135,6 +144,7 @@ const scene = computed(() =>
     fixture: filteredFixture.value,
     expandedTaskIds: expandedIds.value,
     width: chartWidth.value,
+    scaleWidth: timelineScaleWidth.value,
     rowHeight: props.rowHeight,
     zoom: props.zoom,
     dependencyMode: props.dependencyMode ?? (props.showDependencies ? 'all' : 'none'),
@@ -177,7 +187,7 @@ const timelineTicks = computed(() =>
   buildTimelineTicks({
     start: filteredFixture.value.rangeStart,
     end: filteredFixture.value.rangeEnd,
-    width: chartWidth.value - labelWidth,
+    width: timelineScaleWidth.value,
     labelWidth,
     zoom: props.zoom,
   }),
@@ -191,6 +201,7 @@ const barPositions = computed(() => {
     rowHeight: props.rowHeight,
     zoom: props.zoom,
     labelWidth,
+    scaleWidth: timelineScaleWidth.value,
     previewById: livePreviewById.value,
   }).filter((position) => visibleTaskIds.has(position.task.id))
 })
@@ -312,6 +323,7 @@ function onScroll(event: Event) {
     scrollLeft.value = nextScrollLeft
     viewportWidth.value = nextViewportWidth
     pendingScrollFrame = undefined
+    void syncSurface()
   })
 }
 
@@ -321,6 +333,7 @@ function resetHorizontalScroll() {
   }
 
   scrollLeft.value = 0
+  void syncSurface()
 }
 
 function startDrag(task: GanttRow, event: PointerEvent) {
@@ -385,6 +398,7 @@ function finishDrag(task: GanttRow, event: PointerEvent) {
       rangeStart: filteredFixture.value.rangeStart,
       rangeEnd: filteredFixture.value.rangeEnd,
       width: chartWidth.value - labelWidth,
+      scaleWidth: timelineScaleWidth.value,
       zoom: props.zoom,
     }),
   })

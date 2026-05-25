@@ -42,6 +42,13 @@ function portFor(rect: DependencyRouteRect, side: RouteSide): SchedulingScenePoi
   }
 }
 
+function topPortFor(rect: DependencyRouteRect, side: RouteSide): SchedulingScenePoint {
+  return {
+    x: side === 'left' ? rect.left : right(rect),
+    y: rect.top,
+  }
+}
+
 function routeXOutside(
   portX: number,
   side: RouteSide,
@@ -99,11 +106,62 @@ function dedupePoints(points: SchedulingScenePoint[]) {
   })
 }
 
+function hasForwardHorizontalSpace(
+  source: DependencyRouteRect,
+  target: DependencyRouteRect,
+  clearance: number,
+) {
+  return target.left - right(source) >= clearance * 2
+}
+
+function buildTopForwardRoute(
+  source: DependencyRouteRect,
+  target: DependencyRouteRect,
+  sourceSide: RouteSide,
+  targetSide: RouteSide,
+  clearance: number,
+  minimumX: number,
+) {
+  const sourcePort = topPortFor(source, sourceSide)
+  const targetPort = topPortFor(target, targetSide)
+
+  if (source.top === target.top) {
+    return dedupePoints([sourcePort, targetPort])
+  }
+
+  const laneY = Math.max(Math.min(source.top, target.top) - clearance, 0)
+  const sourceX = Math.max(sourcePort.x, minimumX)
+  const targetX = Math.max(targetPort.x, minimumX)
+
+  return dedupePoints([
+    sourcePort,
+    { x: sourceX, y: laneY },
+    { x: targetX, y: laneY },
+    targetPort,
+  ])
+}
+
 export function buildDependencyRoute(options: BuildDependencyRouteOptions): SchedulingScenePoint[] {
   const clearance = options.clearance ?? 12
   const minimumX = options.minimumX ?? 0
   const sourceSide = sideForSource(options.type)
   const targetSide = sideForTarget(options.type)
+
+  if (
+    sourceSide === 'right'
+    && targetSide === 'left'
+    && hasForwardHorizontalSpace(options.source, options.target, clearance)
+  ) {
+    return buildTopForwardRoute(
+      options.source,
+      options.target,
+      sourceSide,
+      targetSide,
+      clearance,
+      minimumX,
+    )
+  }
+
   const sourcePort = portFor(options.source, sourceSide)
   const targetPort = portFor(options.target, targetSide)
   const laneY = chooseLaneY(options.source, options.target, clearance)

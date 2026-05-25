@@ -1,16 +1,24 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import GanttChart from '../components/GanttChart.vue'
 import { createLargeMockGanttFixture, createMockGanttFixture } from '../model/fixtures'
 
+const surfaceSpies = vi.hoisted(() => ({
+  clear: vi.fn(),
+  addRect: vi.fn(),
+  addText: vi.fn(),
+  addPath: vi.fn(),
+  dispose: vi.fn(),
+}))
+
 vi.mock('../canvas/createLeaferSurface', () => ({
   createLeaferSurface: () => ({
-    clear: vi.fn(),
-    addRect: vi.fn(),
-    addText: vi.fn(),
-    addPath: vi.fn(),
-    dispose: vi.fn(),
+    clear: surfaceSpies.clear,
+    addRect: surfaceSpies.addRect,
+    addText: surfaceSpies.addText,
+    addPath: surfaceSpies.addPath,
+    dispose: surfaceSpies.dispose,
   }),
 }))
 
@@ -27,6 +35,14 @@ function waitForFrame() {
 }
 
 describe('GanttChart', () => {
+  beforeEach(() => {
+    surfaceSpies.clear.mockClear()
+    surfaceSpies.addRect.mockClear()
+    surfaceSpies.addText.mockClear()
+    surfaceSpies.addPath.mockClear()
+    surfaceSpies.dispose.mockClear()
+  })
+
   it('renders rows and emits selection from row buttons', async () => {
     const wrapper = mount(GanttChart, {
       props: {
@@ -95,6 +111,25 @@ describe('GanttChart', () => {
 
     expect(wrapper.get('[data-test="gantt-row-task-routing-review"]').attributes('style'))
       .toContain('left: 180px')
+  })
+
+  it('redraws Leafer overlays as soon as the viewport scrolls', async () => {
+    const wrapper = mount(GanttChart, {
+      attachTo: document.body,
+      props: {
+        fixture: createMockGanttFixture(),
+        expandedTaskIds: ['phase-engineering'],
+      },
+    })
+
+    await waitForFrame()
+    const clearsBeforeScroll = surfaceSpies.clear.mock.calls.length
+    const viewport = wrapper.get('[data-test="gantt-viewport"]')
+    Object.defineProperty(viewport.element, 'scrollLeft', { configurable: true, value: 180 })
+    await viewport.trigger('scroll')
+    await waitForFrame()
+
+    expect(surfaceSpies.clear.mock.calls.length).toBeGreaterThan(clearsBeforeScroll)
   })
 
   it('resets horizontal scroll state when zoom changes', async () => {

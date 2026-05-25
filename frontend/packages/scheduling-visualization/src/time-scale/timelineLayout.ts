@@ -53,6 +53,18 @@ const pixelsPerDayByZoom: Record<SchedulingZoom, number> = {
   month: 36,
 }
 
+export function calculateTimelineScaleWidth(options: {
+  start: string
+  end: string
+  zoom: SchedulingZoom
+}) {
+  const start = new Date(options.start).getTime()
+  const end = new Date(options.end).getTime()
+  const dayCount = Math.max(Math.ceil((end - start) / dayInMilliseconds) + 1, 1)
+
+  return dayCount * pixelsPerDayByZoom[options.zoom]
+}
+
 function windowFor(
   id: string,
   fallback: SchedulingPreviewWindow,
@@ -68,10 +80,7 @@ export function calculateTimelineContentWidth(options: {
   labelWidth: number
   minWidth: number
 }) {
-  const start = new Date(options.start).getTime()
-  const end = new Date(options.end).getTime()
-  const dayCount = Math.max(Math.ceil((end - start) / dayInMilliseconds) + 1, 1)
-  const scaledWidth = options.labelWidth + dayCount * pixelsPerDayByZoom[options.zoom]
+  const scaledWidth = options.labelWidth + calculateTimelineScaleWidth(options)
 
   return Math.max(options.minWidth, scaledWidth)
 }
@@ -127,12 +136,13 @@ export function buildGanttBarPositions(options: {
   rowHeight: number
   zoom: SchedulingZoom
   labelWidth: number
+  scaleWidth?: number
   previewById: Record<string, SchedulingPreviewWindow>
 }): GanttBarPosition[] {
   const scale = createTimeScale({
     start: options.fixture.rangeStart,
     end: options.fixture.rangeEnd,
-    width: options.width - options.labelWidth,
+    width: options.scaleWidth ?? options.width - options.labelWidth,
     zoom: options.zoom,
   })
 
@@ -157,12 +167,13 @@ export function buildScheduleOperationPositions(options: {
   rowHeight: number
   zoom: SchedulingZoom
   labelWidth: number
+  scaleWidth?: number
   previewById: Record<string, SchedulingPreviewWindow>
 }): ScheduleOperationPosition[] {
   const scale = createTimeScale({
     start: options.fixture.rangeStart,
     end: options.fixture.rangeEnd,
-    width: options.width - options.labelWidth,
+    width: options.scaleWidth ?? options.width - options.labelWidth,
     zoom: options.zoom,
   })
   const rowIndexByResourceId = new Map(options.rows.map((row, index) => [row.id, index]))
@@ -265,11 +276,12 @@ export function buildScheduleCalendarHighlightPositions(options: {
   rowHeight: number
   zoom: SchedulingZoom
   labelWidth: number
+  scaleWidth?: number
 }): ScheduleCalendarHighlightPosition[] {
   const scale = createTimeScale({
     start: options.fixture.rangeStart,
     end: options.fixture.rangeEnd,
-    width: options.width - options.labelWidth,
+    width: options.scaleWidth ?? options.width - options.labelWidth,
     zoom: options.zoom,
   })
   const rowIndexByResourceId = new Map(options.rows.map((row, index) => [row.id, index]))
@@ -302,16 +314,18 @@ export function shiftWindowByPixels(options: {
   rangeEnd: string
   width: number
   zoom: SchedulingZoom
+  scaleWidth?: number
 }) {
+  const width = options.scaleWidth ?? options.width
   const scale = createTimeScale({
     start: options.rangeStart,
     end: options.rangeEnd,
-    width: options.width,
+    width,
     zoom: options.zoom,
   })
   const startX = scale.dateToX(options.start)
   const endX = scale.dateToX(options.end)
-  const clampedDeltaX = Math.min(Math.max(options.deltaX, -startX), options.width - endX)
+  const clampedDeltaX = Math.min(Math.max(options.deltaX, -startX), width - endX)
 
   return {
     start: scale.xToDate(startX + clampedDeltaX).toISOString(),
