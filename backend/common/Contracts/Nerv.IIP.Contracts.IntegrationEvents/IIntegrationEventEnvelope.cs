@@ -1,5 +1,6 @@
 namespace Nerv.IIP.Contracts.IntegrationEvents;
 
+// Narrow shared contract for consumer reliability guard; concrete events keep their typed Payload property.
 public interface IIntegrationEventEnvelope
 {
     string EventId { get; }

@@ -67,6 +67,7 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
+        // CORS preflight must not consume user/IP quota; actual API calls remain limited below.
         if (HttpMethods.IsOptions(context.Request.Method))
         {
             return RateLimitPartition.GetNoLimiter("cors-preflight");
@@ -104,6 +105,7 @@ app.UseFastEndpoints(c =>
 }).UseSwaggerGen();
 app.Run();
 
+// Keep this gateway-local until another gateway shares the same production security policy shape.
 static string[] ResolveGatewayCorsOrigins(IConfiguration configuration, IWebHostEnvironment environment)
 {
     var origins = configuration.GetSection("Security:Cors:AllowedOrigins").Get<string[]>()
