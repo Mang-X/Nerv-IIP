@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <PackageReference Include="FastEndpoints" />
+    <PackageReference Include="FastEndpoints.Swagger" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="NetCorePal.Extensions.AspNetCore" />
+    <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Iam\Nerv.IIP.Contracts.Iam.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Caching\Nerv.IIP.Caching\Nerv.IIP.Caching.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Localization\Nerv.IIP.Localization\Nerv.IIP.Localization.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Observability\Nerv.IIP.Observability\Nerv.IIP.Observability.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Sdk\Nerv.IIP.Sdk.Core\Nerv.IIP.Sdk.Core.csproj" />
+    <ProjectReference Include="..\..\..\..\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

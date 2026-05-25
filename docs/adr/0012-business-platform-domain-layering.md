@@ -88,3 +88,5 @@ GitHub issues #72 到 #77 给出了第一版业务域输入，覆盖共享基础
 4. 业务服务首次暴露 Gateway 或服务 API 前必须补 OpenAPI 测试，并生成或更新业务前端 api-client。
 5. 业务服务首次发布 IntegrationEvent 前必须补 Contracts DTO、事件常量、序列化测试和消费者幂等测试。
 6. 业务权限码首次落地前必须同步更新 IAM seed、授权矩阵、Endpoint 鉴权声明和权限测试。
+7. #166 到 #169 的 Business Console MVP 使用 `frontend/apps/business-console` 与 `backend/gateway/BusinessGateway` 落地；BusinessGateway 暴露 `/api/business-console/v1/**` 页面级 facade，执行 IAM 权限检查并用 internal service token 调用业务服务。不得把真实业务 CRUD 页面放入 `frontend/apps/console`，也不得把 MasterData、Inventory、Quality 或 MES 的 console facade 写入 PlatformGateway。
+8. BusinessGateway console OpenAPI 快照写入 `frontend/packages/api-client/openapi/business-gateway-console.v1.json`，生成代码放入 `frontend/packages/api-client/src/generated/business-console/`，并通过稳定 `@nerv-iip/api-client` business-console 入口供业务前端消费。

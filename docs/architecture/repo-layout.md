@@ -44,11 +44,12 @@ Nerv-IIP/
 - apps：真实前端应用入口。
 - packages：共享 UI、共享类型、API 客户端、壳层能力、layer 包。
 - frontend 不放后端工程、Connector Host 工程或部署脚本。
+- 主平台控制台放在 `frontend/apps/console`；真实业务 CRUD 与业务工作流控制台放在 `frontend/apps/business-console`，不得把 MES/WMS/ERP/PDM/CMMS 等业务页面塞进主平台 console。
 
 ### backend
 
 - services：平台领域服务，如 IAM、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge；业务平台扩展服务在单仓过渡阶段只能放在 `services/Business/{Context}` 下。
-- gateway：PlatformGateway 与前端聚合接口。
+- gateway：PlatformGateway、BusinessGateway 与前端聚合接口。PlatformGateway 只承载主平台控制面 facade；BusinessGateway 承载业务前端或业务移动端 facade。
 - common：窄共享库，如 Contracts、Sdk、Caching、Observability、Testing。
 - tests：后端测试项目与测试宿主。
 - backend 不承载 Connector Host 与 Connector。
@@ -96,6 +97,7 @@ Nerv-IIP/
 8. backend/common/Sdk 下的项目不得引用 backend/services 或 backend/gateway 下的 Web、Domain、Infrastructure 项目。
 9. 每个平台服务不得各自创建长期维护的 Aspire AppHost；统一平台编排入口归 infra/aspire。
 10. 业务平台扩展不得把 PDM/PLM、MPS/MRP、MES、WMS、ERP、IIoT 或 CMMS 领域规则写入 PlatformGateway、IAM、AppHub、Ops 或主平台 console。
+11. BusinessGateway 可以通过公开 HTTP 契约、OpenAPI DTO、Platform SDK、IAM 授权上下文和 internal service token 调用业务服务，但不得引用 `backend/services/Business` 下的 Web、Domain 或 Infrastructure 项目。
 
 ## 非目标
 

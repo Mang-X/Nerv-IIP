@@ -11,6 +11,8 @@ export default defineConfig({
     ignorePatterns: [
       'apps/console/dist/**',
       'apps/console/typed-router.d.ts',
+      'apps/business-console/dist/**',
+      'apps/business-console/typed-router.d.ts',
       'packages/api-client/openapi/**',
       'packages/api-client/src/generated/**',
     ],
@@ -56,6 +58,8 @@ export default defineConfig({
     ignorePatterns: [
       'apps/console/dist/**',
       'apps/console/typed-router.d.ts',
+      'apps/business-console/dist/**',
+      'apps/business-console/typed-router.d.ts',
       'packages/api-client/src/generated/**',
     ],
   },
@@ -70,6 +74,7 @@ export default defineConfig({
         input: [
           'packages/api-client/openapi-ts.config.ts',
           'packages/api-client/openapi/platform-gateway.v1.json',
+          'packages/api-client/openapi/business-gateway-console.v1.json',
         ],
         output: ['packages/api-client/src/generated/**'],
       },
@@ -84,8 +89,19 @@ export default defineConfig({
           'tsconfig.base.json',
         ],
       },
+      'workspace:test': {
+        command: 'pnpm -r --if-present test',
+        input: [
+          'apps/**/src/**',
+          'apps/**/vite.config.ts',
+          'packages/**/src/**',
+          'packages/**/tsconfig.json',
+          'tsconfig.base.json',
+        ],
+      },
       'workspace:build': {
-        command: 'pnpm --filter @nerv-iip/console build',
+        command:
+          'pnpm --filter @nerv-iip/console --filter @nerv-iip/business-console build',
         dependsOn: ['workspace:typecheck'],
         input: [
           'apps/console/index.html',
@@ -93,12 +109,17 @@ export default defineConfig({
           'apps/console/tsconfig.json',
           'apps/console/vite.config.ts',
           'apps/console/typed-router.d.ts',
+          'apps/business-console/index.html',
+          'apps/business-console/src/**',
+          'apps/business-console/tsconfig.json',
+          'apps/business-console/vite.config.ts',
+          'apps/business-console/typed-router.d.ts',
           'packages/api-client/src/**',
           'packages/app-shell/src/**',
           'packages/ui/src/**',
           'tsconfig.base.json',
         ],
-        output: ['apps/console/dist/**'],
+        output: ['apps/console/dist/**', 'apps/business-console/dist/**'],
       },
     },
   },

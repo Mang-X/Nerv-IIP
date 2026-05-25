@@ -500,6 +500,9 @@ function Start-ManagedBackgroundProcess {
 
     $stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($stdoutStream, $copyCancellation.Token)
     $stderrTask = $process.StandardError.BaseStream.CopyToAsync($stderrStream, $copyCancellation.Token)
+    $stopProcessTree = ${function:Stop-ProcessTree}
+    $protectLogFile = ${function:Protect-ScriptAutomationLogFile}
+    $writeDiagnostic = ${function:Write-Diagnostic}
 
     Write-Diagnostic "Started background process $Command (pid=$($process.Id), cwd=$WorkingDirectory, logs=$resolvedLogDirectory)"
 
@@ -514,13 +517,13 @@ function Start-ManagedBackgroundProcess {
 
         try {
             if ($process -and -not $process.HasExited) {
-                Stop-ProcessTree -ProcessId $process.Id -Reason $Reason | Out-Null
+                & $stopProcessTree -ProcessId $process.Id -Reason $Reason | Out-Null
             }
 
             if ($process) {
                 [void] $process.WaitForExit(1000)
                 if (-not $process.HasExited) {
-                    Write-Diagnostic -Level 'WARN' -Message "Background process did not exit promptly after stop request: $Command (pid=$($process.Id))"
+                    & $writeDiagnostic -Level 'WARN' -Message "Background process did not exit promptly after stop request: $Command (pid=$($process.Id))"
                 }
             }
         }
@@ -548,7 +551,7 @@ function Start-ManagedBackgroundProcess {
 
                 if (-not $copyCompleted) {
                     $copyTimedOut = $true
-                    Write-Diagnostic -Level 'WARN' -Message "Timed out while collecting background $($copyTask.Name) log for $Command."
+                    & $writeDiagnostic -Level 'WARN' -Message "Timed out while collecting background $($copyTask.Name) log for $Command."
                 }
             }
 
@@ -585,15 +588,15 @@ function Start-ManagedBackgroundProcess {
                         throw
                     }
 
-                    Write-Diagnostic -Level 'WARN' -Message "Background $($copyTask.Name) log copy ended after cancellation for $Command`: $($_.Exception.Message)"
+                    & $writeDiagnostic -Level 'WARN' -Message "Background $($copyTask.Name) log copy ended after cancellation for $Command`: $($_.Exception.Message)"
                 }
             }
 
             $stdoutStream.Dispose()
             $stderrStream.Dispose()
             $copyCancellation.Dispose()
-            Protect-ScriptAutomationLogFile -Path $stdoutPath
-            Protect-ScriptAutomationLogFile -Path $stderrPath
+            & $protectLogFile -Path $stdoutPath
+            & $protectLogFile -Path $stderrPath
             $process.Dispose()
         }
     }.GetNewClosure()

@@ -32,6 +32,7 @@ export type NervIipContractsOpsOperationAttemptSummary = {
     leasedAtUtc?: string;
     leasedUntilUtc?: string;
     attemptNo?: number;
+    leaseDurationSeconds?: number;
     maxAttempts?: number;
     abandonReason?: string | null;
 };

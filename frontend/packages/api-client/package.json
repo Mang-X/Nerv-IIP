@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "generate": "openapi-ts",
+    "generate": "node ./scripts/clean-generated.mjs && openapi-ts",
     "test": "vp test run src --environment jsdom",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
