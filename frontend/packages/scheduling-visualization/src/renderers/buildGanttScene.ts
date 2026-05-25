@@ -3,8 +3,10 @@ import { createTimeScale } from '../time-scale/timeScale'
 import type { SchedulingZoom } from '../time-scale/timeScale'
 import type { SchedulingScene, SchedulingSceneElement } from '../canvas/sceneTypes'
 import { flattenGanttTasks } from '../model/gantt'
-import type { GanttFixture, GanttRow, GanttTask } from '../model/gantt'
+import type { GanttFixture, GanttRow } from '../model/gantt'
+import { buildGanttBarPositions } from '../time-scale/timelineLayout'
 import type { SchedulingLinkMode } from '../components/types'
+import { buildDependencyRoute } from './dependencyRouting'
 
 export interface BuildGanttSceneOptions {
   fixture: GanttFixture
@@ -21,25 +23,6 @@ export interface BuildGanttSceneOptions {
 }
 
 const labelWidth = 220
-function findTask(tasks: GanttTask[], taskId: string): GanttTask | undefined {
-  for (const task of tasks) {
-    if (task.id === taskId) {
-      return task
-    }
-
-    const child = findTask(task.children ?? [], taskId)
-    if (child) {
-      return child
-    }
-  }
-
-  return undefined
-}
-
-function taskWindow(row: GanttRow, previewById: Record<string, SchedulingPreviewWindow>) {
-  return previewById[row.id] ?? { start: row.start, end: row.end }
-}
-
 function shouldRenderDependency(
   mode: SchedulingLinkMode,
   selectedId: string | undefined,
@@ -55,52 +38,6 @@ function shouldRenderDependency(
   }
 
   return selectedId === sourceId || selectedId === targetId
-}
-
-function dependencyEndpoints(
-  type: string,
-  sourceWindow: { start: string, end: string },
-  targetWindow: { start: string, end: string },
-  scale: ReturnType<typeof createTimeScale>,
-) {
-  const sourceDate = type.startsWith('start') ? sourceWindow.start : sourceWindow.end
-  const targetDate = type.endsWith('finish') ? targetWindow.end : targetWindow.start
-
-  return {
-    sourceX: labelWidth + scale.dateToX(sourceDate),
-    targetX: labelWidth + scale.dateToX(targetDate),
-  }
-}
-
-function buildDependencyPoints(options: {
-  sourceX: number
-  sourceY: number
-  targetX: number
-  targetY: number
-}) {
-  const direction = options.targetX >= options.sourceX ? 1 : -1
-  const offset = 18 * direction
-  const firstX = options.sourceX + offset
-  const lastX = options.targetX - offset
-  const middleX = direction > 0
-    ? Math.max(firstX, Math.round((options.sourceX + options.targetX) / 2))
-    : Math.min(firstX, Math.round((options.sourceX + options.targetX) / 2))
-
-  if (Math.abs(options.sourceY - options.targetY) < 2) {
-    return [
-      { x: options.sourceX, y: options.sourceY },
-      { x: options.targetX, y: options.targetY },
-    ]
-  }
-
-  return [
-    { x: options.sourceX, y: options.sourceY },
-    { x: firstX, y: options.sourceY },
-    { x: middleX, y: options.sourceY },
-    { x: middleX, y: options.targetY },
-    { x: lastX, y: options.targetY },
-    { x: options.targetX, y: options.targetY },
-  ]
 }
 
 function addGrid(
@@ -164,13 +101,16 @@ function addDependencies(
   rows: GanttRow[],
   options: BuildGanttSceneOptions,
 ) {
-  const rowIndexById = new Map(rows.map((row, index) => [row.id, index]))
-  const scale = createTimeScale({
-    start: options.fixture.rangeStart,
-    end: options.fixture.rangeEnd,
-    width: options.width - labelWidth,
+  const barPositions = buildGanttBarPositions({
+    fixture: options.fixture,
+    rows,
+    width: options.width,
+    rowHeight: options.rowHeight,
     zoom: options.zoom,
+    labelWidth,
+    previewById: options.previewById,
   })
+  const positionByTaskId = new Map(barPositions.map((position) => [position.task.id, position]))
 
   for (const dependency of options.fixture.dependencies) {
     if (
@@ -184,19 +124,11 @@ function addDependencies(
       continue
     }
 
-    const sourceTask = findTask(options.fixture.tasks, dependency.sourceTaskId)
-    const targetTask = findTask(options.fixture.tasks, dependency.targetTaskId)
-    const sourceIndex = rowIndexById.get(dependency.sourceTaskId)
-    const targetIndex = rowIndexById.get(dependency.targetTaskId)
-    if (!sourceTask || !targetTask || sourceIndex === undefined || targetIndex === undefined) {
+    const source = positionByTaskId.get(dependency.sourceTaskId)
+    const target = positionByTaskId.get(dependency.targetTaskId)
+    if (!source || !target) {
       continue
     }
-
-    const sourceWindow = options.previewById[sourceTask.id] ?? sourceTask
-    const targetWindow = options.previewById[targetTask.id] ?? targetTask
-    const { sourceX, targetX } = dependencyEndpoints(dependency.type, sourceWindow, targetWindow, scale)
-    const sourceY = sourceIndex * options.rowHeight + options.rowHeight / 2
-    const targetY = targetIndex * options.rowHeight + options.rowHeight / 2
 
     elements.push({
       id: dependency.id,
@@ -204,7 +136,11 @@ function addDependencies(
       x: 0,
       y: 0,
       stroke: '#64748b',
-      points: buildDependencyPoints({ sourceX, sourceY, targetX, targetY }),
+      points: buildDependencyRoute({
+        source: { left: source.left, top: source.top, width: source.width, height: 22 },
+        target: { left: target.left, top: target.top, width: target.width, height: 22 },
+        type: dependency.type,
+      }),
       metadata: { sourceTaskId: dependency.sourceTaskId, targetTaskId: dependency.targetTaskId },
     })
   }

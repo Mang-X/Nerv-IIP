@@ -6,6 +6,7 @@ import { createTimeScale } from '../time-scale/timeScale'
 import type { SchedulingZoom } from '../time-scale/timeScale'
 import { buildScheduleOperationPositions } from '../time-scale/timelineLayout'
 import type { SchedulingLinkMode } from '../components/types'
+import { buildDependencyRoute } from './dependencyRouting'
 
 export interface BuildScheduleSceneOptions {
   fixture: ScheduleFixture
@@ -36,44 +37,6 @@ function shouldRenderDependency(
   }
 
   return selectedId === sourceId || selectedId === targetId
-}
-
-function dependencyEndpoints(type: string, source: { left: number, width: number }, target: { left: number, width: number }) {
-  const sourceX = type.startsWith('start') ? source.left : source.left + source.width
-  const targetX = type.endsWith('finish') ? target.left + target.width : target.left
-
-  return { sourceX, targetX }
-}
-
-function buildDependencyPoints(options: {
-  sourceX: number
-  sourceY: number
-  targetX: number
-  targetY: number
-}) {
-  const direction = options.targetX >= options.sourceX ? 1 : -1
-  const offset = 18 * direction
-  const firstX = options.sourceX + offset
-  const lastX = options.targetX - offset
-  const middleX = direction > 0
-    ? Math.max(firstX, Math.round((options.sourceX + options.targetX) / 2))
-    : Math.min(firstX, Math.round((options.sourceX + options.targetX) / 2))
-
-  if (Math.abs(options.sourceY - options.targetY) < 2) {
-    return [
-      { x: options.sourceX, y: options.sourceY },
-      { x: options.targetX, y: options.targetY },
-    ]
-  }
-
-  return [
-    { x: options.sourceX, y: options.sourceY },
-    { x: firstX, y: options.sourceY },
-    { x: middleX, y: options.sourceY },
-    { x: middleX, y: options.targetY },
-    { x: lastX, y: options.targetY },
-    { x: options.targetX, y: options.targetY },
-  ]
 }
 
 export function buildScheduleScene(options: BuildScheduleSceneOptions): SchedulingScene {
@@ -192,16 +155,17 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
         continue
       }
 
-      const { sourceX, targetX } = dependencyEndpoints(dependency.type, source, target)
-      const sourceY = source.top + source.height / 2
-      const targetY = target.top + target.height / 2
       elements.push({
         id: dependency.id,
         kind: 'dependency',
-        x: sourceX,
-        y: sourceY,
+        x: 0,
+        y: 0,
         stroke: '#64748b',
-        points: buildDependencyPoints({ sourceX, sourceY, targetX, targetY }),
+        points: buildDependencyRoute({
+          source: { left: source.left, top: source.top, width: source.width, height: source.height },
+          target: { left: target.left, top: target.top, width: target.width, height: target.height },
+          type: dependency.type,
+        }),
         metadata: {
           sourceOperationId: dependency.sourceOperationId,
           targetOperationId: dependency.targetOperationId,

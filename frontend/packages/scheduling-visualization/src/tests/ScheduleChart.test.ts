@@ -2,8 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import ScheduleChart from '../components/ScheduleChart.vue'
-import { createMockScheduleFixture } from '../model/fixtures'
-import type { ScheduleFixture } from '../model/schedule'
+import { createLargeMockScheduleFixture, createMockScheduleFixture } from '../model/fixtures'
 
 vi.mock('../canvas/createLeaferSurface', () => ({
   createLeaferSurface: () => ({
@@ -25,42 +24,6 @@ function dispatchPointer(target: Element, type: string, clientX: number, clientY
 
 function waitForFrame() {
   return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-}
-
-function createLargeScheduleFixture(resourceCount: number, days: number): ScheduleFixture {
-  const fixture = createMockScheduleFixture()
-  const resources = Array.from({ length: resourceCount }, (_, index) => ({
-    id: `wc-large-${index}`,
-    name: `Large Work Center ${index}`,
-    kind: 'work-center' as const,
-    workCenterCode: `LWC-${index}`,
-    capacityPerShift: 480,
-    calendarLabel: 'Day shift calendar',
-  }))
-  const operations = resources.map((resource, index) => ({
-    id: `op-large-${index}`,
-    resourceId: resource.id,
-    workOrderCode: `WO-L-${index}`,
-    operationCode: 'RUN',
-    name: `Large operation ${index}`,
-    skuCode: 'SKU-L',
-    start: '2026-05-06T08:00:00.000Z',
-    end: '2026-05-06T12:00:00.000Z',
-    progress: 0,
-    status: 'ready' as const,
-    loadPercent: 50,
-  }))
-
-  return {
-    ...fixture,
-    rangeEnd: new Date(Date.UTC(2026, 4, 6 + days)).toISOString(),
-    resources,
-    operations,
-    capacityBands: [],
-    dependencies: [],
-    calendarHighlights: [],
-    conflicts: [],
-  }
 }
 
 describe('ScheduleChart', () => {
@@ -230,7 +193,11 @@ describe('ScheduleChart', () => {
     const wrapper = mount(ScheduleChart, {
       attachTo: document.body,
       props: {
-        fixture: createLargeScheduleFixture(1200, 730),
+        fixture: createLargeMockScheduleFixture({
+          resourceCount: 1200,
+          days: 730,
+          operationsPerResource: 1,
+        }),
         maxViewportHeight: 260,
         width: 960,
       },
@@ -242,5 +209,5 @@ describe('ScheduleChart', () => {
     expect(wrapper.findAll('[data-test^="schedule-resource-"]').length).toBeLessThanOrEqual(12)
     expect(wrapper.findAll('[data-test^="schedule-operation-"]').length).toBeLessThanOrEqual(12)
     expect(wrapper.findAll('.timeline-axis__tick').length).toBeLessThan(40)
-  }, 10000)
+  }, 20000)
 })

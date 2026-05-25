@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Card, CardContent, CardHeader, CardTitle } from '@nerv-iip/ui'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@nerv-iip/ui'
 import { shallowRef } from 'vue'
 
 import type {
@@ -7,11 +7,17 @@ import type {
   SchedulingPreviewWindow,
   SchedulingWorkspaceSelection,
 } from '../src'
-import { SchedulingWorkspace } from '../src'
+import { SchedulingWorkspace, createLargeMockScheduleFixture } from '../src'
 
 const lastSelection = shallowRef<SchedulingWorkspaceSelection>()
 const lastCommand = shallowRef<SchedulingPreviewCommand>()
 const committedPreview = shallowRef<Record<string, SchedulingPreviewWindow>>({})
+const useLargeFixture = shallowRef(false)
+const largeScheduleFixture = createLargeMockScheduleFixture({
+  resourceCount: 1200,
+  days: 730,
+  operationsPerResource: 2,
+})
 
 function recordSelection(selection: SchedulingWorkspaceSelection | undefined) {
   lastSelection.value = selection
@@ -35,6 +41,14 @@ function recordCommit(previewById: Record<string, SchedulingPreviewWindow>) {
           <CardTitle class="preview-title">Scheduling Visualization</CardTitle>
         </div>
         <div class="preview-state" data-test="preview-state">
+          <Button
+            size="sm"
+            :variant="useLargeFixture ? 'secondary' : 'outline'"
+            data-test="preview-large-toggle"
+            @click="useLargeFixture = !useLargeFixture"
+          >
+            {{ useLargeFixture ? 'Large data' : 'Base data' }}
+          </Button>
           <Badge variant="outline">Selection: {{ lastSelection?.source ?? 'none' }}</Badge>
           <Badge variant="outline">Preview: {{ lastCommand?.targetId ?? 'none' }}</Badge>
           <Badge variant="secondary">Committed: {{ Object.keys(committedPreview).length }}</Badge>
@@ -45,6 +59,7 @@ function recordCommit(previewById: Record<string, SchedulingPreviewWindow>) {
     <Card size="sm" class="preview-workspace-card">
       <CardContent class="preview-workspace-card__content">
         <SchedulingWorkspace
+          :schedule-fixture="useLargeFixture ? largeScheduleFixture : undefined"
           @selection-change="recordSelection"
           @preview-command="recordCommand"
           @commit-preview="recordCommit"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge } from '@nerv-iip/ui'
+import { Badge, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@nerv-iip/ui'
 import { AlertTriangle, LockKeyhole } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from 'vue'
 
@@ -439,80 +439,95 @@ function cancelDrag(event: PointerEvent) {
         />
 
       <div class="scheduling-chart__rows" :style="{ height: chartHeight, minWidth: `${chartWidth}px` }">
-        <button
-          v-for="item in visibleRows"
-          :key="item.row.id"
-          class="schedule-resource"
-          :class="{ 'schedule-resource--selected': isSelectedResource(item.row) }"
-          type="button"
-          :data-test="`schedule-resource-${item.row.id}`"
-          :title="`${item.row.workCenterCode} ${item.row.name} | ${item.row.calendarLabel}`"
-          :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
-          @click="emit('select', { kind: 'resource', id: item.row.id })"
-        >
-          <span class="schedule-resource__code">{{ item.row.workCenterCode }}</span>
-          <span class="schedule-resource__name">{{ item.row.name }}</span>
-          <span class="schedule-resource__calendar">{{ item.row.calendarLabel }}</span>
-        </button>
+        <TooltipProvider :delay-duration="120">
+          <Tooltip v-for="item in visibleRows" :key="item.row.id">
+            <TooltipTrigger as-child>
+              <button
+                class="schedule-resource"
+                :class="{ 'schedule-resource--selected': isSelectedResource(item.row) }"
+                type="button"
+                :data-test="`schedule-resource-${item.row.id}`"
+                :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
+                @click="emit('select', { kind: 'resource', id: item.row.id })"
+              >
+                <span class="schedule-resource__code">{{ item.row.workCenterCode }}</span>
+                <span class="schedule-resource__name">{{ item.row.name }}</span>
+                <span class="schedule-resource__calendar">{{ item.row.calendarLabel }}</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" align="start">
+              {{ item.row.workCenterCode }} {{ item.row.name }} | {{ item.row.calendarLabel }}
+            </TooltipContent>
+          </Tooltip>
 
-        <button
-          v-for="position in calendarHighlightPositions"
-          :key="position.highlight.id"
-          class="schedule-highlight"
-          :class="`schedule-highlight--${position.highlight.kind}`"
-          type="button"
-          :data-test="`schedule-highlight-${position.highlight.id}`"
-          :title="`${position.highlight.label} | ${position.highlight.kind} | ${formatDateTime(position.highlight.start)} - ${formatDateTime(position.highlight.end)}`"
-          :style="{
-            top: `${position.top}px`,
-            left: `${position.left}px`,
-            width: `${position.width}px`,
-            height: `${position.height}px`,
-          }"
-          @click.stop="emit('select', { kind: 'calendar-highlight', id: position.highlight.id })"
-        >
-          <span>{{ position.highlight.label }}</span>
-        </button>
+          <Tooltip v-for="position in calendarHighlightPositions" :key="position.highlight.id">
+            <TooltipTrigger as-child>
+              <button
+                class="schedule-highlight"
+                :class="`schedule-highlight--${position.highlight.kind}`"
+                type="button"
+                :data-test="`schedule-highlight-${position.highlight.id}`"
+                :style="{
+                  top: `${position.top}px`,
+                  left: `${position.left}px`,
+                  width: `${position.width}px`,
+                  height: `${position.height}px`,
+                }"
+                @click.stop="emit('select', { kind: 'calendar-highlight', id: position.highlight.id })"
+              >
+                <span>{{ position.highlight.label }}</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="start">
+              {{ position.highlight.label }} | {{ position.highlight.kind }} |
+              {{ formatDateTime(position.highlight.start) }} - {{ formatDateTime(position.highlight.end) }}
+            </TooltipContent>
+          </Tooltip>
 
-        <button
-          v-for="position in operationPositions"
-          :key="position.operation.id"
-          class="schedule-operation"
-          :class="{
-            'schedule-operation--selected': isSelectedOperation(position.operation),
-            'schedule-operation--dragging': activeDrag?.operationId === position.operation.id,
-            'schedule-operation--visual-overlap': position.hasVisualOverlap && !position.hasTimeOverlap,
-            'schedule-operation--time-overlap': position.hasTimeOverlap,
-          }"
-          type="button"
-          :data-test="`schedule-operation-${position.operation.id}`"
-          :data-preview-resource-id="position.resourceId"
-          :title="operationTooltip(position)"
-          :style="{
-            top: `${position.top}px`,
-            left: `${position.left}px`,
-            width: `${position.width}px`,
-            height: `${position.height}px`,
-          }"
-          @click.stop="emit('select', { kind: 'operation', id: position.operation.id })"
-          @pointerdown.stop="startDrag(position.operation, $event)"
-          @pointermove.stop="moveDrag"
-          @pointerup.stop="finishDrag(position.operation, $event)"
-          @pointercancel.stop="cancelDrag"
-        >
-          <span class="schedule-operation__title">{{ position.operation.workOrderCode }}</span>
-          <span class="schedule-operation__subtitle">{{ position.operation.name }}</span>
-          <LockKeyhole
-            v-if="position.operation.isLocked"
-            class="schedule-operation__icon"
-            aria-label="Locked"
-          />
-          <AlertTriangle
-            v-if="operationHasConflict(position.operation)"
-            class="schedule-operation__icon schedule-operation__icon--warning"
-            aria-label="Has conflict"
-          />
-        </button>
+          <Tooltip v-for="position in operationPositions" :key="position.operation.id">
+            <TooltipTrigger as-child>
+              <button
+                class="schedule-operation"
+                :class="{
+                  'schedule-operation--selected': isSelectedOperation(position.operation),
+                  'schedule-operation--dragging': activeDrag?.operationId === position.operation.id,
+                  'schedule-operation--visual-overlap': position.hasVisualOverlap && !position.hasTimeOverlap,
+                  'schedule-operation--time-overlap': position.hasTimeOverlap,
+                }"
+                type="button"
+                :data-test="`schedule-operation-${position.operation.id}`"
+                :data-preview-resource-id="position.resourceId"
+                :style="{
+                  top: `${position.top}px`,
+                  left: `${position.left}px`,
+                  width: `${position.width}px`,
+                  height: `${position.height}px`,
+                }"
+                @click.stop="emit('select', { kind: 'operation', id: position.operation.id })"
+                @pointerdown.stop="startDrag(position.operation, $event)"
+                @pointermove.stop="moveDrag"
+                @pointerup.stop="finishDrag(position.operation, $event)"
+                @pointercancel.stop="cancelDrag"
+              >
+                <span class="schedule-operation__title">{{ position.operation.workOrderCode }}</span>
+                <span class="schedule-operation__subtitle">{{ position.operation.name }}</span>
+                <LockKeyhole
+                  v-if="position.operation.isLocked"
+                  class="schedule-operation__icon"
+                  aria-label="Locked"
+                />
+                <AlertTriangle
+                  v-if="operationHasConflict(position.operation)"
+                  class="schedule-operation__icon schedule-operation__icon--warning"
+                  aria-label="Has conflict"
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="start">
+              {{ operationTooltip(position) }}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         </div>
       </div>
     </div>

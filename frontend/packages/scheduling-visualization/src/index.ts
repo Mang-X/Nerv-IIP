@@ -1,8 +1,10 @@
-export { createMockGanttFixture, createMockScheduleFixture } from './model/fixtures'
+export { createLargeMockScheduleFixture, createMockGanttFixture, createMockScheduleFixture } from './model/fixtures'
+export type { LargeMockScheduleFixtureOptions } from './model/fixtures'
 export { flattenGanttTasks } from './model/gantt'
 export { groupScheduleRows } from './model/schedule'
 export { buildGanttScene } from './renderers/buildGanttScene'
 export { buildScheduleScene } from './renderers/buildScheduleScene'
+export { buildDependencyRoute } from './renderers/dependencyRouting'
 export { renderSceneToLeafer } from './renderers/renderSceneToLeafer'
 export { filterGanttFixture, filterScheduleFixture } from './state/filterFixtures'
 export { createSchedulingCommandStack } from './state/useSchedulingCommands'
@@ -61,6 +63,7 @@ export type {
 } from './canvas/sceneTypes'
 export type { BuildGanttSceneOptions } from './renderers/buildGanttScene'
 export type { BuildScheduleSceneOptions } from './renderers/buildScheduleScene'
+export type { BuildDependencyRouteOptions, DependencyRouteRect, DependencyRouteType } from './renderers/dependencyRouting'
 export type {
   SchedulingCommandStack,
   SchedulingPreviewCommand,

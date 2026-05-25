@@ -1,6 +1,12 @@
 import type { GanttFixture } from './gantt'
 import type { ScheduleFixture } from './schedule'
 
+export interface LargeMockScheduleFixtureOptions {
+  resourceCount?: number
+  days?: number
+  operationsPerResource?: number
+}
+
 export function createMockGanttFixture(): GanttFixture {
   return {
     id: 'gantt-release-plan',
@@ -223,5 +229,77 @@ export function createMockScheduleFixture(): ScheduleFixture {
         relatedOperationIds: ['op-packing-1001', 'op-packing-1002'],
       },
     ],
+  }
+}
+
+export function createLargeMockScheduleFixture(options: LargeMockScheduleFixtureOptions = {}): ScheduleFixture {
+  const resourceCount = options.resourceCount ?? 1200
+  const days = options.days ?? 730
+  const operationsPerResource = options.operationsPerResource ?? 2
+  const fixture = createMockScheduleFixture()
+  const resources = Array.from({ length: resourceCount }, (_, index) => ({
+    id: `wc-large-${index}`,
+    name: `Large Work Center ${index}`,
+    kind: index % 3 === 0 ? 'line' as const : 'work-center' as const,
+    workCenterCode: `LWC-${index}`,
+    capacityPerShift: 480,
+    calendarLabel: index % 4 === 0 ? 'Two-shift calendar' : 'Day shift calendar',
+  }))
+  const operations = resources.flatMap((resource, resourceIndex) =>
+    Array.from({ length: operationsPerResource }, (_, operationIndex) => {
+      const dayOffset = (resourceIndex * 3 + operationIndex * 11) % Math.max(days - 2, 1)
+      const startHour = 6 + (operationIndex % 3) * 4
+      const start = new Date(Date.UTC(2026, 4, 6 + dayOffset, startHour, 0, 0)).toISOString()
+      const end = new Date(Date.UTC(2026, 4, 6 + dayOffset, startHour + 3, 30, 0)).toISOString()
+
+      return {
+        id: `op-large-${resourceIndex}-${operationIndex}`,
+        resourceId: resource.id,
+        workOrderCode: `WO-L-${resourceIndex}-${operationIndex}`,
+        operationCode: operationIndex % 2 === 0 ? 'RUN' : 'SETUP',
+        name: `Large operation ${resourceIndex}-${operationIndex}`,
+        skuCode: `SKU-${resourceIndex % 12}`,
+        start,
+        end,
+        progress: operationIndex % 2 === 0 ? 25 : 0,
+        status: operationIndex % 2 === 0 ? 'running' as const : 'ready' as const,
+        loadPercent: 45 + (resourceIndex % 50),
+      }
+    }),
+  )
+  const capacityBands = resources
+    .filter((_, index) => index % 16 === 0)
+    .map((resource, index) => ({
+      id: `cap-large-${resource.id}`,
+      resourceId: resource.id,
+      start: '2026-05-06T06:00:00.000Z',
+      end: '2026-05-06T18:00:00.000Z',
+      loadPercent: index % 2 === 0 ? 108 : 76,
+      capacityPercent: 100,
+      isOverloaded: index % 2 === 0,
+    }))
+  const calendarHighlights = resources
+    .filter((_, index) => index % 24 === 0)
+    .map((resource, index) => ({
+      id: `highlight-large-${resource.id}`,
+      resourceId: resource.id,
+      start: '2026-05-07T08:00:00.000Z',
+      end: '2026-05-07T12:00:00.000Z',
+      kind: index % 2 === 0 ? 'maintenance' as const : 'downtime' as const,
+      label: index % 2 === 0 ? 'Planned maintenance' : 'Resource unavailable',
+      severity: index % 2 === 0 ? 'warning' as const : 'critical' as const,
+    }))
+
+  return {
+    ...fixture,
+    id: 'schedule-large-capacity-validation',
+    name: 'Large capacity validation schedule',
+    rangeEnd: new Date(Date.UTC(2026, 4, 6 + days)).toISOString(),
+    resources,
+    operations,
+    capacityBands,
+    dependencies: [],
+    calendarHighlights,
+    conflicts: [],
   }
 }

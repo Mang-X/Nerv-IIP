@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge } from '@nerv-iip/ui'
+import { Badge, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@nerv-iip/ui'
 import { AlertTriangle, ChevronDown, ChevronRight, LockKeyhole } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from 'vue'
 
@@ -392,62 +392,72 @@ onBeforeUnmount(() => {
         />
 
         <div class="scheduling-chart__rows" :style="{ height: chartHeight }">
-        <button
-          v-for="item in visibleRows"
-          :key="item.row.id"
-          class="gantt-row"
-          :class="{ 'gantt-row--selected': isSelected(item.row) }"
-          type="button"
-          :data-test="`gantt-row-${item.row.id}`"
-          :title="taskTooltip(item.row)"
-          :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
-          @click="selectRow(item.row)"
-        >
-          <span class="gantt-row__main" :style="{ paddingLeft: `${item.row.depth * 16}px` }">
-            <button
-              v-if="item.row.hasChildren"
-              class="gantt-row__expand"
-              type="button"
-              :aria-label="expandedIds.has(item.row.id) ? 'Collapse task group' : 'Expand task group'"
-              @click.stop="toggleRow(item.row)"
-            >
-              <ChevronDown v-if="expandedIds.has(item.row.id)" />
-              <ChevronRight v-else />
-            </button>
-            <span v-else class="gantt-row__spacer" />
-            <span class="gantt-row__name">{{ item.row.name }}</span>
-          </span>
-          <span class="gantt-row__code">{{ item.row.code }}</span>
-          <span class="gantt-row__status">{{ item.row.status }}</span>
-          <LockKeyhole v-if="item.row.isLocked" class="gantt-row__icon" aria-label="Locked" />
-          <AlertTriangle
-            v-if="rowHasConflict(item.row)"
-            class="gantt-row__icon gantt-row__icon--warning"
-            aria-label="Has conflict"
-          />
-        </button>
+          <TooltipProvider :delay-duration="120">
+            <Tooltip v-for="item in visibleRows" :key="item.row.id">
+              <TooltipTrigger as-child>
+                <button
+                  class="gantt-row"
+                  :class="{ 'gantt-row--selected': isSelected(item.row) }"
+                  type="button"
+                  :data-test="`gantt-row-${item.row.id}`"
+                  :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
+                  @click="selectRow(item.row)"
+                >
+                  <span class="gantt-row__main" :style="{ paddingLeft: `${item.row.depth * 16}px` }">
+                    <button
+                      v-if="item.row.hasChildren"
+                      class="gantt-row__expand"
+                      type="button"
+                      :aria-label="expandedIds.has(item.row.id) ? 'Collapse task group' : 'Expand task group'"
+                      @click.stop="toggleRow(item.row)"
+                    >
+                      <ChevronDown v-if="expandedIds.has(item.row.id)" />
+                      <ChevronRight v-else />
+                    </button>
+                    <span v-else class="gantt-row__spacer" />
+                    <span class="gantt-row__name">{{ item.row.name }}</span>
+                  </span>
+                  <span class="gantt-row__code">{{ item.row.code }}</span>
+                  <span class="gantt-row__status">{{ item.row.status }}</span>
+                  <LockKeyhole v-if="item.row.isLocked" class="gantt-row__icon" aria-label="Locked" />
+                  <AlertTriangle
+                    v-if="rowHasConflict(item.row)"
+                    class="gantt-row__icon gantt-row__icon--warning"
+                    aria-label="Has conflict"
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" align="start">
+                {{ taskTooltip(item.row) }}
+              </TooltipContent>
+            </Tooltip>
 
-        <button
-          v-for="position in barPositions"
-          :key="`bar-${position.task.id}`"
-          class="gantt-bar-overlay"
-          :class="{ 'gantt-bar-overlay--dragging': activeDrag?.taskId === position.task.id }"
-          type="button"
-          :data-test="`gantt-bar-${position.task.id}`"
-          :title="taskTooltip(position.task)"
-          :style="{
-            top: `${position.top}px`,
-            left: `${position.left}px`,
-            width: `${position.width}px`,
-          }"
-          @click.stop="selectRow(position.task)"
-          @pointerdown.stop="startDrag(position.task, $event)"
-          @pointermove.stop="moveDrag"
-          @pointerup.stop="finishDrag(position.task, $event)"
-          @pointercancel.stop="cancelDrag"
-        >
-          {{ position.task.code }}
-        </button>
+            <Tooltip v-for="position in barPositions" :key="`bar-${position.task.id}`">
+              <TooltipTrigger as-child>
+                <button
+                  class="gantt-bar-overlay"
+                  :class="{ 'gantt-bar-overlay--dragging': activeDrag?.taskId === position.task.id }"
+                  type="button"
+                  :data-test="`gantt-bar-${position.task.id}`"
+                  :style="{
+                    top: `${position.top}px`,
+                    left: `${position.left}px`,
+                    width: `${position.width}px`,
+                  }"
+                  @click.stop="selectRow(position.task)"
+                  @pointerdown.stop="startDrag(position.task, $event)"
+                  @pointermove.stop="moveDrag"
+                  @pointerup.stop="finishDrag(position.task, $event)"
+                  @pointercancel.stop="cancelDrag"
+                >
+                  {{ position.task.code }}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" align="start">
+                {{ taskTooltip(position.task) }}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
     </div>
