@@ -42,15 +42,6 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
   rows.forEach((row, index) => {
     const y = index * options.rowHeight
     elements.push({
-      id: `resource-${row.id}`,
-      kind: 'row-label',
-      x: 0,
-      y: y + 9,
-      text: `${row.workCenterCode} ${row.name}`,
-      fill: '#0f172a',
-      metadata: { resourceId: row.id },
-    })
-    elements.push({
       id: `resource-line-${row.id}`,
       kind: 'grid-line',
       x: 0,

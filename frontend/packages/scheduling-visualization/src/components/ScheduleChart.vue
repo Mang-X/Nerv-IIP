@@ -381,6 +381,7 @@ function cancelDrag(event: PointerEvent) {
 .scheduling-chart__surface {
   position: absolute;
   inset: 0 auto auto 0;
+  pointer-events: none;
 }
 
 .scheduling-chart__rows {

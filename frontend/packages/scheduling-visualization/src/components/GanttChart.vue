@@ -403,6 +403,7 @@ onBeforeUnmount(() => {
 .scheduling-chart__surface {
   position: absolute;
   inset: 0 auto auto 0;
+  pointer-events: none;
 }
 
 .scheduling-chart__rows {
@@ -414,13 +415,15 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 0;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 96px 86px 24px 24px;
+  grid-template-columns: minmax(0, 1fr) 18px 18px;
+  grid-template-rows: 1fr 1fr;
   align-items: center;
-  width: 100%;
-  padding: 0 12px;
+  width: 220px;
+  padding: 5px 10px;
   border: 0;
+  border-right: 1px solid rgba(226, 232, 240, 0.9);
   border-bottom: 1px solid rgba(226, 232, 240, 0.82);
-  background: transparent;
+  background: rgba(255, 255, 255, 0.92);
   color: #0f172a;
   cursor: pointer;
   font: inherit;
@@ -461,6 +464,8 @@ onBeforeUnmount(() => {
 
 .gantt-row__main {
   display: flex;
+  grid-column: 1 / 2;
+  grid-row: 1 / 2;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -507,6 +512,16 @@ onBeforeUnmount(() => {
   font-weight: 650;
 }
 
+.gantt-row__code {
+  grid-column: 1 / 2;
+  grid-row: 2 / 3;
+  padding-left: 28px;
+}
+
+.gantt-row__status {
+  display: none;
+}
+
 .gantt-row__code,
 .gantt-row__status {
   color: #475569;
@@ -514,6 +529,7 @@ onBeforeUnmount(() => {
 }
 
 .gantt-row__icon {
+  grid-row: 1 / 3;
   color: #64748b;
 }
 
@@ -528,7 +544,8 @@ onBeforeUnmount(() => {
   }
 
   .gantt-row {
-    grid-template-columns: minmax(190px, 1fr) 72px 74px 20px 20px;
+    grid-template-columns: minmax(0, 1fr) 18px 18px;
+    width: 220px;
     padding-inline: 10px;
   }
 }

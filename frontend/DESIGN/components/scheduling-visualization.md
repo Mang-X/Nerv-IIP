@@ -38,6 +38,7 @@ Layer: Component package | Source: custom Vue + Leafer UI + `@nerv-iip/ui`
 - Do: keep Leafer-specific APIs inside the package adapter.
 - Do: pass immutable fixture snapshots and explicit preview maps to renderers.
 - Do: use `pnpm -C frontend --filter @nerv-iip/scheduling-visualization dev` for package-local browser checks.
+- Do: keep the package preview wired to Tailwind/shadcn sources and semantic tokens so `@nerv-iip/ui` primitives render as design-system components, not native controls.
 - Don't: import `leafer-ui` directly from Console pages.
 - Don't: connect these components to generated API clients in this foundation slice.
 - Don't: create page-local Gantt CSS or a second scheduling component set.

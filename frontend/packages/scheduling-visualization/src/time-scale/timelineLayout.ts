@@ -46,10 +46,28 @@ export function buildTimelineTicks(options: BuildTimelineTickOptions): TimelineT
     zoom: options.zoom,
   })
 
-  return scale.ticks.map((tick) => ({
+  const minimumLabelGap = options.zoom === 'day' ? 48 : 58
+  const ticks = scale.ticks.map((tick) => ({
     ...tick,
     x: options.labelWidth + tick.x,
   }))
+
+  const visibleTicks: TimelineTick[] = []
+  ticks.forEach((tick, index) => {
+    const isFirstTick = index === 0
+    const isLastTick = index === ticks.length - 1
+    const previousVisible = visibleTicks.at(-1)
+    if (isLastTick && previousVisible && tick.x - previousVisible.x < minimumLabelGap) {
+      visibleTicks[visibleTicks.length - 1] = tick
+      return
+    }
+
+    if (isFirstTick || !previousVisible || tick.x - previousVisible.x >= minimumLabelGap) {
+      visibleTicks.push(tick)
+    }
+  })
+
+  return visibleTicks
 }
 
 export function buildGanttBarPositions(options: {
@@ -145,4 +163,3 @@ export function shiftWindowByPixels(options: {
     end: scale.xToDate(endX + options.deltaX).toISOString(),
   }
 }
-

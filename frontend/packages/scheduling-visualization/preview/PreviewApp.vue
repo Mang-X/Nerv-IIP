@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Badge, Card, CardContent, CardHeader, CardTitle } from '@nerv-iip/ui'
 import { shallowRef } from 'vue'
 
 import type {
@@ -27,87 +28,71 @@ function recordCommit(previewById: Record<string, SchedulingPreviewWindow>) {
 
 <template>
   <main class="preview-shell">
-    <header class="preview-header">
-      <div>
-        <p class="preview-eyebrow">Nerv-IIP package preview</p>
-        <h1>Scheduling Visualization</h1>
-      </div>
-      <div class="preview-state" data-test="preview-state">
-        <span>Selection: {{ lastSelection?.source ?? 'none' }}</span>
-        <span>Preview: {{ lastCommand?.targetId ?? 'none' }}</span>
-        <span>Committed: {{ Object.keys(committedPreview).length }}</span>
-      </div>
-    </header>
+    <Card size="sm" class="preview-header">
+      <CardHeader class="preview-header__content">
+        <div class="preview-header__title">
+          <p class="preview-eyebrow">Nerv-IIP package preview</p>
+          <CardTitle class="preview-title">Scheduling Visualization</CardTitle>
+        </div>
+        <div class="preview-state" data-test="preview-state">
+          <Badge variant="outline">Selection: {{ lastSelection?.source ?? 'none' }}</Badge>
+          <Badge variant="outline">Preview: {{ lastCommand?.targetId ?? 'none' }}</Badge>
+          <Badge variant="secondary">Committed: {{ Object.keys(committedPreview).length }}</Badge>
+        </div>
+      </CardHeader>
+    </Card>
 
-    <SchedulingWorkspace
-      @selection-change="recordSelection"
-      @preview-command="recordCommand"
-      @commit-preview="recordCommit"
-      @reset-preview="committedPreview = {}"
-    />
+    <Card size="sm" class="preview-workspace-card">
+      <CardContent class="preview-workspace-card__content">
+        <SchedulingWorkspace
+          @selection-change="recordSelection"
+          @preview-command="recordCommand"
+          @commit-preview="recordCommit"
+          @reset-preview="committedPreview = {}"
+        />
+      </CardContent>
+    </Card>
   </main>
 </template>
 
-<style>
-:root {
-  --background: 0 0% 100%;
-  --foreground: 222 47% 11%;
-  --border: 214 32% 91%;
-  --primary: 217 91% 60%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 210 40% 96%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  --destructive: 0 84% 60%;
-  --ring: 217 91% 60%;
-  --input: 214 32% 91%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  min-width: 320px;
-  margin: 0;
-  background: #eef2f7;
-  color: #0f172a;
-  font-family: "Segoe UI", system-ui, sans-serif;
-}
-
+<style scoped>
 .preview-shell {
   display: grid;
+  align-content: start;
   gap: 16px;
   width: min(1440px, 100%);
-  min-height: 100vh;
   margin: 0 auto;
-  padding: 18px;
+  padding: 16px;
 }
 
 .preview-header {
+  overflow: visible;
+}
+
+.preview-header__content {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 16px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 8px;
-  background: hsl(var(--background));
+}
+
+.preview-header__title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
 .preview-eyebrow {
   margin: 0;
-  color: #475569;
+  color: hsl(var(--muted-foreground));
   font-size: 12px;
   font-weight: 750;
 }
 
-.preview-header h1 {
-  margin: 2px 0 0;
+.preview-title {
+  margin: 0;
   font-size: 24px;
+  font-weight: 750;
   letter-spacing: 0;
 }
 
@@ -116,16 +101,14 @@ body {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
-  color: #334155;
-  font-size: 12px;
-  font-weight: 650;
 }
 
-.preview-state span {
-  padding: 5px 8px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 7px;
-  background: #f8fafc;
+.preview-workspace-card {
+  overflow: visible;
+}
+
+.preview-workspace-card__content {
+  min-width: 0;
 }
 
 @media (max-width: 720px) {
@@ -133,7 +116,7 @@ body {
     padding: 10px;
   }
 
-  .preview-header {
+  .preview-header__content {
     align-items: start;
     flex-direction: column;
   }
@@ -143,4 +126,3 @@ body {
   }
 }
 </style>
-

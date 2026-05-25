@@ -57,15 +57,6 @@ function addGrid(
   rows.forEach((row, index) => {
     const y = index * rowHeight
     elements.push({
-      id: `row-label-${row.id}`,
-      kind: 'row-label',
-      x: 0,
-      y: y + 7,
-      text: `${'  '.repeat(row.depth)}${row.name}`,
-      fill: '#0f172a',
-      metadata: { taskId: row.id, depth: row.depth },
-    })
-    elements.push({
       id: `row-line-${row.id}`,
       kind: 'grid-line',
       x: 0,
