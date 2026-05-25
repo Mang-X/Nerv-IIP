@@ -58,28 +58,31 @@ describe('dependency routing', () => {
     expect(intermediateSegments(route).some((segment) => segmentCrossesRectInterior(segment, target))).toBe(false)
   })
 
-  it('uses a compact top-edge route when forward tasks have enough horizontal space', () => {
+  it('uses a direct centerline route when same-row forward tasks have enough horizontal space', () => {
     const source = { left: 300, top: 52, width: 100, height: 22 }
     const target = { left: 520, top: 52, width: 120, height: 22 }
     const route = buildDependencyRoute({ source, target, type: 'finish-start' })
 
     expect(route).toEqual([
-      { x: 400, y: 52 },
-      { x: 520, y: 52 },
+      { x: 400, y: 63 },
+      { x: 520, y: 63 },
     ])
   })
 
-  it('pushes route columns outside overlapping task rectangles before changing rows', () => {
-    const source = { left: 300, top: 52, width: 180, height: 22 }
-    const target = { left: 410, top: 52, width: 260, height: 22 }
+  it('uses a top bridge for same-row finish-start tasks when the horizontal gap is too small', () => {
+    const source = { left: 300, top: 52, width: 100, height: 22 }
+    const target = { left: 408, top: 52, width: 120, height: 22 }
     const route = buildDependencyRoute({ source, target, type: 'finish-start' })
 
-    expect(route[1].x).toBeGreaterThan(target.left + target.width)
-    expect(intermediateSegments(route).some((segment) => segmentCrossesRectInterior(segment, source))).toBe(false)
-    expect(intermediateSegments(route).some((segment) => segmentCrossesRectInterior(segment, target))).toBe(false)
+    expect(route).toEqual([
+      { x: 350, y: 52 },
+      { x: 350, y: 40 },
+      { x: 468, y: 40 },
+      { x: 468, y: 52 },
+    ])
   })
 
-  it('keeps same-row links on an external lane instead of drawing through either block', () => {
+  it('uses a top bridge for same-row overlapping task rectangles', () => {
     const source = { left: 300, top: 52, width: 180, height: 22 }
     const target = { left: 430, top: 52, width: 260, height: 22 }
     const route = buildDependencyRoute({ source, target, type: 'finish-start' })
@@ -87,6 +90,19 @@ describe('dependency routing', () => {
     expect(route.some((point) => point.y < source.top)).toBe(true)
     expect(intermediateSegments(route).some((segment) => segmentCrossesRectInterior(segment, source))).toBe(false)
     expect(intermediateSegments(route).some((segment) => segmentCrossesRectInterior(segment, target))).toBe(false)
+  })
+
+  it('uses the row gap for cross-row finish-start tasks that touch horizontally', () => {
+    const source = { left: 249, top: 51, width: 201, height: 22 }
+    const target = { left: 450, top: 95, width: 268, height: 22 }
+    const route = buildDependencyRoute({ source, target, type: 'finish-start' })
+
+    expect(route).toEqual([
+      { x: 349.5, y: 73 },
+      { x: 349.5, y: 84 },
+      { x: 584, y: 84 },
+      { x: 584, y: 95 },
+    ])
   })
 
   it('keeps intermediate route points inside the timeline area near the frozen column', () => {

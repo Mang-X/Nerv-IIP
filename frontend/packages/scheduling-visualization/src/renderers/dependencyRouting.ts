@@ -27,6 +27,14 @@ function bottom(rect: DependencyRouteRect) {
   return rect.top + rect.height
 }
 
+function centerX(rect: DependencyRouteRect) {
+  return rect.left + rect.width / 2
+}
+
+function centerY(rect: DependencyRouteRect) {
+  return rect.top + rect.height / 2
+}
+
 function sideForSource(type: DependencyRouteType): RouteSide {
   return type.startsWith('start') ? 'left' : 'right'
 }
@@ -38,7 +46,7 @@ function sideForTarget(type: DependencyRouteType): RouteSide {
 function portFor(rect: DependencyRouteRect, side: RouteSide): SchedulingScenePoint {
   return {
     x: side === 'left' ? rect.left : right(rect),
-    y: rect.top + rect.height / 2,
+    y: centerY(rect),
   }
 }
 
@@ -114,6 +122,56 @@ function hasForwardHorizontalSpace(
   return target.left - right(source) >= clearance * 2
 }
 
+function isSameRow(source: DependencyRouteRect, target: DependencyRouteRect) {
+  return Math.abs(source.top - target.top) < 1
+}
+
+function isForwardOrNear(
+  source: DependencyRouteRect,
+  target: DependencyRouteRect,
+  clearance: number,
+) {
+  return target.left >= right(source) - clearance * 2
+}
+
+function buildBridgeRoute(
+  source: DependencyRouteRect,
+  target: DependencyRouteRect,
+  clearance: number,
+  minimumX: number,
+) {
+  let sourcePort: SchedulingScenePoint
+  let targetPort: SchedulingScenePoint
+  let laneY: number
+
+  if (bottom(source) <= target.top) {
+    sourcePort = { x: centerX(source), y: bottom(source) }
+    targetPort = { x: centerX(target), y: target.top }
+    laneY = Math.round(bottom(source) + (target.top - bottom(source)) / 2)
+  }
+  else if (bottom(target) <= source.top) {
+    sourcePort = { x: centerX(source), y: source.top }
+    targetPort = { x: centerX(target), y: bottom(target) }
+    laneY = Math.round(bottom(target) + (source.top - bottom(target)) / 2)
+  }
+  else {
+    const aboveLaneY = Math.min(source.top, target.top) - clearance
+    const useTopBridge = aboveLaneY >= 0
+    laneY = useTopBridge
+      ? aboveLaneY
+      : Math.max(bottom(source), bottom(target)) + clearance
+    sourcePort = { x: centerX(source), y: useTopBridge ? source.top : bottom(source) }
+    targetPort = { x: centerX(target), y: useTopBridge ? target.top : bottom(target) }
+  }
+
+  return dedupePoints([
+    sourcePort,
+    { x: Math.max(sourcePort.x, minimumX), y: laneY },
+    { x: Math.max(targetPort.x, minimumX), y: laneY },
+    targetPort,
+  ])
+}
+
 function buildTopForwardRoute(
   source: DependencyRouteRect,
   target: DependencyRouteRect,
@@ -146,6 +204,20 @@ export function buildDependencyRoute(options: BuildDependencyRouteOptions): Sche
   const minimumX = options.minimumX ?? 0
   const sourceSide = sideForSource(options.type)
   const targetSide = sideForTarget(options.type)
+  const sourcePort = portFor(options.source, sourceSide)
+  const targetPort = portFor(options.target, targetSide)
+
+  if (isSameRow(options.source, options.target)) {
+    if (
+      sourceSide === 'right'
+      && targetSide === 'left'
+      && hasForwardHorizontalSpace(options.source, options.target, clearance)
+    ) {
+      return dedupePoints([sourcePort, targetPort])
+    }
+
+    return buildBridgeRoute(options.source, options.target, clearance, minimumX)
+  }
 
   if (
     sourceSide === 'right'
@@ -162,8 +234,14 @@ export function buildDependencyRoute(options: BuildDependencyRouteOptions): Sche
     )
   }
 
-  const sourcePort = portFor(options.source, sourceSide)
-  const targetPort = portFor(options.target, targetSide)
+  if (
+    sourceSide === 'right'
+    && targetSide === 'left'
+    && isForwardOrNear(options.source, options.target, clearance)
+  ) {
+    return buildBridgeRoute(options.source, options.target, clearance, minimumX)
+  }
+
   const laneY = chooseLaneY(options.source, options.target, clearance)
   const sourceExitX = Math.max(
     routeXOutside(sourcePort.x, sourceSide, clearance, [options.target], sourcePort.y, laneY),
