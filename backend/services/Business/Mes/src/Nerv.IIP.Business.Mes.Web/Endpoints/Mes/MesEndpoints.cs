@@ -96,7 +96,6 @@ public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
 
         Tags("Business MES");
         Policies(InternalServiceAuthorizationPolicy.Name);
-        Permissions(contract.PermissionCode);
     }
 }
 

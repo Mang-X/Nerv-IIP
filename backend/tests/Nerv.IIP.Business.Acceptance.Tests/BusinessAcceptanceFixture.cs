@@ -36,6 +36,12 @@ public sealed class BusinessAcceptanceHarnessInfrastructureTests
     }
 
     [Fact]
+    public void Fixture_declares_live_http_testserver_execution_mode()
+    {
+        Assert.Equal("live-http-testserver-via-service-web-tests", _fixture.ExecutionMode);
+    }
+
+    [Fact]
     public void Event_recorder_keeps_events_grouped_by_correlation()
     {
         var correlation = _fixture.BeginCorrelation("plan-to-produce");
@@ -111,6 +117,8 @@ public sealed class BusinessAcceptanceFixture : IDisposable
     public string OrganizationId { get; } = "org-acceptance";
 
     public string EnvironmentId { get; } = "env-acceptance";
+
+    public string ExecutionMode { get; } = "live-http-testserver-via-service-web-tests";
 
     public BusinessAcceptanceFixtureEventRecorder Events { get; } = new();
 

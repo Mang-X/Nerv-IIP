@@ -30,7 +30,6 @@ public abstract class InventoryEndpoint<TRequest, TResponse> : Endpoint<TRequest
 
         Tags("Business Inventory");
         Policies(contract.AuthorizationPolicy);
-        Permissions(contract.PermissionCode);
     }
 }
 

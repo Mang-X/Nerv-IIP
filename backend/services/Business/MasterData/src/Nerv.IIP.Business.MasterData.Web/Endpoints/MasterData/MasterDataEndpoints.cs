@@ -38,7 +38,6 @@ public abstract class MasterDataEndpoint<TRequest, TResponse> : Endpoint<TReques
 
         Tags("Business MasterData");
         Policies(InternalServiceAuthorizationPolicy.Name);
-        Permissions(contract.PermissionCode);
     }
 }
 

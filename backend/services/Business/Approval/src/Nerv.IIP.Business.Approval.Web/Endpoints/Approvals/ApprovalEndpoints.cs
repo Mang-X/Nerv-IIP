@@ -30,7 +30,6 @@ public abstract class ApprovalEndpoint<TRequest, TResponse> : Endpoint<TRequest,
 
         Tags("Business Approval");
         Policies(contract.AuthorizationPolicy);
-        Permissions(contract.PermissionCode);
     }
 }
 

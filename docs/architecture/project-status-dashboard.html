@@ -366,21 +366,21 @@
       <div class="panel hero-copy">
         <div class="meta">
           <span class="pill green">业务 MVP 后端已成形</span>
-          <span class="pill amber">#77 是下一主线</span>
-          <span class="pill red">#78 甘特/RFC 已排除</span>
+          <span class="pill green">#77 P0 收口 PR</span>
+          <span class="pill red">合并后开放项仅 #78 / #142</span>
         </div>
         <h1>Nerv-IIP 项目状态看板</h1>
         <p>
-          生成时间：2026-05-23（分析快照，非实时看板）。基于 <code>implementation-readiness.md</code>、代码目录、验证脚本、
-          GitHub issue 与 3 个只读 worker 核查结果。当前判断：平台控制面和业务服务骨架已经越过“纸面规划”，
-          接下来应把业务 MVP 的跨服务验收与基础能力补洞并行推进。
+          生成时间：2026-05-25（文档收口快照，非实时看板）。基于 <code>implementation-readiness.md</code>、代码目录、验证脚本、
+          GitHub issue 与端口矩阵核查结果。当前判断：平台控制面、业务服务 MVP、BusinessGateway/BusinessConsole、
+          FileStorage MVP、事件可靠性、生产部署 artifacts、性能 smoke 与 #77 P0 full-chain acceptance 已形成基线；接下来应优先推进 #142 对象存储、PDA/mobile、事件可靠性和部署发布 hardening。
         </p>
       </div>
       <div class="panel hero-kpis" aria-label="项目关键指标">
         <div class="kpi"><strong>12</strong><span>业务服务已存在 Domain / Infrastructure / Web / tests</span></div>
-        <div class="kpi"><strong>5107-5118</strong><span>业务服务本地端口已纳入 Aspire AppHost</span></div>
-        <div class="kpi"><strong>7</strong><span>#77 计划覆盖的全链路验收场景</span></div>
-        <div class="kpi"><strong>3</strong><span>#141 / #142 / #143 仍是基础一期开放子项</span></div>
+        <div class="kpi"><strong>5100-5125</strong><span>平台、业务、Gateway 与 Console 端口矩阵已冻结</span></div>
+        <div class="kpi"><strong>7</strong><span>#77 P0 验收覆盖的全链路场景</span></div>
+        <div class="kpi"><strong>2</strong><span>合并后开放 issue：#78 / #142</span></div>
       </div>
     </section>
 
@@ -391,12 +391,12 @@
         <p>MasterData、ProductEngineering、Inventory、Quality、MES、DemandPlanning、BarcodeLabel、Approval、WMS、IndustrialTelemetry、Maintenance、ERP 都有代码与验证入口。</p>
       </article>
       <article class="section-card lane">
-        <h3>现在缺的是跨域成链</h3>
-        <p><code>backend/tests/Nerv.IIP.Business.Acceptance.Tests</code> 和 <code>scripts/verify-business-full-chain-acceptance.ps1</code> 已补 baseline 入口；#77 仍需继续扩展为真实 HTTP 全链路验收。</p>
+        <h3>#77 P0 已收口</h3>
+        <p><code>backend/tests/Nerv.IIP.Business.Acceptance.Tests</code> 和 <code>scripts/verify-business-full-chain-acceptance.ps1</code> 已覆盖七条链路 acceptance evidence；WMS 另有 service-local live HTTP TestServer proof 验证 WCS 失败、重试和完成查询。</p>
       </article>
       <article class="section-card lane amber">
         <h3>基础能力要贴着业务补</h3>
-        <p>FileStorage 上传、业务控制台组件、Notification 上下文、IAM/部署/观测应和 #77 并行，避免后端能力无人能用、问题无人能查。</p>
+        <p>FileStorage 本地 metadata/tus 与业务控制台组件已进入基线；下一步应把 #142 object storage、PDA/mobile、部署发布和事件可靠性作为独立 hardening 推进。</p>
       </article>
     </div>
 
@@ -406,7 +406,7 @@
         <div class="layer-title">Console / BFF</div>
         <div class="node">Vue Console：实例、Ops、IAM、Notifications</div>
         <div class="node">PlatformGateway：Console facade + permission enforcement</div>
-        <div class="node amber">业务控制台页面尚未展开</div>
+        <div class="node green">BusinessGateway + BusinessConsole：业务控制台入口已纳入端口矩阵</div>
       </section>
       <section class="layer">
         <div class="layer-title">Platform Control Plane</div>
@@ -428,7 +428,8 @@
         <div class="node cyan">Connector Host + Docker Connector</div>
         <div class="node cyan">Aspire AppHost 单一拓扑入口</div>
         <div class="node cyan">PostgreSQL / Redis / MinIO / OTel</div>
-        <div class="node amber">Compose / 安装包 / 生产发布仍待补齐</div>
+        <div class="node cyan">Compose overlay / zip package / production env 模板已形成基线</div>
+        <div class="node amber">客户现场 Windows Service/systemd、备份恢复演练仍待补齐</div>
       </section>
     </div>
 
@@ -444,14 +445,14 @@
       </thead>
       <tbody>
         <tr><td>MasterData</td><td>SKU、UOM、组织、人员技能、工厂、产线、班次、工作中心、设备、参考数据</td><td><span class="status done">已实现</span></td><td>作为 #77 fixture 与公共 resolve/validate 基础</td></tr>
-        <tr><td>ProductEngineering</td><td>工程文档、工程物料、EBOM、MBOM、Routing、ECO/ECN、ProductionVersion</td><td><span class="status done">已实现</span></td><td>与 MES / MRP 的 release facts 验收成链</td></tr>
+        <tr><td>ProductEngineering</td><td>工程文档、工程物料、EBOM、MBOM、Routing、ECO/ECN、ProductionVersion</td><td><span class="status done">已实现</span></td><td>与 MES / MRP 的 release facts 已纳入 #77 P0 验收</td></tr>
         <tr><td>Inventory</td><td>库存地点、台账、移动、盘点任务与调整</td><td><span class="status done">已实现</span></td><td>预留/冻结、批次谱系、成本候选联动</td></tr>
         <tr><td>Quality</td><td>NCR、InspectionPlan、InspectionRecord、收货/工序/终检事实</td><td><span class="status done">已实现</span></td><td>采购入库、生产报工后的检验验收</td></tr>
-        <tr><td>MES</td><td>工单、工序任务、报工、完工入库请求、排产结果</td><td><span class="status done">已实现</span></td><td>补足公开查询面，支撑验收断言</td></tr>
-        <tr><td>DemandPlanning</td><td>需求源、MPS/MRP、pegging、计划采购/工单建议</td><td><span class="status done">已实现</span></td><td>建议 accept 后对 ERP/MES downstream reference 成链</td></tr>
+        <tr><td>MES</td><td>工单、工序任务、报工、完工入库请求、排产结果</td><td><span class="status done">已实现</span></td><td>生产报工、完工入库请求和产能影响查询支撑 #77 P0</td></tr>
+        <tr><td>DemandPlanning</td><td>需求源、MPS/MRP、pegging、计划采购/工单建议</td><td><span class="status done">已实现</span></td><td>建议 accept 后对 ERP/MES downstream reference 已纳入 #77 P0 evidence</td></tr>
         <tr><td>BarcodeLabel</td><td>条码规则、标签模板、打印批次、扫码记录</td><td><span class="status done">已实现</span></td><td>接入 WMS/MES/质检场景的 scan proof</td></tr>
         <tr><td>Approval</td><td>审批模板、审批链、审批步骤与审批结果事件</td><td><span class="status done">已实现</span></td><td>和高风险动作、业务单据审批区分边界</td></tr>
-        <tr><td>WMS</td><td>入库、出库、仓库任务、盘点执行、WCS adapter 边界</td><td><span class="status done">已实现</span></td><td>真实 Inventory posting adapter 与公共事件契约</td></tr>
+        <tr><td>WMS</td><td>入库、出库、仓库任务、盘点执行、WCS adapter 边界</td><td><span class="status done">已实现</span></td><td>WCS 可观测事实已有 live HTTP TestServer proof</td></tr>
         <tr><td>IndustrialTelemetry</td><td>Tag、设备状态快照、报警、采集汇总</td><td><span class="status done">已实现</span></td><td>保持控制命令与凭据在外部边界</td></tr>
         <tr><td>Maintenance</td><td>维修工单、保养计划、点检、停机原因、备件行</td><td><span class="status done">已实现</span></td><td>报警触发开单幂等、资产不可用/恢复事件验收</td></tr>
         <tr><td>ERP</td><td>采购、销售、应收应付、凭证、成本候选</td><td><span class="status done">已实现</span></td><td>完整总账月结、税务/银行/发布 bundle 后置</td></tr>
@@ -468,49 +469,46 @@
         </tr>
       </thead>
       <tbody>
-        <tr><td>#77 Full-chain acceptance</td><td><span class="status next">下一主线</span></td><td>创建业务验收测试项目、7 条链路测试、聚合 verify 脚本；完成后业务 MVP 才算真正可演示。</td></tr>
-        <tr><td>#141 FileStorage tus hardening</td><td><span class="status gap">并行基础</span></td><td>补 size、checksum、expiration、协议兼容；优先级高于 #142。</td></tr>
-        <tr><td>#143 Business console component readiness</td><td><span class="status gap">并行基础</span></td><td>补 Tabs、Sheet、Date/Range、Chart、FileUpload、Progress、ScrollArea，先入 <code>@nerv-iip/ui</code>。</td></tr>
-        <tr><td>#142 MinIO/S3 multipart</td><td><span class="status gap">后置基础</span></td><td>生产对象存储直传前再做，不阻塞业务 MVP。</td></tr>
-        <tr><td>#71 基础设施二期</td><td><span class="status gap">需拆分</span></td><td>拆成 integration-events/outbox、IAM/security、deployment、performance 四条 issue 线。</td></tr>
-        <tr><td>#73 / #74 / #75</td><td><span class="status gap">Epic 状态待清理</span></td><td>子 issue 已关闭且代码存在，建议更新 issue 正文并关闭或改为验收跟踪。</td></tr>
-        <tr><td>#78 甘特/RFC</td><td><span class="status gap">本轮排除</span></td><td>只保留技术方案评估，不进入本轮业务后端与基础能力实施。</td></tr>
+        <tr><td>#77 Full-chain acceptance</td><td><span class="status done">P0 收口</span></td><td>默认 governed verify 覆盖 WMS live HTTP TestServer proof、MES/ERP public surfaces 和七条链路 acceptance evidence；合并 PR 后关闭。</td></tr>
+        <tr><td>#142 MinIO/S3 multipart</td><td><span class="status gap">开放补强</span></td><td>FileStorage MVP 与 tus hardening 已落地；#142 聚焦 post-MVP MinIO/S3 multipart/object storage provider。</td></tr>
+        <tr><td>#78 甘特/RFC</td><td><span class="status gap">开放 RFC</span></td><td>只保留为 shadcn-vue + Leafer UI 甘特/排产图技术方案评估，不进入当前后端/domain 主线。</td></tr>
+        <tr><td>#70 / #71 / #141 / #143</td><td><span class="status done">已关闭</span></td><td>平台一期/二期、FileStorage tus hardening 和 Business Console component readiness 已形成当前基线；后续增量另开 issue。</td></tr>
+        <tr><td>#127-#140</td><td><span class="status done">已关闭</span></td><td>业务 waves、ERP、全链路 baseline support 和 equipment reliability 已落地；#77 P0 收口 PR 承接最终关闭。</td></tr>
+        <tr><td>#166-#175</td><td><span class="status done">已关闭</span></td><td>Security、event reliability、ExternalClient、production deployment artifacts 与 performance baseline 已进入当前事实源。</td></tr>
       </tbody>
     </table>
 
     <h2>下一阶段并行路线</h2>
     <div class="grid-2">
       <article class="section-card lane green">
-        <h3>业务 MVP 主线：#77</h3>
+        <h3>#142：对象存储补强</h3>
         <ul>
-          <li>Worker A：验收 harness、fixture、event recorder、<code>verify-business-full-chain-acceptance.ps1</code>。</li>
-          <li>Worker B：工程到制造、计划到采购/生产链路。</li>
-          <li>Worker C：采购到库存到应付、订单到交付到应收、生产到成本链路。</li>
-          <li>Worker D：设备到维护到产能、WMS-WCS adapter 链路。</li>
+          <li>在 FileStorage metadata/local+tus MVP 之后，补 MinIO/S3 multipart provider 与大文件直传能力。</li>
+          <li>保持业务服务只表达 fileId/FileReference，不直接管理对象存储、bucket 或凭据。</li>
+          <li>验收需要覆盖 provider 切换、multipart 生命周期、checksum/size 与失败清理。</li>
         </ul>
       </article>
       <article class="section-card lane">
-        <h3>基础能力并行</h3>
+        <h3>PDA / Mobile 业务入口</h3>
         <ul>
-          <li>FileStorage：Gateway/Console facade、FileUpload wrapper、tus 硬化。</li>
-          <li>Design System：业务页面所需组件先进入 <code>@nerv-iip/ui</code>。</li>
-          <li>Notification：修复组织/环境 headers，再做偏好、订阅、限流与 provider。</li>
-          <li>IAM / Ops / Observability：生产暴露策略、高风险动作审批、诊断附件与日志入口。</li>
+          <li>围绕扫码、离线、WMS/MES/Quality 现场任务拆分移动 facade、Capacitor/scanner 和 UI issue。</li>
+          <li>业务控制台继续走 BusinessGateway/BusinessConsole；移动端不直接跨服务拼装领域逻辑。</li>
+          <li>附件、照片和证据仍统一走 FileStorage，不直连对象存储。</li>
         </ul>
       </article>
       <article class="section-card lane amber">
-        <h3>业务控制台切入点</h3>
+        <h3>事件可靠性 hardening</h3>
         <ul>
-          <li>先做信息架构与模块导航，不急着把所有业务页一次铺开。</li>
-          <li>第一屏建议选 MasterData + Inventory + Quality + MES 的列表/详情/创建流。</li>
-          <li>附件、证据、照片、CAD 包统一走 FileStorage 与 FileUpload，不直连对象存储。</li>
+          <li>继续扩展 outbox/inbox、幂等、重试和事件健康面。</li>
+          <li>补跨进程多服务 CAP 联调、持久 inbox、DLQ 自动 replay executor 和管理入口。</li>
+          <li>#77 P0 验收脚本继续作为业务链路回归入口。</li>
         </ul>
       </article>
       <article class="section-card lane violet">
-        <h3>治理与验证</h3>
+        <h3>发布 / 可靠性硬化</h3>
         <ul>
-          <li>每条业务链只通过公开 HTTP API 与 IntegrationEvent 可见事实断言。</li>
-          <li>不跨 schema FK，不引用其它服务 Domain / Infrastructure。</li>
+          <li>生产 artifacts 已有基线；下一步补 Windows Service/systemd、备份恢复演练、seed 清单和现场诊断。</li>
+          <li>真实 PostgreSQL/RabbitMQ/外部设备联调作为 hardening profile 增量，不阻塞 #77 P0 关闭。</li>
           <li>新脚本必须 dot-source <code>scripts/lib/ScriptAutomation.ps1</code> 并过治理检查。</li>
         </ul>
       </article>
@@ -519,16 +517,16 @@
     <h2>已知风险</h2>
     <div class="grid-3">
       <article class="section-card">
-        <h3>验收断言可能缺查询面</h3>
-        <p>MES、WMS、Maintenance 等服务可能需要补少量只读 API，才能让 #77 不靠数据库直读。</p>
+        <h3>真实基础设施联调未默认开启</h3>
+        <p>#77 P0 默认使用 TestServer 与本地验证 profile；PostgreSQL/RabbitMQ/外部设备联调仍需后续 hardening profile 覆盖。</p>
       </article>
       <article class="section-card">
-        <h3>Notification 页面上下文缺口</h3>
-        <p>worker 核到前端调用 Notification facade 时未显式传 <code>X-Organization-Id</code> / <code>X-Environment-Id</code>，运行时可能 400。</p>
+        <h3>对象存储仍是 post-MVP</h3>
+        <p>#142 未完成前，FileStorage 不应被宣传为已具备生产级 MinIO/S3 multipart 直传能力。</p>
       </article>
       <article class="section-card">
-        <h3>业务界面落后于后端</h3>
-        <p>目前 Console 已有平台实例、Ops、IAM、Notifications，但业务服务还没有相应的业务控制台页面。</p>
+        <h3>客户交付闭环未完成</h3>
+        <p>Compose、生产环境模板和 zip package 已有基线，但最终客户安装器、服务注册、备份恢复和现场运维手册仍需专项收口。</p>
       </article>
     </div>
 
@@ -542,7 +540,8 @@
       <li><code>infra/aspire/Nerv.IIP.AppHost/Program.cs</code></li>
       <li><code>backend/services/Business/*</code></li>
       <li><code>scripts/verify-business-*.ps1</code></li>
-      <li><code>gh issue list --state all</code>，核对 #70/#71/#73/#74/#75/#77/#141/#142/#143。</li>
+      <li><code>.\nerv.ps1 ports</code>，核对 5100-5125 端口矩阵。</li>
+      <li><code>gh issue list --state open</code>，合并 #77 收口 PR 后核对当前开放项为 #78/#142；<code>gh issue list --state all</code>，核对 #70/#71/#77/#141/#143/#166-#175 已关闭。</li>
     </ul>
   </main>
 </body>

@@ -26,7 +26,6 @@ public abstract class ProductEngineeringEndpoint<TRequest, TResponse> : Endpoint
 
         Tags("Business ProductEngineering");
         Policies(InternalServiceAuthorizationPolicy.Name);
-        Permissions(contract.PermissionCode);
     }
 }
 

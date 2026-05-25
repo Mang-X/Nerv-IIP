@@ -117,10 +117,12 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 | `verify-iam-persistent-auth-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 dotnet/docker/pwsh，输出超时日志和 scoped env 诊断；Ubuntu 22.04.3 `compat-core-verify` 已通过，证据路径为 `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`。 |
 | `verify-fifth-slice-persistence-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、dotnet、solution tests 和 scoped PostgreSQL test environment；baseline exemption 已移除。 |
 | `verify-fourth-slice-real-infra.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、PostgreSQL reset、AppHub/Ops profile tests 和嵌套第三阶段脚本；baseline exemption 已移除。 |
-| `verify-third-slice-console.ps1` | `verify` + `generate` | 需拆分或显式声明混合副作用 | OpenAPI 导出和 api-client 生成应由 `generate` 脚本承载，verify 只调用声明过的 generate step。 |
-| `export-gateway-openapi.ps1` | `generate` | 待迁移 | 声明写入 OpenAPI 快照和服务启动副作用。 |
-| `verify-first-slice.ps1` | `verify` | 待迁移 | 管理本地服务进程和端口 preflight。 |
-| `verify-second-slice-ops.ps1` | `verify` | 待迁移 | 管理 Gateway/Ops/Connector Host 进程树和日志。 |
+| `verify-third-slice-console.ps1` | `verify` + `generate` | 已受治理 | 允许调用已声明的 OpenAPI export/api-client generate step；继续把写入 OpenAPI 快照和 api-client 的副作用归到 generate 分类说明中。 |
+| `verify-first-slice.ps1` | `verify` | 已迁移 | 管理本地服务进程和端口 preflight；baseline exemption 已移除。 |
+| `export-gateway-openapi.ps1` | `generate` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免 `MissingHelper`、`ForbiddenCommand`、`DynamicInvocation` 和 `ForbiddenProcessStart`；迁移时需声明写入 OpenAPI 快照和服务启动副作用。 |
+| `verify-second-slice-ops.ps1` | `verify` | legacy exemption | 仍在 `scripts/script-governance-baseline.json` 中豁免直接命令/进程调用；迁移时需收敛 Gateway/Ops/Connector Host 进程树、日志和端口清理。 |
+
+当前脚本治理 baseline 只保留 `scripts/export-gateway-openapi.ps1` 与 `scripts/verify-second-slice-ops.ps1` 两个 legacy exemption；新增脚本不得复用该例外口径。
 
 ## 新脚本准入
 

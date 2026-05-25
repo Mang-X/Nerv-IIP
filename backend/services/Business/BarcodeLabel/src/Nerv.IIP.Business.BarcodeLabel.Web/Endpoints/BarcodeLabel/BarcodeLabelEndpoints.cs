@@ -35,7 +35,6 @@ public abstract class BarcodeLabelEndpoint<TRequest, TResponse> : Endpoint<TRequ
 
         Tags("Business BarcodeLabel");
         Policies(contract.AuthorizationPolicy);
-        Permissions(contract.PermissionCode);
     }
 }
 
