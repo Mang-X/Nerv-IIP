@@ -35,14 +35,41 @@ export interface ScheduleCapacityBand {
   isOverloaded: boolean
 }
 
+export interface ScheduleDependency {
+  id: string
+  sourceOperationId: string
+  targetOperationId: string
+  type: 'finish-start' | 'start-start' | 'finish-finish'
+}
+
+export interface ScheduleCalendarHighlight {
+  id: string
+  resourceId: string
+  start: string
+  end: string
+  kind: 'working-time' | 'maintenance' | 'downtime' | 'changeover'
+  label: string
+  severity?: 'info' | 'warning' | 'critical'
+}
+
 export interface ScheduleConflict {
   id: string
   targetId: string
   targetKind: 'operation' | 'resource'
   severity: ConflictSeverity
+  submitPolicy?: 'allow' | 'warn' | 'block'
+  reasonCode?:
+    | 'resource-exclusive-overlap'
+    | 'capacity-overload'
+    | 'downtime-window'
+    | 'calendar-non-working'
+    | 'dependency-violation'
+    | 'visual-collision'
   title: string
   description: string
   resolutionHint: string
+  relatedOperationIds?: string[]
+  affectedWindowId?: string
 }
 
 export interface ScheduleFixture {
@@ -53,6 +80,8 @@ export interface ScheduleFixture {
   resources: ScheduleResource[]
   operations: ScheduleOperation[]
   capacityBands: ScheduleCapacityBand[]
+  dependencies: ScheduleDependency[]
+  calendarHighlights: ScheduleCalendarHighlight[]
   conflicts: ScheduleConflict[]
 }
 
@@ -64,6 +93,7 @@ export type ScheduleSelection =
   | { kind: 'resource'; id: string }
   | { kind: 'operation'; id: string }
   | { kind: 'conflict'; id: string }
+  | { kind: 'calendar-highlight'; id: string }
 
 export interface ScheduleChartProps extends ScheduleFixture {
   selected?: ScheduleSelection

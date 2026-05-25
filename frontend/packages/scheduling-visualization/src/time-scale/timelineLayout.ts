@@ -1,5 +1,5 @@
 import type { GanttFixture, GanttRow } from '../model/gantt'
-import type { ScheduleFixture, ScheduleOperation, ScheduleRow } from '../model/schedule'
+import type { ScheduleCalendarHighlight, ScheduleFixture, ScheduleOperation, ScheduleRow } from '../model/schedule'
 import type { SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import type { SchedulingZoom, TimeScaleTick } from './timeScale'
 import { createTimeScale } from './timeScale'
@@ -25,6 +25,19 @@ export interface GanttBarPosition {
 
 export interface ScheduleOperationPosition {
   operation: ScheduleOperation
+  resourceId: string
+  top: number
+  left: number
+  width: number
+  height: number
+  lane: number
+  laneCount: number
+  hasVisualOverlap: boolean
+  hasTimeOverlap: boolean
+}
+
+export interface ScheduleCalendarHighlightPosition {
+  highlight: ScheduleCalendarHighlight
   resourceId: string
   top: number
   left: number
@@ -71,7 +84,7 @@ export function buildTimelineTicks(options: BuildTimelineTickOptions): TimelineT
     zoom: options.zoom,
   })
 
-  const minimumLabelGap = options.zoom === 'day' ? 48 : 58
+  const minimumLabelGap = options.zoom === 'day' ? 72 : options.zoom === 'week' ? 76 : 116
   const ticks = scale.ticks.map((tick) => ({
     ...tick,
     x: options.labelWidth + tick.x,
@@ -93,6 +106,11 @@ export function buildTimelineTicks(options: BuildTimelineTickOptions): TimelineT
   })
 
   return visibleTicks
+}
+
+function rangesOverlap(start: string, end: string, otherStart: string, otherEnd: string) {
+  return new Date(start).getTime() < new Date(otherEnd).getTime()
+    && new Date(end).getTime() > new Date(otherStart).getTime()
 }
 
 export function buildGanttBarPositions(options: {
@@ -143,7 +161,7 @@ export function buildScheduleOperationPositions(options: {
   const rowIndexByResourceId = new Map(options.rows.map((row, index) => [row.id, index]))
   const height = Math.max(Math.min(options.rowHeight - 16, 36), 24)
 
-  return options.fixture.operations.flatMap((operation) => {
+  const positioned = options.fixture.operations.flatMap((operation) => {
     const window = windowFor(
       operation.id,
       { start: operation.start, end: operation.end, resourceId: operation.resourceId },
@@ -161,10 +179,97 @@ export function buildScheduleOperationPositions(options: {
     return [{
       operation,
       resourceId,
+      rowIndex,
+      window,
       top: rowIndex * options.rowHeight + Math.round((options.rowHeight - height) / 2),
       left,
       width: Math.max(endX - left, 72),
       height,
+      lane: 0,
+      laneCount: 1,
+      hasVisualOverlap: false,
+      hasTimeOverlap: false,
+    }]
+  })
+
+  const byResource = new Map<string, typeof positioned>()
+  for (const position of positioned) {
+    byResource.set(position.resourceId, [...(byResource.get(position.resourceId) ?? []), position])
+  }
+
+  for (const resourcePositions of byResource.values()) {
+    const ordered = resourcePositions.sort((a, b) => a.left - b.left)
+    const laneEnds: number[] = []
+
+    for (const position of ordered) {
+      const visualEnd = position.left + position.width
+      const lane = laneEnds.findIndex((end) => position.left >= end + 6)
+      position.lane = lane >= 0 ? lane : laneEnds.length
+      laneEnds[position.lane] = visualEnd
+      position.hasVisualOverlap = ordered.some((other) =>
+        other !== position
+        && position.left < other.left + other.width
+        && visualEnd > other.left,
+      )
+      position.hasTimeOverlap = ordered.some((other) =>
+        other !== position
+        && rangesOverlap(position.window.start, position.window.end, other.window.start, other.window.end),
+      )
+    }
+
+    const laneCount = Math.max(laneEnds.length, 1)
+    const laneGap = 3
+    const availableHeight = Math.max(options.rowHeight - 12, 24)
+    const stackedHeight = Math.max(
+      Math.floor((availableHeight - laneGap * (laneCount - 1)) / laneCount),
+      10,
+    )
+    const rowTop = ordered[0]?.rowIndex ? ordered[0].rowIndex * options.rowHeight : 0
+
+    for (const position of ordered) {
+      const effectiveHeight = laneCount > 1 ? stackedHeight : height
+      position.laneCount = laneCount
+      position.height = effectiveHeight
+      position.top = rowTop + Math.round((options.rowHeight - availableHeight) / 2)
+        + position.lane * (effectiveHeight + laneGap)
+    }
+  }
+
+  return positioned.map(({ rowIndex: _rowIndex, window: _window, ...position }) => position)
+}
+
+export function buildScheduleCalendarHighlightPositions(options: {
+  fixture: ScheduleFixture
+  rows: ScheduleRow[]
+  width: number
+  rowHeight: number
+  zoom: SchedulingZoom
+  labelWidth: number
+}): ScheduleCalendarHighlightPosition[] {
+  const scale = createTimeScale({
+    start: options.fixture.rangeStart,
+    end: options.fixture.rangeEnd,
+    width: options.width - options.labelWidth,
+    zoom: options.zoom,
+  })
+  const rowIndexByResourceId = new Map(options.rows.map((row, index) => [row.id, index]))
+
+  return options.fixture.calendarHighlights.flatMap((highlight) => {
+    const rowIndex = rowIndexByResourceId.get(highlight.resourceId)
+    if (rowIndex === undefined) {
+      return []
+    }
+
+    const left = options.labelWidth + scale.dateToX(highlight.start)
+    const endX = options.labelWidth + scale.dateToX(highlight.end)
+
+    return [{
+      highlight,
+      resourceId: highlight.resourceId,
+      top: rowIndex * options.rowHeight + 3,
+      left,
+      width: Math.max(endX - left, 12),
+      height: options.rowHeight - 7,
     }]
   })
 }

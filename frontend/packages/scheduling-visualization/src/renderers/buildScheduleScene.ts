@@ -4,12 +4,14 @@ import type { ScheduleFixture } from '../model/schedule'
 import type { SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import { createTimeScale } from '../time-scale/timeScale'
 import type { SchedulingZoom } from '../time-scale/timeScale'
+import { buildScheduleOperationPositions } from '../time-scale/timelineLayout'
 
 export interface BuildScheduleSceneOptions {
   fixture: ScheduleFixture
   width: number
   rowHeight: number
   zoom: SchedulingZoom
+  showDependencies: boolean
   showCapacity: boolean
   showConflicts: boolean
   today: string
@@ -27,8 +29,56 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
     width: options.width - labelWidth,
     zoom: options.zoom,
   })
+  const operationPositions = buildScheduleOperationPositions({
+    fixture: options.fixture,
+    rows,
+    width: options.width,
+    rowHeight: options.rowHeight,
+    zoom: options.zoom,
+    labelWidth,
+    previewById: options.previewById,
+  })
+  const positionByOperationId = new Map(
+    operationPositions.map((position) => [position.operation.id, position]),
+  )
+
+  for (const highlight of options.fixture.calendarHighlights) {
+    const rowIndex = rows.findIndex((row) => row.id === highlight.resourceId)
+    if (rowIndex < 0) {
+      continue
+    }
+
+    const x = labelWidth + scale.dateToX(highlight.start)
+    const endX = labelWidth + scale.dateToX(highlight.end)
+    const fillByKind = {
+      'working-time': 'rgba(34, 197, 94, 0.08)',
+      maintenance: 'rgba(245, 158, 11, 0.13)',
+      downtime: 'rgba(220, 38, 38, 0.12)',
+      changeover: 'rgba(14, 165, 233, 0.1)',
+    } satisfies Record<typeof highlight.kind, string>
+
+    elements.push({
+      id: highlight.id,
+      kind: 'calendar-highlight',
+      x,
+      y: rowIndex * options.rowHeight + 2,
+      width: Math.max(endX - x, 8),
+      height: options.rowHeight - 5,
+      fill: fillByKind[highlight.kind],
+      severity: highlight.severity,
+      metadata: {
+        resourceId: highlight.resourceId,
+        label: highlight.label,
+        kind: highlight.kind,
+      },
+    })
+  }
 
   rows.forEach((row, index) => {
+    if (index === rows.length - 1) {
+      return
+    }
+
     const y = index * options.rowHeight
     elements.push({
       id: `resource-line-${row.id}`,
@@ -62,6 +112,40 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
           resourceId: band.resourceId,
           loadPercent: band.loadPercent,
           capacityPercent: band.capacityPercent,
+        },
+      })
+    }
+  }
+
+  if (options.showDependencies) {
+    for (const dependency of options.fixture.dependencies) {
+      const source = positionByOperationId.get(dependency.sourceOperationId)
+      const target = positionByOperationId.get(dependency.targetOperationId)
+      if (!source || !target) {
+        continue
+      }
+
+      const sourceX = source.left + source.width
+      const sourceY = source.top + source.height / 2
+      const targetX = target.left
+      const targetY = target.top + target.height / 2
+      const middleX = Math.max(sourceX + 16, Math.round((sourceX + targetX) / 2))
+      elements.push({
+        id: dependency.id,
+        kind: 'dependency',
+        x: sourceX,
+        y: sourceY,
+        stroke: '#64748b',
+        points: [
+          { x: sourceX, y: sourceY },
+          { x: middleX, y: sourceY },
+          { x: middleX, y: targetY },
+          { x: targetX - 6, y: targetY },
+        ],
+        metadata: {
+          sourceOperationId: dependency.sourceOperationId,
+          targetOperationId: dependency.targetOperationId,
+          type: dependency.type,
         },
       })
     }
@@ -102,6 +186,14 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
       width: 2,
       height,
       fill: '#0ea5e9',
+    })
+    elements.push({
+      id: 'today-label',
+      kind: 'row-label',
+      x: todayX + 5,
+      y: 5,
+      text: 'Today',
+      fill: '#0369a1',
     })
   }
 

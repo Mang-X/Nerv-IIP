@@ -167,4 +167,19 @@ describe('ScheduleChart', () => {
     expect(wrapper.get('[data-test="schedule-resource-wc-pack-01"]').attributes('style'))
       .toContain('left: 0px')
   })
+
+  it('renders selectable calendar highlights for maintenance and downtime windows', async () => {
+    const wrapper = mount(ScheduleChart, {
+      attachTo: document.body,
+      props: {
+        fixture: createMockScheduleFixture(),
+      },
+    })
+
+    await wrapper.get('[data-test="schedule-highlight-highlight-pack-maintenance"]').trigger('click')
+
+    expect(wrapper.emitted('select')?.[0]).toEqual([
+      { kind: 'calendar-highlight', id: 'highlight-pack-maintenance' },
+    ])
+  })
 })

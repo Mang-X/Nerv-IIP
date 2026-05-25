@@ -10,6 +10,7 @@ export { useSchedulingSelection } from './state/useSchedulingSelection'
 export { createTimeScale } from './time-scale/timeScale'
 export {
   buildGanttBarPositions,
+  buildScheduleCalendarHighlightPositions,
   buildScheduleOperationPositions,
   buildTimelineTicks,
   calculateTimelineContentWidth,
@@ -19,6 +20,7 @@ export { calculateVisibleRowRange } from './time-scale/visibleRange'
 export { default as GanttChart } from './components/GanttChart.vue'
 export { default as ScheduleChart } from './components/ScheduleChart.vue'
 export { default as SchedulingDetailSheet } from './components/SchedulingDetailSheet.vue'
+export { default as SchedulingLegend } from './components/SchedulingLegend.vue'
 export { default as SchedulingToolbar } from './components/SchedulingToolbar.vue'
 export { default as SchedulingWorkspace } from './components/SchedulingWorkspace.vue'
 
@@ -35,8 +37,10 @@ export type {
 } from './model/gantt'
 export type {
   ScheduleCapacityBand,
+  ScheduleCalendarHighlight,
   ScheduleChartProps,
   ScheduleConflict,
+  ScheduleDependency,
   ScheduleFixture,
   ScheduleOperation,
   ScheduleResource,
@@ -71,6 +75,7 @@ export type {
 export type {
   BuildTimelineTickOptions,
   GanttBarPosition,
+  ScheduleCalendarHighlightPosition,
   ScheduleOperationPosition,
   TimelineTick,
 } from './time-scale/timelineLayout'

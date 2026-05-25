@@ -9,6 +9,7 @@ export type SchedulingSceneElementKind =
   | 'today'
   | 'capacity'
   | 'conflict'
+  | 'calendar-highlight'
   | 'selection'
 
 export interface SchedulingScenePoint {

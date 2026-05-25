@@ -36,6 +36,7 @@ describe('scene builders', () => {
       width: 960,
       rowHeight: 44,
       zoom: 'day',
+      showDependencies: true,
       showCapacity: true,
       showConflicts: true,
       today: '2026-05-06T00:00:00.000Z',
@@ -45,6 +46,8 @@ describe('scene builders', () => {
     expect(scene.elements.some((element) => element.kind === 'bar')).toBe(false)
     expect(scene.elements.some((element) => element.kind === 'progress')).toBe(false)
     expect(scene.elements.some((element) => element.kind === 'capacity')).toBe(true)
+    expect(scene.elements.some((element) => element.kind === 'calendar-highlight')).toBe(true)
+    expect(scene.elements.some((element) => element.kind === 'dependency')).toBe(true)
     expect(scene.elements.some((element) => element.kind === 'conflict')).toBe(true)
   })
 })

@@ -15,6 +15,7 @@ import { buildScheduleScene } from '../renderers/buildScheduleScene'
 import { renderSceneToLeafer } from '../renderers/renderSceneToLeafer'
 import {
   buildScheduleOperationPositions,
+  buildScheduleCalendarHighlightPositions,
   buildTimelineTicks,
   calculateTimelineContentWidth,
   shiftWindowByPixels,
@@ -25,6 +26,7 @@ interface Props {
   fixture: ScheduleFixture
   selected?: ScheduleSelection
   zoom?: SchedulingZoom
+  showDependencies?: boolean
   showCapacity?: boolean
   showConflicts?: boolean
   today?: string
@@ -44,6 +46,7 @@ const labelWidth = 230
 
 const props = withDefaults(defineProps<Props>(), {
   zoom: 'day',
+  showDependencies: true,
   showCapacity: true,
   showConflicts: true,
   today: '2026-05-06T00:00:00.000Z',
@@ -112,6 +115,7 @@ const scene = computed(() =>
     width: chartWidth.value,
     rowHeight: props.rowHeight,
     zoom: props.zoom,
+    showDependencies: props.showDependencies,
     showCapacity: props.showCapacity,
     showConflicts: props.showConflicts,
     today: props.today,
@@ -160,6 +164,17 @@ const operationPositions = computed(() => {
     zoom: props.zoom,
     labelWidth,
     previewById: livePreviewById.value,
+  }).filter((position) => visibleResourceIds.has(position.resourceId))
+})
+const calendarHighlightPositions = computed(() => {
+  const visibleResourceIds = new Set(visibleRows.value.map((item) => item.row.id))
+  return buildScheduleCalendarHighlightPositions({
+    fixture: filteredFixture.value,
+    rows: rows.value,
+    width: chartWidth.value,
+    rowHeight: props.rowHeight,
+    zoom: props.zoom,
+    labelWidth,
   }).filter((position) => visibleResourceIds.has(position.resourceId))
 })
 
@@ -397,12 +412,32 @@ function cancelDrag(event: PointerEvent) {
         </button>
 
         <button
+          v-for="position in calendarHighlightPositions"
+          :key="position.highlight.id"
+          class="schedule-highlight"
+          :class="`schedule-highlight--${position.highlight.kind}`"
+          type="button"
+          :data-test="`schedule-highlight-${position.highlight.id}`"
+          :style="{
+            top: `${position.top}px`,
+            left: `${position.left}px`,
+            width: `${position.width}px`,
+            height: `${position.height}px`,
+          }"
+          @click.stop="emit('select', { kind: 'calendar-highlight', id: position.highlight.id })"
+        >
+          <span>{{ position.highlight.label }}</span>
+        </button>
+
+        <button
           v-for="position in operationPositions"
           :key="position.operation.id"
           class="schedule-operation"
           :class="{
             'schedule-operation--selected': isSelectedOperation(position.operation),
             'schedule-operation--dragging': activeDrag?.operationId === position.operation.id,
+            'schedule-operation--visual-overlap': position.hasVisualOverlap && !position.hasTimeOverlap,
+            'schedule-operation--time-overlap': position.hasTimeOverlap,
           }"
           type="button"
           :data-test="`schedule-operation-${position.operation.id}`"
@@ -561,6 +596,61 @@ function cancelDrag(event: PointerEvent) {
   font-size: 11px;
 }
 
+.schedule-highlight {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  overflow: hidden;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #7c2d12;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 750;
+  text-align: left;
+}
+
+.schedule-highlight span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-highlight--maintenance {
+  border-color: rgba(217, 119, 6, 0.3);
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.18) 0,
+    rgba(245, 158, 11, 0.18) 6px,
+    rgba(255, 247, 237, 0.72) 6px,
+    rgba(255, 247, 237, 0.72) 12px
+  );
+}
+
+.schedule-highlight--downtime {
+  border-color: rgba(220, 38, 38, 0.28);
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(248, 113, 113, 0.18) 0,
+    rgba(248, 113, 113, 0.18) 6px,
+    rgba(254, 242, 242, 0.8) 6px,
+    rgba(254, 242, 242, 0.8) 12px
+  );
+  color: #991b1b;
+}
+
+.schedule-highlight--working-time,
+.schedule-highlight--changeover {
+  border-color: rgba(14, 165, 233, 0.22);
+  background: rgba(224, 242, 254, 0.58);
+  color: #075985;
+}
+
 .schedule-operation {
   position: absolute;
   z-index: 3;
@@ -605,6 +695,15 @@ function cancelDrag(event: PointerEvent) {
     0 10px 24px rgba(15, 23, 42, 0.16),
     0 0 0 2px rgba(37, 99, 235, 0.18);
   cursor: grabbing;
+}
+
+.schedule-operation--visual-overlap {
+  border-style: dashed;
+}
+
+.schedule-operation--time-overlap {
+  border-color: #dc2626;
+  background: #fee2e2;
 }
 
 .schedule-operation__title,

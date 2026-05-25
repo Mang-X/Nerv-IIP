@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildGanttBarPositions,
+  buildScheduleCalendarHighlightPositions,
   buildScheduleOperationPositions,
   buildTimelineTicks,
   calculateTimelineContentWidth,
@@ -105,8 +106,49 @@ describe('timelineLayout', () => {
 
     expect(position).toEqual(expect.objectContaining({
       resourceId: 'wc-mix-02',
-      top: 60,
     }))
+    expect(position?.top).toBeGreaterThanOrEqual(52)
+    expect((position?.top ?? 0) + (position?.height ?? 0)).toBeLessThanOrEqual(104)
+  })
+
+  it('uses schedule lanes to separate visual collisions without changing resource assignment', () => {
+    const fixture = createMockScheduleFixture()
+    const rows = groupScheduleRows(fixture.resources, fixture.operations)
+    const positions = buildScheduleOperationPositions({
+      fixture,
+      rows,
+      width: 960,
+      rowHeight: 52,
+      zoom: 'day',
+      labelWidth: 230,
+      previewById: {},
+    }).filter((position) => position.resourceId === 'wc-pack-01')
+
+    expect(positions).toHaveLength(2)
+    expect(new Set(positions.map((position) => position.lane)).size).toBe(2)
+    expect(positions.every((position) => position.hasVisualOverlap)).toBe(true)
+    expect(positions.some((position) => position.hasTimeOverlap)).toBe(false)
+  })
+
+  it('builds schedule calendar highlight positions inside resource rows', () => {
+    const fixture = createMockScheduleFixture()
+    const rows = groupScheduleRows(fixture.resources, fixture.operations)
+    const positions = buildScheduleCalendarHighlightPositions({
+      fixture,
+      rows,
+      width: 960,
+      rowHeight: 52,
+      zoom: 'day',
+      labelWidth: 230,
+    })
+
+    expect(positions.map((position) => position.highlight.id)).toContain('highlight-pack-maintenance')
+    expect(positions.find((position) => position.highlight.id === 'highlight-pack-maintenance')).toEqual(
+      expect.objectContaining({
+        resourceId: 'wc-pack-01',
+        top: 3,
+      }),
+    )
   })
 
   it('expands timeline content width by zoom so bar positions stay linked to scale changes', () => {

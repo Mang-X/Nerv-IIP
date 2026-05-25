@@ -9,6 +9,7 @@ import type { SchedulingWorkspaceMode, SchedulingWorkspaceSelection } from './ty
 import GanttChart from './GanttChart.vue'
 import ScheduleChart from './ScheduleChart.vue'
 import SchedulingDetailSheet from './SchedulingDetailSheet.vue'
+import SchedulingLegend from './SchedulingLegend.vue'
 import SchedulingToolbar from './SchedulingToolbar.vue'
 import { createMockGanttFixture, createMockScheduleFixture } from '../model/fixtures'
 import { createSchedulingCommandStack } from '../state/useSchedulingCommands'
@@ -118,6 +119,8 @@ function commitPreview() {
       @commit="commitPreview"
     />
 
+    <SchedulingLegend />
+
     <div class="scheduling-workspace__main">
       <div class="scheduling-workspace__chart">
         <GanttChart
@@ -141,6 +144,7 @@ function commitPreview() {
           :selected="scheduleSelection"
           :zoom="zoom"
           :show-capacity="showCapacity"
+          :show-dependencies="showDependencies"
           :show-conflicts="showConflicts"
           :preview-by-id="effectivePreviewById"
           :query="query"

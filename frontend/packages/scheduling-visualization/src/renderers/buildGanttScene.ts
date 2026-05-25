@@ -45,6 +45,10 @@ function addGrid(
   width: number,
 ) {
   rows.forEach((row, index) => {
+    if (index === rows.length - 1) {
+      return
+    }
+
     const y = index * rowHeight
     elements.push({
       id: `row-line-${row.id}`,
@@ -197,6 +201,14 @@ export function buildGanttScene(options: BuildGanttSceneOptions): SchedulingScen
       width: 2,
       height,
       fill: '#0ea5e9',
+    })
+    elements.push({
+      id: 'today-label',
+      kind: 'row-label',
+      x: todayX + 5,
+      y: 5,
+      text: 'Today',
+      fill: '#0369a1',
     })
   }
 

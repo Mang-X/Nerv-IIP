@@ -163,15 +163,52 @@ export function createMockScheduleFixture(): ScheduleFixture {
         isOverloaded: false,
       },
     ],
+    dependencies: [
+      {
+        id: 'dep-mix-pack-1001',
+        sourceOperationId: 'op-mixing-2001',
+        targetOperationId: 'op-packing-1001',
+        type: 'finish-start',
+      },
+      {
+        id: 'dep-pack-sequence',
+        sourceOperationId: 'op-packing-1001',
+        targetOperationId: 'op-packing-1002',
+        type: 'finish-start',
+      },
+    ],
+    calendarHighlights: [
+      {
+        id: 'highlight-pack-maintenance',
+        resourceId: 'wc-pack-01',
+        start: '2026-05-06T14:00:00.000Z',
+        end: '2026-05-06T16:00:00.000Z',
+        kind: 'maintenance',
+        label: 'Planned maintenance',
+        severity: 'warning',
+      },
+      {
+        id: 'highlight-mix-downtime',
+        resourceId: 'wc-mix-02',
+        start: '2026-05-06T12:00:00.000Z',
+        end: '2026-05-06T13:00:00.000Z',
+        kind: 'downtime',
+        label: 'Resource unavailable',
+        severity: 'critical',
+      },
+    ],
     conflicts: [
       {
         id: 'conflict-pack-overload',
         targetId: 'op-packing-1002',
         targetKind: 'operation',
         severity: 'critical',
+        submitPolicy: 'block',
+        reasonCode: 'capacity-overload',
         title: 'Packaging overload',
         description: 'Packed load exceeds the current capacity band.',
         resolutionHint: 'Move one packing order to the next available shift.',
+        relatedOperationIds: ['op-packing-1001', 'op-packing-1002'],
       },
     ],
   }

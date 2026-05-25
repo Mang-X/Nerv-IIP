@@ -115,21 +115,43 @@ function buildScheduleDetail(selection: SchedulingWorkspaceSelection): Schedulin
     }
   }
 
-  const conflict = props.scheduleFixture.conflicts.find((item) => item.id === selection.selection.id)
-  if (!conflict) {
+  if (selection.selection.kind === 'conflict') {
+    const conflict = props.scheduleFixture.conflicts.find((item) => item.id === selection.selection.id)
+    if (!conflict) {
+      return undefined
+    }
+
+    return {
+      eyebrow: 'Schedule conflict',
+      title: conflict.title,
+      status: conflict.severity,
+      description: conflict.description,
+      fields: [
+        { label: 'Target', value: conflict.targetId },
+        { label: 'Target kind', value: conflict.targetKind },
+        { label: 'Submit policy', value: conflict.submitPolicy ?? 'warn' },
+        { label: 'Reason', value: conflict.reasonCode ?? conflict.severity },
+      ],
+      conflictResolutionHint: conflict.resolutionHint,
+    }
+  }
+
+  const highlight = props.scheduleFixture.calendarHighlights.find((item) => item.id === selection.selection.id)
+  if (!highlight) {
     return undefined
   }
 
+  const resource = props.scheduleFixture.resources.find((item) => item.id === highlight.resourceId)
   return {
-    eyebrow: 'Schedule conflict',
-    title: conflict.title,
-    status: conflict.severity,
-    description: conflict.description,
+    eyebrow: 'Schedule calendar',
+    title: highlight.label,
+    status: highlight.kind,
+    description: resource?.name ?? highlight.resourceId,
     fields: [
-      { label: 'Target', value: conflict.targetId },
-      { label: 'Target kind', value: conflict.targetKind },
+      { label: 'Start', value: dateLabel(highlight.start) },
+      { label: 'End', value: dateLabel(highlight.end) },
+      { label: 'Impact', value: highlight.severity ?? 'info' },
     ],
-    conflictResolutionHint: conflict.resolutionHint,
   }
 }
 
@@ -376,4 +398,3 @@ const detail = computed<SchedulingDetailView | undefined>(() => {
   font-size: 13px;
 }
 </style>
-

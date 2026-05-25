@@ -74,7 +74,6 @@ withDefaults(defineProps<Props>(), {
 .timeline-axis__tick-track {
   position: relative;
   height: 100%;
-  transition: transform 120ms ease;
 }
 
 .timeline-axis__tick {
