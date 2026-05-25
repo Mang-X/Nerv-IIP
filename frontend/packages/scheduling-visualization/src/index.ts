@@ -8,12 +8,11 @@ export { createSchedulingCommandStack } from './state/useSchedulingCommands'
 export { useSchedulingSelection } from './state/useSchedulingSelection'
 export { createTimeScale } from './time-scale/timeScale'
 export { calculateVisibleRowRange } from './time-scale/visibleRange'
-
-export const GanttChart = undefined
-export const ScheduleChart = undefined
-export const SchedulingDetailSheet = undefined
-export const SchedulingToolbar = undefined
-export const SchedulingWorkspace = undefined
+export { default as GanttChart } from './components/GanttChart.vue'
+export { default as ScheduleChart } from './components/ScheduleChart.vue'
+export { default as SchedulingDetailSheet } from './components/SchedulingDetailSheet.vue'
+export { default as SchedulingToolbar } from './components/SchedulingToolbar.vue'
+export { default as SchedulingWorkspace } from './components/SchedulingWorkspace.vue'
 
 export type {
   ConflictSeverity,
@@ -61,3 +60,9 @@ export type {
   TimeScale,
   TimeScaleTick,
 } from './time-scale/timeScale'
+export type {
+  SchedulingDetailField,
+  SchedulingDetailView,
+  SchedulingWorkspaceMode,
+  SchedulingWorkspaceSelection,
+} from './components/types'

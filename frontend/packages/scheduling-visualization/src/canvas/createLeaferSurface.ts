@@ -1,6 +1,13 @@
-import { Group, Leafer, Pen, Rect, Text } from 'leafer-ui'
-
 import type { LeaferPathInput, LeaferRectInput, LeaferSurface, LeaferTextInput } from './leaferTypes'
+
+type LeaferUiModule = typeof import('leafer-ui')
+
+let leaferUiModule: Promise<LeaferUiModule> | undefined
+
+function loadLeaferUi() {
+  leaferUiModule ??= import('leafer-ui')
+  return leaferUiModule
+}
 
 function withMetadata<T extends object>(
   input: T,
@@ -9,7 +16,12 @@ function withMetadata<T extends object>(
   return metadata ? { ...input, data: metadata } : input
 }
 
-export function createLeaferSurface(host: HTMLElement, width: number, height: number): LeaferSurface {
+export async function createLeaferSurface(
+  host: HTMLElement,
+  width: number,
+  height: number,
+): Promise<LeaferSurface> {
+  const { Group, Leafer, Pen, Rect, Text } = await loadLeaferUi()
   const leafer = new Leafer({
     view: host,
     width,
