@@ -43,7 +43,7 @@ Documentation facts:
 2. Do not edit generated API clients.
 3. Do not use issue cleanup to change business boundaries.
 4. Do not reopen #72.
-5. Do not include #78 Gantt/RFC work in this roadmap.
+5. Do not include #78 Gantt/RFC implementation work in this roadmap; it is tracked separately as architecture RFC material.
 
 ## Issue Treatment
 
@@ -57,7 +57,7 @@ Documentation facts:
 | #75 WMS | Keep open, rewrite as an epic | No code exists yet; one or more WMS execution child issues should close it. |
 | #76 ERP | Keep open, rewrite as an epic | Scope is too large for one execution issue; split Procurement, Sales and Finance. |
 | #77 Full-chain acceptance | Keep open, rewrite as acceptance epic | It must remain blocked until all business MVP verify scripts pass. |
-| #78 Gantt RFC | Excluded | User explicitly asked to ignore Gantt-related issue. |
+| #78 Gantt RFC | Archive separately | Keep it outside the business service roadmap; current architecture record is `docs/architecture/gantt-scheduling-visualization-rfc.md`. |
 | #127 ProductEngineering MVP | Keep open as execution issue | This is the current child issue for ProductEngineering completion. |
 | #128 DemandPlanning MVP | Keep open as execution issue | This is the current child issue for MPS/MRP. |
 | #129 IndustrialTelemetry MVP | Keep open as execution issue | This is the current child issue for IIoT/Telemetry. |
@@ -164,7 +164,7 @@ Already present:
 
 ## Out Of Scope
 
-- Gantt and scheduling visualization (#78).
+- Gantt and scheduling visualization implementation (#78); RFC treatment is tracked separately.
 - Rebuilding already delivered Notification/FileStorage MVP capabilities.
 ```
 
@@ -343,7 +343,7 @@ After issue cleanup:
 
 1. `gh issue list --state open --label business-platform --limit 200` should show epics plus executable child issues.
 2. Every open business-platform issue should include at least one of: parent epic, blocking dependency, plan path, or explicit future status.
-3. No open issue except #78 should describe stale from-scratch scope for work already implemented.
+3. No open business-platform issue should describe stale from-scratch scope for work already implemented; #78 is handled as a separate Gantt/RFC archive.
 4. `implementation-readiness.md` should remain the canonical code-fact summary.
 
 ## Open Decisions

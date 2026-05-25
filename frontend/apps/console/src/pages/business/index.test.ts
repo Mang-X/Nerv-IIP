@@ -53,7 +53,7 @@ describe('Business status page', () => {
     expect(wrapper.text()).toContain('Business MVP status')
     expect(wrapper.findAll('[data-test="business-service"]')).toHaveLength(12)
     expect(wrapper.text()).toContain('#77 Full-chain acceptance')
-    expect(wrapper.text()).toContain('#78 Gantt/RFC reference is excluded')
+    expect(wrapper.text()).toContain('#78 Gantt/RFC archived')
   })
 
   it('lists the delivered business backend services', async () => {
