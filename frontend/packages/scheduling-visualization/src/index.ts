@@ -12,6 +12,7 @@ export {
   buildGanttBarPositions,
   buildScheduleOperationPositions,
   buildTimelineTicks,
+  calculateTimelineContentWidth,
   shiftWindowByPixels,
 } from './time-scale/timelineLayout'
 export { calculateVisibleRowRange } from './time-scale/visibleRange'

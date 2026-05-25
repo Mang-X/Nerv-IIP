@@ -4,6 +4,7 @@ import type { ComputedRef, ShallowRef } from 'vue'
 export interface SchedulingPreviewWindow {
   start: string
   end: string
+  resourceId?: string
 }
 
 export interface SchedulingPreviewCommand {

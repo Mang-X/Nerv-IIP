@@ -31,11 +31,38 @@ const tickSteps: Record<SchedulingZoom, number> = {
   month: 30,
 }
 
-const labelFormatter = new Intl.DateTimeFormat('en-US', {
+const dayLabelFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',
   timeZone: 'UTC',
 })
+
+const monthLabelFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+
+function getIsoWeek(date: Date): number {
+  const workingDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+  const day = workingDate.getUTCDay() || 7
+  workingDate.setUTCDate(workingDate.getUTCDate() + 4 - day)
+  const yearStart = new Date(Date.UTC(workingDate.getUTCFullYear(), 0, 1))
+
+  return Math.ceil(((workingDate.getTime() - yearStart.getTime()) / dayInMilliseconds + 1) / 7)
+}
+
+function formatTickLabel(date: Date, zoom: SchedulingZoom): string {
+  if (zoom === 'week') {
+    return `W${getIsoWeek(date)}`
+  }
+
+  if (zoom === 'month') {
+    return monthLabelFormatter.format(date)
+  }
+
+  return dayLabelFormatter.format(date)
+}
 
 export function createTimeScale(options: CreateTimeScaleOptions): TimeScale {
   const start = new Date(options.start)
@@ -61,7 +88,7 @@ export function createTimeScale(options: CreateTimeScaleOptions): TimeScale {
     ticks.push({
       date: date.toISOString(),
       x: dateToX(date.toISOString()),
-      label: labelFormatter.format(date),
+      label: formatTickLabel(date, options.zoom),
     })
   }
 

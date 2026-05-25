@@ -19,9 +19,13 @@ defineProps<Props>()
     <div class="timeline-axis__corner">Timeline</div>
     <div class="timeline-axis__ticks">
       <span
-        v-for="tick in ticks"
+        v-for="(tick, index) in ticks"
         :key="tick.date"
         class="timeline-axis__tick"
+        :class="{
+          'timeline-axis__tick--first': index === 0,
+          'timeline-axis__tick--last': index === ticks.length - 1,
+        }"
         :style="{ left: `${tick.x - labelWidth}px` }"
       >
         {{ tick.label }}
@@ -52,6 +56,7 @@ defineProps<Props>()
 .timeline-axis__ticks {
   position: relative;
   overflow: hidden;
+  padding-inline: 8px;
 }
 
 .timeline-axis__tick {
@@ -64,6 +69,14 @@ defineProps<Props>()
   white-space: nowrap;
 }
 
+.timeline-axis__tick--first {
+  transform: translateX(8px);
+}
+
+.timeline-axis__tick--last {
+  transform: translateX(calc(-100% - 8px));
+}
+
 .timeline-axis__tick::before {
   position: absolute;
   top: 19px;
@@ -74,4 +87,3 @@ defineProps<Props>()
   content: "";
 }
 </style>
-

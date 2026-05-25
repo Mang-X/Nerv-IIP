@@ -16,6 +16,7 @@ import { renderSceneToLeafer } from '../renderers/renderSceneToLeafer'
 import {
   buildScheduleOperationPositions,
   buildTimelineTicks,
+  calculateTimelineContentWidth,
   shiftWindowByPixels,
 } from '../time-scale/timelineLayout'
 import { calculateVisibleRowRange } from '../time-scale/visibleRange'
@@ -55,12 +56,16 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<Emits>()
 
 const surfaceHost = useTemplateRef<HTMLDivElement>('surfaceHost')
+const scrollPlane = useTemplateRef<HTMLDivElement>('scrollPlane')
 const surface = shallowRef<LeaferSurface>()
+const surfaceSize = shallowRef<{ width: number, height: number }>()
 const isDisposed = shallowRef(false)
 const scrollTop = shallowRef(0)
 const activeDrag = shallowRef<{
   operationId: string
   startX: number
+  currentDeltaX: number
+  currentResourceId: string
   before: SchedulingPreviewWindow
 }>()
 
@@ -68,16 +73,47 @@ const filteredFixture = computed(() => filterScheduleFixture(props.fixture, prop
 const rows = computed<ScheduleRow[]>(() =>
   groupScheduleRows(filteredFixture.value.resources, filteredFixture.value.operations),
 )
+const chartWidth = computed(() =>
+  calculateTimelineContentWidth({
+    start: filteredFixture.value.rangeStart,
+    end: filteredFixture.value.rangeEnd,
+    zoom: props.zoom,
+    labelWidth,
+    minWidth: props.width,
+  }),
+)
+const livePreviewById = computed<Record<string, SchedulingPreviewWindow>>(() => {
+  const drag = activeDrag.value
+  if (!drag) {
+    return props.previewById
+  }
+
+  return {
+    ...props.previewById,
+    [drag.operationId]: {
+      ...shiftWindowByPixels({
+        start: drag.before.start,
+        end: drag.before.end,
+        deltaX: drag.currentDeltaX,
+        rangeStart: filteredFixture.value.rangeStart,
+        rangeEnd: filteredFixture.value.rangeEnd,
+        width: chartWidth.value - labelWidth,
+        zoom: props.zoom,
+      }),
+      resourceId: drag.currentResourceId,
+    },
+  }
+})
 const scene = computed(() =>
   buildScheduleScene({
     fixture: filteredFixture.value,
-    width: props.width,
+    width: chartWidth.value,
     rowHeight: props.rowHeight,
     zoom: props.zoom,
     showCapacity: props.showCapacity,
     showConflicts: props.showConflicts,
     today: props.today,
-    previewById: props.previewById,
+    previewById: livePreviewById.value,
   }),
 )
 const chartHeight = computed(() => `${scene.value.height}px`)
@@ -107,7 +143,7 @@ const timelineTicks = computed(() =>
   buildTimelineTicks({
     start: filteredFixture.value.rangeStart,
     end: filteredFixture.value.rangeEnd,
-    width: props.width - labelWidth,
+    width: chartWidth.value - labelWidth,
     labelWidth,
     zoom: props.zoom,
   }),
@@ -117,12 +153,12 @@ const operationPositions = computed(() => {
   return buildScheduleOperationPositions({
     fixture: filteredFixture.value,
     rows: rows.value,
-    width: props.width,
+    width: chartWidth.value,
     rowHeight: props.rowHeight,
     zoom: props.zoom,
     labelWidth,
-    previewById: props.previewById,
-  }).filter((position) => visibleResourceIds.has(position.operation.resourceId))
+    previewById: livePreviewById.value,
+  }).filter((position) => visibleResourceIds.has(position.resourceId))
 })
 
 function isSelectedResource(row: ScheduleRow) {
@@ -143,13 +179,23 @@ async function syncSurface() {
     return
   }
 
+  if (
+    surface.value
+    && (surfaceSize.value?.width !== scene.value.width || surfaceSize.value.height !== scene.value.height)
+  ) {
+    surface.value.dispose()
+    surface.value = undefined
+    surfaceSize.value = undefined
+  }
+
   if (!surface.value) {
-    const nextSurface = await createLeaferSurface(host, props.width, scene.value.height)
+    const nextSurface = await createLeaferSurface(host, scene.value.width, scene.value.height)
     if (isDisposed.value) {
       nextSurface.dispose()
       return
     }
     surface.value = nextSurface
+    surfaceSize.value = { width: scene.value.width, height: scene.value.height }
   }
 
   renderSceneToLeafer(surface.value, scene.value)
@@ -175,7 +221,39 @@ function startDrag(operation: ScheduleOperation, event: PointerEvent) {
   activeDrag.value = {
     operationId: operation.id,
     startX: event.clientX,
-    before: props.previewById[operation.id] ?? { start: operation.start, end: operation.end },
+    currentDeltaX: 0,
+    currentResourceId: props.previewById[operation.id]?.resourceId ?? operation.resourceId,
+    before: props.previewById[operation.id] ?? {
+      start: operation.start,
+      end: operation.end,
+      resourceId: operation.resourceId,
+    },
+  }
+}
+
+function getResourceIdFromPointer(event: PointerEvent, fallbackResourceId: string) {
+  const host = scrollPlane.value
+  if (!host || rows.value.length === 0) {
+    return fallbackResourceId
+  }
+
+  const rect = host.getBoundingClientRect()
+  const relativeY = event.clientY - rect.top
+  const rowIndex = Math.min(Math.max(Math.floor(relativeY / props.rowHeight), 0), rows.value.length - 1)
+
+  return rows.value[rowIndex]?.id ?? fallbackResourceId
+}
+
+function updateActiveDrag(event: PointerEvent) {
+  const drag = activeDrag.value
+  if (!drag) {
+    return
+  }
+
+  activeDrag.value = {
+    ...drag,
+    currentDeltaX: event.clientX - drag.startX,
+    currentResourceId: getResourceIdFromPointer(event, drag.currentResourceId),
   }
 }
 
@@ -184,6 +262,7 @@ function moveDrag(event: PointerEvent) {
     return
   }
 
+  updateActiveDrag(event)
   event.preventDefault()
 }
 
@@ -197,13 +276,16 @@ function finishDrag(operation: ScheduleOperation, event: PointerEvent) {
   }
 
   const drag = activeDrag.value
+  updateActiveDrag(event)
+  const finalDrag = activeDrag.value
   activeDrag.value = undefined
-  if (!drag || drag.operationId !== operation.id) {
+  if (!drag || !finalDrag || drag.operationId !== operation.id) {
     return
   }
 
-  const deltaX = event.clientX - drag.startX
-  if (Math.abs(deltaX) < 4) {
+  const deltaX = finalDrag.currentDeltaX
+  const resourceChanged = finalDrag.currentResourceId !== (drag.before.resourceId ?? operation.resourceId)
+  if (Math.abs(deltaX) < 4 && !resourceChanged) {
     return
   }
 
@@ -212,15 +294,18 @@ function finishDrag(operation: ScheduleOperation, event: PointerEvent) {
     targetId: operation.id,
     kind: 'move',
     before: drag.before,
-    after: shiftWindowByPixels({
-      start: drag.before.start,
-      end: drag.before.end,
-      deltaX,
-      rangeStart: filteredFixture.value.rangeStart,
-      rangeEnd: filteredFixture.value.rangeEnd,
-      width: props.width - labelWidth,
-      zoom: props.zoom,
-    }),
+    after: {
+      ...shiftWindowByPixels({
+        start: drag.before.start,
+        end: drag.before.end,
+        deltaX,
+        rangeStart: filteredFixture.value.rangeStart,
+        rangeEnd: filteredFixture.value.rangeEnd,
+        width: chartWidth.value - labelWidth,
+        zoom: props.zoom,
+      }),
+      resourceId: finalDrag.currentResourceId,
+    },
   })
 }
 
@@ -255,18 +340,23 @@ function cancelDrag(event: PointerEvent) {
       </div>
     </header>
 
-    <TimelineAxis :ticks="timelineTicks" :width="width" :label-width="labelWidth" />
+    <TimelineAxis :ticks="timelineTicks" :width="chartWidth" :label-width="labelWidth" />
 
     <div class="scheduling-chart__viewport" :style="{ height: viewportHeightStyle }" @scroll="onScroll">
-      <div class="scheduling-chart__scroll-plane" :style="{ width: `${width}px`, height: chartHeight }">
+      <div
+        ref="scrollPlane"
+        class="scheduling-chart__scroll-plane"
+        data-test="schedule-scroll-plane"
+        :style="{ width: `${chartWidth}px`, height: chartHeight }"
+      >
         <div
           ref="surfaceHost"
           aria-hidden="true"
           class="scheduling-chart__surface"
-          :style="{ width: `${width}px`, height: chartHeight }"
+          :style="{ width: `${chartWidth}px`, height: chartHeight }"
         />
 
-      <div class="scheduling-chart__rows" :style="{ height: chartHeight, minWidth: `${width}px` }">
+      <div class="scheduling-chart__rows" :style="{ height: chartHeight, minWidth: `${chartWidth}px` }">
         <button
           v-for="item in visibleRows"
           :key="item.row.id"
@@ -286,13 +376,18 @@ function cancelDrag(event: PointerEvent) {
           v-for="position in operationPositions"
           :key="position.operation.id"
           class="schedule-operation"
-          :class="{ 'schedule-operation--selected': isSelectedOperation(position.operation) }"
+          :class="{
+            'schedule-operation--selected': isSelectedOperation(position.operation),
+            'schedule-operation--dragging': activeDrag?.operationId === position.operation.id,
+          }"
           type="button"
           :data-test="`schedule-operation-${position.operation.id}`"
+          :data-preview-resource-id="position.resourceId"
           :style="{
             top: `${position.top}px`,
             left: `${position.left}px`,
             width: `${position.width}px`,
+            height: `${position.height}px`,
           }"
           @click.stop="emit('select', { kind: 'operation', id: position.operation.id })"
           @pointerdown.stop="startDrag(position.operation, $event)"
@@ -392,6 +487,7 @@ function cancelDrag(event: PointerEvent) {
 .schedule-resource {
   position: absolute;
   left: 0;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr);
   grid-template-rows: 1fr 1fr;
@@ -443,19 +539,26 @@ function cancelDrag(event: PointerEvent) {
 .schedule-operation {
   position: absolute;
   z-index: 3;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 5px;
-  min-height: 32px;
   padding: 5px 8px;
   border: 1px solid rgba(29, 78, 216, 0.38);
   border-radius: 7px;
   background: rgba(219, 234, 254, 0.82);
   color: #0f172a;
-  cursor: pointer;
+  cursor: grab;
   font: inherit;
   text-align: left;
+  touch-action: none;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+  will-change: top, left;
 }
 
 .schedule-operation:hover {
@@ -467,6 +570,16 @@ function cancelDrag(event: PointerEvent) {
   border-color: #0f172a;
   background: #dbeafe;
   box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.18);
+}
+
+.schedule-operation--dragging {
+  z-index: 5;
+  border-color: #2563eb;
+  background: #dbeafe;
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.16),
+    0 0 0 2px rgba(37, 99, 235, 0.18);
+  cursor: grabbing;
 }
 
 .schedule-operation__title,

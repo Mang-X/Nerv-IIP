@@ -32,6 +32,7 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
   const rows = groupScheduleRows(options.fixture.resources, options.fixture.operations)
   const height = Math.max(rows.length * options.rowHeight, options.rowHeight)
   const elements: SchedulingSceneElement[] = []
+  const rowIndexByResourceId = new Map(rows.map((row, index) => [row.id, index]))
   const scale = createTimeScale({
     start: options.fixture.rangeStart,
     end: options.fixture.rangeEnd,
@@ -58,12 +59,18 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
       }
 
       const preview = options.previewById[operation.id]
+      const resourceId = preview?.resourceId ?? operation.resourceId
+      const previewRowIndex = rowIndexByResourceId.get(resourceId)
+      if (previewRowIndex === undefined) {
+        continue
+      }
+
       const start = preview?.start ?? operation.start
       const end = preview?.end ?? operation.end
       const x = labelWidth + scale.dateToX(start)
       const endX = labelWidth + scale.dateToX(end)
       const width = Math.max(endX - x, 8)
-      const barY = y + Math.round((options.rowHeight - barHeight) / 2)
+      const barY = previewRowIndex * options.rowHeight + Math.round((options.rowHeight - barHeight) / 2)
 
       elements.push({
         id: operation.id,
@@ -76,7 +83,7 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
         stroke: operation.isLocked ? '#0f172a' : '#1d4ed8',
         metadata: {
           operationId: operation.id,
-          resourceId: operation.resourceId,
+          resourceId,
           workOrderCode: operation.workOrderCode,
         },
       })
@@ -122,8 +129,9 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
   if (options.showConflicts) {
     for (const conflict of options.fixture.conflicts) {
       const operation = options.fixture.operations.find((item) => item.id === conflict.targetId)
+      const previewResourceId = operation ? options.previewById[operation.id]?.resourceId : undefined
       const rowIndex = operation
-        ? rows.findIndex((row) => row.id === operation.resourceId)
+        ? rows.findIndex((row) => row.id === (previewResourceId ?? operation.resourceId))
         : rows.findIndex((row) => row.id === conflict.targetId)
       if (rowIndex < 0) {
         continue

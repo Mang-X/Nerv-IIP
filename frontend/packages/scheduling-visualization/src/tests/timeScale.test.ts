@@ -15,7 +15,7 @@ describe('createTimeScale', () => {
     expect(scale.xToDate(500).toISOString()).toBe('2026-05-06T00:00:00.000Z')
   })
 
-  it('creates readable tick labels for week zoom', () => {
+  it('creates week-specific tick labels for week zoom', () => {
     const scale = createTimeScale({
       start: '2026-05-01T00:00:00.000Z',
       end: '2026-05-22T00:00:00.000Z',
@@ -24,10 +24,26 @@ describe('createTimeScale', () => {
     })
 
     expect(scale.ticks.map((tick) => tick.label)).toEqual([
-      'May 1',
-      'May 8',
-      'May 15',
-      'May 22',
+      'W18',
+      'W19',
+      'W20',
+      'W21',
+    ])
+  })
+
+  it('creates month-specific tick labels for month zoom', () => {
+    const scale = createTimeScale({
+      start: '2026-05-01T00:00:00.000Z',
+      end: '2026-08-01T00:00:00.000Z',
+      width: 840,
+      zoom: 'month',
+    })
+
+    expect(scale.ticks.map((tick) => tick.label)).toEqual([
+      'May 2026',
+      'May 2026',
+      'Jun 2026',
+      'Jul 2026',
     ])
   })
 })

@@ -25,9 +25,19 @@ export interface GanttBarPosition {
 
 export interface ScheduleOperationPosition {
   operation: ScheduleOperation
+  resourceId: string
   top: number
   left: number
   width: number
+  height: number
+}
+
+const dayInMilliseconds = 24 * 60 * 60 * 1000
+
+const pixelsPerDayByZoom: Record<SchedulingZoom, number> = {
+  day: 64,
+  week: 44,
+  month: 36,
 }
 
 function windowFor(
@@ -36,6 +46,21 @@ function windowFor(
   previewById: Record<string, SchedulingPreviewWindow>,
 ) {
   return previewById[id] ?? fallback
+}
+
+export function calculateTimelineContentWidth(options: {
+  start: string
+  end: string
+  zoom: SchedulingZoom
+  labelWidth: number
+  minWidth: number
+}) {
+  const start = new Date(options.start).getTime()
+  const end = new Date(options.end).getTime()
+  const dayCount = Math.max(Math.ceil((end - start) / dayInMilliseconds) + 1, 1)
+  const scaledWidth = options.labelWidth + dayCount * pixelsPerDayByZoom[options.zoom]
+
+  return Math.max(options.minWidth, scaledWidth)
 }
 
 export function buildTimelineTicks(options: BuildTimelineTickOptions): TimelineTick[] {
@@ -116,26 +141,30 @@ export function buildScheduleOperationPositions(options: {
     zoom: options.zoom,
   })
   const rowIndexByResourceId = new Map(options.rows.map((row, index) => [row.id, index]))
+  const height = Math.max(Math.min(options.rowHeight - 16, 36), 24)
 
   return options.fixture.operations.flatMap((operation) => {
-    const rowIndex = rowIndexByResourceId.get(operation.resourceId)
+    const window = windowFor(
+      operation.id,
+      { start: operation.start, end: operation.end, resourceId: operation.resourceId },
+      options.previewById,
+    )
+    const resourceId = window.resourceId ?? operation.resourceId
+    const rowIndex = rowIndexByResourceId.get(resourceId)
     if (rowIndex === undefined) {
       return []
     }
 
-    const window = windowFor(
-      operation.id,
-      { start: operation.start, end: operation.end },
-      options.previewById,
-    )
     const left = options.labelWidth + scale.dateToX(window.start)
     const endX = options.labelWidth + scale.dateToX(window.end)
 
     return [{
       operation,
-      top: rowIndex * options.rowHeight + 10,
+      resourceId,
+      top: rowIndex * options.rowHeight + Math.round((options.rowHeight - height) / 2),
       left,
       width: Math.max(endX - left, 72),
+      height,
     }]
   })
 }

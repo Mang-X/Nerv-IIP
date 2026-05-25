@@ -67,6 +67,9 @@ Gantt and scheduling visualization should:
 5. Emit typed selection and preview intent events; do not decide finite-capacity scheduling rules in frontend code.
 6. Stay package-local until a future Console page issue freezes route, permissions and API contracts.
 7. Use the package-local Vite preview for browser validation; it is not a Console route.
+8. Keep Gantt and resource-schedule time axes linked to `day` / `week` / `month` zoom through both label formatting and chart content width; bars must not remain visually fixed while the axis changes.
+9. Show live drag previews before commit. Schedule operation previews may include a `resourceId` so hosts can support cross-resource reassignment without coupling the component to a backend.
+10. Constrain schedule operation blocks to their resource row height and leave readable axis padding at the first and last timeline labels.
 
 ## Date Picker Contract
 

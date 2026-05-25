@@ -14,9 +14,10 @@ vi.mock('../canvas/createLeaferSurface', () => ({
   }),
 }))
 
-function dispatchPointer(target: Element, type: string, clientX: number) {
+function dispatchPointer(target: Element, type: string, clientX: number, clientY = 20) {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clientX', { value: clientX })
+  Object.defineProperty(event, 'clientY', { value: clientY })
   Object.defineProperty(event, 'pointerId', { value: 1 })
   target.dispatchEvent(event)
 }
@@ -68,6 +69,61 @@ describe('ScheduleChart', () => {
       expect.objectContaining({
         targetId: 'op-packing-1001',
         kind: 'move',
+      }),
+    )
+  })
+
+  it('shows a live preview while dragging an operation', async () => {
+    const wrapper = mount(ScheduleChart, {
+      attachTo: document.body,
+      props: {
+        fixture: createMockScheduleFixture(),
+      },
+    })
+
+    const operation = wrapper.get('[data-test="schedule-operation-op-packing-1001"]')
+    dispatchPointer(operation.element, 'pointerdown', 100, 24)
+    dispatchPointer(operation.element, 'pointermove', 136, 24)
+    await wrapper.vm.$nextTick()
+
+    const previewOperation = wrapper.get('[data-test="schedule-operation-op-packing-1001"]')
+    expect(previewOperation.classes()).toContain('schedule-operation--dragging')
+    expect(previewOperation.attributes('data-preview-resource-id')).toBe('wc-pack-01')
+  })
+
+  it('emits a cross-resource preview command when an operation is dragged to another row', async () => {
+    const wrapper = mount(ScheduleChart, {
+      attachTo: document.body,
+      props: {
+        fixture: createMockScheduleFixture(),
+      },
+    })
+
+    const scrollPlane = wrapper.get('[data-test="schedule-scroll-plane"]')
+    scrollPlane.element.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 960,
+      bottom: 104,
+      width: 960,
+      height: 104,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    const operation = wrapper.get('[data-test="schedule-operation-op-packing-1001"]')
+    dispatchPointer(operation.element, 'pointerdown', 100, 24)
+    dispatchPointer(operation.element, 'pointermove', 120, 76)
+    dispatchPointer(operation.element, 'pointerup', 120, 76)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('previewCommand')?.[0]?.[0]).toEqual(
+      expect.objectContaining({
+        targetId: 'op-packing-1001',
+        after: expect.objectContaining({
+          resourceId: 'wc-mix-02',
+        }),
       }),
     )
   })

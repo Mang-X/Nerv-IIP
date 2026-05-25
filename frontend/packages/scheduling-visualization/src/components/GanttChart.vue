@@ -16,6 +16,7 @@ import { renderSceneToLeafer } from '../renderers/renderSceneToLeafer'
 import {
   buildGanttBarPositions,
   buildTimelineTicks,
+  calculateTimelineContentWidth,
   shiftWindowByPixels,
 } from '../time-scale/timelineLayout'
 import { calculateVisibleRowRange } from '../time-scale/visibleRange'
@@ -61,29 +62,59 @@ const emit = defineEmits<Emits>()
 
 const surfaceHost = useTemplateRef<HTMLDivElement>('surfaceHost')
 const surface = shallowRef<LeaferSurface>()
+const surfaceSize = shallowRef<{ width: number, height: number }>()
 const isDisposed = shallowRef(false)
 const scrollTop = shallowRef(0)
 const activeDrag = shallowRef<{
   taskId: string
   startX: number
+  currentDeltaX: number
   before: SchedulingPreviewWindow
 }>()
 
 const expandedIds = computed(() => new Set(props.expandedTaskIds))
 const filteredFixture = computed(() => filterGanttFixture(props.fixture, props.query))
 const rows = computed<GanttRow[]>(() => flattenGanttTasks(filteredFixture.value.tasks, expandedIds.value))
+const chartWidth = computed(() =>
+  calculateTimelineContentWidth({
+    start: filteredFixture.value.rangeStart,
+    end: filteredFixture.value.rangeEnd,
+    zoom: props.zoom,
+    labelWidth,
+    minWidth: props.width,
+  }),
+)
+const livePreviewById = computed<Record<string, SchedulingPreviewWindow>>(() => {
+  const drag = activeDrag.value
+  if (!drag) {
+    return props.previewById
+  }
+
+  return {
+    ...props.previewById,
+    [drag.taskId]: shiftWindowByPixels({
+      start: drag.before.start,
+      end: drag.before.end,
+      deltaX: drag.currentDeltaX,
+      rangeStart: filteredFixture.value.rangeStart,
+      rangeEnd: filteredFixture.value.rangeEnd,
+      width: chartWidth.value - labelWidth,
+      zoom: props.zoom,
+    }),
+  }
+})
 const scene = computed(() =>
   buildGanttScene({
     fixture: filteredFixture.value,
     expandedTaskIds: expandedIds.value,
-    width: props.width,
+    width: chartWidth.value,
     rowHeight: props.rowHeight,
     zoom: props.zoom,
     showDependencies: props.showDependencies,
     showBaselines: props.showBaselines,
     showConflicts: props.showConflicts,
     today: props.today,
-    previewById: props.previewById,
+    previewById: livePreviewById.value,
   }),
 )
 const chartHeight = computed(() => `${scene.value.height}px`)
@@ -108,7 +139,7 @@ const timelineTicks = computed(() =>
   buildTimelineTicks({
     start: filteredFixture.value.rangeStart,
     end: filteredFixture.value.rangeEnd,
-    width: props.width - labelWidth,
+    width: chartWidth.value - labelWidth,
     labelWidth,
     zoom: props.zoom,
   }),
@@ -118,11 +149,11 @@ const barPositions = computed(() => {
   return buildGanttBarPositions({
     fixture: filteredFixture.value,
     rows: rows.value,
-    width: props.width,
+    width: chartWidth.value,
     rowHeight: props.rowHeight,
     zoom: props.zoom,
     labelWidth,
-    previewById: props.previewById,
+    previewById: livePreviewById.value,
   }).filter((position) => visibleTaskIds.has(position.task.id))
 })
 const summary = computed(() => {
@@ -148,13 +179,23 @@ async function syncSurface() {
     return
   }
 
+  if (
+    surface.value
+    && (surfaceSize.value?.width !== scene.value.width || surfaceSize.value.height !== scene.value.height)
+  ) {
+    surface.value.dispose()
+    surface.value = undefined
+    surfaceSize.value = undefined
+  }
+
   if (!surface.value) {
-    const nextSurface = await createLeaferSurface(host, props.width, scene.value.height)
+    const nextSurface = await createLeaferSurface(host, scene.value.width, scene.value.height)
     if (isDisposed.value) {
       nextSurface.dispose()
       return
     }
     surface.value = nextSurface
+    surfaceSize.value = { width: scene.value.width, height: scene.value.height }
   }
 
   renderSceneToLeafer(surface.value, scene.value)
@@ -182,6 +223,7 @@ function startDrag(task: GanttRow, event: PointerEvent) {
   activeDrag.value = {
     taskId: task.id,
     startX: event.clientX,
+    currentDeltaX: 0,
     before: props.previewById[task.id] ?? { start: task.start, end: task.end },
   }
 }
@@ -191,6 +233,10 @@ function moveDrag(event: PointerEvent) {
     return
   }
 
+  activeDrag.value = {
+    ...activeDrag.value,
+    currentDeltaX: event.clientX - activeDrag.value.startX,
+  }
   event.preventDefault()
 }
 
@@ -225,7 +271,7 @@ function finishDrag(task: GanttRow, event: PointerEvent) {
       deltaX,
       rangeStart: filteredFixture.value.rangeStart,
       rangeEnd: filteredFixture.value.rangeEnd,
-      width: props.width - labelWidth,
+      width: chartWidth.value - labelWidth,
       zoom: props.zoom,
     }),
   })
@@ -270,15 +316,15 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <TimelineAxis :ticks="timelineTicks" :width="width" :label-width="labelWidth" />
+    <TimelineAxis :ticks="timelineTicks" :width="chartWidth" :label-width="labelWidth" />
 
     <div class="scheduling-chart__viewport" :style="{ height: viewportHeightStyle }" @scroll="onScroll">
-      <div class="scheduling-chart__scroll-plane" :style="{ width: `${width}px`, height: chartHeight }">
+      <div class="scheduling-chart__scroll-plane" :style="{ width: `${chartWidth}px`, height: chartHeight }">
         <div
           ref="surfaceHost"
           aria-hidden="true"
           class="scheduling-chart__surface"
-          :style="{ width: `${width}px`, height: chartHeight }"
+          :style="{ width: `${chartWidth}px`, height: chartHeight }"
         />
 
         <div class="scheduling-chart__rows" :style="{ height: chartHeight }">
@@ -320,6 +366,7 @@ onBeforeUnmount(() => {
           v-for="position in barPositions"
           :key="`bar-${position.task.id}`"
           class="gantt-bar-overlay"
+          :class="{ 'gantt-bar-overlay--dragging': activeDrag?.taskId === position.task.id }"
           type="button"
           :data-test="`gantt-bar-${position.task.id}`"
           :style="{
@@ -414,6 +461,7 @@ onBeforeUnmount(() => {
 .gantt-row {
   position: absolute;
   left: 0;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18px 18px;
   grid-template-rows: 1fr 1fr;
@@ -433,6 +481,7 @@ onBeforeUnmount(() => {
 .gantt-bar-overlay {
   position: absolute;
   z-index: 3;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   height: 22px;
@@ -447,9 +496,24 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  touch-action: none;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .gantt-bar-overlay:active {
+  cursor: grabbing;
+}
+
+.gantt-bar-overlay--dragging {
+  z-index: 5;
+  border-color: #2563eb;
+  background: #dbeafe;
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.16),
+    0 0 0 2px rgba(37, 99, 235, 0.18);
   cursor: grabbing;
 }
 

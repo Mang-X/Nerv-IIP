@@ -33,6 +33,14 @@ Layer: Component package | Source: custom Vue + Leafer UI + `@nerv-iip/ui`
 | `commitPreview` | `Record<string, SchedulingPreviewWindow>` | Convert preview windows to an external save command. |
 | `resetPreview` | none | Clear external preview state. |
 
+`SchedulingPreviewWindow` carries `start` and `end`; schedule operation previews may also carry `resourceId` for cross-row reassignment previews. Hosts remain responsible for validating and persisting any submitted intent.
+
+## Interaction details
+- Gantt and schedule bars show a live preview while dragging, before a `previewCommand` is emitted.
+- Schedule operation blocks must stay inside the resource row height and use `resourceId` from preview state when shown on another row.
+- `day`, `week`, and `month` zoom must update both timeline labels and chart content width so bars and axis remain visually linked.
+- Timeline labels should keep padding at the first and last tick to avoid clipped edge text.
+
 ## Do's and Don'ts
 - Do: import only from `@nerv-iip/scheduling-visualization`.
 - Do: keep Leafer-specific APIs inside the package adapter.
