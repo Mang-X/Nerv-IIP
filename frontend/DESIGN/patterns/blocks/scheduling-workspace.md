@@ -26,10 +26,12 @@ Category: block
 - Selecting a task, resource, or operation opens detail content in the adjacent panel.
 - Preview moves stay client-side until a future explicit save intent exists.
 - The package must work with mock fixtures and must not require a real backend.
+- Search filters task/resource/operation names and codes without mutating the source fixture.
+- Dragging a task or operation bar emits a preview command; the host decides whether that preview can be committed.
 
 ## Do's and Don'ts
 - Do: keep the workspace dense, scan-friendly, and operational.
 - Do: keep Console page integration separate from the component package.
+- Do: validate package changes in the package-local preview before proposing Console integration.
 - Don't: add marketing copy, hero layouts, or decorative panels.
 - Don't: infer scheduling conflicts in the frontend; display conflicts from the fixture or API payload.
-

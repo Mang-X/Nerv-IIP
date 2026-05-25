@@ -43,7 +43,7 @@
 37. Business Wave 3/Wave 4 规划入口已补齐：ERP #137/#138/#139 使用 `docs/superpowers/specs/2026-05-23-business-wave-3-agent-session-design.md`、`docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md` 和三份 ERP 子计划推进；#77 Full-chain acceptance 使用 `docs/superpowers/specs/2026-05-23-business-full-chain-acceptance-design.md` 和 `docs/superpowers/plans/2026-05-23-business-full-chain-acceptance.md`。
 38. Business Wave 3 ERP 已落地：BusinessERP 已纳入 `backend/Nerv.IIP.sln`、平台级 Aspire AppHost、IAM seed/catalog、schema catalog、readiness 映射和 `scripts/verify-business-erp-procurement-sales-finance-mvp.ps1` 聚合验证；本地端口固定为 5118。WMS 已抽出 `Nerv.IIP.Contracts.Wms` 公共事件契约，并默认通过 HTTP client 向 Inventory posting 库存移动。
 39. #77 Full-chain acceptance 已从 contract metadata baseline 升级为 live public-surface 验收：WMS completion 使用 HTTP Inventory movement client 并提供 WCS failure/retry/complete 查询与 `wms.WcsTaskCompleted` 公共事件类型；MES 暴露生产报工、完工入库请求和维护产能影响查询；ERP Finance 暴露 AP/AR/Cost candidate source-document drill-down。`backend/tests/Nerv.IIP.Business.Acceptance.Tests` 继续提供统一 fixture/correlation/event recorder/HTTP envelope helper，`scripts/verify-business-full-chain-acceptance.ps1` 会覆盖 WMS/MES/ERP 支撑 surface 与七条链路验收；当前仍不启动 Docker/PostgreSQL 或外部设备。
-40. #78 Scheduling Visualization foundation 已落地为 `frontend/packages/scheduling-visualization`：引入 `leafer-ui` 但只在包内 canvas adapter 使用，提供 mock fixtures、time-scale、row grouping、preview command stack、Leafer scene renderer、`GanttChart`、`ScheduleChart`、`SchedulingToolbar`、`SchedulingDetailSheet` 和 `SchedulingWorkspace`；当前没有 Console route、Gateway/API contract、OpenAPI/api-client 变更或真实后端接线。
+40. #78 Scheduling Visualization foundation 已落地为 `frontend/packages/scheduling-visualization`：引入 `leafer-ui` 但只在包内 canvas adapter 使用，提供 mock fixtures、time-scale、row grouping、search/filter、visible row virtualization、preview command stack、drag preview intent events、Leafer scene renderer、package-local Vite preview、`GanttChart`、`ScheduleChart`、`SchedulingToolbar`、`SchedulingDetailSheet` 和 `SchedulingWorkspace`；当前没有 Console route、Gateway/API contract、OpenAPI/api-client 变更或真实后端接线。
 
 ### 业务平台代码事实与 issue 映射
 
@@ -338,11 +338,12 @@
 29. 运行 `pwsh scripts/verify-business-full-chain-acceptance.ps1` 可验证 #77 live full-chain acceptance：WMS/MES/ERP 支撑 public-surface focused tests、七条链路公开 API contract surface、统一 fixture/correlation、event recorder 和 HTTP response envelope helper；该脚本使用 governed `ScriptAutomation.ps1` helper，当前不启动 Docker/PostgreSQL 或外部设备。
 30. 运行 `pnpm -C frontend check`、`lint`、`fmt`、`typecheck`、`test`、`build` 可单独验证前端工作区质量门禁；第五阶段只有发生 OpenAPI/api-client 变化时才需要触发。
 31. 运行 `pnpm -C frontend --filter @nerv-iip/scheduling-visualization test` 与 `pnpm -C frontend --filter @nerv-iip/scheduling-visualization typecheck` 可验证 #78 甘特/排程可视化组件包 foundation。
-32. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
-33. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
-34. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-35. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、Notification 站内消息/任务纵切与 Console facade、BusinessMasterData Layer 0 realignment、BusinessProductEngineering release facts、BusinessInventory MVP、BusinessQuality inspection MVP、BusinessMES persistence MVP、BusinessDemandPlanning MRP MVP、BarcodeLabel MVP、BusinessApproval MVP、WMS execution MVP、BusinessIndustrialTelemetry MVP、BusinessMaintenance MVP，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；前端另有 mock-only 的 `@nerv-iip/scheduling-visualization` 甘特/排程组件包 foundation；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批、Notification 外部通道 provider、MinIO/S3 multipart 或真实 APS/MES 排程后端接线。
-36. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
+32. 运行 `pnpm -C frontend --filter @nerv-iip/scheduling-visualization dev` 可启动 package-local browser preview；该 preview 只用于组件验收，不代表 Console 路由。
+33. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
+34. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。
+35. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
+36. 当前实现用于本地开发和接口联调，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、Notification 站内消息/任务纵切与 Console facade、BusinessMasterData Layer 0 realignment、BusinessProductEngineering release facts、BusinessInventory MVP、BusinessQuality inspection MVP、BusinessMES persistence MVP、BusinessDemandPlanning MRP MVP、BarcodeLabel MVP、BusinessApproval MVP、WMS execution MVP、BusinessIndustrialTelemetry MVP、BusinessMaintenance MVP，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；前端另有 mock-only 的 `@nerv-iip/scheduling-visualization` 甘特/排程组件包 foundation；不包含 OAuth/OIDC、SSO、MFA、ABAC、生产部署、高风险动作审批、Notification 外部通道 provider、MinIO/S3 multipart 或真实 APS/MES 排程后端接线。
+37. 当前部署交付已经有平台级 AppHost 编译入口；生成式 Compose、安装包和 Windows/Linux 整合安装脚本尚未落地。
 
 ### 可以并行但不阻塞开工的事项
 

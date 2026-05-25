@@ -26,4 +26,20 @@ describe('SchedulingWorkspace', () => {
 
     expect(document.body.textContent).toContain('Routing review')
   })
+
+  it('re-emits host integration events from selection, search, and preview commit', async () => {
+    const wrapper = mount(SchedulingWorkspace, {
+      attachTo: document.body,
+    })
+
+    await wrapper.get('[data-test="scheduling-search"]').setValue('routing')
+    await wrapper.get('[data-test="gantt-row-task-routing-review"]').trigger('click')
+    await wrapper.get('[data-test="commit-preview"]').trigger('click')
+
+    expect(wrapper.emitted('selectionChange')?.[0]?.[0]).toEqual({
+      source: 'gantt',
+      selection: { kind: 'task', id: 'task-routing-review' },
+    })
+    expect(wrapper.emitted('commitPreview')).toBeTruthy()
+  })
 })

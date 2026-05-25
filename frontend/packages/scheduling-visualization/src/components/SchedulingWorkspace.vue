@@ -3,6 +3,7 @@ import { computed, shallowRef } from 'vue'
 
 import type { GanttFixture, GanttSelection } from '../model/gantt'
 import type { ScheduleFixture, ScheduleSelection } from '../model/schedule'
+import type { SchedulingPreviewCommand, SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import type { SchedulingZoom } from '../time-scale/timeScale'
 import type { SchedulingWorkspaceMode, SchedulingWorkspaceSelection } from './types'
 import GanttChart from './GanttChart.vue'
@@ -15,16 +16,27 @@ import { createSchedulingCommandStack } from '../state/useSchedulingCommands'
 interface Props {
   ganttFixture?: GanttFixture
   scheduleFixture?: ScheduleFixture
+  initialMode?: SchedulingWorkspaceMode
+  previewById?: Record<string, SchedulingPreviewWindow>
+}
+
+interface Emits {
+  selectionChange: [selection: SchedulingWorkspaceSelection | undefined]
+  previewCommand: [command: SchedulingPreviewCommand]
+  commitPreview: [previewById: Record<string, SchedulingPreviewWindow>]
+  resetPreview: []
 }
 
 const props = defineProps<Props>()
+const emit = defineEmits<Emits>()
 
 const fallbackGanttFixture = createMockGanttFixture()
 const fallbackScheduleFixture = createMockScheduleFixture()
 const commandStack = createSchedulingCommandStack()
 
-const mode = shallowRef<SchedulingWorkspaceMode>('gantt')
+const mode = shallowRef<SchedulingWorkspaceMode>(props.initialMode ?? 'gantt')
 const zoom = shallowRef<SchedulingZoom>('day')
+const query = shallowRef('')
 const showDependencies = shallowRef(true)
 const showBaselines = shallowRef(true)
 const showCapacity = shallowRef(true)
@@ -40,6 +52,10 @@ const ganttSelection = computed<GanttSelection | undefined>(() =>
 const scheduleSelection = computed<ScheduleSelection | undefined>(() =>
   activeSelection.value?.source === 'schedule' ? activeSelection.value.selection : undefined,
 )
+const effectivePreviewById = computed(() => ({
+  ...(props.previewById ?? {}),
+  ...commandStack.previewById.value,
+}))
 
 function toggleExpandedTask(taskId: string) {
   expandedTaskIds.value = expandedTaskIds.value.includes(taskId)
@@ -49,14 +65,31 @@ function toggleExpandedTask(taskId: string) {
 
 function selectGantt(selection: GanttSelection) {
   activeSelection.value = { source: 'gantt', selection }
+  emit('selectionChange', activeSelection.value)
 }
 
 function selectSchedule(selection: ScheduleSelection) {
   activeSelection.value = { source: 'schedule', selection }
+  emit('selectionChange', activeSelection.value)
 }
 
 function clearSelection() {
   activeSelection.value = undefined
+  emit('selectionChange', undefined)
+}
+
+function applyPreviewCommand(command: SchedulingPreviewCommand) {
+  commandStack.execute(command)
+  emit('previewCommand', command)
+}
+
+function resetPreview() {
+  commandStack.reset()
+  emit('resetPreview')
+}
+
+function commitPreview() {
+  emit('commitPreview', effectivePreviewById.value)
 }
 </script>
 
@@ -65,6 +98,7 @@ function clearSelection() {
     <SchedulingToolbar
       :mode="mode"
       :zoom="zoom"
+      :query="query"
       :show-dependencies="showDependencies"
       :show-baselines="showBaselines"
       :show-capacity="showCapacity"
@@ -73,13 +107,15 @@ function clearSelection() {
       :can-redo="commandStack.canRedo.value"
       @update:mode="mode = $event"
       @update:zoom="zoom = $event"
+      @update:query="query = $event"
       @update:show-dependencies="showDependencies = $event"
       @update:show-baselines="showBaselines = $event"
       @update:show-capacity="showCapacity = $event"
       @update:show-conflicts="showConflicts = $event"
       @undo="commandStack.undo()"
       @redo="commandStack.redo()"
-      @reset="commandStack.reset()"
+      @reset="resetPreview"
+      @commit="commitPreview"
     />
 
     <div class="scheduling-workspace__main">
@@ -93,9 +129,11 @@ function clearSelection() {
           :show-dependencies="showDependencies"
           :show-baselines="showBaselines"
           :show-conflicts="showConflicts"
-          :preview-by-id="commandStack.previewById.value"
+          :preview-by-id="effectivePreviewById"
+          :query="query"
           @select="selectGantt"
           @toggle-expand="toggleExpandedTask"
+          @preview-command="applyPreviewCommand"
         />
         <ScheduleChart
           v-else
@@ -104,8 +142,10 @@ function clearSelection() {
           :zoom="zoom"
           :show-capacity="showCapacity"
           :show-conflicts="showConflicts"
-          :preview-by-id="commandStack.previewById.value"
+          :preview-by-id="effectivePreviewById"
+          :query="query"
           @select="selectSchedule"
+          @preview-command="applyPreviewCommand"
         />
       </div>
 
@@ -144,4 +184,3 @@ function clearSelection() {
   }
 }
 </style>
-

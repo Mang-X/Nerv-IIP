@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from '@nerv-iip/ui'
+import { Button, Input } from '@nerv-iip/ui'
 import {
   CalendarDays,
   ChartGantt,
@@ -18,6 +18,7 @@ import type { SchedulingWorkspaceMode } from './types'
 interface Props {
   mode: SchedulingWorkspaceMode
   zoom: SchedulingZoom
+  query: string
   showDependencies: boolean
   showBaselines: boolean
   showCapacity: boolean
@@ -29,6 +30,7 @@ interface Props {
 interface Emits {
   'update:mode': [value: SchedulingWorkspaceMode]
   'update:zoom': [value: SchedulingZoom]
+  'update:query': [value: string]
   'update:showDependencies': [value: boolean]
   'update:showBaselines': [value: boolean]
   'update:showCapacity': [value: boolean]
@@ -36,6 +38,7 @@ interface Emits {
   undo: []
   redo: []
   reset: []
+  commit: []
 }
 
 const props = defineProps<Props>()
@@ -81,6 +84,16 @@ function zoomBy(delta: number) {
       <Button variant="outline" size="icon-sm" type="button" aria-label="Zoom in" @click="zoomBy(-1)">
         <ZoomIn />
       </Button>
+    </div>
+
+    <div class="scheduling-toolbar__search">
+      <Input
+        :model-value="query"
+        data-test="scheduling-search"
+        placeholder="Search tasks, orders, resources"
+        aria-label="Search schedule"
+        @update:model-value="emit('update:query', String($event))"
+      />
     </div>
 
     <div class="scheduling-toolbar__group scheduling-toolbar__group--wrap" aria-label="Layer toggles">
@@ -145,6 +158,15 @@ function zoomBy(delta: number) {
       <Button variant="outline" size="icon-sm" type="button" aria-label="Reset preview" @click="emit('reset')">
         <RotateCcw />
       </Button>
+      <Button
+        variant="default"
+        size="sm"
+        type="button"
+        data-test="commit-preview"
+        @click="emit('commit')"
+      >
+        Commit
+      </Button>
     </div>
   </div>
 </template>
@@ -179,5 +201,9 @@ function zoomBy(delta: number) {
   text-align: center;
   text-transform: capitalize;
 }
-</style>
 
+.scheduling-toolbar__search {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+</style>

@@ -14,6 +14,13 @@ vi.mock('../canvas/createLeaferSurface', () => ({
   }),
 }))
 
+function dispatchPointer(target: Element, type: string, clientX: number) {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clientX', { value: clientX })
+  Object.defineProperty(event, 'pointerId', { value: 1 })
+  target.dispatchEvent(event)
+}
+
 describe('GanttChart', () => {
   it('renders rows and emits selection from row buttons', async () => {
     const wrapper = mount(GanttChart, {
@@ -27,5 +34,42 @@ describe('GanttChart', () => {
     await wrapper.get('[data-test="gantt-row-task-routing-review"]').trigger('click')
 
     expect(wrapper.emitted('select')?.[0]).toEqual([{ kind: 'task', id: 'task-routing-review' }])
+  })
+
+  it('renders a time axis and filters rows by query', () => {
+    const wrapper = mount(GanttChart, {
+      props: {
+        fixture: createMockGanttFixture(),
+        expandedTaskIds: ['phase-engineering'],
+        query: 'routing',
+      },
+    })
+
+    expect(wrapper.find('[data-test="timeline-axis"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="gantt-row-task-routing-review"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="gantt-row-task-ebom-release"]').exists()).toBe(false)
+  })
+
+  it('emits a preview command when a task bar is dragged', async () => {
+    const wrapper = mount(GanttChart, {
+      attachTo: document.body,
+      props: {
+        fixture: createMockGanttFixture(),
+        expandedTaskIds: ['phase-engineering'],
+      },
+    })
+
+    const bar = wrapper.get('[data-test="gantt-bar-task-routing-review"]')
+    dispatchPointer(bar.element, 'pointerdown', 100)
+    dispatchPointer(bar.element, 'pointermove', 140)
+    dispatchPointer(bar.element, 'pointerup', 140)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('previewCommand')?.[0]?.[0]).toEqual(
+      expect.objectContaining({
+        targetId: 'task-routing-review',
+        kind: 'move',
+      }),
+    )
   })
 })

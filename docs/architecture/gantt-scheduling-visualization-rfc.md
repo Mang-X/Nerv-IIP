@@ -6,7 +6,7 @@
 
 1. shadcn-vue 适合作为甘特/排产页面的表格、工具栏、筛选、弹窗、上下文菜单和反馈组件来源；在本仓库中必须通过 `@nerv-iip/ui` 稳定导出使用，不允许业务页面 deep-import shadcn 组件。
 2. Leafer UI 作为 Canvas 渲染引擎已进入 `frontend/packages/scheduling-visualization`，但只通过本地 adapter 暴露给组件，不允许 Console 页面直接导入。
-3. 2026-05-25 foundation slice 已交付 mock-only 甘特图、排程图、toolbar、detail sheet、workspace、time-scale、command stack、scene renderer 和 package tests；不接真实后端。
+3. 2026-05-25 foundation slice 已交付 mock-only 甘特图、排程图、toolbar、detail sheet、workspace、time-scale、command stack、scene renderer、search/filter、visible row virtualization、drag preview intent events、package-local preview 和 package tests；不接真实后端。
 4. 当前仍不进入业务后端、领域服务或 Console MVP 路由范围。仓库主线继续以 #77 full-chain acceptance 和已拆分业务服务 issue 为准。
 5. 真实 Console 页面实施前，仍必须另建独立 feature issue/spec，先冻结后端 APS 或 MES schedule 查询契约，再接入 generated API client 和路由权限。
 
@@ -51,6 +51,8 @@ shadcn-vue remains the UI shell; Leafer UI remains behind a local adapter so API
 3. Undo/redo preview command state and typed selection state.
 4. Leafer scene builders plus `renderSceneToLeafer`.
 5. Vue components: `GanttChart`, `ScheduleChart`, `SchedulingToolbar`, `SchedulingDetailSheet` and `SchedulingWorkspace`.
+6. Public host integration events: `selectionChange`, `previewCommand`, `commitPreview` and `resetPreview`.
+7. Package-local Vite preview via `pnpm -C frontend --filter @nerv-iip/scheduling-visualization dev`.
 
 The package deliberately does not add a Console route, Gateway facade, OpenAPI contract, generated API client change, persistence schema, or backend scheduling engine.
 

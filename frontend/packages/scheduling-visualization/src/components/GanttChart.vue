@@ -5,12 +5,20 @@ import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch
 
 import type { LeaferSurface } from '../canvas/leaferTypes'
 import type { GanttFixture, GanttRow, GanttSelection } from '../model/gantt'
-import type { SchedulingPreviewWindow } from '../state/useSchedulingCommands'
+import type { SchedulingPreviewCommand, SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import type { SchedulingZoom } from '../time-scale/timeScale'
+import TimelineAxis from './TimelineAxis.vue'
 import { createLeaferSurface } from '../canvas/createLeaferSurface'
+import { filterGanttFixture } from '../state/filterFixtures'
 import { flattenGanttTasks } from '../model/gantt'
 import { buildGanttScene } from '../renderers/buildGanttScene'
 import { renderSceneToLeafer } from '../renderers/renderSceneToLeafer'
+import {
+  buildGanttBarPositions,
+  buildTimelineTicks,
+  shiftWindowByPixels,
+} from '../time-scale/timelineLayout'
+import { calculateVisibleRowRange } from '../time-scale/visibleRange'
 
 interface Props {
   fixture: GanttFixture
@@ -22,14 +30,19 @@ interface Props {
   showConflicts?: boolean
   today?: string
   previewById?: Record<string, SchedulingPreviewWindow>
+  query?: string
   width?: number
   rowHeight?: number
+  maxViewportHeight?: number
 }
 
 interface Emits {
   select: [selection: GanttSelection]
   toggleExpand: [taskId: string]
+  previewCommand: [command: SchedulingPreviewCommand]
 }
+
+const labelWidth = 220
 
 const props = withDefaults(defineProps<Props>(), {
   expandedTaskIds: () => [],
@@ -39,20 +52,29 @@ const props = withDefaults(defineProps<Props>(), {
   showConflicts: true,
   today: '2026-05-06T00:00:00.000Z',
   previewById: () => ({}),
+  query: '',
   width: 960,
   rowHeight: 44,
+  maxViewportHeight: 360,
 })
 const emit = defineEmits<Emits>()
 
 const surfaceHost = useTemplateRef<HTMLDivElement>('surfaceHost')
 const surface = shallowRef<LeaferSurface>()
 const isDisposed = shallowRef(false)
+const scrollTop = shallowRef(0)
+const activeDrag = shallowRef<{
+  taskId: string
+  startX: number
+  before: SchedulingPreviewWindow
+}>()
 
 const expandedIds = computed(() => new Set(props.expandedTaskIds))
-const rows = computed<GanttRow[]>(() => flattenGanttTasks(props.fixture.tasks, expandedIds.value))
+const filteredFixture = computed(() => filterGanttFixture(props.fixture, props.query))
+const rows = computed<GanttRow[]>(() => flattenGanttTasks(filteredFixture.value.tasks, expandedIds.value))
 const scene = computed(() =>
   buildGanttScene({
-    fixture: props.fixture,
+    fixture: filteredFixture.value,
     expandedTaskIds: expandedIds.value,
     width: props.width,
     rowHeight: props.rowHeight,
@@ -65,12 +87,50 @@ const scene = computed(() =>
   }),
 )
 const chartHeight = computed(() => `${scene.value.height}px`)
+const viewportHeight = computed(() => Math.min(scene.value.height, props.maxViewportHeight))
+const viewportHeightStyle = computed(() => `${viewportHeight.value}px`)
+const visibleRange = computed(() =>
+  calculateVisibleRowRange({
+    scrollTop: scrollTop.value,
+    viewportHeight: viewportHeight.value,
+    rowHeight: props.rowHeight,
+    rowCount: rows.value.length,
+    overscan: 3,
+  }),
+)
+const visibleRows = computed(() =>
+  rows.value.slice(visibleRange.value.startIndex, visibleRange.value.endIndex).map((row, offset) => ({
+    row,
+    index: visibleRange.value.startIndex + offset,
+  })),
+)
+const timelineTicks = computed(() =>
+  buildTimelineTicks({
+    start: filteredFixture.value.rangeStart,
+    end: filteredFixture.value.rangeEnd,
+    width: props.width - labelWidth,
+    labelWidth,
+    zoom: props.zoom,
+  }),
+)
+const barPositions = computed(() => {
+  const visibleTaskIds = new Set(visibleRows.value.map((item) => item.row.id))
+  return buildGanttBarPositions({
+    fixture: filteredFixture.value,
+    rows: rows.value,
+    width: props.width,
+    rowHeight: props.rowHeight,
+    zoom: props.zoom,
+    labelWidth,
+    previewById: props.previewById,
+  }).filter((position) => visibleTaskIds.has(position.task.id))
+})
 const summary = computed(() => {
-  const conflictTaskIds = new Set(props.fixture.conflicts.map((conflict) => conflict.taskId))
+  const conflictTaskIds = new Set(filteredFixture.value.conflicts.map((conflict) => conflict.taskId))
   return {
     rows: rows.value.length,
     conflicts: rows.value.filter((row) => conflictTaskIds.has(row.id)).length,
-    dependencies: props.fixture.dependencies.length,
+    dependencies: filteredFixture.value.dependencies.length,
   }
 })
 
@@ -110,6 +170,79 @@ function toggleRow(row: GanttRow) {
   }
 }
 
+function onScroll(event: Event) {
+  scrollTop.value = (event.currentTarget as HTMLElement).scrollTop
+}
+
+function startDrag(task: GanttRow, event: PointerEvent) {
+  if (event.currentTarget instanceof HTMLElement && typeof event.currentTarget.setPointerCapture === 'function') {
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  activeDrag.value = {
+    taskId: task.id,
+    startX: event.clientX,
+    before: props.previewById[task.id] ?? { start: task.start, end: task.end },
+  }
+}
+
+function moveDrag(event: PointerEvent) {
+  if (!activeDrag.value) {
+    return
+  }
+
+  event.preventDefault()
+}
+
+function finishDrag(task: GanttRow, event: PointerEvent) {
+  if (
+    event.currentTarget instanceof HTMLElement
+    && typeof event.currentTarget.hasPointerCapture === 'function'
+    && event.currentTarget.hasPointerCapture(event.pointerId)
+  ) {
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
+  const drag = activeDrag.value
+  activeDrag.value = undefined
+  if (!drag || drag.taskId !== task.id) {
+    return
+  }
+
+  const deltaX = event.clientX - drag.startX
+  if (Math.abs(deltaX) < 4) {
+    return
+  }
+
+  emit('previewCommand', {
+    id: `preview-${task.id}-${Date.now()}`,
+    targetId: task.id,
+    kind: 'move',
+    before: drag.before,
+    after: shiftWindowByPixels({
+      start: drag.before.start,
+      end: drag.before.end,
+      deltaX,
+      rangeStart: filteredFixture.value.rangeStart,
+      rangeEnd: filteredFixture.value.rangeEnd,
+      width: props.width - labelWidth,
+      zoom: props.zoom,
+    }),
+  })
+}
+
+function cancelDrag(event: PointerEvent) {
+  if (
+    event.currentTarget instanceof HTMLElement
+    && typeof event.currentTarget.hasPointerCapture === 'function'
+    && event.currentTarget.hasPointerCapture(event.pointerId)
+  ) {
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
+  activeDrag.value = undefined
+}
+
 onMounted(syncSurface)
 watch(scene, syncSurface, { flush: 'post' })
 onBeforeUnmount(() => {
@@ -137,48 +270,72 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <div class="scheduling-chart__viewport" :style="{ height: chartHeight }">
-      <div
-        ref="surfaceHost"
-        aria-hidden="true"
-        class="scheduling-chart__surface"
-        :style="{ width: `${width}px`, height: chartHeight }"
-      />
+    <TimelineAxis :ticks="timelineTicks" :width="width" :label-width="labelWidth" />
 
-      <div class="scheduling-chart__rows" :style="{ height: chartHeight }">
+    <div class="scheduling-chart__viewport" :style="{ height: viewportHeightStyle }" @scroll="onScroll">
+      <div class="scheduling-chart__scroll-plane" :style="{ width: `${width}px`, height: chartHeight }">
+        <div
+          ref="surfaceHost"
+          aria-hidden="true"
+          class="scheduling-chart__surface"
+          :style="{ width: `${width}px`, height: chartHeight }"
+        />
+
+        <div class="scheduling-chart__rows" :style="{ height: chartHeight }">
         <button
-          v-for="row in rows"
-          :key="row.id"
+          v-for="item in visibleRows"
+          :key="item.row.id"
           class="gantt-row"
-          :class="{ 'gantt-row--selected': isSelected(row) }"
+          :class="{ 'gantt-row--selected': isSelected(item.row) }"
           type="button"
-          :data-test="`gantt-row-${row.id}`"
-          :style="{ minHeight: `${rowHeight}px` }"
-          @click="selectRow(row)"
+          :data-test="`gantt-row-${item.row.id}`"
+          :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px` }"
+          @click="selectRow(item.row)"
         >
-          <span class="gantt-row__main" :style="{ paddingLeft: `${row.depth * 16}px` }">
+          <span class="gantt-row__main" :style="{ paddingLeft: `${item.row.depth * 16}px` }">
             <button
-              v-if="row.hasChildren"
+              v-if="item.row.hasChildren"
               class="gantt-row__expand"
               type="button"
-              :aria-label="expandedIds.has(row.id) ? 'Collapse task group' : 'Expand task group'"
-              @click.stop="toggleRow(row)"
+              :aria-label="expandedIds.has(item.row.id) ? 'Collapse task group' : 'Expand task group'"
+              @click.stop="toggleRow(item.row)"
             >
-              <ChevronDown v-if="expandedIds.has(row.id)" />
+              <ChevronDown v-if="expandedIds.has(item.row.id)" />
               <ChevronRight v-else />
             </button>
             <span v-else class="gantt-row__spacer" />
-            <span class="gantt-row__name">{{ row.name }}</span>
+            <span class="gantt-row__name">{{ item.row.name }}</span>
           </span>
-          <span class="gantt-row__code">{{ row.code }}</span>
-          <span class="gantt-row__status">{{ row.status }}</span>
-          <LockKeyhole v-if="row.isLocked" class="gantt-row__icon" aria-label="Locked" />
+          <span class="gantt-row__code">{{ item.row.code }}</span>
+          <span class="gantt-row__status">{{ item.row.status }}</span>
+          <LockKeyhole v-if="item.row.isLocked" class="gantt-row__icon" aria-label="Locked" />
           <AlertTriangle
-            v-if="rowHasConflict(row)"
+            v-if="rowHasConflict(item.row)"
             class="gantt-row__icon gantt-row__icon--warning"
             aria-label="Has conflict"
           />
         </button>
+
+        <button
+          v-for="position in barPositions"
+          :key="`bar-${position.task.id}`"
+          class="gantt-bar-overlay"
+          type="button"
+          :data-test="`gantt-bar-${position.task.id}`"
+          :style="{
+            top: `${position.top}px`,
+            left: `${position.left}px`,
+            width: `${position.width}px`,
+          }"
+          @click.stop="selectRow(position.task)"
+          @pointerdown.stop="startDrag(position.task, $event)"
+          @pointermove.stop="moveDrag"
+          @pointerup.stop="finishDrag(position.task, $event)"
+          @pointercancel.stop="cancelDrag"
+        >
+          {{ position.task.code }}
+        </button>
+        </div>
       </div>
     </div>
   </section>
@@ -235,8 +392,12 @@ onBeforeUnmount(() => {
 
 .scheduling-chart__viewport {
   position: relative;
-  overflow: auto hidden;
+  overflow: auto;
   min-height: 44px;
+}
+
+.scheduling-chart__scroll-plane {
+  position: relative;
 }
 
 .scheduling-chart__surface {
@@ -247,10 +408,11 @@ onBeforeUnmount(() => {
 .scheduling-chart__rows {
   position: relative;
   width: 100%;
-  min-width: 720px;
 }
 
 .gantt-row {
+  position: absolute;
+  left: 0;
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 96px 86px 24px 24px;
   align-items: center;
@@ -263,6 +425,29 @@ onBeforeUnmount(() => {
   cursor: pointer;
   font: inherit;
   text-align: left;
+}
+
+.gantt-bar-overlay {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding-inline: 7px;
+  border: 1px solid rgba(30, 64, 175, 0.48);
+  border-radius: 7px;
+  background: rgba(219, 234, 254, 0.9);
+  color: #1e3a8a;
+  cursor: grab;
+  font-size: 11px;
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-bar-overlay:active {
+  cursor: grabbing;
 }
 
 .gantt-row:hover {

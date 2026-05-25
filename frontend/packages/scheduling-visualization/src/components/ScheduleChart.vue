@@ -5,13 +5,20 @@ import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch
 
 import type { LeaferSurface } from '../canvas/leaferTypes'
 import type { ScheduleFixture, ScheduleOperation, ScheduleRow, ScheduleSelection } from '../model/schedule'
-import type { SchedulingPreviewWindow } from '../state/useSchedulingCommands'
+import type { SchedulingPreviewCommand, SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import type { SchedulingZoom } from '../time-scale/timeScale'
+import TimelineAxis from './TimelineAxis.vue'
 import { createLeaferSurface } from '../canvas/createLeaferSurface'
+import { filterScheduleFixture } from '../state/filterFixtures'
 import { groupScheduleRows } from '../model/schedule'
 import { buildScheduleScene } from '../renderers/buildScheduleScene'
 import { renderSceneToLeafer } from '../renderers/renderSceneToLeafer'
-import { createTimeScale } from '../time-scale/timeScale'
+import {
+  buildScheduleOperationPositions,
+  buildTimelineTicks,
+  shiftWindowByPixels,
+} from '../time-scale/timelineLayout'
+import { calculateVisibleRowRange } from '../time-scale/visibleRange'
 
 interface Props {
   fixture: ScheduleFixture
@@ -21,19 +28,15 @@ interface Props {
   showConflicts?: boolean
   today?: string
   previewById?: Record<string, SchedulingPreviewWindow>
+  query?: string
   width?: number
   rowHeight?: number
-}
-
-interface OperationPosition {
-  operation: ScheduleOperation
-  top: number
-  left: number
-  width: number
+  maxViewportHeight?: number
 }
 
 interface Emits {
   select: [selection: ScheduleSelection]
+  previewCommand: [command: SchedulingPreviewCommand]
 }
 
 const labelWidth = 230
@@ -44,21 +47,30 @@ const props = withDefaults(defineProps<Props>(), {
   showConflicts: true,
   today: '2026-05-06T00:00:00.000Z',
   previewById: () => ({}),
+  query: '',
   width: 960,
   rowHeight: 52,
+  maxViewportHeight: 360,
 })
 const emit = defineEmits<Emits>()
 
 const surfaceHost = useTemplateRef<HTMLDivElement>('surfaceHost')
 const surface = shallowRef<LeaferSurface>()
 const isDisposed = shallowRef(false)
+const scrollTop = shallowRef(0)
+const activeDrag = shallowRef<{
+  operationId: string
+  startX: number
+  before: SchedulingPreviewWindow
+}>()
 
+const filteredFixture = computed(() => filterScheduleFixture(props.fixture, props.query))
 const rows = computed<ScheduleRow[]>(() =>
-  groupScheduleRows(props.fixture.resources, props.fixture.operations),
+  groupScheduleRows(filteredFixture.value.resources, filteredFixture.value.operations),
 )
 const scene = computed(() =>
   buildScheduleScene({
-    fixture: props.fixture,
+    fixture: filteredFixture.value,
     width: props.width,
     rowHeight: props.rowHeight,
     zoom: props.zoom,
@@ -69,39 +81,48 @@ const scene = computed(() =>
   }),
 )
 const chartHeight = computed(() => `${scene.value.height}px`)
+const viewportHeight = computed(() => Math.min(scene.value.height, props.maxViewportHeight))
+const viewportHeightStyle = computed(() => `${viewportHeight.value}px`)
+const visibleRange = computed(() =>
+  calculateVisibleRowRange({
+    scrollTop: scrollTop.value,
+    viewportHeight: viewportHeight.value,
+    rowHeight: props.rowHeight,
+    rowCount: rows.value.length,
+    overscan: 3,
+  }),
+)
+const visibleRows = computed(() =>
+  rows.value.slice(visibleRange.value.startIndex, visibleRange.value.endIndex).map((row, offset) => ({
+    row,
+    index: visibleRange.value.startIndex + offset,
+  })),
+)
 const summary = computed(() => ({
-  resources: props.fixture.resources.length,
-  operations: props.fixture.operations.length,
-  overloads: props.fixture.capacityBands.filter((band) => band.isOverloaded).length,
+  resources: filteredFixture.value.resources.length,
+  operations: filteredFixture.value.operations.length,
+  overloads: filteredFixture.value.capacityBands.filter((band) => band.isOverloaded).length,
 }))
-const operationPositions = computed<OperationPosition[]>(() => {
-  const scale = createTimeScale({
-    start: props.fixture.rangeStart,
-    end: props.fixture.rangeEnd,
+const timelineTicks = computed(() =>
+  buildTimelineTicks({
+    start: filteredFixture.value.rangeStart,
+    end: filteredFixture.value.rangeEnd,
     width: props.width - labelWidth,
+    labelWidth,
     zoom: props.zoom,
-  })
-  const rowIndexByResource = new Map(rows.value.map((row, index) => [row.id, index]))
-
-  return props.fixture.operations.flatMap((operation) => {
-    const rowIndex = rowIndexByResource.get(operation.resourceId)
-    if (rowIndex === undefined) {
-      return []
-    }
-
-    const preview = props.previewById[operation.id]
-    const start = preview?.start ?? operation.start
-    const end = preview?.end ?? operation.end
-    const left = labelWidth + scale.dateToX(start)
-    const endX = labelWidth + scale.dateToX(end)
-
-    return [{
-      operation,
-      top: rowIndex * props.rowHeight + 10,
-      left,
-      width: Math.max(endX - left, 72),
-    }]
-  })
+  }),
+)
+const operationPositions = computed(() => {
+  const visibleResourceIds = new Set(visibleRows.value.map((item) => item.row.id))
+  return buildScheduleOperationPositions({
+    fixture: filteredFixture.value,
+    rows: rows.value,
+    width: props.width,
+    rowHeight: props.rowHeight,
+    zoom: props.zoom,
+    labelWidth,
+    previewById: props.previewById,
+  }).filter((position) => visibleResourceIds.has(position.operation.resourceId))
 })
 
 function isSelectedResource(row: ScheduleRow) {
@@ -141,6 +162,79 @@ onBeforeUnmount(() => {
   surface.value?.dispose()
   surface.value = undefined
 })
+
+function onScroll(event: Event) {
+  scrollTop.value = (event.currentTarget as HTMLElement).scrollTop
+}
+
+function startDrag(operation: ScheduleOperation, event: PointerEvent) {
+  if (event.currentTarget instanceof HTMLElement && typeof event.currentTarget.setPointerCapture === 'function') {
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  activeDrag.value = {
+    operationId: operation.id,
+    startX: event.clientX,
+    before: props.previewById[operation.id] ?? { start: operation.start, end: operation.end },
+  }
+}
+
+function moveDrag(event: PointerEvent) {
+  if (!activeDrag.value) {
+    return
+  }
+
+  event.preventDefault()
+}
+
+function finishDrag(operation: ScheduleOperation, event: PointerEvent) {
+  if (
+    event.currentTarget instanceof HTMLElement
+    && typeof event.currentTarget.hasPointerCapture === 'function'
+    && event.currentTarget.hasPointerCapture(event.pointerId)
+  ) {
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
+  const drag = activeDrag.value
+  activeDrag.value = undefined
+  if (!drag || drag.operationId !== operation.id) {
+    return
+  }
+
+  const deltaX = event.clientX - drag.startX
+  if (Math.abs(deltaX) < 4) {
+    return
+  }
+
+  emit('previewCommand', {
+    id: `preview-${operation.id}-${Date.now()}`,
+    targetId: operation.id,
+    kind: 'move',
+    before: drag.before,
+    after: shiftWindowByPixels({
+      start: drag.before.start,
+      end: drag.before.end,
+      deltaX,
+      rangeStart: filteredFixture.value.rangeStart,
+      rangeEnd: filteredFixture.value.rangeEnd,
+      width: props.width - labelWidth,
+      zoom: props.zoom,
+    }),
+  })
+}
+
+function cancelDrag(event: PointerEvent) {
+  if (
+    event.currentTarget instanceof HTMLElement
+    && typeof event.currentTarget.hasPointerCapture === 'function'
+    && event.currentTarget.hasPointerCapture(event.pointerId)
+  ) {
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
+  activeDrag.value = undefined
+}
 </script>
 
 <template>
@@ -161,28 +255,31 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <div class="scheduling-chart__viewport" :style="{ height: chartHeight }">
-      <div
-        ref="surfaceHost"
-        aria-hidden="true"
-        class="scheduling-chart__surface"
-        :style="{ width: `${width}px`, height: chartHeight }"
-      />
+    <TimelineAxis :ticks="timelineTicks" :width="width" :label-width="labelWidth" />
+
+    <div class="scheduling-chart__viewport" :style="{ height: viewportHeightStyle }" @scroll="onScroll">
+      <div class="scheduling-chart__scroll-plane" :style="{ width: `${width}px`, height: chartHeight }">
+        <div
+          ref="surfaceHost"
+          aria-hidden="true"
+          class="scheduling-chart__surface"
+          :style="{ width: `${width}px`, height: chartHeight }"
+        />
 
       <div class="scheduling-chart__rows" :style="{ height: chartHeight, minWidth: `${width}px` }">
         <button
-          v-for="row in rows"
-          :key="row.id"
+          v-for="item in visibleRows"
+          :key="item.row.id"
           class="schedule-resource"
-          :class="{ 'schedule-resource--selected': isSelectedResource(row) }"
+          :class="{ 'schedule-resource--selected': isSelectedResource(item.row) }"
           type="button"
-          :data-test="`schedule-resource-${row.id}`"
-          :style="{ height: `${rowHeight}px` }"
-          @click="emit('select', { kind: 'resource', id: row.id })"
+          :data-test="`schedule-resource-${item.row.id}`"
+          :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px` }"
+          @click="emit('select', { kind: 'resource', id: item.row.id })"
         >
-          <span class="schedule-resource__code">{{ row.workCenterCode }}</span>
-          <span class="schedule-resource__name">{{ row.name }}</span>
-          <span class="schedule-resource__calendar">{{ row.calendarLabel }}</span>
+          <span class="schedule-resource__code">{{ item.row.workCenterCode }}</span>
+          <span class="schedule-resource__name">{{ item.row.name }}</span>
+          <span class="schedule-resource__calendar">{{ item.row.calendarLabel }}</span>
         </button>
 
         <button
@@ -198,6 +295,10 @@ onBeforeUnmount(() => {
             width: `${position.width}px`,
           }"
           @click.stop="emit('select', { kind: 'operation', id: position.operation.id })"
+          @pointerdown.stop="startDrag(position.operation, $event)"
+          @pointermove.stop="moveDrag"
+          @pointerup.stop="finishDrag(position.operation, $event)"
+          @pointercancel.stop="cancelDrag"
         >
           <span class="schedule-operation__title">{{ position.operation.workOrderCode }}</span>
           <span class="schedule-operation__subtitle">{{ position.operation.name }}</span>
@@ -212,6 +313,7 @@ onBeforeUnmount(() => {
             aria-label="Has conflict"
           />
         </button>
+        </div>
       </div>
     </div>
   </section>
@@ -268,8 +370,12 @@ onBeforeUnmount(() => {
 
 .scheduling-chart__viewport {
   position: relative;
-  overflow: auto hidden;
+  overflow: auto;
   min-height: 52px;
+}
+
+.scheduling-chart__scroll-plane {
+  position: relative;
 }
 
 .scheduling-chart__surface {
@@ -283,6 +389,8 @@ onBeforeUnmount(() => {
 }
 
 .schedule-resource {
+  position: absolute;
+  left: 0;
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr);
   grid-template-rows: 1fr 1fr;
@@ -333,6 +441,7 @@ onBeforeUnmount(() => {
 
 .schedule-operation {
   position: absolute;
+  z-index: 3;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;

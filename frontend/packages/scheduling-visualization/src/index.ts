@@ -4,9 +4,16 @@ export { groupScheduleRows } from './model/schedule'
 export { buildGanttScene } from './renderers/buildGanttScene'
 export { buildScheduleScene } from './renderers/buildScheduleScene'
 export { renderSceneToLeafer } from './renderers/renderSceneToLeafer'
+export { filterGanttFixture, filterScheduleFixture } from './state/filterFixtures'
 export { createSchedulingCommandStack } from './state/useSchedulingCommands'
 export { useSchedulingSelection } from './state/useSchedulingSelection'
 export { createTimeScale } from './time-scale/timeScale'
+export {
+  buildGanttBarPositions,
+  buildScheduleOperationPositions,
+  buildTimelineTicks,
+  shiftWindowByPixels,
+} from './time-scale/timelineLayout'
 export { calculateVisibleRowRange } from './time-scale/visibleRange'
 export { default as GanttChart } from './components/GanttChart.vue'
 export { default as ScheduleChart } from './components/ScheduleChart.vue'
@@ -60,6 +67,12 @@ export type {
   TimeScale,
   TimeScaleTick,
 } from './time-scale/timeScale'
+export type {
+  BuildTimelineTickOptions,
+  GanttBarPosition,
+  ScheduleOperationPosition,
+  TimelineTick,
+} from './time-scale/timelineLayout'
 export type {
   SchedulingDetailField,
   SchedulingDetailView,
