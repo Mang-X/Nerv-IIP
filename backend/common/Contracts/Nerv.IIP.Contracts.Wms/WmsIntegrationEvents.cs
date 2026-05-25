@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
 namespace Nerv.IIP.Contracts.Wms;
 
 public static class WmsIntegrationEventTypes
@@ -32,7 +34,10 @@ public sealed record WmsIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    WmsIntegrationPayload Payload);
+    WmsIntegrationPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record WmsIntegrationPayload(
     string PublicReference,

@@ -74,6 +74,11 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
+        if (HttpMethods.IsOptions(context.Request.Method))
+        {
+            return RateLimitPartition.GetNoLimiter("cors-preflight");
+        }
+
         var key = context.User.Identity?.Name
             ?? context.Connection.RemoteIpAddress?.ToString()
             ?? "anonymous";

@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
 namespace Nerv.IIP.Contracts.IndustrialTelemetry;
 
 public static class IndustrialTelemetryIntegrationEventTypes
@@ -31,7 +33,10 @@ public sealed record DeviceStateChangedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    DeviceStateChangedPayload Payload);
+    DeviceStateChangedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record DeviceStateChangedPayload(
     string DeviceStateSnapshotId,
@@ -51,7 +56,10 @@ public sealed record AlarmRaisedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    AlarmRaisedPayload Payload);
+    AlarmRaisedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record AlarmRaisedPayload(
     string AlarmEventId,
@@ -73,7 +81,10 @@ public sealed record AlarmClearedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    AlarmClearedPayload Payload);
+    AlarmClearedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record AlarmClearedPayload(
     string AlarmEventId,

@@ -1,3 +1,4 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
 using Xunit;
 
@@ -123,7 +124,10 @@ public sealed class IntegrationEventReliabilityTests
         string EnvironmentId,
         string Actor,
         string IdempotencyKey,
-        SamplePayload Payload);
+        SamplePayload Payload) : IIntegrationEventEnvelope
+    {
+        object? IIntegrationEventEnvelope.PayloadObject => Payload;
+    }
 
     private sealed record SamplePayload(string Value);
 }

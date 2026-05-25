@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Ops;
@@ -58,6 +59,15 @@ public sealed class IntegrationEventEnvelopeContractTests
         Assert.True(
             missing.Length == 0,
             $"{eventType.FullName} is missing ADR 0011 envelope properties: {string.Join(", ", missing)}");
+    }
+
+    [Theory]
+    [MemberData(nameof(IntegrationEventTypes))]
+    public void Integration_events_implement_compile_time_envelope_contract(Type eventType)
+    {
+        Assert.True(
+            typeof(IIntegrationEventEnvelope).IsAssignableFrom(eventType),
+            $"{eventType.FullName} must implement {nameof(IIntegrationEventEnvelope)} for consumer guard validation.");
     }
 
     [Theory]

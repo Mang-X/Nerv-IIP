@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Messaging.CAP;
 
@@ -25,22 +26,10 @@ public sealed record IntegrationEventEnvelopeValidationResult(
 
 public sealed class IntegrationEventEnvelopeValidator
 {
-    private static readonly string[] RequiredStringProperties =
-    [
-        "EventId",
-        "EventType",
-        "SourceService",
-        "CorrelationId",
-        "CausationId",
-        "OrganizationId",
-        "EnvironmentId",
-        "Actor",
-        "IdempotencyKey"
-    ];
-
     public IntegrationEventEnvelopeValidationResult Validate<TIntegrationEvent>(
         TIntegrationEvent integrationEvent,
         IntegrationEventConsumerOptions options)
+        where TIntegrationEvent : IIntegrationEventEnvelope
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -51,83 +40,73 @@ public sealed class IntegrationEventEnvelopeValidator
                 "Integration event envelope is required.");
         }
 
-        foreach (var propertyName in RequiredStringProperties)
+        foreach (var (fieldName, value) in GetRequiredStringFields(integrationEvent))
         {
-            if (string.IsNullOrWhiteSpace(ReadString(integrationEvent, propertyName)))
+            if (string.IsNullOrWhiteSpace(value))
             {
                 return IntegrationEventEnvelopeValidationResult.Invalid(
                     "missing-envelope-field",
-                    $"Integration event envelope field '{propertyName}' is required.");
+                    $"Integration event envelope field '{fieldName}' is required.");
             }
         }
 
-        var occurredAtUtc = ReadDateTimeOffset(integrationEvent, "OccurredAtUtc");
-        if (occurredAtUtc is null || occurredAtUtc == default(DateTimeOffset))
+        if (integrationEvent.OccurredAtUtc == default)
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
                 "missing-envelope-field",
                 "Integration event envelope field 'OccurredAtUtc' is required.");
         }
 
-        var payload = ReadObject(integrationEvent, "Payload");
-        if (payload is null)
+        if (integrationEvent.PayloadObject is null)
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
                 "missing-payload",
                 "Integration event payload is required.");
         }
 
-        var eventType = ReadString(integrationEvent, "EventType");
-        if (!string.Equals(eventType, options.ExpectedEventType, StringComparison.Ordinal))
+        if (!string.Equals(integrationEvent.EventType, options.ExpectedEventType, StringComparison.Ordinal))
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
                 "unexpected-event-type",
-                $"Integration event type '{eventType}' does not match expected '{options.ExpectedEventType}'.");
+                $"Integration event type '{integrationEvent.EventType}' does not match expected '{options.ExpectedEventType}'.");
         }
 
-        var eventVersion = ReadInt(integrationEvent, "EventVersion");
-        if (eventVersion is null || eventVersion <= 0)
+        if (integrationEvent.EventVersion <= 0)
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
                 "missing-envelope-field",
                 "Integration event envelope field 'EventVersion' is required.");
         }
 
-        if (eventVersion != options.SupportedEventVersion)
+        if (integrationEvent.EventVersion != options.SupportedEventVersion)
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
                 "unsupported-version",
-                $"Integration event version '{eventVersion}' is not supported by consumer '{options.ConsumerName}'.");
+                $"Integration event version '{integrationEvent.EventVersion}' is not supported by consumer '{options.ConsumerName}'.");
         }
 
         return IntegrationEventEnvelopeValidationResult.Valid;
     }
 
-    private static string? ReadString<TIntegrationEvent>(TIntegrationEvent integrationEvent, string propertyName)
-    {
-        return ReadObject(integrationEvent, propertyName) as string;
-    }
-
-    private static int? ReadInt<TIntegrationEvent>(TIntegrationEvent integrationEvent, string propertyName)
-    {
-        return ReadObject(integrationEvent, propertyName) is int value ? value : null;
-    }
-
-    private static DateTimeOffset? ReadDateTimeOffset<TIntegrationEvent>(TIntegrationEvent integrationEvent, string propertyName)
-    {
-        return ReadObject(integrationEvent, propertyName) is DateTimeOffset value ? value : null;
-    }
-
-    private static object? ReadObject<TIntegrationEvent>(TIntegrationEvent integrationEvent, string propertyName)
-    {
-        return integrationEvent?.GetType().GetProperty(propertyName)?.GetValue(integrationEvent);
-    }
+    private static (string FieldName, string? Value)[] GetRequiredStringFields(IIntegrationEventEnvelope integrationEvent) =>
+    [
+        (nameof(IIntegrationEventEnvelope.EventId), integrationEvent.EventId),
+        (nameof(IIntegrationEventEnvelope.EventType), integrationEvent.EventType),
+        (nameof(IIntegrationEventEnvelope.SourceService), integrationEvent.SourceService),
+        (nameof(IIntegrationEventEnvelope.CorrelationId), integrationEvent.CorrelationId),
+        (nameof(IIntegrationEventEnvelope.CausationId), integrationEvent.CausationId),
+        (nameof(IIntegrationEventEnvelope.OrganizationId), integrationEvent.OrganizationId),
+        (nameof(IIntegrationEventEnvelope.EnvironmentId), integrationEvent.EnvironmentId),
+        (nameof(IIntegrationEventEnvelope.Actor), integrationEvent.Actor),
+        (nameof(IIntegrationEventEnvelope.IdempotencyKey), integrationEvent.IdempotencyKey)
+    ];
 }
 
 public sealed class IntegrationEventConsumerGuard<TIntegrationEvent>(
     IntegrationEventEnvelopeValidator validator,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IntegrationEventConsumerOptions options)
+    where TIntegrationEvent : IIntegrationEventEnvelope
 {
     public async Task HandleAsync(
         TIntegrationEvent integrationEvent,
@@ -251,6 +230,7 @@ public sealed record IntegrationEventDeadLetterMessage(
         TIntegrationEvent integrationEvent,
         string failureCode,
         string failureMessage)
+        where TIntegrationEvent : IIntegrationEventEnvelope
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(consumerName);
         ArgumentException.ThrowIfNullOrWhiteSpace(failureCode);
@@ -259,28 +239,18 @@ public sealed record IntegrationEventDeadLetterMessage(
         return new IntegrationEventDeadLetterMessage(
             Guid.CreateVersion7(),
             consumerName,
-            ReadString(integrationEvent, "EventId"),
-            ReadString(integrationEvent, "EventType"),
-            ReadInt(integrationEvent, "EventVersion"),
-            ReadString(integrationEvent, "SourceService"),
-            ReadString(integrationEvent, "IdempotencyKey"),
-            integrationEvent?.GetType().FullName ?? typeof(TIntegrationEvent).FullName ?? typeof(TIntegrationEvent).Name,
+            integrationEvent.EventId,
+            integrationEvent.EventType,
+            integrationEvent.EventVersion,
+            integrationEvent.SourceService,
+            integrationEvent.IdempotencyKey,
+            integrationEvent.GetType().FullName ?? typeof(TIntegrationEvent).FullName ?? typeof(TIntegrationEvent).Name,
             JsonSerializer.Serialize(integrationEvent),
             failureCode,
             failureMessage,
             IntegrationEventDeadLetterStatus.Pending,
             DateTimeOffset.UtcNow,
             null);
-    }
-
-    private static string? ReadString<TIntegrationEvent>(TIntegrationEvent integrationEvent, string propertyName)
-    {
-        return integrationEvent?.GetType().GetProperty(propertyName)?.GetValue(integrationEvent) as string;
-    }
-
-    private static int? ReadInt<TIntegrationEvent>(TIntegrationEvent integrationEvent, string propertyName)
-    {
-        return integrationEvent?.GetType().GetProperty(propertyName)?.GetValue(integrationEvent) is int value ? value : null;
     }
 }
 

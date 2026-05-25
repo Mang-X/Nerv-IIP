@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Maintenance\Nerv.IIP.Contracts.Maintenance.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Wms\Nerv.IIP.Contracts.Wms.csproj" />
+    <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.IntegrationEvents\Nerv.IIP.Contracts.IntegrationEvents.csproj" />
   </ItemGroup>
 
 </Project>

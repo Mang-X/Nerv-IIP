@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
 namespace Nerv.IIP.Contracts.Ops;
 
 public sealed record OperationTaskCompletedIntegrationEvent(
@@ -12,7 +14,10 @@ public sealed record OperationTaskCompletedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    OperationTaskCompletedPayload Payload);
+    OperationTaskCompletedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record OperationTaskCompletedPayload(
     string OperationTaskId,
@@ -33,7 +38,10 @@ public sealed record OperationTaskFailedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    OperationTaskFailedPayload Payload);
+    OperationTaskFailedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record OperationTaskFailedPayload(
     string OperationTaskId,
@@ -55,7 +63,10 @@ public sealed record OperationTaskRequestedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    OperationTaskRequestedPayload Payload);
+    OperationTaskRequestedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record OperationTaskRequestedPayload(
     string OperationTaskId,
@@ -76,7 +87,10 @@ public sealed record OperationTaskClaimedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    OperationTaskClaimedPayload Payload);
+    OperationTaskClaimedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record OperationTaskClaimedPayload(
     string OperationTaskId,
@@ -101,7 +115,10 @@ public sealed record AuditRecordedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    AuditRecordedPayload Payload);
+    AuditRecordedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record AuditRecordedPayload(
     string AuditRecordId,
