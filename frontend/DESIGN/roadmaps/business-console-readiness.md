@@ -70,6 +70,9 @@ Gantt and scheduling visualization should:
 8. Keep Gantt and resource-schedule time axes linked to `day` / `week` / `month` zoom through both label formatting and chart content width; bars must not remain visually fixed while the axis changes.
 9. Show live drag previews before commit. Schedule operation previews may include a `resourceId` so hosts can support cross-resource reassignment without coupling the component to a backend.
 10. Constrain schedule operation blocks to their resource row height and leave readable axis padding at the first and last timeline labels.
+11. Keep interactive task/resource labels in a frozen DOM column during horizontal scrolling; zoom changes must not leave stale scroll offsets that visually separate labels from bars.
+12. Avoid duplicate bar rendering between DOM and Leafer. Canvas layers are for background grid/dependencies/baselines/capacity/conflict markers, while interactive bars remain DOM overlays.
+13. Preserve task duration when drag previews clamp at timeline range edges.
 
 ## Date Picker Contract
 

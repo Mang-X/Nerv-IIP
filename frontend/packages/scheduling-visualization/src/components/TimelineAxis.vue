@@ -5,31 +5,42 @@ interface Props {
   ticks: TimelineTick[]
   width: number
   labelWidth: number
+  scrollLeft?: number
 }
 
-defineProps<Props>()
+withDefaults(defineProps<Props>(), {
+  scrollLeft: 0,
+})
 </script>
 
 <template>
   <div
     class="timeline-axis"
     data-test="timeline-axis"
-    :style="{ width: `${width}px`, gridTemplateColumns: `${labelWidth}px 1fr` }"
+    :style="{ gridTemplateColumns: `${labelWidth}px minmax(0, 1fr)` }"
   >
     <div class="timeline-axis__corner">Timeline</div>
     <div class="timeline-axis__ticks">
-      <span
-        v-for="(tick, index) in ticks"
-        :key="tick.date"
-        class="timeline-axis__tick"
-        :class="{
-          'timeline-axis__tick--first': index === 0,
-          'timeline-axis__tick--last': index === ticks.length - 1,
+      <div
+        class="timeline-axis__tick-track"
+        :style="{
+          width: `${Math.max(width - labelWidth, 0)}px`,
+          transform: `translateX(-${scrollLeft}px)`,
         }"
-        :style="{ left: `${tick.x - labelWidth}px` }"
       >
-        {{ tick.label }}
-      </span>
+        <span
+          v-for="(tick, index) in ticks"
+          :key="tick.date"
+          class="timeline-axis__tick"
+          :class="{
+            'timeline-axis__tick--first': index === 0,
+            'timeline-axis__tick--last': index === ticks.length - 1,
+          }"
+          :style="{ left: `${tick.x - labelWidth}px` }"
+        >
+          {{ tick.label }}
+        </span>
+      </div>
     </div>
   </div>
 </template>
@@ -38,6 +49,7 @@ defineProps<Props>()
 .timeline-axis {
   display: grid;
   min-width: 100%;
+  width: 100%;
   height: 34px;
   border-bottom: 1px solid rgba(226, 232, 240, 0.95);
   background: #f8fafc;
@@ -57,6 +69,12 @@ defineProps<Props>()
   position: relative;
   overflow: hidden;
   padding-inline: 8px;
+}
+
+.timeline-axis__tick-track {
+  position: relative;
+  height: 100%;
+  transition: transform 120ms ease;
 }
 
 .timeline-axis__tick {

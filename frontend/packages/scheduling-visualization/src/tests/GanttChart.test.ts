@@ -72,4 +72,46 @@ describe('GanttChart', () => {
       }),
     )
   })
+
+  it('keeps the task label column frozen while the timeline scrolls horizontally', async () => {
+    const wrapper = mount(GanttChart, {
+      attachTo: document.body,
+      props: {
+        fixture: createMockGanttFixture(),
+        expandedTaskIds: ['phase-engineering'],
+      },
+    })
+
+    const viewport = wrapper.get('[data-test="gantt-viewport"]')
+    Object.defineProperty(viewport.element, 'scrollLeft', { configurable: true, value: 180 })
+    await viewport.trigger('scroll')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-test="gantt-row-task-routing-review"]').attributes('style'))
+      .toContain('left: 180px')
+  })
+
+  it('resets horizontal scroll state when zoom changes', async () => {
+    const wrapper = mount(GanttChart, {
+      attachTo: document.body,
+      props: {
+        fixture: createMockGanttFixture(),
+        expandedTaskIds: ['phase-engineering'],
+        zoom: 'day',
+      },
+    })
+
+    const viewport = wrapper.get('[data-test="gantt-viewport"]')
+    Object.defineProperty(viewport.element, 'scrollLeft', {
+      configurable: true,
+      writable: true,
+      value: 180,
+    })
+    await viewport.trigger('scroll')
+    await wrapper.setProps({ zoom: 'week' })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-test="gantt-row-task-routing-review"]').attributes('style'))
+      .toContain('left: 0px')
+  })
 })

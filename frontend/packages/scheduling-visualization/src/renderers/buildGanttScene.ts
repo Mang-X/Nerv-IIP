@@ -3,7 +3,7 @@ import { createTimeScale } from '../time-scale/timeScale'
 import type { SchedulingZoom } from '../time-scale/timeScale'
 import type { SchedulingScene, SchedulingSceneElement } from '../canvas/sceneTypes'
 import { flattenGanttTasks } from '../model/gantt'
-import type { GanttFixture, GanttRow, GanttTask, SchedulingStatus } from '../model/gantt'
+import type { GanttFixture, GanttRow, GanttTask } from '../model/gantt'
 
 export interface BuildGanttSceneOptions {
   fixture: GanttFixture
@@ -19,16 +19,6 @@ export interface BuildGanttSceneOptions {
 }
 
 const labelWidth = 220
-const barHeight = 14
-
-const statusFill: Record<SchedulingStatus, string> = {
-  planned: '#93c5fd',
-  ready: '#38bdf8',
-  running: '#2563eb',
-  blocked: '#ef4444',
-  done: '#16a34a',
-}
-
 function findTask(tasks: GanttTask[], taskId: string): GanttTask | undefined {
   for (const task of tasks) {
     if (task.id === taskId) {
@@ -68,7 +58,7 @@ function addGrid(
   })
 }
 
-function addGanttBars(
+function addGanttBaselines(
   elements: SchedulingSceneElement[],
   rows: GanttRow[],
   options: BuildGanttSceneOptions,
@@ -82,31 +72,6 @@ function addGanttBars(
 
   rows.forEach((row, index) => {
     const y = index * options.rowHeight
-    const window = taskWindow(row, options.previewById)
-    const x = labelWidth + scale.dateToX(window.start)
-    const endX = labelWidth + scale.dateToX(window.end)
-    const width = Math.max(row.isMilestone ? 16 : endX - x, 8)
-    const barY = y + Math.round((options.rowHeight - barHeight) / 2)
-
-    if (row.isMilestone) {
-      elements.push({
-        id: row.id,
-        kind: 'milestone',
-        x,
-        y: barY,
-        width: 16,
-        height: 16,
-        fill: '#0f172a',
-        points: [
-          { x: x + 8, y: barY },
-          { x: x + 16, y: barY + 8 },
-          { x: x + 8, y: barY + 16 },
-          { x, y: barY + 8 },
-        ],
-        metadata: { taskId: row.id },
-      })
-      return
-    }
 
     if (options.showBaselines && row.baselineStart && row.baselineEnd) {
       const baselineX = labelWidth + scale.dateToX(row.baselineStart)
@@ -115,35 +80,13 @@ function addGanttBars(
         id: `baseline-${row.id}`,
         kind: 'baseline',
         x: baselineX,
-        y: barY + barHeight + 4,
+        y: y + options.rowHeight - 10,
         width: Math.max(baselineEndX - baselineX, 6),
         height: 4,
         fill: '#94a3b8',
         metadata: { taskId: row.id },
       })
     }
-
-    elements.push({
-      id: row.id,
-      kind: 'bar',
-      x,
-      y: barY,
-      width,
-      height: barHeight,
-      fill: statusFill[row.status],
-      stroke: row.isLocked ? '#0f172a' : '#1d4ed8',
-      metadata: { taskId: row.id, status: row.status },
-    })
-    elements.push({
-      id: `progress-${row.id}`,
-      kind: 'progress',
-      x,
-      y: barY,
-      width: Math.round(width * Math.min(Math.max(row.progress, 0), 100) / 100),
-      height: barHeight,
-      fill: '#0f172a',
-      metadata: { taskId: row.id, progress: row.progress },
-    })
   })
 }
 
@@ -234,7 +177,7 @@ export function buildGanttScene(options: BuildGanttSceneOptions): SchedulingScen
   const elements: SchedulingSceneElement[] = []
 
   addGrid(elements, rows, options.rowHeight, options.width)
-  addGanttBars(elements, rows, options)
+  addGanttBaselines(elements, rows, options)
   addDependencies(elements, rows, options)
   addConflicts(elements, rows, options)
 

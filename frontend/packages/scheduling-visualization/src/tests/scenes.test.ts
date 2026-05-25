@@ -5,7 +5,7 @@ import { buildGanttScene } from '../renderers/buildGanttScene'
 import { buildScheduleScene } from '../renderers/buildScheduleScene'
 
 describe('scene builders', () => {
-  it('builds Gantt bars, milestones, dependencies and conflicts', () => {
+  it('builds Gantt non-interactive canvas layers without duplicating DOM task bars', () => {
     const fixture = createMockGanttFixture()
     const scene = buildGanttScene({
       fixture,
@@ -20,16 +20,16 @@ describe('scene builders', () => {
       previewById: {},
     })
 
-    expect(scene.elements.filter((element) => element.kind === 'bar').map((element) => element.id)).toContain(
-      'task-routing-review',
-    )
-    expect(scene.elements.some((element) => element.kind === 'milestone')).toBe(true)
+    expect(scene.elements.some((element) => element.kind === 'bar')).toBe(false)
+    expect(scene.elements.some((element) => element.kind === 'progress')).toBe(false)
+    expect(scene.elements.some((element) => element.kind === 'milestone')).toBe(false)
+    expect(scene.elements.some((element) => element.kind === 'baseline')).toBe(true)
     expect(scene.elements.some((element) => element.kind === 'dependency')).toBe(true)
     expect(scene.elements.some((element) => element.kind === 'conflict')).toBe(true)
     expect(scene.height).toBeGreaterThan(100)
   })
 
-  it('builds schedule operations and capacity bands', () => {
+  it('builds schedule non-interactive canvas layers without duplicating DOM operation bars', () => {
     const fixture = createMockScheduleFixture()
     const scene = buildScheduleScene({
       fixture,
@@ -42,9 +42,8 @@ describe('scene builders', () => {
       previewById: {},
     })
 
-    expect(scene.elements.filter((element) => element.kind === 'bar').map((element) => element.id)).toContain(
-      'op-packing-1001',
-    )
+    expect(scene.elements.some((element) => element.kind === 'bar')).toBe(false)
+    expect(scene.elements.some((element) => element.kind === 'progress')).toBe(false)
     expect(scene.elements.some((element) => element.kind === 'capacity')).toBe(true)
     expect(scene.elements.some((element) => element.kind === 'conflict')).toBe(true)
   })

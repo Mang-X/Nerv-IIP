@@ -186,9 +186,10 @@ export function shiftWindowByPixels(options: {
   })
   const startX = scale.dateToX(options.start)
   const endX = scale.dateToX(options.end)
+  const clampedDeltaX = Math.min(Math.max(options.deltaX, -startX), options.width - endX)
 
   return {
-    start: scale.xToDate(startX + options.deltaX).toISOString(),
-    end: scale.xToDate(endX + options.deltaX).toISOString(),
+    start: scale.xToDate(startX + clampedDeltaX).toISOString(),
+    end: scale.xToDate(endX + clampedDeltaX).toISOString(),
   }
 }

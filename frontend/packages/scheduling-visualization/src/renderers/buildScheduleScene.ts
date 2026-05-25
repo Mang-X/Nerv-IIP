@@ -1,5 +1,4 @@
 import type { SchedulingScene, SchedulingSceneElement } from '../canvas/sceneTypes'
-import type { SchedulingStatus } from '../model/gantt'
 import { groupScheduleRows } from '../model/schedule'
 import type { ScheduleFixture } from '../model/schedule'
 import type { SchedulingPreviewWindow } from '../state/useSchedulingCommands'
@@ -18,21 +17,10 @@ export interface BuildScheduleSceneOptions {
 }
 
 const labelWidth = 230
-const barHeight = 16
-
-const statusFill: Record<SchedulingStatus, string> = {
-  planned: '#bfdbfe',
-  ready: '#38bdf8',
-  running: '#2563eb',
-  blocked: '#ef4444',
-  done: '#16a34a',
-}
-
 export function buildScheduleScene(options: BuildScheduleSceneOptions): SchedulingScene {
   const rows = groupScheduleRows(options.fixture.resources, options.fixture.operations)
   const height = Math.max(rows.length * options.rowHeight, options.rowHeight)
   const elements: SchedulingSceneElement[] = []
-  const rowIndexByResourceId = new Map(rows.map((row, index) => [row.id, index]))
   const scale = createTimeScale({
     start: options.fixture.rangeStart,
     end: options.fixture.rangeEnd,
@@ -51,53 +39,6 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
       height: 1,
       fill: '#e2e8f0',
     })
-
-    for (const operationId of row.operationIds) {
-      const operation = options.fixture.operations.find((item) => item.id === operationId)
-      if (!operation) {
-        continue
-      }
-
-      const preview = options.previewById[operation.id]
-      const resourceId = preview?.resourceId ?? operation.resourceId
-      const previewRowIndex = rowIndexByResourceId.get(resourceId)
-      if (previewRowIndex === undefined) {
-        continue
-      }
-
-      const start = preview?.start ?? operation.start
-      const end = preview?.end ?? operation.end
-      const x = labelWidth + scale.dateToX(start)
-      const endX = labelWidth + scale.dateToX(end)
-      const width = Math.max(endX - x, 8)
-      const barY = previewRowIndex * options.rowHeight + Math.round((options.rowHeight - barHeight) / 2)
-
-      elements.push({
-        id: operation.id,
-        kind: 'bar',
-        x,
-        y: barY,
-        width,
-        height: barHeight,
-        fill: statusFill[operation.status],
-        stroke: operation.isLocked ? '#0f172a' : '#1d4ed8',
-        metadata: {
-          operationId: operation.id,
-          resourceId,
-          workOrderCode: operation.workOrderCode,
-        },
-      })
-      elements.push({
-        id: `progress-${operation.id}`,
-        kind: 'progress',
-        x,
-        y: barY,
-        width: Math.round(width * Math.min(Math.max(operation.progress, 0), 100) / 100),
-        height: barHeight,
-        fill: '#0f172a',
-        metadata: { operationId: operation.id, progress: operation.progress },
-      })
-    }
   })
 
   if (options.showCapacity) {

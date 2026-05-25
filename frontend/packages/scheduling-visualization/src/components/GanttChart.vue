@@ -61,10 +61,12 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<Emits>()
 
 const surfaceHost = useTemplateRef<HTMLDivElement>('surfaceHost')
+const viewport = useTemplateRef<HTMLDivElement>('viewport')
 const surface = shallowRef<LeaferSurface>()
 const surfaceSize = shallowRef<{ width: number, height: number }>()
 const isDisposed = shallowRef(false)
 const scrollTop = shallowRef(0)
+const scrollLeft = shallowRef(0)
 const activeDrag = shallowRef<{
   taskId: string
   startX: number
@@ -212,7 +214,17 @@ function toggleRow(row: GanttRow) {
 }
 
 function onScroll(event: Event) {
-  scrollTop.value = (event.currentTarget as HTMLElement).scrollTop
+  const target = event.currentTarget as HTMLElement
+  scrollTop.value = target.scrollTop
+  scrollLeft.value = target.scrollLeft
+}
+
+function resetHorizontalScroll() {
+  if (viewport.value) {
+    viewport.value.scrollLeft = 0
+  }
+
+  scrollLeft.value = 0
 }
 
 function startDrag(task: GanttRow, event: PointerEvent) {
@@ -291,6 +303,7 @@ function cancelDrag(event: PointerEvent) {
 
 onMounted(syncSurface)
 watch(scene, syncSurface, { flush: 'post' })
+watch(() => props.zoom, resetHorizontalScroll, { flush: 'post' })
 onBeforeUnmount(() => {
   isDisposed.value = true
   surface.value?.dispose()
@@ -316,9 +329,20 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <TimelineAxis :ticks="timelineTicks" :width="chartWidth" :label-width="labelWidth" />
+    <TimelineAxis
+      :ticks="timelineTicks"
+      :width="chartWidth"
+      :label-width="labelWidth"
+      :scroll-left="scrollLeft"
+    />
 
-    <div class="scheduling-chart__viewport" :style="{ height: viewportHeightStyle }" @scroll="onScroll">
+    <div
+      ref="viewport"
+      class="scheduling-chart__viewport"
+      data-test="gantt-viewport"
+      :style="{ height: viewportHeightStyle }"
+      @scroll="onScroll"
+    >
       <div class="scheduling-chart__scroll-plane" :style="{ width: `${chartWidth}px`, height: chartHeight }">
         <div
           ref="surfaceHost"
@@ -335,7 +359,7 @@ onBeforeUnmount(() => {
           :class="{ 'gantt-row--selected': isSelected(item.row) }"
           type="button"
           :data-test="`gantt-row-${item.row.id}`"
-          :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px` }"
+          :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
           @click="selectRow(item.row)"
         >
           <span class="gantt-row__main" :style="{ paddingLeft: `${item.row.depth * 16}px` }">
@@ -460,7 +484,7 @@ onBeforeUnmount(() => {
 
 .gantt-row {
   position: absolute;
-  left: 0;
+  z-index: 4;
   box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18px 18px;
@@ -472,6 +496,7 @@ onBeforeUnmount(() => {
   border-right: 1px solid rgba(226, 232, 240, 0.9);
   border-bottom: 1px solid rgba(226, 232, 240, 0.82);
   background: rgba(255, 255, 255, 0.92);
+  box-shadow: 1px 0 0 rgba(226, 232, 240, 0.9);
   color: #0f172a;
   cursor: pointer;
   font: inherit;

@@ -21,6 +21,7 @@ export async function createLeaferSurface(
   width: number,
   height: number,
 ): Promise<LeaferSurface> {
+  host.replaceChildren()
   const { Group, Leafer, Pen, Rect, Text } = await loadLeaferUi()
   const leafer = new Leafer({
     view: host,
@@ -98,6 +99,7 @@ export async function createLeaferSurface(
       root.clear()
       const destroyable = leafer as { destroy?: () => void }
       destroyable.destroy?.()
+      host.replaceChildren()
     },
   }
 }

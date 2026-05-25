@@ -40,6 +40,9 @@ Layer: Component package | Source: custom Vue + Leafer UI + `@nerv-iip/ui`
 - Schedule operation blocks must stay inside the resource row height and use `resourceId` from preview state when shown on another row.
 - `day`, `week`, and `month` zoom must update both timeline labels and chart content width so bars and axis remain visually linked.
 - Timeline labels should keep padding at the first and last tick to avoid clipped edge text.
+- Interactive task and operation blocks are DOM overlays only. Leafer renders non-interactive background layers such as grid lines, dependencies, baselines, capacity and conflict markers so canvas progress fills cannot visually duplicate the DOM blocks.
+- The left task/resource label column remains frozen during horizontal timeline scrolling, and horizontal scroll resets on zoom changes to prevent stale offsets.
+- Drag movement is clamped as a whole time window at range boundaries, preserving task duration instead of shortening bars at the edge.
 
 ## Do's and Don'ts
 - Do: import only from `@nerv-iip/scheduling-visualization`.

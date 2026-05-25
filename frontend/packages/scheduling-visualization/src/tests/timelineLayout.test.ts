@@ -5,6 +5,7 @@ import {
   buildScheduleOperationPositions,
   buildTimelineTicks,
   calculateTimelineContentWidth,
+  shiftWindowByPixels,
 } from '../time-scale/timelineLayout'
 import { createMockGanttFixture, createMockScheduleFixture } from '../model/fixtures'
 import { flattenGanttTasks } from '../model/gantt'
@@ -123,5 +124,24 @@ describe('timelineLayout', () => {
     expect(dayWidth).toBeGreaterThan(weekWidth)
     expect(weekWidth).toBeGreaterThan(monthWidth)
     expect(monthWidth).toBeGreaterThanOrEqual(960)
+  })
+
+  it('keeps dragged windows at their original duration when clamped at the range edge', () => {
+    const shifted = shiftWindowByPixels({
+      start: '2026-05-04T00:00:00.000Z',
+      end: '2026-05-08T00:00:00.000Z',
+      deltaX: 2000,
+      rangeStart: '2026-05-01T00:00:00.000Z',
+      rangeEnd: '2026-05-22T00:00:00.000Z',
+      width: 1344,
+      zoom: 'day',
+    })
+
+    const durationDays = (
+      new Date(shifted.end).getTime() - new Date(shifted.start).getTime()
+    ) / (24 * 60 * 60 * 1000)
+
+    expect(shifted.end).toBe('2026-05-22T00:00:00.000Z')
+    expect(durationDays).toBe(4)
   })
 })

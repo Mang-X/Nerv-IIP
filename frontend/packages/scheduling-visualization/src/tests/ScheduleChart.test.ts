@@ -127,4 +127,44 @@ describe('ScheduleChart', () => {
       }),
     )
   })
+
+  it('keeps the resource label column frozen while the timeline scrolls horizontally', async () => {
+    const wrapper = mount(ScheduleChart, {
+      attachTo: document.body,
+      props: {
+        fixture: createMockScheduleFixture(),
+      },
+    })
+
+    const viewport = wrapper.get('[data-test="schedule-viewport"]')
+    Object.defineProperty(viewport.element, 'scrollLeft', { configurable: true, value: 160 })
+    await viewport.trigger('scroll')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-test="schedule-resource-wc-pack-01"]').attributes('style'))
+      .toContain('left: 160px')
+  })
+
+  it('resets horizontal scroll state when zoom changes', async () => {
+    const wrapper = mount(ScheduleChart, {
+      attachTo: document.body,
+      props: {
+        fixture: createMockScheduleFixture(),
+        zoom: 'day',
+      },
+    })
+
+    const viewport = wrapper.get('[data-test="schedule-viewport"]')
+    Object.defineProperty(viewport.element, 'scrollLeft', {
+      configurable: true,
+      writable: true,
+      value: 160,
+    })
+    await viewport.trigger('scroll')
+    await wrapper.setProps({ zoom: 'week' })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-test="schedule-resource-wc-pack-01"]').attributes('style'))
+      .toContain('left: 0px')
+  })
 })

@@ -56,11 +56,13 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<Emits>()
 
 const surfaceHost = useTemplateRef<HTMLDivElement>('surfaceHost')
+const viewport = useTemplateRef<HTMLDivElement>('viewport')
 const scrollPlane = useTemplateRef<HTMLDivElement>('scrollPlane')
 const surface = shallowRef<LeaferSurface>()
 const surfaceSize = shallowRef<{ width: number, height: number }>()
 const isDisposed = shallowRef(false)
 const scrollTop = shallowRef(0)
+const scrollLeft = shallowRef(0)
 const activeDrag = shallowRef<{
   operationId: string
   startX: number
@@ -203,6 +205,7 @@ async function syncSurface() {
 
 onMounted(syncSurface)
 watch(scene, syncSurface, { flush: 'post' })
+watch(() => props.zoom, resetHorizontalScroll, { flush: 'post' })
 onBeforeUnmount(() => {
   isDisposed.value = true
   surface.value?.dispose()
@@ -210,7 +213,17 @@ onBeforeUnmount(() => {
 })
 
 function onScroll(event: Event) {
-  scrollTop.value = (event.currentTarget as HTMLElement).scrollTop
+  const target = event.currentTarget as HTMLElement
+  scrollTop.value = target.scrollTop
+  scrollLeft.value = target.scrollLeft
+}
+
+function resetHorizontalScroll() {
+  if (viewport.value) {
+    viewport.value.scrollLeft = 0
+  }
+
+  scrollLeft.value = 0
 }
 
 function startDrag(operation: ScheduleOperation, event: PointerEvent) {
@@ -340,9 +353,20 @@ function cancelDrag(event: PointerEvent) {
       </div>
     </header>
 
-    <TimelineAxis :ticks="timelineTicks" :width="chartWidth" :label-width="labelWidth" />
+    <TimelineAxis
+      :ticks="timelineTicks"
+      :width="chartWidth"
+      :label-width="labelWidth"
+      :scroll-left="scrollLeft"
+    />
 
-    <div class="scheduling-chart__viewport" :style="{ height: viewportHeightStyle }" @scroll="onScroll">
+    <div
+      ref="viewport"
+      class="scheduling-chart__viewport"
+      data-test="schedule-viewport"
+      :style="{ height: viewportHeightStyle }"
+      @scroll="onScroll"
+    >
       <div
         ref="scrollPlane"
         class="scheduling-chart__scroll-plane"
@@ -364,7 +388,7 @@ function cancelDrag(event: PointerEvent) {
           :class="{ 'schedule-resource--selected': isSelectedResource(item.row) }"
           type="button"
           :data-test="`schedule-resource-${item.row.id}`"
-          :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px` }"
+          :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
           @click="emit('select', { kind: 'resource', id: item.row.id })"
         >
           <span class="schedule-resource__code">{{ item.row.workCenterCode }}</span>
@@ -486,7 +510,7 @@ function cancelDrag(event: PointerEvent) {
 
 .schedule-resource {
   position: absolute;
-  left: 0;
+  z-index: 4;
   box-sizing: border-box;
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr);
@@ -497,6 +521,7 @@ function cancelDrag(event: PointerEvent) {
   border: 0;
   border-bottom: 1px solid rgba(226, 232, 240, 0.82);
   background: rgba(248, 250, 252, 0.9);
+  box-shadow: 1px 0 0 rgba(226, 232, 240, 0.9);
   color: #0f172a;
   cursor: pointer;
   font: inherit;
