@@ -7,12 +7,16 @@ import type {
   SchedulingPreviewWindow,
   SchedulingWorkspaceSelection,
 } from '../src'
-import { SchedulingWorkspace, createLargeMockScheduleFixture } from '../src'
+import { SchedulingWorkspace, createLargeMockGanttFixture, createLargeMockScheduleFixture } from '../src'
 
 const lastSelection = shallowRef<SchedulingWorkspaceSelection>()
 const lastCommand = shallowRef<SchedulingPreviewCommand>()
 const committedPreview = shallowRef<Record<string, SchedulingPreviewWindow>>({})
 const useLargeFixture = shallowRef(false)
+const largeGanttFixture = createLargeMockGanttFixture({
+  taskCount: 1200,
+  days: 730,
+})
 const largeScheduleFixture = createLargeMockScheduleFixture({
   resourceCount: 1200,
   days: 730,
@@ -59,6 +63,7 @@ function recordCommit(previewById: Record<string, SchedulingPreviewWindow>) {
     <Card size="sm" class="preview-workspace-card">
       <CardContent class="preview-workspace-card__content">
         <SchedulingWorkspace
+          :gantt-fixture="useLargeFixture ? largeGanttFixture : undefined"
           :schedule-fixture="useLargeFixture ? largeScheduleFixture : undefined"
           @selection-change="recordSelection"
           @preview-command="recordCommand"

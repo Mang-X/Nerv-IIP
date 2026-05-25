@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, shallowRef } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 import type { GanttFixture, GanttSelection } from '../model/gantt'
 import type { ScheduleFixture, ScheduleSelection } from '../model/schedule'
@@ -30,6 +30,23 @@ interface Emits {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+defineSlots<{
+  toolbar?: (props: {
+    mode: SchedulingWorkspaceMode
+    zoom: SchedulingZoom
+    query: string
+    dependencyMode: SchedulingLinkMode
+  }) => unknown
+  ganttTaskRow?: (props: Record<string, unknown>) => unknown
+  ganttTaskBar?: (props: Record<string, unknown>) => unknown
+  ganttTooltip?: (props: Record<string, unknown>) => unknown
+  scheduleResourceRow?: (props: Record<string, unknown>) => unknown
+  scheduleCalendarHighlight?: (props: Record<string, unknown>) => unknown
+  scheduleOperationBar?: (props: Record<string, unknown>) => unknown
+  scheduleTooltip?: (props: Record<string, unknown>) => unknown
+  detail?: (props: { selection: SchedulingWorkspaceSelection }) => unknown
+  legend?: () => unknown
+}>()
 
 const fallbackGanttFixture = createMockGanttFixture()
 const fallbackScheduleFixture = createMockScheduleFixture()
@@ -47,6 +64,11 @@ const activeSelection = shallowRef<SchedulingWorkspaceSelection>()
 
 const ganttFixture = computed(() => props.ganttFixture ?? fallbackGanttFixture)
 const scheduleFixture = computed(() => props.scheduleFixture ?? fallbackScheduleFixture)
+const defaultExpandedTaskIds = computed(() =>
+  ganttFixture.value.tasks
+    .filter((task) => (task.children?.length ?? 0) > 0)
+    .map((task) => task.id),
+)
 const ganttSelection = computed<GanttSelection | undefined>(() =>
   activeSelection.value?.source === 'gantt' ? activeSelection.value.selection : undefined,
 )
@@ -92,32 +114,48 @@ function resetPreview() {
 function commitPreview() {
   emit('commitPreview', effectivePreviewById.value)
 }
+
+watch(
+  () => props.ganttFixture?.id,
+  () => {
+    expandedTaskIds.value = props.ganttFixture ? defaultExpandedTaskIds.value : ['phase-engineering']
+  },
+  { flush: 'sync', immediate: true },
+)
 </script>
 
 <template>
   <section class="scheduling-workspace" data-test="scheduling-workspace">
-    <SchedulingToolbar
+    <slot
+      name="toolbar"
       :mode="mode"
       :zoom="zoom"
       :query="query"
       :dependency-mode="dependencyMode"
-      :show-baselines="showBaselines"
-      :show-capacity="showCapacity"
-      :show-conflicts="showConflicts"
-      :can-undo="commandStack.canUndo.value"
-      :can-redo="commandStack.canRedo.value"
-      @update:mode="mode = $event"
-      @update:zoom="zoom = $event"
-      @update:query="query = $event"
-      @update:dependency-mode="dependencyMode = $event"
-      @update:show-baselines="showBaselines = $event"
-      @update:show-capacity="showCapacity = $event"
-      @update:show-conflicts="showConflicts = $event"
-      @undo="commandStack.undo()"
-      @redo="commandStack.redo()"
-      @reset="resetPreview"
-      @commit="commitPreview"
-    />
+    >
+      <SchedulingToolbar
+        :mode="mode"
+        :zoom="zoom"
+        :query="query"
+        :dependency-mode="dependencyMode"
+        :show-baselines="showBaselines"
+        :show-capacity="showCapacity"
+        :show-conflicts="showConflicts"
+        :can-undo="commandStack.canUndo.value"
+        :can-redo="commandStack.canRedo.value"
+        @update:mode="mode = $event"
+        @update:zoom="zoom = $event"
+        @update:query="query = $event"
+        @update:dependency-mode="dependencyMode = $event"
+        @update:show-baselines="showBaselines = $event"
+        @update:show-capacity="showCapacity = $event"
+        @update:show-conflicts="showConflicts = $event"
+        @undo="commandStack.undo()"
+        @redo="commandStack.redo()"
+        @reset="resetPreview"
+        @commit="commitPreview"
+      />
+    </slot>
 
     <div
       class="scheduling-workspace__main"
@@ -138,7 +176,19 @@ function commitPreview() {
           @select="selectGantt"
           @toggle-expand="toggleExpandedTask"
           @preview-command="applyPreviewCommand"
-        />
+        >
+          <template v-if="$slots.ganttTaskRow" #taskRow="slotProps">
+            <slot name="ganttTaskRow" v-bind="slotProps" />
+          </template>
+          <template v-if="$slots.ganttTaskBar" #taskBar="slotProps">
+            <slot name="ganttTaskBar" v-bind="slotProps" />
+          </template>
+          <template #tooltip="slotProps">
+            <slot name="ganttTooltip" v-bind="slotProps">
+              {{ slotProps.text }}
+            </slot>
+          </template>
+        </GanttChart>
         <ScheduleChart
           v-else
           :fixture="scheduleFixture"
@@ -151,19 +201,37 @@ function commitPreview() {
           :query="query"
           @select="selectSchedule"
           @preview-command="applyPreviewCommand"
-        />
+        >
+          <template v-if="$slots.scheduleResourceRow" #resourceRow="slotProps">
+            <slot name="scheduleResourceRow" v-bind="slotProps" />
+          </template>
+          <template v-if="$slots.scheduleCalendarHighlight" #calendarHighlight="slotProps">
+            <slot name="scheduleCalendarHighlight" v-bind="slotProps" />
+          </template>
+          <template v-if="$slots.scheduleOperationBar" #operationBar="slotProps">
+            <slot name="scheduleOperationBar" v-bind="slotProps" />
+          </template>
+          <template #tooltip="slotProps">
+            <slot name="scheduleTooltip" v-bind="slotProps">
+              {{ slotProps.text }}
+            </slot>
+          </template>
+        </ScheduleChart>
       </div>
 
-      <SchedulingDetailSheet
-        v-if="activeSelection"
-        :gantt-fixture="ganttFixture"
-        :schedule-fixture="scheduleFixture"
-        :selection="activeSelection"
-        @clear="clearSelection"
-      />
+      <slot v-if="activeSelection" name="detail" :selection="activeSelection">
+        <SchedulingDetailSheet
+          :gantt-fixture="ganttFixture"
+          :schedule-fixture="scheduleFixture"
+          :selection="activeSelection"
+          @clear="clearSelection"
+        />
+      </slot>
     </div>
 
-    <SchedulingLegend />
+    <slot name="legend">
+      <SchedulingLegend />
+    </slot>
   </section>
 </template>
 

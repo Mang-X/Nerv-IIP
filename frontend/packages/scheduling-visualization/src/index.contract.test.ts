@@ -20,6 +20,7 @@ describe('@nerv-iip/scheduling-visualization public exports', () => {
       'buildTimelineTicks',
       'calculateTimelineContentWidth',
       'calculateVisibleRowRange',
+      'createLargeMockGanttFixture',
       'createLargeMockScheduleFixture',
       'createMockGanttFixture',
       'createMockScheduleFixture',

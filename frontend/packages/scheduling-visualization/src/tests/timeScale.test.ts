@@ -41,9 +41,9 @@ describe('createTimeScale', () => {
 
     expect(scale.ticks.map((tick) => tick.label)).toEqual([
       'May 2026',
-      'May 2026',
       'Jun 2026',
       'Jul 2026',
+      'Aug 2026',
     ])
   })
 })

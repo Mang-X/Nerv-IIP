@@ -25,7 +25,7 @@ export interface BuildGanttSceneOptions {
 const labelWidth = 220
 function shouldRenderDependency(
   mode: SchedulingLinkMode,
-  selectedId: string | undefined,
+  selectedChainIds: Set<string> | undefined,
   sourceId: string,
   targetId: string,
 ) {
@@ -37,7 +37,32 @@ function shouldRenderDependency(
     return true
   }
 
-  return selectedId === sourceId || selectedId === targetId
+  return Boolean(selectedChainIds?.has(sourceId) && selectedChainIds.has(targetId))
+}
+
+function collectLinkedIds(
+  selectedId: string | undefined,
+  dependencies: GanttFixture['dependencies'],
+) {
+  if (!selectedId) {
+    return undefined
+  }
+
+  const linkedIds = new Set([selectedId])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const dependency of dependencies) {
+      if (linkedIds.has(dependency.sourceTaskId) || linkedIds.has(dependency.targetTaskId)) {
+        const before = linkedIds.size
+        linkedIds.add(dependency.sourceTaskId)
+        linkedIds.add(dependency.targetTaskId)
+        changed ||= linkedIds.size !== before
+      }
+    }
+  }
+
+  return linkedIds
 }
 
 function addGrid(
@@ -111,12 +136,15 @@ function addDependencies(
     previewById: options.previewById,
   })
   const positionByTaskId = new Map(barPositions.map((position) => [position.task.id, position]))
+  const selectedChainIds = options.dependencyMode === 'selection'
+    ? collectLinkedIds(options.selectedTaskId, options.fixture.dependencies)
+    : undefined
 
   for (const dependency of options.fixture.dependencies) {
     if (
       !shouldRenderDependency(
         options.dependencyMode,
-        options.selectedTaskId,
+        selectedChainIds,
         dependency.sourceTaskId,
         dependency.targetTaskId,
       )
@@ -140,6 +168,7 @@ function addDependencies(
         source: { left: source.left, top: source.top, width: source.width, height: 22 },
         target: { left: target.left, top: target.top, width: target.width, height: 22 },
         type: dependency.type,
+        minimumX: labelWidth + 8,
       }),
       metadata: { sourceTaskId: dependency.sourceTaskId, targetTaskId: dependency.targetTaskId },
     })

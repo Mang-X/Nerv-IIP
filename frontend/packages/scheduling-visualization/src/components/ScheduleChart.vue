@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@nerv-iip/ui'
+import { Badge } from '@nerv-iip/ui'
 import { AlertTriangle, LockKeyhole } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from 'vue'
 
@@ -8,12 +8,14 @@ import type { ScheduleFixture, ScheduleOperation, ScheduleRow, ScheduleSelection
 import type { SchedulingPreviewCommand, SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import type { SchedulingZoom } from '../time-scale/timeScale'
 import type { SchedulingLinkMode } from './types'
+import SchedulingPointerTooltip from './SchedulingPointerTooltip.vue'
 import TimelineAxis from './TimelineAxis.vue'
 import { createLeaferSurface } from '../canvas/createLeaferSurface'
 import { filterScheduleFixture } from '../state/filterFixtures'
 import { groupScheduleRows } from '../model/schedule'
 import { buildScheduleScene } from '../renderers/buildScheduleScene'
 import { renderSceneToLeafer } from '../renderers/renderSceneToLeafer'
+import { buildViewportScene } from '../renderers/viewportScene'
 import {
   buildScheduleOperationPositions,
   buildScheduleCalendarHighlightPositions,
@@ -59,6 +61,24 @@ const props = withDefaults(defineProps<Props>(), {
   maxViewportHeight: 360,
 })
 const emit = defineEmits<Emits>()
+defineSlots<{
+  headerMeta?: (props: { summary: { resources: number, operations: number, overloads: number } }) => unknown
+  resourceRow?: (props: { row: ScheduleRow, selected: boolean }) => unknown
+  calendarHighlight?: (props: { position: ReturnType<typeof buildScheduleCalendarHighlightPositions>[number] }) => unknown
+  operationBar?: (props: {
+    position: ReturnType<typeof buildScheduleOperationPositions>[number]
+    selected: boolean
+    dragging: boolean
+    hasConflict: boolean
+  }) => unknown
+  tooltip?: (props: {
+    kind: 'resource' | 'highlight' | 'operation'
+    row?: ScheduleRow
+    highlight?: ReturnType<typeof buildScheduleCalendarHighlightPositions>[number]
+    position?: ReturnType<typeof buildScheduleOperationPositions>[number]
+    text: string
+  }) => unknown
+}>()
 
 const surfaceHost = useTemplateRef<HTMLDivElement>('surfaceHost')
 const viewport = useTemplateRef<HTMLDivElement>('viewport')
@@ -80,6 +100,11 @@ const activeDrag = shallowRef<{
   currentResourceId: string
   before: SchedulingPreviewWindow
 }>()
+const tooltipState = shallowRef<
+  | { kind: 'resource', row: ScheduleRow, x: number, y: number }
+  | { kind: 'highlight', highlight: ReturnType<typeof buildScheduleCalendarHighlightPositions>[number], x: number, y: number }
+  | { kind: 'operation', position: ReturnType<typeof buildScheduleOperationPositions>[number], x: number, y: number }
+>()
 
 const filteredFixture = computed(() => filterScheduleFixture(props.fixture, props.query))
 const rows = computed<ScheduleRow[]>(() =>
@@ -133,6 +158,16 @@ const scene = computed(() =>
 const chartHeight = computed(() => `${scene.value.height}px`)
 const viewportHeight = computed(() => Math.min(scene.value.height, props.maxViewportHeight))
 const viewportHeightStyle = computed(() => `${viewportHeight.value}px`)
+const surfaceWidth = computed(() => Math.max(viewportWidth.value, 1))
+const surfaceHeight = computed(() => Math.max(viewportHeight.value, 1))
+const viewportScene = computed(() =>
+  buildViewportScene(scene.value, {
+    scrollLeft: scrollLeft.value,
+    scrollTop: scrollTop.value,
+    width: surfaceWidth.value,
+    height: surfaceHeight.value,
+  }),
+)
 const visibleRange = computed(() =>
   calculateVisibleRowRange({
     scrollTop: scrollTop.value,
@@ -213,15 +248,76 @@ function operationTooltip(position: ReturnType<typeof buildScheduleOperationPosi
   return `${position.operation.workOrderCode} ${position.operation.name} | ${formatDateTime(position.operation.start)} - ${formatDateTime(position.operation.end)} | ${position.resourceId}${overlap}`
 }
 
+function highlightTooltip(position: ReturnType<typeof buildScheduleCalendarHighlightPositions>[number]) {
+  return `${position.highlight.label} | ${position.highlight.kind} | ${formatDateTime(position.highlight.start)} - ${formatDateTime(position.highlight.end)}`
+}
+
+function resourceTooltip(row: ScheduleRow) {
+  return `${row.workCenterCode} ${row.name} | ${row.calendarLabel}`
+}
+
+function pointFromEvent(event: PointerEvent | FocusEvent) {
+  if ('clientX' in event) {
+    return { x: event.clientX, y: event.clientY }
+  }
+
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+}
+
+function showResourceTooltip(row: ScheduleRow, event: PointerEvent | FocusEvent) {
+  tooltipState.value = { kind: 'resource', row, ...pointFromEvent(event) }
+}
+
+function showHighlightTooltip(
+  highlight: ReturnType<typeof buildScheduleCalendarHighlightPositions>[number],
+  event: PointerEvent | FocusEvent,
+) {
+  tooltipState.value = { kind: 'highlight', highlight, ...pointFromEvent(event) }
+}
+
+function showOperationTooltip(
+  position: ReturnType<typeof buildScheduleOperationPositions>[number],
+  event: PointerEvent | FocusEvent,
+) {
+  tooltipState.value = { kind: 'operation', position, ...pointFromEvent(event) }
+}
+
+function moveTooltip(event: PointerEvent) {
+  if (!tooltipState.value) {
+    return
+  }
+
+  tooltipState.value = {
+    ...tooltipState.value,
+    x: event.clientX,
+    y: event.clientY,
+  }
+}
+
+function hideTooltip() {
+  tooltipState.value = undefined
+}
+
+function applySurfaceHostLayout(host: HTMLElement) {
+  host.style.position = 'absolute'
+  host.style.inset = '0 auto auto 0'
+  host.style.width = `${surfaceWidth.value}px`
+  host.style.height = `${surfaceHeight.value}px`
+  host.style.transform = `translate(${scrollLeft.value}px, ${scrollTop.value}px)`
+}
+
 async function syncSurface() {
   const host = surfaceHost.value
   if (!host) {
     return
   }
 
+  applySurfaceHostLayout(host)
+
   if (
     surface.value
-    && (surfaceSize.value?.width !== scene.value.width || surfaceSize.value.height !== scene.value.height)
+    && (surfaceSize.value?.width !== viewportScene.value.width || surfaceSize.value.height !== viewportScene.value.height)
   ) {
     surface.value.dispose()
     surface.value = undefined
@@ -229,16 +325,17 @@ async function syncSurface() {
   }
 
   if (!surface.value) {
-    const nextSurface = await createLeaferSurface(host, scene.value.width, scene.value.height)
+    const nextSurface = await createLeaferSurface(host, viewportScene.value.width, viewportScene.value.height)
     if (isDisposed.value) {
       nextSurface.dispose()
       return
     }
     surface.value = nextSurface
-    surfaceSize.value = { width: scene.value.width, height: scene.value.height }
+    surfaceSize.value = { width: viewportScene.value.width, height: viewportScene.value.height }
+    applySurfaceHostLayout(host)
   }
 
-  renderSceneToLeafer(surface.value, scene.value)
+  renderSceneToLeafer(surface.value, viewportScene.value)
 }
 
 onMounted(() => {
@@ -247,7 +344,7 @@ onMounted(() => {
   }
   void syncSurface()
 })
-watch(scene, syncSurface, { flush: 'post' })
+watch(viewportScene, syncSurface, { flush: 'post' })
 watch(() => props.zoom, resetHorizontalScroll, { flush: 'post' })
 onBeforeUnmount(() => {
   isDisposed.value = true
@@ -336,6 +433,11 @@ function moveDrag(event: PointerEvent) {
   event.preventDefault()
 }
 
+function moveOperationPointer(event: PointerEvent) {
+  moveDrag(event)
+  moveTooltip(event)
+}
+
 function finishDrag(operation: ScheduleOperation, event: PointerEvent) {
   if (
     event.currentTarget instanceof HTMLElement
@@ -401,13 +503,15 @@ function cancelDrag(event: PointerEvent) {
           {{ fixture.name }}
         </h3>
       </div>
-      <div class="scheduling-chart__meta">
-        <Badge variant="secondary">{{ summary.resources }} resources</Badge>
-        <Badge variant="outline">{{ summary.operations }} ops</Badge>
-        <Badge :variant="summary.overloads > 0 ? 'destructive' : 'secondary'">
-          {{ summary.overloads }} overloads
-        </Badge>
-      </div>
+      <slot name="headerMeta" :summary="summary">
+        <div class="scheduling-chart__meta">
+          <Badge variant="secondary">{{ summary.resources }} resources</Badge>
+          <Badge variant="outline">{{ summary.operations }} ops</Badge>
+          <Badge :variant="summary.overloads > 0 ? 'destructive' : 'secondary'">
+            {{ summary.overloads }} overloads
+          </Badge>
+        </div>
+      </slot>
     </header>
 
     <TimelineAxis
@@ -435,80 +539,97 @@ function cancelDrag(event: PointerEvent) {
           ref="surfaceHost"
           aria-hidden="true"
           class="scheduling-chart__surface"
-          :style="{ width: `${chartWidth}px`, height: chartHeight }"
+          :style="{
+            width: `${surfaceWidth}px`,
+            height: `${surfaceHeight}px`,
+            transform: `translate(${scrollLeft}px, ${scrollTop}px)`,
+          }"
         />
 
       <div class="scheduling-chart__rows" :style="{ height: chartHeight, minWidth: `${chartWidth}px` }">
-        <TooltipProvider :delay-duration="120">
-          <Tooltip v-for="item in visibleRows" :key="item.row.id">
-            <TooltipTrigger as-child>
-              <button
-                class="schedule-resource"
-                :class="{ 'schedule-resource--selected': isSelectedResource(item.row) }"
-                type="button"
-                :data-test="`schedule-resource-${item.row.id}`"
-                :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
-                @click="emit('select', { kind: 'resource', id: item.row.id })"
-              >
+        <button
+          v-for="item in visibleRows"
+          :key="item.row.id"
+          class="schedule-resource"
+          :class="{ 'schedule-resource--selected': isSelectedResource(item.row) }"
+          type="button"
+          :data-test="`schedule-resource-${item.row.id}`"
+          :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
+          @blur="hideTooltip"
+          @click="emit('select', { kind: 'resource', id: item.row.id })"
+          @focus="showResourceTooltip(item.row, $event)"
+          @pointerenter="showResourceTooltip(item.row, $event)"
+          @pointerleave="hideTooltip"
+          @pointermove="moveTooltip"
+        >
+          <slot name="resourceRow" :row="item.row" :selected="isSelectedResource(item.row)">
                 <span class="schedule-resource__code">{{ item.row.workCenterCode }}</span>
                 <span class="schedule-resource__name">{{ item.row.name }}</span>
                 <span class="schedule-resource__calendar">{{ item.row.calendarLabel }}</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" align="start">
-              {{ item.row.workCenterCode }} {{ item.row.name }} | {{ item.row.calendarLabel }}
-            </TooltipContent>
-          </Tooltip>
+          </slot>
+        </button>
 
-          <Tooltip v-for="position in calendarHighlightPositions" :key="position.highlight.id">
-            <TooltipTrigger as-child>
-              <button
-                class="schedule-highlight"
-                :class="`schedule-highlight--${position.highlight.kind}`"
-                type="button"
-                :data-test="`schedule-highlight-${position.highlight.id}`"
-                :style="{
-                  top: `${position.top}px`,
-                  left: `${position.left}px`,
-                  width: `${position.width}px`,
-                  height: `${position.height}px`,
-                }"
-                @click.stop="emit('select', { kind: 'calendar-highlight', id: position.highlight.id })"
-              >
+        <button
+          v-for="position in calendarHighlightPositions"
+          :key="position.highlight.id"
+          class="schedule-highlight"
+          :class="`schedule-highlight--${position.highlight.kind}`"
+          type="button"
+          :data-test="`schedule-highlight-${position.highlight.id}`"
+          :style="{
+            top: `${position.top}px`,
+            left: `${position.left}px`,
+            width: `${position.width}px`,
+            height: `${position.height}px`,
+          }"
+          @blur="hideTooltip"
+          @click.stop="emit('select', { kind: 'calendar-highlight', id: position.highlight.id })"
+          @focus="showHighlightTooltip(position, $event)"
+          @pointerenter="showHighlightTooltip(position, $event)"
+          @pointerleave="hideTooltip"
+          @pointermove="moveTooltip"
+        >
+          <slot name="calendarHighlight" :position="position">
                 <span>{{ position.highlight.label }}</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" align="start">
-              {{ position.highlight.label }} | {{ position.highlight.kind }} |
-              {{ formatDateTime(position.highlight.start) }} - {{ formatDateTime(position.highlight.end) }}
-            </TooltipContent>
-          </Tooltip>
+          </slot>
+        </button>
 
-          <Tooltip v-for="position in operationPositions" :key="position.operation.id">
-            <TooltipTrigger as-child>
-              <button
-                class="schedule-operation"
-                :class="{
-                  'schedule-operation--selected': isSelectedOperation(position.operation),
-                  'schedule-operation--dragging': activeDrag?.operationId === position.operation.id,
-                  'schedule-operation--visual-overlap': position.hasVisualOverlap && !position.hasTimeOverlap,
-                  'schedule-operation--time-overlap': position.hasTimeOverlap,
-                }"
-                type="button"
-                :data-test="`schedule-operation-${position.operation.id}`"
-                :data-preview-resource-id="position.resourceId"
-                :style="{
-                  top: `${position.top}px`,
-                  left: `${position.left}px`,
-                  width: `${position.width}px`,
-                  height: `${position.height}px`,
-                }"
-                @click.stop="emit('select', { kind: 'operation', id: position.operation.id })"
-                @pointerdown.stop="startDrag(position.operation, $event)"
-                @pointermove.stop="moveDrag"
-                @pointerup.stop="finishDrag(position.operation, $event)"
-                @pointercancel.stop="cancelDrag"
-              >
+        <button
+          v-for="position in operationPositions"
+          :key="position.operation.id"
+          class="schedule-operation"
+          :class="{
+            'schedule-operation--selected': isSelectedOperation(position.operation),
+            'schedule-operation--dragging': activeDrag?.operationId === position.operation.id,
+            'schedule-operation--visual-overlap': position.hasVisualOverlap && !position.hasTimeOverlap,
+            'schedule-operation--time-overlap': position.hasTimeOverlap,
+          }"
+          type="button"
+          :data-test="`schedule-operation-${position.operation.id}`"
+          :data-preview-resource-id="position.resourceId"
+          :style="{
+            top: `${position.top}px`,
+            left: `${position.left}px`,
+            width: `${position.width}px`,
+            height: `${position.height}px`,
+          }"
+          @blur="hideTooltip"
+          @click.stop="emit('select', { kind: 'operation', id: position.operation.id })"
+          @focus="showOperationTooltip(position, $event)"
+          @pointercancel.stop="cancelDrag"
+          @pointerdown.stop="startDrag(position.operation, $event)"
+          @pointerenter="showOperationTooltip(position, $event)"
+          @pointerleave="hideTooltip"
+          @pointermove.stop="moveOperationPointer"
+          @pointerup.stop="finishDrag(position.operation, $event)"
+        >
+          <slot
+            name="operationBar"
+            :position="position"
+            :selected="isSelectedOperation(position.operation)"
+            :dragging="activeDrag?.operationId === position.operation.id"
+            :has-conflict="operationHasConflict(position.operation)"
+          >
                 <span class="schedule-operation__title">{{ position.operation.workOrderCode }}</span>
                 <span class="schedule-operation__subtitle">{{ position.operation.name }}</span>
                 <LockKeyhole
@@ -521,16 +642,39 @@ function cancelDrag(event: PointerEvent) {
                   class="schedule-operation__icon schedule-operation__icon--warning"
                   aria-label="Has conflict"
                 />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" align="start">
-              {{ operationTooltip(position) }}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+          </slot>
+        </button>
         </div>
       </div>
     </div>
+
+    <SchedulingPointerTooltip
+      v-if="tooltipState"
+      :x="tooltipState.x"
+      :y="tooltipState.y"
+      data-test="scheduling-pointer-tooltip"
+    >
+      <slot
+        name="tooltip"
+        :kind="tooltipState.kind"
+        :row="tooltipState.kind === 'resource' ? tooltipState.row : undefined"
+        :highlight="tooltipState.kind === 'highlight' ? tooltipState.highlight : undefined"
+        :position="tooltipState.kind === 'operation' ? tooltipState.position : undefined"
+        :text="tooltipState.kind === 'resource'
+          ? resourceTooltip(tooltipState.row)
+          : tooltipState.kind === 'highlight'
+            ? highlightTooltip(tooltipState.highlight)
+            : operationTooltip(tooltipState.position)"
+      >
+        {{
+          tooltipState.kind === 'resource'
+            ? resourceTooltip(tooltipState.row)
+            : tooltipState.kind === 'highlight'
+              ? highlightTooltip(tooltipState.highlight)
+              : operationTooltip(tooltipState.position)
+        }}
+      </slot>
+    </SchedulingPointerTooltip>
   </section>
 </template>
 

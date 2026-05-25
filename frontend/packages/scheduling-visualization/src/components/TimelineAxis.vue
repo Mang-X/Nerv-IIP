@@ -20,14 +20,11 @@ const visibleTicks = computed(() => {
     return props.ticks
   }
 
-  const timelineStart = props.labelWidth + props.scrollLeft - 120
-  const timelineEnd = props.labelWidth + props.scrollLeft + props.viewportWidth + 120
+  const overscan = 160
+  const timelineStart = props.labelWidth + props.scrollLeft - overscan
+  const timelineEnd = props.labelWidth + props.scrollLeft + props.viewportWidth + overscan
 
-  return props.ticks.filter((tick, index) =>
-    index === 0
-    || index === props.ticks.length - 1
-    || (tick.x >= timelineStart && tick.x <= timelineEnd),
-  )
+  return props.ticks.filter((tick) => tick.x >= timelineStart && tick.x <= timelineEnd)
 })
 </script>
 
@@ -50,10 +47,6 @@ const visibleTicks = computed(() => {
           v-for="tick in visibleTicks"
           :key="tick.date"
           class="timeline-axis__tick"
-          :class="{
-            'timeline-axis__tick--first': tick.date === ticks[0]?.date,
-            'timeline-axis__tick--last': tick.date === ticks[ticks.length - 1]?.date,
-          }"
           :style="{ left: `${tick.x - labelWidth}px` }"
         >
           {{ tick.label }}
@@ -86,7 +79,7 @@ const visibleTicks = computed(() => {
 .timeline-axis__ticks {
   position: relative;
   overflow: hidden;
-  padding-inline: 8px;
+  padding-inline: 14px;
 }
 
 .timeline-axis__tick-track {
@@ -97,19 +90,11 @@ const visibleTicks = computed(() => {
 .timeline-axis__tick {
   position: absolute;
   top: 9px;
-  transform: translateX(-1px);
+  transform: translateX(0);
   color: #475569;
   font-size: 11px;
   font-weight: 650;
   white-space: nowrap;
-}
-
-.timeline-axis__tick--first {
-  transform: translateX(8px);
-}
-
-.timeline-axis__tick--last {
-  transform: translateX(calc(-100% - 8px));
 }
 
 .timeline-axis__tick::before {

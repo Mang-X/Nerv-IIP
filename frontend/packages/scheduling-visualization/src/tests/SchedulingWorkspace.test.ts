@@ -42,4 +42,19 @@ describe('SchedulingWorkspace', () => {
     })
     expect(wrapper.emitted('commitPreview')).toBeTruthy()
   })
+
+  it('renders host-provided detail and legend slots', async () => {
+    const wrapper = mount(SchedulingWorkspace, {
+      attachTo: document.body,
+      slots: {
+        detail: '<aside data-test="custom-detail">Custom detail</aside>',
+        legend: '<footer data-test="custom-legend">Custom legend</footer>',
+      },
+    })
+
+    await wrapper.get('[data-test="gantt-row-task-routing-review"]').trigger('click')
+
+    expect(wrapper.get('[data-test="custom-detail"]').text()).toBe('Custom detail')
+    expect(wrapper.get('[data-test="custom-legend"]').text()).toBe('Custom legend')
+  })
 })

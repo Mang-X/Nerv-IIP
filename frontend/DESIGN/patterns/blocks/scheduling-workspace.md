@@ -32,10 +32,13 @@ Category: block
 - Operation bars on an exclusive resource remain overlapped when their time windows collide, making the conflict obvious. Bars stack only when the fixture explicitly marks them as a shared parallel capacity group.
 - Calendar, maintenance, downtime, and changeover windows appear as row-local highlights and can be selected for detail inspection.
 - Link visibility applies to both Gantt dependencies and schedule operation dependencies and supports hidden, all links, or selected-chain modes.
-- Dependency links route around the source and target task/operation rectangles. A link should not overlap a task bar except at the entering edge.
-- The detail sheet opens on demand after a selection; operators can use `@nerv-iip/ui` hover tooltips for quick scan-level facts.
-- Large schedules must keep row labels, operation DOM, and timeline tick DOM bounded to the visible viewport plus overscan.
-- Package preview should expose a large-data scenario so operators and designers can validate scroll, frozen labels, axis sync, and density without a real backend.
+- Selection-chain mode shows the full connected dependency path for the selected task or operation.
+- Dependency links route around the source and target task/operation rectangles and stay out of the frozen side column. A link should not overlap a task bar except at the entering edge.
+- Dependency links do not route around row-background highlights such as calendar, maintenance, downtime, and changeover windows.
+- The detail sheet opens on demand after a selection; operators can use pointer-following hover tooltips for quick scan-level facts.
+- Large Gantt plans and large schedules must keep row labels, operation/task DOM, and timeline tick DOM bounded to the visible viewport plus overscan.
+- Package preview should expose large-data scenarios for both Gantt and resource schedule so operators and designers can validate scroll, frozen labels, axis sync, density, and dependency-link rendering without a real backend.
+- Host pages may customize row labels, bar content, tooltip content, detail content, and legend content through documented slots while keeping scheduling logic and persistence outside this package.
 
 ## Do's and Don'ts
 - Do: keep the workspace dense, scan-friendly, and operational.

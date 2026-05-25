@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import GanttChart from '../components/GanttChart.vue'
-import { createMockGanttFixture } from '../model/fixtures'
+import { createLargeMockGanttFixture, createMockGanttFixture } from '../model/fixtures'
 
 vi.mock('../canvas/createLeaferSurface', () => ({
   createLeaferSurface: () => ({
@@ -14,9 +14,10 @@ vi.mock('../canvas/createLeaferSurface', () => ({
   }),
 }))
 
-function dispatchPointer(target: Element, type: string, clientX: number) {
+function dispatchPointer(target: Element, type: string, clientX: number, clientY = 20) {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clientX', { value: clientX })
+  Object.defineProperty(event, 'clientY', { value: clientY })
   Object.defineProperty(event, 'pointerId', { value: 1 })
   target.dispatchEvent(event)
 }
@@ -119,5 +120,45 @@ describe('GanttChart', () => {
 
     expect(wrapper.get('[data-test="gantt-row-task-routing-review"]').attributes('style'))
       .toContain('left: 0px')
+  })
+
+  it('keeps large Gantt DOM bounded to visible rows and timeline ticks', async () => {
+    const fixture = createLargeMockGanttFixture({
+      taskCount: 1200,
+      days: 730,
+      dependencyEvery: 12,
+    })
+
+    const wrapper = mount(GanttChart, {
+      attachTo: document.body,
+      props: {
+        fixture,
+        expandedTaskIds: fixture.tasks.map((task) => task.id),
+        maxViewportHeight: 260,
+        width: 960,
+      },
+    })
+
+    await waitForFrame()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('[data-test^="gantt-row-"]').length).toBeLessThanOrEqual(12)
+    expect(wrapper.findAll('[data-test^="gantt-bar-"]').length).toBeLessThanOrEqual(12)
+    expect(wrapper.findAll('.timeline-axis__tick').length).toBeLessThan(40)
+  }, 20000)
+
+  it('shows a pointer-following tooltip for task bars', async () => {
+    const wrapper = mount(GanttChart, {
+      attachTo: document.body,
+      props: {
+        fixture: createMockGanttFixture(),
+        expandedTaskIds: ['phase-engineering'],
+      },
+    })
+
+    dispatchPointer(wrapper.get('[data-test="gantt-bar-task-routing-review"]').element, 'pointerenter', 320, 180)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-test="scheduling-pointer-tooltip"]').text()).toContain('ROUTE-REV')
   })
 })

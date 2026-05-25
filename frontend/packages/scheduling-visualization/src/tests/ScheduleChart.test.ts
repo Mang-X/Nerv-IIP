@@ -190,14 +190,19 @@ describe('ScheduleChart', () => {
   })
 
   it('keeps large schedule DOM bounded to visible rows and visible timeline ticks', async () => {
+    const fixture = createLargeMockScheduleFixture({
+      resourceCount: 1200,
+      days: 730,
+      operationsPerResource: 1,
+      dependencyEvery: 4,
+    })
+
+    expect(fixture.dependencies.length).toBeGreaterThan(200)
+
     const wrapper = mount(ScheduleChart, {
       attachTo: document.body,
       props: {
-        fixture: createLargeMockScheduleFixture({
-          resourceCount: 1200,
-          days: 730,
-          operationsPerResource: 1,
-        }),
+        fixture,
         maxViewportHeight: 260,
         width: 960,
       },

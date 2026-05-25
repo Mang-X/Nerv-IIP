@@ -25,10 +25,9 @@ export interface TimeScale {
 
 const dayInMilliseconds = 24 * 60 * 60 * 1000
 
-const tickSteps: Record<SchedulingZoom, number> = {
+const tickSteps: Record<Exclude<SchedulingZoom, 'month'>, number> = {
   day: 1,
   week: 7,
-  month: 30,
 }
 
 const dayLabelFormatter = new Intl.DateTimeFormat('en-US', {
@@ -64,6 +63,14 @@ function formatTickLabel(date: Date, zoom: SchedulingZoom): string {
   return dayLabelFormatter.format(date)
 }
 
+function nextTickDate(date: Date, zoom: SchedulingZoom): Date {
+  if (zoom === 'month') {
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1))
+  }
+
+  return new Date(date.getTime() + tickSteps[zoom] * dayInMilliseconds)
+}
+
 export function createTimeScale(options: CreateTimeScaleOptions): TimeScale {
   const start = new Date(options.start)
   const end = new Date(options.end)
@@ -81,10 +88,8 @@ export function createTimeScale(options: CreateTimeScaleOptions): TimeScale {
     return new Date(startMs + (clampedX / options.width) * duration)
   }
 
-  const stepMs = tickSteps[options.zoom] * dayInMilliseconds
   const ticks: TimeScaleTick[] = []
-  for (let value = startMs; value <= endMs; value += stepMs) {
-    const date = new Date(value)
+  for (let date = new Date(startMs); date.getTime() <= endMs; date = nextTickDate(date, options.zoom)) {
     ticks.push({
       date: date.toISOString(),
       x: dateToX(date.toISOString()),

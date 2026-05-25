@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@nerv-iip/ui'
+import { Badge } from '@nerv-iip/ui'
 import { AlertTriangle, ChevronDown, ChevronRight, LockKeyhole } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from 'vue'
 
@@ -8,12 +8,14 @@ import type { GanttFixture, GanttRow, GanttSelection } from '../model/gantt'
 import type { SchedulingPreviewCommand, SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import type { SchedulingZoom } from '../time-scale/timeScale'
 import type { SchedulingLinkMode } from './types'
+import SchedulingPointerTooltip from './SchedulingPointerTooltip.vue'
 import TimelineAxis from './TimelineAxis.vue'
 import { createLeaferSurface } from '../canvas/createLeaferSurface'
 import { filterGanttFixture } from '../state/filterFixtures'
 import { flattenGanttTasks } from '../model/gantt'
 import { buildGanttScene } from '../renderers/buildGanttScene'
 import { renderSceneToLeafer } from '../renderers/renderSceneToLeafer'
+import { buildViewportScene } from '../renderers/viewportScene'
 import {
   buildGanttBarPositions,
   buildTimelineTicks,
@@ -61,6 +63,16 @@ const props = withDefaults(defineProps<Props>(), {
   maxViewportHeight: 360,
 })
 const emit = defineEmits<Emits>()
+defineSlots<{
+  headerMeta?: (props: { summary: { rows: number, conflicts: number, dependencies: number } }) => unknown
+  taskRow?: (props: { row: GanttRow, expanded: boolean, hasConflict: boolean }) => unknown
+  taskBar?: (props: { position: ReturnType<typeof buildGanttBarPositions>[number], isDragging: boolean }) => unknown
+  tooltip?: (props: {
+    kind: 'row' | 'bar'
+    row: GanttRow
+    text: string
+  }) => unknown
+}>()
 
 const surfaceHost = useTemplateRef<HTMLDivElement>('surfaceHost')
 const viewport = useTemplateRef<HTMLDivElement>('viewport')
@@ -79,6 +91,12 @@ const activeDrag = shallowRef<{
   startX: number
   currentDeltaX: number
   before: SchedulingPreviewWindow
+}>()
+const tooltipState = shallowRef<{
+  kind: 'row' | 'bar'
+  row: GanttRow
+  x: number
+  y: number
 }>()
 
 const expandedIds = computed(() => new Set(props.expandedTaskIds))
@@ -130,6 +148,16 @@ const scene = computed(() =>
 const chartHeight = computed(() => `${scene.value.height}px`)
 const viewportHeight = computed(() => Math.min(scene.value.height, props.maxViewportHeight))
 const viewportHeightStyle = computed(() => `${viewportHeight.value}px`)
+const surfaceWidth = computed(() => Math.max(viewportWidth.value, 1))
+const surfaceHeight = computed(() => Math.max(viewportHeight.value, 1))
+const viewportScene = computed(() =>
+  buildViewportScene(scene.value, {
+    scrollLeft: scrollLeft.value,
+    scrollTop: scrollTop.value,
+    width: surfaceWidth.value,
+    height: surfaceHeight.value,
+  }),
+)
 const visibleRange = computed(() =>
   calculateVisibleRowRange({
     scrollTop: scrollTop.value,
@@ -195,15 +223,51 @@ function taskTooltip(row: GanttRow) {
   return `${row.code} ${row.name} | ${formatDate(row.start)} - ${formatDate(row.end)} | ${row.status}`
 }
 
+function showTooltip(kind: 'row' | 'bar', row: GanttRow, event: PointerEvent | FocusEvent) {
+  if ('clientX' in event) {
+    tooltipState.value = { kind, row, x: event.clientX, y: event.clientY }
+    return
+  }
+
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  tooltipState.value = { kind, row, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+}
+
+function moveTooltip(event: PointerEvent) {
+  if (!tooltipState.value) {
+    return
+  }
+
+  tooltipState.value = {
+    ...tooltipState.value,
+    x: event.clientX,
+    y: event.clientY,
+  }
+}
+
+function hideTooltip() {
+  tooltipState.value = undefined
+}
+
+function applySurfaceHostLayout(host: HTMLElement) {
+  host.style.position = 'absolute'
+  host.style.inset = '0 auto auto 0'
+  host.style.width = `${surfaceWidth.value}px`
+  host.style.height = `${surfaceHeight.value}px`
+  host.style.transform = `translate(${scrollLeft.value}px, ${scrollTop.value}px)`
+}
+
 async function syncSurface() {
   const host = surfaceHost.value
   if (!host) {
     return
   }
 
+  applySurfaceHostLayout(host)
+
   if (
     surface.value
-    && (surfaceSize.value?.width !== scene.value.width || surfaceSize.value.height !== scene.value.height)
+    && (surfaceSize.value?.width !== viewportScene.value.width || surfaceSize.value.height !== viewportScene.value.height)
   ) {
     surface.value.dispose()
     surface.value = undefined
@@ -211,16 +275,17 @@ async function syncSurface() {
   }
 
   if (!surface.value) {
-    const nextSurface = await createLeaferSurface(host, scene.value.width, scene.value.height)
+    const nextSurface = await createLeaferSurface(host, viewportScene.value.width, viewportScene.value.height)
     if (isDisposed.value) {
       nextSurface.dispose()
       return
     }
     surface.value = nextSurface
-    surfaceSize.value = { width: scene.value.width, height: scene.value.height }
+    surfaceSize.value = { width: viewportScene.value.width, height: viewportScene.value.height }
+    applySurfaceHostLayout(host)
   }
 
-  renderSceneToLeafer(surface.value, scene.value)
+  renderSceneToLeafer(surface.value, viewportScene.value)
 }
 
 function selectRow(row: GanttRow) {
@@ -283,6 +348,11 @@ function moveDrag(event: PointerEvent) {
   event.preventDefault()
 }
 
+function moveBarPointer(event: PointerEvent) {
+  moveDrag(event)
+  moveTooltip(event)
+}
+
 function finishDrag(task: GanttRow, event: PointerEvent) {
   if (
     event.currentTarget instanceof HTMLElement
@@ -338,7 +408,7 @@ onMounted(() => {
   }
   void syncSurface()
 })
-watch(scene, syncSurface, { flush: 'post' })
+watch(viewportScene, syncSurface, { flush: 'post' })
 watch(() => props.zoom, resetHorizontalScroll, { flush: 'post' })
 onBeforeUnmount(() => {
   isDisposed.value = true
@@ -359,13 +429,15 @@ onBeforeUnmount(() => {
           {{ fixture.name }}
         </h3>
       </div>
-      <div class="scheduling-chart__meta">
-        <Badge variant="secondary">{{ summary.rows }} rows</Badge>
-        <Badge variant="outline">{{ summary.dependencies }} links</Badge>
-        <Badge :variant="summary.conflicts > 0 ? 'destructive' : 'secondary'">
-          {{ summary.conflicts }} conflicts
-        </Badge>
-      </div>
+      <slot name="headerMeta" :summary="summary">
+        <div class="scheduling-chart__meta">
+          <Badge variant="secondary">{{ summary.rows }} rows</Badge>
+          <Badge variant="outline">{{ summary.dependencies }} links</Badge>
+          <Badge :variant="summary.conflicts > 0 ? 'destructive' : 'secondary'">
+            {{ summary.conflicts }} conflicts
+          </Badge>
+        </div>
+      </slot>
     </header>
 
     <TimelineAxis
@@ -388,21 +460,35 @@ onBeforeUnmount(() => {
           ref="surfaceHost"
           aria-hidden="true"
           class="scheduling-chart__surface"
-          :style="{ width: `${chartWidth}px`, height: chartHeight }"
+          :style="{
+            width: `${surfaceWidth}px`,
+            height: `${surfaceHeight}px`,
+            transform: `translate(${scrollLeft}px, ${scrollTop}px)`,
+          }"
         />
 
         <div class="scheduling-chart__rows" :style="{ height: chartHeight }">
-          <TooltipProvider :delay-duration="120">
-            <Tooltip v-for="item in visibleRows" :key="item.row.id">
-              <TooltipTrigger as-child>
-                <button
-                  class="gantt-row"
-                  :class="{ 'gantt-row--selected': isSelected(item.row) }"
-                  type="button"
-                  :data-test="`gantt-row-${item.row.id}`"
-                  :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
-                  @click="selectRow(item.row)"
-                >
+          <button
+            v-for="item in visibleRows"
+            :key="item.row.id"
+            class="gantt-row"
+            :class="{ 'gantt-row--selected': isSelected(item.row) }"
+            type="button"
+            :data-test="`gantt-row-${item.row.id}`"
+            :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
+            @blur="hideTooltip"
+            @click="selectRow(item.row)"
+            @focus="showTooltip('row', item.row, $event)"
+            @pointerenter="showTooltip('row', item.row, $event)"
+            @pointerleave="hideTooltip"
+            @pointermove="moveTooltip"
+          >
+            <slot
+              name="taskRow"
+              :row="item.row"
+              :expanded="expandedIds.has(item.row.id)"
+              :has-conflict="rowHasConflict(item.row)"
+            >
                   <span class="gantt-row__main" :style="{ paddingLeft: `${item.row.depth * 16}px` }">
                     <button
                       v-if="item.row.hasChildren"
@@ -425,42 +511,58 @@ onBeforeUnmount(() => {
                     class="gantt-row__icon gantt-row__icon--warning"
                     aria-label="Has conflict"
                   />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right" align="start">
-                {{ taskTooltip(item.row) }}
-              </TooltipContent>
-            </Tooltip>
+            </slot>
+          </button>
 
-            <Tooltip v-for="position in barPositions" :key="`bar-${position.task.id}`">
-              <TooltipTrigger as-child>
-                <button
-                  class="gantt-bar-overlay"
-                  :class="{ 'gantt-bar-overlay--dragging': activeDrag?.taskId === position.task.id }"
-                  type="button"
-                  :data-test="`gantt-bar-${position.task.id}`"
-                  :style="{
-                    top: `${position.top}px`,
-                    left: `${position.left}px`,
-                    width: `${position.width}px`,
-                  }"
-                  @click.stop="selectRow(position.task)"
-                  @pointerdown.stop="startDrag(position.task, $event)"
-                  @pointermove.stop="moveDrag"
-                  @pointerup.stop="finishDrag(position.task, $event)"
-                  @pointercancel.stop="cancelDrag"
-                >
+          <button
+            v-for="position in barPositions"
+            :key="`bar-${position.task.id}`"
+            class="gantt-bar-overlay"
+            :class="{ 'gantt-bar-overlay--dragging': activeDrag?.taskId === position.task.id }"
+            type="button"
+            :data-test="`gantt-bar-${position.task.id}`"
+            :style="{
+              top: `${position.top}px`,
+              left: `${position.left}px`,
+              width: `${position.width}px`,
+            }"
+            @blur="hideTooltip"
+            @click.stop="selectRow(position.task)"
+            @focus="showTooltip('bar', position.task, $event)"
+            @pointercancel.stop="cancelDrag"
+            @pointerdown.stop="startDrag(position.task, $event)"
+            @pointerenter="showTooltip('bar', position.task, $event)"
+            @pointerleave="hideTooltip"
+            @pointermove.stop="moveBarPointer"
+            @pointerup.stop="finishDrag(position.task, $event)"
+          >
+            <slot
+              name="taskBar"
+              :position="position"
+              :is-dragging="activeDrag?.taskId === position.task.id"
+            >
                   {{ position.task.code }}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" align="start">
-                {{ taskTooltip(position.task) }}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+            </slot>
+          </button>
         </div>
       </div>
     </div>
+
+    <SchedulingPointerTooltip
+      v-if="tooltipState"
+      :x="tooltipState.x"
+      :y="tooltipState.y"
+      data-test="scheduling-pointer-tooltip"
+    >
+      <slot
+        name="tooltip"
+        :kind="tooltipState.kind"
+        :row="tooltipState.row"
+        :text="taskTooltip(tooltipState.row)"
+      >
+        {{ taskTooltip(tooltipState.row) }}
+      </slot>
+    </SchedulingPointerTooltip>
   </section>
 </template>
 

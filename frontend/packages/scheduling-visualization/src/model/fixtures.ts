@@ -5,6 +5,13 @@ export interface LargeMockScheduleFixtureOptions {
   resourceCount?: number
   days?: number
   operationsPerResource?: number
+  dependencyEvery?: number
+}
+
+export interface LargeMockGanttFixtureOptions {
+  taskCount?: number
+  days?: number
+  dependencyEvery?: number
 }
 
 export function createMockGanttFixture(): GanttFixture {
@@ -232,10 +239,79 @@ export function createMockScheduleFixture(): ScheduleFixture {
   }
 }
 
+export function createLargeMockGanttFixture(options: LargeMockGanttFixtureOptions = {}): GanttFixture {
+  const taskCount = options.taskCount ?? 1200
+  const days = options.days ?? 730
+  const dependencyEvery = options.dependencyEvery ?? 6
+  const phaseSize = 40
+  const phaseCount = Math.ceil(taskCount / phaseSize)
+  const tasks = Array.from({ length: phaseCount }, (_, phaseIndex) => {
+    const children = Array.from({ length: Math.min(phaseSize, taskCount - phaseIndex * phaseSize) }, (_, childIndex) => {
+      const taskIndex = phaseIndex * phaseSize + childIndex
+      const startOffset = (taskIndex * 2) % Math.max(days - 8, 1)
+      const duration = 2 + (taskIndex % 6)
+      const start = new Date(Date.UTC(2026, 4, 1 + startOffset)).toISOString()
+      const end = new Date(Date.UTC(2026, 4, 1 + startOffset + duration)).toISOString()
+
+      return {
+        id: `task-large-${taskIndex}`,
+        parentId: `phase-large-${phaseIndex}`,
+        name: `Release task ${taskIndex}`,
+        code: `GT-${taskIndex}`,
+        start,
+        end,
+        progress: taskIndex % 3 === 0 ? 60 : 0,
+        status: taskIndex % 3 === 0 ? 'running' as const : 'planned' as const,
+        baselineStart: new Date(Date.UTC(2026, 4, 1 + Math.max(startOffset - 1, 0))).toISOString(),
+        baselineEnd: new Date(Date.UTC(2026, 4, 1 + startOffset + duration)).toISOString(),
+      }
+    })
+    const phaseStart = children[0]?.start ?? '2026-05-01T00:00:00.000Z'
+    const phaseEnd = children.at(-1)?.end ?? phaseStart
+
+    return {
+      id: `phase-large-${phaseIndex}`,
+      name: `Large release phase ${phaseIndex + 1}`,
+      code: `PH-${phaseIndex + 1}`,
+      start: phaseStart,
+      end: phaseEnd,
+      progress: 20 + (phaseIndex % 5) * 10,
+      status: phaseIndex % 2 === 0 ? 'running' as const : 'planned' as const,
+      baselineStart: phaseStart,
+      baselineEnd: phaseEnd,
+      children,
+    }
+  })
+  const dependencies = Array.from(
+    { length: Math.max(Math.floor((taskCount - 1) / dependencyEvery), 0) },
+    (_, index) => {
+      const sourceIndex = index * dependencyEvery
+      const targetIndex = sourceIndex + dependencyEvery
+      return {
+        id: `dep-large-${sourceIndex}-${targetIndex}`,
+        sourceTaskId: `task-large-${sourceIndex}`,
+        targetTaskId: `task-large-${targetIndex}`,
+        type: 'finish-start' as const,
+      }
+    },
+  ).filter((dependency) => Number(dependency.targetTaskId.replace('task-large-', '')) < taskCount)
+
+  return {
+    id: 'gantt-large-validation',
+    name: 'Large release validation plan',
+    rangeStart: '2026-05-01T00:00:00.000Z',
+    rangeEnd: new Date(Date.UTC(2026, 4, 1 + days)).toISOString(),
+    tasks,
+    dependencies,
+    conflicts: [],
+  }
+}
+
 export function createLargeMockScheduleFixture(options: LargeMockScheduleFixtureOptions = {}): ScheduleFixture {
   const resourceCount = options.resourceCount ?? 1200
   const days = options.days ?? 730
   const operationsPerResource = options.operationsPerResource ?? 2
+  const dependencyEvery = Math.max(options.dependencyEvery ?? 4, 1)
   const fixture = createMockScheduleFixture()
   const resources = Array.from({ length: resourceCount }, (_, index) => ({
     id: `wc-large-${index}`,
@@ -289,6 +365,23 @@ export function createLargeMockScheduleFixture(options: LargeMockScheduleFixture
       label: index % 2 === 0 ? 'Planned maintenance' : 'Resource unavailable',
       severity: index % 2 === 0 ? 'warning' as const : 'critical' as const,
     }))
+  const dependencies = Array.from(
+    { length: Math.max(Math.floor((resourceCount - 1) / dependencyEvery), 0) },
+    (_, index) => {
+      const sourceIndex = index * dependencyEvery
+      const targetIndex = sourceIndex + 1
+
+      return {
+        id: `dep-large-op-${sourceIndex}-${targetIndex}`,
+        sourceOperationId: `op-large-${sourceIndex}-0`,
+        targetOperationId: `op-large-${targetIndex}-0`,
+        type: 'finish-start' as const,
+      }
+    },
+  ).filter((dependency) =>
+    operations.some((operation) => operation.id === dependency.sourceOperationId)
+    && operations.some((operation) => operation.id === dependency.targetOperationId),
+  )
 
   return {
     ...fixture,
@@ -298,7 +391,7 @@ export function createLargeMockScheduleFixture(options: LargeMockScheduleFixture
     resources,
     operations,
     capacityBands,
-    dependencies: [],
+    dependencies,
     calendarHighlights,
     conflicts: [],
   }

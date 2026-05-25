@@ -24,7 +24,7 @@ export interface BuildScheduleSceneOptions {
 const labelWidth = 230
 function shouldRenderDependency(
   mode: SchedulingLinkMode,
-  selectedId: string | undefined,
+  selectedChainIds: Set<string> | undefined,
   sourceId: string,
   targetId: string,
 ) {
@@ -36,7 +36,32 @@ function shouldRenderDependency(
     return true
   }
 
-  return selectedId === sourceId || selectedId === targetId
+  return Boolean(selectedChainIds?.has(sourceId) && selectedChainIds.has(targetId))
+}
+
+function collectLinkedIds(
+  selectedId: string | undefined,
+  dependencies: ScheduleFixture['dependencies'],
+) {
+  if (!selectedId) {
+    return undefined
+  }
+
+  const linkedIds = new Set([selectedId])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const dependency of dependencies) {
+      if (linkedIds.has(dependency.sourceOperationId) || linkedIds.has(dependency.targetOperationId)) {
+        const before = linkedIds.size
+        linkedIds.add(dependency.sourceOperationId)
+        linkedIds.add(dependency.targetOperationId)
+        changed ||= linkedIds.size !== before
+      }
+    }
+  }
+
+  return linkedIds
 }
 
 export function buildScheduleScene(options: BuildScheduleSceneOptions): SchedulingScene {
@@ -61,6 +86,9 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
   const positionByOperationId = new Map(
     operationPositions.map((position) => [position.operation.id, position]),
   )
+  const selectedChainIds = options.dependencyMode === 'selection'
+    ? collectLinkedIds(options.selectedOperationId, options.fixture.dependencies)
+    : undefined
 
   for (const highlight of options.fixture.calendarHighlights) {
     const rowIndex = rows.findIndex((row) => row.id === highlight.resourceId)
@@ -141,7 +169,7 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
     if (
       !shouldRenderDependency(
         options.dependencyMode,
-        options.selectedOperationId,
+        selectedChainIds,
         dependency.sourceOperationId,
         dependency.targetOperationId,
       )
@@ -165,6 +193,7 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
           source: { left: source.left, top: source.top, width: source.width, height: source.height },
           target: { left: target.left, top: target.top, width: target.width, height: target.height },
           type: dependency.type,
+          minimumX: labelWidth + 8,
         }),
         metadata: {
           sourceOperationId: dependency.sourceOperationId,

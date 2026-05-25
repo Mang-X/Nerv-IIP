@@ -14,6 +14,7 @@ export interface BuildDependencyRouteOptions {
   target: DependencyRouteRect
   type: DependencyRouteType
   clearance?: number
+  minimumX?: number
 }
 
 type RouteSide = 'left' | 'right'
@@ -64,7 +65,7 @@ function routeXOutside(
     }
   }
 
-  return x
+  return Math.max(x, 0)
 }
 
 function chooseLaneY(
@@ -100,13 +101,20 @@ function dedupePoints(points: SchedulingScenePoint[]) {
 
 export function buildDependencyRoute(options: BuildDependencyRouteOptions): SchedulingScenePoint[] {
   const clearance = options.clearance ?? 12
+  const minimumX = options.minimumX ?? 0
   const sourceSide = sideForSource(options.type)
   const targetSide = sideForTarget(options.type)
   const sourcePort = portFor(options.source, sourceSide)
   const targetPort = portFor(options.target, targetSide)
   const laneY = chooseLaneY(options.source, options.target, clearance)
-  const sourceExitX = routeXOutside(sourcePort.x, sourceSide, clearance, [options.target], sourcePort.y, laneY)
-  const targetEntryX = routeXOutside(targetPort.x, targetSide, clearance, [options.source], laneY, targetPort.y)
+  const sourceExitX = Math.max(
+    routeXOutside(sourcePort.x, sourceSide, clearance, [options.target], sourcePort.y, laneY),
+    minimumX,
+  )
+  const targetEntryX = Math.max(
+    routeXOutside(targetPort.x, targetSide, clearance, [options.source], laneY, targetPort.y),
+    minimumX,
+  )
 
   return dedupePoints([
     sourcePort,

@@ -77,4 +77,17 @@ describe('dependency routing', () => {
     expect(intermediateSegments(route).some((segment) => segmentCrossesRectInterior(segment, source))).toBe(false)
     expect(intermediateSegments(route).some((segment) => segmentCrossesRectInterior(segment, target))).toBe(false)
   })
+
+  it('keeps intermediate route points inside the timeline area near the frozen column', () => {
+    const source = { left: 220, top: 8, width: 96, height: 22 }
+    const target = { left: 220, top: 52, width: 120, height: 22 }
+    const route = buildDependencyRoute({
+      source,
+      target,
+      type: 'start-start',
+      minimumX: 228,
+    })
+
+    expect(route.slice(1, -1).every((point) => point.x >= 228)).toBe(true)
+  })
 })

@@ -1,5 +1,10 @@
-export { createLargeMockScheduleFixture, createMockGanttFixture, createMockScheduleFixture } from './model/fixtures'
-export type { LargeMockScheduleFixtureOptions } from './model/fixtures'
+export {
+  createLargeMockGanttFixture,
+  createLargeMockScheduleFixture,
+  createMockGanttFixture,
+  createMockScheduleFixture,
+} from './model/fixtures'
+export type { LargeMockGanttFixtureOptions, LargeMockScheduleFixtureOptions } from './model/fixtures'
 export { flattenGanttTasks } from './model/gantt'
 export { groupScheduleRows } from './model/schedule'
 export { buildGanttScene } from './renderers/buildGanttScene'

@@ -31,6 +31,22 @@ describe('scene builders', () => {
 
   it('filters Gantt dependencies to the selected task chain', () => {
     const fixture = createMockGanttFixture()
+    fixture.tasks.push({
+      id: 'milestone-release-approved',
+      name: 'Release approved',
+      code: 'REL-OK',
+      start: '2026-05-12T00:00:00.000Z',
+      end: '2026-05-12T00:00:00.000Z',
+      progress: 0,
+      status: 'planned',
+      isMilestone: true,
+    })
+    fixture.dependencies.push({
+      id: 'dep-routing-approved',
+      sourceTaskId: 'task-routing-review',
+      targetTaskId: 'milestone-release-approved',
+      type: 'finish-start',
+    })
     const scene = buildGanttScene({
       fixture,
       expandedTaskIds: new Set(['phase-engineering']),
@@ -46,7 +62,26 @@ describe('scene builders', () => {
     })
 
     expect(scene.elements.filter((element) => element.kind === 'dependency').map((element) => element.id))
-      .toEqual(['dep-ebom-routing'])
+      .toEqual(['dep-ebom-routing', 'dep-routing-approved'])
+  })
+
+  it('filters schedule dependencies to the selected operation chain', () => {
+    const fixture = createMockScheduleFixture()
+    const scene = buildScheduleScene({
+      fixture,
+      width: 960,
+      rowHeight: 44,
+      zoom: 'day',
+      dependencyMode: 'selection',
+      selectedOperationId: 'op-packing-1001',
+      showCapacity: true,
+      showConflicts: true,
+      today: '2026-05-06T00:00:00.000Z',
+      previewById: {},
+    })
+
+    expect(scene.elements.filter((element) => element.kind === 'dependency').map((element) => element.id))
+      .toEqual(['dep-mix-pack-1001', 'dep-pack-sequence'])
   })
 
   it('builds schedule non-interactive canvas layers without duplicating DOM operation bars', () => {
