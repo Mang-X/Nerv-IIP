@@ -235,6 +235,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         return string.Join('&', pairs);
     }
 
+    protected static bool? TrueFlag(bool value) => value ? true : null;
+
     private static string FormatValue(object value) => value switch
     {
         bool boolValue => boolValue.ToString().ToLowerInvariant(),
@@ -259,7 +261,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("resourceType", request.ResourceType),
-                ("includeDisabled", request.IncludeDisabled ? true : null),
+                ("includeDisabled", TrueFlag(request.IncludeDisabled)),
                 ("take", request.Take)),
             null,
             cancellationToken);
@@ -365,7 +367,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             null,
             cancellationToken);
         return new BusinessConsoleQualityListResponse(
-            response.Items.Select(ToConsoleItem).ToArray());
+            response.Items.Select(ToQualityItem).ToArray());
     }
 
     public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordAsync(
@@ -395,7 +397,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             null,
             cancellationToken);
         return new BusinessConsoleQualityListResponse(
-            response.Items.Select(ToConsoleItem).ToArray());
+            response.Items.Select(ToQualityItem).ToArray());
     }
 
     public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
@@ -430,7 +432,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 request.ReturnDocumentId),
             cancellationToken);
 
-    private static BusinessConsoleQualityItem ToConsoleItem(DownstreamInspectionPlanItem item) =>
+    private static BusinessConsoleQualityItem ToQualityItem(DownstreamInspectionPlanItem item) =>
         new(
             item.InspectionPlanId,
             item.PlanCode,
@@ -448,7 +450,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             null,
             null);
 
-    private static BusinessConsoleQualityItem ToConsoleItem(DownstreamNcrItem item) =>
+    private static BusinessConsoleQualityItem ToQualityItem(DownstreamNcrItem item) =>
         new(
             item.NcrId,
             item.NcrCode,
