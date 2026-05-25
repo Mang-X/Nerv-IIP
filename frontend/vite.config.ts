@@ -44,6 +44,9 @@ export default defineConfig({
       '@nerv-iip/app-shell': fileURLToPath(
         new URL('./packages/app-shell/src/index.ts', import.meta.url),
       ),
+      '@nerv-iip/scheduling-visualization': fileURLToPath(
+        new URL('./packages/scheduling-visualization/src/index.ts', import.meta.url),
+      ),
       '@nerv-iip/ui': fileURLToPath(new URL('./packages/ui/src/index.ts', import.meta.url)),
     },
   },
