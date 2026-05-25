@@ -208,12 +208,29 @@ function rowKey(item: BusinessConsoleQualityItem, index: number) {
   return `${item.id ?? item.code ?? 'plan'}:${index}`
 }
 
+function qualityItemSummary(item: BusinessConsoleQualityItem) {
+  const values = [
+    item.category,
+    item.skuCode,
+    item.partnerId,
+    item.workCenterId,
+    item.deviceAssetId,
+    item.documentType,
+  ].filter(isPresent)
+
+  return values.length ? values.join(' / ') : 'n/a'
+}
+
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? 'Request failed.' : ''
 }
 
 function isNonEmpty(value: string) {
   return value.trim().length > 0
+}
+
+function isPresent(value: string | undefined | null): value is string {
+  return typeof value === 'string' && value.trim().length > 0
 }
 </script>
 
@@ -288,7 +305,7 @@ function isNonEmpty(value: string) {
                   <TableCell>
                     <Badge variant="secondary">{{ plan.status ?? 'unknown' }}</Badge>
                   </TableCell>
-                  <TableCell>{{ plan.summary ?? 'n/a' }}</TableCell>
+                  <TableCell>{{ qualityItemSummary(plan) }}</TableCell>
                   <TableCell class="text-right">
                     <Button
                       size="sm"

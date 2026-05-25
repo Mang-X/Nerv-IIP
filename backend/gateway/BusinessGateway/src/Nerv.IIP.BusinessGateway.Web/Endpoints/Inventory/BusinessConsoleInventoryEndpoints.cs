@@ -1,4 +1,5 @@
 using FastEndpoints;
+using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
@@ -101,5 +102,18 @@ public sealed class ConfirmBusinessConsoleInventoryCountAdjustmentEndpoint(
             countTaskId,
             downstreamRequest,
             cancellationToken);
+    }
+}
+
+public sealed class BusinessConsoleConfirmStockCountAdjustmentRequestValidator
+    : Validator<BusinessConsoleConfirmStockCountAdjustmentRequest>
+{
+    public BusinessConsoleConfirmStockCountAdjustmentRequestValidator()
+    {
+        RuleFor(x => x.CountTaskId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CountedQuantity).GreaterThan(0);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }

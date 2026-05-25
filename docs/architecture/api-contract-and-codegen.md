@@ -59,10 +59,11 @@ BusinessGateway Console OpenAPI 的生成链路固定为：
 
 1. BusinessGateway 通过 FastEndpoints.Swagger 输出 `/swagger/v1/swagger.json`。
 2. 导出脚本将 BusinessGateway Console OpenAPI 快照写入 `frontend/packages/api-client/openapi/business-gateway-console.v1.json`。
-3. `frontend/packages/api-client/openapi-ts.config.ts` 增加 business-console input，生成到 `frontend/packages/api-client/src/generated/business-console/`，与现有 PlatformGateway generated 文件和移动端 generated 文件隔离；多 input 生成任务必须避免互相清理输出目录，当前 Hey API 配置使用独立 output path 并关闭 per-job clean。
+3. `frontend/packages/api-client/openapi-ts.config.ts` 增加 business-console input，生成到 `frontend/packages/api-client/src/generated/business-console/`，与现有 PlatformGateway generated 文件和移动端 generated 文件隔离；多 input 生成任务必须避免互相清理输出目录，当前 Hey API 配置使用独立 output path，并在 `generate` script 中先清理已知 generated 文件，再关闭 per-job clean，避免并行 job 互删子目录。
 4. `frontend/packages/api-client/src/business-console.ts` 提供业务控制台稳定导出；`src/index.ts` 可以重新导出业务控制台需要的类型、SDK 和 Pinia Colada query/mutation options。
 5. `frontend/apps/business-console` 只从 `@nerv-iip/api-client` 稳定入口消费，不深 import `src/generated/business-console/*`。
 6. OpenAPI 快照是生成输入，不允许手改；新增或修改 business-console endpoint 时必须先更新 BusinessGateway endpoint、OpenAPI/authorization/proxy tests，再导出快照并运行 `pnpm -C frontend generate:api`。
+7. `@hey-api/openapi-ts` 当前生成的 fetch client 内含上游 TODO 注释；该注释属于 generated artifact，不在项目内手改，升级生成器前通过 `frontend/packages/api-client/scripts/clean-generated.mjs` 保持生成目录无陈旧文件。
 
 Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` 语义前缀：
 

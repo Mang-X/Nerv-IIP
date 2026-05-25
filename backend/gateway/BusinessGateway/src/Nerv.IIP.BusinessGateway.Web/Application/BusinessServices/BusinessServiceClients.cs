@@ -259,7 +259,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("resourceType", request.ResourceType),
-                ("includeDisabled", request.IncludeDisabled),
+                ("includeDisabled", request.IncludeDisabled ? true : null),
                 ("take", request.Take)),
             null,
             cancellationToken);
@@ -430,44 +430,41 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 request.ReturnDocumentId),
             cancellationToken);
 
-    private static BusinessConsoleQualityItem ToConsoleItem(DownstreamInspectionPlanItem item)
-    {
-        var summaryParts = new[]
-            {
-                item.Category,
-                item.SkuCode,
-                item.PartnerId,
-                item.WorkCenterId,
-                item.DeviceAssetId,
-                item.DocumentType,
-            }
-            .Where(value => !string.IsNullOrWhiteSpace(value));
-
-        return new BusinessConsoleQualityItem(
+    private static BusinessConsoleQualityItem ToConsoleItem(DownstreamInspectionPlanItem item) =>
+        new(
             item.InspectionPlanId,
             item.PlanCode,
             item.Status,
-            string.Join(" / ", summaryParts));
-    }
+            item.Category,
+            item.SkuCode,
+            item.PartnerId,
+            item.WorkCenterId,
+            item.DeviceAssetId,
+            item.DocumentType,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
 
-    private static BusinessConsoleQualityItem ToConsoleItem(DownstreamNcrItem item)
-    {
-        var summaryParts = new[]
-            {
-                item.SourceType,
-                item.SourceDocumentId,
-                item.SkuCode,
-                item.DefectQuantity.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                item.DefectReason,
-            }
-            .Where(value => !string.IsNullOrWhiteSpace(value));
-
-        return new BusinessConsoleQualityItem(
+    private static BusinessConsoleQualityItem ToConsoleItem(DownstreamNcrItem item) =>
+        new(
             item.NcrId,
             item.NcrCode,
             item.Status,
-            string.Join(" / ", summaryParts));
-    }
+            null,
+            item.SkuCode,
+            null,
+            null,
+            null,
+            null,
+            item.SourceType,
+            item.SourceDocumentId,
+            item.DefectQuantity,
+            item.DefectReason,
+            item.BatchNo,
+            item.SerialNo);
 
     private sealed record DownstreamInspectionPlanListResponse(
         IReadOnlyCollection<DownstreamInspectionPlanItem> Items);

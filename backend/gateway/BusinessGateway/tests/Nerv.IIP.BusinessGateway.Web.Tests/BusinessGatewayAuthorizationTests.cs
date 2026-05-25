@@ -115,7 +115,7 @@ public sealed class BusinessGatewayAuthorizationTests
         using var request = new HttpRequestMessage(method, $"{path}{(path.Contains('?') ? '&' : '?')}organizationId=org-001&environmentId=env-dev")
         {
             Content = method == HttpMethod.Post
-                ? JsonContent.Create(new { organizationId = "org-001", environmentId = "env-dev" })
+                ? JsonContent.Create(ValidPostBody(path))
                 : null
         };
 
@@ -127,6 +127,35 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
         Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
     }
+
+    private static object ValidPostBody(string path) => path switch
+    {
+        "/api/business-console/v1/master-data/skus" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "SKU-001",
+            name = "Demo SKU",
+            baseUomCode = "EA",
+            category = "finished-good",
+            materialType = "standard",
+            batchTrackingPolicy = "none",
+            serialTrackingPolicy = "none",
+            shelfLifePolicyCode = "none",
+            storageConditionCode = "ambient",
+            defaultBarcodeRuleCode = "default",
+            qualityRequired = true,
+            complianceTags = Array.Empty<string>(),
+        },
+        "/api/business-console/v1/inventory/count-tasks/count-001/adjustments" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            countedQuantity = 1,
+            idempotencyKey = "idem-001",
+        },
+        _ => new { organizationId = "org-001", environmentId = "env-dev" },
+    };
 
     public static TheoryData<HttpMethod, string, string> BusinessConsoleRoutes()
     {

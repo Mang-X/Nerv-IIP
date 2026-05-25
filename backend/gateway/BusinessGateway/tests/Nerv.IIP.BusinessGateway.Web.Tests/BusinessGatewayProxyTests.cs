@@ -205,6 +205,61 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Create_sku_rejects_obviously_invalid_gateway_request()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = new string('S', 65),
+            name = "Demo SKU",
+            baseUomCode = "EA",
+            category = "finished-good",
+            materialType = "standard",
+            batchTrackingPolicy = "none",
+            serialTrackingPolicy = "none",
+            shelfLifePolicyCode = "none",
+            storageConditionCode = "ambient",
+            defaultBarcodeRuleCode = "default",
+            qualityRequired = true,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Count_adjustment_rejects_zero_counted_quantity()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/inventory/count-tasks/count-001/adjustments?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            countedQuantity = 0,
+            idempotencyKey = "idem-001",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Master_data_http_client_sends_internal_bearer_token_and_builds_downstream_query()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
@@ -235,6 +290,31 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&includeDisabled=true&take=12", request.RequestUri!.PathAndQuery);
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.Equal("internal-token-001", request.Headers.Authorization.Parameter);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_omits_default_false_include_disabled_query()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                resources = Array.Empty<object>(),
+                total = 0,
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        await client.ListResourcesAsync(
+            "internal-token-001",
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, 12),
+            CancellationToken.None);
+
+        Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&take=12", handler.Requests.Single().RequestUri!.PathAndQuery);
     }
 
     [Fact]
@@ -355,8 +435,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("plan-001", item.Id);
         Assert.Equal("IP-001", item.Code);
         Assert.Equal("active", item.Status);
-        Assert.Contains("incoming", item.Summary, StringComparison.Ordinal);
-        Assert.Contains("SKU-001", item.Summary, StringComparison.Ordinal);
+        Assert.Equal("incoming", item.Category);
+        Assert.Equal("SKU-001", item.SkuCode);
     }
 
     [Fact]
@@ -397,9 +477,11 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("ncr-001", item.Id);
         Assert.Equal("NCR-001", item.Code);
         Assert.Equal("open", item.Status);
-        Assert.Contains("inspection", item.Summary, StringComparison.Ordinal);
-        Assert.Contains("SKU-001", item.Summary, StringComparison.Ordinal);
-        Assert.Contains("dimension-out-of-spec", item.Summary, StringComparison.Ordinal);
+        Assert.Equal("inspection", item.SourceType);
+        Assert.Equal("IR-001", item.SourceDocumentId);
+        Assert.Equal("SKU-001", item.SkuCode);
+        Assert.Equal(3, item.DefectQuantity);
+        Assert.Equal("dimension-out-of-spec", item.DefectReason);
     }
 
     [Fact]
@@ -746,7 +828,24 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         LastInternalToken = internalBearerToken;
         LastNcrListRequest = request;
         return Task.FromResult(new BusinessConsoleQualityListResponse(
-            [new BusinessConsoleQualityItem("ncr-001", "NCR-001", "open", "Defect")]));
+            [
+                new BusinessConsoleQualityItem(
+                    "ncr-001",
+                    "NCR-001",
+                    "open",
+                    null,
+                    "SKU-001",
+                    null,
+                    null,
+                    null,
+                    null,
+                    "inspection",
+                    "IR-001",
+                    1,
+                    "Defect",
+                    null,
+                    null),
+            ]));
     }
 
     public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(

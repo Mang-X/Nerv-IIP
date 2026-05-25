@@ -60,7 +60,9 @@ public static class BusinessGatewayPermissions
 
 public sealed class BusinessGatewayAuthorizationOptions
 {
-    public int AuthorizationCacheTtlSeconds { get; set; } = 45;
+    public int AuthorizationCacheTtlSeconds { get; set; } = 15;
+
+    public string AuthorizationCheckPath { get; set; } = "/internal/iam/v1/authorization/check";
 }
 
 public sealed class HttpBusinessGatewayAuthorizationClient(
@@ -71,7 +73,7 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
     private TimeSpan AuthorizationCacheTtl => TimeSpan.FromSeconds(
         options.Value.AuthorizationCacheTtlSeconds > 0
             ? options.Value.AuthorizationCacheTtlSeconds
-            : 45);
+            : 15);
 
     public async Task<BusinessGatewayAuthorizationResult> CheckAsync(
         string bearerToken,
@@ -90,7 +92,7 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
         BusinessGatewayPermissionRequirement requirement,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/internal/iam/v1/authorization/check");
+        using var request = new HttpRequestMessage(HttpMethod.Post, AuthorizationCheckPath());
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
         request.Content = JsonContent.Create(new AuthorizationCheckRequest(
             requirement.PermissionCode,
@@ -134,6 +136,14 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
             resourceType,
             resourceId,
             "v1");
+    }
+
+    private string AuthorizationCheckPath()
+    {
+        var configuredPath = options.Value.AuthorizationCheckPath;
+        return string.IsNullOrWhiteSpace(configuredPath)
+            ? "/internal/iam/v1/authorization/check"
+            : configuredPath;
     }
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);

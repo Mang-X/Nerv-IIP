@@ -147,7 +147,18 @@ public sealed record BusinessConsoleQualityItem(
     string Id,
     string Code,
     string Status,
-    string Summary);
+    string? Category,
+    string? SkuCode,
+    string? PartnerId,
+    string? WorkCenterId,
+    string? DeviceAssetId,
+    string? DocumentType,
+    string? SourceType,
+    string? SourceDocumentId,
+    decimal? DefectQuantity,
+    string? DefectReason,
+    string? BatchNo,
+    string? SerialNo);
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items);

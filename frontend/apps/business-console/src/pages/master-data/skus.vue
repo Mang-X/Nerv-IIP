@@ -67,9 +67,9 @@ const createForm = reactive({
   materialType: 'finished-good',
   batchTrackingPolicy: 'none',
   serialTrackingPolicy: 'none',
-  shelfLifePolicyCode: '',
-  storageConditionCode: '',
-  defaultBarcodeRuleCode: '',
+  shelfLifePolicyCode: 'none',
+  storageConditionCode: 'ambient',
+  defaultBarcodeRuleCode: 'default',
   qualityRequired: false,
   complianceTags: '',
 })
@@ -85,13 +85,14 @@ const canCreateSku = computed(
     isNonEmpty(createForm.code) &&
     isNonEmpty(createForm.name) &&
     isNonEmpty(createForm.baseUomCode) &&
-    isNonEmpty(createForm.category),
+    isNonEmpty(createForm.category) &&
+    isNonEmpty(createForm.materialType) &&
+    isNonEmpty(createForm.batchTrackingPolicy) &&
+    isNonEmpty(createForm.serialTrackingPolicy) &&
+    isNonEmpty(createForm.shelfLifePolicyCode) &&
+    isNonEmpty(createForm.storageConditionCode) &&
+    isNonEmpty(createForm.defaultBarcodeRuleCode),
 )
-
-function optionalText(value: string) {
-  const trimmed = value.trim()
-  return trimmed ? trimmed : undefined
-}
 
 function splitTags(value: string) {
   const tags = value
@@ -110,9 +111,9 @@ function resetCreateForm() {
   createForm.materialType = 'finished-good'
   createForm.batchTrackingPolicy = 'none'
   createForm.serialTrackingPolicy = 'none'
-  createForm.shelfLifePolicyCode = ''
-  createForm.storageConditionCode = ''
-  createForm.defaultBarcodeRuleCode = ''
+  createForm.shelfLifePolicyCode = 'none'
+  createForm.storageConditionCode = 'ambient'
+  createForm.defaultBarcodeRuleCode = 'default'
   createForm.qualityRequired = false
   createForm.complianceTags = ''
 }
@@ -127,12 +128,12 @@ async function submitSku() {
     name: createForm.name.trim(),
     baseUomCode: createForm.baseUomCode.trim(),
     category: createForm.category.trim(),
-    materialType: optionalText(createForm.materialType),
-    batchTrackingPolicy: optionalText(createForm.batchTrackingPolicy),
-    serialTrackingPolicy: optionalText(createForm.serialTrackingPolicy),
-    shelfLifePolicyCode: optionalText(createForm.shelfLifePolicyCode),
-    storageConditionCode: optionalText(createForm.storageConditionCode),
-    defaultBarcodeRuleCode: optionalText(createForm.defaultBarcodeRuleCode),
+    materialType: createForm.materialType.trim(),
+    batchTrackingPolicy: createForm.batchTrackingPolicy.trim(),
+    serialTrackingPolicy: createForm.serialTrackingPolicy.trim(),
+    shelfLifePolicyCode: createForm.shelfLifePolicyCode.trim(),
+    storageConditionCode: createForm.storageConditionCode.trim(),
+    defaultBarcodeRuleCode: createForm.defaultBarcodeRuleCode.trim(),
     qualityRequired: createForm.qualityRequired,
     complianceTags: splitTags(createForm.complianceTags),
   }

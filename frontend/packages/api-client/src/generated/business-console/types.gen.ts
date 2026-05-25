@@ -16,7 +16,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     id?: string;
     code?: string;
     status?: string;
-    summary?: string;
+    category?: string | null;
+    skuCode?: string | null;
+    partnerId?: string | null;
+    workCenterId?: string | null;
+    deviceAssetId?: string | null;
+    documentType?: string | null;
+    sourceType?: string | null;
+    sourceDocumentId?: string | null;
+    defectQuantity?: number | null;
+    defectReason?: string | null;
+    batchNo?: string | null;
+    serialNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseData = {
@@ -219,20 +230,40 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceItem = N
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSkuRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    name?: string;
-    baseUomCode?: string;
-    category?: string;
-    materialType?: string;
-    batchTrackingPolicy?: string;
-    serialTrackingPolicy?: string;
-    shelfLifePolicyCode?: string;
-    storageConditionCode?: string;
-    defaultBarcodeRuleCode?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    name: string;
+    baseUomCode: string;
+    category: string;
+    materialType: string;
+    batchTrackingPolicy: string;
+    serialTrackingPolicy: string;
+    shelfLifePolicyCode: string;
+    storageConditionCode: string;
+    defaultBarcodeRuleCode: string;
     qualityRequired?: boolean;
     complianceTags?: Array<string> | null;
+};
+
+/**
+ * the dto used to send an error response to the client
+ */
+export type FastEndpointsErrorResponse = {
+    /**
+     * the http status code sent to the client. default is 400.
+     */
+    statusCode?: number;
+    /**
+     * the message for the error response
+     */
+    message?: string;
+    /**
+     * the collection of errors for the current context
+     */
+    errors?: {
+        [key: string]: Array<string>;
+    };
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryAvailabilityResponse = NetCorePalExtensionsDtoResponseData & {
@@ -339,7 +370,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmStockCountAdjustmentRequest = {
     countedQuantity?: number;
-    idempotencyKey?: string;
+    idempotencyKey: string;
 };
 
 export type ListBusinessConsoleQualityInspectionPlansData = {
@@ -684,6 +715,10 @@ export type CreateBusinessConsoleSkuData = {
 
 export type CreateBusinessConsoleSkuErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -692,6 +727,8 @@ export type CreateBusinessConsoleSkuErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleSkuError = CreateBusinessConsoleSkuErrors[keyof CreateBusinessConsoleSkuErrors];
 
 export type CreateBusinessConsoleSkuResponses = {
     /**
@@ -809,6 +846,10 @@ export type ConfirmBusinessConsoleInventoryCountAdjustmentData = {
 
 export type ConfirmBusinessConsoleInventoryCountAdjustmentErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -817,6 +858,8 @@ export type ConfirmBusinessConsoleInventoryCountAdjustmentErrors = {
      */
     403: unknown;
 };
+
+export type ConfirmBusinessConsoleInventoryCountAdjustmentError = ConfirmBusinessConsoleInventoryCountAdjustmentErrors[keyof ConfirmBusinessConsoleInventoryCountAdjustmentErrors];
 
 export type ConfirmBusinessConsoleInventoryCountAdjustmentResponses = {
     /**

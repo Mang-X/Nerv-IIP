@@ -712,6 +712,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -995,6 +1005,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -1071,8 +1091,54 @@
           "status": {
             "type": "string"
           },
-          "summary": {
-            "type": "string"
+          "category": {
+            "type": "string",
+            "nullable": true
+          },
+          "skuCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "partnerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceAssetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceType": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceDocumentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "defectQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "defectReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "batchNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -1737,42 +1803,92 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSkuRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "code",
+          "name",
+          "baseUomCode",
+          "category",
+          "materialType",
+          "batchTrackingPolicy",
+          "serialTrackingPolicy",
+          "shelfLifePolicyCode",
+          "storageConditionCode",
+          "defaultBarcodeRuleCode"
+        ],
         "properties": {
           "organizationId": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "environmentId": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "code": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 0,
+            "nullable": false
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
           },
           "baseUomCode": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 0,
+            "nullable": false
           },
           "category": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "materialType": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "batchTrackingPolicy": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "serialTrackingPolicy": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "shelfLifePolicyCode": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "storageConditionCode": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "defaultBarcodeRuleCode": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "qualityRequired": {
             "type": "boolean"
@@ -1782,6 +1898,34 @@
             "nullable": true,
             "items": {
               "type": "string"
+            }
+          }
+        }
+      },
+      "FastEndpointsErrorResponse": {
+        "type": "object",
+        "description": "the dto used to send an error response to the client",
+        "additionalProperties": false,
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "description": "the http status code sent to the client. default is 400.",
+            "format": "int32",
+            "default": 400
+          },
+          "message": {
+            "type": "string",
+            "description": "the message for the error response",
+            "default": "One or more errors occurred!"
+          },
+          "errors": {
+            "type": "object",
+            "description": "the collection of errors for the current context",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         }
@@ -2133,13 +2277,21 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmStockCountAdjustmentRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "idempotencyKey"
+        ],
         "properties": {
           "countedQuantity": {
             "type": "number",
-            "format": "decimal"
+            "format": "decimal",
+            "minimum": 0.0,
+            "exclusiveMinimum": true
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
           }
         }
       }

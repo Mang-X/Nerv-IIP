@@ -14,7 +14,11 @@ public sealed class BusinessGatewayAuthorizationClientTests
     public async Task Http_authorization_client_posts_internal_iam_check_contract()
     {
         var handler = new RecordingHandler(_ => AuthorizationResponse(HttpStatusCode.OK, allowed: true));
-        var client = CreateClient(handler);
+        var client = CreateClient(handler, new BusinessGatewayAuthorizationOptions
+        {
+            AuthorizationCacheTtlSeconds = 60,
+            AuthorizationCheckPath = "/custom/iam/check",
+        });
 
         var result = await client.CheckAsync(
             "access-token-001",
@@ -28,7 +32,7 @@ public sealed class BusinessGatewayAuthorizationClientTests
 
         Assert.True(result.IsAllowed);
         Assert.Equal(HttpMethod.Post, handler.Requests.Single().Method);
-        Assert.Equal("/internal/iam/v1/authorization/check", handler.Requests.Single().RequestUri!.PathAndQuery);
+        Assert.Equal("/custom/iam/check", handler.Requests.Single().RequestUri!.PathAndQuery);
         Assert.Equal("Bearer", handler.Requests.Single().Headers.Authorization!.Scheme);
         Assert.Equal("access-token-001", handler.Requests.Single().Headers.Authorization!.Parameter);
 
@@ -104,11 +108,13 @@ public sealed class BusinessGatewayAuthorizationClientTests
             string.Join(", ", terminal.Requests.Single().Headers.AcceptLanguage.Select(value => value.ToString())));
     }
 
-    private static HttpBusinessGatewayAuthorizationClient CreateClient(RecordingHandler handler) =>
+    private static HttpBusinessGatewayAuthorizationClient CreateClient(
+        RecordingHandler handler,
+        BusinessGatewayAuthorizationOptions? options = null) =>
         new(
             new HttpClient(handler) { BaseAddress = new Uri("http://iam.local") },
             new MemoryAppCache(),
-            Options.Create(new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 60 }));
+            Options.Create(options ?? new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 60 }));
 
     private static HttpResponseMessage AuthorizationResponse(HttpStatusCode statusCode, bool allowed)
     {

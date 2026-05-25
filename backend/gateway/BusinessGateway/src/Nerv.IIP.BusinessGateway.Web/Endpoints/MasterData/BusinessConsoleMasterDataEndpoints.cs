@@ -1,4 +1,5 @@
 using FastEndpoints;
+using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
@@ -78,4 +79,23 @@ public sealed class CreateBusinessConsoleSkuEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         masterData.CreateSkuAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleCreateSkuRequestValidator : Validator<BusinessConsoleCreateSkuRequest>
+{
+    public BusinessConsoleCreateSkuRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.BaseUomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Category).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.MaterialType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.BatchTrackingPolicy).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SerialTrackingPolicy).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ShelfLifePolicyCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.StorageConditionCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DefaultBarcodeRuleCode).NotEmpty().MaximumLength(100);
+    }
 }
