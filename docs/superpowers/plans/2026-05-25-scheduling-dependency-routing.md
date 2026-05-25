@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Improve Gantt and schedule dependency routing so same-row tasks connect directly when separated, close or overlapping tasks use a short top/bottom bridge, and existing frozen-column protection remains intact.
+**Goal:** Improve Gantt and schedule dependency routing so same-row tasks connect directly when separated, close or overlapping tasks use a short top/bottom bridge, cross-row links avoid top-corner ports, and existing frozen-column protection remains intact.
 
 **Architecture:** Keep routing as a pure TypeScript function in `frontend/packages/scheduling-visualization/src/renderers/dependencyRouting.ts`. Gantt and schedule scene builders continue to call the same function, so one behavior change covers both component modes.
 
@@ -21,6 +21,8 @@
 
 Add tests for direct same-row finish-start links, same-row tight bridge links, cross-row tight bridge links, and frozen-column clamping.
 
+Follow-up coverage added tests for side-center cross-row routing, drag previews beyond the current fixture range, and Leafer scene clearing without manual canvas pixel blanking.
+
 - [x] **Step 2: Run the route test**
 
 Run: `pnpm -C frontend --filter @nerv-iip/scheduling-visualization test -- src/tests/dependencyRouting.test.ts`
@@ -32,6 +34,7 @@ Expected before implementation: at least the new direct/bridge assertions fail a
 Update `dependencyRouting.ts` to choose:
 - direct side-center line for same-row forward tasks with enough gap,
 - top or bottom center bridge for same-row close/overlapping tasks,
+- side-center row-gap routing for cross-row tasks with enough room,
 - row-gap center bridge for cross-row close tasks,
 - existing external-lane fallback for other dependency types and backward/overlap cases.
 

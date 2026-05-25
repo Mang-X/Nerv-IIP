@@ -317,18 +317,14 @@ export function shiftWindowByPixels(options: {
   scaleWidth?: number
 }) {
   const width = options.scaleWidth ?? options.width
-  const scale = createTimeScale({
-    start: options.rangeStart,
-    end: options.rangeEnd,
-    width,
-    zoom: options.zoom,
-  })
-  const startX = scale.dateToX(options.start)
-  const endX = scale.dateToX(options.end)
-  const clampedDeltaX = Math.min(Math.max(options.deltaX, -startX), width - endX)
+  const rangeStart = new Date(options.rangeStart).getTime()
+  const rangeEnd = new Date(options.rangeEnd).getTime()
+  const rangeDuration = Math.max(rangeEnd - rangeStart, 1)
+  const millisecondsPerPixel = rangeDuration / Math.max(width, 1)
+  const deltaMilliseconds = options.deltaX * millisecondsPerPixel
 
   return {
-    start: scale.xToDate(startX + clampedDeltaX).toISOString(),
-    end: scale.xToDate(endX + clampedDeltaX).toISOString(),
+    start: new Date(new Date(options.start).getTime() + deltaMilliseconds).toISOString(),
+    end: new Date(new Date(options.end).getTime() + deltaMilliseconds).toISOString(),
   }
 }

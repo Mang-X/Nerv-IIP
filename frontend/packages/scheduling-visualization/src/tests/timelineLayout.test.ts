@@ -230,7 +230,7 @@ describe('timelineLayout', () => {
     expect(dayPosition?.width).toBeGreaterThan(monthPosition?.width ?? 0)
   })
 
-  it('keeps dragged windows at their original duration when clamped at the range edge', () => {
+  it('lets dragged windows move beyond the current fixture range while preserving duration', () => {
     const shifted = shiftWindowByPixels({
       start: '2026-05-04T00:00:00.000Z',
       end: '2026-05-08T00:00:00.000Z',
@@ -245,7 +245,24 @@ describe('timelineLayout', () => {
       new Date(shifted.end).getTime() - new Date(shifted.start).getTime()
     ) / (24 * 60 * 60 * 1000)
 
-    expect(shifted.end).toBe('2026-05-22T00:00:00.000Z')
+    expect(new Date(shifted.end).getTime()).toBeGreaterThan(new Date('2026-05-22T00:00:00.000Z').getTime())
     expect(durationDays).toBe(4)
+  })
+
+  it('keeps using the pixel scale when a drag preview starts at the fixture edge', () => {
+    const shifted = shiftWindowByPixels({
+      start: '2026-05-07T00:00:00.000Z',
+      end: '2026-05-08T00:00:00.000Z',
+      deltaX: 64,
+      rangeStart: '2026-05-06T00:00:00.000Z',
+      rangeEnd: '2026-05-08T00:00:00.000Z',
+      width: 128,
+      zoom: 'day',
+    })
+
+    expect(shifted).toEqual({
+      start: '2026-05-08T00:00:00.000Z',
+      end: '2026-05-09T00:00:00.000Z',
+    })
   })
 })

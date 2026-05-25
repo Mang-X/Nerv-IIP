@@ -47,14 +47,19 @@ function intermediateSegments(points: { x: number, y: number }[]) {
 }
 
 describe('dependency routing', () => {
-  it('routes a finish-start link between rows without crossing the target task interior', () => {
+  it('routes a finish-start link between rows through side centers and the row gap', () => {
     const source = { left: 220, top: 8, width: 200, height: 22 }
     const target = { left: 446, top: 52, width: 268, height: 22 }
     const route = buildDependencyRoute({ source, target, type: 'finish-start' })
 
-    expect(route[0]).toEqual({ x: 420, y: 8 })
-    expect(route.at(-1)).toEqual({ x: 446, y: 52 })
-    expect(route.some((point) => point.y < source.top)).toBe(true)
+    expect(route).toEqual([
+      { x: 420, y: 19 },
+      { x: 432, y: 19 },
+      { x: 432, y: 41 },
+      { x: 434, y: 41 },
+      { x: 434, y: 63 },
+      { x: 446, y: 63 },
+    ])
     expect(intermediateSegments(route).some((segment) => segmentCrossesRectInterior(segment, target))).toBe(false)
   })
 

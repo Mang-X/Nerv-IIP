@@ -33,12 +33,12 @@ Category: block
 - Calendar, maintenance, downtime, and changeover windows appear as row-local highlights and can be selected for detail inspection.
 - Link visibility applies to both Gantt dependencies and schedule operation dependencies and supports hidden, all links, or selected-chain modes.
 - Selection-chain mode shows the full connected dependency path for the selected task or operation.
-- Dependency links route around the source and target task/operation rectangles and stay out of the frozen side column. Same-row predecessors and successors should connect directly when there is enough horizontal room; close, touching, or overlapping bars should use a compact top/bottom bridge from the bar centers. Cross-row close finish-to-start links should use the row gap before falling back to a longer external lane.
+- Dependency links route around the source and target task/operation rectangles and stay out of the frozen side column. Same-row predecessors and successors should connect directly when there is enough horizontal room; close, touching, or overlapping bars should use a compact top/bottom bridge from the bar centers. Cross-row finish-to-start links should prefer side-center ports and row-gap lanes when there is room; close links should use the row gap before falling back to a longer external lane.
 - Dependency links do not route around row-background highlights such as calendar, maintenance, downtime, and changeover windows.
 - The detail sheet opens on demand after a selection; operators can use pointer-following hover tooltips for quick scan-level facts.
 - Zoom changes are view-preset changes: they alter time density and bar pixel widths while preserving task/operation dates.
 - Opening or closing the detail sheet changes the available chart width; timeline DOM, DOM bars, and Leafer overlays must resize together instead of waiting for the next drag or scroll interaction.
-- Scroll and drag previews must repaint canvas overlays from a cleared frame, not rely on partial canvas reuse. Frozen side columns remain opaque masks over scrolled timeline content.
+- Scroll and drag previews must update Leafer scene nodes and request a render without manually blanking the canvas between frames. Frozen side columns remain opaque masks over scrolled timeline content.
 - Large Gantt plans and large schedules must keep row labels, operation/task DOM, Leafer overlays, and timeline tick DOM bounded to the visible viewport plus overscan.
 - Package preview should expose large-data scenarios for both Gantt and resource schedule so operators and designers can validate scroll, frozen labels, axis sync, density, and dependency-link rendering without a real backend.
 - Host pages may customize row labels, bar content, tooltip content, detail content, and legend content through documented slots while keeping scheduling logic and persistence outside this package.

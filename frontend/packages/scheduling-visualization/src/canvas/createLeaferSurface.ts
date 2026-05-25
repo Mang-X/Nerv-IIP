@@ -41,13 +41,6 @@ export async function createLeaferSurface(
   leafer.add(root)
   const renderTarget = leafer as unknown as LeaferRenderTarget
 
-  function clearCanvasPixels() {
-    host.querySelectorAll('canvas').forEach((canvas) => {
-      const context = canvas.getContext('2d')
-      context?.clearRect(0, 0, canvas.width, canvas.height)
-    })
-  }
-
   function requestFullRender() {
     if (renderTarget.render) {
       renderTarget.render({ force: true })
@@ -65,7 +58,6 @@ export async function createLeaferSurface(
   return {
     clear() {
       root.clear()
-      clearCanvasPixels()
     },
     addRect(input: LeaferRectInput) {
       root.add(
