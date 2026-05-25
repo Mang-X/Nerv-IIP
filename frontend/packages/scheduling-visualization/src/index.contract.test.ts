@@ -13,9 +13,11 @@ describe('@nerv-iip/scheduling-visualization public exports', () => {
       'calculateVisibleRowRange',
       'createMockGanttFixture',
       'createMockScheduleFixture',
+      'createSchedulingCommandStack',
       'createTimeScale',
       'flattenGanttTasks',
       'groupScheduleRows',
+      'useSchedulingSelection',
     ])
   })
 })
