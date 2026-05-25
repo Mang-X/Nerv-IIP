@@ -5,13 +5,15 @@ import type { SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import { createTimeScale } from '../time-scale/timeScale'
 import type { SchedulingZoom } from '../time-scale/timeScale'
 import { buildScheduleOperationPositions } from '../time-scale/timelineLayout'
+import type { SchedulingLinkMode } from '../components/types'
 
 export interface BuildScheduleSceneOptions {
   fixture: ScheduleFixture
   width: number
   rowHeight: number
   zoom: SchedulingZoom
-  showDependencies: boolean
+  dependencyMode: SchedulingLinkMode
+  selectedOperationId?: string
   showCapacity: boolean
   showConflicts: boolean
   today: string
@@ -19,6 +21,61 @@ export interface BuildScheduleSceneOptions {
 }
 
 const labelWidth = 230
+function shouldRenderDependency(
+  mode: SchedulingLinkMode,
+  selectedId: string | undefined,
+  sourceId: string,
+  targetId: string,
+) {
+  if (mode === 'none') {
+    return false
+  }
+
+  if (mode === 'all') {
+    return true
+  }
+
+  return selectedId === sourceId || selectedId === targetId
+}
+
+function dependencyEndpoints(type: string, source: { left: number, width: number }, target: { left: number, width: number }) {
+  const sourceX = type.startsWith('start') ? source.left : source.left + source.width
+  const targetX = type.endsWith('finish') ? target.left + target.width : target.left
+
+  return { sourceX, targetX }
+}
+
+function buildDependencyPoints(options: {
+  sourceX: number
+  sourceY: number
+  targetX: number
+  targetY: number
+}) {
+  const direction = options.targetX >= options.sourceX ? 1 : -1
+  const offset = 18 * direction
+  const firstX = options.sourceX + offset
+  const lastX = options.targetX - offset
+  const middleX = direction > 0
+    ? Math.max(firstX, Math.round((options.sourceX + options.targetX) / 2))
+    : Math.min(firstX, Math.round((options.sourceX + options.targetX) / 2))
+
+  if (Math.abs(options.sourceY - options.targetY) < 2) {
+    return [
+      { x: options.sourceX, y: options.sourceY },
+      { x: options.targetX, y: options.targetY },
+    ]
+  }
+
+  return [
+    { x: options.sourceX, y: options.sourceY },
+    { x: firstX, y: options.sourceY },
+    { x: middleX, y: options.sourceY },
+    { x: middleX, y: options.targetY },
+    { x: lastX, y: options.targetY },
+    { x: options.targetX, y: options.targetY },
+  ]
+}
+
 export function buildScheduleScene(options: BuildScheduleSceneOptions): SchedulingScene {
   const rows = groupScheduleRows(options.fixture.resources, options.fixture.operations)
   const height = Math.max(rows.length * options.rowHeight, options.rowHeight)
@@ -117,38 +174,40 @@ export function buildScheduleScene(options: BuildScheduleSceneOptions): Scheduli
     }
   }
 
-  if (options.showDependencies) {
-    for (const dependency of options.fixture.dependencies) {
+  for (const dependency of options.fixture.dependencies) {
+    if (
+      !shouldRenderDependency(
+        options.dependencyMode,
+        options.selectedOperationId,
+        dependency.sourceOperationId,
+        dependency.targetOperationId,
+      )
+    ) {
+      continue
+    }
+
       const source = positionByOperationId.get(dependency.sourceOperationId)
       const target = positionByOperationId.get(dependency.targetOperationId)
       if (!source || !target) {
         continue
       }
 
-      const sourceX = source.left + source.width
+      const { sourceX, targetX } = dependencyEndpoints(dependency.type, source, target)
       const sourceY = source.top + source.height / 2
-      const targetX = target.left
       const targetY = target.top + target.height / 2
-      const middleX = Math.max(sourceX + 16, Math.round((sourceX + targetX) / 2))
       elements.push({
         id: dependency.id,
         kind: 'dependency',
         x: sourceX,
         y: sourceY,
         stroke: '#64748b',
-        points: [
-          { x: sourceX, y: sourceY },
-          { x: middleX, y: sourceY },
-          { x: middleX, y: targetY },
-          { x: targetX - 6, y: targetY },
-        ],
+        points: buildDependencyPoints({ sourceX, sourceY, targetX, targetY }),
         metadata: {
           sourceOperationId: dependency.sourceOperationId,
           targetOperationId: dependency.targetOperationId,
           type: dependency.type,
         },
       })
-    }
   }
 
   if (options.showConflicts) {

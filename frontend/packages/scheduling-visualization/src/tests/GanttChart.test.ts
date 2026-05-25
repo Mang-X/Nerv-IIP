@@ -21,6 +21,10 @@ function dispatchPointer(target: Element, type: string, clientX: number) {
   target.dispatchEvent(event)
 }
 
+function waitForFrame() {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+}
+
 describe('GanttChart', () => {
   it('renders rows and emits selection from row buttons', async () => {
     const wrapper = mount(GanttChart, {
@@ -85,6 +89,7 @@ describe('GanttChart', () => {
     const viewport = wrapper.get('[data-test="gantt-viewport"]')
     Object.defineProperty(viewport.element, 'scrollLeft', { configurable: true, value: 180 })
     await viewport.trigger('scroll')
+    await waitForFrame()
     await wrapper.vm.$nextTick()
 
     expect(wrapper.get('[data-test="gantt-row-task-routing-review"]').attributes('style'))
@@ -108,6 +113,7 @@ describe('GanttChart', () => {
       value: 180,
     })
     await viewport.trigger('scroll')
+    await waitForFrame()
     await wrapper.setProps({ zoom: 'week' })
     await wrapper.vm.$nextTick()
 

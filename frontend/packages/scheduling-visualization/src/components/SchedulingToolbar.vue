@@ -13,13 +13,13 @@ import {
 } from 'lucide-vue-next'
 
 import type { SchedulingZoom } from '../time-scale/timeScale'
-import type { SchedulingWorkspaceMode } from './types'
+import type { SchedulingLinkMode, SchedulingWorkspaceMode } from './types'
 
 interface Props {
   mode: SchedulingWorkspaceMode
   zoom: SchedulingZoom
   query: string
-  showDependencies: boolean
+  dependencyMode: SchedulingLinkMode
   showBaselines: boolean
   showCapacity: boolean
   showConflicts: boolean
@@ -31,7 +31,7 @@ interface Emits {
   'update:mode': [value: SchedulingWorkspaceMode]
   'update:zoom': [value: SchedulingZoom]
   'update:query': [value: string]
-  'update:showDependencies': [value: boolean]
+  'update:dependencyMode': [value: SchedulingLinkMode]
   'update:showBaselines': [value: boolean]
   'update:showCapacity': [value: boolean]
   'update:showConflicts': [value: boolean]
@@ -45,11 +45,17 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const zoomOrder: SchedulingZoom[] = ['day', 'week', 'month']
+const dependencyModeOrder: SchedulingLinkMode[] = ['none', 'selection', 'all']
 
 function zoomBy(delta: number) {
   const index = zoomOrder.indexOf(props.zoom)
   const nextIndex = Math.min(Math.max(index + delta, 0), zoomOrder.length - 1)
   emit('update:zoom', zoomOrder[nextIndex])
+}
+
+function cycleDependencyMode() {
+  const index = dependencyModeOrder.indexOf(props.dependencyMode)
+  emit('update:dependencyMode', dependencyModeOrder[(index + 1) % dependencyModeOrder.length])
 }
 </script>
 
@@ -98,13 +104,14 @@ function zoomBy(delta: number) {
 
     <div class="scheduling-toolbar__group scheduling-toolbar__group--wrap" aria-label="Layer toggles">
       <Button
-        :variant="showDependencies ? 'secondary' : 'outline'"
+        :variant="dependencyMode === 'none' ? 'outline' : 'secondary'"
         size="sm"
         type="button"
-        @click="emit('update:showDependencies', !showDependencies)"
+        :aria-label="`Dependency links: ${dependencyMode}`"
+        @click="cycleDependencyMode"
       >
         <Workflow />
-        Links
+        Links: {{ dependencyMode }}
       </Button>
       <Button
         :variant="showBaselines ? 'secondary' : 'outline'"

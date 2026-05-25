@@ -13,7 +13,7 @@ describe('scene builders', () => {
       width: 960,
       rowHeight: 36,
       zoom: 'day',
-      showDependencies: true,
+      dependencyMode: 'all',
       showBaselines: true,
       showConflicts: true,
       today: '2026-05-06T00:00:00.000Z',
@@ -29,6 +29,26 @@ describe('scene builders', () => {
     expect(scene.height).toBeGreaterThan(100)
   })
 
+  it('filters Gantt dependencies to the selected task chain', () => {
+    const fixture = createMockGanttFixture()
+    const scene = buildGanttScene({
+      fixture,
+      expandedTaskIds: new Set(['phase-engineering']),
+      width: 960,
+      rowHeight: 36,
+      zoom: 'day',
+      dependencyMode: 'selection',
+      selectedTaskId: 'task-ebom-release',
+      showBaselines: true,
+      showConflicts: true,
+      today: '2026-05-06T00:00:00.000Z',
+      previewById: {},
+    })
+
+    expect(scene.elements.filter((element) => element.kind === 'dependency').map((element) => element.id))
+      .toEqual(['dep-ebom-routing'])
+  })
+
   it('builds schedule non-interactive canvas layers without duplicating DOM operation bars', () => {
     const fixture = createMockScheduleFixture()
     const scene = buildScheduleScene({
@@ -36,7 +56,7 @@ describe('scene builders', () => {
       width: 960,
       rowHeight: 44,
       zoom: 'day',
-      showDependencies: true,
+      dependencyMode: 'all',
       showCapacity: true,
       showConflicts: true,
       today: '2026-05-06T00:00:00.000Z',
@@ -49,5 +69,22 @@ describe('scene builders', () => {
     expect(scene.elements.some((element) => element.kind === 'calendar-highlight')).toBe(true)
     expect(scene.elements.some((element) => element.kind === 'dependency')).toBe(true)
     expect(scene.elements.some((element) => element.kind === 'conflict')).toBe(true)
+  })
+
+  it('hides schedule dependencies when link mode is none', () => {
+    const fixture = createMockScheduleFixture()
+    const scene = buildScheduleScene({
+      fixture,
+      width: 960,
+      rowHeight: 44,
+      zoom: 'day',
+      dependencyMode: 'none',
+      showCapacity: true,
+      showConflicts: true,
+      today: '2026-05-06T00:00:00.000Z',
+      previewById: {},
+    })
+
+    expect(scene.elements.some((element) => element.kind === 'dependency')).toBe(false)
   })
 })

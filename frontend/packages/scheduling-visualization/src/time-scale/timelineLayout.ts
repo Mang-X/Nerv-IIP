@@ -113,6 +113,13 @@ function rangesOverlap(start: string, end: string, otherStart: string, otherEnd:
     && new Date(end).getTime() > new Date(otherStart).getTime()
 }
 
+function canRunInParallel(operation: ScheduleOperation, otherOperation: ScheduleOperation) {
+  return operation.resourceUsageMode === 'parallel-capacity'
+    && otherOperation.resourceUsageMode === 'parallel-capacity'
+    && Boolean(operation.parallelGroupId)
+    && operation.parallelGroupId === otherOperation.parallelGroupId
+}
+
 export function buildGanttBarPositions(options: {
   fixture: GanttFixture
   rows: GanttRow[]
@@ -160,6 +167,7 @@ export function buildScheduleOperationPositions(options: {
   })
   const rowIndexByResourceId = new Map(options.rows.map((row, index) => [row.id, index]))
   const height = Math.max(Math.min(options.rowHeight - 16, 36), 24)
+  const minOperationWidth = 36
 
   const positioned = options.fixture.operations.flatMap((operation) => {
     const window = windowFor(
@@ -183,7 +191,7 @@ export function buildScheduleOperationPositions(options: {
       window,
       top: rowIndex * options.rowHeight + Math.round((options.rowHeight - height) / 2),
       left,
-      width: Math.max(endX - left, 72),
+      width: Math.max(endX - left, minOperationWidth),
       height,
       lane: 0,
       laneCount: 1,
@@ -199,13 +207,9 @@ export function buildScheduleOperationPositions(options: {
 
   for (const resourcePositions of byResource.values()) {
     const ordered = resourcePositions.sort((a, b) => a.left - b.left)
-    const laneEnds: number[] = []
 
     for (const position of ordered) {
       const visualEnd = position.left + position.width
-      const lane = laneEnds.findIndex((end) => position.left >= end + 6)
-      position.lane = lane >= 0 ? lane : laneEnds.length
-      laneEnds[position.lane] = visualEnd
       position.hasVisualOverlap = ordered.some((other) =>
         other !== position
         && position.left < other.left + other.width
@@ -215,6 +219,21 @@ export function buildScheduleOperationPositions(options: {
         other !== position
         && rangesOverlap(position.window.start, position.window.end, other.window.start, other.window.end),
       )
+    }
+
+    const parallelPositions = ordered.filter((position) =>
+      ordered.some((other) =>
+        other !== position
+        && rangesOverlap(position.window.start, position.window.end, other.window.start, other.window.end)
+        && canRunInParallel(position.operation, other.operation),
+      ),
+    )
+    const laneEnds: number[] = []
+    for (const position of parallelPositions) {
+      const visualEnd = position.left + position.width
+      const lane = laneEnds.findIndex((end) => position.left >= end + 6)
+      position.lane = lane >= 0 ? lane : laneEnds.length
+      laneEnds[position.lane] = visualEnd
     }
 
     const laneCount = Math.max(laneEnds.length, 1)
@@ -227,11 +246,12 @@ export function buildScheduleOperationPositions(options: {
     const rowTop = ordered[0]?.rowIndex ? ordered[0].rowIndex * options.rowHeight : 0
 
     for (const position of ordered) {
-      const effectiveHeight = laneCount > 1 ? stackedHeight : height
-      position.laneCount = laneCount
+      const usesParallelLane = parallelPositions.includes(position) && laneCount > 1
+      const effectiveHeight = usesParallelLane ? stackedHeight : height
+      position.laneCount = usesParallelLane ? laneCount : 1
       position.height = effectiveHeight
       position.top = rowTop + Math.round((options.rowHeight - availableHeight) / 2)
-        + position.lane * (effectiveHeight + laneGap)
+        + (usesParallelLane ? position.lane * (effectiveHeight + laneGap) : Math.round((availableHeight - height) / 2))
     }
   }
 

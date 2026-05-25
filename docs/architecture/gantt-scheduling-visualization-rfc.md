@@ -52,9 +52,9 @@ shadcn-vue remains the UI shell; Leafer UI remains behind a local adapter so API
 4. Leafer scene builders plus `renderSceneToLeafer`.
 5. Vue components: `GanttChart`, `ScheduleChart`, `SchedulingToolbar`, `SchedulingLegend`, `SchedulingDetailSheet` and `SchedulingWorkspace`.
 6. Public host integration events: `selectionChange`, `previewCommand`, `commitPreview` and `resetPreview`.
-7. Schedule operation dependency links, calendar highlight windows, conflict reason/submit-policy metadata, visual lane layout for short operation collisions, and package-local Vite preview via `pnpm -C frontend --filter @nerv-iip/scheduling-visualization dev`.
+7. Schedule operation dependency links, selected-chain/all/hidden link modes, calendar highlight windows, conflict reason/submit-policy metadata, explicit parallel-capacity lane layout, and package-local Vite preview via `pnpm -C frontend --filter @nerv-iip/scheduling-visualization dev`.
 
-The package separates visual collisions from scheduling rules. Adjacent short bars may use lanes so operators can still click them; blocking overlap, downtime, dependency, and capacity decisions must be supplied as conflict facts by a fixture or future APS/MES API payload.
+The package separates visual collisions from scheduling rules. Exclusive resource overlaps remain visually overlapped and are displayed as conflicts; bars only use lanes when a fixture explicitly marks operations as a shared parallel capacity group. Blocking overlap, downtime, dependency, and capacity decisions must be supplied as conflict facts by a fixture or future APS/MES API payload.
 
 The package deliberately does not add a Console route, Gateway facade, OpenAPI contract, generated API client change, persistence schema, or backend scheduling engine.
 

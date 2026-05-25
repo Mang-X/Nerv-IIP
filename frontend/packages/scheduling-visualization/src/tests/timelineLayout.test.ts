@@ -111,7 +111,7 @@ describe('timelineLayout', () => {
     expect((position?.top ?? 0) + (position?.height ?? 0)).toBeLessThanOrEqual(104)
   })
 
-  it('uses schedule lanes to separate visual collisions without changing resource assignment', () => {
+  it('keeps exclusive resource overlaps in the same lane so conflicts remain visible', () => {
     const fixture = createMockScheduleFixture()
     const rows = groupScheduleRows(fixture.resources, fixture.operations)
     const positions = buildScheduleOperationPositions({
@@ -125,9 +125,31 @@ describe('timelineLayout', () => {
     }).filter((position) => position.resourceId === 'wc-pack-01')
 
     expect(positions).toHaveLength(2)
-    expect(new Set(positions.map((position) => position.lane)).size).toBe(2)
+    expect(new Set(positions.map((position) => position.lane)).size).toBe(1)
     expect(positions.every((position) => position.hasVisualOverlap)).toBe(true)
-    expect(positions.some((position) => position.hasTimeOverlap)).toBe(false)
+    expect(positions.every((position) => position.hasTimeOverlap)).toBe(true)
+  })
+
+  it('uses schedule lanes only for explicitly parallel capacity groups', () => {
+    const fixture = createMockScheduleFixture()
+    fixture.operations = fixture.operations.map((operation) =>
+      operation.resourceId === 'wc-pack-01'
+        ? { ...operation, resourceUsageMode: 'parallel-capacity', parallelGroupId: 'pack-pool' }
+        : operation,
+    )
+    const rows = groupScheduleRows(fixture.resources, fixture.operations)
+    const positions = buildScheduleOperationPositions({
+      fixture,
+      rows,
+      width: 960,
+      rowHeight: 52,
+      zoom: 'day',
+      labelWidth: 230,
+      previewById: {},
+    }).filter((position) => position.resourceId === 'wc-pack-01')
+
+    expect(new Set(positions.map((position) => position.lane)).size).toBe(2)
+    expect(positions.every((position) => position.laneCount === 2)).toBe(true)
   })
 
   it('builds schedule calendar highlight positions inside resource rows', () => {

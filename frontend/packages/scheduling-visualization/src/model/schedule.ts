@@ -21,6 +21,8 @@ export interface ScheduleOperation {
   progress: number
   status: SchedulingStatus
   isLocked?: boolean
+  resourceUsageMode?: 'exclusive' | 'parallel-capacity'
+  parallelGroupId?: string
   loadPercent: number
   conflictIds?: string[]
 }

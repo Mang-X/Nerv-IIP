@@ -7,6 +7,7 @@ import type { LeaferSurface } from '../canvas/leaferTypes'
 import type { ScheduleFixture, ScheduleOperation, ScheduleRow, ScheduleSelection } from '../model/schedule'
 import type { SchedulingPreviewCommand, SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import type { SchedulingZoom } from '../time-scale/timeScale'
+import type { SchedulingLinkMode } from './types'
 import TimelineAxis from './TimelineAxis.vue'
 import { createLeaferSurface } from '../canvas/createLeaferSurface'
 import { filterScheduleFixture } from '../state/filterFixtures'
@@ -26,6 +27,7 @@ interface Props {
   fixture: ScheduleFixture
   selected?: ScheduleSelection
   zoom?: SchedulingZoom
+  dependencyMode?: SchedulingLinkMode
   showDependencies?: boolean
   showCapacity?: boolean
   showConflicts?: boolean
@@ -66,6 +68,11 @@ const surfaceSize = shallowRef<{ width: number, height: number }>()
 const isDisposed = shallowRef(false)
 const scrollTop = shallowRef(0)
 const scrollLeft = shallowRef(0)
+const viewportWidth = shallowRef(props.width)
+let pendingScrollFrame: number | undefined
+let nextScrollTop = 0
+let nextScrollLeft = 0
+let nextViewportWidth = props.width
 const activeDrag = shallowRef<{
   operationId: string
   startX: number
@@ -115,7 +122,8 @@ const scene = computed(() =>
     width: chartWidth.value,
     rowHeight: props.rowHeight,
     zoom: props.zoom,
-    showDependencies: props.showDependencies,
+    dependencyMode: props.dependencyMode ?? (props.showDependencies ? 'all' : 'none'),
+    selectedOperationId: props.selected?.kind === 'operation' ? props.selected.id : undefined,
     showCapacity: props.showCapacity,
     showConflicts: props.showConflicts,
     today: props.today,
@@ -190,6 +198,21 @@ function operationHasConflict(operation: ScheduleOperation) {
   return (operation.conflictIds?.length ?? 0) > 0
 }
 
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  }).format(new Date(value))
+}
+
+function operationTooltip(position: ReturnType<typeof buildScheduleOperationPositions>[number]) {
+  const overlap = position.hasTimeOverlap ? ' | overlap conflict' : ''
+  return `${position.operation.workOrderCode} ${position.operation.name} | ${formatDateTime(position.operation.start)} - ${formatDateTime(position.operation.end)} | ${position.resourceId}${overlap}`
+}
+
 async function syncSurface() {
   const host = surfaceHost.value
   if (!host) {
@@ -218,19 +241,38 @@ async function syncSurface() {
   renderSceneToLeafer(surface.value, scene.value)
 }
 
-onMounted(syncSurface)
+onMounted(() => {
+  if (viewport.value && viewport.value.clientWidth > 0) {
+    viewportWidth.value = viewport.value.clientWidth
+  }
+  void syncSurface()
+})
 watch(scene, syncSurface, { flush: 'post' })
 watch(() => props.zoom, resetHorizontalScroll, { flush: 'post' })
 onBeforeUnmount(() => {
   isDisposed.value = true
+  if (pendingScrollFrame !== undefined) {
+    window.cancelAnimationFrame(pendingScrollFrame)
+  }
   surface.value?.dispose()
   surface.value = undefined
 })
 
 function onScroll(event: Event) {
   const target = event.currentTarget as HTMLElement
-  scrollTop.value = target.scrollTop
-  scrollLeft.value = target.scrollLeft
+  nextScrollTop = target.scrollTop
+  nextScrollLeft = target.scrollLeft
+  nextViewportWidth = target.clientWidth
+  if (pendingScrollFrame !== undefined) {
+    return
+  }
+
+  pendingScrollFrame = window.requestAnimationFrame(() => {
+    scrollTop.value = nextScrollTop
+    scrollLeft.value = nextScrollLeft
+    viewportWidth.value = nextViewportWidth
+    pendingScrollFrame = undefined
+  })
 }
 
 function resetHorizontalScroll() {
@@ -373,6 +415,7 @@ function cancelDrag(event: PointerEvent) {
       :width="chartWidth"
       :label-width="labelWidth"
       :scroll-left="scrollLeft"
+      :viewport-width="viewportWidth"
     />
 
     <div
@@ -403,6 +446,7 @@ function cancelDrag(event: PointerEvent) {
           :class="{ 'schedule-resource--selected': isSelectedResource(item.row) }"
           type="button"
           :data-test="`schedule-resource-${item.row.id}`"
+          :title="`${item.row.workCenterCode} ${item.row.name} | ${item.row.calendarLabel}`"
           :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
           @click="emit('select', { kind: 'resource', id: item.row.id })"
         >
@@ -418,6 +462,7 @@ function cancelDrag(event: PointerEvent) {
           :class="`schedule-highlight--${position.highlight.kind}`"
           type="button"
           :data-test="`schedule-highlight-${position.highlight.id}`"
+          :title="`${position.highlight.label} | ${position.highlight.kind} | ${formatDateTime(position.highlight.start)} - ${formatDateTime(position.highlight.end)}`"
           :style="{
             top: `${position.top}px`,
             left: `${position.left}px`,
@@ -442,6 +487,7 @@ function cancelDrag(event: PointerEvent) {
           type="button"
           :data-test="`schedule-operation-${position.operation.id}`"
           :data-preview-resource-id="position.resourceId"
+          :title="operationTooltip(position)"
           :style="{
             top: `${position.top}px`,
             left: `${position.left}px`,

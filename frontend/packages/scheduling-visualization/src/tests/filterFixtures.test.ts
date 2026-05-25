@@ -19,7 +19,9 @@ describe('filterFixtures', () => {
     expect(fixture.resources.map((resource) => resource.id)).toEqual(['wc-pack-01'])
     expect(fixture.operations.map((operation) => operation.id)).toEqual(['op-packing-1002'])
     expect(fixture.capacityBands.map((band) => band.id)).toEqual(['cap-pack-morning'])
-    expect(fixture.conflicts.map((conflict) => conflict.id)).toEqual(['conflict-pack-overload'])
+    expect(fixture.conflicts.map((conflict) => conflict.id)).toEqual([
+      'conflict-pack-overlap',
+      'conflict-pack-overload',
+    ])
   })
 })
-

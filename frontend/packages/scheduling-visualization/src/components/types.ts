@@ -2,6 +2,7 @@ import type { GanttSelection } from '../model/gantt'
 import type { ScheduleSelection } from '../model/schedule'
 
 export type SchedulingWorkspaceMode = 'gantt' | 'schedule'
+export type SchedulingLinkMode = 'none' | 'all' | 'selection'
 
 export type SchedulingWorkspaceSelection =
   | { source: 'gantt'; selection: GanttSelection }
@@ -22,4 +23,3 @@ export interface SchedulingDetailView {
   conflictDescription?: string
   conflictResolutionHint?: string
 }
-

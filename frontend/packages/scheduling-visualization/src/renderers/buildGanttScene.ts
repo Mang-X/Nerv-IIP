@@ -4,6 +4,7 @@ import type { SchedulingZoom } from '../time-scale/timeScale'
 import type { SchedulingScene, SchedulingSceneElement } from '../canvas/sceneTypes'
 import { flattenGanttTasks } from '../model/gantt'
 import type { GanttFixture, GanttRow, GanttTask } from '../model/gantt'
+import type { SchedulingLinkMode } from '../components/types'
 
 export interface BuildGanttSceneOptions {
   fixture: GanttFixture
@@ -11,7 +12,8 @@ export interface BuildGanttSceneOptions {
   width: number
   rowHeight: number
   zoom: SchedulingZoom
-  showDependencies: boolean
+  dependencyMode: SchedulingLinkMode
+  selectedTaskId?: string
   showBaselines: boolean
   showConflicts: boolean
   today: string
@@ -36,6 +38,69 @@ function findTask(tasks: GanttTask[], taskId: string): GanttTask | undefined {
 
 function taskWindow(row: GanttRow, previewById: Record<string, SchedulingPreviewWindow>) {
   return previewById[row.id] ?? { start: row.start, end: row.end }
+}
+
+function shouldRenderDependency(
+  mode: SchedulingLinkMode,
+  selectedId: string | undefined,
+  sourceId: string,
+  targetId: string,
+) {
+  if (mode === 'none') {
+    return false
+  }
+
+  if (mode === 'all') {
+    return true
+  }
+
+  return selectedId === sourceId || selectedId === targetId
+}
+
+function dependencyEndpoints(
+  type: string,
+  sourceWindow: { start: string, end: string },
+  targetWindow: { start: string, end: string },
+  scale: ReturnType<typeof createTimeScale>,
+) {
+  const sourceDate = type.startsWith('start') ? sourceWindow.start : sourceWindow.end
+  const targetDate = type.endsWith('finish') ? targetWindow.end : targetWindow.start
+
+  return {
+    sourceX: labelWidth + scale.dateToX(sourceDate),
+    targetX: labelWidth + scale.dateToX(targetDate),
+  }
+}
+
+function buildDependencyPoints(options: {
+  sourceX: number
+  sourceY: number
+  targetX: number
+  targetY: number
+}) {
+  const direction = options.targetX >= options.sourceX ? 1 : -1
+  const offset = 18 * direction
+  const firstX = options.sourceX + offset
+  const lastX = options.targetX - offset
+  const middleX = direction > 0
+    ? Math.max(firstX, Math.round((options.sourceX + options.targetX) / 2))
+    : Math.min(firstX, Math.round((options.sourceX + options.targetX) / 2))
+
+  if (Math.abs(options.sourceY - options.targetY) < 2) {
+    return [
+      { x: options.sourceX, y: options.sourceY },
+      { x: options.targetX, y: options.targetY },
+    ]
+  }
+
+  return [
+    { x: options.sourceX, y: options.sourceY },
+    { x: firstX, y: options.sourceY },
+    { x: middleX, y: options.sourceY },
+    { x: middleX, y: options.targetY },
+    { x: lastX, y: options.targetY },
+    { x: options.targetX, y: options.targetY },
+  ]
 }
 
 function addGrid(
@@ -99,10 +164,6 @@ function addDependencies(
   rows: GanttRow[],
   options: BuildGanttSceneOptions,
 ) {
-  if (!options.showDependencies) {
-    return
-  }
-
   const rowIndexById = new Map(rows.map((row, index) => [row.id, index]))
   const scale = createTimeScale({
     start: options.fixture.rangeStart,
@@ -112,6 +173,17 @@ function addDependencies(
   })
 
   for (const dependency of options.fixture.dependencies) {
+    if (
+      !shouldRenderDependency(
+        options.dependencyMode,
+        options.selectedTaskId,
+        dependency.sourceTaskId,
+        dependency.targetTaskId,
+      )
+    ) {
+      continue
+    }
+
     const sourceTask = findTask(options.fixture.tasks, dependency.sourceTaskId)
     const targetTask = findTask(options.fixture.tasks, dependency.targetTaskId)
     const sourceIndex = rowIndexById.get(dependency.sourceTaskId)
@@ -122,11 +194,9 @@ function addDependencies(
 
     const sourceWindow = options.previewById[sourceTask.id] ?? sourceTask
     const targetWindow = options.previewById[targetTask.id] ?? targetTask
-    const sourceX = labelWidth + scale.dateToX(sourceWindow.end)
-    const targetX = labelWidth + scale.dateToX(targetWindow.start)
+    const { sourceX, targetX } = dependencyEndpoints(dependency.type, sourceWindow, targetWindow, scale)
     const sourceY = sourceIndex * options.rowHeight + options.rowHeight / 2
     const targetY = targetIndex * options.rowHeight + options.rowHeight / 2
-    const elbowX = sourceX + Math.max((targetX - sourceX) / 2, 16)
 
     elements.push({
       id: dependency.id,
@@ -134,12 +204,7 @@ function addDependencies(
       x: 0,
       y: 0,
       stroke: '#64748b',
-      points: [
-        { x: sourceX, y: sourceY },
-        { x: elbowX, y: sourceY },
-        { x: elbowX, y: targetY },
-        { x: targetX, y: targetY },
-      ],
+      points: buildDependencyPoints({ sourceX, sourceY, targetX, targetY }),
       metadata: { sourceTaskId: dependency.sourceTaskId, targetTaskId: dependency.targetTaskId },
     })
   }

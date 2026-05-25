@@ -7,6 +7,7 @@ import type { LeaferSurface } from '../canvas/leaferTypes'
 import type { GanttFixture, GanttRow, GanttSelection } from '../model/gantt'
 import type { SchedulingPreviewCommand, SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import type { SchedulingZoom } from '../time-scale/timeScale'
+import type { SchedulingLinkMode } from './types'
 import TimelineAxis from './TimelineAxis.vue'
 import { createLeaferSurface } from '../canvas/createLeaferSurface'
 import { filterGanttFixture } from '../state/filterFixtures'
@@ -26,6 +27,7 @@ interface Props {
   expandedTaskIds?: string[]
   selected?: GanttSelection
   zoom?: SchedulingZoom
+  dependencyMode?: SchedulingLinkMode
   showDependencies?: boolean
   showBaselines?: boolean
   showConflicts?: boolean
@@ -67,6 +69,11 @@ const surfaceSize = shallowRef<{ width: number, height: number }>()
 const isDisposed = shallowRef(false)
 const scrollTop = shallowRef(0)
 const scrollLeft = shallowRef(0)
+const viewportWidth = shallowRef(props.width)
+let pendingScrollFrame: number | undefined
+let nextScrollTop = 0
+let nextScrollLeft = 0
+let nextViewportWidth = props.width
 const activeDrag = shallowRef<{
   taskId: string
   startX: number
@@ -112,7 +119,8 @@ const scene = computed(() =>
     width: chartWidth.value,
     rowHeight: props.rowHeight,
     zoom: props.zoom,
-    showDependencies: props.showDependencies,
+    dependencyMode: props.dependencyMode ?? (props.showDependencies ? 'all' : 'none'),
+    selectedTaskId: props.selected?.kind === 'task' ? props.selected.id : undefined,
     showBaselines: props.showBaselines,
     showConflicts: props.showConflicts,
     today: props.today,
@@ -175,6 +183,18 @@ function rowHasConflict(row: GanttRow) {
   return (row.conflictIds?.length ?? 0) > 0
 }
 
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(value))
+}
+
+function taskTooltip(row: GanttRow) {
+  return `${row.code} ${row.name} | ${formatDate(row.start)} - ${formatDate(row.end)} | ${row.status}`
+}
+
 async function syncSurface() {
   const host = surfaceHost.value
   if (!host) {
@@ -215,8 +235,19 @@ function toggleRow(row: GanttRow) {
 
 function onScroll(event: Event) {
   const target = event.currentTarget as HTMLElement
-  scrollTop.value = target.scrollTop
-  scrollLeft.value = target.scrollLeft
+  nextScrollTop = target.scrollTop
+  nextScrollLeft = target.scrollLeft
+  nextViewportWidth = target.clientWidth
+  if (pendingScrollFrame !== undefined) {
+    return
+  }
+
+  pendingScrollFrame = window.requestAnimationFrame(() => {
+    scrollTop.value = nextScrollTop
+    scrollLeft.value = nextScrollLeft
+    viewportWidth.value = nextViewportWidth
+    pendingScrollFrame = undefined
+  })
 }
 
 function resetHorizontalScroll() {
@@ -301,11 +332,19 @@ function cancelDrag(event: PointerEvent) {
   activeDrag.value = undefined
 }
 
-onMounted(syncSurface)
+onMounted(() => {
+  if (viewport.value && viewport.value.clientWidth > 0) {
+    viewportWidth.value = viewport.value.clientWidth
+  }
+  void syncSurface()
+})
 watch(scene, syncSurface, { flush: 'post' })
 watch(() => props.zoom, resetHorizontalScroll, { flush: 'post' })
 onBeforeUnmount(() => {
   isDisposed.value = true
+  if (pendingScrollFrame !== undefined) {
+    window.cancelAnimationFrame(pendingScrollFrame)
+  }
   surface.value?.dispose()
   surface.value = undefined
 })
@@ -334,6 +373,7 @@ onBeforeUnmount(() => {
       :width="chartWidth"
       :label-width="labelWidth"
       :scroll-left="scrollLeft"
+      :viewport-width="viewportWidth"
     />
 
     <div
@@ -359,6 +399,7 @@ onBeforeUnmount(() => {
           :class="{ 'gantt-row--selected': isSelected(item.row) }"
           type="button"
           :data-test="`gantt-row-${item.row.id}`"
+          :title="taskTooltip(item.row)"
           :style="{ height: `${rowHeight}px`, top: `${item.index * rowHeight}px`, left: `${scrollLeft}px` }"
           @click="selectRow(item.row)"
         >
@@ -393,6 +434,7 @@ onBeforeUnmount(() => {
           :class="{ 'gantt-bar-overlay--dragging': activeDrag?.taskId === position.task.id }"
           type="button"
           :data-test="`gantt-bar-${position.task.id}`"
+          :title="taskTooltip(position.task)"
           :style="{
             top: `${position.top}px`,
             left: `${position.left}px`,

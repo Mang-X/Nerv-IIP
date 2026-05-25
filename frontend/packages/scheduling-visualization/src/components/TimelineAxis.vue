@@ -1,15 +1,33 @@
 <script setup lang="ts">
 import type { TimelineTick } from '../time-scale/timelineLayout'
+import { computed } from 'vue'
 
 interface Props {
   ticks: TimelineTick[]
   width: number
   labelWidth: number
   scrollLeft?: number
+  viewportWidth?: number
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   scrollLeft: 0,
+  viewportWidth: 0,
+})
+
+const visibleTicks = computed(() => {
+  if (props.viewportWidth <= 0) {
+    return props.ticks
+  }
+
+  const timelineStart = props.labelWidth + props.scrollLeft - 120
+  const timelineEnd = props.labelWidth + props.scrollLeft + props.viewportWidth + 120
+
+  return props.ticks.filter((tick, index) =>
+    index === 0
+    || index === props.ticks.length - 1
+    || (tick.x >= timelineStart && tick.x <= timelineEnd),
+  )
 })
 </script>
 
@@ -29,12 +47,12 @@ withDefaults(defineProps<Props>(), {
         }"
       >
         <span
-          v-for="(tick, index) in ticks"
+          v-for="tick in visibleTicks"
           :key="tick.date"
           class="timeline-axis__tick"
           :class="{
-            'timeline-axis__tick--first': index === 0,
-            'timeline-axis__tick--last': index === ticks.length - 1,
+            'timeline-axis__tick--first': tick.date === ticks[0]?.date,
+            'timeline-axis__tick--last': tick.date === ticks[ticks.length - 1]?.date,
           }"
           :style="{ left: `${tick.x - labelWidth}px` }"
         >

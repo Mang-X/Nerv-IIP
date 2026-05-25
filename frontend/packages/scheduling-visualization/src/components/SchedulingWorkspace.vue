@@ -5,7 +5,7 @@ import type { GanttFixture, GanttSelection } from '../model/gantt'
 import type { ScheduleFixture, ScheduleSelection } from '../model/schedule'
 import type { SchedulingPreviewCommand, SchedulingPreviewWindow } from '../state/useSchedulingCommands'
 import type { SchedulingZoom } from '../time-scale/timeScale'
-import type { SchedulingWorkspaceMode, SchedulingWorkspaceSelection } from './types'
+import type { SchedulingLinkMode, SchedulingWorkspaceMode, SchedulingWorkspaceSelection } from './types'
 import GanttChart from './GanttChart.vue'
 import ScheduleChart from './ScheduleChart.vue'
 import SchedulingDetailSheet from './SchedulingDetailSheet.vue'
@@ -38,7 +38,7 @@ const commandStack = createSchedulingCommandStack()
 const mode = shallowRef<SchedulingWorkspaceMode>(props.initialMode ?? 'gantt')
 const zoom = shallowRef<SchedulingZoom>('day')
 const query = shallowRef('')
-const showDependencies = shallowRef(true)
+const dependencyMode = shallowRef<SchedulingLinkMode>('all')
 const showBaselines = shallowRef(true)
 const showCapacity = shallowRef(true)
 const showConflicts = shallowRef(true)
@@ -100,7 +100,7 @@ function commitPreview() {
       :mode="mode"
       :zoom="zoom"
       :query="query"
-      :show-dependencies="showDependencies"
+      :dependency-mode="dependencyMode"
       :show-baselines="showBaselines"
       :show-capacity="showCapacity"
       :show-conflicts="showConflicts"
@@ -109,7 +109,7 @@ function commitPreview() {
       @update:mode="mode = $event"
       @update:zoom="zoom = $event"
       @update:query="query = $event"
-      @update:show-dependencies="showDependencies = $event"
+      @update:dependency-mode="dependencyMode = $event"
       @update:show-baselines="showBaselines = $event"
       @update:show-capacity="showCapacity = $event"
       @update:show-conflicts="showConflicts = $event"
@@ -119,9 +119,10 @@ function commitPreview() {
       @commit="commitPreview"
     />
 
-    <SchedulingLegend />
-
-    <div class="scheduling-workspace__main">
+    <div
+      class="scheduling-workspace__main"
+      :class="{ 'scheduling-workspace__main--with-detail': activeSelection }"
+    >
       <div class="scheduling-workspace__chart">
         <GanttChart
           v-if="mode === 'gantt'"
@@ -129,7 +130,7 @@ function commitPreview() {
           :expanded-task-ids="expandedTaskIds"
           :selected="ganttSelection"
           :zoom="zoom"
-          :show-dependencies="showDependencies"
+          :dependency-mode="dependencyMode"
           :show-baselines="showBaselines"
           :show-conflicts="showConflicts"
           :preview-by-id="effectivePreviewById"
@@ -144,7 +145,7 @@ function commitPreview() {
           :selected="scheduleSelection"
           :zoom="zoom"
           :show-capacity="showCapacity"
-          :show-dependencies="showDependencies"
+          :dependency-mode="dependencyMode"
           :show-conflicts="showConflicts"
           :preview-by-id="effectivePreviewById"
           :query="query"
@@ -154,12 +155,15 @@ function commitPreview() {
       </div>
 
       <SchedulingDetailSheet
+        v-if="activeSelection"
         :gantt-fixture="ganttFixture"
         :schedule-fixture="scheduleFixture"
         :selection="activeSelection"
         @clear="clearSelection"
       />
     </div>
+
+    <SchedulingLegend />
   </section>
 </template>
 
@@ -173,9 +177,13 @@ function commitPreview() {
 
 .scheduling-workspace__main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
+}
+
+.scheduling-workspace__main--with-detail {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
 }
 
 .scheduling-workspace__chart {
@@ -183,7 +191,8 @@ function commitPreview() {
 }
 
 @media (max-width: 960px) {
-  .scheduling-workspace__main {
+  .scheduling-workspace__main,
+  .scheduling-workspace__main--with-detail {
     grid-template-columns: minmax(0, 1fr);
   }
 }

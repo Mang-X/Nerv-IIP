@@ -82,6 +82,7 @@ export type {
 export type {
   SchedulingDetailField,
   SchedulingDetailView,
+  SchedulingLinkMode,
   SchedulingWorkspaceMode,
   SchedulingWorkspaceSelection,
 } from './components/types'
