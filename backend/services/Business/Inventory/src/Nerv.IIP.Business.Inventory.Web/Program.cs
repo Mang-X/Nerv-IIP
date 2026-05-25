@@ -78,7 +78,8 @@ try
 
         builder.Services.AddCap(x =>
         {
-            x.UseNetCorePalStorage<ApplicationDbContext>();
+            x.Version = builder.Configuration["Cap:Version"] ?? "v1";
+            x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration);
             x.UseDashboard();

@@ -72,7 +72,7 @@ Endpoint 只声明需要的权限码与上下文；业务不变式仍由 Domain 
 | `files.read` | File Storage | `user` / `connector-host` / `external-client` / `internal-service` | environment + resource | 已 seed | 查看文件元数据。 |
 | `files.download-grants.create` | File Storage | `user` / `external-client` / `internal-service` | environment + resource | 已 seed | 创建短期下载授权。 |
 | `files.archive` | File Storage | `user` / `internal-service` | environment + resource | 已 seed | 归档文件。 |
-| `ops.tasks.create` | Ops | `user` / `external-client` / `internal-service` | environment + resource + capability | 已 seed；Gateway 已 enforcement | 创建运维任务。 |
+| `ops.tasks.create` | Ops | `user` / `external-client` / `internal-service` | environment + resource + capability | 已 seed；Gateway 已 enforcement；ExternalClient client_credentials grant 已可校验 | 创建运维任务。 |
 | `ops.tasks.read` | Ops | `user` / `connector-host` / `external-client` / `internal-service` | environment + resource | 已 seed；Gateway 已 enforcement | 查看运维任务。 |
 | `ops.results.write` | Ops | `connector-host` | environment + resource + capability | 已 seed | Connector Host 回传动作结果。 |
 | `ops.audit.read` | Ops | `user` / `internal-service` | organization / environment + resource | 已 seed | 查看审计记录。 |

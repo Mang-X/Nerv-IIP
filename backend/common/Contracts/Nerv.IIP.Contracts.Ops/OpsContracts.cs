@@ -61,7 +61,8 @@ public sealed record AuditRecordSummary(
     string Action,
     string Actor,
     DateTimeOffset OccurredAtUtc,
-    string CorrelationId);
+    string CorrelationId,
+    string IntegrityHash);
 
 public sealed record AuditRecordListResponse(IReadOnlyList<AuditRecordSummary> Items);
 
@@ -79,7 +80,8 @@ public sealed record AuditIntentResponse(
     string Action,
     string Actor,
     DateTimeOffset OccurredAtUtc,
-    string CorrelationId);
+    string CorrelationId,
+    string IntegrityHash);
 
 public sealed record CreateOperationTemplateRequest(
     string OperationCode,

@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
@@ -441,6 +443,7 @@ public sealed class AuditRecord : Entity<AuditRecordId>
         Actor = actor;
         OccurredAtUtc = occurredAtUtc;
         CorrelationId = correlationId;
+        IntegrityHash = ComputeIntegrityHash(id.Id, operationTaskId.Id, action, actor, occurredAtUtc, correlationId);
     }
 
     public OperationTaskId OperationTaskId { get; private set; }
@@ -448,14 +451,41 @@ public sealed class AuditRecord : Entity<AuditRecordId>
     public string Actor { get; private set; } = string.Empty;
     public DateTimeOffset OccurredAtUtc { get; private set; }
     public string CorrelationId { get; private set; } = string.Empty;
+    public string IntegrityHash { get; private set; } = string.Empty;
 
     internal void AssignId(AuditRecordId id)
     {
         Id = id;
+        IntegrityHash = ComputeIntegrityHash(Id.Id, OperationTaskId.Id, Action, Actor, OccurredAtUtc, CorrelationId);
     }
 
     internal AuditRecordFact ToFact()
     {
-        return new AuditRecordFact(Id.Id, OperationTaskId.Id, Action, Actor, OccurredAtUtc, CorrelationId);
+        return new AuditRecordFact(Id.Id, OperationTaskId.Id, Action, Actor, OccurredAtUtc, CorrelationId, IntegrityHash);
+    }
+
+    public bool HasValidIntegrityHash() =>
+        string.Equals(
+            IntegrityHash,
+            ComputeIntegrityHash(Id.Id, OperationTaskId.Id, Action, Actor, OccurredAtUtc, CorrelationId),
+            StringComparison.Ordinal);
+
+    public static string ComputeIntegrityHash(
+        string auditRecordId,
+        string operationTaskId,
+        string action,
+        string actor,
+        DateTimeOffset occurredAtUtc,
+        string correlationId)
+    {
+        var material = string.Join(
+            "\u001f",
+            auditRecordId,
+            operationTaskId,
+            action,
+            actor,
+            occurredAtUtc.ToUniversalTime().ToString("O"),
+            correlationId);
+        return $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material))).ToLowerInvariant()}";
     }
 }

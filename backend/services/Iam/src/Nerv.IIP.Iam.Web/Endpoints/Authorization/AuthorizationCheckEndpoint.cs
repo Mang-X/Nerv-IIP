@@ -19,8 +19,8 @@ public sealed class AuthorizationCheckEndpoint(IIamAuthService auth) : Endpoint<
             return;
         }
 
-        var allowed = await auth.UserHasPermissionAsync(
-            principal.UserId,
+        var allowed = await auth.PrincipalHasPermissionAsync(
+            principal,
             req.OrganizationId,
             req.EnvironmentId,
             req.PermissionCode,

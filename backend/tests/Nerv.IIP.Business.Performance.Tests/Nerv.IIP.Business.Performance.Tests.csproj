@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\services\Business\Inventory\src\Nerv.IIP.Business.Inventory.Web\Nerv.IIP.Business.Inventory.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Mes\src\Nerv.IIP.Business.Mes.Web\Nerv.IIP.Business.Mes.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Erp\src\Nerv.IIP.Business.Erp.Web\Nerv.IIP.Business.Erp.Web.csproj" />
+  </ItemGroup>
+
+</Project>

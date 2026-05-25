@@ -62,6 +62,19 @@ public sealed class ValidateConnectorCredentialEndpoint(IIamAuthService auth) : 
     }
 }
 
+[HttpPost("/api/iam/v1/auth/client-token")]
+[AllowAnonymous]
+public sealed class ClientCredentialsTokenEndpoint(IIamAuthService auth) : Endpoint<ClientCredentialsTokenRequest, ResponseData<ClientCredentialsTokenResponse>>
+{
+    public override async Task HandleAsync(ClientCredentialsTokenRequest req, CancellationToken ct)
+    {
+        await IamEndpointResults.WriteAuthResultAsync(
+            HttpContext,
+            () => auth.IssueClientCredentialsTokenAsync(req.ClientId, req.ClientSecret, req.Scope, ct),
+            ct);
+    }
+}
+
 [HttpGet("/api/iam/v1/me")]
 [AllowAnonymous]
 public sealed class GetMeEndpoint(IIamAuthService auth) : EndpointWithoutRequest<ResponseData<CurrentPrincipalResponse>>

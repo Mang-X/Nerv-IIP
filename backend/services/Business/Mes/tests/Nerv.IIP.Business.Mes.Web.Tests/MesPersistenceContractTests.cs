@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -108,7 +109,8 @@ public sealed class MesPersistenceContractTests
             var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
                 scope.ServiceProvider.GetRequiredService<IMesPlanningStore>(),
                 scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
-                new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true });
+                new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+                new InMemoryIntegrationEventDeadLetterStore());
 
             await handler.HandleAsync(CreateUnavailableEvent(now), CancellationToken.None);
             await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
@@ -162,7 +164,8 @@ public sealed class MesPersistenceContractTests
         var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
             store,
             scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
-            new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = false });
+            new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = false },
+            new InMemoryIntegrationEventDeadLetterStore());
         await handler.HandleAsync(CreateUnavailableEvent(now, organizationId: "org-b"), CancellationToken.None);
 
         var orgAPlan = new RuleScheduler().Schedule(

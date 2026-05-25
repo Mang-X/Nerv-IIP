@@ -51,7 +51,8 @@ if (usePostgreSql)
     builder.Services.AddIntegrationEvents(typeof(Program)).UseCap<ApplicationDbContext>(_ => { });
     builder.Services.AddCap(options =>
     {
-        options.UseNetCorePalStorage<ApplicationDbContext>();
+        options.Version = builder.Configuration["Cap:Version"] ?? "v1";
+        options.UseEntityFramework<ApplicationDbContext>();
         options.UseConfiguredTransport(builder.Configuration);
     });
 }

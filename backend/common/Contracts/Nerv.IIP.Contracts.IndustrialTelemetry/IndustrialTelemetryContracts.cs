@@ -14,23 +14,47 @@ public static class IndustrialTelemetryIntegrationEventSources
     public const string IndustrialTelemetry = "industrialTelemetry";
 }
 
+public static class IndustrialTelemetryIntegrationEventVersions
+{
+    public const int V1 = 1;
+}
+
 public sealed record DeviceStateChangedIntegrationEvent(
     string EventId,
     string EventType,
-    string DeviceStateSnapshotId,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
     string OrganizationId,
     string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    DeviceStateChangedPayload Payload);
+
+public sealed record DeviceStateChangedPayload(
+    string DeviceStateSnapshotId,
     string DeviceAssetId,
     string CurrentState,
-    DateTimeOffset OccurredAtUtc,
     string SourceSequence);
 
 public sealed record AlarmRaisedIntegrationEvent(
     string EventId,
     string EventType,
-    string AlarmEventId,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
     string OrganizationId,
     string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    AlarmRaisedPayload Payload);
+
+public sealed record AlarmRaisedPayload(
+    string AlarmEventId,
     string DeviceAssetId,
     string AlarmCode,
     string Severity,
@@ -40,9 +64,19 @@ public sealed record AlarmRaisedIntegrationEvent(
 public sealed record AlarmClearedIntegrationEvent(
     string EventId,
     string EventType,
-    string AlarmEventId,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
     string OrganizationId,
     string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    AlarmClearedPayload Payload);
+
+public sealed record AlarmClearedPayload(
+    string AlarmEventId,
     string DeviceAssetId,
     string AlarmCode,
     string Severity,

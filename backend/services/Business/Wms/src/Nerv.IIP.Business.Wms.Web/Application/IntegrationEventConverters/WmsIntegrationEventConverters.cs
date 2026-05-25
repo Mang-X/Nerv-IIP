@@ -110,8 +110,11 @@ internal static class WmsIntegrationEventFactory
             WmsIntegrationEventVersions.V1,
             DateTimeOffset.UtcNow,
             WmsIntegrationEventSources.BusinessWms,
+            idempotencyKey,
+            payload.PublicReference,
             organizationId,
             environmentId,
+            "system:wms",
             idempotencyKey,
             payload);
     }

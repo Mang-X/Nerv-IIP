@@ -146,6 +146,27 @@ public sealed class OperationTaskAggregateTests
     }
 
     [Fact]
+    public void Audit_records_include_tamper_evident_integrity_hash()
+    {
+        var task = OperationTask.Create(TaskId(), CreateRequest("idem-001"), Template("lifecycle.restart"), Now);
+        task.AssignInitialAuditId(AuditId("audit-000001"));
+
+        var audit = Assert.Single(task.AuditRecords);
+
+        Assert.True(audit.HasValidIntegrityHash());
+        Assert.StartsWith("sha256:", audit.IntegrityHash, StringComparison.Ordinal);
+        Assert.Equal(
+            AuditRecord.ComputeIntegrityHash(
+                "audit-000001",
+                "op-000001",
+                "operation.requested",
+                "local-admin",
+                Now,
+                "corr-001"),
+            audit.IntegrityHash);
+    }
+
+    [Fact]
     public void Failed_result_moves_dispatched_task_to_failed_and_rejects_duplicate_result()
     {
         var task = CreateTask();

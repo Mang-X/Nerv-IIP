@@ -5,8 +5,9 @@
 
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
-    <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="8.4.0" />
-    <PackageVersion Include="DotNetCore.CAP.RabbitMQ" Version="8.4.0" />
+    <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="10.0.1" />
+    <PackageVersion Include="DotNetCore.CAP.PostgreSql" Version="10.0.1" />
+    <PackageVersion Include="DotNetCore.CAP.RabbitMQ" Version="10.0.1" />
     <PackageVersion Include="FastEndpoints" Version="8.1.0" />
     <PackageVersion Include="FastEndpoints.Swagger" Version="8.1.0" />
     <PackageVersion Include="FastEndpoints.Swagger.Swashbuckle" Version="2.3.0" />
@@ -52,7 +53,7 @@
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.1.0" />
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.3.0.106239" />
-    <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
+    <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="10.0.0" />
     <PackageVersion Include="StackExchange.Redis" Version="2.9.11" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.2.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />

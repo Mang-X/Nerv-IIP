@@ -103,6 +103,130 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate.AuthorizationGrant", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("Authorization grant identifier.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Grant environment scope.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Grant organization scope.");
+
+                    b.Property<string>("PermissionCode")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasComment("Granted permission code.");
+
+                    b.Property<string>("PrincipalId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("Principal identifier.");
+
+                    b.Property<string>("PrincipalType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Principal type, for example external-client.");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Grant revocation time in UTC.");
+
+                    b.Property<DateTimeOffset>("ValidFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Grant validity start time in UTC.");
+
+                    b.Property<DateTimeOffset?>("ValidToUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Grant validity end time in UTC.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PrincipalType", "PrincipalId", "OrganizationId", "EnvironmentId", "PermissionCode")
+                        .IsUnique();
+
+                    b.ToTable("authorization_grants", "iam", t =>
+                        {
+                            t.HasComment("IAM authorization grants for non-user principals and scoped access.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate.ExternalClient", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("External client record identifier.");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("Public client identifier used for client_credentials.");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasComment("External client display name.");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean")
+                        .HasComment("Whether the external client can authenticate.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("External client environment scope.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("External client organization scope.");
+
+                    b.Property<int>("PermissionVersion")
+                        .HasColumnType("integer")
+                        .HasComment("External client permission version for token invalidation.");
+
+                    b.Property<string>("SecretHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasComment("External client secret hash.");
+
+                    b.Property<DateTimeOffset>("ValidFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("External client credential validity start time in UTC.");
+
+                    b.Property<DateTimeOffset?>("ValidToUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("External client credential validity end time in UTC.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique();
+
+                    b.ToTable("external_clients", "iam", t =>
+                        {
+                            t.HasComment("IAM external clients that can use client_credentials tokens.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.Membership", b =>
                 {
                     b.Property<string>("Id")
@@ -261,17 +385,17 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasComment("Soft delete flag.");
 
-                    b.Property<string>("RoleName")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasComment("Unique role name.");
-
                     b.Property<string>("NormalizedRoleName")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasComment("Case-insensitive normalized role name.");
+
+                    b.Property<string>("RoleName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("Unique role name.");
 
                     b.Property<int>("RowVersion")
                         .IsConcurrencyToken()

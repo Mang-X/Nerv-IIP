@@ -385,6 +385,90 @@ public sealed class IamPostgresProfileTests
     }
 
     [Fact]
+    public async Task Postgres_profile_issues_external_client_token_and_authorizes_with_grants()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            return;
+        }
+
+        var environment = PreserveEnvironment(
+            "Persistence__Provider",
+            "ConnectionStrings__IamDb",
+            "Iam__Seed__Enabled",
+            "Iam__Seed__AdminPassword",
+            "Iam__Seed__ConnectorHostSecret",
+            "Iam__Seed__ExternalClientSecret");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
+            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString);
+            Environment.SetEnvironmentVariable("Iam__Seed__Enabled", "true");
+            Environment.SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!");
+            Environment.SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+            Environment.SetEnvironmentVariable("Iam__Seed__ExternalClientSecret", "external-client-secret");
+
+            await using var factory = new WebApplicationFactory<Program>();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                await db.Database.EnsureDeletedAsync();
+
+                var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
+                await migrations.MigrateAsync();
+
+                var seed = scope.ServiceProvider.GetRequiredService<IamSeedService>();
+                await seed.SeedAsync(CancellationToken.None);
+            }
+
+            var client = factory.CreateClient();
+            var token = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/client-token",
+                new { clientId = "external-client-demo", clientSecret = "external-client-secret", scope = "ops.tasks.create" });
+            token.EnsureSuccessStatusCode();
+            var auth = await ReadResponseDataAsync<ClientCredentialsTokenResponse>(token);
+
+            Assert.Equal("Bearer", auth!.TokenType);
+            Assert.Equal("ops.tasks.create", auth.Scope);
+            Assert.True(auth.ExpiresAtUtc > DateTimeOffset.UtcNow);
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", auth.AccessToken);
+            var me = await client.GetAsync("/api/iam/v1/me");
+            me.EnsureSuccessStatusCode();
+            var principal = await ReadResponseDataAsync<MeResponse>(me);
+            Assert.Equal("external-client-demo", principal!.UserId);
+            Assert.Equal("external-client", principal.PrincipalType);
+
+            var allowed = await client.PostAsJsonAsync(
+                "/internal/iam/v1/authorization/check",
+                new { organizationId = "org-001", environmentId = "env-dev", permissionCode = "ops.tasks.create" });
+            allowed.EnsureSuccessStatusCode();
+
+            var denied = await client.PostAsJsonAsync(
+                "/internal/iam/v1/authorization/check",
+                new { organizationId = "org-001", environmentId = "env-dev", permissionCode = "iam.users.manage" });
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                Assert.Equal(1, await db.ExternalClients.CountAsync(x => x.ClientId == "external-client-demo"));
+                Assert.Equal(1, await db.AuthorizationGrants.CountAsync(x =>
+                    x.PrincipalType == "external-client"
+                    && x.PrincipalId == "external-client-demo"
+                    && x.PermissionCode == "ops.tasks.create"));
+            }
+        }
+        finally
+        {
+            RestoreEnvironment(environment);
+        }
+    }
+
+    [Fact]
     public void Postgres_automigrate_is_rejected_outside_development()
     {
         var environment = PreserveEnvironment(
@@ -435,6 +519,7 @@ public sealed class IamPostgresProfileTests
     }
 
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+    private sealed record ClientCredentialsTokenResponse(string AccessToken, string TokenType, DateTimeOffset ExpiresAtUtc, string Scope);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
     private sealed record UserResponse(string UserId, string LoginName, string Email, bool Enabled);
     private sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);

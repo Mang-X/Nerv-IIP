@@ -76,7 +76,7 @@ try
         })
         .AddJwtBearer(options =>
         {
-            options.RequireHttpsMetadata = false;
+            options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
             options.TokenValidationParameters.ValidAudience = "netcorepal";
             options.TokenValidationParameters.ValidateAudience = true;
             options.TokenValidationParameters.ValidIssuer = "netcorepal";
@@ -147,7 +147,8 @@ try
 
         builder.Services.AddCap(x =>
         {
-            x.UseNetCorePalStorage<ApplicationDbContext>();
+            x.Version = builder.Configuration["Cap:Version"] ?? "v1";
+            x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration);
             x.UseDashboard(); //CAP Dashboard  path：  /cap

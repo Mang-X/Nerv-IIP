@@ -48,6 +48,12 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasComment("Correlation identifier.");
 
+                    b.Property<string>("IntegrityHash")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasComment("Tamper-evident SHA-256 hash over immutable audit fields.");
+
                     b.Property<DateTimeOffset>("OccurredAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasComment("Audit occurrence time in UTC.");

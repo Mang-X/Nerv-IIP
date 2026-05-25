@@ -46,7 +46,7 @@ try
         })
         .AddJwtBearer(options =>
         {
-            options.RequireHttpsMetadata = false;
+            options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
             options.TokenValidationParameters.ValidAudience = "netcorepal";
             options.TokenValidationParameters.ValidateAudience = true;
             options.TokenValidationParameters.ValidIssuer = "netcorepal";

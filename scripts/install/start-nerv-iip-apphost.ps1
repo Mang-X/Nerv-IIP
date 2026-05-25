@@ -1,0 +1,146 @@
+# Script-Governance:
+#   Category: release-install
+#   SideEffects:
+#     - Starts the platform Aspire AppHost in the current terminal
+#     - Sets scoped process environment variables for the AppHost run
+#   Writes:
+#     - bin/ and obj/ build outputs under projects built by dotnet run
+#     - artifacts/script-logs/**
+#   Cleanup:
+#     - Restores scoped environment variables after AppHost exits
+#   Requires:
+#     - PowerShell 7
+#     - .NET SDK 10
+#     - Required external dependencies reachable or started separately, for example via infra/compose/nerv-iip.dependencies.yml
+
+[CmdletBinding()]
+param(
+    [ValidateSet("Development", "Staging", "Production")]
+    [string] $EnvironmentName = "Development",
+
+    [ValidateSet("InMemory", "RabbitMQ")]
+    [string] $MessagingProvider = "InMemory",
+
+    [string] $IamJwtSigningKey,
+
+    [string] $IamSeedAdminPassword,
+
+    [string] $InternalServiceBearerToken,
+
+    [string] $ConnectorHostSecret,
+
+    [string] $ExternalClientSecret,
+
+    [string] $MinioRootUser,
+
+    [string] $MinioRootPassword,
+
+    [string] $CorsAllowedOrigins,
+
+    [switch] $UsePostgreSql,
+
+    [switch] $AutoMigrate
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$root = Resolve-Path (Join-Path $PSScriptRoot "../..")
+Set-Location $root
+. (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
+
+if ($EnvironmentName -ne "Development") {
+    if ([string]::IsNullOrWhiteSpace($IamJwtSigningKey)) {
+        throw "-IamJwtSigningKey is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($InternalServiceBearerToken)) {
+        throw "-InternalServiceBearerToken is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ConnectorHostSecret)) {
+        throw "-ConnectorHostSecret is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($IamSeedAdminPassword)) {
+        throw "-IamSeedAdminPassword is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($MinioRootUser)) {
+        throw "-MinioRootUser is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($MinioRootPassword)) {
+        throw "-MinioRootPassword is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($CorsAllowedOrigins)) {
+        throw "-CorsAllowedOrigins is required outside Development."
+    }
+}
+
+$environment = @{
+    ASPNETCORE_ENVIRONMENT = $EnvironmentName
+    DOTNET_ENVIRONMENT = $EnvironmentName
+    Messaging__Provider = $MessagingProvider
+}
+
+if ($UsePostgreSql) {
+    $environment["Persistence__Provider"] = "PostgreSQL"
+}
+
+if ($AutoMigrate) {
+    if ($EnvironmentName -ne "Development") {
+        throw "-AutoMigrate is only allowed in Development."
+    }
+
+    $environment["Persistence__AutoMigrate"] = "true"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($IamJwtSigningKey)) {
+    $environment["Iam__Jwt__SigningKey"] = $IamJwtSigningKey
+    $environment["Parameters__iam-jwt-signing-key"] = $IamJwtSigningKey
+}
+
+if (-not [string]::IsNullOrWhiteSpace($IamSeedAdminPassword)) {
+    $environment["Iam__Seed__AdminPassword"] = $IamSeedAdminPassword
+    $environment["Parameters__iam-seed-admin-password"] = $IamSeedAdminPassword
+}
+
+if (-not [string]::IsNullOrWhiteSpace($InternalServiceBearerToken)) {
+    $environment["InternalService__BearerToken"] = $InternalServiceBearerToken
+    $environment["Parameters__internal-service-bearer-token"] = $InternalServiceBearerToken
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConnectorHostSecret)) {
+    $environment["Iam__Seed__ConnectorHostSecret"] = $ConnectorHostSecret
+    $environment["ConnectorHostCredential__Secret"] = $ConnectorHostSecret
+    $environment["Parameters__iam-seed-connector-host-secret"] = $ConnectorHostSecret
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ExternalClientSecret)) {
+    $environment["Iam__Seed__ExternalClientSecret"] = $ExternalClientSecret
+}
+
+if (-not [string]::IsNullOrWhiteSpace($MinioRootUser)) {
+    $environment["Parameters__minio-root-user"] = $MinioRootUser
+}
+
+if (-not [string]::IsNullOrWhiteSpace($MinioRootPassword)) {
+    $environment["Parameters__minio-root-password"] = $MinioRootPassword
+}
+
+if (-not [string]::IsNullOrWhiteSpace($CorsAllowedOrigins)) {
+    $environment["Security__Cors__AllowedOrigins"] = $CorsAllowedOrigins
+}
+
+$appHostProject = "infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj"
+Write-Diagnostic "Starting Nerv-IIP AppHost environment=$EnvironmentName messaging=$MessagingProvider postgres=$UsePostgreSql."
+
+Invoke-WithScopedEnvironment -Variables $environment -ScriptBlock {
+    Invoke-DotNetInteractive -Name "nerv-iip-apphost" -WorkingDirectory $root -Arguments @(
+        "run",
+        "--project",
+        $appHostProject
+    ) | Out-Null
+}

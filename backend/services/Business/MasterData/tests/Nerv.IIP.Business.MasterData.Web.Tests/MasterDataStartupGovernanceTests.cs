@@ -71,6 +71,17 @@ public sealed class MasterDataStartupGovernanceTests
         Assert.Equal(JwtBearerDefaults.AuthenticationScheme, options.DefaultChallengeScheme);
     }
 
+    [Fact]
+    public async Task Jwt_metadata_requires_https_outside_development()
+    {
+        await using var factory = CreateFactory();
+
+        var options = factory.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme);
+
+        Assert.True(options.RequireHttpsMetadata);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         Dictionary<string, string?>? overrides = null)
     {

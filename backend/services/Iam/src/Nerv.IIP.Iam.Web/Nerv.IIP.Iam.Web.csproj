@@ -4,6 +4,10 @@
     <PackageReference Include="FastEndpoints" />
     <PackageReference Include="MediatR" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" VersionOverride="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="NetCorePal.Extensions.AspNetCore" />
     <PackageReference Include="NetCorePal.Extensions.Primitives" />
     <ProjectReference Include="..\Nerv.IIP.Iam.Domain\Nerv.IIP.Iam.Domain.csproj" />

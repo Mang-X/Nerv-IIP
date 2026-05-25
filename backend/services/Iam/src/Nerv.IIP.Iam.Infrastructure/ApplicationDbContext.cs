@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
@@ -24,6 +25,8 @@ public sealed partial class ApplicationDbContext(DbContextOptions<ApplicationDbC
     public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<ConnectorHostCredential> ConnectorHostCredentials => Set<ConnectorHostCredential>();
     public DbSet<ConnectorHostCredentialCapability> ConnectorHostCredentialCapabilities => Set<ConnectorHostCredentialCapability>();
+    public DbSet<ExternalClient> ExternalClients => Set<ExternalClient>();
+    public DbSet<AuthorizationGrant> AuthorizationGrants => Set<AuthorizationGrant>();
     public DbSet<SeedManifest> SeedManifests => Set<SeedManifest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

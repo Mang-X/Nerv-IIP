@@ -46,7 +46,8 @@ public sealed class ListAuditRecordsQueryHandler(IServiceProvider serviceProvide
                 x.Action,
                 x.Actor,
                 x.OccurredAtUtc,
-                x.CorrelationId))
+                x.CorrelationId,
+                x.IntegrityHash))
             .ToListAsync(cancellationToken);
 
         return new AuditRecordListResponse(items);

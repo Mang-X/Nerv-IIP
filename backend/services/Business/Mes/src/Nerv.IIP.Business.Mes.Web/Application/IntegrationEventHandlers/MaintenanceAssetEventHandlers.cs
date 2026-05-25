@@ -1,7 +1,9 @@
+using DotNetCore.CAP;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
@@ -17,12 +19,32 @@ public sealed class MesRescheduleOptions
 public sealed class AssetUnavailableIntegrationEventHandlerForReschedule(
     IMesPlanningStore store,
     RuleScheduler scheduler,
-    MesRescheduleOptions options)
-    : IIntegrationEventHandler<AssetUnavailableIntegrationEvent>
+    MesRescheduleOptions options,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<AssetUnavailableIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.asset-unavailable";
 
+    private readonly IntegrationEventConsumerGuard<AssetUnavailableIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            MaintenanceIntegrationEventTypes.AssetUnavailable,
+            MaintenanceIntegrationEventVersions.V1));
+
     public async Task HandleAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe("Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
         var payload = integrationEvent.Payload;
@@ -54,12 +76,32 @@ public sealed class AssetUnavailableIntegrationEventHandlerForReschedule(
 public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
     IMesPlanningStore store,
     RuleScheduler scheduler,
-    MesRescheduleOptions options)
-    : IIntegrationEventHandler<AssetRestoredIntegrationEvent>
+    MesRescheduleOptions options,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<AssetRestoredIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-mes.asset-restored";
 
+    private readonly IntegrationEventConsumerGuard<AssetRestoredIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            MaintenanceIntegrationEventTypes.AssetRestored,
+            MaintenanceIntegrationEventVersions.V1));
+
     public async Task HandleAsync(AssetRestoredIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe("Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(AssetRestoredIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(AssetRestoredIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
         var payload = integrationEvent.Payload;

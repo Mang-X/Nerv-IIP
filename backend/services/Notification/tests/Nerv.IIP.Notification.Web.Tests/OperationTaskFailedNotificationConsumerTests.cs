@@ -7,6 +7,7 @@ using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
@@ -111,6 +112,27 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToListAsync());
     }
 
+    [Fact]
+    public async Task Handle_unsupported_event_version_is_dead_lettered_without_creating_notification()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleAsync(factory, CreateEvent("event-v2", "operation-task-failed:v2", eventVersion: 2));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            OperationTaskFailedIntegrationEventHandlerForNotification.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+
+        Assert.Empty(await dbContext.NotificationIntents.ToListAsync());
+        Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal("unsupported-version", deadLetter.FailureCode);
+        Assert.Equal(2, deadLetter.EventVersion);
+    }
+
     private static async Task HandleAsync(
         NotificationConsumerWebApplicationFactory factory,
         OperationTaskFailedIntegrationEvent integrationEvent)
@@ -124,12 +146,13 @@ public sealed class OperationTaskFailedNotificationConsumerTests
     private static OperationTaskFailedIntegrationEvent CreateEvent(
         string eventId,
         string idempotencyKey,
-        string operationTaskId = "task-001")
+        string operationTaskId = "task-001",
+        int eventVersion = 1)
     {
         return new OperationTaskFailedIntegrationEvent(
             EventId: eventId,
             EventType: "ops.OperationTaskFailed",
-            EventVersion: 1,
+            EventVersion: eventVersion,
             OccurredAtUtc: DateTimeOffset.Parse("2026-05-21T08:00:00Z"),
             SourceService: "ops",
             CorrelationId: $"corr-{eventId}",

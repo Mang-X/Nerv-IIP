@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\common\Messaging\Nerv.IIP.Messaging.CAP\Nerv.IIP.Messaging.CAP.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Business.Maintenance.Domain\Nerv.IIP.Business.Maintenance.Domain.csproj" />
   </ItemGroup>
 

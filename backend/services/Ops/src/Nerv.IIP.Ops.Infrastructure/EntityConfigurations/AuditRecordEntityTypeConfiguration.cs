@@ -23,6 +23,7 @@ public sealed class AuditRecordEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.Actor).IsRequired().HasMaxLength(128).HasComment("Audit actor.");
         builder.Property(x => x.OccurredAtUtc).HasComment("Audit occurrence time in UTC.");
         builder.Property(x => x.CorrelationId).IsRequired().HasMaxLength(128).HasComment("Correlation identifier.");
+        builder.Property(x => x.IntegrityHash).IsRequired().HasMaxLength(80).HasComment("Tamper-evident SHA-256 hash over immutable audit fields.");
 
         builder.HasIndex(x => new { x.OperationTaskId, x.OccurredAtUtc });
     }

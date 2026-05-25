@@ -31,7 +31,7 @@ public sealed class IndustrialTelemetryIntegrationEventTests
 
         Assert.Equal(IndustrialTelemetryIntegrationEventTypes.AlarmRaised, raised.EventType);
         Assert.Equal(IndustrialTelemetryIntegrationEventTypes.AlarmCleared, cleared.EventType);
-        Assert.Equal(alarm.Id.Id.ToString("D"), raised.AlarmEventId);
+        Assert.Equal(alarm.Id.Id.ToString("D"), raised.Payload.AlarmEventId);
         Assert.Contains("\"eventType\":\"industrialTelemetry.AlarmRaised\"", JsonSerializer.Serialize(raised, new JsonSerializerOptions(JsonSerializerDefaults.Web)), StringComparison.Ordinal);
         Assert.Contains("\"eventType\":\"industrialTelemetry.AlarmCleared\"", JsonSerializer.Serialize(cleared, new JsonSerializerOptions(JsonSerializerDefaults.Web)), StringComparison.Ordinal);
     }

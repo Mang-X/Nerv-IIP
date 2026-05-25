@@ -33,7 +33,7 @@ public sealed class OpsContractJsonTests
                 300,
                 3,
                 null)],
-            [new AuditRecordSummary("audit-000001", "op-000001", "operation.completed", "connector-host-001", DateTimeOffset.Parse("2026-05-15T00:00:02Z"), "corr-ops-001")]);
+            [new AuditRecordSummary("audit-000001", "op-000001", "operation.completed", "connector-host-001", DateTimeOffset.Parse("2026-05-15T00:00:02Z"), "corr-ops-001", "sha256:contract-test")]);
 
         var json = JsonSerializer.Serialize(source, JsonOptions);
         var result = JsonSerializer.Deserialize<OperationTaskResponse>(json, JsonOptions);
@@ -77,7 +77,8 @@ public sealed class OpsContractJsonTests
             "manual.reviewed",
             "user:auditor",
             DateTimeOffset.Parse("2026-05-22T00:00:00Z"),
-            "corr-audit-001");
+            "corr-audit-001",
+            "sha256:contract-test");
 
         var requestJson = JsonSerializer.Serialize(request, JsonOptions);
         var responseJson = JsonSerializer.Serialize(response, JsonOptions);
@@ -91,6 +92,7 @@ public sealed class OpsContractJsonTests
         Assert.Equal("manual.reviewed", requestDocument.RootElement.GetProperty("action").GetString());
         Assert.Equal("audit-000002", responseDocument.RootElement.GetProperty("auditRecordId").GetString());
         Assert.Equal("corr-audit-001", responseDocument.RootElement.GetProperty("correlationId").GetString());
+        Assert.Equal("sha256:contract-test", responseDocument.RootElement.GetProperty("integrityHash").GetString());
         Assert.NotNull(requestResult);
         Assert.Equal("user:auditor", requestResult.Actor);
         Assert.NotNull(responseResult);
