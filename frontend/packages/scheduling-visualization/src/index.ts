@@ -3,6 +3,7 @@ export { flattenGanttTasks } from './model/gantt'
 export { groupScheduleRows } from './model/schedule'
 export { buildGanttScene } from './renderers/buildGanttScene'
 export { buildScheduleScene } from './renderers/buildScheduleScene'
+export { renderSceneToLeafer } from './renderers/renderSceneToLeafer'
 export { createSchedulingCommandStack } from './state/useSchedulingCommands'
 export { useSchedulingSelection } from './state/useSchedulingSelection'
 export { createTimeScale } from './time-scale/timeScale'
@@ -35,6 +36,12 @@ export type {
   ScheduleRow,
   ScheduleSelection,
 } from './model/schedule'
+export type {
+  LeaferPathInput,
+  LeaferRectInput,
+  LeaferSurface,
+  LeaferTextInput,
+} from './canvas/leaferTypes'
 export type {
   SchedulingScene,
   SchedulingSceneElement,

@@ -19,6 +19,7 @@ describe('@nerv-iip/scheduling-visualization public exports', () => {
       'createTimeScale',
       'flattenGanttTasks',
       'groupScheduleRows',
+      'renderSceneToLeafer',
       'useSchedulingSelection',
     ])
   })
