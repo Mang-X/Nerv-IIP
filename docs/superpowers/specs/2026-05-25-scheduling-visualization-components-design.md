@@ -4,13 +4,13 @@
 
 Build a reusable frontend package for mock-only Gantt and scheduling visualization components using Leafer UI for canvas rendering and the existing Nerv-IIP shadcn-vue design system for controls, panels and page composition.
 
-This work implements the first executable slice after `docs/architecture/gantt-scheduling-visualization-rfc.md`: a frontend-only component package and Console demo. It does not connect to real APS, MES, DemandPlanning, WMS, ERP or PlatformGateway APIs.
+This work implements the first executable slice after `docs/architecture/gantt-scheduling-visualization-rfc.md`: a frontend-only component package with mock fixtures and package-level tests. It does not connect to real APS, MES, DemandPlanning, WMS, ERP or PlatformGateway APIs.
 
 ## Selected Approach
 
 Create a new workspace package named `@nerv-iip/scheduling-visualization` under `frontend/packages/scheduling-visualization`.
 
-The package owns all visualization models, mock fixtures, time-scale math, command preview state, Leafer adapter code and Vue components. The Console app consumes the package through stable exports only, in the same way it consumes `@nerv-iip/ui`, `@nerv-iip/app-shell` and `@nerv-iip/api-client`.
+The package owns all visualization models, mock fixtures, time-scale math, command preview state, Leafer adapter code and Vue components. A future Console page can consume the package through stable exports only, in the same way it consumes `@nerv-iip/ui`, `@nerv-iip/app-shell` and `@nerv-iip/api-client`.
 
 This keeps the first implementation reusable and avoids placing a complex scheduling product surface directly inside `frontend/apps/console`.
 
@@ -22,9 +22,9 @@ This keeps the first implementation reusable and avoids placing a complex schedu
 2. A reusable schedule chart component for resources/work centers, operation bars, capacity bands, load histogram, locked operations, overload/conflict markers, selection and zoom.
 3. Local-only interaction preview for moving and resizing tasks or operations, including undo/redo and reset.
 4. Mock data fixtures with at least two scenarios: a mixed project Gantt scenario and a manufacturing schedule scenario.
-5. A protected Console demo page that renders both components with fixture switching and a detail sheet for the selected item.
+5. A package-level `SchedulingWorkspace` composition component that renders both charts with fixture switching and a detail sheet for the selected item.
 6. Package-level tests for time-scale math, row flattening, command undo/redo and renderer scene generation.
-7. Component tests for `GanttChart`, `ScheduleChart` and the Console demo page.
+7. Component tests for `GanttChart`, `ScheduleChart` and `SchedulingWorkspace`.
 8. Design System updates after component completion, including DESIGN component/pattern documentation and roadmap status.
 
 ### Excluded
@@ -34,6 +34,7 @@ This keeps the first implementation reusable and avoids placing a complex schedu
 3. No persisted changes; drag/resize operations remain preview-only.
 4. No object storage, PDF, Excel or image export in this slice.
 5. No production performance guarantee for 10,000 rows. The first target is responsive rendering for the included fixtures and deterministic scene generation for tests.
+6. No Console route or protected demo page in this slice. Console integration is a follow-up consumer task after the package is stable.
 
 ## Package Structure
 
@@ -44,6 +45,7 @@ frontend/packages/scheduling-visualization/
   src/
     index.ts
     components/
+      SchedulingWorkspace.vue
       GanttChart.vue
       ScheduleChart.vue
       SchedulingToolbar.vue
@@ -74,6 +76,7 @@ frontend/packages/scheduling-visualization/
       scenes.test.ts
       GanttChart.test.ts
       ScheduleChart.test.ts
+      SchedulingWorkspace.test.ts
 ```
 
 The package imports shared UI primitives from `@nerv-iip/ui`. It must not deep-import shadcn-vue registry files.
@@ -83,6 +86,7 @@ The package imports shared UI primitives from `@nerv-iip/ui`. It must not deep-i
 `frontend/packages/scheduling-visualization/src/index.ts` exports:
 
 ```ts
+export { default as SchedulingWorkspace } from './components/SchedulingWorkspace.vue'
 export { default as GanttChart } from './components/GanttChart.vue'
 export { default as ScheduleChart } from './components/ScheduleChart.vue'
 export { default as SchedulingToolbar } from './components/SchedulingToolbar.vue'
@@ -105,7 +109,7 @@ export type {
 } from './model/schedule'
 ```
 
-The Console app imports only from `@nerv-iip/scheduling-visualization`.
+Future app consumers import only from `@nerv-iip/scheduling-visualization`.
 
 ## Data Model
 
@@ -158,20 +162,18 @@ Scene objects include:
 6. Locked items render with a locked visual state and do not create preview commands.
 7. The package emits `preview-change` events but never saves to a server.
 
-## Console Demo
+## Package Workspace
 
-Add `frontend/apps/console/src/pages/business/scheduling/index.vue` with:
+Add `SchedulingWorkspace.vue` inside the package with:
 
-1. route meta requiring authentication,
-2. a page header matching existing business console density,
-3. tabs for `Gantt` and `Schedule`,
-4. fixture selector,
-5. toolbar controls,
-6. chart area with fixed responsive dimensions,
-7. detail sheet for the selected object,
-8. mock-only data source comments in code and docs.
+1. tabs for `Gantt` and `Schedule`,
+2. fixture selector,
+3. toolbar controls,
+4. chart area with fixed responsive dimensions,
+5. detail sheet for the selected object,
+6. mock-only data source comments in code and docs.
 
-The page must not mention keyboard shortcuts or usage instructions as visible tutorial copy. Controls should be discoverable by labels, icons, tooltips and conventional placement.
+The workspace component is not a route and does not depend on Console auth, router or app shell. Controls should be discoverable by labels, icons, tooltips and conventional placement.
 
 ## Design System Update Requirement
 
@@ -180,7 +182,7 @@ Formal completion includes updating the frontend design system, not just compone
 Required DESIGN changes:
 
 1. Add `frontend/DESIGN/components/scheduling-visualization.md` describing the package-level components, anatomy, variants, states, accessibility expectations, responsive behavior and anti-patterns.
-2. Add or update `frontend/DESIGN/patterns/blocks/scheduling-workspace.md` for the page pattern: toolbar, grid/canvas split, detail sheet, status badges and dense operational layout.
+2. Add or update `frontend/DESIGN/patterns/blocks/scheduling-workspace.md` for the component composition pattern: toolbar, grid/canvas split, detail sheet, status badges and dense operational layout.
 3. Update `frontend/DESIGN/index.md` quick-reference tables to include the scheduling visualization components and pattern.
 4. Update `frontend/DESIGN/roadmaps/business-console-readiness.md` to mark the scheduling visualization design-system contract as introduced.
 5. Keep `@nerv-iip/ui` as the stable shadcn-vue primitive boundary. The new package may compose `Button`, `Badge`, `Tabs`, `Sheet`, `Select`, `Tooltip`, `Progress`, `ScrollArea`, `Table` and `Card`, but must not fork their skins.
@@ -207,13 +209,12 @@ Minimum checks for completion:
 ```powershell
 pnpm -C frontend --filter @nerv-iip/scheduling-visualization test
 pnpm -C frontend --filter @nerv-iip/scheduling-visualization typecheck
-pnpm -C frontend --filter @nerv-iip/console test -- src/pages/business/scheduling/index.test.ts
 pnpm -C frontend typecheck
 pnpm -C frontend test
 pnpm -C frontend build
 ```
 
-If browser tooling is available, also verify the Console demo at desktop `1366x900` and mobile `390x844` with screenshots or equivalent Playwright assertions for nonblank canvas rendering and no incoherent text overlap.
+If browser tooling is available, verify a package consumer harness or temporary local preview at desktop `1366x900` and mobile `390x844` with screenshots or equivalent assertions for nonblank canvas rendering and no incoherent text overlap. This must not require committing a Console route.
 
 ## Acceptance Criteria
 
@@ -221,9 +222,9 @@ If browser tooling is available, also verify the Console demo at desktop `1366x9
 2. `GanttChart` renders mock task hierarchy, bars, progress, milestones, baselines, dependencies, conflicts and today line.
 3. `ScheduleChart` renders mock resources, operations, capacity bands, load histogram, locked states and overload/conflict markers.
 4. Toolbar controls update zoom and visibility toggles.
-5. Selection opens a detail sheet in the Console demo.
+5. Selection opens a detail sheet in `SchedulingWorkspace`.
 6. Drag/resize preview commands support undo, redo and reset without server persistence.
-7. Console demo page renders behind the existing auth guard.
+7. No Console route or app-shell dependency is introduced.
 8. Design System docs are updated as specified.
 9. Required tests and frontend gates pass or any environment blocker is reported with command output and scope.
 
