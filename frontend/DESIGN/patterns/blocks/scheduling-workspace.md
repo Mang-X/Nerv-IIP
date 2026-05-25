@@ -38,6 +38,7 @@ Category: block
 - The detail sheet opens on demand after a selection; operators can use pointer-following hover tooltips for quick scan-level facts.
 - Zoom changes are view-preset changes: they alter time density and bar pixel widths while preserving task/operation dates.
 - Opening or closing the detail sheet changes the available chart width; timeline DOM, DOM bars, and Leafer overlays must resize together instead of waiting for the next drag or scroll interaction.
+- Scroll and drag previews must repaint canvas overlays from a cleared frame, not rely on partial canvas reuse. Frozen side columns remain opaque masks over scrolled timeline content.
 - Large Gantt plans and large schedules must keep row labels, operation/task DOM, Leafer overlays, and timeline tick DOM bounded to the visible viewport plus overscan.
 - Package preview should expose large-data scenarios for both Gantt and resource schedule so operators and designers can validate scroll, frozen labels, axis sync, density, and dependency-link rendering without a real backend.
 - Host pages may customize row labels, bar content, tooltip content, detail content, and legend content through documented slots while keeping scheduling logic and persistence outside this package.

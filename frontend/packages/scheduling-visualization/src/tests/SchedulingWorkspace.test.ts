@@ -9,6 +9,7 @@ vi.mock('../canvas/createLeaferSurface', () => ({
     addRect: vi.fn(),
     addText: vi.fn(),
     addPath: vi.fn(),
+    flush: vi.fn(),
     dispose: vi.fn(),
   }),
 }))

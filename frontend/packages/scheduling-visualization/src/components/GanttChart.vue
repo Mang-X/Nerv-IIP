@@ -682,7 +682,7 @@ onBeforeUnmount(() => {
   border: 0;
   border-right: 1px solid rgba(226, 232, 240, 0.9);
   border-bottom: 1px solid rgba(226, 232, 240, 0.82);
-  background: rgba(255, 255, 255, 0.92);
+  background: #ffffff;
   box-shadow: 1px 0 0 rgba(226, 232, 240, 0.9);
   color: #0f172a;
   cursor: pointer;
@@ -730,11 +730,11 @@ onBeforeUnmount(() => {
 }
 
 .gantt-row:hover {
-  background: rgba(14, 165, 233, 0.08);
+  background: #eaf7fd;
 }
 
 .gantt-row--selected {
-  background: rgba(37, 99, 235, 0.12);
+  background: #dbeafe;
   box-shadow: inset 3px 0 0 #2563eb;
 }
 

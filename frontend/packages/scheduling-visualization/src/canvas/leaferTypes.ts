@@ -33,5 +33,6 @@ export interface LeaferSurface {
   addRect(input: LeaferRectInput): void
   addText(input: LeaferTextInput): void
   addPath(input: LeaferPathInput): void
+  flush(): void
   dispose(): void
 }

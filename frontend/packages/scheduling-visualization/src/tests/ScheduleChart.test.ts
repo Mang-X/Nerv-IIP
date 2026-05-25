@@ -9,6 +9,7 @@ const surfaceSpies = vi.hoisted(() => ({
   addRect: vi.fn(),
   addText: vi.fn(),
   addPath: vi.fn(),
+  flush: vi.fn(),
   dispose: vi.fn(),
 }))
 
@@ -18,6 +19,7 @@ vi.mock('../canvas/createLeaferSurface', () => ({
     addRect: surfaceSpies.addRect,
     addText: surfaceSpies.addText,
     addPath: surfaceSpies.addPath,
+    flush: surfaceSpies.flush,
     dispose: surfaceSpies.dispose,
   }),
 }))
@@ -40,6 +42,7 @@ describe('ScheduleChart', () => {
     surfaceSpies.addRect.mockClear()
     surfaceSpies.addText.mockClear()
     surfaceSpies.addPath.mockClear()
+    surfaceSpies.flush.mockClear()
     surfaceSpies.dispose.mockClear()
   })
 
@@ -182,6 +185,7 @@ describe('ScheduleChart', () => {
     await waitForFrame()
 
     expect(surfaceSpies.clear.mock.calls.length).toBeGreaterThan(clearsBeforeScroll)
+    expect(surfaceSpies.flush.mock.calls.length).toBeGreaterThan(0)
   })
 
   it('resets horizontal scroll state when zoom changes', async () => {

@@ -11,6 +11,7 @@ describe('renderSceneToLeafer', () => {
       addRect: vi.fn(),
       addText: vi.fn(),
       addPath: vi.fn(),
+      flush: vi.fn(),
       dispose: vi.fn(),
     }
     const scene: SchedulingScene = {
@@ -41,5 +42,8 @@ describe('renderSceneToLeafer', () => {
     expect(surface.addText).toHaveBeenCalledWith(expect.objectContaining({ id: 'row-1' }))
     expect(surface.addRect).toHaveBeenCalledWith(expect.objectContaining({ id: 'bar-1' }))
     expect(surface.addPath).toHaveBeenCalledWith(expect.objectContaining({ id: 'dep-1' }))
+    expect(surface.flush).toHaveBeenCalledOnce()
+    expect(vi.mocked(surface.flush).mock.invocationCallOrder[0])
+      .toBeGreaterThan(vi.mocked(surface.addPath).mock.invocationCallOrder[0])
   })
 })

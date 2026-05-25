@@ -794,7 +794,7 @@ function cancelDrag(event: PointerEvent) {
   padding: 7px 12px;
   border: 0;
   border-bottom: 1px solid rgba(226, 232, 240, 0.82);
-  background: rgba(248, 250, 252, 0.9);
+  background: #f8fafc;
   box-shadow: 1px 0 0 rgba(226, 232, 240, 0.9);
   color: #0f172a;
   cursor: pointer;
@@ -803,11 +803,11 @@ function cancelDrag(event: PointerEvent) {
 }
 
 .schedule-resource:hover {
-  background: rgba(14, 165, 233, 0.08);
+  background: #eaf7fd;
 }
 
 .schedule-resource--selected {
-  background: rgba(37, 99, 235, 0.12);
+  background: #dbeafe;
   box-shadow: inset 3px 0 0 #2563eb;
 }
 

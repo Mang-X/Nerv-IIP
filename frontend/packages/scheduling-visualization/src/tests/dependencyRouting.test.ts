@@ -54,19 +54,8 @@ describe('dependency routing', () => {
 
     expect(route[0]).toEqual({ x: 420, y: 8 })
     expect(route.at(-1)).toEqual({ x: 446, y: 52 })
-    expect(route).toContainEqual({ x: 446, y: 8 })
+    expect(route.some((point) => point.y < source.top)).toBe(true)
     expect(intermediateSegments(route).some((segment) => segmentCrossesRectInterior(segment, target))).toBe(false)
-  })
-
-  it('uses a straight boundary connector when finish and start touch across rows', () => {
-    const source = { left: 249, top: 51, width: 201, height: 22 }
-    const target = { left: 450, top: 95, width: 268, height: 22 }
-    const route = buildDependencyRoute({ source, target, type: 'finish-start' })
-
-    expect(route).toEqual([
-      { x: 450, y: 51 },
-      { x: 450, y: 95 },
-    ])
   })
 
   it('uses a compact top-edge route when forward tasks have enough horizontal space', () => {

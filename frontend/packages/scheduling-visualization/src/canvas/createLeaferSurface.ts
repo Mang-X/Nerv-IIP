@@ -1,6 +1,11 @@
 import type { LeaferPathInput, LeaferRectInput, LeaferSurface, LeaferTextInput } from './leaferTypes'
 
 type LeaferUiModule = typeof import('leafer-ui')
+type LeaferRenderTarget = {
+  forceRender?: () => void
+  forceUpdate?: (change?: string) => void
+  render?: (options?: { force?: boolean }) => void
+}
 
 let leaferUiModule: Promise<LeaferUiModule> | undefined
 
@@ -29,14 +34,38 @@ export async function createLeaferSurface(
     height,
     hittable: true,
     smooth: true,
+    usePartRender: false,
     pixelRatio: window.devicePixelRatio || 1,
   })
   const root = new Group()
   leafer.add(root)
+  const renderTarget = leafer as unknown as LeaferRenderTarget
+
+  function clearCanvasPixels() {
+    host.querySelectorAll('canvas').forEach((canvas) => {
+      const context = canvas.getContext('2d')
+      context?.clearRect(0, 0, canvas.width, canvas.height)
+    })
+  }
+
+  function requestFullRender() {
+    if (renderTarget.render) {
+      renderTarget.render({ force: true })
+      return
+    }
+
+    if (renderTarget.forceRender) {
+      renderTarget.forceRender()
+      return
+    }
+
+    renderTarget.forceUpdate?.('surface')
+  }
 
   return {
     clear() {
       root.clear()
+      clearCanvasPixels()
     },
     addRect(input: LeaferRectInput) {
       root.add(
@@ -94,6 +123,9 @@ export async function createLeaferSurface(
         pen.data = input.metadata
       }
       root.add(pen)
+    },
+    flush() {
+      requestFullRender()
     },
     dispose() {
       root.clear()

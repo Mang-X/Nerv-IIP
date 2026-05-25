@@ -49,4 +49,6 @@ export function renderSceneToLeafer(surface: LeaferSurface, scene: SchedulingSce
 
     renderRect(surface, element)
   }
+
+  surface.flush()
 }
