@@ -10,8 +10,12 @@ describe('@nerv-iip/scheduling-visualization public exports', () => {
       'SchedulingDetailSheet',
       'SchedulingToolbar',
       'SchedulingWorkspace',
+      'calculateVisibleRowRange',
       'createMockGanttFixture',
       'createMockScheduleFixture',
+      'createTimeScale',
+      'flattenGanttTasks',
+      'groupScheduleRows',
     ])
   })
 })
