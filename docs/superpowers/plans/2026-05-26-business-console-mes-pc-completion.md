@@ -58,6 +58,100 @@ P1 follow-ups: richer finite-capacity dispatching, line-side inventory details, 
 
 P2 integrations: full APS optimization, full WMS/AGV/WCS automation, full QMS/LIMS, full CMMS/EAM, SCADA/PLC control, BI/data lake analytics, mobile/PDA scanning, and detailed cost accounting.
 
+## Foundation Readiness Baseline
+
+The MES workbench must not start from work order CRUD. It first needs a production foundation readiness layer that checks whether the core facts required to release and execute a work order exist, are active, and are usable for the selected organization/environment/site/line/date.
+
+### Foundation Ownership
+
+| Foundation area | Source of truth | MES first-release responsibility |
+| --- | --- | --- |
+| Organization, environment, user, permissions | IAM | Use IDs and permission checks; do not copy IAM roles or memberships into MES. |
+| Site, plant, area, line, work center, work station | BusinessMasterData | Resolve and validate the production hierarchy before plan release, dispatch, reporting, and handover. |
+| Work calendar, shift, team | BusinessMasterData | Validate that planned start/end, dispatch, report, and handover are inside an active calendar/shift/team context. |
+| Personnel business attributes and skills | IAM user ID + BusinessMasterData `PersonnelSkill` | Validate operator/team assignment and skill qualification; MES stores assignment snapshot only. |
+| Device asset and resource capability | BusinessMasterData static facts, Maintenance/Telemetry runtime facts | Validate static compatibility and current availability before dispatch; MES records actual device usage and downtime impact. |
+| SKU, UOM, UOM conversion, traceability policy | BusinessMasterData | Validate manufacturing-enabled SKU, UOM conversions, batch/serial policy, and default barcode rule before release/reporting. |
+| Production version, MBOM, routing, operation definitions | ProductEngineering | Resolve released production version and lock a release snapshot; MES does not edit engineering design facts. |
+| Warehouse, production supply area, line-side location, inventory status | WMS/Inventory plus MasterData labels | Validate material availability and staging route; MES creates request intent and records line-side receipt evidence. |
+| Inspection standards, inspection plans, quality holds | Quality plus MasterData characteristic definitions | Validate inspection requirements and blocking quality state; MES records execution defect context and links to Quality facts. |
+| Maintenance plans, downtime, asset restoration | Maintenance plus IndustrialTelemetry | Validate asset availability and production-impacting maintenance state; MES records shop-floor downtime and recovery confirmation. |
+| Barcode rules, labels, scan records | BarcodeLabel | Resolve barcode/label rule references for work order, material lot, product serial, flow card, container, pallet, and inspection labels. |
+| Business document numbering | Service-local numbering policy with shared governance; future Numbering service remains optional | Generate stable IDs for MES-owned documents, using a consistent rule contract and collision tests; do not hardcode UI-entered IDs as the long-term source. |
+
+### Minimum Readiness Checks
+
+Every plan-to-work-order or work-order-release path must compute a readiness result with `Ready`, `Warning`, or `Blocked` status and a machine-readable reason code. The first release must cover:
+
+| Readiness check | Blocking examples | Warning examples |
+| --- | --- | --- |
+| MasterData hierarchy | Plant, line, work center, shift, team, SKU, UOM, or device is missing/disabled. | Work center is active but missing capacity metadata. |
+| Calendar and shift | Planned time has no active work calendar or shift. | Planned time crosses shift boundary and needs handover. |
+| Personnel and skill | Assigned user lacks required skill/qualification or inactive IAM user reference. | Skill expires soon or manual supervisor confirmation is required. |
+| Product engineering | No released production version, MBOM, routing, or operation sequence. | Production version is valid but close to expiry/effective-date change. |
+| Material and supply | Required material has no UOM conversion, traceability policy mismatch, no available inventory, or no staging route. | Material partially available, substitute available, or expected receipt date is known. |
+| Quality | SKU or operation requires inspection but no inspection plan exists, or source batch is quality-held. | Inspection plan exists but needs first-piece confirmation. |
+| Equipment and maintenance | Required device/work center is unavailable, under maintenance, or has active blocking alarm. | Device is available but has scheduled maintenance conflict. |
+| Barcode and label | Required barcode/label rule missing for traceable material, serial product, flow card, or receipt label. | Barcode rule exists but template has no printer mapping. |
+| Numbering | Required document number rule missing for work order, operation task, material request, report, defect, downtime, receipt request, handover, or traceability event. | Rule exists but prefix sequence is near configured threshold. |
+
+### Foundation Record Contract
+
+Every foundation resolver used by MES must return enough data for both execution decisions and user guidance. Do not return only `true`/`false`.
+
+| Field | Requirement |
+| --- | --- |
+| `sourceSystem` | One of `IAM`, `MasterData`, `ProductEngineering`, `WMS`, `Inventory`, `Quality`, `Maintenance`, `IndustrialTelemetry`, `BarcodeLabel`, or `MES`. |
+| `referenceType` | Stable type name such as `Plant`, `ProductionLine`, `WorkCenter`, `WorkCalendar`, `Shift`, `Team`, `PersonnelSkill`, `DeviceAsset`, `Sku`, `Uom`, `ProductionVersion`, `Mbom`, `Routing`, `InventoryLocation`, `InspectionPlan`, `BarcodeRule`, or `NumberingRule`. |
+| `referenceId` | Durable source-system ID; never use display text as the ID. |
+| `displayName` | Human-readable Chinese name when available; use source code as the fallback for records without a name. |
+| `status` | `Ready`, `Warning`, or `Blocked`; source-specific states must be normalized at the BusinessGateway/MES workbench boundary. |
+| `effectiveFromUtc` / `effectiveToUtc` | Required for production version, BOM/routing, calendar, shift, skill qualification, inspection plan, barcode rule, and numbering rule when the source has effectivity. |
+| `version` | Required for production version, MBOM, routing, barcode template, and inspection plan when the source has versions. |
+| `fixHint` | Short Chinese operator/planner guidance, for example `请先维护该产线的工作日历` or `请发布该物料的生产版本`。 |
+
+### Reason Code Baseline
+
+Use stable reason codes so pages, tests, and later mobile/PDA flows can reuse the same semantics:
+
+| Code | Severity | Meaning |
+| --- | --- | --- |
+| `MASTERDATA_HIERARCHY_MISSING` | Blocked | Site, plant, area, line, work center, or work station cannot be resolved. |
+| `MASTERDATA_REFERENCE_INACTIVE` | Blocked | A required MasterData record exists but is disabled or outside effectivity. |
+| `CALENDAR_SHIFT_MISSING` | Blocked | Planned execution time has no active work calendar or shift. |
+| `SHIFT_HANDOVER_REQUIRED` | Warning | Planned execution crosses a shift boundary and must create/consume handover context. |
+| `PERSONNEL_SKILL_MISSING` | Blocked | Assigned user/team lacks the required skill or qualification. |
+| `PERSONNEL_SKILL_EXPIRING` | Warning | Required skill is valid but expires within the configured warning window. |
+| `PRODUCTION_VERSION_MISSING` | Blocked | No released production version can be resolved for SKU, site/line, and planned date. |
+| `BOM_ROUTING_MISSING` | Blocked | Released production version has no usable MBOM, routing, or operation sequence. |
+| `MATERIAL_TRACEABILITY_MISMATCH` | Blocked | Required material traceability policy conflicts with SKU or barcode rules. |
+| `MATERIAL_NOT_AVAILABLE` | Blocked | Required material has no available inventory or staged supply route. |
+| `MATERIAL_PARTIAL_AVAILABLE` | Warning | Some required material can be issued but shortage remains. |
+| `QUALITY_PLAN_MISSING` | Blocked | Required inspection plan or quality standard cannot be resolved. |
+| `QUALITY_HOLD_ACTIVE` | Blocked | Related source batch, material, or product is under quality hold. |
+| `EQUIPMENT_UNAVAILABLE` | Blocked | Required work center/device is down, under maintenance, or blocked by active alarm. |
+| `EQUIPMENT_MAINTENANCE_CONFLICT` | Warning | Device is usable now but conflicts with scheduled maintenance. |
+| `BARCODE_RULE_MISSING` | Blocked | Required barcode or label rule cannot be resolved. |
+| `LABEL_TEMPLATE_PRINTER_MISSING` | Warning | Label rule exists but no printer/template mapping is configured. |
+| `NUMBERING_RULE_MISSING` | Blocked | MES cannot generate the required document number server-side. |
+| `NUMBERING_SEQUENCE_NEAR_LIMIT` | Warning | Number sequence is close to its configured limit. |
+
+### Source Boundary Rule
+
+The `/mes/foundation` page is a readiness and guidance surface, not a foundation-data maintenance module. It may show blocker cards and links to source pages when routes exist, but it must not create MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance, Telemetry, BarcodeLabel, or IAM records from inside MES. This keeps MES focused on execution and avoids duplicating master-data workflows.
+
+### Snapshot Rule
+
+MES must store immutable execution snapshots when a work order is released or an operation task is dispatched:
+
+1. MasterData snapshot: site/plant/line/work center/work station, shift/team, SKU/UOM, device static identity, resource capability, and personnel skill reference.
+2. ProductEngineering snapshot: `productionVersionId`, MBOM ID/version, routing ID/version, operation sequence, required resource capability, standard duration, and material demand summary.
+3. Material snapshot: required material, UOM, traceability policy, planned quantity, substitute policy, requested/staged/received quantities, and WMS/Inventory references.
+4. Quality snapshot: inspection requirement, first-piece/in-process/final inspection trigger, quality hold state, and related inspection/NCR references.
+5. Numbering/barcode snapshot: generated document IDs and barcode/label rule references used for the released execution object.
+
+Snapshots keep historical execution readable. They do not move source-of-truth ownership away from MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance, or BarcodeLabel.
+
 ## Verified Current Code Facts
 
 These facts were checked against the repository on 2026-05-26:
@@ -76,28 +170,30 @@ These facts were checked against the repository on 2026-05-26:
 
 ### In Scope
 
-1. Production cockpit for today's plan attainment, work order progress, material blockers, downtime, quality exceptions, and handover items.
-2. Production plan readiness, plan-to-work-order conversion, work order release, rush/insert handling, and release risk checks.
-3. Material readiness, shortage visibility, issue/staging request creation, line-side receipt confirmation, return/supplement request visibility, and material consumption evidence.
-4. Operation dispatching to shift, team, person, work center, and device; operation task start, pause, resume, complete, transfer, and hold.
-5. Production reporting with good quantity, scrap, rework, labor/machine time, material batch/serial evidence, and attachments.
-6. In-process quality and nonconformance entry points: first-piece/in-process/final inspection task visibility, defect registration, rework/scrap linkage, and Quality/NCR drill-down.
-7. Finished-goods receipt request creation and status visibility from production completion through WMS/Inventory receipt evidence.
-8. Downtime, equipment impact, maintenance request visibility, recovery confirmation, and dispatch blocking/warning on unavailable assets.
-9. Shift handover with unresolved production, material, quality, equipment, and receipt issues carried to the next shift.
-10. Work-order-level and batch/serial-level genealogy/traceability across plan, BOM/routing version, operation tasks, reports, material lots, quality, equipment, people, downtime, and receipt requests.
-11. BusinessGateway MES facade expansion for existing MES read/write service capabilities plus missing standard MES P0 contracts.
-12. Minimal cross-domain read/action facades where the MES page needs context:
+1. Production foundation readiness checks across MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, and numbering policy.
+2. Production cockpit for today's plan attainment, work order progress, material blockers, downtime, quality exceptions, and handover items.
+3. Production plan readiness, plan-to-work-order conversion, work order release, rush/insert handling, and release risk checks.
+4. Material readiness, shortage visibility, issue/staging request creation, line-side receipt confirmation, return/supplement request visibility, and material consumption evidence.
+5. Operation dispatching to shift, team, person, work center, and device; operation task start, pause, resume, complete, transfer, and hold.
+6. Production reporting with good quantity, scrap, rework, labor/machine time, material batch/serial evidence, and attachments.
+7. In-process quality and nonconformance entry points: first-piece/in-process/final inspection task visibility, defect registration, rework/scrap linkage, and Quality/NCR drill-down.
+8. Finished-goods receipt request creation and status visibility from production completion through WMS/Inventory receipt evidence.
+9. Downtime, equipment impact, maintenance request visibility, recovery confirmation, and dispatch blocking/warning on unavailable assets.
+10. Shift handover with unresolved production, material, quality, equipment, and receipt issues carried to the next shift.
+11. Work-order-level and batch/serial-level genealogy/traceability across plan, BOM/routing version, operation tasks, reports, material lots, quality, equipment, people, downtime, and receipt requests.
+12. BusinessGateway MES facade expansion for existing MES read/write service capabilities plus missing standard MES P0 contracts.
+13. Minimal cross-domain read/action facades where the MES page needs context:
    - ProductEngineering: production version, MBOM, routing release context.
    - DemandPlanning/ERP: production plan source, planned work order suggestion, sales/order priority context where already available.
    - MasterData: SKU, work center, production line, device asset labels.
    - Quality: inspection task, defect, NCR, rework/scrap disposition context related to work orders and operation reports.
    - WMS/Inventory: stock availability, issue/staging execution status, line-side receipt, finished-goods inbound and stock movement visibility.
    - Maintenance/IndustrialTelemetry: asset unavailable/restored, downtime, alarm, recovery, and capacity impact visibility.
+   - BarcodeLabel: barcode rule, label template, print batch, and scan record references needed for traceability.
    - ERP Finance: source-document drill-down for production cost evidence where an existing service surface already supports it.
-13. Business Console generated client refresh and stable exports.
-14. Desktop UI pages with Chinese visible copy.
-15. Focused unit, API contract, frontend, and e2e verification.
+14. Business Console generated client refresh and stable exports.
+15. Desktop UI pages with Chinese visible copy.
+16. Focused unit, API contract, frontend, and e2e verification.
 
 ### Out of Scope
 
@@ -116,6 +212,7 @@ These facts were checked against the repository on 2026-05-26:
 
 | PC MES need | Execution owner | External fact owner | BusinessGateway approach |
 | --- | --- | --- | --- |
+| Foundation readiness | MES workbench decision surface | MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM | Add a readiness endpoint that validates all required references and returns `Ready`/`Warning`/`Blocked` with reason codes. |
 | Production plan readiness | MES workbench decision surface | DemandPlanning/ERP source plans, ProductEngineering BOM/routing, Inventory availability, Maintenance capacity | Add aggregated readiness endpoint that returns risk reasons and allowed release actions without moving source facts into MES. |
 | Work order release and execution | MES | ProductEngineering, MasterData | Add work order detail/release endpoints with release snapshot of BOM/routing/version, work centers, and plan source. |
 | Material readiness and shortages | MES visible readiness result | ProductEngineering BOM, Inventory availability/reservation, WMS line-side status | Add material readiness endpoint keyed by plan/work order/operation; keep inventory quantities authoritative in Inventory/WMS. |
@@ -127,6 +224,8 @@ These facts were checked against the repository on 2026-05-26:
 | Downtime and equipment impact | MES execution impact | IndustrialTelemetry events and Maintenance work orders | Surface downtime list/create/recovery endpoints and downstream maintenance status. |
 | Shift handover | MES | Related contexts provide open issue status | Add handover summary/create/accept endpoints. |
 | Traceability | MES execution genealogy | ProductEngineering, Quality, WMS/Inventory, Maintenance provide linked facts | Add traceability query endpoints by work order, batch/serial, material lot, and defect ID. |
+| Barcode and labels | MES references rules and records scans | BarcodeLabel owns rule, template, print batch, scan record | Add rule resolution and label/scan references to material, report, receipt, and traceability DTOs. |
+| Numbering | MES owns MES document IDs | Shared numbering governance; service-local generator in first release | Add explicit number rule checks and generate IDs server-side for MES documents. |
 | Cost/source-document drill-down | ERP Finance | ERP Finance | Link to existing ERP Finance candidate/source-document surface only after route and permission are verified. |
 
 ## File Structure
@@ -135,6 +234,9 @@ Planned file responsibilities:
 
 | Path | Responsibility |
 | --- | --- |
+| `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/*` | Add or verify batch resolve/readiness endpoints for site, line, work center, calendar, shift, team, personnel skill, device asset, resource capability, SKU, UOM, and reference data. |
+| `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/*` | Add or verify production-version resolve endpoints that return released MBOM, routing, operation sequence, material demand, and resource capability references. |
+| `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Endpoints/*` | Add or verify barcode rule and label template resolution for work order, operation task, material lot, product serial, receipt, and traceability labels. |
 | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs` | Add missing MES read endpoints only when the MES service lacks the page-level query. |
 | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/...` | Query handlers for production readiness, work order detail, material readiness, dispatch task list, operation task list, WIP, production reports, downtime, handover, traceability, schedule result history, and any missing read model. |
 | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/...` | Commands for work order release, dispatch assignment, operation start/pause/resume/complete, material issue request intent, defect entry, downtime entry/recovery, finished-goods receipt request, and shift handover. |
@@ -145,7 +247,8 @@ Planned file responsibilities:
 | `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs` | Stable route and operationId tests. |
 | `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs` | Bearer, permission, context, and downstream proxy tests. |
 | `frontend/packages/api-client/src/business-console.ts` | Stable business-console exports after generated client refresh. |
-| `frontend/apps/business-console/src/composables/useBusinessMes.ts` | Query/mutation composition for MES PC pages. Split into `src/composables/mes/*.ts` only if the file grows beyond one focused workbench. |
+| `frontend/apps/business-console/src/composables/useBusinessMes.ts` | Query/mutation composition entry point for MES PC pages, delegating grouped hooks to `src/composables/mes/*.ts`. |
+| `frontend/apps/business-console/src/pages/mes/foundation.vue` | Foundation readiness page for master data, product engineering, supply, quality, equipment, barcode, and numbering blockers. |
 | `frontend/apps/business-console/src/pages/mes/index.vue` | Production cockpit: plan attainment, blockers, exceptions, handover, and traceability entry points. |
 | `frontend/apps/business-console/src/pages/mes/plans.vue` | Production plan readiness, plan-to-work-order conversion, release risk checks, and rush/insert impact. |
 | `frontend/apps/business-console/src/pages/mes/work-orders.vue` | Work order list, release state, readiness summary, and quick actions. |
@@ -172,6 +275,13 @@ Target BusinessGateway operation IDs:
 
 | Method | Route | Operation ID | Downstream owner |
 | --- | --- | --- | --- |
+| GET | `/api/business-console/v1/mes/foundation-readiness` | `getBusinessConsoleMesFoundationReadiness` | BusinessGateway aggregation over MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM |
+| GET | `/api/business-console/v1/mes/foundation-readiness/master-data` | `getBusinessConsoleMesMasterDataReadiness` | MasterData resolve/validate facade |
+| GET | `/api/business-console/v1/mes/foundation-readiness/product-engineering` | `getBusinessConsoleMesProductEngineeringReadiness` | ProductEngineering production-version resolve facade |
+| GET | `/api/business-console/v1/mes/foundation-readiness/supply` | `getBusinessConsoleMesSupplyReadiness` | WMS/Inventory availability and staging route facade |
+| GET | `/api/business-console/v1/mes/foundation-readiness/quality` | `getBusinessConsoleMesQualityReadiness` | Quality inspection/hold facade |
+| GET | `/api/business-console/v1/mes/foundation-readiness/equipment` | `getBusinessConsoleMesEquipmentReadiness` | MasterData, Maintenance, IndustrialTelemetry facade |
+| GET | `/api/business-console/v1/mes/foundation-readiness/barcode-numbering` | `getBusinessConsoleMesBarcodeNumberingReadiness` | BarcodeLabel plus MES numbering policy facade |
 | GET | `/api/business-console/v1/mes/overview` | `getBusinessConsoleMesOverview` | BusinessGateway aggregation over MES queries |
 | GET | `/api/business-console/v1/mes/production-plans` | `listBusinessConsoleMesProductionPlans` | DemandPlanning/ERP source plan via MES workbench facade |
 | GET | `/api/business-console/v1/mes/production-plans/{productionPlanId}/readiness` | `getBusinessConsoleMesProductionPlanReadiness` | MES aggregation over ProductEngineering, Inventory/WMS, Quality, Maintenance |
@@ -216,6 +326,125 @@ All target routes must keep the existing BusinessGateway pattern:
 3. Gateway forwards `tokenProvider.BearerToken` to business services.
 4. Business services stay protected by `InternalServiceAuthorizationPolicy`.
 5. Frontend consumes only `@nerv-iip/api-client` stable business-console exports.
+
+## Task 0: Production Foundation Readiness
+
+**Files:**
+- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
+- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
+- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs`
+- Review and modify when the endpoint is missing: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/*` for production foundation readiness.
+- Review and modify when the endpoint is missing: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/*` for production-version readiness.
+- Review and modify when the endpoint is missing: `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Endpoints/*` for barcode and label rule readiness.
+- Test: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
+- Test: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
+
+- [ ] **Step 1: Define readiness DTOs**
+
+Add Business Console DTOs with stable names and reason codes:
+
+```csharp
+public sealed record BusinessConsoleMesFoundationReadinessRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SiteCode,
+    string? LineCode,
+    string? WorkCenterCode,
+    string? SkuId,
+    string? ProductionVersionId,
+    DateTimeOffset? PlannedStartUtc,
+    DateTimeOffset? PlannedEndUtc);
+
+public sealed record BusinessConsoleMesFoundationReadinessResponse(
+    string Status,
+    IReadOnlyCollection<BusinessConsoleMesReadinessArea> Areas,
+    IReadOnlyCollection<BusinessConsoleMesReadinessIssue> BlockingIssues,
+    IReadOnlyCollection<BusinessConsoleMesReadinessIssue> WarningIssues);
+
+public sealed record BusinessConsoleMesReadinessArea(
+    string AreaCode,
+    string Status,
+    IReadOnlyCollection<BusinessConsoleMesReadinessIssue> Issues);
+
+public sealed record BusinessConsoleMesReadinessIssue(
+    string Code,
+    string Severity,
+    string Message,
+    string? SourceSystem,
+    string? ReferenceType,
+    string? ReferenceId,
+    string? ReferenceDisplayName,
+    DateTimeOffset? EffectiveFromUtc,
+    DateTimeOffset? EffectiveToUtc,
+    string? Version,
+    string? FixHint);
+```
+
+Use these area codes in the first release: `master-data`, `product-engineering`, `supply`, `quality`, `equipment`, `barcode-numbering`, and `iam-context`.
+Use these status values only: `Ready`, `Warning`, and `Blocked`.
+Use the reason codes from the Reason Code Baseline table; add a new code only with a gateway contract test and a page rendering assertion.
+
+- [ ] **Step 2: Write gateway tests for foundation readiness**
+
+Add tests proving `GET /api/business-console/v1/mes/foundation-readiness`:
+
+1. Requires authenticated Business Console user bearer.
+2. Calls IAM authorization with a MES read permission.
+3. Calls downstream read clients with internal service bearer token.
+4. Returns `Blocked` when any P0 area returns a blocking issue.
+5. Returns `Warning` when no blocker exists but at least one warning exists.
+6. Returns `Ready` when all areas are ready.
+7. Preserves source-system and reference IDs so users know which foundation record to fix.
+
+- [ ] **Step 3: Verify source-service resolver coverage**
+
+Check these source services before adding new endpoints:
+
+```powershell
+rg -n "Resolve|Validate|ProductionVersion|Barcode|Rule|WorkCalendar|Shift|PersonnelSkill|DeviceAsset|WorkCenter" backend/services/Business
+```
+
+Use existing resolver endpoints when they already return the Foundation Record Contract fields. When coverage is missing, add only these narrow read endpoints:
+
+| Service | Endpoint shape | Must answer |
+| --- | --- | --- |
+| MasterData | `POST /api/business/master-data/v1/readiness/production-foundation` | Hierarchy, work calendar, shift, team, personnel skill, SKU/UOM, work center, device asset, and resource capability readiness. |
+| ProductEngineering | `POST /api/business/product-engineering/v1/readiness/production-version` | Released production version, MBOM, routing, operation sequence, material demand, standard duration, and required resource capability readiness. |
+| BarcodeLabel | `POST /api/business/barcode-label/v1/readiness/rules` | Barcode rule, label template, printer mapping, and scan rule readiness for MES document/material/product/receipt/traceability use cases. |
+
+Do not add broad foundation-data maintenance screens or CRUD endpoints inside MES.
+
+- [ ] **Step 4: Add numbering readiness contract**
+
+For MES-owned documents, add server-side number rule checks before commands create records:
+
+| Document | Required prefix example | Rule owner |
+| --- | --- | --- |
+| Work order | `MO` | MES service-local policy |
+| Operation task | `OP` | MES service-local policy |
+| Material issue request | `MI` | MES service-local policy |
+| Production report | `PR` | MES service-local policy |
+| Defect record | `DF` | MES service-local policy |
+| Downtime event | `DT` | MES service-local policy |
+| Finished-goods receipt request | `FG` | MES service-local policy |
+| Shift handover | `SH` | MES service-local policy |
+
+The first implementation may keep the generator inside MES, but the rule shape must be explicit enough to move to a shared Numbering service later without changing Business Console contracts.
+
+- [ ] **Step 5: Run gateway focused tests**
+
+```powershell
+dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --no-restore
+```
+
+Expected after implementation: PASS.
+
+- [ ] **Step 6: Commit foundation readiness**
+
+```powershell
+git add backend/gateway/BusinessGateway backend/services/Business/MasterData backend/services/Business/ProductEngineering backend/services/Business/BarcodeLabel
+git commit -m "feat: add mes foundation readiness contracts"
+```
 
 ## Task 1: Contract Gap Map And First Failing Tests
 
@@ -455,8 +684,8 @@ git commit -m "feat: generate mes pc business console client"
 
 **Files:**
 - Modify: `frontend/apps/business-console/src/composables/useBusinessMes.ts`
-- Create if needed: `frontend/apps/business-console/src/composables/mes/useMesWorkbench.ts`
-- Create if needed: `frontend/apps/business-console/src/composables/mes/useMesReferenceLabels.ts`
+- Create: `frontend/apps/business-console/src/composables/mes/useMesWorkbench.ts`
+- Create: `frontend/apps/business-console/src/composables/mes/useMesReferenceLabels.ts`
 - Test: existing or new Vitest files under `frontend/apps/business-console/src/**/__tests__` or `frontend/apps/business-console/tests`
 
 - [ ] **Step 1: Add query wrappers**
@@ -464,23 +693,24 @@ git commit -m "feat: generate mes pc business console client"
 Expose composable functions for:
 
 1. `useMesOverview()`
-2. `useMesProductionPlans()`
-3. `useMesProductionPlanReadiness(productionPlanId)`
-4. `useMesWorkOrders()`
-5. `useMesWorkOrderDetail(workOrderId)`
-6. `useMesMaterialReadiness(workOrderId)`
-7. `useMesMaterialIssueRequests()`
-8. `useMesDispatchTasks()`
-9. `useMesOperationTasks()`
-10. `useMesWipSummary()`
-11. `useMesProductionReports()`
-12. `useMesQualityContext()`
-13. `useMesFinishedGoodsReceiptRequests()`
-14. `useMesDowntimeEvents()`
-15. `useMesShiftHandovers()`
-16. `useMesTraceability()`
-17. `useMesCapacityImpacts()`
-18. `useMesSchedules()`
+2. `useMesFoundationReadiness()`
+3. `useMesProductionPlans()`
+4. `useMesProductionPlanReadiness(productionPlanId)`
+5. `useMesWorkOrders()`
+6. `useMesWorkOrderDetail(workOrderId)`
+7. `useMesMaterialReadiness(workOrderId)`
+8. `useMesMaterialIssueRequests()`
+9. `useMesDispatchTasks()`
+10. `useMesOperationTasks()`
+11. `useMesWipSummary()`
+12. `useMesProductionReports()`
+13. `useMesQualityContext()`
+14. `useMesFinishedGoodsReceiptRequests()`
+15. `useMesDowntimeEvents()`
+16. `useMesShiftHandovers()`
+17. `useMesTraceability()`
+18. `useMesCapacityImpacts()`
+19. `useMesSchedules()`
 
 - [ ] **Step 2: Replace hardcoded context source**
 
@@ -509,6 +739,7 @@ git commit -m "feat: add mes pc workbench composables"
 
 **Files:**
 - Create: `frontend/apps/business-console/src/pages/mes/index.vue`
+- Create: `frontend/apps/business-console/src/pages/mes/foundation.vue`
 - Create: `frontend/apps/business-console/src/pages/mes/plans.vue`
 - Modify: `frontend/apps/business-console/src/pages/mes/work-orders.vue`
 - Create: `frontend/apps/business-console/src/pages/mes/work-orders/[workOrderId].vue`
@@ -523,7 +754,7 @@ git commit -m "feat: add mes pc workbench composables"
 - Create: `frontend/apps/business-console/src/pages/mes/handovers.vue`
 - Create: `frontend/apps/business-console/src/pages/mes/traceability.vue`
 - Create: `frontend/apps/business-console/src/pages/mes/capacity.vue`
-- Modify if needed: `frontend/apps/business-console/src/layouts/BusinessLayout.vue`
+- Modify: `frontend/apps/business-console/src/layouts/BusinessLayout.vue`
 - Test: `frontend/apps/business-console/tests/e2e/business-console.spec.ts`
 
 - [ ] **Step 1: Build the desktop MES navigation**
@@ -533,6 +764,7 @@ Add the MES pages to the Business Console navigation with Chinese labels:
 | Route | Label |
 | --- | --- |
 | `/mes` | `生产驾驶舱` |
+| `/mes/foundation` | `基础准备` |
 | `/mes/plans` | `生产计划` |
 | `/mes/work-orders` | `计划与工单` |
 | `/mes/materials` | `齐套与物料` |
@@ -728,25 +960,30 @@ If Docker-dependent gates are not run, state the Docker blocker explicitly in th
 
 ## Rollout Order
 
-1. Merge API/BFF contract work before page expansion.
-2. Implement the standard P0 MES service surface in this order: plan readiness and work order release, material readiness/request, dispatch and operation state, report/quality/downtime, receipt/handover/traceability.
-3. Merge generated client and composables immediately after contracts.
-4. Merge PC MES pages with Chinese copy and role-oriented navigation.
-5. Add minimal cross-domain context as a follow-up if it increases review size too much, but do not drop material readiness, dispatch, downtime, handover, or traceability from the target model.
-6. Start WMS workbench, DemandPlanning/MRP, ERP drill-down, Quality deeper workflow, and Maintenance/Telemetry PC pages after MES desktop flow is usable.
-7. Start PDA/mobile only after MES PC contracts and primary flows stop changing.
+1. Merge foundation readiness contracts first: MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM, and numbering checks.
+2. Merge API/BFF contract work before page expansion.
+3. Implement the standard P0 MES service surface in this order: plan readiness and work order release, material readiness/request, dispatch and operation state, report/quality/downtime, receipt/handover/traceability.
+4. Merge generated client and composables immediately after contracts.
+5. Merge PC MES pages with Chinese copy and role-oriented navigation.
+6. Add minimal cross-domain context as a follow-up if it increases review size too much, but do not drop foundation readiness, material readiness, dispatch, downtime, handover, or traceability from the target model.
+7. Start WMS workbench, DemandPlanning/MRP, ERP drill-down, Quality deeper workflow, and Maintenance/Telemetry PC pages after MES desktop flow is usable.
+8. Start PDA/mobile only after MES PC contracts and primary flows stop changing.
 
 ## Acceptance Checklist
 
 - [ ] BusinessGateway exposes the MES PC workbench routes in the Contract Targets table.
 - [ ] BusinessGateway tests cover auth, permission, context propagation, internal bearer forwarding, and downstream denial behavior.
+- [ ] Foundation readiness returns `Ready`, `Warning`, or `Blocked` across MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM, and numbering areas.
+- [ ] Work order release stores snapshots for master data, production version, material readiness, quality requirement, equipment/person assignment, barcode rule, and generated document IDs.
 - [ ] MES service endpoints exist for P0 execution facts: plan readiness, work order release, material readiness/request intent, dispatch, operation state, WIP, report, defect context, downtime, receipt request, shift handover, and traceability.
 - [ ] Generated business-console client exports stable MES workbench functions and types.
-- [ ] PC MES routes exist under `frontend/apps/business-console/src/pages/mes` with production cockpit, production plan, material readiness, dispatch, operation execution, report, quality, receipt, downtime, handover, and traceability pages.
+- [ ] PC MES routes exist under `frontend/apps/business-console/src/pages/mes` with foundation readiness, production cockpit, production plan, material readiness, dispatch, operation execution, report, quality, receipt, downtime, handover, and traceability pages.
 - [ ] User-visible MES page copy is Chinese in the first implementation.
 - [ ] No page directly calls business service URLs or generated deep imports.
 - [ ] MES can see and trigger material issue/staging flow, but WMS/Inventory remain the source of warehouse execution and inventory balances.
 - [ ] MES can see quality, downtime, and maintenance context, but Quality and Maintenance remain their own source-of-truth services.
+- [ ] MES can consume barcode and label rules, but BarcodeLabel remains the source of templates, print batches, and scan records.
+- [ ] MES document IDs are generated server-side using explicit numbering rules; users are not required to manually invent durable IDs.
 - [ ] Traceability can start from work order, batch/serial, material lot, or defect and return the linked execution evidence.
 - [ ] `scripts/verify-business-console-mes-pc-workbench.ps1` passes.
 - [ ] `docs/architecture/frontend-structure.md` and `docs/architecture/implementation-readiness.md` are updated after implementation evidence exists.
