@@ -35,7 +35,7 @@ builder.Services.AddMesPostgreSqlPersistence(connectionString, builder.Environme
 builder.Services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
 builder.Services.AddSingleton<RuleScheduler>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
+builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
 builder.Services.AddSingleton(new MesRescheduleOptions
 {
     AutoRescheduleOnAssetUnavailable = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetUnavailable", true),

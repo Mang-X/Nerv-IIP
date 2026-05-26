@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure.IntegrationEvents;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
@@ -23,6 +24,7 @@ public sealed partial class ApplicationDbContext(DbContextOptions<ApplicationDbC
     {
         modelBuilder.HasDefaultSchema("notification");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureIntegrationEventDeadLetters();
         ConfigureCapStorage(modelBuilder);
         base.OnModelCreating(modelBuilder);
     }
