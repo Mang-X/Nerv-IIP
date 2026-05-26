@@ -18,11 +18,6 @@ import {
   FieldGroup,
   FieldLabel,
   Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Spinner,
   Table,
   TableBody,
@@ -38,7 +33,7 @@ import { computed, reactive, shallowRef } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: 'routes.workOrders',
+    title: '工单执行',
   },
 })
 
@@ -159,7 +154,7 @@ async function submitRushWorkOrder() {
   }
 
   const response = await createRushWorkOrder(body)
-  rushSuccess.value = `Rush order ${response?.data?.workOrderId ?? body.workOrderId} submitted.`
+  rushSuccess.value = `急单 ${response?.data?.workOrderId ?? body.workOrderId} 已提交。`
   lastRushAffectedWorkOrders.value = response?.data?.affectedWorkOrderIds ?? []
   lastRushScheduleVersion.value = response?.data?.schedule?.scheduleVersion
 }
@@ -179,7 +174,7 @@ async function submitProductionReport() {
   }
 
   const response = await recordProductionReport(body)
-  reportSuccess.value = `Production report ${response?.data?.productionReportId ?? body.workOrderId} submitted.`
+  reportSuccess.value = `生产报工 ${response?.data?.productionReportId ?? body.workOrderId} 已提交。`
 }
 
 function optionalText(value: string) {
@@ -208,7 +203,7 @@ function toLocalDateTimeInput(date: Date) {
 }
 
 function formatDateTime(value?: string | null) {
-  if (!value) return 'n/a'
+  if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
@@ -224,7 +219,7 @@ function orderKey(order: BusinessConsoleMesWorkOrderItem, index: number) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? 'Request failed.' : ''
+  return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
 
 function isNonEmpty(value: string) {
@@ -237,13 +232,13 @@ function isNonEmpty(value: string) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="Work orders"
-        summary="List work orders, create rush work orders, and record production reports."
+        title="工单执行"
+        summary="查看生产工单、创建急单，并对一线工序进行生产报工。"
       >
         <template #actions>
           <Button size="sm" type="button" variant="outline" :disabled="workOrdersPending" @click="refreshWorkOrders">
             <RefreshCwIcon data-icon="inline-start" />
-            Refresh
+            刷新
           </Button>
         </template>
       </BusinessPageHeader>
@@ -251,19 +246,19 @@ function isNonEmpty(value: string) {
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
           <Field>
-            <FieldLabel for="work-order-org">Organization</FieldLabel>
+            <FieldLabel for="work-order-org">组织</FieldLabel>
             <Input id="work-order-org" v-model="filters.organizationId" @change="syncContextFromFilters" />
           </Field>
           <Field>
-            <FieldLabel for="work-order-env">Environment</FieldLabel>
+            <FieldLabel for="work-order-env">环境</FieldLabel>
             <Input id="work-order-env" v-model="filters.environmentId" @change="syncContextFromFilters" />
           </Field>
           <Field>
-            <FieldLabel for="work-order-status">Status</FieldLabel>
-            <Input id="work-order-status" v-model="filters.status" placeholder="optional" />
+            <FieldLabel for="work-order-status">状态</FieldLabel>
+            <Input id="work-order-status" v-model="filters.status" placeholder="可选" />
           </Field>
           <Field>
-            <FieldLabel for="work-order-take">Take</FieldLabel>
+            <FieldLabel for="work-order-take">数量</FieldLabel>
             <Input id="work-order-take" v-model.number="filters.take" inputmode="numeric" type="number" />
           </Field>
         </FieldGroup>
@@ -271,38 +266,43 @@ function isNonEmpty(value: string) {
       </div>
 
       <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="Work orders" :value="workOrders.length" detail="Returned by BFF" />
-        <BusinessMetricCell label="Open orders" :value="openOrderCount" detail="Non-closed status" />
-        <BusinessMetricCell label="Operations" :value="operationCount" detail="Visible task rows" />
+        <BusinessMetricCell label="工单数" :value="workOrders.length" detail="当前筛选结果" />
+        <BusinessMetricCell label="未关闭工单" :value="openOrderCount" detail="非 Closed 状态" />
+        <BusinessMetricCell label="工序任务" :value="operationCount" detail="工单下可见任务" />
       </div>
 
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">Work order list</h2>
-          <span class="text-sm text-muted-foreground">{{ workOrders.length }} returned</span>
+          <h2 class="text-sm font-semibold text-foreground">工单列表</h2>
+          <span class="text-sm text-muted-foreground">返回 {{ workOrders.length }} 条</span>
         </div>
         <div class="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Work order</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead class="text-right">Quantity</TableHead>
-                <TableHead>Due</TableHead>
-                <TableHead>Operations</TableHead>
-                <TableHead class="text-right">Report</TableHead>
+                <TableHead>工单</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead class="text-right">数量</TableHead>
+                <TableHead>交期</TableHead>
+                <TableHead>工序</TableHead>
+                <TableHead class="text-right">报工</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               <TableRow v-for="(order, index) in workOrders" :key="orderKey(order, index)">
                 <TableCell>
                   <div class="flex flex-col gap-0.5">
-                    <span class="font-medium">{{ order.workOrderId ?? 'n/a' }}</span>
-                    <span class="text-xs text-muted-foreground">{{ order.skuId ?? 'No SKU' }}</span>
+                    <RouterLink
+                      class="font-medium text-primary underline-offset-4 hover:underline"
+                      :to="{ path: `/mes/work-order-detail/${order.workOrderId}` }"
+                    >
+                      {{ order.workOrderId ?? '无编号' }}
+                    </RouterLink>
+                    <span class="text-xs text-muted-foreground">{{ order.skuId ?? '无 SKU' }}</span>
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{{ order.status ?? 'unknown' }}</Badge>
+                  <Badge variant="secondary">{{ order.status ?? '未知' }}</Badge>
                 </TableCell>
                 <TableCell class="text-right tabular-nums">{{ formatQuantity(order.quantity) }}</TableCell>
                 <TableCell>{{ formatDateTime(order.dueUtc) }}</TableCell>
@@ -313,25 +313,25 @@ function isNonEmpty(value: string) {
                       :key="task.operationTaskId ?? `${order.workOrderId}-${task.operationSequence}`"
                       class="text-xs text-muted-foreground"
                     >
-                      {{ task.operationSequence ?? 'n/a' }} /
-                      {{ task.workCenterId ?? 'n/a' }} /
-                      {{ task.status ?? 'unknown' }}
+                      {{ task.operationSequence ?? '无' }} /
+                      {{ task.workCenterId ?? '无' }} /
+                      {{ task.status ?? '未知' }}
                     </span>
                     <span v-if="!(order.operationTasks?.length)" class="text-xs text-muted-foreground">
-                      No task rows
+                      暂无工序任务
                     </span>
                   </div>
                 </TableCell>
                 <TableCell class="text-right">
                   <Button size="sm" variant="outline" type="button" @click="useWorkOrder(order)">
-                    Use
+                    使用
                   </Button>
                 </TableCell>
               </TableRow>
               <TableEmpty v-if="!workOrders.length && !workOrdersPending" :colspan="6">
-                No work orders returned.
+                暂无工单。
               </TableEmpty>
-              <TableEmpty v-if="workOrdersPending" :colspan="6">Loading work orders...</TableEmpty>
+              <TableEmpty v-if="workOrdersPending" :colspan="6">正在加载工单...</TableEmpty>
             </TableBody>
           </Table>
         </div>
@@ -340,65 +340,65 @@ function isNonEmpty(value: string) {
       <div class="grid gap-4 xl:grid-cols-2">
         <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitRushWorkOrder">
           <div>
-            <p class="text-xs font-bold uppercase text-primary">Rush</p>
-            <h2 class="text-base font-semibold text-foreground">Create rush work order</h2>
+            <p class="text-xs font-bold uppercase text-primary">急单</p>
+            <h2 class="text-base font-semibold text-foreground">创建急单</h2>
           </div>
           <BusinessFormStatus :error="rushErrorMessage" :success="rushSuccess" />
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
-              <FieldLabel for="rush-org">Organization</FieldLabel>
+              <FieldLabel for="rush-org">组织</FieldLabel>
               <Input id="rush-org" v-model="rushForm.organizationId" required />
             </Field>
             <Field>
-              <FieldLabel for="rush-env">Environment</FieldLabel>
+              <FieldLabel for="rush-env">环境</FieldLabel>
               <Input id="rush-env" v-model="rushForm.environmentId" required />
             </Field>
             <Field>
-              <FieldLabel for="rush-work-order">Work order ID</FieldLabel>
+              <FieldLabel for="rush-work-order">工单号</FieldLabel>
               <Input id="rush-work-order" v-model="rushForm.workOrderId" required />
             </Field>
             <Field>
-              <FieldLabel for="rush-sku">SKU ID</FieldLabel>
+              <FieldLabel for="rush-sku">SKU</FieldLabel>
               <Input id="rush-sku" v-model="rushForm.skuId" required />
             </Field>
             <Field>
-              <FieldLabel for="rush-version">Production version</FieldLabel>
+              <FieldLabel for="rush-version">生产版本</FieldLabel>
               <Input id="rush-version" v-model="rushForm.productionVersionId" />
             </Field>
             <Field>
-              <FieldLabel for="rush-quantity">Quantity</FieldLabel>
+              <FieldLabel for="rush-quantity">数量</FieldLabel>
               <Input id="rush-quantity" v-model="rushForm.quantity" inputmode="decimal" required type="number" />
             </Field>
             <Field>
-              <FieldLabel for="rush-due">Due</FieldLabel>
+              <FieldLabel for="rush-due">交期</FieldLabel>
               <Input id="rush-due" v-model="rushForm.dueUtc" required type="datetime-local" />
             </Field>
             <Field>
-              <FieldLabel for="rush-work-center">Work center</FieldLabel>
+              <FieldLabel for="rush-work-center">工作中心</FieldLabel>
               <Input id="rush-work-center" v-model="rushForm.workCenterId" required />
             </Field>
             <Field>
-              <FieldLabel for="rush-operation-task">Operation task</FieldLabel>
+              <FieldLabel for="rush-operation-task">工序任务</FieldLabel>
               <Input id="rush-operation-task" v-model="rushForm.operationTaskId" />
             </Field>
             <Field>
-              <FieldLabel for="rush-operation-sequence">Operation sequence</FieldLabel>
+              <FieldLabel for="rush-operation-sequence">工序序号</FieldLabel>
               <Input id="rush-operation-sequence" v-model="rushForm.operationSequence" inputmode="numeric" type="number" />
             </Field>
             <Field>
-              <FieldLabel for="rush-duration">Duration minutes</FieldLabel>
+              <FieldLabel for="rush-duration">工时分钟</FieldLabel>
               <Input id="rush-duration" v-model="rushForm.durationMinutes" inputmode="numeric" required type="number" />
             </Field>
           </FieldGroup>
 
           <div v-if="lastRushScheduleVersion || lastRushAffectedWorkOrders.length" class="grid gap-2 rounded-lg border p-3">
-            <p class="text-sm font-semibold text-foreground">Generated schedule visibility</p>
+            <p class="text-sm font-semibold text-foreground">排程结果</p>
             <p v-if="lastRushScheduleVersion" class="text-sm text-muted-foreground">
-              Schedule version {{ lastRushScheduleVersion }}
+              排程版本 {{ lastRushScheduleVersion }}
             </p>
             <p v-if="lastRushAffectedWorkOrders.length" class="text-sm text-muted-foreground">
-              Affected work orders: {{ lastRushAffectedWorkOrders.join(', ') }}
+              受影响工单：{{ lastRushAffectedWorkOrders.join(', ') }}
             </p>
           </div>
 
@@ -406,50 +406,50 @@ function isNonEmpty(value: string) {
             <Button type="submit" :disabled="createRushWorkOrderPending || !canCreateRush">
               <Spinner v-if="createRushWorkOrderPending" data-icon="inline-start" />
               <FactoryIcon v-else data-icon="inline-start" />
-              Create rush order
+              创建急单
             </Button>
           </div>
         </form>
 
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitProductionReport">
           <div>
-            <p class="text-xs font-bold uppercase text-primary">Report</p>
-            <h2 class="text-base font-semibold text-foreground">Record production report</h2>
+            <p class="text-xs font-bold uppercase text-primary">报工</p>
+            <h2 class="text-base font-semibold text-foreground">生产报工</h2>
           </div>
           <BusinessFormStatus :error="reportErrorMessage" :success="reportSuccess" />
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
-              <FieldLabel for="report-org">Organization</FieldLabel>
+              <FieldLabel for="report-org">组织</FieldLabel>
               <Input id="report-org" v-model="reportForm.organizationId" required />
             </Field>
             <Field>
-              <FieldLabel for="report-env">Environment</FieldLabel>
+              <FieldLabel for="report-env">环境</FieldLabel>
               <Input id="report-env" v-model="reportForm.environmentId" required />
             </Field>
             <Field>
-              <FieldLabel for="report-work-order">Work order ID</FieldLabel>
+              <FieldLabel for="report-work-order">工单号</FieldLabel>
               <Input id="report-work-order" v-model="reportForm.workOrderId" required />
             </Field>
             <Field>
-              <FieldLabel for="report-operation-task">Operation task ID</FieldLabel>
+              <FieldLabel for="report-operation-task">工序任务</FieldLabel>
               <Input id="report-operation-task" v-model="reportForm.operationTaskId" required />
             </Field>
             <Field>
-              <FieldLabel for="report-good">Good quantity</FieldLabel>
+              <FieldLabel for="report-good">良品数</FieldLabel>
               <Input id="report-good" v-model="reportForm.goodQuantity" inputmode="decimal" min="0" required type="number" />
             </Field>
             <Field>
-              <FieldLabel for="report-scrap">Scrap quantity</FieldLabel>
+              <FieldLabel for="report-scrap">报废数</FieldLabel>
               <Input id="report-scrap" v-model="reportForm.scrapQuantity" inputmode="decimal" min="0" required type="number" />
-              <FieldDescription>Good and scrap must be non-negative, with a total greater than zero.</FieldDescription>
+              <FieldDescription>良品和报废必须为非负数，合计必须大于 0。</FieldDescription>
             </Field>
             <Field>
-              <FieldLabel for="report-time">Reported at</FieldLabel>
+              <FieldLabel for="report-time">报工时间</FieldLabel>
               <Input id="report-time" v-model="reportForm.reportedAtUtc" required type="datetime-local" />
             </Field>
             <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
-              <FieldLabel for="report-complete">Completes operation</FieldLabel>
+              <FieldLabel for="report-complete">完成当前工序</FieldLabel>
               <Checkbox id="report-complete" v-model:checked="reportForm.completesOperation" />
             </Field>
           </FieldGroup>
@@ -458,7 +458,7 @@ function isNonEmpty(value: string) {
             <Button type="submit" :disabled="recordProductionReportPending || !canRecordReport">
               <Spinner v-if="recordProductionReportPending" data-icon="inline-start" />
               <ClipboardCheckIcon v-else data-icon="inline-start" />
-              Record report
+              提交报工
             </Button>
           </div>
         </form>

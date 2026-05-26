@@ -53,31 +53,38 @@ describe('BusinessLayout', () => {
     })
 
     const navItems = wrapper.getComponent(AppShellStub).props('navItems') as Record<string, unknown>[]
-    expect(wrapper.getComponent(AppShellStub).props('title')).toBe('Nerv-IIP Business')
-    expect(wrapper.getComponent(AppShellStub).props('navLabel')).toBe('Business')
+    expect(wrapper.getComponent(AppShellStub).props('title')).toBe('Nerv-IIP 业务控制台')
+    expect(wrapper.getComponent(AppShellStub).props('navLabel')).toBe('业务模块')
     expect(navItems).toMatchObject([
-      { title: 'MasterData', items: [{ title: 'SKUs', to: { path: '/master-data/skus' } }] },
+      { title: '主数据', items: [{ title: 'SKU 维护', to: { path: '/master-data/skus' } }] },
       {
-        title: 'Inventory',
+        title: '库存',
         isActive: true,
         items: [
-          { title: 'Availability', to: { path: '/inventory/availability' } },
-          { title: 'Movements', to: { path: '/inventory/movements' } },
-          { title: 'Counts', to: { path: '/inventory/counts' } },
+          { title: '库存可用量', to: { path: '/inventory/availability' } },
+          { title: '库存移动', to: { path: '/inventory/movements' } },
+          { title: '库存盘点', to: { path: '/inventory/counts' } },
         ],
       },
       {
-        title: 'Quality',
+        title: '质量',
         items: [
-          { title: 'Inspections', to: { path: '/quality/inspections' } },
-          { title: 'NCRs', to: { path: '/quality/ncrs' } },
+          { title: '检验记录', to: { path: '/quality/inspections' } },
+          { title: '不合格品处理', to: { path: '/quality/ncrs' } },
         ],
       },
       {
         title: 'MES',
         items: [
-          { title: 'Work orders', to: { path: '/mes/work-orders' } },
-          { title: 'Schedules', to: { path: '/mes/schedules' } },
+          { title: 'MES 总览', to: { path: '/mes' } },
+          { title: '基础就绪', to: { path: '/mes/foundation' } },
+          { title: '工单执行', to: { path: '/mes/work-orders' } },
+          { title: '工序任务', to: { path: '/mes/operation-tasks' } },
+          { title: '在制状态', to: { path: '/mes/wip' } },
+          { title: '生产报工', to: { path: '/mes/production-reports' } },
+          { title: '完工入库', to: { path: '/mes/receipts' } },
+          { title: '产能影响', to: { path: '/mes/capacity' } },
+          { title: '规则排程', to: { path: '/mes/schedules' } },
         ],
       },
     ])
@@ -104,7 +111,7 @@ describe('BusinessLayout', () => {
     })
 
     expect(wrapper.getComponent(AppShellStub).props('user')).toMatchObject({
-      name: 'Authenticated user',
+      name: '已登录用户',
     })
   })
 })

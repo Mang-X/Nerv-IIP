@@ -1,26 +1,30 @@
 <script setup lang="ts">
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { Badge } from '@nerv-iip/ui'
-import { useI18n } from 'vue-i18n'
 
 definePage({
   meta: {
     requiresAuth: true,
-    title: 'routes.dashboard',
+    title: '业务工作台',
   },
 })
 
-const { t } = useI18n()
-
 const mvpPages = [
-  { path: '/master-data/skus', domain: 'MasterData', labelKey: 'nav.skus' },
-  { path: '/inventory/availability', domain: 'Inventory', labelKey: 'nav.availability' },
-  { path: '/inventory/movements', domain: 'Inventory', labelKey: 'nav.movements' },
-  { path: '/inventory/counts', domain: 'Inventory', labelKey: 'nav.counts' },
-  { path: '/quality/inspections', domain: 'Quality', labelKey: 'nav.inspections' },
-  { path: '/quality/ncrs', domain: 'Quality', labelKey: 'nav.ncrs' },
-  { path: '/mes/work-orders', domain: 'MES', labelKey: 'nav.workOrders' },
-  { path: '/mes/schedules', domain: 'MES', labelKey: 'nav.schedules' },
+  { path: '/master-data/skus', domain: '主数据', label: 'SKU 维护' },
+  { path: '/inventory/availability', domain: '库存', label: '库存可用量' },
+  { path: '/inventory/movements', domain: '库存', label: '库存移动' },
+  { path: '/inventory/counts', domain: '库存', label: '库存盘点' },
+  { path: '/quality/inspections', domain: '质量', label: '检验记录' },
+  { path: '/quality/ncrs', domain: '质量', label: '不合格品处理' },
+  { path: '/mes', domain: 'MES', label: 'MES 总览' },
+  { path: '/mes/foundation', domain: 'MES', label: '基础就绪' },
+  { path: '/mes/work-orders', domain: 'MES', label: '工单执行' },
+  { path: '/mes/operation-tasks', domain: 'MES', label: '工序任务' },
+  { path: '/mes/wip', domain: 'MES', label: '在制状态' },
+  { path: '/mes/production-reports', domain: 'MES', label: '生产报工' },
+  { path: '/mes/receipts', domain: 'MES', label: '完工入库' },
+  { path: '/mes/capacity', domain: 'MES', label: '产能影响' },
+  { path: '/mes/schedules', domain: 'MES', label: '规则排程' },
 ] as const
 </script>
 
@@ -29,13 +33,13 @@ const mvpPages = [
     <section class="grid gap-4">
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p class="text-xs font-bold uppercase text-primary">{{ t('app.tagline') }}</p>
-          <h1 class="text-xl font-semibold text-foreground">{{ t('dashboard.title') }}</h1>
+          <p class="text-xs font-bold uppercase text-primary">业务控制台</p>
+          <h1 class="text-xl font-semibold text-foreground">业务工作台</h1>
           <p class="mt-1 max-w-3xl text-sm text-muted-foreground">
-            {{ t('dashboard.summary') }}
+            面向主数据、库存、质量和 MES 的 PC 操作入口。
           </p>
         </div>
-        <Badge variant="secondary">{{ t('dashboard.status') }}</Badge>
+        <Badge variant="secondary">MVP 已接入</Badge>
       </div>
 
       <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
@@ -46,7 +50,7 @@ const mvpPages = [
           :to="page.path"
         >
           <span class="block text-xs font-bold uppercase text-muted-foreground">{{ page.domain }}</span>
-          <span class="mt-1 block font-semibold text-foreground">{{ t(page.labelKey) }}</span>
+          <span class="mt-1 block font-semibold text-foreground">{{ page.label }}</span>
         </RouterLink>
       </div>
     </section>

@@ -9,8 +9,18 @@ import {
   submitConsoleNotificationIntentMutationOptions,
 } from './console'
 import {
+  createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleSkuMutationOptions,
   getBusinessConsoleInventoryAvailabilityQueryOptions,
+  getBusinessConsoleMesFoundationReadinessQueryOptions,
+  getBusinessConsoleMesMaterialReadinessQueryOptions,
+  getBusinessConsoleMesOverviewQueryOptions,
+  getBusinessConsoleMesWipSummaryQueryOptions,
+  getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  listBusinessConsoleMesCapacityImpactsQueryOptions,
+  listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
+  listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
   listBusinessConsoleSkusQueryOptions,
@@ -80,6 +90,16 @@ describe('generated API client contract', () => {
     expect(getBusinessConsoleInventoryAvailabilityQueryOptions).toBeTypeOf('function')
     expect(postBusinessConsoleInventoryMovementMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleQualityNcrsQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesFoundationReadinessQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesOverviewQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesWorkOrdersQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesMaterialReadinessQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesWipSummaryQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesProductionReportsQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toBeTypeOf('function')
+    expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesCapacityImpactsQueryOptions).toBeTypeOf('function')
   })
 })

@@ -286,3 +286,349 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     DateTimeOffset ReportedAtUtc);
 
 public sealed record BusinessConsoleRecordProductionReportResponse(string ProductionReportId);
+
+public sealed record BusinessConsoleMesContextRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleMesFoundationReadinessRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SiteCode,
+    string? LineCode,
+    string? WorkCenterCode,
+    string? SkuId,
+    string? ProductionVersionId,
+    DateTimeOffset? PlannedStartUtc,
+    DateTimeOffset? PlannedEndUtc);
+
+public sealed record BusinessConsoleMesFoundationReadinessResponse(
+    string Status,
+    IReadOnlyCollection<BusinessConsoleMesReadinessArea> Areas,
+    IReadOnlyCollection<BusinessConsoleMesReadinessIssue> BlockingIssues,
+    IReadOnlyCollection<BusinessConsoleMesReadinessIssue> WarningIssues);
+
+public sealed record BusinessConsoleMesReadinessArea(
+    string AreaCode,
+    string Status,
+    IReadOnlyCollection<BusinessConsoleMesReadinessIssue> Issues);
+
+public sealed record BusinessConsoleMesReadinessIssue(
+    string Code,
+    string Severity,
+    string Message,
+    string? SourceSystem,
+    string? ReferenceType,
+    string? ReferenceId,
+    string? ReferenceDisplayName,
+    DateTimeOffset? EffectiveFromUtc,
+    DateTimeOffset? EffectiveToUtc,
+    string? Version,
+    string? FixHint);
+
+public sealed record BusinessConsoleMesOverviewResponse(
+    IReadOnlyCollection<BusinessConsoleMesCockpitCount> Counts,
+    IReadOnlyCollection<BusinessConsoleMesBlockerSummary> Blockers,
+    IReadOnlyCollection<BusinessConsoleMesPendingWorkItem> PendingWork);
+
+public sealed record BusinessConsoleMesCockpitCount(string Key, int Count, string Status);
+
+public sealed record BusinessConsoleMesBlockerSummary(string AreaCode, string Code, string Message, int Count);
+
+public sealed record BusinessConsoleMesPendingWorkItem(string RoleCode, string WorkType, int Count, string? RouteHint);
+
+public sealed record BusinessConsoleMesProductionPlanListResponse(IReadOnlyCollection<BusinessConsoleMesProductionPlanRow> Items);
+
+public sealed record BusinessConsoleMesProductionPlanRow(
+    string ProductionPlanId,
+    string SourceSystem,
+    string SourceDocumentId,
+    string SkuId,
+    decimal PlannedQuantity,
+    string ReadinessStatus,
+    IReadOnlyCollection<string> BlockingReasons,
+    DateTimeOffset? PlannedStartUtc,
+    DateTimeOffset? PlannedEndUtc);
+
+public sealed record BusinessConsoleMesProductionPlanReadinessRequest(
+    [property: RouteParam] string ProductionPlanId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesConvertPlanToWorkOrderRequest(
+    [property: RouteParam] string ProductionPlanId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string? WorkOrderId,
+    string? WorkCenterId,
+    DateTimeOffset? DueUtc,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesWorkOrderDetailRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesWorkOrderDetailResponse(
+    string WorkOrderId,
+    string SkuId,
+    string? ProductionVersionId,
+    decimal Quantity,
+    string Status,
+    string ReadinessStatus,
+    IReadOnlyCollection<string> BlockingReasons,
+    IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> OperationTasks);
+
+public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    bool ConfirmWarnings,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesMaterialReadinessRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesMaterialReadinessResponse(
+    string WorkOrderId,
+    string ReadinessStatus,
+    IReadOnlyCollection<string> BlockingReasons,
+    IReadOnlyCollection<BusinessConsoleMesMaterialReadinessRow> Items);
+
+public sealed record BusinessConsoleMesMaterialReadinessRow(
+    string MaterialId,
+    string? MaterialLotId,
+    decimal RequiredQuantity,
+    decimal AvailableQuantity,
+    decimal RequestedQuantity,
+    decimal StagedQuantity,
+    decimal ReceivedQuantity,
+    decimal ShortageQuantity,
+    string Status);
+
+public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string? OperationTaskId,
+    IReadOnlyCollection<string>? MaterialIds,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesMaterialIssueRequestListResponse(IReadOnlyCollection<BusinessConsoleMesMaterialIssueRequestRow> Items);
+
+public sealed record BusinessConsoleMesMaterialIssueRequestRow(
+    string RequestId,
+    string WorkOrderId,
+    string Status,
+    string? WmsRequestId,
+    DateTimeOffset RequestedAtUtc);
+
+public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
+    [property: RouteParam] string RequestId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    IReadOnlyCollection<string>? EvidenceFileIds,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesDispatchTaskListResponse(IReadOnlyCollection<BusinessConsoleMesDispatchTaskRow> Items);
+
+public sealed record BusinessConsoleMesDispatchTaskRow(
+    string OperationTaskId,
+    string WorkOrderId,
+    string Status,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string? ShiftId,
+    string? AssignedUserId,
+    DateTimeOffset? PlannedStartUtc,
+    IReadOnlyCollection<string> BlockingReasons);
+
+public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
+    [property: RouteParam] string OperationTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string? AssignedUserId,
+    string? DeviceAssetId,
+    string? ShiftId,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesOperationTaskListResponse(IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> Items);
+
+public sealed record BusinessConsoleMesOperationTaskRow(
+    string OperationTaskId,
+    string WorkOrderId,
+    string Status,
+    int OperationSequence,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string? ShiftId,
+    string? AssignedUserId,
+    DateTimeOffset? PlannedStartUtc,
+    DateTimeOffset? StartedAtUtc,
+    string QualityStatus);
+
+public sealed record BusinessConsoleMesOperationTaskActionRequest(
+    [property: RouteParam] string OperationTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string? ReasonCode,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesOperationTaskActionResponse(
+    string OperationTaskId,
+    string Status,
+    DateTimeOffset ChangedAtUtc);
+
+public sealed record BusinessConsoleMesWipSummaryResponse(IReadOnlyCollection<BusinessConsoleMesWipSummaryRow> Items);
+
+public sealed record BusinessConsoleMesWipSummaryRow(
+    string WorkOrderId,
+    string OperationTaskId,
+    string WorkCenterId,
+    string Status,
+    decimal PlannedQuantity,
+    decimal GoodQuantity,
+    decimal ScrapQuantity,
+    IReadOnlyCollection<string> BlockingReasons);
+
+public sealed record BusinessConsoleMesProductionReportListResponse(IReadOnlyCollection<BusinessConsoleMesProductionReportRow> Items);
+
+public sealed record BusinessConsoleMesProductionReportRow(
+    string ProductionReportId,
+    string WorkOrderId,
+    string OperationTaskId,
+    decimal GoodQuantity,
+    decimal ScrapQuantity,
+    decimal ReworkQuantity,
+    DateTimeOffset ReportedAtUtc);
+
+public sealed record BusinessConsoleMesRecordDefectRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string OperationTaskId,
+    string DefectCode,
+    decimal DefectQuantity,
+    string? MaterialLotId,
+    string? BatchOrSerial,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesRelatedQualityItemListResponse(IReadOnlyCollection<BusinessConsoleMesRelatedQualityItemRow> Items);
+
+public sealed record BusinessConsoleMesRelatedQualityItemRow(
+    string QualityItemId,
+    string SourceType,
+    string SourceDocumentId,
+    string Status,
+    string? DefectCode,
+    string? NcrId);
+
+public sealed record BusinessConsoleMesReceiptRequestListResponse(IReadOnlyCollection<BusinessConsoleMesReceiptRequestRow> Items);
+
+public sealed record BusinessConsoleMesReceiptRequestRow(
+    string ReceiptRequestId,
+    string WorkOrderId,
+    string SkuId,
+    decimal Quantity,
+    string ReceiptStatus,
+    DateTimeOffset RequestedAtUtc);
+
+public sealed record BusinessConsoleMesCreateReceiptRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string SkuId,
+    decimal Quantity,
+    string UomCode,
+    DateTimeOffset RequestedAtUtc,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGoodsReceiptRequestId);
+
+public sealed record BusinessConsoleMesDowntimeEventListResponse(IReadOnlyCollection<BusinessConsoleMesDowntimeEventRow> Items);
+
+public sealed record BusinessConsoleMesDowntimeEventRow(
+    string DowntimeEventId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string? DeviceAssetId,
+    string Status,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? RecoveredAtUtc);
+
+public sealed record BusinessConsoleMesRecordDowntimeEventRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string? DeviceAssetId,
+    string ReasonCode,
+    DateTimeOffset StartedAtUtc,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
+    [property: RouteParam] string DowntimeEventId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    DateTimeOffset RecoveredAtUtc,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesShiftHandoverListResponse(IReadOnlyCollection<BusinessConsoleMesShiftHandoverRow> Items);
+
+public sealed record BusinessConsoleMesShiftHandoverRow(
+    string HandoverId,
+    string ShiftId,
+    string TeamId,
+    string HandoverStatus,
+    int OpenIssueCount,
+    DateTimeOffset CreatedAtUtc);
+
+public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ShiftId,
+    string TeamId,
+    IReadOnlyCollection<string>? OpenIssueIds,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
+    [property: RouteParam] string HandoverId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesTraceabilityByWorkOrderRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesTraceabilityByBatchRequest(
+    [property: RouteParam] string BatchOrSerial,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesTraceabilityByMaterialLotRequest(
+    [property: RouteParam] string MaterialLotId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesTraceabilityResponse(
+    IReadOnlyCollection<BusinessConsoleMesTraceabilityNode> Nodes,
+    IReadOnlyCollection<BusinessConsoleMesTraceabilityEdge> Edges);
+
+public sealed record BusinessConsoleMesTraceabilityNode(string NodeId, string NodeType, string DisplayName, string Status);
+
+public sealed record BusinessConsoleMesTraceabilityEdge(string FromNodeId, string ToNodeId, string RelationType);
+
+public sealed record BusinessConsoleMesCapacityImpactListResponse(IReadOnlyCollection<BusinessConsoleMesCapacityImpactRow> Items);
+
+public sealed record BusinessConsoleMesCapacityImpactRow(
+    string ImpactId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string Status,
+    DateTimeOffset EffectiveFromUtc,
+    DateTimeOffset? EffectiveToUtc,
+    string ReasonCode);

@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
@@ -77,6 +78,27 @@ public sealed record ListCapacityImpactsRequest(
     string? DeviceAssetId,
     int Take = 100);
 
+public sealed record FoundationReadinessAreaRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string AreaCode,
+    string? SiteCode,
+    string? LineCode,
+    string? WorkCenterCode,
+    string? SkuId,
+    string? ProductionVersionId,
+    DateTimeOffset? PlannedStartUtc,
+    DateTimeOffset? PlannedEndUtc);
+
+public sealed record MesContextRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record WorkOrderContextRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId);
+
 public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
@@ -115,6 +137,40 @@ public sealed class RunScheduleEndpoint(ISender sender, TimeProvider timeProvide
             req.Trigger,
             timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(result, ct);
+    }
+}
+
+public sealed class GetFoundationReadinessAreaEndpoint(ISender sender)
+    : MesEndpoint<FoundationReadinessAreaRequest, MesReadinessArea>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetFoundationReadinessAreaEndpoint>());
+
+    public override async Task HandleAsync(FoundationReadinessAreaRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetMesFoundationReadinessAreaQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.AreaCode,
+            req.SiteCode,
+            req.LineCode,
+            req.WorkCenterCode,
+            req.SkuId,
+            req.ProductionVersionId,
+            req.PlannedStartUtc,
+            req.PlannedEndUtc), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class GetMesOverviewEndpoint(ISender sender)
+    : MesEndpoint<MesContextRequest, MesOverviewResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetMesOverviewEndpoint>());
+
+    public override async Task HandleAsync(MesContextRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetMesOverviewQuery(req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(response, ct);
     }
 }
 
@@ -158,6 +214,54 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
         var response = await sender.Send(
             new ListMesWorkOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Take),
             ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class GetMesWorkOrderDetailEndpoint(ISender sender)
+    : MesEndpoint<WorkOrderContextRequest, MesWorkOrderDetailResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetMesWorkOrderDetailEndpoint>());
+
+    public override async Task HandleAsync(WorkOrderContextRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetMesWorkOrderDetailQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class GetMaterialReadinessEndpoint(ISender sender)
+    : MesEndpoint<WorkOrderContextRequest, MesMaterialReadinessResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetMaterialReadinessEndpoint>());
+
+    public override async Task HandleAsync(WorkOrderContextRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetMaterialReadinessQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class ListOperationTasksEndpoint(ISender sender)
+    : MesEndpoint<ListMesWorkOrdersRequest, MesOperationTaskListResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ListOperationTasksEndpoint>());
+
+    public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListOperationTasksQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Take), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class GetWipSummaryEndpoint(ISender sender)
+    : MesEndpoint<ListMesWorkOrdersRequest, MesWipSummaryResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetWipSummaryEndpoint>());
+
+    public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetWipSummaryQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Take), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -248,14 +352,20 @@ public static class MesEndpointContracts
 {
     public static readonly IReadOnlyCollection<MesEndpointContract> All =
     [
+        new(typeof(GetFoundationReadinessAreaEndpoint), "GET", "/api/business/v1/mes/foundation-readiness/{areaCode}", MesPermissionCodes.FoundationRead, "getBusinessMesFoundationReadinessArea"),
+        new(typeof(GetMesOverviewEndpoint), "GET", "/api/business/v1/mes/overview", MesPermissionCodes.OverviewRead, "getBusinessMesOverview"),
         new(typeof(RunScheduleEndpoint), "POST", "/api/business/v1/mes/schedules/run", MesPermissionCodes.SchedulesManage, "runBusinessMesSchedule"),
         new(typeof(CreateRushWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/rush", MesPermissionCodes.WorkOrdersManage, "createBusinessMesRushWorkOrder"),
-        new(typeof(ListMesWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders", MesPermissionCodes.WorkOrdersManage, "listBusinessMesWorkOrders"),
-        new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.WorkOrdersManage, "recordBusinessMesProductionReport"),
-        new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.WorkOrdersManage, "listBusinessMesProductionReports"),
-        new(typeof(CreateFinishedGoodsReceiptRequestEndpoint), "POST", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.WorkOrdersManage, "createBusinessMesFinishedGoodsReceiptRequest"),
-        new(typeof(ListFinishedGoodsReceiptRequestsEndpoint), "GET", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.WorkOrdersManage, "listBusinessMesFinishedGoodsReceiptRequests"),
-        new(typeof(ListCapacityImpactsEndpoint), "GET", "/api/business/v1/mes/capacity-impacts", MesPermissionCodes.SchedulesManage, "listBusinessMesCapacityImpacts"),
+        new(typeof(ListMesWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders", MesPermissionCodes.WorkOrdersRead, "listBusinessMesWorkOrders"),
+        new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderDetail"),
+        new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
+        new(typeof(ListOperationTasksEndpoint), "GET", "/api/business/v1/mes/operation-tasks", MesPermissionCodes.OperationsRead, "listBusinessMesOperationTasks"),
+        new(typeof(GetWipSummaryEndpoint), "GET", "/api/business/v1/mes/wip", MesPermissionCodes.OperationsRead, "getBusinessMesWipSummary"),
+        new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingWrite, "recordBusinessMesProductionReport"),
+        new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingRead, "listBusinessMesProductionReports"),
+        new(typeof(CreateFinishedGoodsReceiptRequestEndpoint), "POST", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.ReceiptsManage, "createBusinessMesFinishedGoodsReceiptRequest"),
+        new(typeof(ListFinishedGoodsReceiptRequestsEndpoint), "GET", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.ReceiptsRead, "listBusinessMesFinishedGoodsReceiptRequests"),
+        new(typeof(ListCapacityImpactsEndpoint), "GET", "/api/business/v1/mes/capacity-impacts", MesPermissionCodes.CapacityRead, "listBusinessMesCapacityImpacts"),
     ];
 
     public static MesEndpointContract Get<TEndpoint>()

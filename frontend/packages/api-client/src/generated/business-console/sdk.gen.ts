@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CloseBusinessConsoleQualityNcrData, CloseBusinessConsoleQualityNcrErrors, CloseBusinessConsoleQualityNcrResponses, ConfirmBusinessConsoleInventoryCountAdjustmentData, ConfirmBusinessConsoleInventoryCountAdjustmentErrors, ConfirmBusinessConsoleInventoryCountAdjustmentResponses, CreateBusinessConsoleInventoryCountTaskData, CreateBusinessConsoleInventoryCountTaskErrors, CreateBusinessConsoleInventoryCountTaskResponses, CreateBusinessConsoleMesRushWorkOrderData, CreateBusinessConsoleMesRushWorkOrderErrors, CreateBusinessConsoleMesRushWorkOrderResponses, CreateBusinessConsoleQualityInspectionRecordData, CreateBusinessConsoleQualityInspectionRecordErrors, CreateBusinessConsoleQualityInspectionRecordResponses, CreateBusinessConsoleSkuData, CreateBusinessConsoleSkuErrors, CreateBusinessConsoleSkuResponses, GetBusinessConsoleInventoryAvailabilityData, GetBusinessConsoleInventoryAvailabilityErrors, GetBusinessConsoleInventoryAvailabilityResponses, HealthEndpointData, HealthEndpointResponses, ListBusinessConsoleMasterDataResourcesData, ListBusinessConsoleMasterDataResourcesErrors, ListBusinessConsoleMasterDataResourcesResponses, ListBusinessConsoleMesWorkOrdersData, ListBusinessConsoleMesWorkOrdersErrors, ListBusinessConsoleMesWorkOrdersResponses, ListBusinessConsoleQualityInspectionPlansData, ListBusinessConsoleQualityInspectionPlansErrors, ListBusinessConsoleQualityInspectionPlansResponses, ListBusinessConsoleQualityNcrsData, ListBusinessConsoleQualityNcrsErrors, ListBusinessConsoleQualityNcrsResponses, ListBusinessConsoleSkusData, ListBusinessConsoleSkusErrors, ListBusinessConsoleSkusResponses, PostBusinessConsoleInventoryMovementData, PostBusinessConsoleInventoryMovementErrors, PostBusinessConsoleInventoryMovementResponses, RecordBusinessConsoleMesProductionReportData, RecordBusinessConsoleMesProductionReportErrors, RecordBusinessConsoleMesProductionReportResponses, RunBusinessConsoleMesScheduleData, RunBusinessConsoleMesScheduleErrors, RunBusinessConsoleMesScheduleResponses, SubmitBusinessConsoleQualityNcrDispositionData, SubmitBusinessConsoleQualityNcrDispositionErrors, SubmitBusinessConsoleQualityNcrDispositionResponses } from './types.gen';
+import type { CloseBusinessConsoleQualityNcrData, CloseBusinessConsoleQualityNcrErrors, CloseBusinessConsoleQualityNcrResponses, ConfirmBusinessConsoleInventoryCountAdjustmentData, ConfirmBusinessConsoleInventoryCountAdjustmentErrors, ConfirmBusinessConsoleInventoryCountAdjustmentResponses, CreateBusinessConsoleInventoryCountTaskData, CreateBusinessConsoleInventoryCountTaskErrors, CreateBusinessConsoleInventoryCountTaskResponses, CreateBusinessConsoleMesFinishedGoodsReceiptRequestData, CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors, CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses, CreateBusinessConsoleMesRushWorkOrderData, CreateBusinessConsoleMesRushWorkOrderErrors, CreateBusinessConsoleMesRushWorkOrderResponses, CreateBusinessConsoleQualityInspectionRecordData, CreateBusinessConsoleQualityInspectionRecordErrors, CreateBusinessConsoleQualityInspectionRecordResponses, CreateBusinessConsoleSkuData, CreateBusinessConsoleSkuErrors, CreateBusinessConsoleSkuResponses, GetBusinessConsoleInventoryAvailabilityData, GetBusinessConsoleInventoryAvailabilityErrors, GetBusinessConsoleInventoryAvailabilityResponses, GetBusinessConsoleMesFoundationReadinessData, GetBusinessConsoleMesFoundationReadinessErrors, GetBusinessConsoleMesFoundationReadinessResponses, GetBusinessConsoleMesMaterialReadinessData, GetBusinessConsoleMesMaterialReadinessErrors, GetBusinessConsoleMesMaterialReadinessResponses, GetBusinessConsoleMesOverviewData, GetBusinessConsoleMesOverviewErrors, GetBusinessConsoleMesOverviewResponses, GetBusinessConsoleMesWipSummaryData, GetBusinessConsoleMesWipSummaryErrors, GetBusinessConsoleMesWipSummaryResponses, GetBusinessConsoleMesWorkOrderDetailData, GetBusinessConsoleMesWorkOrderDetailErrors, GetBusinessConsoleMesWorkOrderDetailResponses, HealthEndpointData, HealthEndpointResponses, ListBusinessConsoleMasterDataResourcesData, ListBusinessConsoleMasterDataResourcesErrors, ListBusinessConsoleMasterDataResourcesResponses, ListBusinessConsoleMesCapacityImpactsData, ListBusinessConsoleMesCapacityImpactsErrors, ListBusinessConsoleMesCapacityImpactsResponses, ListBusinessConsoleMesFinishedGoodsReceiptRequestsData, ListBusinessConsoleMesFinishedGoodsReceiptRequestsErrors, ListBusinessConsoleMesFinishedGoodsReceiptRequestsResponses, ListBusinessConsoleMesOperationTasksData, ListBusinessConsoleMesOperationTasksErrors, ListBusinessConsoleMesOperationTasksResponses, ListBusinessConsoleMesProductionReportsData, ListBusinessConsoleMesProductionReportsErrors, ListBusinessConsoleMesProductionReportsResponses, ListBusinessConsoleMesWorkOrdersData, ListBusinessConsoleMesWorkOrdersErrors, ListBusinessConsoleMesWorkOrdersResponses, ListBusinessConsoleQualityInspectionPlansData, ListBusinessConsoleQualityInspectionPlansErrors, ListBusinessConsoleQualityInspectionPlansResponses, ListBusinessConsoleQualityNcrsData, ListBusinessConsoleQualityNcrsErrors, ListBusinessConsoleQualityNcrsResponses, ListBusinessConsoleSkusData, ListBusinessConsoleSkusErrors, ListBusinessConsoleSkusResponses, PostBusinessConsoleInventoryMovementData, PostBusinessConsoleInventoryMovementErrors, PostBusinessConsoleInventoryMovementResponses, RecordBusinessConsoleMesProductionReportData, RecordBusinessConsoleMesProductionReportErrors, RecordBusinessConsoleMesProductionReportResponses, RunBusinessConsoleMesScheduleData, RunBusinessConsoleMesScheduleErrors, RunBusinessConsoleMesScheduleResponses, SubmitBusinessConsoleQualityNcrDispositionData, SubmitBusinessConsoleQualityNcrDispositionErrors, SubmitBusinessConsoleQualityNcrDispositionResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -60,9 +60,27 @@ export const closeBusinessConsoleQualityNcr = <ThrowOnError extends boolean = fa
     }
 });
 
+export const getBusinessConsoleMesFoundationReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesFoundationReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesFoundationReadinessResponses, GetBusinessConsoleMesFoundationReadinessErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/foundation-readiness',
+    ...options
+});
+
+export const getBusinessConsoleMesOverview = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesOverviewData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesOverviewResponses, GetBusinessConsoleMesOverviewErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/overview',
+    ...options
+});
+
 export const listBusinessConsoleMesWorkOrders = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesWorkOrdersData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesWorkOrdersResponses, ListBusinessConsoleMesWorkOrdersErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/mes/work-orders',
+    ...options
+});
+
+export const getBusinessConsoleMesWorkOrderDetail = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesWorkOrderDetailData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesWorkOrderDetailResponses, GetBusinessConsoleMesWorkOrderDetailErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}',
     ...options
 });
 
@@ -76,9 +94,33 @@ export const createBusinessConsoleMesRushWorkOrder = <ThrowOnError extends boole
     }
 });
 
-export const runBusinessConsoleMesSchedule = <ThrowOnError extends boolean = false>(options: Options<RunBusinessConsoleMesScheduleData, ThrowOnError>) => (options.client ?? client).post<RunBusinessConsoleMesScheduleResponses, RunBusinessConsoleMesScheduleErrors, ThrowOnError>({
+export const getBusinessConsoleMesMaterialReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesMaterialReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesMaterialReadinessResponses, GetBusinessConsoleMesMaterialReadinessErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/api/business-console/v1/mes/schedules/run',
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/material-readiness',
+    ...options
+});
+
+export const listBusinessConsoleMesOperationTasks = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesOperationTasksData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesOperationTasksResponses, ListBusinessConsoleMesOperationTasksErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/operation-tasks',
+    ...options
+});
+
+export const getBusinessConsoleMesWipSummary = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesWipSummaryData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesWipSummaryResponses, GetBusinessConsoleMesWipSummaryErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/wip',
+    ...options
+});
+
+export const listBusinessConsoleMesProductionReports = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesProductionReportsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesProductionReportsResponses, ListBusinessConsoleMesProductionReportsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/production-reports',
+    ...options
+});
+
+export const recordBusinessConsoleMesProductionReport = <ThrowOnError extends boolean = false>(options: Options<RecordBusinessConsoleMesProductionReportData, ThrowOnError>) => (options.client ?? client).post<RecordBusinessConsoleMesProductionReportResponses, RecordBusinessConsoleMesProductionReportErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/production-reports',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -86,9 +128,31 @@ export const runBusinessConsoleMesSchedule = <ThrowOnError extends boolean = fal
     }
 });
 
-export const recordBusinessConsoleMesProductionReport = <ThrowOnError extends boolean = false>(options: Options<RecordBusinessConsoleMesProductionReportData, ThrowOnError>) => (options.client ?? client).post<RecordBusinessConsoleMesProductionReportResponses, RecordBusinessConsoleMesProductionReportErrors, ThrowOnError>({
+export const listBusinessConsoleMesFinishedGoodsReceiptRequests = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesFinishedGoodsReceiptRequestsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesFinishedGoodsReceiptRequestsResponses, ListBusinessConsoleMesFinishedGoodsReceiptRequestsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/api/business-console/v1/mes/production-reports',
+    url: '/api/business-console/v1/mes/finished-goods-receipt-requests',
+    ...options
+});
+
+export const createBusinessConsoleMesFinishedGoodsReceiptRequest = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleMesFinishedGoodsReceiptRequestData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses, CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/finished-goods-receipt-requests',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listBusinessConsoleMesCapacityImpacts = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesCapacityImpactsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesCapacityImpactsResponses, ListBusinessConsoleMesCapacityImpactsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/capacity-impacts',
+    ...options
+});
+
+export const runBusinessConsoleMesSchedule = <ThrowOnError extends boolean = false>(options: Options<RunBusinessConsoleMesScheduleData, ThrowOnError>) => (options.client ?? client).post<RunBusinessConsoleMesScheduleResponses, RunBusinessConsoleMesScheduleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/schedules/run',
     ...options,
     headers: {
         'Content-Type': 'application/json',

@@ -35,7 +35,7 @@ import { computed, reactive, shallowRef } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: 'routes.schedules',
+    title: '规则排程',
   },
 })
 
@@ -59,6 +59,14 @@ const canRunSchedule = computed(
     isNonEmpty(runForm.trigger),
 )
 
+function triggerLabel(value: string) {
+  if (value === 'Manual') return '手动'
+  if (value === 'RushOrder') return '急单'
+  if (value === 'AssetUnavailable') return '设备不可用'
+  if (value === 'AssetRestored') return '设备恢复'
+  return value
+}
+
 async function submitScheduleRun() {
   if (!canRunSchedule.value) return
 
@@ -69,7 +77,7 @@ async function submitScheduleRun() {
   }
 
   const response = await runSchedule(body)
-  runSuccess.value = `Schedule run ${response?.data?.scheduleVersion ?? body.trigger} completed.`
+  runSuccess.value = `排程运行 ${response?.data?.scheduleVersion ?? body.trigger} 已完成。`
 }
 
 function assignmentKey(item: BusinessConsoleScheduledOperation, index: number) {
@@ -77,13 +85,13 @@ function assignmentKey(item: BusinessConsoleScheduledOperation, index: number) {
 }
 
 function formatDateTime(value?: string | null) {
-  if (!value) return 'n/a'
+  if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? 'Request failed.' : ''
+  return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
 
 function isNonEmpty(value: string) {
@@ -96,8 +104,8 @@ function isNonEmpty(value: string) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="Schedules"
-        summary="Run rule-based scheduling and review operation assignments as a list."
+        title="规则排程"
+        summary="运行规则排程，并用列表查看工序任务的工作中心分配结果。"
       />
 
       <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitScheduleRun">
@@ -105,88 +113,88 @@ function isNonEmpty(value: string) {
 
         <FieldGroup class="grid gap-3 md:grid-cols-3">
           <Field>
-            <FieldLabel for="schedule-org">Organization</FieldLabel>
+            <FieldLabel for="schedule-org">组织</FieldLabel>
             <Input id="schedule-org" v-model="runForm.organizationId" required />
           </Field>
           <Field>
-            <FieldLabel for="schedule-env">Environment</FieldLabel>
+            <FieldLabel for="schedule-env">环境</FieldLabel>
             <Input id="schedule-env" v-model="runForm.environmentId" required />
           </Field>
           <Field>
-            <FieldLabel>Trigger</FieldLabel>
+            <FieldLabel>触发来源</FieldLabel>
             <Select v-model="runForm.trigger">
-              <SelectTrigger aria-label="Schedule trigger">
+              <SelectTrigger aria-label="排程触发来源">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Manual">Manual</SelectItem>
-                <SelectItem value="RushOrder">Rush order</SelectItem>
-                <SelectItem value="AssetUnavailable">Asset unavailable</SelectItem>
-                <SelectItem value="AssetRestored">Asset restored</SelectItem>
+                <SelectItem value="Manual">手动</SelectItem>
+                <SelectItem value="RushOrder">急单</SelectItem>
+                <SelectItem value="AssetUnavailable">设备不可用</SelectItem>
+                <SelectItem value="AssetRestored">设备恢复</SelectItem>
               </SelectContent>
             </Select>
           </Field>
         </FieldGroup>
 
         <div class="flex items-center justify-between gap-3 rounded-lg border p-3">
-          <span class="min-w-0 truncate text-sm text-muted-foreground">{{ runForm.trigger }}</span>
+          <span class="min-w-0 truncate text-sm text-muted-foreground">{{ triggerLabel(runForm.trigger) }}</span>
           <Button type="submit" :disabled="runSchedulePending || !canRunSchedule">
             <Spinner v-if="runSchedulePending" data-icon="inline-start" />
             <PlayIcon v-else data-icon="inline-start" />
-            Run schedule
+            运行排程
           </Button>
         </div>
       </form>
 
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell
-          label="Version"
-          :value="lastSchedule?.scheduleVersion ?? 'n/a'"
-          :detail="lastSchedule?.trigger ?? 'No run yet'"
+          label="版本"
+          :value="lastSchedule?.scheduleVersion ?? '无'"
+          :detail="lastSchedule?.trigger ? triggerLabel(lastSchedule.trigger) : '尚未运行'"
         />
-        <BusinessMetricCell label="Assignments" :value="assignments.length" detail="Returned rows" />
-        <BusinessMetricCell label="Affected orders" :value="affectedWorkOrderIds.length" detail="Impacted work order IDs" />
+        <BusinessMetricCell label="分配数" :value="assignments.length" detail="返回的工序分配行" />
+        <BusinessMetricCell label="影响工单" :value="affectedWorkOrderIds.length" detail="受影响工单号" />
       </div>
 
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">Schedule result</h2>
+          <h2 class="text-sm font-semibold text-foreground">排程结果</h2>
           <span class="text-sm text-muted-foreground">{{ formatDateTime(lastSchedule?.scheduledAtUtc) }}</span>
         </div>
         <div class="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Work order</TableHead>
-                <TableHead>Operation</TableHead>
-                <TableHead>Work center</TableHead>
-                <TableHead>Start</TableHead>
-                <TableHead>End</TableHead>
-                <TableHead>Reason</TableHead>
+                <TableHead>工单</TableHead>
+                <TableHead>工序</TableHead>
+                <TableHead>工作中心</TableHead>
+                <TableHead>开始</TableHead>
+                <TableHead>结束</TableHead>
+                <TableHead>原因</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               <TableRow v-for="(assignment, index) in assignments" :key="assignmentKey(assignment, index)">
-                <TableCell class="font-medium">{{ assignment.workOrderId ?? 'n/a' }}</TableCell>
-                <TableCell>{{ assignment.operationTaskId ?? 'n/a' }}</TableCell>
+                <TableCell class="font-medium">{{ assignment.workOrderId ?? '无' }}</TableCell>
+                <TableCell>{{ assignment.operationTaskId ?? '无' }}</TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{{ assignment.workCenterId ?? 'n/a' }}</Badge>
+                  <Badge variant="secondary">{{ assignment.workCenterId ?? '无' }}</Badge>
                 </TableCell>
                 <TableCell>{{ formatDateTime(assignment.startUtc) }}</TableCell>
                 <TableCell>{{ formatDateTime(assignment.endUtc) }}</TableCell>
-                <TableCell>{{ assignment.reason ?? 'n/a' }}</TableCell>
+                <TableCell>{{ assignment.reason ?? '无' }}</TableCell>
               </TableRow>
               <TableEmpty v-if="!assignments.length && !runSchedulePending" :colspan="6">
-                No schedule assignments returned.
+                暂无排程分配。
               </TableEmpty>
-              <TableEmpty v-if="runSchedulePending" :colspan="6">Running schedule...</TableEmpty>
+              <TableEmpty v-if="runSchedulePending" :colspan="6">正在运行排程...</TableEmpty>
             </TableBody>
           </Table>
         </div>
       </div>
 
       <div v-if="affectedWorkOrderIds.length" class="rounded-lg border bg-background p-4">
-        <h2 class="text-sm font-semibold text-foreground">Affected work orders</h2>
+        <h2 class="text-sm font-semibold text-foreground">受影响工单</h2>
         <div class="mt-3 flex flex-wrap gap-2">
           <Badge v-for="workOrderId in affectedWorkOrderIds" :key="workOrderId" variant="secondary">
             {{ workOrderId }}

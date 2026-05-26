@@ -75,14 +75,127 @@ public interface IBusinessQualityClient
 
 public interface IBusinessMesClient
 {
+    Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
+        string internalBearerToken,
+        string areaCode,
+        BusinessConsoleMesFoundationReadinessRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesOverviewResponse> GetOverviewAsync(
+        string internalBearerToken,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesProductionPlanListResponse> ListProductionPlansAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesFoundationReadinessResponse> GetProductionPlanReadinessAsync(
+        string internalBearerToken,
+        string productionPlanId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> ConvertPlanToWorkOrderAsync(
+        string internalBearerToken,
+        string productionPlanId,
+        BusinessConsoleMesConvertPlanToWorkOrderRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
         BusinessConsoleMesListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesWorkOrderDetailResponse> GetWorkOrderDetailAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> ReleaseWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesReleaseWorkOrderRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCreateRushWorkOrderResponse> CreateRushWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateRushWorkOrderRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesMaterialReadinessResponse> GetMaterialReadinessAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesCreateMaterialIssueRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesMaterialIssueRequestListResponse> ListMaterialIssueRequestsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> ConfirmLineSideMaterialReceiptAsync(
+        string internalBearerToken,
+        string requestId,
+        BusinessConsoleMesConfirmLineSideReceiptRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesDispatchTaskListResponse> ListDispatchTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> AssignDispatchTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesAssignDispatchTaskRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesOperationTaskActionResponse> StartOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesOperationTaskActionResponse> PauseOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesOperationTaskActionResponse> ResumeOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesOperationTaskActionResponse> CompleteOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesWipSummaryResponse> GetWipSummaryAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesProductionReportListResponse> ListProductionReportsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
@@ -93,6 +206,81 @@ public interface IBusinessMesClient
     Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
         string internalBearerToken,
         BusinessConsoleRecordProductionReportRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
+        string internalBearerToken,
+        BusinessConsoleMesRecordDefectRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesRelatedQualityItemListResponse> ListRelatedQualityItemsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesReceiptRequestListResponse> ListFinishedGoodsReceiptRequestsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesCreateReceiptResponse> CreateFinishedGoodsReceiptRequestAsync(
+        string internalBearerToken,
+        BusinessConsoleMesCreateReceiptRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> RecordDowntimeEventAsync(
+        string internalBearerToken,
+        BusinessConsoleMesRecordDowntimeEventRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> ConfirmDowntimeRecoveryAsync(
+        string internalBearerToken,
+        string downtimeEventId,
+        BusinessConsoleMesRecoverDowntimeEventRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
+        string internalBearerToken,
+        BusinessConsoleMesCreateShiftHandoverRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesTraceabilityResponse> GetBatchTraceabilityAsync(
+        string internalBearerToken,
+        string batchOrSerial,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesTraceabilityResponse> GetMaterialLotTraceabilityAsync(
+        string internalBearerToken,
+        string materialLotId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesCapacityImpactListResponse> ListCapacityImpactsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -566,6 +754,64 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 public sealed class HttpBusinessMesClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMesClient
 {
+    public Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
+        string internalBearerToken,
+        string areaCode,
+        BusinessConsoleMesFoundationReadinessRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesReadinessArea>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/foundation-readiness/{Uri.EscapeDataString(areaCode)}?" + FoundationQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesOverviewResponse> GetOverviewAsync(
+        string internalBearerToken,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesOverviewResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/overview?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesProductionPlanListResponse> ListProductionPlansAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesProductionPlanListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/production-plans?" + ListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesFoundationReadinessResponse> GetProductionPlanReadinessAsync(
+        string internalBearerToken,
+        string productionPlanId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesFoundationReadinessResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/production-plans/{Uri.EscapeDataString(productionPlanId)}/readiness?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> ConvertPlanToWorkOrderAsync(
+        string internalBearerToken,
+        string productionPlanId,
+        BusinessConsoleMesConvertPlanToWorkOrderRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/mes/production-plans/{Uri.EscapeDataString(productionPlanId)}/work-orders",
+            request,
+            cancellationToken);
+
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
         BusinessConsoleMesListRequest request,
@@ -581,11 +827,166 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleMesWorkOrderDetailResponse> GetWorkOrderDetailAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesWorkOrderDetailResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> ReleaseWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesReleaseWorkOrderRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/release",
+            request,
+            cancellationToken);
+
     public Task<BusinessConsoleCreateRushWorkOrderResponse> CreateRushWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateRushWorkOrderRequest request,
         CancellationToken cancellationToken) =>
         CreateRushWorkOrderCoreAsync(internalBearerToken, request, cancellationToken);
+
+    public Task<BusinessConsoleMesMaterialReadinessResponse> GetMaterialReadinessAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesMaterialReadinessResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/material-readiness?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesCreateMaterialIssueRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/material-issue-requests",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesMaterialIssueRequestListResponse> ListMaterialIssueRequestsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesMaterialIssueRequestListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/material-issue-requests?" + ListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> ConfirmLineSideMaterialReceiptAsync(
+        string internalBearerToken,
+        string requestId,
+        BusinessConsoleMesConfirmLineSideReceiptRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/mes/material-issue-requests/{Uri.EscapeDataString(requestId)}/line-side-receipts",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesDispatchTaskListResponse> ListDispatchTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesDispatchTaskListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/dispatch-tasks?" + ListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> AssignDispatchTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesAssignDispatchTaskRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/mes/dispatch-tasks/{Uri.EscapeDataString(operationTaskId)}/assign",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesOperationTaskListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/operation-tasks?" + ListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesOperationTaskActionResponse> StartOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken) =>
+        OperationTaskActionAsync(internalBearerToken, operationTaskId, "start", request, cancellationToken);
+
+    public Task<BusinessConsoleMesOperationTaskActionResponse> PauseOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken) =>
+        OperationTaskActionAsync(internalBearerToken, operationTaskId, "pause", request, cancellationToken);
+
+    public Task<BusinessConsoleMesOperationTaskActionResponse> ResumeOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken) =>
+        OperationTaskActionAsync(internalBearerToken, operationTaskId, "resume", request, cancellationToken);
+
+    public Task<BusinessConsoleMesOperationTaskActionResponse> CompleteOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken) =>
+        OperationTaskActionAsync(internalBearerToken, operationTaskId, "complete", request, cancellationToken);
+
+    public Task<BusinessConsoleMesWipSummaryResponse> GetWipSummaryAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesWipSummaryResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/wip?" + ListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesProductionReportListResponse> ListProductionReportsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesProductionReportListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/production-reports?" + ListQuery(request),
+            null,
+            cancellationToken);
 
     public async Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
         string internalBearerToken,
@@ -612,6 +1013,165 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             request,
             cancellationToken);
 
+    public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
+        string internalBearerToken,
+        BusinessConsoleMesRecordDefectRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/mes/defects",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesRelatedQualityItemListResponse> ListRelatedQualityItemsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesRelatedQualityItemListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/related-quality-items?" + ListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesReceiptRequestListResponse> ListFinishedGoodsReceiptRequestsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesReceiptRequestListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/finished-goods-receipt-requests?" + ListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesCreateReceiptResponse> CreateFinishedGoodsReceiptRequestAsync(
+        string internalBearerToken,
+        BusinessConsoleMesCreateReceiptRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesCreateReceiptResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/mes/finished-goods-receipt-requests",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesDowntimeEventListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/downtime-events?" + ListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> RecordDowntimeEventAsync(
+        string internalBearerToken,
+        BusinessConsoleMesRecordDowntimeEventRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/mes/downtime-events",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> ConfirmDowntimeRecoveryAsync(
+        string internalBearerToken,
+        string downtimeEventId,
+        BusinessConsoleMesRecoverDowntimeEventRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/mes/downtime-events/{Uri.EscapeDataString(downtimeEventId)}/recover",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesShiftHandoverListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/shift-handovers?" + ListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
+        string internalBearerToken,
+        BusinessConsoleMesCreateShiftHandoverRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/mes/shift-handovers",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/mes/shift-handovers/{Uri.EscapeDataString(handoverId)}/accept",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesTraceabilityResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/traceability/work-orders/{Uri.EscapeDataString(workOrderId)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesTraceabilityResponse> GetBatchTraceabilityAsync(
+        string internalBearerToken,
+        string batchOrSerial,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesTraceabilityResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/traceability/batches/{Uri.EscapeDataString(batchOrSerial)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesTraceabilityResponse> GetMaterialLotTraceabilityAsync(
+        string internalBearerToken,
+        string materialLotId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesTraceabilityResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/traceability/material-lots/{Uri.EscapeDataString(materialLotId)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesCapacityImpactListResponse> ListCapacityImpactsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesCapacityImpactListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/mes/capacity-impacts?" + ListQuery(request),
+            null,
+            cancellationToken);
+
     private async Task<BusinessConsoleCreateRushWorkOrderResponse> CreateRushWorkOrderCoreAsync(
         string internalBearerToken,
         BusinessConsoleCreateRushWorkOrderRequest request,
@@ -628,6 +1188,41 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             response.Schedule.ToBusinessConsoleResult(),
             response.AffectedWorkOrderIds);
     }
+
+    private Task<BusinessConsoleMesOperationTaskActionResponse> OperationTaskActionAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        string action,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesOperationTaskActionResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/mes/operation-tasks/{Uri.EscapeDataString(operationTaskId)}/{action}",
+            request,
+            cancellationToken);
+
+    private static string ContextQuery(string organizationId, string environmentId) =>
+        Query(("organizationId", organizationId), ("environmentId", environmentId));
+
+    private static string ListQuery(BusinessConsoleMesListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("status", request.Status),
+            ("take", request.Take));
+
+    private static string FoundationQuery(BusinessConsoleMesFoundationReadinessRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("siteCode", request.SiteCode),
+            ("lineCode", request.LineCode),
+            ("workCenterCode", request.WorkCenterCode),
+            ("skuId", request.SkuId),
+            ("productionVersionId", request.ProductionVersionId),
+            ("plannedStartUtc", request.PlannedStartUtc),
+            ("plannedEndUtc", request.PlannedEndUtc));
 
     private sealed record DownstreamCreateRushWorkOrderResponse(
         string WorkOrderId,

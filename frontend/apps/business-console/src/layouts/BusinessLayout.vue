@@ -20,37 +20,44 @@ const route = useRoute()
 
 const navItems = computed<NavItem[]>(() => [
   {
-    title: t('nav.masterData'),
+    title: '主数据',
     icon: BoxesIcon,
     isActive: route.path.startsWith('/master-data'),
-    items: [{ title: t('nav.skus'), to: { path: '/master-data/skus' } }],
+    items: [{ title: 'SKU 维护', to: { path: '/master-data/skus' } }],
   },
   {
-    title: t('nav.inventory'),
+    title: '库存',
     icon: PackageSearchIcon,
     isActive: route.path.startsWith('/inventory'),
     items: [
-      { title: t('nav.availability'), to: { path: '/inventory/availability' } },
-      { title: t('nav.movements'), to: { path: '/inventory/movements' } },
-      { title: t('nav.counts'), to: { path: '/inventory/counts' } },
+      { title: '库存可用量', to: { path: '/inventory/availability' } },
+      { title: '库存移动', to: { path: '/inventory/movements' } },
+      { title: '库存盘点', to: { path: '/inventory/counts' } },
     ],
   },
   {
-    title: t('nav.quality'),
+    title: '质量',
     icon: ClipboardCheckIcon,
     isActive: route.path.startsWith('/quality'),
     items: [
-      { title: t('nav.inspections'), to: { path: '/quality/inspections' } },
-      { title: t('nav.ncrs'), to: { path: '/quality/ncrs' } },
+      { title: '检验记录', to: { path: '/quality/inspections' } },
+      { title: '不合格品处理', to: { path: '/quality/ncrs' } },
     ],
   },
   {
-    title: t('nav.mes'),
+    title: 'MES',
     icon: FactoryIcon,
     isActive: route.path.startsWith('/mes'),
     items: [
-      { title: t('nav.workOrders'), to: { path: '/mes/work-orders' } },
-      { title: t('nav.schedules'), to: { path: '/mes/schedules' } },
+      { title: 'MES 总览', to: { path: '/mes' } },
+      { title: '基础就绪', to: { path: '/mes/foundation' } },
+      { title: '工单执行', to: { path: '/mes/work-orders' } },
+      { title: '工序任务', to: { path: '/mes/operation-tasks' } },
+      { title: '在制状态', to: { path: '/mes/wip' } },
+      { title: '生产报工', to: { path: '/mes/production-reports' } },
+      { title: '完工入库', to: { path: '/mes/receipts' } },
+      { title: '产能影响', to: { path: '/mes/capacity' } },
+      { title: '规则排程', to: { path: '/mes/schedules' } },
     ],
   },
 ])
@@ -83,7 +90,7 @@ const shellUser = computed(() => {
   const p = principal.value
   if (!p) return undefined
   return {
-    name: p.loginName ?? p.principalId ?? t('nav.authenticatedUser'),
+    name: p.loginName ?? p.principalId ?? '已登录用户',
     email: p.email,
   }
 })
@@ -96,10 +103,10 @@ async function signOut() {
 
 <template>
   <AppShell
-    title="Nerv-IIP Business"
+    title="Nerv-IIP 业务控制台"
     :nav-items="navItems"
-    :nav-label="t('nav.business')"
-    :sign-out-label="t('nav.signOut')"
+    nav-label="业务模块"
+    sign-out-label="退出登录"
     :user="shellUser"
     @sign-out="signOut"
   >

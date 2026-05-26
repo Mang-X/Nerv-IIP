@@ -2,12 +2,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 
 import {
+  createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
+  getBusinessConsoleMesFoundationReadinessQueryOptions,
+  getBusinessConsoleMesOverviewQueryOptions,
+  getBusinessConsoleMesWipSummaryQueryOptions,
+  listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
 } from '@nerv-iip/api-client'
-import { useMesSchedules, useMesWorkOrders } from './useBusinessMes'
+import {
+  useMesFoundationReadiness,
+  useMesFinishedGoodsReceipts,
+  useMesOperationTasks,
+  useMesOverview,
+  useMesSchedules,
+  useMesWipSummary,
+  useMesWorkOrders,
+} from './useBusinessMes'
 
 const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
@@ -15,11 +28,57 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
   createBusinessConsoleMesRushWorkOrderMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
     })),
+  })),
+  getBusinessConsoleMesCapacityImpactsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesCapacityImpacts' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesFoundationReadinessQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesFoundationReadiness' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesMaterialReadinessQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesMaterialReadiness' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesOverviewQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesOverview' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesWipSummaryQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesWipSummary' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesWorkOrderDetailQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesWorkOrderDetail' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesCapacityImpactsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesCapacityImpacts' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesFinishedGoodsReceiptRequests' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesOperationTasksQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesOperationTasks' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesProductionReportsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesProductionReports' }],
+    query: vi.fn(),
   })),
   listBusinessConsoleMesWorkOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesWorkOrders' }],
@@ -155,6 +214,78 @@ describe('business MES composables', () => {
         operationTaskId: 'op-1',
       }),
     })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(8)
+  })
+
+  it('reads overview, foundation readiness, operation tasks, and WIP rows', () => {
+    coladaState.queryDataById.set('getBusinessConsoleMesOverview', {
+      success: true,
+      data: {
+        counts: [{ key: 'WorkOrders', count: 2 }],
+        blockers: [{ areaCode: 'materials', code: 'SHORTAGE', message: '缺料', count: 1 }],
+        pendingWork: [{ roleCode: 'planner', workType: 'dispatch', count: 3 }],
+      },
+    })
+    coladaState.queryDataById.set('getBusinessConsoleMesFoundationReadiness', {
+      success: true,
+      data: {
+        status: 'Ready',
+        areas: [{ areaCode: 'master-data', status: 'Ready', issues: [] }],
+      },
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMesOperationTasks', {
+      success: true,
+      data: {
+        items: [{ operationTaskId: 'op-1', workOrderId: 'wo-1', status: 'Ready' }],
+      },
+    })
+    coladaState.queryDataById.set('getBusinessConsoleMesWipSummary', {
+      success: true,
+      data: {
+        items: [{ workOrderId: 'wo-1', operationTaskId: 'op-1', goodQuantity: 5 }],
+      },
+    })
+
+    const overview = useMesOverview()
+    const readiness = useMesFoundationReadiness()
+    const tasks = useMesOperationTasks()
+    const wip = useMesWipSummary()
+
+    expect(getBusinessConsoleMesOverviewQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
+    })
+    expect(getBusinessConsoleMesFoundationReadinessQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
+    })
+    expect(listBusinessConsoleMesOperationTasksQueryOptions).toHaveBeenCalled()
+    expect(getBusinessConsoleMesWipSummaryQueryOptions).toHaveBeenCalled()
+    expect(overview.counts.value).toHaveLength(1)
+    expect(readiness.readiness.value?.status).toBe('Ready')
+    expect(tasks.operationTasks.value).toHaveLength(1)
+    expect(wip.wipRows.value).toHaveLength(1)
+  })
+
+  it('creates finished goods receipt requests and invalidates dependent lists', async () => {
+    const { createReceiptRequest } = useMesFinishedGoodsReceipts()
+
+    await createReceiptRequest({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      workOrderId: 'wo-1',
+      skuId: 'sku-1',
+      quantity: 10,
+      uomCode: 'EA',
+      requestedAtUtc: '2026-05-26T00:00:00.000Z',
+      idempotencyKey: 'receipt-1',
+    })
+
+    expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toHaveBeenCalled()
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(2)
   })
 
