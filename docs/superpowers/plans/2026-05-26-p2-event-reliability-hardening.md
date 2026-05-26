@@ -4,7 +4,7 @@
 
 **Goal:** Make #170/#171 event reliability production-grade enough for P2 by persisting DLQ facts for Notification, AppHub and MES and adding an opt-in cross-service CAP hardening gate.
 
-**Architecture:** Reuse the existing Maintenance persistent DLQ shape as the table contract, but move the reusable EF store into `Nerv.IIP.Messaging.CAP` so services can opt in without copy/paste. Each service owns its own `integration_event_dead_letters` table inside its schema. CAP `received` remains broker-level inbox; service-owned processed-event tables remain business inbox and will be extended incrementally.
+**Architecture:** Reuse the existing Maintenance persistent DLQ shape as the table contract, but keep the base `Nerv.IIP.Messaging.CAP` package limited to contracts, guard logic and in-memory DLQ. The reusable EF store lives in `Nerv.IIP.Messaging.CAP.EntityFrameworkCore` so PostgreSQL-backed services can opt in without copy/paste while non-persistent consumers avoid EF Core transitive dependencies. Each service owns its own `integration_event_dead_letters` table inside its schema. CAP `received` remains broker-level inbox; service-owned processed-event tables remain business inbox and will be extended incrementally.
 
 **Implementation status (2026-05-26):** This first PR completes the persistent DLQ slice for the shared CAP store, Notification, AppHub and MES. The opt-in cross-service multi-process CAP gate remains the next event-reliability PR so it can carry its own Docker/PostgreSQL/RabbitMQ setup and teardown review.
 
@@ -17,11 +17,12 @@
 **Files:**
 - Modify: `backend/common/Messaging/Nerv.IIP.Messaging.CAP/Nerv.IIP.Messaging.CAP.csproj`
 - Modify: `backend/common/Messaging/Nerv.IIP.Messaging.CAP/IntegrationEventReliability.cs`
+- Create: `backend/common/Messaging/Nerv.IIP.Messaging.CAP.EntityFrameworkCore/**`
 - Test: `backend/tests/Nerv.IIP.Messaging.CAP.Tests/IntegrationEventReliabilityTests.cs`
 
 - [ ] **Step 1: Add a failing EF-backed DLQ store test**
 
-Add a test that creates an EF InMemory `DbContext`, configures the shared dead-letter entity, writes a rejected message through the persistent store, lists it, marks it replayed, and verifies the status change.
+Add a test that creates a relational EF test `DbContext` (SQLite in-memory is sufficient for CI), configures the shared dead-letter entity, verifies the relational mapping metadata such as table name, `event_json` column type and indexes, writes a rejected message through the persistent store, lists it, marks it replayed, and verifies the status change.
 
 Run:
 
@@ -31,13 +32,13 @@ dotnet test backend/tests/Nerv.IIP.Messaging.CAP.Tests/Nerv.IIP.Messaging.CAP.Te
 
 Expected before implementation: compile failure because `PersistentIntegrationEventDeadLetterStore<TDbContext>` does not exist.
 
-- [ ] **Step 2: Add EF package references**
+- [ ] **Step 2: Add EF extension package**
 
-Add `Microsoft.EntityFrameworkCore` and `Microsoft.EntityFrameworkCore.Relational` to `Nerv.IIP.Messaging.CAP.csproj`.
+Create `Nerv.IIP.Messaging.CAP.EntityFrameworkCore` and add `Microsoft.EntityFrameworkCore` and `Microsoft.EntityFrameworkCore.Relational` there. Do not add EF Core package references to the base `Nerv.IIP.Messaging.CAP.csproj`.
 
 - [ ] **Step 3: Implement shared persistent DLQ entity and store**
 
-In `IntegrationEventReliability.cs`, add:
+In the EF extension package, add:
 
 ```csharp
 public sealed class IntegrationEventDeadLetter
@@ -63,7 +64,7 @@ public sealed class IntegrationEventDeadLetter
 }
 ```
 
-Add `PersistentIntegrationEventDeadLetterStore<TDbContext>` with `AddAsync`, `ListAsync` and `MarkReplayedAsync`, using `dbContext.Set<IntegrationEventDeadLetter>()`.
+Add `PersistentIntegrationEventDeadLetterStore<TDbContext>` with `AddAsync`, `ListAsync` and `MarkReplayedAsync`, using `dbContext.Set<IntegrationEventDeadLetter>()`. Keep only `IIntegrationEventDeadLetterStore`, `IntegrationEventDeadLetterMessage`, `IntegrationEventDeadLetterStatus`, `IntegrationEventConsumerGuard`, the envelope validator and the in-memory store in the base CAP package.
 
 Add `ModelBuilder.ConfigureIntegrationEventDeadLetters()` extension that maps table `integration_event_dead_letters`, all comments, JSON column type, status string conversion, and indexes:
 
@@ -145,6 +146,7 @@ Expected: Notification tests pass.
 - [ ] **Step 1: Add failing AppHub persistence test**
 
 Add a test that boots AppHub with PostgreSQL profile test services and asserts `IIntegrationEventDeadLetterStore` resolves to `PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>`.
+Because this test only verifies DI registration, the test factory must replace the EF Core database provider with an in-memory provider after service registration. It must not depend on a reachable PostgreSQL instance.
 
 - [ ] **Step 2: Register persistent store for PostgreSQL profile**
 
