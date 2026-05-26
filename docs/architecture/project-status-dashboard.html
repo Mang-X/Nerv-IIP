@@ -366,21 +366,21 @@
       <div class="panel hero-copy">
         <div class="meta">
           <span class="pill green">业务 MVP 后端已成形</span>
-          <span class="pill green">#77 P0 收口 PR</span>
-          <span class="pill red">合并后开放项仅 #78 / #142</span>
+          <span class="pill green">#77 P0 已收口</span>
+          <span class="pill red">开放项仅 #78 / #142</span>
         </div>
         <h1>Nerv-IIP 项目状态看板</h1>
         <p>
-          生成时间：2026-05-25（文档收口快照，非实时看板）。基于 <code>implementation-readiness.md</code>、代码目录、验证脚本、
+          生成时间：2026-05-26（文档收口快照，非实时看板）。基于 <code>implementation-readiness.md</code>、代码目录、验证脚本、
           GitHub issue 与端口矩阵核查结果。当前判断：平台控制面、业务服务 MVP、BusinessGateway/BusinessConsole、
-          FileStorage MVP、事件可靠性、生产部署 artifacts、性能 smoke 与 #77 P0 full-chain acceptance 已形成基线；接下来应优先推进 #142 对象存储、PDA/mobile、事件可靠性和部署发布 hardening。
+          FileStorage MVP、事件可靠性、生产部署 artifacts、release rehearsal、性能阈值化与 #77 P0 full-chain acceptance 已形成基线；接下来应优先推进 #142 对象存储、PDA/mobile、事件可靠性和部署发布 hardening。
         </p>
       </div>
       <div class="panel hero-kpis" aria-label="项目关键指标">
         <div class="kpi"><strong>12</strong><span>业务服务已存在 Domain / Infrastructure / Web / tests</span></div>
         <div class="kpi"><strong>5100-5125</strong><span>平台、业务、Gateway 与 Console 端口矩阵已冻结</span></div>
         <div class="kpi"><strong>7</strong><span>#77 P0 验收覆盖的全链路场景</span></div>
-        <div class="kpi"><strong>2</strong><span>合并后开放 issue：#78 / #142</span></div>
+        <div class="kpi"><strong>2</strong><span>开放 issue：#78 / #142</span></div>
       </div>
     </section>
 
@@ -469,12 +469,12 @@
         </tr>
       </thead>
       <tbody>
-        <tr><td>#77 Full-chain acceptance</td><td><span class="status done">P0 收口</span></td><td>默认 governed verify 覆盖 WMS live HTTP TestServer proof、MES/ERP public surfaces 和七条链路 acceptance evidence；合并 PR 后关闭。</td></tr>
+        <tr><td>#77 Full-chain acceptance</td><td><span class="status done">P0 收口</span></td><td>默认 governed verify 覆盖 WMS live HTTP TestServer proof、MES/ERP public surfaces 和七条链路 acceptance evidence；已完成关闭。</td></tr>
         <tr><td>#142 MinIO/S3 multipart</td><td><span class="status gap">开放补强</span></td><td>FileStorage MVP 与 tus hardening 已落地；#142 聚焦 post-MVP MinIO/S3 multipart/object storage provider。</td></tr>
         <tr><td>#78 甘特/RFC</td><td><span class="status gap">开放 RFC</span></td><td>只保留为 shadcn-vue + Leafer UI 甘特/排产图技术方案评估，不进入当前后端/domain 主线。</td></tr>
         <tr><td>#70 / #71 / #141 / #143</td><td><span class="status done">已关闭</span></td><td>平台一期/二期、FileStorage tus hardening 和 Business Console component readiness 已形成当前基线；后续增量另开 issue。</td></tr>
-        <tr><td>#127-#140</td><td><span class="status done">已关闭</span></td><td>业务 waves、ERP、全链路 baseline support 和 equipment reliability 已落地；#77 P0 收口 PR 承接最终关闭。</td></tr>
-        <tr><td>#166-#175</td><td><span class="status done">已关闭</span></td><td>Security、event reliability、ExternalClient、production deployment artifacts 与 performance baseline 已进入当前事实源。</td></tr>
+        <tr><td>#127-#140</td><td><span class="status done">已关闭</span></td><td>业务 waves、ERP、全链路 baseline support、equipment reliability 和 #77 P0 收口已落地。</td></tr>
+        <tr><td>#166-#175</td><td><span class="status done">已关闭</span></td><td>Security、event reliability、ExternalClient、production deployment artifacts、release rehearsal 与 performance threshold gate 已进入当前事实源。</td></tr>
       </tbody>
     </table>
 
@@ -507,8 +507,8 @@
       <article class="section-card lane violet">
         <h3>发布 / 可靠性硬化</h3>
         <ul>
-          <li>生产 artifacts 已有基线；下一步补 Windows Service/systemd、备份恢复演练、seed 清单和现场诊断。</li>
-          <li>真实 PostgreSQL/RabbitMQ/外部设备联调作为 hardening profile 增量，不阻塞 #77 P0 关闭。</li>
+          <li>生产 artifacts、release rehearsal 和性能阈值化已有基线；下一步补 Windows Service/systemd、备份恢复演练、seed 清单和现场诊断。</li>
+          <li>真实 PostgreSQL/RabbitMQ/外部设备联调作为 hardening profile 增量，不阻塞业务推进。</li>
           <li>新脚本必须 dot-source <code>scripts/lib/ScriptAutomation.ps1</code> 并过治理检查。</li>
         </ul>
       </article>
@@ -541,7 +541,7 @@
       <li><code>backend/services/Business/*</code></li>
       <li><code>scripts/verify-business-*.ps1</code></li>
       <li><code>.\nerv.ps1 ports</code>，核对 5100-5125 端口矩阵。</li>
-      <li><code>gh issue list --state open</code>，合并 #77 收口 PR 后核对当前开放项为 #78/#142；<code>gh issue list --state all</code>，核对 #70/#71/#77/#141/#143/#166-#175 已关闭。</li>
+      <li><code>gh issue list --state open</code>，核对当前开放项为 #78/#142；<code>gh issue list --state all</code>，核对 #70/#71/#77/#141/#143/#166-#175 已关闭。</li>
     </ul>
   </main>
 </body>

@@ -32,6 +32,7 @@ builder.Services
             s.Version = "v1";
         };
     });
+builder.Services.AddHealthChecks();
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddMediatR(configuration =>
 {
@@ -72,6 +73,12 @@ else
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
+if (usePostgreSql && autoMigrate)
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<NotificationDatabaseMigrationRunner>().MigrateAsync();
+}
+
 app.UseNervIipCorrelation();
 app.UseNervIipRequestLocalization();
 if (usePostgreSql)
@@ -85,6 +92,7 @@ app.UseFastEndpoints(c =>
 {
     c.Endpoints.NameGenerator = ctx => ToLowerCamelEndpointName(ctx.EndpointType.Name);
 }).UseSwaggerGen();
+app.MapHealthChecks("/health");
 app.Run();
 
 static string ToLowerCamelEndpointName(string endpointTypeName)

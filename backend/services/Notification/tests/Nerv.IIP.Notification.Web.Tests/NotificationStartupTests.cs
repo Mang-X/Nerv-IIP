@@ -26,6 +26,17 @@ public sealed class NotificationStartupTests
     }
 
     [Fact]
+    public async Task Health_endpoint_returns_healthy()
+    {
+        await using var factory = CreateInMemoryFactory();
+        using var client = factory.CreateClient();
+
+        var health = await client.GetStringAsync("/health");
+
+        Assert.Equal("Healthy", health);
+    }
+
+    [Fact]
     public void Postgres_automigrate_is_rejected_outside_development()
     {
         using var factory = new WebApplicationFactory<Program>()

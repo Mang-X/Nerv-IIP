@@ -20,6 +20,7 @@ internal static class NotificationPersistenceServiceCollectionExtensions
             services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
                 connectionString,
                 npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "notification")));
+            services.AddScoped<NotificationDatabaseMigrationRunner>();
         }
         else if (string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase))
         {
