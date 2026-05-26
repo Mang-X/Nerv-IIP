@@ -156,6 +156,7 @@ public static class BusinessAcceptanceHttp
             {
                 if (string.Equals(pair.Key, propertyName, StringComparison.OrdinalIgnoreCase))
                 {
+                    // Prefer the first matching key in document order; callers use unique response fields.
                     return ExtractString(pair.Value);
                 }
 

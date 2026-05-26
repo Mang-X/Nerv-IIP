@@ -14,6 +14,8 @@ using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.DistributedLocks;
+using NetCorePal.Extensions.DistributedTransactions;
 using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTask;
 using WarehouseTaskId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId;
 
@@ -87,6 +89,8 @@ public sealed class WmsEndpointContractTests
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
         var suffix = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        var externalTaskId = $"WCS-{suffix}-1";
+        var retryExternalTaskId = $"WCS-{suffix}-2";
         WarehouseTaskId warehouseTaskId;
         using (var scope = factory.Services.CreateScope())
         {
@@ -94,20 +98,36 @@ public sealed class WmsEndpointContractTests
             var warehouseTask = WarehouseTask.CreatePutaway("org-acceptance", "env-acceptance", $"WT-{suffix}", $"IN-WCS-{suffix}", "10", $"SKU-WCS-{suffix}", "pcs", "SITE-01", "RECV-01", "STAGE-01", 3m);
             dbContext.WarehouseTasks.Add(warehouseTask);
             await dbContext.SaveChangesAsync(CancellationToken.None);
-
             warehouseTaskId = warehouseTask.Id;
-            var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext);
-            await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", $"WCS-{suffix}-1", """{"step":1}"""), CancellationToken.None);
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            await new Application.Commands.FailWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.FailWcsTaskCommand($"WCS-{suffix}-1", "PLC_TIMEOUT", "PLC timeout"), CancellationToken.None);
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", $"WCS-{suffix}-2", """{"step":2}"""), CancellationToken.None);
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.CompleteWcsTaskCommand($"WCS-{suffix}-2", """{"ok":true}"""), CancellationToken.None);
-            await dbContext.SaveChangesAsync(CancellationToken.None);
         }
 
-        var diagnostics = await client.GetStringAsync($"/api/business/v1/wms/wcs-tasks?OrganizationId=org-acceptance&EnvironmentId=env-acceptance&ExternalTaskId=WCS-{suffix}-2&WarehouseTaskId={warehouseTaskId}");
+        await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", new
+        {
+            warehouseTaskId = warehouseTaskId.ToString(),
+            adapterType = "agv",
+            externalTaskId,
+            payloadJson = """{"step":1}""",
+        });
+        await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail", new
+        {
+            externalTaskId,
+            failureCode = "PLC_TIMEOUT",
+            failureMessage = "PLC timeout",
+        });
+        await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", new
+        {
+            warehouseTaskId = warehouseTaskId.ToString(),
+            adapterType = "agv",
+            externalTaskId = retryExternalTaskId,
+            payloadJson = """{"step":2}""",
+        });
+        await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{retryExternalTaskId}/complete", new
+        {
+            externalTaskId = retryExternalTaskId,
+            completionPayloadJson = """{"ok":true}""",
+        });
+
+        var diagnostics = await client.GetStringAsync($"/api/business/v1/wms/wcs-tasks?OrganizationId=org-acceptance&EnvironmentId=env-acceptance&ExternalTaskId={retryExternalTaskId}&WarehouseTaskId={warehouseTaskId}");
 
         Assert.Contains("Completed", diagnostics, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("PLC_TIMEOUT", diagnostics, StringComparison.OrdinalIgnoreCase);
@@ -158,28 +178,58 @@ public sealed class WmsEndpointContractTests
 
     private static WebApplicationFactory<Program> CreateAuthorizedFactory()
     {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseSetting("environment", "Testing");
-                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
-                builder.ConfigureTestServices(services =>
-                {
-                    var databaseName = $"wms-live-http-acceptance-{Guid.NewGuid():N}";
-                    var efServices = new ServiceCollection()
-                        .AddEntityFrameworkInMemoryDatabase()
-                        .BuildServiceProvider();
+        return new WmsLiveHttpTestFactory();
+    }
 
-                    services.RemoveAll<ApplicationDbContext>();
-                    services.RemoveAll<DbContextOptions>();
-                    services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
-                    services.AddDbContext<ApplicationDbContext>(options =>
-                        options
-                            .UseInMemoryDatabase(databaseName)
-                            .UseInternalServiceProvider(efServices)
-                            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
-                });
+    private static async Task PostJsonAndAssertOkAsync(HttpClient client, string route, object request)
+    {
+        var response = await client.PostAsJsonAsync(route, request);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected successful WMS live HTTP response from {route}, got {(int)response.StatusCode}: {body}");
+    }
+
+    private sealed class WmsLiveHttpTestFactory : WebApplicationFactory<Program>
+    {
+        private readonly string databaseName = $"wms-live-http-acceptance-{Guid.NewGuid():N}";
+        private readonly ServiceProvider efServices = new ServiceCollection()
+            .AddEntityFrameworkInMemoryDatabase()
+            .BuildServiceProvider();
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ApplicationDbContext>();
+                services.RemoveAll<DbContextOptions>();
+                services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                services.AddInMemoryDistributedLock();
+                services.TryAddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddDbContext<ApplicationDbContext>(options =>
+                    options
+                        .UseInMemoryDatabase(databaseName)
+                        .UseInternalServiceProvider(efServices)
+                        .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
             });
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                efServices.Dispose();
+            }
+        }
+    }
+
+    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 }
 
