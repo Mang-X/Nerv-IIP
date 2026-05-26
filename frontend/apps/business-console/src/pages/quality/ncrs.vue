@@ -111,7 +111,7 @@ async function submitNcrDisposition() {
   }
 
   await submitDisposition(selectedNcrId.value, body)
-  dispositionSuccess.value = `Disposition for ${selectedNcr.value?.code ?? selectedNcrId.value} submitted.`
+  dispositionSuccess.value = `不合格品 ${selectedNcr.value?.code ?? selectedNcrId.value} 处置已提交。`
 }
 
 async function submitCloseNcr() {
@@ -124,7 +124,7 @@ async function submitCloseNcr() {
   }
 
   await closeNcr(selectedNcrId.value, body)
-  closeSuccess.value = `NCR ${selectedNcr.value?.code ?? selectedNcrId.value} close submitted.`
+  closeSuccess.value = `不合格品 ${selectedNcr.value?.code ?? selectedNcrId.value} 关闭已提交。`
 }
 
 function optionalText(value: string) {
@@ -156,11 +156,11 @@ function qualityItemSummary(item: BusinessConsoleQualityItem) {
     item.serialNo,
   ].filter(isPresent)
 
-  return values.length ? values.join(' / ') : 'n/a'
+  return values.length ? values.join(' / ') : '无'
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? 'Request failed.' : ''
+  return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
 
 function isNonEmpty(value: string) {
@@ -176,14 +176,14 @@ function isPresent(value: string | undefined | null): value is string {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="Quality"
-        title="NCRs"
-        summary="Review nonconformance reports and submit disposition or close actions through Quality."
+        domain="质量"
+        title="不合格品处理"
+        summary="查看不合格报告，并通过质量服务提交处置或关闭动作。"
       >
         <template #actions>
           <Button size="sm" type="button" variant="outline" :disabled="ncrsPending" @click="refreshNcrs">
             <RefreshCwIcon data-icon="inline-start" />
-            Refresh
+            刷新
           </Button>
         </template>
       </BusinessPageHeader>
@@ -191,19 +191,19 @@ function isPresent(value: string | undefined | null): value is string {
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
           <Field>
-            <FieldLabel for="ncr-org">Organization</FieldLabel>
+            <FieldLabel for="ncr-org">组织</FieldLabel>
             <Input id="ncr-org" v-model="filters.organizationId" />
           </Field>
           <Field>
-            <FieldLabel for="ncr-env">Environment</FieldLabel>
+            <FieldLabel for="ncr-env">环境</FieldLabel>
             <Input id="ncr-env" v-model="filters.environmentId" />
           </Field>
           <Field>
-            <FieldLabel for="ncr-status">Status</FieldLabel>
-            <Input id="ncr-status" v-model="filters.status" placeholder="optional" />
+            <FieldLabel for="ncr-status">状态</FieldLabel>
+            <Input id="ncr-status" v-model="filters.status" placeholder="可选" />
           </Field>
           <Field>
-            <FieldLabel for="ncr-take">Take</FieldLabel>
+            <FieldLabel for="ncr-take">返回条数</FieldLabel>
             <Input id="ncr-take" v-model.number="filters.take" inputmode="numeric" type="number" />
           </Field>
         </FieldGroup>
@@ -212,41 +212,41 @@ function isPresent(value: string | undefined | null): value is string {
 
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">Nonconformance reports</h2>
-          <span class="text-sm text-muted-foreground">{{ ncrs.length }} returned</span>
+          <h2 class="text-sm font-semibold text-foreground">不合格报告</h2>
+          <span class="text-sm text-muted-foreground">返回 {{ ncrs.length }} 条</span>
         </div>
         <div class="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>NCR</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Summary</TableHead>
-                <TableHead class="text-right">Action</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead>摘要</TableHead>
+                <TableHead class="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               <TableRow v-for="(ncr, index) in ncrs" :key="rowKey(ncr, index)">
                 <TableCell>
                   <div class="flex flex-col gap-0.5">
-                    <span class="font-medium">{{ ncr.code ?? 'n/a' }}</span>
-                    <span class="text-xs text-muted-foreground">{{ ncr.id ?? 'No NCR id' }}</span>
+                    <span class="font-medium">{{ ncr.code ?? '无' }}</span>
+                    <span class="text-xs text-muted-foreground">{{ ncr.id ?? '无 NCR ID' }}</span>
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{{ ncr.status ?? 'unknown' }}</Badge>
+                  <Badge variant="secondary">{{ ncr.status ?? '未知' }}</Badge>
                 </TableCell>
                 <TableCell>{{ qualityItemSummary(ncr) }}</TableCell>
                 <TableCell class="text-right">
                   <Button size="sm" variant="outline" type="button" @click="openNcr(ncr)">
-                    Open
+                    打开
                   </Button>
                 </TableCell>
               </TableRow>
               <TableEmpty v-if="!ncrs.length && !ncrsPending" :colspan="4">
-                No NCRs returned.
+                未返回不合格报告。
               </TableEmpty>
-              <TableEmpty v-if="ncrsPending" :colspan="4">Loading NCRs...</TableEmpty>
+              <TableEmpty v-if="ncrsPending" :colspan="4">正在加载不合格报告...</TableEmpty>
             </TableBody>
           </Table>
         </div>
@@ -255,51 +255,51 @@ function isPresent(value: string | undefined | null): value is string {
       <Sheet v-model:open="detailOpen">
         <SheetContent class="w-full overflow-y-auto sm:max-w-xl">
           <SheetHeader>
-            <SheetTitle>{{ selectedNcr?.code ?? 'NCR detail' }}</SheetTitle>
+            <SheetTitle>{{ selectedNcr?.code ?? '不合格品详情' }}</SheetTitle>
             <SheetDescription>
-              {{ selectedNcr ? qualityItemSummary(selectedNcr) : 'Review and submit quality actions.' }}
+              {{ selectedNcr ? qualityItemSummary(selectedNcr) : '查看并提交质量动作。' }}
             </SheetDescription>
           </SheetHeader>
 
           <div class="grid gap-4 px-1">
             <div class="grid gap-2 rounded-lg border p-3">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-medium text-foreground">Status</span>
-                <Badge variant="secondary">{{ selectedNcr?.status ?? 'unknown' }}</Badge>
+                <span class="text-sm font-medium text-foreground">状态</span>
+                <Badge variant="secondary">{{ selectedNcr?.status ?? '未知' }}</Badge>
               </div>
               <div class="grid gap-1 text-sm text-muted-foreground">
-                <span>ID: {{ selectedNcr?.id ?? 'n/a' }}</span>
-                <span>Code: {{ selectedNcr?.code ?? 'n/a' }}</span>
+                <span>ID: {{ selectedNcr?.id ?? '无' }}</span>
+                <span>编码: {{ selectedNcr?.code ?? '无' }}</span>
               </div>
             </div>
 
             <form class="grid gap-3 rounded-lg border p-3" @submit.prevent="submitNcrDisposition">
               <div>
-                <p class="text-xs font-bold uppercase text-primary">Disposition</p>
-                <h2 class="text-base font-semibold text-foreground">Submit disposition</h2>
+                <p class="text-xs font-bold uppercase text-primary">处置</p>
+                <h2 class="text-base font-semibold text-foreground">提交处置</h2>
               </div>
               <BusinessFormStatus :error="dispositionErrorMessage" :success="dispositionSuccess" />
               <FieldGroup class="grid gap-3">
                 <Field>
-                  <FieldLabel>Disposition type</FieldLabel>
+                  <FieldLabel>处置类型</FieldLabel>
                   <Select v-model="dispositionForm.dispositionType">
-                    <SelectTrigger aria-label="Disposition type">
+                    <SelectTrigger aria-label="处置类型">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="use-as-is">Use as is</SelectItem>
-                      <SelectItem value="rework">Rework</SelectItem>
-                      <SelectItem value="scrap">Scrap</SelectItem>
-                      <SelectItem value="return-to-supplier">Return to supplier</SelectItem>
+                      <SelectItem value="use-as-is">让步接收</SelectItem>
+                      <SelectItem value="rework">返工</SelectItem>
+                      <SelectItem value="scrap">报废</SelectItem>
+                      <SelectItem value="return-to-supplier">退供应商</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
                 <Field>
-                  <FieldLabel for="ncr-approval-chain">Approval chain</FieldLabel>
+                  <FieldLabel for="ncr-approval-chain">审批链</FieldLabel>
                   <Input id="ncr-approval-chain" v-model="dispositionForm.dispositionApprovalChainId" />
                 </Field>
                 <Field>
-                  <FieldLabel for="ncr-disposition-files">Attachment file IDs</FieldLabel>
+                  <FieldLabel for="ncr-disposition-files">附件文件 ID</FieldLabel>
                   <Input id="ncr-disposition-files" v-model="dispositionForm.attachmentFileIds" placeholder="file-1, file-2" />
                 </Field>
               </FieldGroup>
@@ -307,28 +307,28 @@ function isPresent(value: string | undefined | null): value is string {
                 <Button type="submit" :disabled="submitDispositionPending || !canSubmitDisposition">
                   <Spinner v-if="submitDispositionPending" data-icon="inline-start" />
                   <SendIcon v-else data-icon="inline-start" />
-                  Submit disposition
+                  提交处置
                 </Button>
               </div>
             </form>
 
             <form class="grid gap-3 rounded-lg border p-3" @submit.prevent>
               <div>
-                <p class="text-xs font-bold uppercase text-primary">Close</p>
-                <h2 class="text-base font-semibold text-foreground">Close NCR</h2>
+                <p class="text-xs font-bold uppercase text-primary">关闭</p>
+                <h2 class="text-base font-semibold text-foreground">关闭不合格品</h2>
               </div>
               <BusinessFormStatus :error="closeErrorMessage" :success="closeSuccess" />
               <FieldGroup class="grid gap-3">
                 <Field>
-                  <FieldLabel for="ncr-rework">Rework work order</FieldLabel>
+                  <FieldLabel for="ncr-rework">返工工单</FieldLabel>
                   <Input id="ncr-rework" v-model="closeForm.reworkWorkOrderId" />
                 </Field>
                 <Field>
-                  <FieldLabel for="ncr-scrap">Scrap movement</FieldLabel>
+                  <FieldLabel for="ncr-scrap">报废库存移动</FieldLabel>
                   <Input id="ncr-scrap" v-model="closeForm.scrapMovementId" />
                 </Field>
                 <Field>
-                  <FieldLabel for="ncr-return">Return document</FieldLabel>
+                  <FieldLabel for="ncr-return">退货单据</FieldLabel>
                   <Input id="ncr-return" v-model="closeForm.returnDocumentId" />
                 </Field>
               </FieldGroup>
@@ -343,19 +343,19 @@ function isPresent(value: string | undefined | null): value is string {
                     >
                       <Spinner v-if="closeNcrPending" data-icon="inline-start" />
                       <CheckCircle2Icon v-else data-icon="inline-start" />
-                      Close NCR
+                      关闭不合格品
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Close this NCR?</AlertDialogTitle>
+                      <AlertDialogTitle>确认关闭该不合格品？</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This submits a Quality close action only. Inventory, WMS, and MES follow their own service workflows.
+                        这里仅提交质量关闭动作，库存、WMS 和 MES 仍按各自服务流程处理。
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction @click="submitCloseNcr">Confirm close</AlertDialogAction>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction @click="submitCloseNcr">确认关闭</AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>

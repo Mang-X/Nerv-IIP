@@ -36,7 +36,7 @@ export const useAuthStore = defineStore('business-auth', () => {
 
   const isAuthenticated = computed(() => Boolean(accessToken.value && principal.value))
   const isRestoring = computed(() => restoreStatus.value === 'restoring')
-  const displayName = computed(() => principal.value?.loginName ?? 'Unknown user')
+  const displayName = computed(() => principal.value?.loginName ?? '未知用户')
 
   async function login(loginName: string, password: string) {
     authError.value = undefined
@@ -44,7 +44,7 @@ export const useAuthStore = defineStore('business-auth', () => {
       await applySession(await loginConsole({ loginName, password }))
     } catch (error) {
       clearSession('login-failed')
-      authError.value = error instanceof Error ? error.message : 'Unable to sign in.'
+      authError.value = error instanceof Error ? error.message : '无法登录。'
       throw error
     }
   }
@@ -275,7 +275,7 @@ function assertValidSession(session: ConsoleAuthResponse): ValidConsoleAuthRespo
     return session as ValidConsoleAuthResponse
   }
 
-  throw new Error('Authentication service returned an invalid session.')
+  throw new Error('认证服务返回了无效会话。')
 }
 
 function unrefTimer(timer: ReturnType<typeof setTimeout>) {

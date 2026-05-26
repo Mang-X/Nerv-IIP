@@ -139,7 +139,7 @@ async function submitSku() {
   }
 
   const response = await createSku(body)
-  createSuccess.value = `SKU ${response?.data?.code ?? body.code} submitted.`
+  createSuccess.value = `SKU ${response?.data?.code ?? body.code} 已提交。`
   resetCreateForm()
   createOpen.value = false
 }
@@ -154,7 +154,7 @@ function rowKey(item: BusinessConsoleResourceItem, index: number) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? 'Request failed.' : ''
+  return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
 
 function isNonEmpty(value: string) {
@@ -166,9 +166,9 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MasterData"
-        title="SKU maintenance"
-        summary="List and create SKU master records through the BusinessGateway facade."
+        domain="主数据"
+        title="SKU 维护"
+        summary="通过业务网关查询和创建 SKU 主数据。"
       >
         <template #actions>
           <Button
@@ -179,21 +179,21 @@ function isNonEmpty(value: string) {
             @click="refreshSkus"
           >
             <RefreshCwIcon data-icon="inline-start" />
-            Refresh
+            刷新
           </Button>
 
           <Dialog v-model:open="createOpen" @update:open="syncContextFromFilters">
             <DialogTrigger as-child>
               <Button size="sm" type="button">
                 <PlusIcon data-icon="inline-start" />
-                Create SKU
+                新建 SKU
               </Button>
             </DialogTrigger>
             <DialogContent class="sm:max-w-3xl">
               <DialogHeader>
-                <DialogTitle>Create SKU</DialogTitle>
+                <DialogTitle>新建 SKU</DialogTitle>
                 <DialogDescription>
-                  Submit a new MasterData SKU. Required fields mirror the BFF contract.
+                  提交新的 SKU 主数据，必填项与业务网关契约保持一致。
                 </DialogDescription>
               </DialogHeader>
 
@@ -202,87 +202,87 @@ function isNonEmpty(value: string) {
 
                 <FieldGroup class="grid gap-3 sm:grid-cols-2">
                   <Field>
-                    <FieldLabel for="sku-org">Organization</FieldLabel>
+                    <FieldLabel for="sku-org">组织</FieldLabel>
                     <Input id="sku-org" v-model="createForm.organizationId" required />
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-env">Environment</FieldLabel>
+                    <FieldLabel for="sku-env">环境</FieldLabel>
                     <Input id="sku-env" v-model="createForm.environmentId" required />
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-code">SKU code</FieldLabel>
+                    <FieldLabel for="sku-code">SKU 编码</FieldLabel>
                     <Input id="sku-code" v-model="createForm.code" autocomplete="off" required />
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-name">Name</FieldLabel>
+                    <FieldLabel for="sku-name">名称</FieldLabel>
                     <Input id="sku-name" v-model="createForm.name" autocomplete="off" required />
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-uom">Base UOM</FieldLabel>
+                    <FieldLabel for="sku-uom">基本单位</FieldLabel>
                     <Input id="sku-uom" v-model="createForm.baseUomCode" required />
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-category">Category</FieldLabel>
+                    <FieldLabel for="sku-category">分类</FieldLabel>
                     <Input id="sku-category" v-model="createForm.category" required />
                   </Field>
                   <Field>
-                    <FieldLabel>Material type</FieldLabel>
+                    <FieldLabel>物料类型</FieldLabel>
                     <Select v-model="createForm.materialType">
-                      <SelectTrigger aria-label="Material type">
-                        <SelectValue placeholder="Material type" />
+                      <SelectTrigger aria-label="物料类型">
+                        <SelectValue placeholder="物料类型" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="finished-good">Finished good</SelectItem>
-                        <SelectItem value="raw-material">Raw material</SelectItem>
-                        <SelectItem value="packaging">Packaging</SelectItem>
-                        <SelectItem value="service">Service</SelectItem>
+                        <SelectItem value="finished-good">成品</SelectItem>
+                        <SelectItem value="raw-material">原材料</SelectItem>
+                        <SelectItem value="packaging">包材</SelectItem>
+                        <SelectItem value="service">服务</SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>
                   <Field>
-                    <FieldLabel>Batch tracking</FieldLabel>
+                    <FieldLabel>批次追踪</FieldLabel>
                     <Select v-model="createForm.batchTrackingPolicy">
-                      <SelectTrigger aria-label="Batch tracking">
-                        <SelectValue placeholder="Batch tracking" />
+                      <SelectTrigger aria-label="批次追踪">
+                        <SelectValue placeholder="批次追踪" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="optional">Optional</SelectItem>
-                        <SelectItem value="required">Required</SelectItem>
+                        <SelectItem value="none">不追踪</SelectItem>
+                        <SelectItem value="optional">可选</SelectItem>
+                        <SelectItem value="required">必填</SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>
                   <Field>
-                    <FieldLabel>Serial tracking</FieldLabel>
+                    <FieldLabel>序列号追踪</FieldLabel>
                     <Select v-model="createForm.serialTrackingPolicy">
-                      <SelectTrigger aria-label="Serial tracking">
-                        <SelectValue placeholder="Serial tracking" />
+                      <SelectTrigger aria-label="序列号追踪">
+                        <SelectValue placeholder="序列号追踪" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="optional">Optional</SelectItem>
-                        <SelectItem value="required">Required</SelectItem>
+                        <SelectItem value="none">不追踪</SelectItem>
+                        <SelectItem value="optional">可选</SelectItem>
+                        <SelectItem value="required">必填</SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-shelf">Shelf-life policy</FieldLabel>
+                    <FieldLabel for="sku-shelf">保质期策略</FieldLabel>
                     <Input id="sku-shelf" v-model="createForm.shelfLifePolicyCode" />
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-storage">Storage condition</FieldLabel>
+                    <FieldLabel for="sku-storage">存储条件</FieldLabel>
                     <Input id="sku-storage" v-model="createForm.storageConditionCode" />
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-barcode">Default barcode rule</FieldLabel>
+                    <FieldLabel for="sku-barcode">默认条码规则</FieldLabel>
                     <Input id="sku-barcode" v-model="createForm.defaultBarcodeRuleCode" />
                   </Field>
                   <Field class="sm:col-span-2">
-                    <FieldLabel for="sku-tags">Compliance tags</FieldLabel>
-                    <Input id="sku-tags" v-model="createForm.complianceTags" placeholder="GMP, export" />
+                    <FieldLabel for="sku-tags">合规标签</FieldLabel>
+                    <Input id="sku-tags" v-model="createForm.complianceTags" placeholder="GMP, 出口" />
                   </Field>
                   <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3 sm:col-span-2">
-                    <FieldLabel for="sku-quality">Quality inspection required</FieldLabel>
+                    <FieldLabel for="sku-quality">需要质量检验</FieldLabel>
                     <Checkbox id="sku-quality" v-model:checked="createForm.qualityRequired" />
                   </Field>
                 </FieldGroup>
@@ -290,7 +290,7 @@ function isNonEmpty(value: string) {
                 <DialogFooter>
                   <Button type="submit" :disabled="createSkuPending || !canCreateSku">
                     <Spinner v-if="createSkuPending" data-icon="inline-start" />
-                    Create SKU
+                    新建 SKU
                   </Button>
                 </DialogFooter>
               </form>
@@ -302,15 +302,15 @@ function isNonEmpty(value: string) {
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <div class="grid gap-3 sm:grid-cols-3">
           <Field>
-            <FieldLabel for="sku-filter-org">Organization</FieldLabel>
+            <FieldLabel for="sku-filter-org">组织</FieldLabel>
             <Input id="sku-filter-org" v-model="filters.organizationId" />
           </Field>
           <Field>
-            <FieldLabel for="sku-filter-env">Environment</FieldLabel>
+            <FieldLabel for="sku-filter-env">环境</FieldLabel>
             <Input id="sku-filter-env" v-model="filters.environmentId" />
           </Field>
           <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
-            <FieldLabel for="sku-include-disabled">Include disabled</FieldLabel>
+            <FieldLabel for="sku-include-disabled">包含停用数据</FieldLabel>
             <Checkbox id="sku-include-disabled" v-model:checked="filters.includeDisabled" />
           </Field>
         </div>
@@ -319,36 +319,36 @@ function isNonEmpty(value: string) {
 
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">SKU list</h2>
-          <span class="text-sm text-muted-foreground">{{ filteredSkus.length }} returned</span>
+          <h2 class="text-sm font-semibold text-foreground">SKU 列表</h2>
+          <span class="text-sm text-muted-foreground">返回 {{ filteredSkus.length }} 条</span>
         </div>
         <div class="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Display name</TableHead>
-                <TableHead>Resource type</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Snapshot</TableHead>
+                <TableHead>编码</TableHead>
+                <TableHead>显示名称</TableHead>
+                <TableHead>资源类型</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead>快照版本</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               <TableRow v-for="(sku, index) in filteredSkus" :key="rowKey(sku, index)">
-                <TableCell class="font-medium">{{ sku.code ?? 'n/a' }}</TableCell>
-                <TableCell>{{ sku.displayName ?? 'n/a' }}</TableCell>
+                <TableCell class="font-medium">{{ sku.code ?? '无' }}</TableCell>
+                <TableCell>{{ sku.displayName ?? '无' }}</TableCell>
                 <TableCell>{{ sku.resourceType ?? 'sku' }}</TableCell>
                 <TableCell>
                   <Badge :variant="sku.active === false ? 'secondary' : 'success'">
-                    {{ sku.active === false ? 'inactive' : 'active' }}
+                    {{ sku.active === false ? '停用' : '启用' }}
                   </Badge>
                 </TableCell>
-                <TableCell class="tabular-nums">{{ sku.snapshotVersion ?? 'n/a' }}</TableCell>
+                <TableCell class="tabular-nums">{{ sku.snapshotVersion ?? '无' }}</TableCell>
               </TableRow>
               <TableEmpty v-if="!filteredSkus.length && !skusPending" :colspan="5">
-                No SKU data returned.
+                未返回 SKU 数据。
               </TableEmpty>
-              <TableEmpty v-if="skusPending" :colspan="5">Loading SKUs...</TableEmpty>
+              <TableEmpty v-if="skusPending" :colspan="5">正在加载 SKU...</TableEmpty>
             </TableBody>
           </Table>
         </div>

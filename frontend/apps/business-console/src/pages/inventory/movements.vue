@@ -90,7 +90,7 @@ async function submitMovement() {
   }
 
   const response = await postMovement(body)
-  successMessage.value = `Movement ${response?.data?.movementId ?? body.idempotencyKey} accepted.`
+  successMessage.value = `库存移动 ${response?.data?.movementId ?? body.idempotencyKey} 已受理。`
 }
 
 function optionalText(value: string) {
@@ -104,7 +104,7 @@ function toOptionalNumber(value: string) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? 'Request failed.' : ''
+  return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
 
 function isNonEmpty(value: string) {
@@ -116,9 +116,9 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="Inventory"
-        title="Movement posting"
-        summary="Post an idempotent inventory movement request through the BusinessGateway facade."
+        domain="库存"
+        title="库存移动过账"
+        summary="通过业务网关提交幂等库存移动请求。"
       />
 
       <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitMovement">
@@ -126,41 +126,41 @@ function isNonEmpty(value: string) {
 
         <FieldGroup class="grid gap-3 md:grid-cols-3">
           <Field>
-            <FieldLabel for="movement-org">Organization</FieldLabel>
+            <FieldLabel for="movement-org">组织</FieldLabel>
             <Input id="movement-org" v-model="form.organizationId" required />
           </Field>
           <Field>
-            <FieldLabel for="movement-env">Environment</FieldLabel>
+            <FieldLabel for="movement-env">环境</FieldLabel>
             <Input id="movement-env" v-model="form.environmentId" required />
           </Field>
           <Field>
-            <FieldLabel>Movement type</FieldLabel>
+            <FieldLabel>移动类型</FieldLabel>
             <Select v-model="form.movementType">
-              <SelectTrigger aria-label="Movement type">
+              <SelectTrigger aria-label="移动类型">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="receipt">Receipt</SelectItem>
-                <SelectItem value="issue">Issue</SelectItem>
-                <SelectItem value="transfer">Transfer</SelectItem>
-                <SelectItem value="adjustment">Adjustment</SelectItem>
+                <SelectItem value="receipt">入库</SelectItem>
+                <SelectItem value="issue">出库</SelectItem>
+                <SelectItem value="transfer">调拨</SelectItem>
+                <SelectItem value="adjustment">调整</SelectItem>
               </SelectContent>
             </Select>
           </Field>
           <Field>
-            <FieldLabel for="movement-source-service">Source service</FieldLabel>
+            <FieldLabel for="movement-source-service">来源服务</FieldLabel>
             <Input id="movement-source-service" v-model="form.sourceService" required />
           </Field>
           <Field>
-            <FieldLabel for="movement-source-document">Source document</FieldLabel>
+            <FieldLabel for="movement-source-document">来源单据</FieldLabel>
             <Input id="movement-source-document" v-model="form.sourceDocumentId" required />
           </Field>
           <Field>
-            <FieldLabel for="movement-source-line">Source line</FieldLabel>
+            <FieldLabel for="movement-source-line">来源行</FieldLabel>
             <Input id="movement-source-line" v-model="form.sourceDocumentLineId" />
           </Field>
           <Field>
-            <FieldLabel for="movement-idempotency">Idempotency key</FieldLabel>
+            <FieldLabel for="movement-idempotency">幂等键</FieldLabel>
             <Input id="movement-idempotency" v-model="form.idempotencyKey" required />
           </Field>
           <Field>
@@ -168,39 +168,39 @@ function isNonEmpty(value: string) {
             <Input id="movement-sku" v-model="form.skuCode" required />
           </Field>
           <Field>
-            <FieldLabel for="movement-uom">UOM</FieldLabel>
+            <FieldLabel for="movement-uom">单位</FieldLabel>
             <Input id="movement-uom" v-model="form.uomCode" required />
           </Field>
           <Field>
-            <FieldLabel for="movement-site">Site</FieldLabel>
+            <FieldLabel for="movement-site">工厂</FieldLabel>
             <Input id="movement-site" v-model="form.siteCode" required />
           </Field>
           <Field>
-            <FieldLabel for="movement-location">Location</FieldLabel>
+            <FieldLabel for="movement-location">库位</FieldLabel>
             <Input id="movement-location" v-model="form.locationCode" required />
           </Field>
           <Field>
-            <FieldLabel for="movement-quantity">Quantity</FieldLabel>
+            <FieldLabel for="movement-quantity">数量</FieldLabel>
             <Input id="movement-quantity" v-model="form.quantity" inputmode="decimal" required type="number" />
           </Field>
           <Field>
-            <FieldLabel for="movement-quality">Quality</FieldLabel>
+            <FieldLabel for="movement-quality">质量状态</FieldLabel>
             <Input id="movement-quality" v-model="form.qualityStatus" required />
           </Field>
           <Field>
-            <FieldLabel for="movement-owner-type">Owner type</FieldLabel>
+            <FieldLabel for="movement-owner-type">货主类型</FieldLabel>
             <Input id="movement-owner-type" v-model="form.ownerType" required />
           </Field>
           <Field>
-            <FieldLabel for="movement-owner-id">Owner ID</FieldLabel>
+            <FieldLabel for="movement-owner-id">货主 ID</FieldLabel>
             <Input id="movement-owner-id" v-model="form.ownerId" />
           </Field>
           <Field>
-            <FieldLabel for="movement-lot">Lot</FieldLabel>
+            <FieldLabel for="movement-lot">批次</FieldLabel>
             <Input id="movement-lot" v-model="form.lotNo" />
           </Field>
           <Field>
-            <FieldLabel for="movement-serial">Serial</FieldLabel>
+            <FieldLabel for="movement-serial">序列号</FieldLabel>
             <Input id="movement-serial" v-model="form.serialNo" />
           </Field>
         </FieldGroup>
@@ -209,7 +209,7 @@ function isNonEmpty(value: string) {
           <Button type="submit" :disabled="postMovementPending || !canSubmit">
             <Spinner v-if="postMovementPending" data-icon="inline-start" />
             <SendIcon v-else data-icon="inline-start" />
-            Post movement
+            提交库存移动
           </Button>
         </div>
       </form>
