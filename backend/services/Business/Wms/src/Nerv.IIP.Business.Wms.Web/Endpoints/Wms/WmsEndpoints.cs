@@ -31,7 +31,6 @@ public abstract class WmsEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
 
         Tags("Business WMS");
         Policies(contract.AuthorizationPolicy);
-        Permissions(contract.PermissionCode);
     }
 }
 

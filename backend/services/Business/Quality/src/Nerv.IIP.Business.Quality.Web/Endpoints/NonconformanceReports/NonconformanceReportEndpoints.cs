@@ -56,7 +56,6 @@ public abstract class QualityEndpoint<TRequest, TResponse> : Endpoint<TRequest, 
 
         Tags("Business Quality");
         Policies(InternalServiceAuthorizationPolicy.Name);
-        Permissions(contract.PermissionCode);
     }
 }
 

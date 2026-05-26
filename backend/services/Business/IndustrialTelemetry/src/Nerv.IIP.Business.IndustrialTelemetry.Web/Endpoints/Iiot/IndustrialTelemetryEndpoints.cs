@@ -30,7 +30,6 @@ public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoin
 
         Tags("Business IndustrialTelemetry");
         Policies(contract.AuthorizationPolicy);
-        Permissions(contract.PermissionCode);
     }
 }
 

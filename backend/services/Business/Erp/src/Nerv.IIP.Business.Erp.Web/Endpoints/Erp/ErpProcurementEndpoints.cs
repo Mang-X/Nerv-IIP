@@ -31,7 +31,6 @@ public abstract class ErpEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
 
         Tags("Business ERP");
         Policies(contract.AuthorizationPolicy);
-        Permissions(contract.PermissionCode);
     }
 }
 

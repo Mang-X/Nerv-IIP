@@ -29,7 +29,6 @@ public abstract class MaintenanceEndpoint<TRequest, TResponse> : Endpoint<TReque
 
         Tags("Business Maintenance");
         Policies(contract.AuthorizationPolicy);
-        Permissions(contract.PermissionCode);
     }
 }
 

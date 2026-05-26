@@ -32,7 +32,6 @@ public abstract class ProductionVersionEndpoint<TRequest, TResponse> : Endpoint<
 
         Tags("Business ProductEngineering");
         Policies(InternalServiceAuthorizationPolicy.Name);
-        Permissions(contract.PermissionCode);
     }
 }
 

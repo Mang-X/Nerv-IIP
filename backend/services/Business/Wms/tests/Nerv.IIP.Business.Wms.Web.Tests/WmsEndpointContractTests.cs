@@ -1,16 +1,23 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.DistributedLocks;
+using NetCorePal.Extensions.DistributedTransactions;
 using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTask;
+using WarehouseTaskId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -75,6 +82,58 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
+    public async Task Wms_live_http_acceptance_host_dispatches_fails_retries_and_completes_wcs_task()
+    {
+        await using var factory = CreateAuthorizedFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var suffix = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        var externalTaskId = $"WCS-{suffix}-1";
+        var retryExternalTaskId = $"WCS-{suffix}-2";
+        WarehouseTaskId warehouseTaskId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var warehouseTask = WarehouseTask.CreatePutaway("org-acceptance", "env-acceptance", $"WT-{suffix}", $"IN-WCS-{suffix}", "10", $"SKU-WCS-{suffix}", "pcs", "SITE-01", "RECV-01", "STAGE-01", 3m);
+            dbContext.WarehouseTasks.Add(warehouseTask);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            warehouseTaskId = warehouseTask.Id;
+        }
+
+        await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", new
+        {
+            warehouseTaskId = warehouseTaskId.ToString(),
+            adapterType = "agv",
+            externalTaskId,
+            payloadJson = """{"step":1}""",
+        });
+        await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail", new
+        {
+            externalTaskId,
+            failureCode = "PLC_TIMEOUT",
+            failureMessage = "PLC timeout",
+        });
+        await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", new
+        {
+            warehouseTaskId = warehouseTaskId.ToString(),
+            adapterType = "agv",
+            externalTaskId = retryExternalTaskId,
+            payloadJson = """{"step":2}""",
+        });
+        await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{retryExternalTaskId}/complete", new
+        {
+            externalTaskId = retryExternalTaskId,
+            completionPayloadJson = """{"ok":true}""",
+        });
+
+        var diagnostics = await client.GetStringAsync($"/api/business/v1/wms/wcs-tasks?OrganizationId=org-acceptance&EnvironmentId=env-acceptance&ExternalTaskId={retryExternalTaskId}&WarehouseTaskId={warehouseTaskId}");
+
+        Assert.Contains("Completed", diagnostics, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PLC_TIMEOUT", diagnostics, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Wcs_task_query_exposes_failure_retry_and_completion_diagnostics()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
@@ -115,6 +174,64 @@ public sealed class WmsEndpointContractTests
     public static IEnumerable<object[]> EndpointTypes()
     {
         return WmsEndpointContracts.All.Select(x => new object[] { x.EndpointType });
+    }
+
+    private static WebApplicationFactory<Program> CreateAuthorizedFactory()
+    {
+        return new WmsLiveHttpTestFactory();
+    }
+
+    private static async Task PostJsonAndAssertOkAsync(HttpClient client, string route, object request)
+    {
+        var response = await client.PostAsJsonAsync(route, request);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected successful WMS live HTTP response from {route}, got {(int)response.StatusCode}: {body}");
+    }
+
+    private sealed class WmsLiveHttpTestFactory : WebApplicationFactory<Program>
+    {
+        private readonly string databaseName = $"wms-live-http-acceptance-{Guid.NewGuid():N}";
+        private readonly ServiceProvider efServices = new ServiceCollection()
+            .AddEntityFrameworkInMemoryDatabase()
+            .BuildServiceProvider();
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ApplicationDbContext>();
+                services.RemoveAll<DbContextOptions>();
+                services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                services.RemoveAll<IDistributedLock>();
+                services.RemoveAll<IIntegrationEventPublisher>();
+                services.AddInMemoryDistributedLock();
+                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddDbContext<ApplicationDbContext>(options =>
+                    options
+                        .UseInMemoryDatabase(databaseName)
+                        .UseInternalServiceProvider(efServices)
+                        .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+            });
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                efServices.Dispose();
+            }
+        }
+    }
+
+    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 }
 

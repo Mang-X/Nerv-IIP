@@ -28,7 +28,6 @@ public abstract class DemandPlanningEndpoint<TRequest, TResponse> : Endpoint<TRe
 
         Tags("Business Demand Planning");
         Policies(contract.AuthorizationPolicy);
-        Permissions(contract.PermissionCode);
     }
 }
 
