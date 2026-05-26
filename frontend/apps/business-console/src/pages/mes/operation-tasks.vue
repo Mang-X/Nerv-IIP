@@ -25,7 +25,7 @@ import { computed } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '工序任务',
+    title: '工序执行',
   },
 })
 
@@ -56,8 +56,8 @@ function formatError(error: unknown) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="工序任务"
-        summary="面向班组长和调度员查看工序任务、工作中心、设备、班次和质量状态。"
+        title="工序执行"
+        summary="面向班组长和一线员工查看工序任务、工作中心、设备、班次和质量状态。"
       >
         <template #actions>
           <Button size="sm" type="button" variant="outline" :disabled="operationTasksPending" @click="refreshOperationTasks">

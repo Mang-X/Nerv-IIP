@@ -24,7 +24,7 @@ import { computed } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '生产报工',
+    title: '报工记录',
   },
 })
 
@@ -64,8 +64,8 @@ function formatError(error: unknown) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="生产报工"
-        summary="查看一线生产报工记录；新增报工仍从工单页选择工单和工序后提交。"
+        title="报工记录"
+        summary="查看一线报工结果；新增报工从工单与派工或工序执行上下文进入。"
       >
         <template #actions>
           <Button size="sm" type="button" variant="outline" :disabled="productionReportsPending" @click="refreshProductionReports">

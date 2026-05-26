@@ -25,7 +25,7 @@ import { computed } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '基础就绪',
+    title: '生产准备检查',
   },
 })
 
@@ -54,8 +54,8 @@ function formatError(error: unknown) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="基础就绪"
-        summary="开工前核对主数据、工程版本、库存、质量、设备和班次日历等前置条件。"
+        title="生产准备检查"
+        summary="作为开工、释放和派工前的辅助检查，不替代主数据、工程、库存和质量维护入口。"
       >
         <template #actions>
           <Button size="sm" type="button" variant="outline" :disabled="readinessPending" @click="refreshReadiness">
@@ -100,7 +100,7 @@ function formatError(error: unknown) {
       </div>
 
       <div class="grid gap-3 md:grid-cols-4">
-        <BusinessMetricCell label="总状态" :value="statusLabel(readiness?.status)" detail="综合基础就绪结果" />
+        <BusinessMetricCell label="总状态" :value="statusLabel(readiness?.status)" detail="综合生产准备结果" />
         <BusinessMetricCell label="检查区域" :value="areas.length" detail="当前已纳入的来源" />
         <BusinessMetricCell label="阻塞问题" :value="blockingIssues.length" detail="必须先处理" />
         <BusinessMetricCell label="警告问题" :value="warningIssues.length" detail="建议处理" />

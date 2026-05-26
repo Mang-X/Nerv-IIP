@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
+import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
@@ -50,15 +52,14 @@ const form = reactive({
 })
 
 const successMessage = shallowRef('')
+const movementSheetOpen = shallowRef(false)
 const errorMessage = computed(() => formatError(postMovementError.value))
 const canSubmit = computed(
   () =>
     isNonEmpty(form.organizationId) &&
     isNonEmpty(form.environmentId) &&
     isNonEmpty(form.movementType) &&
-    isNonEmpty(form.sourceService) &&
     isNonEmpty(form.sourceDocumentId) &&
-    isNonEmpty(form.idempotencyKey) &&
     isNonEmpty(form.skuCode) &&
     isNonEmpty(form.uomCode) &&
     isNonEmpty(form.siteCode) &&
@@ -73,10 +74,10 @@ async function submitMovement() {
     organizationId: form.organizationId.trim(),
     environmentId: form.environmentId.trim(),
     movementType: form.movementType,
-    sourceService: form.sourceService.trim(),
+    sourceService: form.sourceService.trim() || 'business-console',
     sourceDocumentId: form.sourceDocumentId.trim(),
     sourceDocumentLineId: optionalText(form.sourceDocumentLineId),
-    idempotencyKey: form.idempotencyKey.trim(),
+    idempotencyKey: optionalText(form.idempotencyKey) ?? `movement-${Date.now()}`,
     skuCode: form.skuCode.trim(),
     uomCode: form.uomCode.trim(),
     siteCode: form.siteCode.trim(),
@@ -118,9 +119,44 @@ function isNonEmpty(value: string) {
       <BusinessPageHeader
         domain="库存"
         title="库存移动过账"
-        summary="通过业务网关提交幂等库存移动请求。"
-      />
+        summary="以库存流水和来源单据为中心处理入库、出库、调拨和调整。"
+      >
+        <template #actions>
+          <Button size="sm" type="button" @click="movementSheetOpen = true">
+            <SendIcon data-icon="inline-start" />
+            新建移动
+          </Button>
+        </template>
+      </BusinessPageHeader>
 
+      <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <section class="rounded-lg border bg-background">
+          <div class="border-b px-4 py-3">
+            <h2 class="text-sm font-semibold text-foreground">库存移动工作台</h2>
+            <p class="mt-1 text-sm text-muted-foreground">后续接入库存流水后，主页面展示待确认、失败和最近过账记录。</p>
+          </div>
+          <BusinessEmptyState
+            title="暂未接入库存移动列表"
+            description="库存过账属于高风险动作，先从右上角进入抽屉填写业务单据，技术字段由系统生成。"
+            action="建议优先从收货、完工入库、领料或盘点任务上下文发起。"
+          />
+        </section>
+
+        <section class="rounded-lg border bg-background p-4">
+          <h2 class="text-sm font-semibold text-foreground">操作原则</h2>
+          <div class="mt-3 grid gap-2 text-sm text-muted-foreground">
+            <p>来源服务固定为业务控制台，不让一线用户选择技术来源。</p>
+            <p>幂等键默认自动生成，只在排查重复过账时才展开。</p>
+            <p>库存移动完成后应回到库存流水和可用量页面确认影响。</p>
+          </div>
+        </section>
+      </div>
+
+      <BusinessActionSheet
+        v-model:open="movementSheetOpen"
+        title="新建库存移动"
+        description="用于少量人工补录和异常处理；常规业务应从来源单据自动发起。"
+      >
       <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitMovement">
         <BusinessFormStatus :error="errorMessage" :success="successMessage" />
 
@@ -148,10 +184,6 @@ function isNonEmpty(value: string) {
             </Select>
           </Field>
           <Field>
-            <FieldLabel for="movement-source-service">来源服务</FieldLabel>
-            <Input id="movement-source-service" v-model="form.sourceService" required />
-          </Field>
-          <Field>
             <FieldLabel for="movement-source-document">来源单据</FieldLabel>
             <Input id="movement-source-document" v-model="form.sourceDocumentId" required />
           </Field>
@@ -159,9 +191,9 @@ function isNonEmpty(value: string) {
             <FieldLabel for="movement-source-line">来源行</FieldLabel>
             <Input id="movement-source-line" v-model="form.sourceDocumentLineId" />
           </Field>
-          <Field>
+          <Field class="md:col-span-3">
             <FieldLabel for="movement-idempotency">幂等键</FieldLabel>
-            <Input id="movement-idempotency" v-model="form.idempotencyKey" required />
+            <Input id="movement-idempotency" v-model="form.idempotencyKey" placeholder="默认自动生成，排查重复过账时填写" />
           </Field>
           <Field>
             <FieldLabel for="movement-sku">SKU</FieldLabel>
@@ -213,6 +245,7 @@ function isNonEmpty(value: string) {
           </Button>
         </div>
       </form>
+      </BusinessActionSheet>
     </section>
   </BusinessLayout>
 </template>

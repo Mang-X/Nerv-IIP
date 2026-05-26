@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
+import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import { useMesSchedules } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type {
@@ -9,7 +12,6 @@ import type {
   BusinessConsoleScheduledOperation,
 } from '@nerv-iip/api-client'
 import {
-  Badge,
   Button,
   Field,
   FieldGroup,
@@ -42,6 +44,7 @@ definePage({
 const { lastSchedule, runSchedule, runScheduleError, runSchedulePending } = useMesSchedules()
 
 const runSuccess = shallowRef('')
+const scheduleSheetOpen = shallowRef(false)
 
 const runForm = reactive({
   organizationId: 'org-001',
@@ -105,9 +108,21 @@ function isNonEmpty(value: string) {
       <BusinessPageHeader
         domain="MES"
         title="规则排程"
-        summary="运行规则排程，并用列表查看工序任务的工作中心分配结果。"
-      />
+        summary="查看最近一次规则排程结果；运行排程作为显式动作进入抽屉。"
+      >
+        <template #actions>
+          <Button size="sm" type="button" @click="scheduleSheetOpen = true">
+            <PlayIcon data-icon="inline-start" />
+            运行排程
+          </Button>
+        </template>
+      </BusinessPageHeader>
 
+      <BusinessActionSheet
+        v-model:open="scheduleSheetOpen"
+        title="运行规则排程"
+        description="规则排程会重新计算工序分配，运行前请确认触发来源和业务上下文。"
+      >
       <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitScheduleRun">
         <BusinessFormStatus :error="errorMessage" :success="runSuccess" />
 
@@ -145,6 +160,7 @@ function isNonEmpty(value: string) {
           </Button>
         </div>
       </form>
+      </BusinessActionSheet>
 
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell
@@ -178,14 +194,18 @@ function isNonEmpty(value: string) {
                 <TableCell class="font-medium">{{ assignment.workOrderId ?? '无' }}</TableCell>
                 <TableCell>{{ assignment.operationTaskId ?? '无' }}</TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{{ assignment.workCenterId ?? '无' }}</Badge>
+                  <BusinessStatusBadge :value="assignment.workCenterId ?? '无'" />
                 </TableCell>
                 <TableCell>{{ formatDateTime(assignment.startUtc) }}</TableCell>
                 <TableCell>{{ formatDateTime(assignment.endUtc) }}</TableCell>
                 <TableCell>{{ assignment.reason ?? '无' }}</TableCell>
               </TableRow>
               <TableEmpty v-if="!assignments.length && !runSchedulePending" :colspan="6">
-                暂无排程分配。
+                <BusinessEmptyState
+                  title="尚未生成排程结果"
+                  description="运行排程后，这里会显示工序任务的工作中心、开始和结束时间。"
+                  action="当前页面只展示规则结果，不替代甘特排程工作台。"
+                />
               </TableEmpty>
               <TableEmpty v-if="runSchedulePending" :colspan="6">正在运行排程...</TableEmpty>
             </TableBody>
@@ -196,9 +216,7 @@ function isNonEmpty(value: string) {
       <div v-if="affectedWorkOrderIds.length" class="rounded-lg border bg-background p-4">
         <h2 class="text-sm font-semibold text-foreground">受影响工单</h2>
         <div class="mt-3 flex flex-wrap gap-2">
-          <Badge v-for="workOrderId in affectedWorkOrderIds" :key="workOrderId" variant="secondary">
-            {{ workOrderId }}
-          </Badge>
+          <BusinessStatusBadge v-for="workOrderId in affectedWorkOrderIds" :key="workOrderId" :value="workOrderId" />
         </div>
       </div>
     </section>

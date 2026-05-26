@@ -16,7 +16,7 @@ defineProps<{
         <h1 class="text-xl font-semibold text-foreground">{{ routeName }}</h1>
         <p class="mt-1 max-w-3xl text-sm text-muted-foreground">{{ summary }}</p>
       </div>
-      <Badge variant="secondary">MVP 路由</Badge>
+      <Badge variant="secondary">待完善路由</Badge>
     </div>
 
     <div class="rounded-lg border bg-background p-4 text-sm text-muted-foreground">

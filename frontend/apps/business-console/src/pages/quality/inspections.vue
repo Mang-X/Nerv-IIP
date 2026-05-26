@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
+import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useQualityInspectionPlans } from '@/composables/useBusinessQuality'
@@ -52,6 +54,7 @@ const {
 } = useQualityInspectionPlans()
 
 const recordSuccess = shallowRef('')
+const recordSheetOpen = shallowRef(false)
 
 const recordForm = reactive({
   organizationId: filters.organizationId,
@@ -110,6 +113,14 @@ const canCreateRecord = computed(
 function syncContextFromFilters() {
   recordForm.organizationId = filters.organizationId
   recordForm.environmentId = filters.environmentId
+}
+
+function useInspectionPlan(plan: BusinessConsoleQualityItem) {
+  recordForm.inspectionPlanId = plan.id ?? ''
+  if (plan.skuCode) {
+    recordForm.skuCode = plan.skuCode
+  }
+  recordSheetOpen.value = true
 }
 
 function addCharacteristicRow() {
@@ -239,10 +250,14 @@ function isPresent(value: string | undefined | null): value is string {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="质量"
-        title="质量检验"
-        summary="通过质量服务门面查看检验方案并提交检验记录。"
+        title="检验任务与记录"
+        summary="先确认检验方案和来源上下文，再进入抽屉提交检验记录。"
       >
         <template #actions>
+          <Button size="sm" type="button" @click="recordSheetOpen = true">
+            <ClipboardCheckIcon data-icon="inline-start" />
+            创建检验记录
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -278,7 +293,7 @@ function isPresent(value: string | undefined | null): value is string {
         <BusinessFormStatus :error="listErrorMessage" />
       </div>
 
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.95fr)]">
+      <div class="grid gap-4">
         <div class="overflow-hidden rounded-lg border bg-background">
           <div class="flex items-center justify-between border-b px-4 py-3">
             <h2 class="text-sm font-semibold text-foreground">检验方案</h2>
@@ -311,21 +326,31 @@ function isPresent(value: string | undefined | null): value is string {
                       size="sm"
                       variant="outline"
                       type="button"
-                      @click="recordForm.inspectionPlanId = plan.id ?? ''"
+                      @click="useInspectionPlan(plan)"
                     >
                       选择
                     </Button>
                   </TableCell>
                 </TableRow>
                 <TableEmpty v-if="!inspectionPlans.length && !inspectionPlansPending" :colspan="4">
-                  未返回检验方案。
+                  <BusinessEmptyState
+                    title="当前筛选下没有检验方案"
+                    description="检验记录应从工单、收货或检验任务上下文进入；缺少方案时请先维护质量规则。"
+                    action="也可以使用右上角创建检验记录进行临时补录。"
+                  />
                 </TableEmpty>
                 <TableEmpty v-if="inspectionPlansPending" :colspan="4">正在加载检验方案...</TableEmpty>
               </TableBody>
             </Table>
           </div>
         </div>
+      </div>
 
+      <BusinessActionSheet
+        v-model:open="recordSheetOpen"
+        title="创建检验记录"
+        description="检验记录应尽量从方案、工单、收货或质量任务带出上下文，减少手输来源字段。"
+      >
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitInspectionRecord">
           <div>
             <p class="text-xs font-bold uppercase text-primary">记录</p>
@@ -496,7 +521,7 @@ function isPresent(value: string | undefined | null): value is string {
             </Button>
           </div>
         </form>
-      </div>
+      </BusinessActionSheet>
     </section>
   </BusinessLayout>
 </template>

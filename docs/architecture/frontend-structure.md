@@ -183,12 +183,20 @@ Business Console 登录、刷新、退出和 `/me` 可以先复用 PlatformGatew
 | --- | --- | --- |
 | `/master-data/skus` | SKU 列表、创建和基础资源选择。 | BusinessGateway MasterData facade。 |
 | `/inventory/availability` | 可用量查询。 | BusinessGateway Inventory facade。 |
-| `/inventory/movements` | 库存移动提交。 | BusinessGateway Inventory facade。 |
-| `/inventory/counts` | 盘点任务与调整确认。 | BusinessGateway Inventory facade。 |
-| `/quality/inspections` | 检验计划列表和检验记录创建。 | BusinessGateway Quality facade。 |
+| `/inventory/movements` | 库存移动工作台；新建移动通过抽屉承载。 | BusinessGateway Inventory facade。 |
+| `/inventory/counts` | 盘点任务工作台；创建任务和确认差异通过抽屉承载。 | BusinessGateway Inventory facade。 |
+| `/quality/inspections` | 检验任务与记录；检验记录创建通过抽屉承载。 | BusinessGateway Quality facade。 |
 | `/quality/ncrs` | NCR 列表、处置和关闭。 | BusinessGateway Quality facade。 |
-| `/mes/work-orders` | 工单列表和急单创建。 | BusinessGateway MES facade。 |
-| `/mes/schedules` | 规则排程运行和结果状态；不包含甘特。 | BusinessGateway MES facade。 |
+| `/mes` | 生产驾驶舱，展示工单、工序、在制、阻塞和角色待办。 | BusinessGateway MES facade。 |
+| `/mes/foundation` | 生产准备检查，作为开工、释放和派工前的辅助诊断。 | BusinessGateway MES facade。 |
+| `/mes/work-orders` | 工单与派工；急单创建和报工通过抽屉承载。 | BusinessGateway MES facade。 |
+| `/mes/work-order-detail/:workOrderId` | 工单详情，展示工序、用料和开工阻塞。后续应归位到 `/mes/work-orders/:workOrderId`。 | BusinessGateway MES facade。 |
+| `/mes/operation-tasks` | 工序执行任务列表。 | BusinessGateway MES facade。 |
+| `/mes/wip` | 在制跟踪。 | BusinessGateway MES facade。 |
+| `/mes/production-reports` | 报工记录查询；新增报工从工单或工序上下文进入。 | BusinessGateway MES facade。 |
+| `/mes/receipts` | 完工入库请求；新增请求通过抽屉承载。 | BusinessGateway MES facade。 |
+| `/mes/capacity` | 异常与产能影响。 | BusinessGateway MES facade。 |
+| `/mes/schedules` | 规则排程结果和显式运行动作；不包含甘特。 | BusinessGateway MES facade。 |
 
 业务控制台的服务端状态统一放入 `src/composables/useBusinessMasterData.ts`、`useBusinessInventory.ts`、`useBusinessQuality.ts` 和 `useBusinessMes.ts`。这些 composable 只消费 `@nerv-iip/api-client` 的 business-console 稳定导出，不深 import generated，不手写业务服务 URL。
 

@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
+import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import {
-  Badge,
   Button,
   Field,
   FieldGroup,
@@ -43,6 +45,7 @@ const {
 } = useMesFinishedGoodsReceipts()
 
 const successMessage = shallowRef('')
+const receiptSheetOpen = shallowRef(false)
 const form = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
@@ -138,9 +141,13 @@ function isNonEmpty(value: string) {
       <BusinessPageHeader
         domain="MES"
         title="完工入库"
-        summary="生产完成后发起成品入库请求，供 WMS/库存侧后续接收和过账。"
+        summary="查看完工入库请求；新增入库尽量从报工完成、工单详情或质量放行后触发。"
       >
         <template #actions>
+          <Button size="sm" type="button" @click="receiptSheetOpen = true">
+            <PackageCheckIcon data-icon="inline-start" />
+            新增入库请求
+          </Button>
           <Button size="sm" type="button" variant="outline" :disabled="receiptRequestsPending" @click="refreshReceiptRequests">
             <RefreshCwIcon data-icon="inline-start" />
             刷新
@@ -148,7 +155,7 @@ function isNonEmpty(value: string) {
         </template>
       </BusinessPageHeader>
 
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div class="grid gap-4">
         <div class="grid gap-4">
           <div class="grid gap-3 rounded-lg border bg-background p-4">
             <FieldGroup class="grid gap-3 md:grid-cols-4">
@@ -198,12 +205,16 @@ function isNonEmpty(value: string) {
                     <TableCell>{{ row.skuId ?? '无' }}</TableCell>
                     <TableCell class="text-right tabular-nums">{{ formatQuantity(row.quantity) }}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{{ row.receiptStatus ?? '未知' }}</Badge>
+                      <BusinessStatusBadge :value="row.receiptStatus" />
                     </TableCell>
                     <TableCell>{{ formatDateTime(row.requestedAtUtc) }}</TableCell>
                   </TableRow>
                   <TableEmpty v-if="!receiptRequests.length && !receiptRequestsPending" :colspan="6">
-                    暂无完工入库请求。
+                    <BusinessEmptyState
+                      title="当前没有完工入库请求"
+                      description="完工入库通常从生产报工完成、质量放行或工单详情中发起。"
+                      action="需要临时补录时，使用右上角新增入库请求。"
+                    />
                   </TableEmpty>
                   <TableEmpty v-if="receiptRequestsPending" :colspan="6">正在加载完工入库...</TableEmpty>
                 </TableBody>
@@ -211,7 +222,13 @@ function isNonEmpty(value: string) {
             </div>
           </div>
         </div>
+      </div>
 
+      <BusinessActionSheet
+        v-model:open="receiptSheetOpen"
+        title="新增入库请求"
+        description="用于生产完成后的成品入库申请，常规场景应从工单或报工上下文带出字段。"
+      >
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitReceiptRequest">
           <div>
             <p class="text-xs font-bold uppercase text-primary">入库</p>
@@ -262,7 +279,7 @@ function isNonEmpty(value: string) {
             </Button>
           </div>
         </form>
-      </div>
+      </BusinessActionSheet>
     </section>
   </BusinessLayout>
 </template>

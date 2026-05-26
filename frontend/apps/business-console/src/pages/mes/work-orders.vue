@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
+import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import { useMesWorkOrders } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type {
@@ -10,7 +13,6 @@ import type {
   BusinessConsoleRecordProductionReportRequest,
 } from '@nerv-iip/api-client'
 import {
-  Badge,
   Button,
   Checkbox,
   Field,
@@ -33,7 +35,7 @@ import { computed, reactive, shallowRef } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '工单执行',
+    title: '工单与派工',
   },
 })
 
@@ -53,6 +55,8 @@ const {
 
 const rushSuccess = shallowRef('')
 const reportSuccess = shallowRef('')
+const rushSheetOpen = shallowRef(false)
+const reportSheetOpen = shallowRef(false)
 const lastRushAffectedWorkOrders = shallowRef<string[]>([])
 const lastRushScheduleVersion = shallowRef<number>()
 
@@ -134,6 +138,7 @@ function useWorkOrder(order: BusinessConsoleMesWorkOrderItem) {
   if (firstTask?.operationTaskId) {
     reportForm.operationTaskId = firstTask.operationTaskId
   }
+  reportSheetOpen.value = true
 }
 
 async function submitRushWorkOrder() {
@@ -232,10 +237,14 @@ function isNonEmpty(value: string) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="工单执行"
-        summary="查看生产工单、创建急单，并对一线工序进行生产报工。"
+        title="工单与派工"
+        summary="以工单列表和工序上下文为中心处理急单、详情查看和报工动作。"
       >
         <template #actions>
+          <Button size="sm" type="button" @click="rushSheetOpen = true">
+            <FactoryIcon data-icon="inline-start" />
+            创建急单
+          </Button>
           <Button size="sm" type="button" variant="outline" :disabled="workOrdersPending" @click="refreshWorkOrders">
             <RefreshCwIcon data-icon="inline-start" />
             刷新
@@ -302,7 +311,7 @@ function isNonEmpty(value: string) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{{ order.status ?? '未知' }}</Badge>
+                  <BusinessStatusBadge :value="order.status" />
                 </TableCell>
                 <TableCell class="text-right tabular-nums">{{ formatQuantity(order.quantity) }}</TableCell>
                 <TableCell>{{ formatDateTime(order.dueUtc) }}</TableCell>
@@ -324,12 +333,16 @@ function isNonEmpty(value: string) {
                 </TableCell>
                 <TableCell class="text-right">
                   <Button size="sm" variant="outline" type="button" @click="useWorkOrder(order)">
-                    使用
+                    报工
                   </Button>
                 </TableCell>
               </TableRow>
               <TableEmpty v-if="!workOrders.length && !workOrdersPending" :colspan="6">
-                暂无工单。
+                <BusinessEmptyState
+                  title="当前筛选下没有工单"
+                  description="可以调整状态筛选，或从右上角创建急单进入插单流程。"
+                  action="急单创建完成后会回到工单列表继续派工和报工。"
+                />
               </TableEmpty>
               <TableEmpty v-if="workOrdersPending" :colspan="6">正在加载工单...</TableEmpty>
             </TableBody>
@@ -337,7 +350,11 @@ function isNonEmpty(value: string) {
         </div>
       </div>
 
-      <div class="grid gap-4 xl:grid-cols-2">
+      <BusinessActionSheet
+        v-model:open="rushSheetOpen"
+        title="创建急单"
+        description="急单用于生产插单和临时补单；提交后系统返回受影响工单和排程版本。"
+      >
         <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitRushWorkOrder">
           <div>
             <p class="text-xs font-bold uppercase text-primary">急单</p>
@@ -410,7 +427,13 @@ function isNonEmpty(value: string) {
             </Button>
           </div>
         </form>
+      </BusinessActionSheet>
 
+      <BusinessActionSheet
+        v-model:open="reportSheetOpen"
+        title="生产报工"
+        description="从工单或工序任务进入报工，避免一线人员手动拼接上下文。"
+      >
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitProductionReport">
           <div>
             <p class="text-xs font-bold uppercase text-primary">报工</p>
@@ -462,7 +485,7 @@ function isNonEmpty(value: string) {
             </Button>
           </div>
         </form>
-      </div>
+      </BusinessActionSheet>
     </section>
   </BusinessLayout>
 </template>

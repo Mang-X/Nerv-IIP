@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
+import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useInventoryCounts } from '@/composables/useBusinessInventory'
@@ -30,6 +32,8 @@ const {
 
 const taskSuccess = shallowRef('')
 const adjustmentSuccess = shallowRef('')
+const taskSheetOpen = shallowRef(false)
+const adjustmentSheetOpen = shallowRef(false)
 
 const taskForm = reactive({
   countTaskCode: '',
@@ -67,7 +71,6 @@ const canConfirmAdjustment = computed(
     isNonEmpty(filters.organizationId) &&
     isNonEmpty(filters.environmentId) &&
     isNonEmpty(adjustmentForm.countTaskId) &&
-    isNonEmpty(adjustmentForm.idempotencyKey) &&
     toOptionalNumber(adjustmentForm.countedQuantity) !== undefined,
 )
 
@@ -102,7 +105,7 @@ async function submitAdjustment() {
 
   const body: BusinessConsoleConfirmStockCountAdjustmentRequest = {
     countedQuantity: toOptionalNumber(adjustmentForm.countedQuantity),
-    idempotencyKey: adjustmentForm.idempotencyKey.trim(),
+    idempotencyKey: optionalText(adjustmentForm.idempotencyKey) ?? `count-${adjustmentForm.countTaskId.trim()}-${Date.now()}`,
   }
 
   const response = await confirmAdjustment(adjustmentForm.countTaskId.trim(), body)
@@ -134,8 +137,19 @@ function isNonEmpty(value: string) {
       <BusinessPageHeader
         domain="库存"
         title="库存盘点"
-        summary="创建盘点任务并确认盘点差异，页面不直接耦合库存服务内部实现。"
-      />
+        summary="以盘点任务为中心组织创建、实盘录入和差异确认。"
+      >
+        <template #actions>
+          <Button size="sm" type="button" @click="taskSheetOpen = true">
+            <ClipboardPlusIcon data-icon="inline-start" />
+            创建盘点任务
+          </Button>
+          <Button size="sm" type="button" variant="outline" @click="adjustmentSheetOpen = true">
+            <CheckCircle2Icon data-icon="inline-start" />
+            确认差异
+          </Button>
+        </template>
+      </BusinessPageHeader>
 
       <div class="grid gap-3 rounded-lg border bg-background p-4 md:grid-cols-2">
         <Field>
@@ -148,7 +162,23 @@ function isNonEmpty(value: string) {
         </Field>
       </div>
 
-      <div class="grid gap-4 xl:grid-cols-2">
+      <section class="rounded-lg border bg-background">
+        <div class="border-b px-4 py-3">
+          <h2 class="text-sm font-semibold text-foreground">盘点任务队列</h2>
+          <p class="mt-1 text-sm text-muted-foreground">后续接入盘点任务列表后，差异确认只从具体任务进入。</p>
+        </div>
+        <BusinessEmptyState
+          title="暂未接入盘点任务列表"
+          description="当前先保留任务创建和差异确认动作，但通过抽屉承载，避免两个表单堆在主页面。"
+          action="建议先创建盘点任务，再从返回的任务 ID 进入差异确认。"
+        />
+      </section>
+
+      <BusinessActionSheet
+        v-model:open="taskSheetOpen"
+        title="创建盘点任务"
+        description="指定物料、工厂、库位和批次后生成盘点任务。"
+      >
         <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitTask">
           <div>
             <p class="text-xs font-bold uppercase text-primary">任务</p>
@@ -208,7 +238,13 @@ function isNonEmpty(value: string) {
             </Button>
           </div>
         </form>
+      </BusinessActionSheet>
 
+      <BusinessActionSheet
+        v-model:open="adjustmentSheetOpen"
+        title="确认盘点差异"
+        description="从已完成实盘的任务进入差异确认；幂等键默认由系统生成。"
+      >
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitAdjustment">
           <div>
             <p class="text-xs font-bold uppercase text-primary">调整</p>
@@ -234,7 +270,7 @@ function isNonEmpty(value: string) {
             </Field>
             <Field>
               <FieldLabel for="count-adjust-idempotency">幂等键</FieldLabel>
-              <Input id="count-adjust-idempotency" v-model="adjustmentForm.idempotencyKey" required />
+              <Input id="count-adjust-idempotency" v-model="adjustmentForm.idempotencyKey" placeholder="默认自动生成" />
             </Field>
           </FieldGroup>
 
@@ -246,7 +282,7 @@ function isNonEmpty(value: string) {
             </Button>
           </div>
         </form>
-      </div>
+      </BusinessActionSheet>
     </section>
   </BusinessLayout>
 </template>

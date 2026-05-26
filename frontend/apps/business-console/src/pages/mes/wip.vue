@@ -25,7 +25,7 @@ import { computed } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '在制状态',
+    title: '在制跟踪',
   },
 })
 
@@ -53,7 +53,7 @@ function formatError(error: unknown) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="在制状态"
+        title="在制跟踪"
         summary="按工单和工序查看计划数量、良品、报废和阻塞原因。"
       >
         <template #actions>

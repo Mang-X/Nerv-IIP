@@ -9,7 +9,7 @@ withDefaults(
     badge?: string
   }>(),
   {
-    badge: 'MVP',
+    badge: 'PC 工作台',
   },
 )
 </script>

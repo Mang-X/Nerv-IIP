@@ -76,6 +76,7 @@ See `components/install-backlog.md` for full list and install commands.
 | Scenario | File |
 |---|---|
 | Business console component readiness (#143) | `roadmaps/business-console-readiness.md` |
+| Business Console MES PC workbench | `roadmaps/business-console-mes-pc-workbench.md` |
 
 ---
 

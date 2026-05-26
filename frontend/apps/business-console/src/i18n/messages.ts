@@ -11,8 +11,8 @@ export const messages = {
     },
     dashboard: {
       title: '业务控制台',
-      summary: 'MVP 业务页面入口已就位，后续纵切将在这些路由上接入真实数据维护。',
-      status: '纵切就绪',
+      summary: '业务页面入口已就位，后续按工作台交互继续完善真实数据维护。',
+      status: '工作台就绪',
     },
     login: {
       title: '登录',
@@ -49,7 +49,7 @@ export const messages = {
       counts: '库存盘点',
       inspections: '质量检验',
       ncrs: '不合格品处理',
-      workOrders: 'MES 工单',
+      workOrders: '工单与派工',
       schedules: 'MES 排程',
     },
   },
@@ -65,8 +65,8 @@ export const messages = {
     },
     dashboard: {
       title: '业务控制台',
-      summary: 'MVP 业务页面入口已就位，后续纵切将在这些路由上接入真实数据维护。',
-      status: '纵切就绪',
+      summary: '业务页面入口已就位，后续按工作台交互继续完善真实数据维护。',
+      status: '工作台就绪',
     },
     login: {
       title: '登录',
@@ -103,7 +103,7 @@ export const messages = {
       counts: '库存盘点',
       inspections: '质量检验',
       ncrs: '不合格品处理',
-      workOrders: 'MES 工单',
+      workOrders: '工单与派工',
       schedules: 'MES 排程',
     },
   },

@@ -25,7 +25,7 @@ import { computed } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '产能影响',
+    title: '异常与产能',
   },
 })
 
@@ -56,8 +56,8 @@ function formatError(error: unknown) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="产能影响"
-        summary="查看设备停机、恢复和维护事件对工作中心产能的影响。"
+        title="异常与产能"
+        summary="查看设备停机、恢复和维护事件对工作中心产能和排程的影响。"
       >
         <template #actions>
           <Button size="sm" type="button" variant="outline" :disabled="capacityImpactsPending" @click="refreshCapacityImpacts">

@@ -26,7 +26,7 @@ import { computed } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: 'MES 总览',
+    title: '生产驾驶舱',
   },
 })
 
@@ -56,8 +56,8 @@ function formatError(error: unknown) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="MES 总览"
-        summary="集中查看工单、工序任务、在制状态和待处理事项。"
+        title="生产驾驶舱"
+        summary="集中查看工单、工序、在制、阻塞和角色待办，作为班组长/调度员的首屏。"
       >
         <template #actions>
           <Button size="sm" type="button" variant="outline" :disabled="overviewPending" @click="refreshOverview">

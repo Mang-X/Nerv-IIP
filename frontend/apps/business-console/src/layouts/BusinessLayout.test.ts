@@ -69,22 +69,22 @@ describe('BusinessLayout', () => {
       {
         title: '质量',
         items: [
-          { title: '检验记录', to: { path: '/quality/inspections' } },
+          { title: '检验任务与记录', to: { path: '/quality/inspections' } },
           { title: '不合格品处理', to: { path: '/quality/ncrs' } },
         ],
       },
       {
         title: 'MES',
         items: [
-          { title: 'MES 总览', to: { path: '/mes' } },
-          { title: '基础就绪', to: { path: '/mes/foundation' } },
-          { title: '工单执行', to: { path: '/mes/work-orders' } },
-          { title: '工序任务', to: { path: '/mes/operation-tasks' } },
-          { title: '在制状态', to: { path: '/mes/wip' } },
-          { title: '生产报工', to: { path: '/mes/production-reports' } },
+          { title: '生产驾驶舱', to: { path: '/mes' } },
+          { title: '工单与派工', to: { path: '/mes/work-orders' } },
+          { title: '工序执行', to: { path: '/mes/operation-tasks' } },
+          { title: '在制跟踪', to: { path: '/mes/wip' } },
+          { title: '报工记录', to: { path: '/mes/production-reports' } },
           { title: '完工入库', to: { path: '/mes/receipts' } },
-          { title: '产能影响', to: { path: '/mes/capacity' } },
+          { title: '异常与产能', to: { path: '/mes/capacity' } },
           { title: '规则排程', to: { path: '/mes/schedules' } },
+          { title: '生产准备检查', to: { path: '/mes/foundation' } },
         ],
       },
     ])
