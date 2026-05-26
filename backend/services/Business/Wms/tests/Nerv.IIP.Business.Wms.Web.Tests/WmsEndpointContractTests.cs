@@ -204,8 +204,10 @@ public sealed class WmsEndpointContractTests
                 services.RemoveAll<ApplicationDbContext>();
                 services.RemoveAll<DbContextOptions>();
                 services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                services.RemoveAll<IDistributedLock>();
+                services.RemoveAll<IIntegrationEventPublisher>();
                 services.AddInMemoryDistributedLock();
-                services.TryAddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
                 services.AddDbContext<ApplicationDbContext>(options =>
                     options
                         .UseInMemoryDatabase(databaseName)
