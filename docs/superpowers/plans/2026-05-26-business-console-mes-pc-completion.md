@@ -8,6 +8,16 @@
 
 **Tech Stack:** .NET 10, FastEndpoints, CleanDDD service boundaries, BusinessGateway facade, Hey API generated `@nerv-iip/api-client`, Vue 3, Vite Plus, Pinia Colada, `@nerv-iip/ui`, Playwright.
 
+## Implementation Closure — 2026-05-26
+
+This plan is implemented in PR #185 for the PC-first Business Console MES workbench:
+
+- Backend MES now exposes the P0 workbench surface for production plans, readiness, work order release, material issue request, dispatch, operation task lifecycle, WIP, production reports, defects, downtime, receipt requests, shift handover, traceability, schedules, and capacity impacts.
+- BusinessGateway exposes the matching `/api/business-console/v1/mes/**` facade routes with narrow IAM permission codes and generated OpenAPI/client coverage.
+- Business Console now has Chinese PC routes for `生产驾驶舱`、`基础准备`、`生产计划`、`计划与工单`、`齐套与物料`、`派工看板`、`工序执行`、`报工与完工`、`质量与不良`、`完工入库`、`规则排程`、`设备与停机`、`班次交接`、`追溯查询` 和 `产能影响`。
+- `scripts/verify-business-console-mes-pc-workbench.ps1` is the focused verification gate. It covers MES tests, BusinessGateway tests, api-client generation/typecheck/test, and Business Console typecheck/test/build; e2e is opt-in through `-E2E`.
+- PDA/mobile remains deferred until these PC contracts stabilize.
+
 ---
 
 ## Baseline Decision

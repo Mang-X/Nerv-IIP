@@ -4,8 +4,8 @@ import { type _JSONValue, defineQueryOptions, type UseMutationOptions } from '@p
 
 import { serializeQueryKeyValue } from '../client';
 import { client } from '../client.gen';
-import { closeBusinessConsoleQualityNcr, confirmBusinessConsoleInventoryCountAdjustment, createBusinessConsoleInventoryCountTask, createBusinessConsoleMesFinishedGoodsReceiptRequest, createBusinessConsoleMesRushWorkOrder, createBusinessConsoleQualityInspectionRecord, createBusinessConsoleSku, getBusinessConsoleInventoryAvailability, getBusinessConsoleMesFoundationReadiness, getBusinessConsoleMesMaterialReadiness, getBusinessConsoleMesOverview, getBusinessConsoleMesWipSummary, getBusinessConsoleMesWorkOrderDetail, healthEndpoint, listBusinessConsoleMasterDataResources, listBusinessConsoleMesCapacityImpacts, listBusinessConsoleMesFinishedGoodsReceiptRequests, listBusinessConsoleMesOperationTasks, listBusinessConsoleMesProductionReports, listBusinessConsoleMesWorkOrders, listBusinessConsoleQualityInspectionPlans, listBusinessConsoleQualityNcrs, listBusinessConsoleSkus, type Options, postBusinessConsoleInventoryMovement, recordBusinessConsoleMesProductionReport, runBusinessConsoleMesSchedule, submitBusinessConsoleQualityNcrDisposition } from '../sdk.gen';
-import type { CloseBusinessConsoleQualityNcrData, CloseBusinessConsoleQualityNcrResponse, ConfirmBusinessConsoleInventoryCountAdjustmentData, ConfirmBusinessConsoleInventoryCountAdjustmentError, ConfirmBusinessConsoleInventoryCountAdjustmentResponse, CreateBusinessConsoleInventoryCountTaskData, CreateBusinessConsoleInventoryCountTaskResponse, CreateBusinessConsoleMesFinishedGoodsReceiptRequestData, CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponse, CreateBusinessConsoleMesRushWorkOrderData, CreateBusinessConsoleMesRushWorkOrderResponse, CreateBusinessConsoleQualityInspectionRecordData, CreateBusinessConsoleQualityInspectionRecordResponse, CreateBusinessConsoleSkuData, CreateBusinessConsoleSkuError, CreateBusinessConsoleSkuResponse, GetBusinessConsoleInventoryAvailabilityData, GetBusinessConsoleInventoryAvailabilityResponse, GetBusinessConsoleMesFoundationReadinessData, GetBusinessConsoleMesFoundationReadinessResponse, GetBusinessConsoleMesMaterialReadinessData, GetBusinessConsoleMesMaterialReadinessResponse, GetBusinessConsoleMesOverviewData, GetBusinessConsoleMesOverviewResponse, GetBusinessConsoleMesWipSummaryData, GetBusinessConsoleMesWipSummaryResponse, GetBusinessConsoleMesWorkOrderDetailData, GetBusinessConsoleMesWorkOrderDetailResponse, HealthEndpointData, HealthEndpointResponse, ListBusinessConsoleMasterDataResourcesData, ListBusinessConsoleMasterDataResourcesResponse, ListBusinessConsoleMesCapacityImpactsData, ListBusinessConsoleMesCapacityImpactsResponse, ListBusinessConsoleMesFinishedGoodsReceiptRequestsData, ListBusinessConsoleMesFinishedGoodsReceiptRequestsResponse, ListBusinessConsoleMesOperationTasksData, ListBusinessConsoleMesOperationTasksResponse, ListBusinessConsoleMesProductionReportsData, ListBusinessConsoleMesProductionReportsResponse, ListBusinessConsoleMesWorkOrdersData, ListBusinessConsoleMesWorkOrdersResponse, ListBusinessConsoleQualityInspectionPlansData, ListBusinessConsoleQualityInspectionPlansResponse, ListBusinessConsoleQualityNcrsData, ListBusinessConsoleQualityNcrsResponse, ListBusinessConsoleSkusData, ListBusinessConsoleSkusResponse, PostBusinessConsoleInventoryMovementData, PostBusinessConsoleInventoryMovementResponse, RecordBusinessConsoleMesProductionReportData, RecordBusinessConsoleMesProductionReportResponse, RunBusinessConsoleMesScheduleData, RunBusinessConsoleMesScheduleResponse, SubmitBusinessConsoleQualityNcrDispositionData, SubmitBusinessConsoleQualityNcrDispositionResponse } from '../types.gen';
+import { acceptBusinessConsoleMesShiftHandover, assignBusinessConsoleMesDispatchTask, closeBusinessConsoleQualityNcr, completeBusinessConsoleMesOperationTask, confirmBusinessConsoleInventoryCountAdjustment, confirmBusinessConsoleMesDowntimeRecovery, confirmBusinessConsoleMesLineSideMaterialReceipt, convertBusinessConsoleMesPlanToWorkOrder, createBusinessConsoleInventoryCountTask, createBusinessConsoleMesFinishedGoodsReceiptRequest, createBusinessConsoleMesMaterialIssueRequest, createBusinessConsoleMesRushWorkOrder, createBusinessConsoleMesShiftHandover, createBusinessConsoleQualityInspectionRecord, createBusinessConsoleSku, getBusinessConsoleInventoryAvailability, getBusinessConsoleMesBarcodeNumberingReadiness, getBusinessConsoleMesBatchTraceability, getBusinessConsoleMesEquipmentReadiness, getBusinessConsoleMesFoundationReadiness, getBusinessConsoleMesMasterDataReadiness, getBusinessConsoleMesMaterialLotTraceability, getBusinessConsoleMesMaterialReadiness, getBusinessConsoleMesOverview, getBusinessConsoleMesProductEngineeringReadiness, getBusinessConsoleMesProductionPlanReadiness, getBusinessConsoleMesQualityReadiness, getBusinessConsoleMesSupplyReadiness, getBusinessConsoleMesWipSummary, getBusinessConsoleMesWorkOrderDetail, getBusinessConsoleMesWorkOrderTraceability, healthEndpoint, listBusinessConsoleMasterDataResources, listBusinessConsoleMesCapacityImpacts, listBusinessConsoleMesDispatchTasks, listBusinessConsoleMesDowntimeEvents, listBusinessConsoleMesFinishedGoodsReceiptRequests, listBusinessConsoleMesMaterialIssueRequests, listBusinessConsoleMesOperationTasks, listBusinessConsoleMesProductionPlans, listBusinessConsoleMesProductionReports, listBusinessConsoleMesRelatedQualityItems, listBusinessConsoleMesShiftHandovers, listBusinessConsoleMesWorkOrders, listBusinessConsoleQualityInspectionPlans, listBusinessConsoleQualityNcrs, listBusinessConsoleSkus, type Options, pauseBusinessConsoleMesOperationTask, postBusinessConsoleInventoryMovement, recordBusinessConsoleMesDefect, recordBusinessConsoleMesDowntimeEvent, recordBusinessConsoleMesProductionReport, releaseBusinessConsoleMesWorkOrder, resumeBusinessConsoleMesOperationTask, runBusinessConsoleMesSchedule, startBusinessConsoleMesOperationTask, submitBusinessConsoleQualityNcrDisposition } from '../sdk.gen';
+import type { AcceptBusinessConsoleMesShiftHandoverData, AcceptBusinessConsoleMesShiftHandoverResponse, AssignBusinessConsoleMesDispatchTaskData, AssignBusinessConsoleMesDispatchTaskResponse, CloseBusinessConsoleQualityNcrData, CloseBusinessConsoleQualityNcrResponse, CompleteBusinessConsoleMesOperationTaskData, CompleteBusinessConsoleMesOperationTaskResponse, ConfirmBusinessConsoleInventoryCountAdjustmentData, ConfirmBusinessConsoleInventoryCountAdjustmentError, ConfirmBusinessConsoleInventoryCountAdjustmentResponse, ConfirmBusinessConsoleMesDowntimeRecoveryData, ConfirmBusinessConsoleMesDowntimeRecoveryResponse, ConfirmBusinessConsoleMesLineSideMaterialReceiptData, ConfirmBusinessConsoleMesLineSideMaterialReceiptResponse, ConvertBusinessConsoleMesPlanToWorkOrderData, ConvertBusinessConsoleMesPlanToWorkOrderResponse, CreateBusinessConsoleInventoryCountTaskData, CreateBusinessConsoleInventoryCountTaskResponse, CreateBusinessConsoleMesFinishedGoodsReceiptRequestData, CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponse, CreateBusinessConsoleMesMaterialIssueRequestData, CreateBusinessConsoleMesMaterialIssueRequestResponse, CreateBusinessConsoleMesRushWorkOrderData, CreateBusinessConsoleMesRushWorkOrderResponse, CreateBusinessConsoleMesShiftHandoverData, CreateBusinessConsoleMesShiftHandoverResponse, CreateBusinessConsoleQualityInspectionRecordData, CreateBusinessConsoleQualityInspectionRecordResponse, CreateBusinessConsoleSkuData, CreateBusinessConsoleSkuError, CreateBusinessConsoleSkuResponse, GetBusinessConsoleInventoryAvailabilityData, GetBusinessConsoleInventoryAvailabilityResponse, GetBusinessConsoleMesBarcodeNumberingReadinessData, GetBusinessConsoleMesBarcodeNumberingReadinessResponse, GetBusinessConsoleMesBatchTraceabilityData, GetBusinessConsoleMesBatchTraceabilityResponse, GetBusinessConsoleMesEquipmentReadinessData, GetBusinessConsoleMesEquipmentReadinessResponse, GetBusinessConsoleMesFoundationReadinessData, GetBusinessConsoleMesFoundationReadinessResponse, GetBusinessConsoleMesMasterDataReadinessData, GetBusinessConsoleMesMasterDataReadinessResponse, GetBusinessConsoleMesMaterialLotTraceabilityData, GetBusinessConsoleMesMaterialLotTraceabilityResponse, GetBusinessConsoleMesMaterialReadinessData, GetBusinessConsoleMesMaterialReadinessResponse, GetBusinessConsoleMesOverviewData, GetBusinessConsoleMesOverviewResponse, GetBusinessConsoleMesProductEngineeringReadinessData, GetBusinessConsoleMesProductEngineeringReadinessResponse, GetBusinessConsoleMesProductionPlanReadinessData, GetBusinessConsoleMesProductionPlanReadinessResponse, GetBusinessConsoleMesQualityReadinessData, GetBusinessConsoleMesQualityReadinessResponse, GetBusinessConsoleMesSupplyReadinessData, GetBusinessConsoleMesSupplyReadinessResponse, GetBusinessConsoleMesWipSummaryData, GetBusinessConsoleMesWipSummaryResponse, GetBusinessConsoleMesWorkOrderDetailData, GetBusinessConsoleMesWorkOrderDetailResponse, GetBusinessConsoleMesWorkOrderTraceabilityData, GetBusinessConsoleMesWorkOrderTraceabilityResponse, HealthEndpointData, HealthEndpointResponse, ListBusinessConsoleMasterDataResourcesData, ListBusinessConsoleMasterDataResourcesResponse, ListBusinessConsoleMesCapacityImpactsData, ListBusinessConsoleMesCapacityImpactsResponse, ListBusinessConsoleMesDispatchTasksData, ListBusinessConsoleMesDispatchTasksResponse, ListBusinessConsoleMesDowntimeEventsData, ListBusinessConsoleMesDowntimeEventsResponse, ListBusinessConsoleMesFinishedGoodsReceiptRequestsData, ListBusinessConsoleMesFinishedGoodsReceiptRequestsResponse, ListBusinessConsoleMesMaterialIssueRequestsData, ListBusinessConsoleMesMaterialIssueRequestsResponse, ListBusinessConsoleMesOperationTasksData, ListBusinessConsoleMesOperationTasksResponse, ListBusinessConsoleMesProductionPlansData, ListBusinessConsoleMesProductionPlansResponse, ListBusinessConsoleMesProductionReportsData, ListBusinessConsoleMesProductionReportsResponse, ListBusinessConsoleMesRelatedQualityItemsData, ListBusinessConsoleMesRelatedQualityItemsResponse, ListBusinessConsoleMesShiftHandoversData, ListBusinessConsoleMesShiftHandoversResponse, ListBusinessConsoleMesWorkOrdersData, ListBusinessConsoleMesWorkOrdersResponse, ListBusinessConsoleQualityInspectionPlansData, ListBusinessConsoleQualityInspectionPlansResponse, ListBusinessConsoleQualityNcrsData, ListBusinessConsoleQualityNcrsResponse, ListBusinessConsoleSkusData, ListBusinessConsoleSkusResponse, PauseBusinessConsoleMesOperationTaskData, PauseBusinessConsoleMesOperationTaskResponse, PostBusinessConsoleInventoryMovementData, PostBusinessConsoleInventoryMovementResponse, RecordBusinessConsoleMesDefectData, RecordBusinessConsoleMesDefectResponse, RecordBusinessConsoleMesDowntimeEventData, RecordBusinessConsoleMesDowntimeEventResponse, RecordBusinessConsoleMesProductionReportData, RecordBusinessConsoleMesProductionReportResponse, ReleaseBusinessConsoleMesWorkOrderData, ReleaseBusinessConsoleMesWorkOrderResponse, ResumeBusinessConsoleMesOperationTaskData, ResumeBusinessConsoleMesOperationTaskResponse, RunBusinessConsoleMesScheduleData, RunBusinessConsoleMesScheduleResponse, StartBusinessConsoleMesOperationTaskData, StartBusinessConsoleMesOperationTaskResponse, SubmitBusinessConsoleQualityNcrDispositionData, SubmitBusinessConsoleQualityNcrDispositionResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'path'> & {
@@ -117,6 +117,90 @@ export const getBusinessConsoleMesFoundationReadinessQueryOptions = defineQueryO
     }
 }));
 
+export const getBusinessConsoleMesMasterDataReadinessQueryKey = (options: Options<GetBusinessConsoleMesMasterDataReadinessData>) => createQueryKey('getBusinessConsoleMesMasterDataReadiness', options, ['Business Console MES', 'Api']);
+
+export const getBusinessConsoleMesMasterDataReadinessQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesMasterDataReadinessData>, GetBusinessConsoleMesMasterDataReadinessResponse, Error>((options: Options<GetBusinessConsoleMesMasterDataReadinessData>) => ({
+    key: getBusinessConsoleMesMasterDataReadinessQueryKey(options),
+    query: async (context) => {
+        const { data } = await getBusinessConsoleMesMasterDataReadiness({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getBusinessConsoleMesProductEngineeringReadinessQueryKey = (options: Options<GetBusinessConsoleMesProductEngineeringReadinessData>) => createQueryKey('getBusinessConsoleMesProductEngineeringReadiness', options, ['Business Console MES', 'Api']);
+
+export const getBusinessConsoleMesProductEngineeringReadinessQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesProductEngineeringReadinessData>, GetBusinessConsoleMesProductEngineeringReadinessResponse, Error>((options: Options<GetBusinessConsoleMesProductEngineeringReadinessData>) => ({
+    key: getBusinessConsoleMesProductEngineeringReadinessQueryKey(options),
+    query: async (context) => {
+        const { data } = await getBusinessConsoleMesProductEngineeringReadiness({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getBusinessConsoleMesSupplyReadinessQueryKey = (options: Options<GetBusinessConsoleMesSupplyReadinessData>) => createQueryKey('getBusinessConsoleMesSupplyReadiness', options, ['Business Console MES', 'Api']);
+
+export const getBusinessConsoleMesSupplyReadinessQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesSupplyReadinessData>, GetBusinessConsoleMesSupplyReadinessResponse, Error>((options: Options<GetBusinessConsoleMesSupplyReadinessData>) => ({
+    key: getBusinessConsoleMesSupplyReadinessQueryKey(options),
+    query: async (context) => {
+        const { data } = await getBusinessConsoleMesSupplyReadiness({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getBusinessConsoleMesQualityReadinessQueryKey = (options: Options<GetBusinessConsoleMesQualityReadinessData>) => createQueryKey('getBusinessConsoleMesQualityReadiness', options, ['Business Console MES', 'Api']);
+
+export const getBusinessConsoleMesQualityReadinessQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesQualityReadinessData>, GetBusinessConsoleMesQualityReadinessResponse, Error>((options: Options<GetBusinessConsoleMesQualityReadinessData>) => ({
+    key: getBusinessConsoleMesQualityReadinessQueryKey(options),
+    query: async (context) => {
+        const { data } = await getBusinessConsoleMesQualityReadiness({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getBusinessConsoleMesEquipmentReadinessQueryKey = (options: Options<GetBusinessConsoleMesEquipmentReadinessData>) => createQueryKey('getBusinessConsoleMesEquipmentReadiness', options, ['Business Console MES', 'Api']);
+
+export const getBusinessConsoleMesEquipmentReadinessQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesEquipmentReadinessData>, GetBusinessConsoleMesEquipmentReadinessResponse, Error>((options: Options<GetBusinessConsoleMesEquipmentReadinessData>) => ({
+    key: getBusinessConsoleMesEquipmentReadinessQueryKey(options),
+    query: async (context) => {
+        const { data } = await getBusinessConsoleMesEquipmentReadiness({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getBusinessConsoleMesBarcodeNumberingReadinessQueryKey = (options: Options<GetBusinessConsoleMesBarcodeNumberingReadinessData>) => createQueryKey('getBusinessConsoleMesBarcodeNumberingReadiness', options, ['Business Console MES', 'Api']);
+
+export const getBusinessConsoleMesBarcodeNumberingReadinessQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesBarcodeNumberingReadinessData>, GetBusinessConsoleMesBarcodeNumberingReadinessResponse, Error>((options: Options<GetBusinessConsoleMesBarcodeNumberingReadinessData>) => ({
+    key: getBusinessConsoleMesBarcodeNumberingReadinessQueryKey(options),
+    query: async (context) => {
+        const { data } = await getBusinessConsoleMesBarcodeNumberingReadiness({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
 export const getBusinessConsoleMesOverviewQueryKey = (options: Options<GetBusinessConsoleMesOverviewData>) => createQueryKey('getBusinessConsoleMesOverview', options, ['Business Console MES', 'Api']);
 
 export const getBusinessConsoleMesOverviewQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesOverviewData>, GetBusinessConsoleMesOverviewResponse, Error>((options: Options<GetBusinessConsoleMesOverviewData>) => ({
@@ -130,6 +214,45 @@ export const getBusinessConsoleMesOverviewQueryOptions = defineQueryOptions<Opti
         return data;
     }
 }));
+
+export const listBusinessConsoleMesProductionPlansQueryKey = (options: Options<ListBusinessConsoleMesProductionPlansData>) => createQueryKey('listBusinessConsoleMesProductionPlans', options, ['Business Console MES', 'Api']);
+
+export const listBusinessConsoleMesProductionPlansQueryOptions = defineQueryOptions<Options<ListBusinessConsoleMesProductionPlansData>, ListBusinessConsoleMesProductionPlansResponse, Error>((options: Options<ListBusinessConsoleMesProductionPlansData>) => ({
+    key: listBusinessConsoleMesProductionPlansQueryKey(options),
+    query: async (context) => {
+        const { data } = await listBusinessConsoleMesProductionPlans({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getBusinessConsoleMesProductionPlanReadinessQueryKey = (options: Options<GetBusinessConsoleMesProductionPlanReadinessData>) => createQueryKey('getBusinessConsoleMesProductionPlanReadiness', options, ['Business Console MES', 'Api']);
+
+export const getBusinessConsoleMesProductionPlanReadinessQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesProductionPlanReadinessData>, GetBusinessConsoleMesProductionPlanReadinessResponse, Error>((options: Options<GetBusinessConsoleMesProductionPlanReadinessData>) => ({
+    key: getBusinessConsoleMesProductionPlanReadinessQueryKey(options),
+    query: async (context) => {
+        const { data } = await getBusinessConsoleMesProductionPlanReadiness({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const convertBusinessConsoleMesPlanToWorkOrderMutationOptions = (options?: Partial<Options<ConvertBusinessConsoleMesPlanToWorkOrderData>>): UseMutationOptions<ConvertBusinessConsoleMesPlanToWorkOrderResponse, Options<ConvertBusinessConsoleMesPlanToWorkOrderData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await convertBusinessConsoleMesPlanToWorkOrder({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
 
 export const listBusinessConsoleMesWorkOrdersQueryKey = (options: Options<ListBusinessConsoleMesWorkOrdersData>) => createQueryKey('listBusinessConsoleMesWorkOrders', options, ['Business Console MES', 'Api']);
 
@@ -159,6 +282,17 @@ export const getBusinessConsoleMesWorkOrderDetailQueryOptions = defineQueryOptio
     }
 }));
 
+export const releaseBusinessConsoleMesWorkOrderMutationOptions = (options?: Partial<Options<ReleaseBusinessConsoleMesWorkOrderData>>): UseMutationOptions<ReleaseBusinessConsoleMesWorkOrderResponse, Options<ReleaseBusinessConsoleMesWorkOrderData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await releaseBusinessConsoleMesWorkOrder({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
 export const createBusinessConsoleMesRushWorkOrderMutationOptions = (options?: Partial<Options<CreateBusinessConsoleMesRushWorkOrderData>>): UseMutationOptions<CreateBusinessConsoleMesRushWorkOrderResponse, Options<CreateBusinessConsoleMesRushWorkOrderData>, Error> => ({
     mutation: async (vars) => {
         const { data } = await createBusinessConsoleMesRushWorkOrder({
@@ -184,6 +318,67 @@ export const getBusinessConsoleMesMaterialReadinessQueryOptions = defineQueryOpt
     }
 }));
 
+export const createBusinessConsoleMesMaterialIssueRequestMutationOptions = (options?: Partial<Options<CreateBusinessConsoleMesMaterialIssueRequestData>>): UseMutationOptions<CreateBusinessConsoleMesMaterialIssueRequestResponse, Options<CreateBusinessConsoleMesMaterialIssueRequestData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await createBusinessConsoleMesMaterialIssueRequest({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const listBusinessConsoleMesMaterialIssueRequestsQueryKey = (options: Options<ListBusinessConsoleMesMaterialIssueRequestsData>) => createQueryKey('listBusinessConsoleMesMaterialIssueRequests', options, ['Business Console MES', 'Api']);
+
+export const listBusinessConsoleMesMaterialIssueRequestsQueryOptions = defineQueryOptions<Options<ListBusinessConsoleMesMaterialIssueRequestsData>, ListBusinessConsoleMesMaterialIssueRequestsResponse, Error>((options: Options<ListBusinessConsoleMesMaterialIssueRequestsData>) => ({
+    key: listBusinessConsoleMesMaterialIssueRequestsQueryKey(options),
+    query: async (context) => {
+        const { data } = await listBusinessConsoleMesMaterialIssueRequests({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions = (options?: Partial<Options<ConfirmBusinessConsoleMesLineSideMaterialReceiptData>>): UseMutationOptions<ConfirmBusinessConsoleMesLineSideMaterialReceiptResponse, Options<ConfirmBusinessConsoleMesLineSideMaterialReceiptData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await confirmBusinessConsoleMesLineSideMaterialReceipt({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const listBusinessConsoleMesDispatchTasksQueryKey = (options: Options<ListBusinessConsoleMesDispatchTasksData>) => createQueryKey('listBusinessConsoleMesDispatchTasks', options, ['Business Console MES', 'Api']);
+
+export const listBusinessConsoleMesDispatchTasksQueryOptions = defineQueryOptions<Options<ListBusinessConsoleMesDispatchTasksData>, ListBusinessConsoleMesDispatchTasksResponse, Error>((options: Options<ListBusinessConsoleMesDispatchTasksData>) => ({
+    key: listBusinessConsoleMesDispatchTasksQueryKey(options),
+    query: async (context) => {
+        const { data } = await listBusinessConsoleMesDispatchTasks({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const assignBusinessConsoleMesDispatchTaskMutationOptions = (options?: Partial<Options<AssignBusinessConsoleMesDispatchTaskData>>): UseMutationOptions<AssignBusinessConsoleMesDispatchTaskResponse, Options<AssignBusinessConsoleMesDispatchTaskData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await assignBusinessConsoleMesDispatchTask({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
 export const listBusinessConsoleMesOperationTasksQueryKey = (options: Options<ListBusinessConsoleMesOperationTasksData>) => createQueryKey('listBusinessConsoleMesOperationTasks', options, ['Business Console MES', 'Api']);
 
 export const listBusinessConsoleMesOperationTasksQueryOptions = defineQueryOptions<Options<ListBusinessConsoleMesOperationTasksData>, ListBusinessConsoleMesOperationTasksResponse, Error>((options: Options<ListBusinessConsoleMesOperationTasksData>) => ({
@@ -197,6 +392,50 @@ export const listBusinessConsoleMesOperationTasksQueryOptions = defineQueryOptio
         return data;
     }
 }));
+
+export const startBusinessConsoleMesOperationTaskMutationOptions = (options?: Partial<Options<StartBusinessConsoleMesOperationTaskData>>): UseMutationOptions<StartBusinessConsoleMesOperationTaskResponse, Options<StartBusinessConsoleMesOperationTaskData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await startBusinessConsoleMesOperationTask({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const pauseBusinessConsoleMesOperationTaskMutationOptions = (options?: Partial<Options<PauseBusinessConsoleMesOperationTaskData>>): UseMutationOptions<PauseBusinessConsoleMesOperationTaskResponse, Options<PauseBusinessConsoleMesOperationTaskData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await pauseBusinessConsoleMesOperationTask({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const resumeBusinessConsoleMesOperationTaskMutationOptions = (options?: Partial<Options<ResumeBusinessConsoleMesOperationTaskData>>): UseMutationOptions<ResumeBusinessConsoleMesOperationTaskResponse, Options<ResumeBusinessConsoleMesOperationTaskData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await resumeBusinessConsoleMesOperationTask({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const completeBusinessConsoleMesOperationTaskMutationOptions = (options?: Partial<Options<CompleteBusinessConsoleMesOperationTaskData>>): UseMutationOptions<CompleteBusinessConsoleMesOperationTaskResponse, Options<CompleteBusinessConsoleMesOperationTaskData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await completeBusinessConsoleMesOperationTask({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
 
 export const getBusinessConsoleMesWipSummaryQueryKey = (options: Options<GetBusinessConsoleMesWipSummaryData>) => createQueryKey('getBusinessConsoleMesWipSummary', options, ['Business Console MES', 'Api']);
 
@@ -237,6 +476,31 @@ export const recordBusinessConsoleMesProductionReportMutationOptions = (options?
     }
 });
 
+export const recordBusinessConsoleMesDefectMutationOptions = (options?: Partial<Options<RecordBusinessConsoleMesDefectData>>): UseMutationOptions<RecordBusinessConsoleMesDefectResponse, Options<RecordBusinessConsoleMesDefectData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await recordBusinessConsoleMesDefect({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const listBusinessConsoleMesRelatedQualityItemsQueryKey = (options: Options<ListBusinessConsoleMesRelatedQualityItemsData>) => createQueryKey('listBusinessConsoleMesRelatedQualityItems', options, ['Business Console MES', 'Api']);
+
+export const listBusinessConsoleMesRelatedQualityItemsQueryOptions = defineQueryOptions<Options<ListBusinessConsoleMesRelatedQualityItemsData>, ListBusinessConsoleMesRelatedQualityItemsResponse, Error>((options: Options<ListBusinessConsoleMesRelatedQualityItemsData>) => ({
+    key: listBusinessConsoleMesRelatedQualityItemsQueryKey(options),
+    query: async (context) => {
+        const { data } = await listBusinessConsoleMesRelatedQualityItems({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
 export const listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryKey = (options: Options<ListBusinessConsoleMesFinishedGoodsReceiptRequestsData>) => createQueryKey('listBusinessConsoleMesFinishedGoodsReceiptRequests', options, ['Business Console MES', 'Api']);
 
 export const listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions = defineQueryOptions<Options<ListBusinessConsoleMesFinishedGoodsReceiptRequestsData>, ListBusinessConsoleMesFinishedGoodsReceiptRequestsResponse, Error>((options: Options<ListBusinessConsoleMesFinishedGoodsReceiptRequestsData>) => ({
@@ -261,6 +525,120 @@ export const createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions 
         return data;
     }
 });
+
+export const listBusinessConsoleMesDowntimeEventsQueryKey = (options: Options<ListBusinessConsoleMesDowntimeEventsData>) => createQueryKey('listBusinessConsoleMesDowntimeEvents', options, ['Business Console MES', 'Api']);
+
+export const listBusinessConsoleMesDowntimeEventsQueryOptions = defineQueryOptions<Options<ListBusinessConsoleMesDowntimeEventsData>, ListBusinessConsoleMesDowntimeEventsResponse, Error>((options: Options<ListBusinessConsoleMesDowntimeEventsData>) => ({
+    key: listBusinessConsoleMesDowntimeEventsQueryKey(options),
+    query: async (context) => {
+        const { data } = await listBusinessConsoleMesDowntimeEvents({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const recordBusinessConsoleMesDowntimeEventMutationOptions = (options?: Partial<Options<RecordBusinessConsoleMesDowntimeEventData>>): UseMutationOptions<RecordBusinessConsoleMesDowntimeEventResponse, Options<RecordBusinessConsoleMesDowntimeEventData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await recordBusinessConsoleMesDowntimeEvent({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const confirmBusinessConsoleMesDowntimeRecoveryMutationOptions = (options?: Partial<Options<ConfirmBusinessConsoleMesDowntimeRecoveryData>>): UseMutationOptions<ConfirmBusinessConsoleMesDowntimeRecoveryResponse, Options<ConfirmBusinessConsoleMesDowntimeRecoveryData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await confirmBusinessConsoleMesDowntimeRecovery({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const listBusinessConsoleMesShiftHandoversQueryKey = (options: Options<ListBusinessConsoleMesShiftHandoversData>) => createQueryKey('listBusinessConsoleMesShiftHandovers', options, ['Business Console MES', 'Api']);
+
+export const listBusinessConsoleMesShiftHandoversQueryOptions = defineQueryOptions<Options<ListBusinessConsoleMesShiftHandoversData>, ListBusinessConsoleMesShiftHandoversResponse, Error>((options: Options<ListBusinessConsoleMesShiftHandoversData>) => ({
+    key: listBusinessConsoleMesShiftHandoversQueryKey(options),
+    query: async (context) => {
+        const { data } = await listBusinessConsoleMesShiftHandovers({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const createBusinessConsoleMesShiftHandoverMutationOptions = (options?: Partial<Options<CreateBusinessConsoleMesShiftHandoverData>>): UseMutationOptions<CreateBusinessConsoleMesShiftHandoverResponse, Options<CreateBusinessConsoleMesShiftHandoverData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await createBusinessConsoleMesShiftHandover({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const acceptBusinessConsoleMesShiftHandoverMutationOptions = (options?: Partial<Options<AcceptBusinessConsoleMesShiftHandoverData>>): UseMutationOptions<AcceptBusinessConsoleMesShiftHandoverResponse, Options<AcceptBusinessConsoleMesShiftHandoverData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await acceptBusinessConsoleMesShiftHandover({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const getBusinessConsoleMesWorkOrderTraceabilityQueryKey = (options: Options<GetBusinessConsoleMesWorkOrderTraceabilityData>) => createQueryKey('getBusinessConsoleMesWorkOrderTraceability', options, ['Business Console MES', 'Api']);
+
+export const getBusinessConsoleMesWorkOrderTraceabilityQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesWorkOrderTraceabilityData>, GetBusinessConsoleMesWorkOrderTraceabilityResponse, Error>((options: Options<GetBusinessConsoleMesWorkOrderTraceabilityData>) => ({
+    key: getBusinessConsoleMesWorkOrderTraceabilityQueryKey(options),
+    query: async (context) => {
+        const { data } = await getBusinessConsoleMesWorkOrderTraceability({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getBusinessConsoleMesBatchTraceabilityQueryKey = (options: Options<GetBusinessConsoleMesBatchTraceabilityData>) => createQueryKey('getBusinessConsoleMesBatchTraceability', options, ['Business Console MES', 'Api']);
+
+export const getBusinessConsoleMesBatchTraceabilityQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesBatchTraceabilityData>, GetBusinessConsoleMesBatchTraceabilityResponse, Error>((options: Options<GetBusinessConsoleMesBatchTraceabilityData>) => ({
+    key: getBusinessConsoleMesBatchTraceabilityQueryKey(options),
+    query: async (context) => {
+        const { data } = await getBusinessConsoleMesBatchTraceability({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getBusinessConsoleMesMaterialLotTraceabilityQueryKey = (options: Options<GetBusinessConsoleMesMaterialLotTraceabilityData>) => createQueryKey('getBusinessConsoleMesMaterialLotTraceability', options, ['Business Console MES', 'Api']);
+
+export const getBusinessConsoleMesMaterialLotTraceabilityQueryOptions = defineQueryOptions<Options<GetBusinessConsoleMesMaterialLotTraceabilityData>, GetBusinessConsoleMesMaterialLotTraceabilityResponse, Error>((options: Options<GetBusinessConsoleMesMaterialLotTraceabilityData>) => ({
+    key: getBusinessConsoleMesMaterialLotTraceabilityQueryKey(options),
+    query: async (context) => {
+        const { data } = await getBusinessConsoleMesMaterialLotTraceability({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
 
 export const listBusinessConsoleMesCapacityImpactsQueryKey = (options: Options<ListBusinessConsoleMesCapacityImpactsData>) => createQueryKey('listBusinessConsoleMesCapacityImpacts', options, ['Business Console MES', 'Api']);
 

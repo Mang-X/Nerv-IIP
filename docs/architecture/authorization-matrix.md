@@ -198,12 +198,31 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `business.wms.shipments.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看出库单、拣货任务和复核包装。 |
 | `business.wms.shipments.manage` | `user` / `external-client` | environment + resource | 创建和完成出库、拣货、复核包装作业。 |
 | `business.wms.automation.manage` | `user` / `external-client` / `connector-host` | environment + resource + capability | 调度 WCS adapter 任务并处理外部自动化设备回执。 |
-| `business.mes.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单、工序任务和完工入库请求。 |
-| `business.mes.work-orders.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建、审批后释放、关闭工单。 |
+| `business.mes.foundation.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 基础就绪、生产版本、物料、质量、设备、条码和编号阻塞项。 |
+| `business.mes.overview.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 生产驾驶舱和待办摘要。 |
+| `business.mes.plans.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看生产计划候选、计划就绪和转工单前检查。 |
+| `business.mes.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单、工单详情和释放快照。 |
+| `business.mes.work-orders.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建急单、计划转工单、释放和关闭工单。 |
+| `business.mes.materials.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看齐套检查、领料申请和线边收料状态。 |
+| `business.mes.materials.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建领料/备料申请并确认线边收料。 |
+| `business.mes.dispatch.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看派工任务和资源阻塞。 |
+| `business.mes.dispatch.manage` | `user` / `external-client` / `internal-service` | environment + resource | 指派工序任务到人员、设备、班次和工作中心。 |
+| `business.mes.operations.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工序任务和 WIP 摘要。 |
+| `business.mes.operations.manage` | `user` / `external-client` / `internal-service` | environment + resource | 开始、暂停、恢复和完成工序任务。 |
 | `business.mes.reporting.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看报工记录和生产日报。 |
 | `business.mes.reporting.write` | `user` / `external-client` | environment + resource | 提交工序报工、合格数、不良数和工时。 |
-| `business.mes.schedules.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看排产结果和 Gantt 数据。 |
+| `business.mes.quality.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单/工序关联的质量、缺陷和 NCR 上下文。 |
+| `business.mes.quality.write` | `user` / `external-client` | environment + resource | 记录生产过程不良和返工/报废上下文。 |
+| `business.mes.receipts.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看完工入库请求。 |
+| `business.mes.receipts.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建完工入库请求。 |
+| `business.mes.downtime.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看设备停机和产能影响事件。 |
+| `business.mes.downtime.manage` | `user` / `external-client` / `internal-service` | environment + resource | 记录停机、确认恢复并影响短期执行能力。 |
+| `business.mes.handovers.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看班次交接和未结事项。 |
+| `business.mes.handovers.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建和接收班次交接。 |
+| `business.mes.traceability.read` | `user` / `external-client` / `internal-service` | environment + resource | 按工单、批次/序列号、物料批追溯执行证据。 |
+| `business.mes.schedules.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看规则排程版本和执行结果。 |
 | `business.mes.schedules.manage` | `user` / `external-client` / `internal-service` | environment + resource | 触发规则派工、发布或撤销排产版本。 |
+| `business.mes.capacity.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看产能影响、设备不可用和执行阻塞摘要。 |
 | `business.iiot.tags.manage` | `user` / `external-client` | environment + resource | 管理设备 tag 映射、采集点和单位。 |
 | `business.iiot.telemetry.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看设备状态快照、时序摘要和 OEE 输入数据。 |
 | `business.iiot.telemetry.write` | `connector-host` / `external-client` | environment + resource + capability | 写入受控采集样本或状态摘要；不得表达 PLC/DCS 控制授权。 |

@@ -191,7 +191,7 @@ function formatError(error: unknown) {
                       <EyeIcon data-icon="inline-start" />
                       查看工单
                     </DropdownMenuItem>
-                    <DropdownMenuItem @click="openRoute('/mes/production-reports')">
+                    <DropdownMenuItem @click="openRoute('/mes/reports')">
                       <ClipboardCheckIcon data-icon="inline-start" />
                       查看报工
                     </DropdownMenuItem>
@@ -200,7 +200,7 @@ function formatError(error: unknown) {
                       <ShieldCheckIcon data-icon="inline-start" />
                       呼叫质检
                     </DropdownMenuItem>
-                    <DropdownMenuItem @click="openRoute('/mes/capacity')">
+                    <DropdownMenuItem @click="openRoute('/mes/downtime')">
                       <WrenchIcon data-icon="inline-start" />
                       记录异常
                     </DropdownMenuItem>

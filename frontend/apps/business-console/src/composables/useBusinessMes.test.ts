@@ -28,7 +28,43 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  acceptBusinessConsoleMesShiftHandoverMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  assignBusinessConsoleMesDispatchTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  completeBusinessConsoleMesOperationTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  confirmBusinessConsoleMesDowntimeRecoveryMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  convertBusinessConsoleMesPlanToWorkOrderMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  createBusinessConsoleMesMaterialIssueRequestMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -39,6 +75,16 @@ vi.mock('@nerv-iip/api-client', () => ({
       success: true,
       data: vars.body,
     })),
+  })),
+  createBusinessConsoleMesShiftHandoverMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  getBusinessConsoleMesBatchTraceabilityQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesBatchTraceability' }],
+    query: vi.fn(),
   })),
   getBusinessConsoleMesCapacityImpactsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesCapacityImpacts' }],
@@ -52,8 +98,16 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'getBusinessConsoleMesMaterialReadiness' }],
     query: vi.fn(),
   })),
+  getBusinessConsoleMesMaterialLotTraceabilityQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesMaterialLotTraceability' }],
+    query: vi.fn(),
+  })),
   getBusinessConsoleMesOverviewQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesOverview' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesProductionPlanReadinessQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesProductionPlanReadiness' }],
     query: vi.fn(),
   })),
   getBusinessConsoleMesWipSummaryQueryOptions: vi.fn(() => ({
@@ -64,6 +118,18 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderDetail' }],
     query: vi.fn(),
   })),
+  getBusinessConsoleMesWorkOrderTraceabilityQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesWorkOrderTraceability' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesDispatchTasksQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesDispatchTasks' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesDowntimeEventsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesDowntimeEvents' }],
+    query: vi.fn(),
+  })),
   listBusinessConsoleMesCapacityImpactsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesCapacityImpacts' }],
     query: vi.fn(),
@@ -72,17 +138,51 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleMesFinishedGoodsReceiptRequests' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleMesMaterialIssueRequestsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesMaterialIssueRequests' }],
+    query: vi.fn(),
+  })),
   listBusinessConsoleMesOperationTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesOperationTasks' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesProductionPlansQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesProductionPlans' }],
     query: vi.fn(),
   })),
   listBusinessConsoleMesProductionReportsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesProductionReports' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleMesRelatedQualityItemsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesRelatedQualityItems' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesShiftHandoversQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesShiftHandovers' }],
+    query: vi.fn(),
+  })),
   listBusinessConsoleMesWorkOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesWorkOrders' }],
     query: vi.fn(),
+  })),
+  pauseBusinessConsoleMesOperationTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  recordBusinessConsoleMesDefectMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  recordBusinessConsoleMesDowntimeEventMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
   })),
   recordBusinessConsoleMesProductionReportMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
@@ -90,7 +190,25 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
+  releaseBusinessConsoleMesWorkOrderMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  resumeBusinessConsoleMesOperationTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
   runBusinessConsoleMesScheduleMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  startBusinessConsoleMesOperationTaskMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,

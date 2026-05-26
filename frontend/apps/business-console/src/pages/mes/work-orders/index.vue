@@ -45,7 +45,7 @@ import { useRouter } from 'vue-router'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '工单与派工',
+    title: '计划与工单',
   },
 })
 
@@ -274,7 +274,7 @@ function isNonEmpty(value: string) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="工单与派工"
+        title="计划与工单"
         summary="以工单列表和工序上下文为中心处理急单、详情查看和报工动作。"
       >
         <template #actions>

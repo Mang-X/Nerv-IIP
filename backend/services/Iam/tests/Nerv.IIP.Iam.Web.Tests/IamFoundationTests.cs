@@ -210,11 +210,23 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         {
             "business.mes.work-orders.manage",
             "business.mes.materials.read",
+            "business.mes.materials.manage",
+            "business.mes.dispatch.read",
+            "business.mes.dispatch.manage",
             "business.mes.operations.read",
+            "business.mes.operations.manage",
             "business.mes.reporting.read",
             "business.mes.reporting.write",
+            "business.mes.quality.read",
+            "business.mes.quality.write",
             "business.mes.receipts.read",
             "business.mes.receipts.manage",
+            "business.mes.downtime.read",
+            "business.mes.downtime.manage",
+            "business.mes.handovers.read",
+            "business.mes.handovers.manage",
+            "business.mes.traceability.read",
+            "business.mes.schedules.read",
             "business.mes.schedules.manage",
             "business.mes.capacity.read"
         })

@@ -25,7 +25,7 @@ import { computed } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '生产准备检查',
+    title: '基础准备',
   },
 })
 
@@ -54,7 +54,7 @@ function formatError(error: unknown) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="生产准备检查"
+        title="基础准备"
         summary="作为开工、释放和派工前的辅助检查，不替代主数据、工程、库存和质量维护入口。"
       >
         <template #actions>

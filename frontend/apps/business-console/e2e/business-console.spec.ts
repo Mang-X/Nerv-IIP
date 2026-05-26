@@ -31,15 +31,21 @@ test('business console smoke pages render', async ({ page }) => {
   await expectHeading(page, '/inventory/availability', '库存可用量')
   await expectHeading(page, '/quality/ncrs', '不合格品处理')
   await expectHeading(page, '/mes', '生产驾驶舱')
-  await expectHeading(page, '/mes/foundation', '生产准备检查')
-  await expectHeading(page, '/mes/work-orders', '工单与派工')
+  await expectHeading(page, '/mes/foundation', '基础准备')
+  await expectHeading(page, '/mes/plans', '生产计划')
+  await expectHeading(page, '/mes/work-orders', '计划与工单')
   await expectHeading(page, '/mes/work-orders/WO-001', '工单详情')
+  await expectHeading(page, '/mes/materials', '齐套与物料')
+  await expectHeading(page, '/mes/dispatch', '派工看板')
   await expectHeading(page, '/mes/operation-tasks', '工序执行')
-  await expectHeading(page, '/mes/wip', '在制跟踪')
-  await expectHeading(page, '/mes/production-reports', '报工记录')
+  await expectHeading(page, '/mes/reports', '报工与完工')
+  await expectHeading(page, '/mes/quality', '质量与不良')
   await expectHeading(page, '/mes/receipts', '完工入库')
-  await expectHeading(page, '/mes/capacity', '异常与产能')
   await expectHeading(page, '/mes/schedules', '规则排程')
+  await expectHeading(page, '/mes/downtime', '设备与停机')
+  await expectHeading(page, '/mes/handovers', '班次交接')
+  await expectHeading(page, '/mes/traceability', '追溯查询')
+  await expectHeading(page, '/mes/capacity', '产能影响')
 })
 
 async function expectHeading(page: Page, path: string, heading: string) {
@@ -189,6 +195,10 @@ async function routeBusinessConsoleApi(route: Route) {
     )
   }
 
+  if (pathname === '/api/business-console/v1/mes/production-plans') {
+    return fulfillJson(route, envelope({ items: [] }))
+  }
+
   if (pathname === '/api/business-console/v1/mes/work-orders/WO-001') {
     return fulfillJson(
       route,
@@ -241,6 +251,30 @@ async function routeBusinessConsoleApi(route: Route) {
         ],
       }),
     )
+  }
+
+  if (pathname === '/api/business-console/v1/mes/material-issue-requests') {
+    return fulfillJson(route, envelope({ items: [] }))
+  }
+
+  if (pathname === '/api/business-console/v1/mes/dispatch-tasks') {
+    return fulfillJson(route, envelope({ items: [] }))
+  }
+
+  if (pathname === '/api/business-console/v1/mes/related-quality-items') {
+    return fulfillJson(route, envelope({ items: [] }))
+  }
+
+  if (pathname === '/api/business-console/v1/mes/downtime-events') {
+    return fulfillJson(route, envelope({ items: [] }))
+  }
+
+  if (pathname === '/api/business-console/v1/mes/shift-handovers') {
+    return fulfillJson(route, envelope({ items: [] }))
+  }
+
+  if (pathname.startsWith('/api/business-console/v1/mes/traceability/')) {
+    return fulfillJson(route, envelope({ nodes: [], edges: [] }))
   }
 
   if (pathname === '/api/business-console/v1/mes/wip') {
