@@ -26,6 +26,8 @@ public interface IOpsStateStore
     OperationTaskResponse AbandonLease(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now);
     OperationTaskResponse HeartbeatLease(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now);
     OperationTaskResponse RecordResult(OperationResult result);
+    OperationTaskResponse Approve(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now);
+    OperationTaskResponse Reject(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now);
 }
 
 public sealed class InMemoryOpsStateStore : IOpsStateStore
@@ -72,7 +74,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                 request.EnvironmentId,
                 request.InstanceKey,
                 request.OperationCode,
-                "queued",
+                template.RequiresApproval ? "approval-pending" : "queued",
                 request.RequestedBy,
                 now,
                 request.IdempotencyKey,
@@ -80,11 +82,19 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                 new Dictionary<string, string>(request.Parameters, StringComparer.Ordinal),
                 template.DefaultMaxAttempts,
                 template.DefaultLeaseDurationSeconds,
-                template.RequiresApproval);
+                template.RequiresApproval,
+                template.RequiresApproval
+                    ? new OperationApprovalFact("pending", request.RequestedBy, now, null, null, null)
+                    : null);
 
             _tasks.Add(task);
             _idempotency[idempotencyScope] = taskId;
             AddAudit(taskId, "operation.requested", request.RequestedBy, now, request.CorrelationId);
+            if (template.RequiresApproval)
+            {
+                AddAudit(taskId, "operation.approval-requested", request.RequestedBy, now, request.CorrelationId);
+            }
+
             return GetUnlocked(taskId);
         }
     }
@@ -366,6 +376,64 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
+    public OperationTaskResponse Approve(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            var task = FindTask(operationTaskId);
+            ValidateApprovalDecision(task, request);
+            var approval = task.Approval ?? throw new InvalidOperationTaskRequestException("Operation task does not require approval.");
+            if (!string.Equals(task.Status, "approval-pending", StringComparison.Ordinal)
+                || !string.Equals(approval.Status, "pending", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationTaskRequestException("Operation task approval is not pending.");
+            }
+
+            ReplaceTask(task with
+            {
+                Status = "queued",
+                Approval = approval with
+                {
+                    Status = "approved",
+                    DecidedBy = request.Actor,
+                    DecidedAtUtc = now,
+                    DecisionReason = request.DecisionReason
+                }
+            });
+            AddAudit(task.OperationTaskId, "operation.approved", request.Actor, now, request.CorrelationId);
+            return GetUnlocked(task.OperationTaskId);
+        }
+    }
+
+    public OperationTaskResponse Reject(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            var task = FindTask(operationTaskId);
+            ValidateApprovalDecision(task, request);
+            var approval = task.Approval ?? throw new InvalidOperationTaskRequestException("Operation task does not require approval.");
+            if (!string.Equals(task.Status, "approval-pending", StringComparison.Ordinal)
+                || !string.Equals(approval.Status, "pending", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationTaskRequestException("Operation task approval is not pending.");
+            }
+
+            ReplaceTask(task with
+            {
+                Status = "rejected",
+                Approval = approval with
+                {
+                    Status = "rejected",
+                    DecidedBy = request.Actor,
+                    DecidedAtUtc = now,
+                    DecisionReason = request.DecisionReason
+                }
+            });
+            AddAudit(task.OperationTaskId, "operation.rejected", request.Actor, now, request.CorrelationId);
+            return GetUnlocked(task.OperationTaskId);
+        }
+    }
+
     private OperationTaskResponse GetUnlocked(string operationTaskId)
     {
         var task = FindTask(operationTaskId);
@@ -399,6 +467,25 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
             || !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
         {
             throw new InvalidOperationTaskRequestException("Audit intent context does not match the operation task scope.");
+        }
+    }
+
+    private static void ValidateApprovalDecision(OperationTaskFact task, DecideOperationApprovalRequest request)
+    {
+        if (!string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationTaskRequestException("Approval decision context does not match the operation task scope.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Actor))
+        {
+            throw new InvalidOperationTaskRequestException("Approval decision actor is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.CorrelationId))
+        {
+            throw new InvalidOperationTaskRequestException("Approval decision correlation id is required.");
         }
     }
 

@@ -25,6 +25,8 @@ public sealed class OpsOpenApiTests
         ("/api/ops/v1/operation-tasks", "get", "listOperationTasks"),
         ("/api/ops/v1/operation-tasks", "post", "createOperationTask"),
         ("/api/ops/v1/operation-tasks/{operationTaskId}", "get", "getOperationTask"),
+        ("/api/ops/v1/operation-tasks/{operationTaskId}/approval/approve", "post", "approveOperationApproval"),
+        ("/api/ops/v1/operation-tasks/{operationTaskId}/approval/reject", "post", "rejectOperationApproval"),
         ("/api/ops/v1/operation-tasks/pending", "get", "getPendingOperationTasks"),
         ("/api/ops/v1/operation-tasks/claims", "post", "claimOperationTasks"),
         ("/api/ops/v1/operation-tasks/{operationTaskId}/lease/abandon", "post", "abandonOperationTaskLease"),

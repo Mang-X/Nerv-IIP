@@ -17,7 +17,16 @@ public sealed record OperationTaskFact(
     IReadOnlyDictionary<string, string> Parameters,
     int DefaultMaxAttempts,
     int DefaultLeaseDurationSeconds,
-    bool RequiresApproval);
+    bool RequiresApproval,
+    OperationApprovalFact? Approval);
+
+public sealed record OperationApprovalFact(
+    string Status,
+    string RequestedBy,
+    DateTimeOffset RequestedAtUtc,
+    string? DecidedBy,
+    DateTimeOffset? DecidedAtUtc,
+    string? DecisionReason);
 
 public sealed record OperationAttemptFact(
     string AttemptId,
@@ -133,6 +142,15 @@ public static class OperationTaskMapper
             task.Status,
             task.RequestedBy,
             task.RequestedAtUtc,
+            task.Approval is null
+                ? null
+                : new OperationApprovalSummary(
+                    task.Approval.Status,
+                    task.Approval.RequestedBy,
+                    task.Approval.RequestedAtUtc,
+                    task.Approval.DecidedBy,
+                    task.Approval.DecidedAtUtc,
+                    task.Approval.DecisionReason),
             attemptSummaries.LastOrDefault()?.AttemptId,
             attemptSummaries,
             auditSummaries);

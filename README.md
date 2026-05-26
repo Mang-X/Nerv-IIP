@@ -262,7 +262,7 @@ Nerv-IIP/
 
 当前仓库已经在首批架构文档基础上落地平台控制面、业务服务、BusinessGateway/BusinessConsole、FileStorage、本地部署产物和脚本治理基线；关键设计已经沉淀为 ADR 与 architecture 文档。平台 HTTP 接口统一采用 FastEndpoints；Program.cs 只负责服务注册、中间件和 `UseFastEndpoints()` 接线，具体接口放在各 Web 项目的 `Endpoints/` 目录。
 
-控制面已经覆盖 Connector Host 注册/心跳/状态、低风险 Ops restart 闭环、Gateway OpenAPI/api-client、IAM 持久化登录、Gateway-wide permission enforcement、Console Auth、IAM Admin Console、Notification 站内消息/任务纵切、ExternalClient client_credentials 和生产安全硬化。部署侧已有平台级 Aspire AppHost、Compose dependencies/platform overlay、统一 Dockerfile、生产 env 样例、AppHost release-install 启动脚本、zip package 生成脚本、生产部署产物验证脚本和 opt-in 发布演练脚本。
+控制面已经覆盖 Connector Host 注册/心跳/状态、低风险 Ops restart 闭环、Ops 高风险动作 approval gate、Gateway OpenAPI/api-client、IAM 持久化登录、Gateway-wide permission enforcement、Console Auth、IAM Admin Console、Notification 站内消息/任务纵切、ExternalClient client_credentials 和生产安全硬化。部署侧已有平台级 Aspire AppHost、Compose dependencies/platform overlay、统一 Dockerfile、生产 env 样例、AppHost release-install 启动脚本、zip package 生成脚本、生产部署产物验证脚本和 opt-in 发布演练脚本。
 
 业务平台已经完成 Wave 1、Wave 2、Equipment Reliability、Wave 3 ERP 和 Business Console MVP：BusinessMasterData、ProductEngineering、Inventory、Quality、MES、DemandPlanning、BarcodeLabel、BusinessApproval、WMS、IndustrialTelemetry、Maintenance 和 ERP 均已有服务代码、AppHost 注册、schema catalog、IAM seed 和对应 verify 脚本；BusinessGateway 提供 `/api/business-console/v1/**` facade，BusinessConsole 已交付 #166 到 #169 的首批页面。
 
@@ -287,7 +287,7 @@ pnpm -C frontend build
 2. 以已有 Mobile PDA PRD/architecture 为输入，拆出 BusinessGateway `/api/mobile/v1/**` facade、Capacitor app、scanner bridge、offline outbox/sync 和 WMS PDA MVP issue。
 3. 深化 #170/#171 之后的事件可靠性：跨进程多服务 CAP 联调、持久 inbox、DLQ 自动 replay executor 和管理入口。
 4. 在 #173/#174 基础上补 Windows Service/systemd 注册器、客户现场备份恢复演练、生产日志长期查询后端和发布 runbook 证据；当前发布演练入口已覆盖 disposable Compose dependencies/platform smoke。
-5. 继续推进 OAuth/OIDC、SSO、MFA、ABAC、高风险动作审批和通知联动；#77 的 P0 验收脚本继续作为业务链路回归入口。
+5. 继续推进 OAuth/OIDC、SSO、MFA、ABAC；高风险动作审批和 Notification intent 联动已具备首个 Ops approval gate，后续补 Console 管理入口和更细权限 scope。#77 的 P0 验收脚本继续作为业务链路回归入口。
 
 ## 非目标
 

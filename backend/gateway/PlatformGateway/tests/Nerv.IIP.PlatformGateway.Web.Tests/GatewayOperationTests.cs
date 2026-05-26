@@ -114,7 +114,7 @@ public sealed class GatewayOperationTests
             }
 
             LastRequest = request;
-            return Task.FromResult(new OperationTaskResponse("op-000001", request.OrganizationId, request.EnvironmentId, request.InstanceKey, request.OperationCode, "queued", request.RequestedBy, DateTimeOffset.UtcNow, null, [], []));
+            return Task.FromResult(new OperationTaskResponse("op-000001", request.OrganizationId, request.EnvironmentId, request.InstanceKey, request.OperationCode, "queued", request.RequestedBy, DateTimeOffset.UtcNow, null, null, [], []));
         }
 
         public Task<OperationTaskResponse> GetTaskAsync(string operationTaskId, CancellationToken cancellationToken)
@@ -125,7 +125,7 @@ public sealed class GatewayOperationTests
             }
 
             LastOperationTaskId = operationTaskId;
-            return Task.FromResult(new OperationTaskResponse(operationTaskId, "org-001", "env-dev", "docker-container-local-demo-001", "lifecycle.restart", "completed", "local-admin", DateTimeOffset.UtcNow, "attempt-000001", [], []));
+            return Task.FromResult(new OperationTaskResponse(operationTaskId, "org-001", "env-dev", "docker-container-local-demo-001", "lifecycle.restart", "completed", "local-admin", DateTimeOffset.UtcNow, null, "attempt-000001", [], []));
         }
     }
 

@@ -69,6 +69,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public int DefaultMaxAttempts { get; private set; } = 3;
     public int DefaultLeaseDurationSeconds { get; private set; } = 300;
     public bool RequiresApproval { get; private set; }
+    public string? ApprovalStatus { get; private set; }
+    public string? ApprovalRequestedBy { get; private set; }
+    public DateTimeOffset? ApprovalRequestedAtUtc { get; private set; }
+    public string? ApprovalDecidedBy { get; private set; }
+    public DateTimeOffset? ApprovalDecidedAtUtc { get; private set; }
+    public string? ApprovalDecisionReason { get; private set; }
     public Deleted Deleted { get; private set; } = new(false);
     public RowVersion RowVersion { get; private set; } = new(0);
     public IReadOnlyCollection<OperationAttempt> Attempts => _attempts;
@@ -90,7 +96,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new InvalidOperationTaskRequestException($"Cannot create task from disabled operation template: {request.OperationCode}");
         }
 
-        return new OperationTask(
+        var task = new OperationTask(
             id,
             request.OrganizationId,
             request.EnvironmentId,
@@ -106,6 +112,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             DefaultLeaseDurationSeconds = Math.Clamp(template.DefaultLeaseDurationSeconds, 30, 3600),
             RequiresApproval = template.RequiresApproval
         };
+        if (task.RequiresApproval)
+        {
+            task.RequestApproval(now);
+        }
+
+        return task;
     }
 
     public OperationTaskDispatchItem Claim(
@@ -231,6 +243,56 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         return ToResponse();
     }
 
+    public OperationTaskResponse Approve(DecideOperationApprovalRequest request, AuditRecordId auditRecordId, DateTimeOffset now)
+    {
+        ValidateApprovalDecision(request);
+        if (!RequiresApproval)
+        {
+            throw new InvalidOperationTaskRequestException("Operation task does not require approval.");
+        }
+
+        if (!string.Equals(Status, "approval-pending", StringComparison.Ordinal)
+            || !string.Equals(ApprovalStatus, "pending", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationTaskRequestException("Operation task approval is not pending.");
+        }
+
+        ApprovalStatus = "approved";
+        ApprovalDecidedBy = request.Actor;
+        ApprovalDecidedAtUtc = now;
+        ApprovalDecisionReason = request.DecisionReason;
+        Status = "queued";
+        var auditRecord = AddAudit(auditRecordId, "operation.approved", request.Actor, now, request.CorrelationId);
+        this.AddDomainEvent(new OperationTaskApprovedDomainEvent(this, request.Actor, request.DecisionReason, request.CorrelationId, now));
+        AddAuditRecordedDomainEvent(auditRecord);
+        return ToResponse();
+    }
+
+    public OperationTaskResponse Reject(DecideOperationApprovalRequest request, AuditRecordId auditRecordId, DateTimeOffset now)
+    {
+        ValidateApprovalDecision(request);
+        if (!RequiresApproval)
+        {
+            throw new InvalidOperationTaskRequestException("Operation task does not require approval.");
+        }
+
+        if (!string.Equals(Status, "approval-pending", StringComparison.Ordinal)
+            || !string.Equals(ApprovalStatus, "pending", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationTaskRequestException("Operation task approval is not pending.");
+        }
+
+        ApprovalStatus = "rejected";
+        ApprovalDecidedBy = request.Actor;
+        ApprovalDecidedAtUtc = now;
+        ApprovalDecisionReason = request.DecisionReason;
+        Status = "rejected";
+        var auditRecord = AddAudit(auditRecordId, "operation.rejected", request.Actor, now, request.CorrelationId);
+        this.AddDomainEvent(new OperationTaskRejectedDomainEvent(this, request.Actor, request.DecisionReason, request.CorrelationId, now));
+        AddAuditRecordedDomainEvent(auditRecord);
+        return ToResponse();
+    }
+
     public AuditIntentResponse SubmitAuditIntent(SubmitAuditIntentRequest request, AuditRecordId auditRecordId, DateTimeOffset now)
     {
         AuditIntentValidator.Validate(request);
@@ -261,7 +323,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             Parameters,
             DefaultMaxAttempts,
             DefaultLeaseDurationSeconds,
-            RequiresApproval);
+            RequiresApproval,
+            ToApprovalFact());
     }
 
     public OperationTaskResponse ToResponse()
@@ -279,8 +342,68 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     public void AssignInitialAuditId(AuditRecordId auditRecordId)
     {
-        var audit = _auditRecords.Single(x => x.Id.Id.Length == 0);
+        var audit = _auditRecords.First(x => x.Id.Id.Length == 0);
         audit.AssignId(auditRecordId);
+    }
+
+    public void AssignPendingAuditIds(IReadOnlyCollection<AuditRecordId> auditRecordIds)
+    {
+        var pendingAudits = _auditRecords.Where(x => x.Id.Id.Length == 0).ToArray();
+        if (pendingAudits.Length != auditRecordIds.Count)
+        {
+            throw new InvalidOperationTaskRequestException("Pending audit id count does not match operation task audit records.");
+        }
+
+        foreach (var (audit, auditRecordId) in pendingAudits.Zip(auditRecordIds))
+        {
+            audit.AssignId(auditRecordId);
+        }
+    }
+
+    private OperationApprovalFact? ToApprovalFact()
+    {
+        if (!RequiresApproval && string.IsNullOrWhiteSpace(ApprovalStatus))
+        {
+            return null;
+        }
+
+        return new OperationApprovalFact(
+            ApprovalStatus ?? "not-required",
+            ApprovalRequestedBy ?? RequestedBy,
+            ApprovalRequestedAtUtc ?? RequestedAtUtc,
+            ApprovalDecidedBy,
+            ApprovalDecidedAtUtc,
+            ApprovalDecisionReason);
+    }
+
+    private void RequestApproval(DateTimeOffset now)
+    {
+        Status = "approval-pending";
+        ApprovalStatus = "pending";
+        ApprovalRequestedBy = RequestedBy;
+        ApprovalRequestedAtUtc = now;
+        var auditRecord = AddAudit(new AuditRecordId(string.Empty), "operation.approval-requested", RequestedBy, now, CorrelationId);
+        this.AddDomainEvent(new OperationApprovalRequestedDomainEvent(this));
+        AddAuditRecordedDomainEvent(auditRecord);
+    }
+
+    private void ValidateApprovalDecision(DecideOperationApprovalRequest request)
+    {
+        if (!string.Equals(OrganizationId, request.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationTaskRequestException("Approval decision context does not match the operation task scope.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Actor))
+        {
+            throw new InvalidOperationTaskRequestException("Approval decision actor is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.CorrelationId))
+        {
+            throw new InvalidOperationTaskRequestException("Approval decision correlation id is required.");
+        }
     }
 
     private IReadOnlyDictionary<string, string> Parameters =>

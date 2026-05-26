@@ -10,6 +10,8 @@ public interface IOpsClient
 {
     Task<OperationTaskResponse> CreateOperationTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken = default);
     Task<OperationTaskResponse> GetOperationTaskAsync(string operationTaskId, CancellationToken cancellationToken = default);
+    Task<OperationTaskResponse> ApproveOperationTaskAsync(string operationTaskId, DecideOperationApprovalRequest request, CancellationToken cancellationToken = default);
+    Task<OperationTaskResponse> RejectOperationTaskAsync(string operationTaskId, DecideOperationApprovalRequest request, CancellationToken cancellationToken = default);
     Task<PendingOperationTasksResponse> GetPendingOperationTasksAsync(string organizationId, string environmentId, string connectorHostId, int take, CancellationToken cancellationToken = default);
     Task<PendingOperationTasksResponse> ClaimOperationTasksAsync(ClaimOperationTasksRequest request, CancellationToken cancellationToken = default);
     Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, CancellationToken cancellationToken = default);
@@ -31,6 +33,22 @@ public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential
     {
         var escapedOperationTaskId = Uri.EscapeDataString(operationTaskId);
         using var response = await httpClient.GetAsync($"/api/ops/v1/operation-tasks/{escapedOperationTaskId}", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await PlatformApiClient.ReadResponseDataAsync<OperationTaskResponse>(response, cancellationToken);
+    }
+
+    public async Task<OperationTaskResponse> ApproveOperationTaskAsync(string operationTaskId, DecideOperationApprovalRequest request, CancellationToken cancellationToken = default)
+    {
+        var escapedOperationTaskId = Uri.EscapeDataString(operationTaskId);
+        using var response = await httpClient.PostAsJsonAsync($"/api/ops/v1/operation-tasks/{escapedOperationTaskId}/approval/approve", request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await PlatformApiClient.ReadResponseDataAsync<OperationTaskResponse>(response, cancellationToken);
+    }
+
+    public async Task<OperationTaskResponse> RejectOperationTaskAsync(string operationTaskId, DecideOperationApprovalRequest request, CancellationToken cancellationToken = default)
+    {
+        var escapedOperationTaskId = Uri.EscapeDataString(operationTaskId);
+        using var response = await httpClient.PostAsJsonAsync($"/api/ops/v1/operation-tasks/{escapedOperationTaskId}/approval/reject", request, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await PlatformApiClient.ReadResponseDataAsync<OperationTaskResponse>(response, cancellationToken);
     }

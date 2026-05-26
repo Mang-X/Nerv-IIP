@@ -52,6 +52,7 @@
 46. #174 生产部署产物已形成可验证闭环：平台级 AppHost 继续作为服务拓扑真相源；`infra/compose/nerv-iip.dependencies.yml` 提供 PostgreSQL、Redis、MinIO、OpenTelemetry Collector、RabbitMQ profile 和 Aspire Dashboard profile 的受控依赖/观测 Compose；`infra/compose/nerv-iip.platform.yml` 提供 PlatformGateway、BusinessGateway、AppHub、IAM、Ops、FileStorage、Notification、全部业务服务、Connector Host、Console 和 Business Console 的完整镜像拓扑 overlay；`infra/docker/dotnet-service.Dockerfile`、`infra/docker/vite-spa.Dockerfile` 和 `infra/compose/nerv-iip.production.env.example` 提供统一镜像构建与配置样例；`scripts/install/start-nerv-iip-apphost.ps1` 是受治理 release-install AppHost 启动入口，`scripts/package/create-nerv-iip-package.ps1` 是 zip 包生成入口，`scripts/verify-production-deployment-artifacts.ps1` 验证部署产物和 Compose config。
 47. #175/P2 性能基线已从 opt-in 骨架升级为可阈值化 release gate：`backend/tests/Nerv.IIP.Business.Performance.Tests` 会写出 machine-readable JSONL 指标，`scripts/verify-business-performance-baseline.ps1` 可在显式 PostgreSQL 连接串下输出 summary JSON，并通过全局或 inventory/mes/erp 分场景 elapsed-time 阈值失败门禁；未配置 `NERV_IIP_PERF_POSTGRES` 时测试 skip，脚本失败提示，避免用 InMemory 结果冒充性能事实。
 48. P2 部署演练已新增 opt-in 入口：`scripts/verify-production-release-rehearsal.ps1 -Profile dependencies|platform-smoke` 使用生产 Compose artifacts 创建 disposable project、启动依赖、执行 PostgreSQL/Redis/MinIO smoke，并在 `platform-smoke` profile 下构建核心平台服务、执行 Development-only auto-migration smoke 和 `/health` 检查；脚本默认清理自有 Compose project 和 volumes，Docker 不可用时报环境不可用，不进入默认本地 verify。
+49. P2 Ops 高风险动作审批与通知联动已落地首个 approval gate：`operation_templates.RequiresApproval=true` 的 Ops 任务创建后进入 `approval-pending`，通过 `/api/ops/v1/operation-tasks/{operationTaskId}/approval/approve|reject` 决策；审批通过后才可被 Connector Host claim，拒绝进入 `rejected` 终态。Ops 新增审批字段 migration 和 `OperationApprovalRequested/Approved/Rejected` 事件，Notification 真实消费者会把审批待办、审批结果和执行完成/失败结果转为 Notification intent。
 
 ### 业务平台代码事实与 issue 映射
 
@@ -355,13 +356,13 @@
 37. AppHub 当前提供 registration、heartbeat、state-snapshot 和内部实例查询接口。
 38. PlatformGateway 当前提供实例列表、实例详情、实例 restart、operation task detail 和 Console IAM Admin facade；这些 Console API 需要 bearer token，并由 Gateway 转发到 IAM 做权限校验。BusinessGateway 当前提供 Business Console MasterData、Inventory、Quality 和 MES facade，使用用户 bearer token 到 IAM 做权限校验，并使用 internal service token 调用业务服务。
 39. Connector Host 当前可通过 Platform SDK 将 Docker Connector 的发现结果上报到 AppHub，并通过 Ops SDK 拉取和回传低风险动作。
-40. 当前实现用于本地开发、接口联调和 PoC/私有化部署基线，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、ExternalClient client_credentials、Notification 站内消息/任务纵切与 Console facade、Notification/AppHub/BusinessMES/BusinessMaintenance PostgreSQL persistent DLQ、BusinessMasterData Layer 0 realignment、BusinessProductEngineering release facts、BusinessInventory MVP、BusinessQuality inspection MVP、BusinessMES persistence MVP、BusinessDemandPlanning MRP MVP、BarcodeLabel MVP、BusinessApproval MVP、WMS execution MVP、BusinessIndustrialTelemetry MVP、BusinessMaintenance MVP、BusinessERP MVP、BusinessGateway 控制台 facade、BusinessConsole 独立 Vite Plus app 和 #166-#169 首批业务页面，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含完整 OAuth/OIDC、SSO、MFA、ABAC、高风险动作审批、Notification 外部通道 provider、BusinessConsole 的高级报表/甘特/跨域工作流或 MinIO/S3 multipart。
+40. 当前实现用于本地开发、接口联调和 PoC/私有化部署基线，已包含 IAM 用户/角色/权限 catalog/会话管理控制台、ExternalClient client_credentials、Ops 高风险动作 approval gate、Notification 站内消息/任务纵切与 Console facade、Notification/AppHub/BusinessMES/BusinessMaintenance PostgreSQL persistent DLQ、BusinessMasterData Layer 0 realignment、BusinessProductEngineering release facts、BusinessInventory MVP、BusinessQuality inspection MVP、BusinessMES persistence MVP、BusinessDemandPlanning MRP MVP、BarcodeLabel MVP、BusinessApproval MVP、WMS execution MVP、BusinessIndustrialTelemetry MVP、BusinessMaintenance MVP、BusinessERP MVP、BusinessGateway 控制台 facade、BusinessConsole 独立 Vite Plus app 和 #166-#169 首批业务页面，以及 FileStorage contracts/SDK、metadata API、PostgreSQL-backed service、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；不包含完整 OAuth/OIDC、SSO、MFA、ABAC、Ops 审批 Console 管理入口、Notification 外部通道 provider、BusinessConsole 的高级报表/甘特/跨域工作流或 MinIO/S3 multipart。
 41. 当前部署交付已经有平台级 AppHost 编译入口、完整平台 Compose overlay、统一 Docker build flow、生产 env 样例、AppHost release-install 启动脚本、zip 包生成脚本、部署产物静态验证、disposable Compose 发布演练入口和性能阈值化 release gate；Windows Service/systemd 注册器、客户现场备份恢复演练和生产日志长期查询后端仍按 deployment-baseline 后续深化。
 
 ### 可以并行但不阻塞开工的事项
 
-1. Ops 持久化 outbox、复杂失败重试、审批联动和生产级调度策略。
-2. 高风险动作审批、人工确认 UI、权限 scope 和通知联动。
+1. Ops 持久化 outbox、复杂失败重试、审批 Console 管理入口和生产级调度策略。
+2. 高风险动作审批的人工确认 UI、细粒度权限 scope 和批量/恢复类动作策略。
 3. Sdk.Observability 的完整实现和诊断附件链路。
 4. AI Integration 与 Knowledge 的具体代码骨架。
 5. Notification 的偏好/订阅、外部通道 provider、限流、模板映射和 DLQ replay 管理入口；边界口径应遵守 docs/architecture/notification-baseline.md。

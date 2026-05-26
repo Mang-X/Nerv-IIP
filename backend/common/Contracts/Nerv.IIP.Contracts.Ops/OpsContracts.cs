@@ -20,6 +20,7 @@ public sealed record OperationTaskResponse(
     string Status,
     string RequestedBy,
     DateTimeOffset RequestedAtUtc,
+    OperationApprovalSummary? Approval,
     string? CurrentAttemptId,
     IReadOnlyList<OperationAttemptSummary> Attempts,
     IReadOnlyList<AuditRecordSummary> AuditRecords);
@@ -63,6 +64,21 @@ public sealed record AuditRecordSummary(
     DateTimeOffset OccurredAtUtc,
     string CorrelationId,
     string IntegrityHash);
+
+public sealed record OperationApprovalSummary(
+    string Status,
+    string RequestedBy,
+    DateTimeOffset RequestedAtUtc,
+    string? DecidedBy,
+    DateTimeOffset? DecidedAtUtc,
+    string? DecisionReason);
+
+public sealed record DecideOperationApprovalRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string DecisionReason,
+    string CorrelationId);
 
 public sealed record AuditRecordListResponse(IReadOnlyList<AuditRecordSummary> Items);
 
