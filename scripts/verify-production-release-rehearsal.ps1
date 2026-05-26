@@ -157,7 +157,6 @@ function Wait-ReleaseRehearsalHttpHealth {
             }
         }
         catch {
-            Start-Sleep -Milliseconds 750
         }
 
         Start-Sleep -Milliseconds 750
@@ -238,7 +237,7 @@ $summaryPath = Join-Path $summaryDirectory "summary.json"
 $environment = New-ReleaseRehearsalEnvironment -PortBase $HostPortBase
 $composeBaseArguments = Get-ReleaseRehearsalComposeArguments
 $services = @(Get-ReleaseRehearsalServices)
-$composeTouched = $true
+$composeStarted = $false
 $passed = $false
 
 try {
@@ -258,13 +257,14 @@ try {
         }
 
         Invoke-DockerCompose -Arguments ($upArguments + $services) -WorkingDirectory $root -TimeoutSeconds $TimeoutSeconds -Name "release-rehearsal-compose-up" | Out-Null
+        $script:composeStarted = $true
         Invoke-ReleaseRehearsalSmokeChecks -Environment $environment
     }
 
     $passed = $true
 }
 finally {
-    if ($composeTouched -and -not $KeepRunning) {
+    if ($composeStarted -and -not $KeepRunning) {
         Invoke-WithScopedEnvironment -Variables $environment -ScriptBlock {
             Invoke-DockerCompose -Arguments ($composeBaseArguments + @(
                     "down",

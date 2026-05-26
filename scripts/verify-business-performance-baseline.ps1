@@ -77,6 +77,7 @@ function Get-PerformanceMetricThreshold {
 
     $scenarioName = [string] $Metric.scenario
 
+    # Scenario-specific thresholds rely on the stable inventory-/mes-/erp- metric prefixes.
     if ($scenarioName.StartsWith("inventory-", [StringComparison]::OrdinalIgnoreCase) -and $InventoryMaxElapsedMilliseconds -gt 0) {
         return $InventoryMaxElapsedMilliseconds
     }

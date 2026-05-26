@@ -5,6 +5,7 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application;
+using Nerv.IIP.Notification.Web.Application.Health;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
 using Nerv.IIP.Observability;
@@ -32,7 +33,11 @@ builder.Services
             s.Version = "v1";
         };
     });
-builder.Services.AddHealthChecks();
+var healthChecks = builder.Services.AddHealthChecks();
+if (usePostgreSql)
+{
+    healthChecks.AddCheck<NotificationDatabaseHealthCheck>("notification-db");
+}
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddMediatR(configuration =>
 {
