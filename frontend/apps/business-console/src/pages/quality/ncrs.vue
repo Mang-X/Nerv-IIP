@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import BusinessContextBar from '@/components/business/BusinessContextBar.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import BusinessRowActions from '@/components/business/BusinessRowActions.vue'
+import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type {
@@ -18,8 +21,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-  Badge,
   Button,
+  DropdownMenuItem,
   Field,
   FieldGroup,
   FieldLabel,
@@ -72,6 +75,12 @@ const selectedNcr = shallowRef<BusinessConsoleQualityItem>()
 const detailOpen = shallowRef(false)
 const dispositionSuccess = shallowRef('')
 const closeSuccess = shallowRef('')
+const statusOptions = [
+  { label: '全部状态', value: 'all' },
+  { label: '待处理', value: 'open' },
+  { label: '处置中', value: 'dispositioned' },
+  { label: '已关闭', value: 'closed' },
+]
 
 const dispositionForm = reactive({
   dispositionType: 'use-as-is',
@@ -93,6 +102,12 @@ const canSubmitDisposition = computed(
   () => isNonEmpty(selectedNcrId.value) && isNonEmpty(dispositionForm.dispositionType),
 )
 const canCloseNcr = computed(() => isNonEmpty(selectedNcrId.value))
+const statusFilter = computed({
+  get: () => filters.status || 'all',
+  set: (value: string) => {
+    filters.status = value === 'all' ? undefined : value
+  },
+})
 
 function openNcr(ncr: BusinessConsoleQualityItem) {
   selectedNcr.value = ncr
@@ -188,19 +203,28 @@ function isPresent(value: string | undefined | null): value is string {
         </template>
       </BusinessPageHeader>
 
-      <div class="grid gap-3 rounded-lg border bg-background p-4">
-        <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field>
-            <FieldLabel for="ncr-org">组织</FieldLabel>
-            <Input id="ncr-org" v-model="filters.organizationId" />
-          </Field>
-          <Field>
-            <FieldLabel for="ncr-env">环境</FieldLabel>
-            <Input id="ncr-env" v-model="filters.environmentId" />
-          </Field>
+      <BusinessContextBar
+        v-model:environment-id="filters.environmentId"
+        v-model:organization-id="filters.organizationId"
+        :show-line="false"
+        :show-shift="false"
+        :show-site="false"
+        :show-work-center="false"
+        title="质量上下文"
+      >
+        <FieldGroup class="grid gap-3 md:grid-cols-2">
           <Field>
             <FieldLabel for="ncr-status">状态</FieldLabel>
-            <Input id="ncr-status" v-model="filters.status" placeholder="可选" />
+            <Select v-model="statusFilter">
+              <SelectTrigger id="ncr-status" aria-label="NCR 状态">
+                <SelectValue placeholder="全部状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="option in statusOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
           <Field>
             <FieldLabel for="ncr-take">返回条数</FieldLabel>
@@ -208,7 +232,7 @@ function isPresent(value: string | undefined | null): value is string {
           </Field>
         </FieldGroup>
         <BusinessFormStatus :error="listErrorMessage" />
-      </div>
+      </BusinessContextBar>
 
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
@@ -234,13 +258,13 @@ function isPresent(value: string | undefined | null): value is string {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{{ ncr.status ?? '未知' }}</Badge>
+                  <BusinessStatusBadge :value="ncr.status" />
                 </TableCell>
                 <TableCell>{{ qualityItemSummary(ncr) }}</TableCell>
                 <TableCell class="text-right">
-                  <Button size="sm" variant="outline" type="button" @click="openNcr(ncr)">
-                    打开
-                  </Button>
+                  <BusinessRowActions :label="`NCR 操作 ${ncr.code ?? ''}`">
+                    <DropdownMenuItem @click="openNcr(ncr)">打开处置</DropdownMenuItem>
+                  </BusinessRowActions>
                 </TableCell>
               </TableRow>
               <TableEmpty v-if="!ncrs.length && !ncrsPending" :colspan="4">
@@ -265,7 +289,7 @@ function isPresent(value: string | undefined | null): value is string {
             <div class="grid gap-2 rounded-lg border p-3">
               <div class="flex items-center justify-between gap-2">
                 <span class="text-sm font-medium text-foreground">状态</span>
-                <Badge variant="secondary">{{ selectedNcr?.status ?? '未知' }}</Badge>
+                <BusinessStatusBadge :value="selectedNcr?.status" />
               </div>
               <div class="grid gap-1 text-sm text-muted-foreground">
                 <span>ID: {{ selectedNcr?.id ?? '无' }}</span>

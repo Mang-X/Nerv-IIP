@@ -1,19 +1,27 @@
 <script setup lang="ts">
 import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
+import BusinessContextBar from '@/components/business/BusinessContextBar.vue'
 import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import BusinessRowActions from '@/components/business/BusinessRowActions.vue'
 import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import {
   Button,
+  DropdownMenuItem,
   Field,
   FieldGroup,
   FieldLabel,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Spinner,
   Table,
   TableBody,
@@ -23,8 +31,9 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
-import { PackageCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { EyeIcon, PackageCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
+import { useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -44,8 +53,21 @@ const {
   refreshReceiptRequests,
 } = useMesFinishedGoodsReceipts()
 
+const router = useRouter()
 const successMessage = shallowRef('')
 const receiptSheetOpen = shallowRef(false)
+const executionContext = reactive({
+  siteCode: '',
+  lineCode: '',
+  workCenterCode: '',
+  shiftCode: '',
+})
+const statusOptions = [
+  { label: '全部状态', value: 'all' },
+  { label: '待处理', value: 'Pending' },
+  { label: '已完成', value: 'Completed' },
+  { label: '失败', value: 'Failed' },
+]
 const form = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
@@ -72,10 +94,21 @@ const canCreate = computed(
 const pendingCount = computed(
   () => receiptRequests.value.filter((item) => item.receiptStatus !== 'Completed').length,
 )
+const statusFilter = computed({
+  get: () => filters.status || 'all',
+  set: (value: string) => {
+    filters.status = value === 'all' ? undefined : value
+  },
+})
 
 function syncContextFromFilters() {
   form.organizationId = filters.organizationId
   form.environmentId = filters.environmentId
+}
+
+function openWorkOrder(workOrderId?: string | null) {
+  if (!workOrderId) return
+  void router.push({ path: `/mes/work-orders/${encodeURIComponent(workOrderId)}` })
 }
 
 async function submitReceiptRequest() {
@@ -157,19 +190,29 @@ function isNonEmpty(value: string) {
 
       <div class="grid gap-4">
         <div class="grid gap-4">
-          <div class="grid gap-3 rounded-lg border bg-background p-4">
-            <FieldGroup class="grid gap-3 md:grid-cols-4">
-              <Field>
-                <FieldLabel for="receipt-list-org">组织</FieldLabel>
-                <Input id="receipt-list-org" v-model="filters.organizationId" @change="syncContextFromFilters" />
-              </Field>
-              <Field>
-                <FieldLabel for="receipt-list-env">环境</FieldLabel>
-                <Input id="receipt-list-env" v-model="filters.environmentId" @change="syncContextFromFilters" />
-              </Field>
+          <BusinessContextBar
+            v-model:environment-id="filters.environmentId"
+            v-model:line-code="executionContext.lineCode"
+            v-model:organization-id="filters.organizationId"
+            v-model:shift-code="executionContext.shiftCode"
+            v-model:site-code="executionContext.siteCode"
+            v-model:work-center-code="executionContext.workCenterCode"
+            title="入库上下文"
+            @change="syncContextFromFilters"
+          >
+            <FieldGroup class="grid gap-3 md:grid-cols-2">
               <Field>
                 <FieldLabel for="receipt-list-status">状态</FieldLabel>
-                <Input id="receipt-list-status" v-model="filters.status" placeholder="可选" />
+                <Select v-model="statusFilter">
+                  <SelectTrigger id="receipt-list-status" aria-label="入库状态">
+                    <SelectValue placeholder="全部状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="option in statusOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
               <Field>
                 <FieldLabel for="receipt-list-take">数量</FieldLabel>
@@ -177,7 +220,7 @@ function isNonEmpty(value: string) {
               </Field>
             </FieldGroup>
             <BusinessFormStatus :error="listErrorMessage" />
-          </div>
+          </BusinessContextBar>
 
           <div class="grid gap-3 md:grid-cols-3">
             <BusinessMetricCell label="入库请求" :value="receiptRequests.length" detail="当前筛选结果" />
@@ -196,6 +239,7 @@ function isNonEmpty(value: string) {
                     <TableHead class="text-right">数量</TableHead>
                     <TableHead>状态</TableHead>
                     <TableHead>请求时间</TableHead>
+                    <TableHead class="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -208,15 +252,23 @@ function isNonEmpty(value: string) {
                       <BusinessStatusBadge :value="row.receiptStatus" />
                     </TableCell>
                     <TableCell>{{ formatDateTime(row.requestedAtUtc) }}</TableCell>
+                    <TableCell class="text-right">
+                      <BusinessRowActions :label="`入库请求操作 ${row.receiptRequestId ?? ''}`">
+                        <DropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
+                          <EyeIcon data-icon="inline-start" />
+                          查看工单
+                        </DropdownMenuItem>
+                      </BusinessRowActions>
+                    </TableCell>
                   </TableRow>
-                  <TableEmpty v-if="!receiptRequests.length && !receiptRequestsPending" :colspan="6">
+                  <TableEmpty v-if="!receiptRequests.length && !receiptRequestsPending" :colspan="7">
                     <BusinessEmptyState
                       title="当前没有完工入库请求"
                       description="完工入库通常从生产报工完成、质量放行或工单详情中发起。"
                       action="需要临时补录时，使用右上角新增入库请求。"
                     />
                   </TableEmpty>
-                  <TableEmpty v-if="receiptRequestsPending" :colspan="6">正在加载完工入库...</TableEmpty>
+                  <TableEmpty v-if="receiptRequestsPending" :colspan="7">正在加载完工入库...</TableEmpty>
                 </TableBody>
               </Table>
             </div>

@@ -1,12 +1,16 @@
 <script setup lang="ts">
+import BusinessContextBar from '@/components/business/BusinessContextBar.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import BusinessRowActions from '@/components/business/BusinessRowActions.vue'
+import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Badge,
   Button,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   Field,
   FieldGroup,
   FieldLabel,
@@ -24,8 +28,9 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { ClipboardListIcon, MoveRightIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { computed, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -43,6 +48,7 @@ const {
   refreshAvailability,
 } = useInventoryAvailability()
 
+const router = useRouter()
 const errorMessage = computed(() => formatError(availabilityError.value))
 const onHandQuantity = computed(() => availability.value?.onHandQuantity ?? 0)
 const availableQuantity = computed(() => availability.value?.availableQuantity ?? 0)
@@ -50,6 +56,28 @@ const reservedQuantity = computed(() => availability.value?.reservedQuantity ?? 
 const frozenQuantity = computed(() =>
   Math.max(onHandQuantity.value - availableQuantity.value - reservedQuantity.value, 0),
 )
+const executionContext = reactive({
+  lineCode: '',
+  workCenterCode: '',
+  shiftCode: '',
+})
+const qualityStatusOptions = [
+  { label: '全部状态', value: 'all' },
+  { label: '可用', value: 'available' },
+  { label: '待检', value: 'inspection' },
+  { label: '冻结', value: 'blocked' },
+  { label: '不合格', value: 'rejected' },
+]
+const qualityStatusFilter = computed({
+  get: () => filters.qualityStatus || 'all',
+  set: (value: string) => {
+    filters.qualityStatus = value === 'all' ? undefined : value
+  },
+})
+
+function openRoute(path: string) {
+  void router.push({ path })
+}
 
 function lineFrozen(onHand?: number, available?: number) {
   return Math.max((onHand ?? 0) - (available ?? 0), 0)
@@ -88,16 +116,19 @@ function formatError(error: unknown) {
         </template>
       </BusinessPageHeader>
 
-      <div class="grid gap-3 rounded-lg border bg-background p-4">
+      <BusinessContextBar
+        v-model:environment-id="filters.environmentId"
+        v-model:line-code="executionContext.lineCode"
+        v-model:organization-id="filters.organizationId"
+        v-model:shift-code="executionContext.shiftCode"
+        v-model:site-code="filters.siteCode"
+        v-model:work-center-code="executionContext.workCenterCode"
+        :show-line="false"
+        :show-shift="false"
+        :show-work-center="false"
+        title="库存上下文"
+      >
         <FieldGroup class="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
-          <Field>
-            <FieldLabel for="availability-org">组织</FieldLabel>
-            <Input id="availability-org" v-model="filters.organizationId" />
-          </Field>
-          <Field>
-            <FieldLabel for="availability-env">环境</FieldLabel>
-            <Input id="availability-env" v-model="filters.environmentId" />
-          </Field>
           <Field>
             <FieldLabel for="availability-sku">SKU</FieldLabel>
             <Input id="availability-sku" v-model="filters.skuCode" />
@@ -105,10 +136,6 @@ function formatError(error: unknown) {
           <Field>
             <FieldLabel for="availability-uom">单位</FieldLabel>
             <Input id="availability-uom" v-model="filters.uomCode" />
-          </Field>
-          <Field>
-            <FieldLabel for="availability-site">工厂</FieldLabel>
-            <Input id="availability-site" v-model="filters.siteCode" />
           </Field>
           <Field>
             <FieldLabel for="availability-location">库位</FieldLabel>
@@ -124,7 +151,16 @@ function formatError(error: unknown) {
           </Field>
           <Field>
             <FieldLabel for="availability-quality">质量状态</FieldLabel>
-            <Input id="availability-quality" v-model="filters.qualityStatus" />
+            <Select v-model="qualityStatusFilter">
+              <SelectTrigger id="availability-quality" aria-label="质量状态">
+                <SelectValue placeholder="全部状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="option in qualityStatusOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
           <Field>
             <FieldLabel>货主类型</FieldLabel>
@@ -146,7 +182,7 @@ function formatError(error: unknown) {
           </Field>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
-      </div>
+      </BusinessContextBar>
 
       <div class="grid gap-3 sm:grid-cols-3">
         <BusinessMetricCell label="现存量" :value="formatQuantity(onHandQuantity)" :detail="filters.uomCode" />
@@ -174,6 +210,7 @@ function formatError(error: unknown) {
                 <TableHead class="text-right">现存量</TableHead>
                 <TableHead class="text-right">可用量</TableHead>
                 <TableHead class="text-right">冻结/其他</TableHead>
+                <TableHead class="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -186,7 +223,7 @@ function formatError(error: unknown) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{{ line.qualityStatus ?? '未知' }}</Badge>
+                  <BusinessStatusBadge :value="line.qualityStatus" />
                 </TableCell>
                 <TableCell>{{ line.ownerId ?? line.ownerType ?? '无' }}</TableCell>
                 <TableCell class="text-right tabular-nums">{{ formatQuantity(line.onHandQuantity) }}</TableCell>
@@ -194,11 +231,24 @@ function formatError(error: unknown) {
                 <TableCell class="text-right tabular-nums">
                   {{ formatQuantity(lineFrozen(line.onHandQuantity, line.availableQuantity)) }}
                 </TableCell>
+                <TableCell class="text-right">
+                  <BusinessRowActions :label="`库存操作 ${line.locationCode ?? ''}`">
+                    <DropdownMenuItem @click="openRoute('/inventory/movements')">
+                      <MoveRightIcon data-icon="inline-start" />
+                      发起移动
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem @click="openRoute('/inventory/counts')">
+                      <ClipboardListIcon data-icon="inline-start" />
+                      创建盘点
+                    </DropdownMenuItem>
+                  </BusinessRowActions>
+                </TableCell>
               </TableRow>
-              <TableEmpty v-if="!availabilityLines.length && !availabilityPending" :colspan="7">
+              <TableEmpty v-if="!availabilityLines.length && !availabilityPending" :colspan="8">
                 未返回可用量明细。
               </TableEmpty>
-              <TableEmpty v-if="availabilityPending" :colspan="7">正在加载可用量...</TableEmpty>
+              <TableEmpty v-if="availabilityPending" :colspan="8">正在加载可用量...</TableEmpty>
             </TableBody>
           </Table>
         </div>

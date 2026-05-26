@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
+import BusinessContextBar from '@/components/business/BusinessContextBar.vue'
 import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import BusinessRowActions from '@/components/business/BusinessRowActions.vue'
 import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import { useMesWorkOrders } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -15,11 +17,18 @@ import type {
 import {
   Button,
   Checkbox,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Spinner,
   Table,
   TableBody,
@@ -29,8 +38,9 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
-import { ClipboardCheckIcon, FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { ClipboardCheckIcon, EyeIcon, FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
+import { useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -53,12 +63,28 @@ const {
   workOrdersPending,
 } = useMesWorkOrders()
 
+const router = useRouter()
 const rushSuccess = shallowRef('')
 const reportSuccess = shallowRef('')
 const rushSheetOpen = shallowRef(false)
 const reportSheetOpen = shallowRef(false)
 const lastRushAffectedWorkOrders = shallowRef<string[]>([])
 const lastRushScheduleVersion = shallowRef<number>()
+const executionContext = reactive({
+  siteCode: '',
+  lineCode: '',
+  workCenterCode: '',
+  shiftCode: '',
+})
+const statusOptions = [
+  { label: '全部状态', value: 'all' },
+  { label: '已下达', value: 'Released' },
+  { label: '可开工', value: 'Ready' },
+  { label: '执行中', value: 'Running' },
+  { label: '已完成', value: 'Completed' },
+  { label: '已关闭', value: 'Closed' },
+  { label: '阻塞', value: 'Blocked' },
+]
 
 const rushForm = reactive({
   organizationId: filters.organizationId,
@@ -124,6 +150,12 @@ const canRecordReport = computed(
     reportQuantitiesAreValid.value &&
     isNonEmpty(reportForm.reportedAtUtc),
 )
+const statusFilter = computed({
+  get: () => filters.status || 'all',
+  set: (value: string) => {
+    filters.status = value === 'all' ? undefined : value
+  },
+})
 
 function syncContextFromFilters() {
   rushForm.organizationId = filters.organizationId
@@ -139,6 +171,11 @@ function useWorkOrder(order: BusinessConsoleMesWorkOrderItem) {
     reportForm.operationTaskId = firstTask.operationTaskId
   }
   reportSheetOpen.value = true
+}
+
+function openOrderDetail(order: BusinessConsoleMesWorkOrderItem) {
+  if (!order.workOrderId) return
+  void router.push({ path: `/mes/work-orders/${encodeURIComponent(order.workOrderId)}` })
 }
 
 async function submitRushWorkOrder() {
@@ -252,19 +289,29 @@ function isNonEmpty(value: string) {
         </template>
       </BusinessPageHeader>
 
-      <div class="grid gap-3 rounded-lg border bg-background p-4">
-        <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field>
-            <FieldLabel for="work-order-org">组织</FieldLabel>
-            <Input id="work-order-org" v-model="filters.organizationId" @change="syncContextFromFilters" />
-          </Field>
-          <Field>
-            <FieldLabel for="work-order-env">环境</FieldLabel>
-            <Input id="work-order-env" v-model="filters.environmentId" @change="syncContextFromFilters" />
-          </Field>
+      <BusinessContextBar
+        v-model:environment-id="filters.environmentId"
+        v-model:line-code="executionContext.lineCode"
+        v-model:organization-id="filters.organizationId"
+        v-model:shift-code="executionContext.shiftCode"
+        v-model:site-code="executionContext.siteCode"
+        v-model:work-center-code="executionContext.workCenterCode"
+        title="派工上下文"
+        @change="syncContextFromFilters"
+      >
+        <FieldGroup class="grid gap-3 md:grid-cols-2">
           <Field>
             <FieldLabel for="work-order-status">状态</FieldLabel>
-            <Input id="work-order-status" v-model="filters.status" placeholder="可选" />
+            <Select v-model="statusFilter">
+              <SelectTrigger id="work-order-status" aria-label="工单状态">
+                <SelectValue placeholder="全部状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="option in statusOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
           <Field>
             <FieldLabel for="work-order-take">数量</FieldLabel>
@@ -272,7 +319,7 @@ function isNonEmpty(value: string) {
           </Field>
         </FieldGroup>
         <BusinessFormStatus :error="listErrorMessage" />
-      </div>
+      </BusinessContextBar>
 
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell label="工单数" :value="workOrders.length" detail="当前筛选结果" />
@@ -294,7 +341,7 @@ function isNonEmpty(value: string) {
                 <TableHead class="text-right">数量</TableHead>
                 <TableHead>交期</TableHead>
                 <TableHead>工序</TableHead>
-                <TableHead class="text-right">报工</TableHead>
+                <TableHead class="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -303,7 +350,7 @@ function isNonEmpty(value: string) {
                   <div class="flex flex-col gap-0.5">
                     <RouterLink
                       class="font-medium text-primary underline-offset-4 hover:underline"
-                      :to="{ path: `/mes/work-order-detail/${order.workOrderId}` }"
+                      :to="{ path: `/mes/work-orders/${order.workOrderId}` }"
                     >
                       {{ order.workOrderId ?? '无编号' }}
                     </RouterLink>
@@ -332,9 +379,17 @@ function isNonEmpty(value: string) {
                   </div>
                 </TableCell>
                 <TableCell class="text-right">
-                  <Button size="sm" variant="outline" type="button" @click="useWorkOrder(order)">
-                    报工
-                  </Button>
+                  <BusinessRowActions :label="`工单操作 ${order.workOrderId ?? ''}`">
+                    <DropdownMenuItem @click="openOrderDetail(order)">
+                      <EyeIcon data-icon="inline-start" />
+                      查看详情
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem @click="useWorkOrder(order)">
+                      <ClipboardCheckIcon data-icon="inline-start" />
+                      生产报工
+                    </DropdownMenuItem>
+                  </BusinessRowActions>
                 </TableCell>
               </TableRow>
               <TableEmpty v-if="!workOrders.length && !workOrdersPending" :colspan="6">

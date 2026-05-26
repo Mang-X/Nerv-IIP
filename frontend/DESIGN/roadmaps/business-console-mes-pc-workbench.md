@@ -116,16 +116,20 @@ Implemented in this PR:
 3. Added app-level action sheet, empty-state and status-badge helpers.
 4. Moved the largest direct forms into sheets for work orders, inventory movement, inventory counts, inspections, receipts and schedules.
 5. Renamed `基础就绪` to `生产准备检查`.
+6. Added a global business context store and shared context bar for organization, environment, site, line, work center and shift.
+7. Moved the canonical work-order detail route to `/mes/work-orders/:workOrderId`; the old route remains as a compatibility redirect.
+8. Replaced first-wave free-text status filters with Select controls on work orders, operation tasks, finished-goods receipts, inventory availability and NCRs.
+9. Added row action menus for work orders, operation tasks, finished-goods receipts, inventory availability rows and NCRs, using only existing backend-supported or route-based actions.
 
 ## Next P0/P1 Scope
 
 P0 after this PR:
 
-1. Add a global business context store for organization, environment, plant, line, work center and shift.
-2. Convert operation task rows into actionable execution entries: start, pause, report, exception, call quality.
-3. Move `/mes/work-order-detail/:workOrderId` to `/mes/work-orders/:workOrderId` and make the detail page the main work-order action surface.
-4. Replace free-text status filters with status segments or Select controls.
-5. Add row action menus for work orders, operation tasks, NCRs, receipts and inventory facts.
+1. Add backend lifecycle APIs before exposing true start, pause, resume, complete, release or dispatch commands.
+2. Make operation task rows prefill downstream report, inspection and exception forms instead of only routing to those pages.
+3. Continue replacing remaining free-text enum/status fields with app-level dictionaries and Select controls.
+4. Add row action menus to the remaining business facts, especially production reports, WIP rows, capacity impacts and inspection records.
+5. Add route/query prefill contracts so work order, operation task and inventory rows can carry context into sheets without manual entry.
 
 P1:
 

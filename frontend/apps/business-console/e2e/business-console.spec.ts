@@ -33,7 +33,7 @@ test('business console smoke pages render', async ({ page }) => {
   await expectHeading(page, '/mes', '生产驾驶舱')
   await expectHeading(page, '/mes/foundation', '生产准备检查')
   await expectHeading(page, '/mes/work-orders', '工单与派工')
-  await expectHeading(page, '/mes/work-order-detail/WO-001', '工单详情')
+  await expectHeading(page, '/mes/work-orders/WO-001', '工单详情')
   await expectHeading(page, '/mes/operation-tasks', '工序执行')
   await expectHeading(page, '/mes/wip', '在制跟踪')
   await expectHeading(page, '/mes/production-reports', '报工记录')

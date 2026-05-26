@@ -189,12 +189,13 @@ Business Console 登录、刷新、退出和 `/me` 可以先复用 PlatformGatew
 | `/quality/ncrs` | NCR 列表、处置和关闭。 | BusinessGateway Quality facade。 |
 | `/mes` | 生产驾驶舱，展示工单、工序、在制、阻塞和角色待办。 | BusinessGateway MES facade。 |
 | `/mes/foundation` | 生产准备检查，作为开工、释放和派工前的辅助诊断。 | BusinessGateway MES facade。 |
-| `/mes/work-orders` | 工单与派工；急单创建和报工通过抽屉承载。 | BusinessGateway MES facade。 |
-| `/mes/work-order-detail/:workOrderId` | 工单详情，展示工序、用料和开工阻塞。后续应归位到 `/mes/work-orders/:workOrderId`。 | BusinessGateway MES facade。 |
-| `/mes/operation-tasks` | 工序执行任务列表。 | BusinessGateway MES facade。 |
+| `/mes/work-orders` | 工单与派工；急单创建、行级操作和报工通过抽屉或详情路由承载。 | BusinessGateway MES facade。 |
+| `/mes/work-orders/:workOrderId` | 工单详情，展示工序、用料、开工阻塞，并作为报工、完工入库和质量检验的上下文入口。 | BusinessGateway MES facade。 |
+| `/mes/work-order-detail/:workOrderId` | 旧工单详情兼容路由，进入后重定向到 `/mes/work-orders/:workOrderId`。 | BusinessGateway MES facade。 |
+| `/mes/operation-tasks` | 工序执行任务列表，提供查看工单、查看报工、呼叫质检和记录异常的行级入口；真实开工/暂停命令等待后端生命周期 API。 | BusinessGateway MES facade。 |
 | `/mes/wip` | 在制跟踪。 | BusinessGateway MES facade。 |
 | `/mes/production-reports` | 报工记录查询；新增报工从工单或工序上下文进入。 | BusinessGateway MES facade。 |
-| `/mes/receipts` | 完工入库请求；新增请求通过抽屉承载。 | BusinessGateway MES facade。 |
+| `/mes/receipts` | 完工入库请求；新增请求通过抽屉承载，行级入口可回到工单上下文。 | BusinessGateway MES facade。 |
 | `/mes/capacity` | 异常与产能影响。 | BusinessGateway MES facade。 |
 | `/mes/schedules` | 规则排程结果和显式运行动作；不包含甘特。 | BusinessGateway MES facade。 |
 
