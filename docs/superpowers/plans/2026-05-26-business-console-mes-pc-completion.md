@@ -135,10 +135,15 @@ Use stable reason codes so pages, tests, and later mobile/PDA flows can reuse th
 | `LABEL_TEMPLATE_PRINTER_MISSING` | Warning | Label rule exists but no printer/template mapping is configured. |
 | `NUMBERING_RULE_MISSING` | Blocked | MES cannot generate the required document number server-side. |
 | `NUMBERING_SEQUENCE_NEAR_LIMIT` | Warning | Number sequence is close to its configured limit. |
+| `SOURCE_SERVICE_UNAVAILABLE` | Blocked | BusinessGateway cannot reach a required source service, or the source service returns timeout, 5xx, or malformed readiness response. |
 
 ### Source Boundary Rule
 
 The `/mes/foundation` page is a readiness and guidance surface, not a foundation-data maintenance module. It may show blocker cards and links to source pages when routes exist, but it must not create MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance, Telemetry, BarcodeLabel, or IAM records from inside MES. This keeps MES focused on execution and avoids duplicating master-data workflows.
+
+### Source Failure Rule
+
+Foundation readiness is a decision surface, so source-service failures must be visible as production blockers instead of blank pages. For `GET /api/business-console/v1/mes/foundation-readiness`, BusinessGateway must return HTTP 200 with the affected area marked `Blocked` and a `SOURCE_SERVICE_UNAVAILABLE` issue when MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, or the MES numbering policy resolver times out, returns 5xx, returns invalid JSON, or omits required readiness fields. IAM authentication/authorization failures remain normal 401/403 responses and must not be converted into readiness issues.
 
 ### Snapshot Rule
 
@@ -163,6 +168,7 @@ These facts were checked against the repository on 2026-05-26:
 | Current MES composable | `frontend/apps/business-console/src/composables/useBusinessMes.ts` consumes generated Business Console APIs. | New page data should be added here or split into MES-specific composables under the same app boundary. |
 | BusinessGateway MES facade | `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs` exposes `listBusinessConsoleMesWorkOrders`, `createBusinessConsoleMesRushWorkOrder`, `runBusinessConsoleMesSchedule`, and `recordBusinessConsoleMesProductionReport`. | Business Console currently has only the MVP MES surface. |
 | MES service surface | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs` already contains service endpoints for work orders, production reports, finished-goods receipt requests, and capacity impacts. | The first API work can expand BusinessGateway facade coverage before introducing broader domain changes. |
+| DemandPlanning and ERP plan context | DemandPlanning exposes demand sources, MRP runs, MRP pegging, and planning suggestions under `/api/business/v1/planning/**`; ERP exposes sales orders and finance source-document drill-down, but there is no verified endpoint literally named `production-plans`. | BusinessGateway should build the MES production-plan facade from verified planning suggestions or ERP sales priority context. When a stable read endpoint is missing, show the MES/source raw ID and record the gap in the implementation PR instead of fabricating data. |
 | Existing page copy | Current MES Vue pages still contain English user-visible labels such as `Work orders`, `Create rush work order`, `Run schedule`, and `No work orders returned.` | PC completion must include a Chinese-copy pass. |
 | Mobile/PDA | No mobile Business Console client or generated mobile API boundary is present. | Mobile/PDA is not a blocker for PC MES and should start after PC contract stabilization. |
 
@@ -243,6 +249,7 @@ Planned file responsibilities:
 | `backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/...` | MES service endpoint and query tests. |
 | `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs` | Business Console DTOs for MES workbench responses. |
 | `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs` | Internal HTTP clients for MES and minimal related business read endpoints. |
+| `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs` | `BusinessGatewayPermissions` constants and Business Console authorization checks for the MES permission matrix. |
 | `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs` | BusinessGateway MES facade endpoints and stable operation IDs. |
 | `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs` | Stable route and operationId tests. |
 | `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs` | Bearer, permission, context, and downstream proxy tests. |
@@ -319,6 +326,40 @@ Target BusinessGateway operation IDs:
 | GET | `/api/business-console/v1/mes/traceability/material-lots/{materialLotId}` | `getBusinessConsoleMesMaterialLotTraceability` | MES genealogy query |
 | GET | `/api/business-console/v1/mes/capacity-impacts` | `listBusinessConsoleMesCapacityImpacts` | Existing MES service list |
 
+## Permission Targets
+
+Define Business Console permissions explicitly in `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs`, where `BusinessGatewayPermissions` currently lives. Add matching IAM seed/catalog and `docs/architecture/authorization-matrix.md` entries in the implementation PR. Do not let unrelated read pages fall through `business.mes.work-orders.manage`. Routes in this table omit the shared `/api/business-console/v1` prefix.
+
+| Permission constant | Permission code | Routes |
+| --- | --- | --- |
+| `MesFoundationRead` | `business.mes.foundation.read` | All `/mes/foundation-readiness*` routes. |
+| `MesOverviewRead` | `business.mes.overview.read` | `/mes/overview`. |
+| `MesPlansRead` | `business.mes.plans.read` | `GET /mes/production-plans`, `GET /mes/production-plans/{productionPlanId}/readiness`. |
+| `MesWorkOrdersRead` | `business.mes.work-orders.read` | `GET /mes/work-orders`, `GET /mes/work-orders/{workOrderId}`. |
+| `MesWorkOrdersManage` | `business.mes.work-orders.manage` | Work order release, rush work order creation, and plan-to-work-order conversion. |
+| `MesMaterialsRead` | `business.mes.materials.read` | Material readiness and material issue request list. |
+| `MesMaterialsManage` | `business.mes.materials.manage` | Material issue request creation and line-side receipt confirmation. |
+| `MesDispatchRead` | `business.mes.dispatch.read` | Dispatch task list. |
+| `MesDispatchManage` | `business.mes.dispatch.manage` | Dispatch assignment. |
+| `MesOperationsRead` | `business.mes.operations.read` | Operation task list and WIP summary. |
+| `MesOperationsManage` | `business.mes.operations.manage` | Operation start, pause, resume, complete, transfer, and hold commands. |
+| `MesReportingRead` | `business.mes.reporting.read` | Production report list. |
+| `MesReportingWrite` | `business.mes.reporting.write` | Production report creation. |
+| `MesQualityRead` | `business.mes.quality.read` | Related quality items and defect context drill-down. |
+| `MesQualityWrite` | `business.mes.quality.write` | MES execution defect creation. |
+| `MesReceiptsRead` | `business.mes.receipts.read` | Finished-goods receipt request list. |
+| `MesReceiptsManage` | `business.mes.receipts.manage` | Finished-goods receipt request creation. |
+| `MesDowntimeRead` | `business.mes.downtime.read` | Downtime event list. |
+| `MesDowntimeManage` | `business.mes.downtime.manage` | Downtime event creation and recovery confirmation. |
+| `MesHandoversRead` | `business.mes.handovers.read` | Shift handover list. |
+| `MesHandoversManage` | `business.mes.handovers.manage` | Shift handover creation and acceptance. |
+| `MesTraceabilityRead` | `business.mes.traceability.read` | Work order, batch/serial, and material-lot traceability queries. |
+| `MesSchedulesRead` | `business.mes.schedules.read` | Schedule result/status history. |
+| `MesSchedulesManage` | `business.mes.schedules.manage` | Rule schedule run. |
+| `MesCapacityRead` | `business.mes.capacity.read` | Capacity impact list. |
+
+The MES service `MesPermissionCodes` should mirror MES-owned endpoint intent at the same granularity for contract metadata. Source services keep their own permission catalogs; BusinessGateway still performs the end-user authorization check before forwarding internal bearer calls.
+
 All target routes must keep the existing BusinessGateway pattern:
 
 1. Gateway endpoint uses `AuthorizedBusinessProxyEndpoint`.
@@ -332,6 +373,7 @@ All target routes must keep the existing BusinessGateway pattern:
 **Files:**
 - Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
 - Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
+- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs`
 - Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs`
 - Review and modify when the endpoint is missing: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/*` for production foundation readiness.
 - Review and modify when the endpoint is missing: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/*` for production-version readiness.
@@ -389,12 +431,13 @@ Use the reason codes from the Reason Code Baseline table; add a new code only wi
 Add tests proving `GET /api/business-console/v1/mes/foundation-readiness`:
 
 1. Requires authenticated Business Console user bearer.
-2. Calls IAM authorization with a MES read permission.
+2. Calls IAM authorization with `BusinessGatewayPermissions.MesFoundationRead`.
 3. Calls downstream read clients with internal service bearer token.
 4. Returns `Blocked` when any P0 area returns a blocking issue.
 5. Returns `Warning` when no blocker exists but at least one warning exists.
 6. Returns `Ready` when all areas are ready.
 7. Preserves source-system and reference IDs so users know which foundation record to fix.
+8. Converts source-service timeout, 5xx, invalid JSON, and missing required readiness fields into a `Blocked` area with `SOURCE_SERVICE_UNAVAILABLE`, while preserving normal 401/403 responses for IAM authentication and authorization failures.
 
 - [ ] **Step 3: Verify source-service resolver coverage**
 
@@ -442,7 +485,7 @@ Expected after implementation: PASS.
 - [ ] **Step 6: Commit foundation readiness**
 
 ```powershell
-git add backend/gateway/BusinessGateway backend/services/Business/MasterData backend/services/Business/ProductEngineering backend/services/Business/BarcodeLabel
+git add backend/gateway/BusinessGateway backend/services/Business/MasterData backend/services/Business/ProductEngineering backend/services/Business/BarcodeLabel docs/architecture/authorization-matrix.md
 git commit -m "feat: add mes foundation readiness contracts"
 ```
 
@@ -515,7 +558,8 @@ Write service-level tests for:
 11. Existing `GET /api/business/v1/mes/capacity-impacts` remains available.
 12. `POST /api/business/v1/mes/downtime-events` and recovery confirmation record production-impacting downtime.
 13. `POST /api/business/v1/mes/shift-handovers` carries unresolved production/material/quality/equipment/receipt issues to the next shift.
-14. Traceability queries return at least work order, production version, operation tasks, reports, material lots, defects, downtime, receipt request, person, and device links.
+14. `GET /api/business/v1/mes/wip` returns WIP counts by work order, operation, work center, status, blocker reason, shift, team, and planned/actual quantity.
+15. Traceability queries return at least work order, production version, operation tasks, reports, material lots, defects, downtime, receipt request, person, and device links.
 
 - [ ] **Step 2: Implement missing read queries**
 
@@ -524,14 +568,17 @@ Only add MES service queries and commands that do not already exist. Use async E
 Expected endpoint contract additions:
 
 ```csharp
-new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersManage, "getBusinessMesWorkOrderDetail"),
-new(typeof(ListOperationTasksEndpoint), "GET", "/api/business/v1/mes/operation-tasks", MesPermissionCodes.WorkOrdersManage, "listBusinessMesOperationTasks"),
-new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.WorkOrdersManage, "getBusinessMesMaterialReadiness"),
-new(typeof(AssignDispatchTaskEndpoint), "POST", "/api/business/v1/mes/dispatch-tasks/{operationTaskId}/assign", MesPermissionCodes.WorkOrdersManage, "assignBusinessMesDispatchTask"),
-new(typeof(RecordDowntimeEventEndpoint), "POST", "/api/business/v1/mes/downtime-events", MesPermissionCodes.SchedulesManage, "recordBusinessMesDowntimeEvent"),
-new(typeof(CreateShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.WorkOrdersManage, "createBusinessMesShiftHandover"),
-new(typeof(GetWorkOrderTraceabilityEndpoint), "GET", "/api/business/v1/mes/traceability/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersManage, "getBusinessMesWorkOrderTraceability"),
+new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderDetail"),
+new(typeof(ListOperationTasksEndpoint), "GET", "/api/business/v1/mes/operation-tasks", MesPermissionCodes.OperationsRead, "listBusinessMesOperationTasks"),
+new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
+new(typeof(AssignDispatchTaskEndpoint), "POST", "/api/business/v1/mes/dispatch-tasks/{operationTaskId}/assign", MesPermissionCodes.DispatchManage, "assignBusinessMesDispatchTask"),
+new(typeof(GetWipSummaryEndpoint), "GET", "/api/business/v1/mes/wip", MesPermissionCodes.OperationsRead, "getBusinessMesWipSummary"),
+new(typeof(RecordDowntimeEventEndpoint), "POST", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeManage, "recordBusinessMesDowntimeEvent"),
+new(typeof(CreateShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.HandoversManage, "createBusinessMesShiftHandover"),
+new(typeof(GetWorkOrderTraceabilityEndpoint), "GET", "/api/business/v1/mes/traceability/work-orders/{workOrderId}", MesPermissionCodes.TraceabilityRead, "getBusinessMesWorkOrderTraceability"),
 ```
+
+Add every new MES service permission constant to `MesPermissionCodes.All` and its endpoint contract test. Keep the service endpoint protected by `InternalServiceAuthorizationPolicy`; the permission code remains contract/catalog metadata and is not a terminal-user bearer authorization decision.
 
 - [ ] **Step 3: Run MES focused tests**
 
@@ -553,7 +600,7 @@ git commit -m "feat: expose mes pc workbench read surface"
 **Files:**
 - Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
 - Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayPermissions.cs`
+- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs`
 - Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs`
 - Test: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
 - Test: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
@@ -619,7 +666,12 @@ Add one FastEndpoints class per route to `BusinessConsoleMesEndpoints.cs`, follo
 
 - [ ] **Step 4: Use narrow permissions**
 
-Map read endpoints to read permissions and write endpoints to manage/write permissions. Keep permission names in `business.mes.*` shape and update authorization matrix only when a new permission code is introduced.
+Implement the Permission Targets table exactly:
+
+1. Add missing constants to `BusinessGatewayPermissions` in `BusinessGatewayAuthorization.cs`.
+2. Map every BusinessGateway endpoint to the listed permission; do not reuse `MesWorkOrdersManage` for foundation, material, dispatch, operation, quality, receipt, downtime, handover, traceability, schedule-read, or capacity-read pages.
+3. Add IAM seed/catalog and `docs/architecture/authorization-matrix.md` rows for every new permission code.
+4. Add gateway tests proving at least one read route and one write route use different permission codes in each MES area.
 
 - [ ] **Step 5: Run gateway tests**
 
@@ -802,6 +854,8 @@ All visible MES page text must be Chinese literals for this phase. Examples:
 
 Do not introduce a new translation catalog or locale switcher in this task.
 
+For the existing `frontend/apps/business-console/src/pages/mes/schedules.vue`, replace all visible English copy, consume `useMesSchedules()`, keep the page as a rule-schedule result/status workbench, and do not add full APS/Gantt behavior in this task.
+
 - [ ] **Step 3: Implement page states**
 
 Each page must cover loading, empty, error, success, and disabled-submit states. Use `Spinner`, `TableEmpty`, `Badge`, `Button`, `Field`, and related `@nerv-iip/ui` exports only.
@@ -960,9 +1014,9 @@ If Docker-dependent gates are not run, state the Docker blocker explicitly in th
 
 ## Rollout Order
 
-1. Merge foundation readiness contracts first: MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM, and numbering checks.
-2. Merge API/BFF contract work before page expansion.
-3. Implement the standard P0 MES service surface in this order: plan readiness and work order release, material readiness/request, dispatch and operation state, report/quality/downtime, receipt/handover/traceability.
+1. Merge Task 0 foundation readiness contracts first: MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM, source-service failure handling, permissions, and numbering checks.
+2. Merge Task 1 API/BFF contract work before page expansion.
+3. Implement Task 2 standard P0 MES service surface in this order: plan readiness and work order release, material readiness/request, dispatch and operation state, WIP, report/quality/downtime, receipt/handover/traceability.
 4. Merge generated client and composables immediately after contracts.
 5. Merge PC MES pages with Chinese copy and role-oriented navigation.
 6. Add minimal cross-domain context as a follow-up if it increases review size too much, but do not drop foundation readiness, material readiness, dispatch, downtime, handover, or traceability from the target model.
@@ -972,8 +1026,10 @@ If Docker-dependent gates are not run, state the Docker blocker explicitly in th
 ## Acceptance Checklist
 
 - [ ] BusinessGateway exposes the MES PC workbench routes in the Contract Targets table.
+- [ ] BusinessGateway and IAM expose the Permission Targets matrix, and read/write routes do not collapse into one broad manage permission.
 - [ ] BusinessGateway tests cover auth, permission, context propagation, internal bearer forwarding, and downstream denial behavior.
 - [ ] Foundation readiness returns `Ready`, `Warning`, or `Blocked` across MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM, and numbering areas.
+- [ ] Foundation readiness converts source-service timeout, 5xx, invalid JSON, or malformed readiness payload into a `Blocked` area with `SOURCE_SERVICE_UNAVAILABLE`.
 - [ ] Work order release stores snapshots for master data, production version, material readiness, quality requirement, equipment/person assignment, barcode rule, and generated document IDs.
 - [ ] MES service endpoints exist for P0 execution facts: plan readiness, work order release, material readiness/request intent, dispatch, operation state, WIP, report, defect context, downtime, receipt request, shift handover, and traceability.
 - [ ] Generated business-console client exports stable MES workbench functions and types.
