@@ -133,17 +133,6 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         Assert.Equal(2, deadLetter.EventVersion);
     }
 
-    [Fact]
-    public void PostgreSQL_profile_uses_persistent_dead_letter_store()
-    {
-        using var factory = new NotificationPostgreSqlWebApplicationFactory();
-        using var scope = factory.Services.CreateScope();
-
-        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
-
-        Assert.IsType<PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>(store);
-    }
-
     private static async Task HandleAsync(
         NotificationConsumerWebApplicationFactory factory,
         OperationTaskFailedIntegrationEvent integrationEvent)
@@ -192,28 +181,6 @@ public sealed class OperationTaskFailedNotificationConsumerTests
                     ["Persistence:Provider"] = "InMemory",
                     ["Persistence:InMemoryDatabaseName"] = Guid.NewGuid().ToString("N"),
                 });
-            });
-        }
-    }
-
-    private sealed class NotificationPostgreSqlWebApplicationFactory : WebApplicationFactory<Program>
-    {
-        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
-        {
-            var settings = new Dictionary<string, string?>
-            {
-                ["Persistence:Provider"] = "PostgreSQL",
-                ["ConnectionStrings:NotificationDb"] = "Host=localhost;Database=nerv_iip_notification_dead_letter_test;Username=nerv;Password=nerv",
-                ["InternalService:BearerToken"] = "test-internal-token",
-            };
-            foreach (var (key, value) in settings)
-            {
-                builder.UseSetting(key, value);
-            }
-
-            builder.ConfigureAppConfiguration((_, configuration) =>
-            {
-                configuration.AddInMemoryCollection(settings);
             });
         }
     }

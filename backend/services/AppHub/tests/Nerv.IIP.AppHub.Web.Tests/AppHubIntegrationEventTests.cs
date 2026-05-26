@@ -1,17 +1,11 @@
 using MediatR;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
-using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventConverters;
-using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Messaging.CAP;
-using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.AppHub.Web.Tests;
 
@@ -213,17 +207,6 @@ public sealed class AppHubIntegrationEventTests
         Assert.Equal(2, deadLetter.EventVersion);
     }
 
-    [Fact]
-    public void PostgreSQL_profile_uses_persistent_dead_letter_store()
-    {
-        using var factory = new AppHubPostgreSqlWebApplicationFactory();
-        using var scope = factory.Services.CreateScope();
-
-        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
-
-        Assert.IsType<PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>(store);
-    }
-
     private static OperationTaskCompletedIntegrationEvent CreateCompletedEvent(int eventVersion)
     {
         return new OperationTaskCompletedIntegrationEvent(
@@ -300,31 +283,6 @@ public sealed class AppHubIntegrationEventTests
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException("Streams are not used by these tests.");
-        }
-    }
-
-    private sealed class AppHubPostgreSqlWebApplicationFactory : WebApplicationFactory<Program>
-    {
-        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
-        {
-            var settings = new Dictionary<string, string?>
-            {
-                ["Persistence:Provider"] = "PostgreSQL",
-                ["ConnectionStrings:AppHubDb"] = "Host=localhost;Database=nerv_iip_apphub_dead_letter_test;Username=nerv;Password=nerv",
-            };
-            foreach (var (key, value) in settings)
-            {
-                builder.UseSetting(key, value);
-            }
-
-            builder.ConfigureAppConfiguration((_, configuration) =>
-            {
-                configuration.AddInMemoryCollection(settings);
-            });
-            builder.ConfigureServices(services =>
-            {
-                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
-            });
         }
     }
 }

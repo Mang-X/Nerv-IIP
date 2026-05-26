@@ -52,14 +52,7 @@ else
 }
 builder.Services.AddAppHubPersistence(builder.Configuration);
 builder.Services.AddNervIipLocalization();
-if (usePostgreSql)
-{
-    builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
-}
-else
-{
-    builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
-}
+builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
 builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>();
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState>();
 if (usePostgreSql)

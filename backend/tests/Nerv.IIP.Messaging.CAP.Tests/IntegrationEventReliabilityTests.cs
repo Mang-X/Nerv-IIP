@@ -1,6 +1,5 @@
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
-using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Nerv.IIP.Messaging.CAP.Tests;
@@ -96,31 +95,6 @@ public sealed class IntegrationEventReliabilityTests
         Assert.Empty(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
     }
 
-    [Fact]
-    public async Task Persistent_dead_letter_store_marks_pending_message_as_replayed()
-    {
-        var options = new DbContextOptionsBuilder<TestDeadLetterDbContext>()
-            .UseInMemoryDatabase($"persistent-dead-letters-{Guid.NewGuid():N}")
-            .Options;
-        await using var dbContext = new TestDeadLetterDbContext(options);
-        var store = new PersistentIntegrationEventDeadLetterStore<TestDeadLetterDbContext>(dbContext);
-        var message = await store.AddAsync(
-            IntegrationEventDeadLetterMessage.Create(
-                "sample.consumer",
-                CreateValidEvent("event-004"),
-                "manual-replay-test",
-                "Stored for replay."),
-            CancellationToken.None);
-
-        await store.MarkReplayedAsync(message.Id, DateTimeOffset.Parse("2026-05-26T00:00:00Z"), CancellationToken.None);
-
-        var replayed = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Replayed, CancellationToken.None));
-        Assert.Equal(message.Id, replayed.Id);
-        Assert.Equal("event-004", replayed.EventId);
-        Assert.NotNull(replayed.ReplayedAtUtc);
-        Assert.Empty(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
-    }
-
     private static SampleIntegrationEvent CreateValidEvent(string eventId)
     {
         return new SampleIntegrationEvent(
@@ -156,13 +130,4 @@ public sealed class IntegrationEventReliabilityTests
     }
 
     private sealed record SamplePayload(string Value);
-
-    private sealed class TestDeadLetterDbContext(DbContextOptions<TestDeadLetterDbContext> options)
-        : DbContext(options)
-    {
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            modelBuilder.ConfigureIntegrationEventDeadLetters();
-        }
-    }
 }
