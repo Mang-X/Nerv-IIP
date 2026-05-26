@@ -1,3 +1,7 @@
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
@@ -102,6 +106,17 @@ public sealed class MaintenanceEventHandlerTests
         Assert.Equal(2, deadLetter.EventVersion);
     }
 
+    [Fact]
+    public void PostgreSQL_profile_uses_persistent_dead_letter_store()
+    {
+        using var factory = new MesPostgreSqlWebApplicationFactory();
+        using var scope = factory.Services.CreateScope();
+
+        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+
+        Assert.IsType<PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>(store);
+    }
+
     private static AssetUnavailableIntegrationEvent CreateUnavailableEvent(DateTimeOffset fromUtc, int eventVersion = MaintenanceIntegrationEventVersions.V1)
     {
         return new AssetUnavailableIntegrationEvent(
@@ -134,5 +149,20 @@ public sealed class MaintenanceEventHandlerTests
             "maintenance",
             "maintenance.AssetRestored:ASSET-CNC-01:20260522100000",
             new AssetRestoredPayload("ASSET-CNC-01", restoredAtUtc));
+    }
+
+    private sealed class MesPostgreSqlWebApplicationFactory : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+        {
+            builder.ConfigureAppConfiguration((_, configuration) =>
+            {
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:PostgreSQL"] = "Host=localhost;Database=nerv_iip_mes_dead_letter_test;Username=nerv;Password=nerv",
+                    ["InternalService:BearerToken"] = "test-internal-token",
+                });
+            });
+        }
     }
 }

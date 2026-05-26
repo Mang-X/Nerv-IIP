@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Infrastructure;
 
@@ -36,6 +37,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(MesFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureIntegrationEventDeadLetters();
         ConfigureCapStorage(modelBuilder);
     }
 

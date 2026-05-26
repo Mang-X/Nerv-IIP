@@ -6,6 +6,8 @@
 
 **Architecture:** Reuse the existing Maintenance persistent DLQ shape as the table contract, but move the reusable EF store into `Nerv.IIP.Messaging.CAP` so services can opt in without copy/paste. Each service owns its own `integration_event_dead_letters` table inside its schema. CAP `received` remains broker-level inbox; service-owned processed-event tables remain business inbox and will be extended incrementally.
 
+**Implementation status (2026-05-26):** This first PR completes the persistent DLQ slice for the shared CAP store, Notification, AppHub and MES. The opt-in cross-service multi-process CAP gate remains the next event-reliability PR so it can carry its own Docker/PostgreSQL/RabbitMQ setup and teardown review.
+
 **Tech Stack:** .NET 10, EF Core 10, PostgreSQL, CAP, RabbitMQ profile, xUnit, governed PowerShell scripts.
 
 ---

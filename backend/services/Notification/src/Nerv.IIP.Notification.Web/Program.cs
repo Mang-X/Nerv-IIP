@@ -61,7 +61,14 @@ else
 builder.Services.AddNotificationPersistence(builder.Configuration);
 builder.Services.AddNervIipObservability(builder.Configuration, "notification");
 builder.Services.AddNervIipLocalization();
-builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
+if (usePostgreSql)
+{
+    builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+}
+else
+{
+    builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
+}
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();

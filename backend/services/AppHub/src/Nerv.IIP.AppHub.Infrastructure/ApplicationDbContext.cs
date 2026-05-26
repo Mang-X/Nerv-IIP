@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ManagedNodeAggregate;
+using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 using AppHubApplication = Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate.Application;
@@ -29,6 +30,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema("apphub");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureIntegrationEventDeadLetters();
         ConfigureCapStorage(modelBuilder);
     }
 
