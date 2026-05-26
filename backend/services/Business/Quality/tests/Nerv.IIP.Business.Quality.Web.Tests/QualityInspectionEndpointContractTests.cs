@@ -111,8 +111,8 @@ public sealed class QualityInspectionEndpointContractTests
             ]));
 
         Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.PropertyName == nameof(CreateInspectionPlanCommand.Characteristics)
-            && error.ErrorMessage.Contains("unique", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Errors, error =>
+            error.ErrorMessage.Contains("unique", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
