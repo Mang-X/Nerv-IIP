@@ -5,6 +5,7 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application;
+using Nerv.IIP.Notification.Web.Application.Health;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
 using Nerv.IIP.Observability;
@@ -32,6 +33,11 @@ builder.Services
             s.Version = "v1";
         };
     });
+var healthChecks = builder.Services.AddHealthChecks();
+if (usePostgreSql)
+{
+    healthChecks.AddCheck<NotificationDatabaseHealthCheck>("notification-db");
+}
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddMediatR(configuration =>
 {
@@ -72,6 +78,12 @@ else
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
+if (usePostgreSql && autoMigrate)
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<NotificationDatabaseMigrationRunner>().MigrateAsync();
+}
+
 app.UseNervIipCorrelation();
 app.UseNervIipRequestLocalization();
 if (usePostgreSql)
@@ -85,6 +97,7 @@ app.UseFastEndpoints(c =>
 {
     c.Endpoints.NameGenerator = ctx => ToLowerCamelEndpointName(ctx.EndpointType.Name);
 }).UseSwaggerGen();
+app.MapHealthChecks("/health");
 app.Run();
 
 static string ToLowerCamelEndpointName(string endpointTypeName)

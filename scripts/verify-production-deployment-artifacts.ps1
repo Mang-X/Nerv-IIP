@@ -29,6 +29,7 @@ $requiredFiles = @(
     "infra/compose/nerv-iip.dependencies.yml",
     "infra/compose/nerv-iip.platform.yml",
     "infra/postgres/init-nerv-iip-databases.sql",
+    "scripts/verify-production-release-rehearsal.ps1",
     "scripts/install/start-nerv-iip-apphost.ps1"
 )
 
@@ -57,7 +58,7 @@ if (-not $SkipDockerComposeConfig) {
             "infra/compose/nerv-iip.platform.yml",
             "config",
             "--quiet"
-        )
+        ) | Out-Null
     }
 }
 
