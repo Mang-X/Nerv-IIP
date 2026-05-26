@@ -1,6 +1,8 @@
+using Microsoft.Data.Sqlite;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Xunit;
 
 namespace Nerv.IIP.Messaging.CAP.Tests;
@@ -97,12 +99,30 @@ public sealed class IntegrationEventReliabilityTests
     }
 
     [Fact]
-    public async Task Persistent_dead_letter_store_marks_pending_message_as_replayed()
+    public async Task Persistent_dead_letter_store_marks_pending_message_as_replayed_with_relational_mapping()
     {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<TestDeadLetterDbContext>()
-            .UseInMemoryDatabase($"persistent-dead-letters-{Guid.NewGuid():N}")
+            .UseSqlite(connection)
             .Options;
         await using var dbContext = new TestDeadLetterDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+
+        var entity = dbContext.Model.FindEntityType(typeof(IntegrationEventDeadLetter));
+        Assert.NotNull(entity);
+        Assert.Equal("integration_event_dead_letters", entity.GetTableName());
+        // SQLite accepts the annotation, but only PostgreSQL exercises actual jsonb storage.
+        Assert.Equal("jsonb", entity.FindProperty(nameof(IntegrationEventDeadLetter.EventJson))?.GetColumnType());
+        Assert.Contains(
+            entity.GetIndexes(),
+            index => IndexProperties(index)
+                .SequenceEqual([
+                    nameof(IntegrationEventDeadLetter.ConsumerName),
+                    nameof(IntegrationEventDeadLetter.Status),
+                    nameof(IntegrationEventDeadLetter.DeadLetteredAtUtc)
+                ]));
+
         var store = new PersistentIntegrationEventDeadLetterStore<TestDeadLetterDbContext>(dbContext);
         var message = await store.AddAsync(
             IntegrationEventDeadLetterMessage.Create(
@@ -119,6 +139,11 @@ public sealed class IntegrationEventReliabilityTests
         Assert.Equal("event-004", replayed.EventId);
         Assert.NotNull(replayed.ReplayedAtUtc);
         Assert.Empty(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    private static string[] IndexProperties(IIndex index)
+    {
+        return index.Properties.Select(property => property.Name).ToArray();
     }
 
     private static SampleIntegrationEvent CreateValidEvent(string eventId)
