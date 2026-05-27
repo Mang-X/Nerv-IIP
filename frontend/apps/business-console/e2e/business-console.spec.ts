@@ -27,13 +27,15 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('business console smoke pages render', async ({ page }) => {
-  await expectHeading(page, '/master-data/skus', 'SKU 维护')
+  await expectHeading(page, '/master-data/skus', '物料与产品')
+  await expectHeading(page, '/master-data/partners', '客户与供应商')
+  await expectHeading(page, '/master-data/resources', '工厂资源')
   await expectHeading(page, '/inventory/availability', '库存可用量')
   await expectHeading(page, '/quality/ncrs', '不合格品处理')
   await expectHeading(page, '/mes', '生产驾驶舱')
   await expectHeading(page, '/mes/foundation', '基础准备')
   await expectHeading(page, '/mes/plans', '生产计划')
-  await expectHeading(page, '/mes/work-orders', '计划与工单')
+  await expectHeading(page, '/mes/work-orders', '工单与派工')
   await expectHeading(page, '/mes/work-orders/WO-001', '工单详情')
   await expectHeading(page, '/mes/materials', '齐套与物料')
   await expectHeading(page, '/mes/dispatch', '派工看板')
@@ -95,7 +97,26 @@ async function routeBusinessConsoleApi(route: Route) {
           {
             resourceType: 'sku',
             code: 'SKU-001',
-            displayName: 'Demo SKU',
+            displayName: '前减振器总成',
+            active: true,
+            snapshotVersion: 'v1',
+          },
+        ],
+        total: 1,
+      }),
+    )
+  }
+
+  if (pathname === '/api/business-console/v1/master-data/resources') {
+    const resourceType = url.searchParams.get('resourceType') ?? 'site'
+    return fulfillJson(
+      route,
+      envelope({
+        resources: [
+          {
+            resourceType,
+            code: `${resourceType.toUpperCase()}-001`,
+            displayName: `${resourceType} 主数据`,
             active: true,
             snapshotVersion: 'v1',
           },

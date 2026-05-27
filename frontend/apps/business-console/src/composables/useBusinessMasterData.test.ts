@@ -7,6 +7,7 @@ import {
   listBusinessConsoleSkusQueryOptions,
 } from '@nerv-iip/api-client'
 import {
+  useBusinessMasterDataGroups,
   useBusinessMasterDataResources,
   useBusinessSkus,
 } from './useBusinessMasterData'
@@ -171,6 +172,36 @@ describe('business master data composables', () => {
         resourceType: 'uom',
         code: 'EA',
       },
+    ])
+  })
+
+  it('lists multiple master data resource groups for linked selectors', () => {
+    const { groups } = useBusinessMasterDataGroups([
+      { key: 'site', title: '工厂' },
+      { key: 'production-line', title: '产线' },
+      { key: 'work-center', title: '工作中心' },
+    ])
+
+    expect(listBusinessConsoleMasterDataResourcesQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        resourceType: 'site',
+        take: 100,
+      },
+    })
+    expect(listBusinessConsoleMasterDataResourcesQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        resourceType: 'production-line',
+        take: 100,
+      },
+    })
+    expect(groups.value).toMatchObject([
+      { key: 'site', title: '工厂', rows: [] },
+      { key: 'production-line', title: '产线', rows: [] },
+      { key: 'work-center', title: '工作中心', rows: [] },
     ])
   })
 })
