@@ -105,9 +105,9 @@ public sealed class OperationTaskAggregateTests
     public void Approval_required_task_waits_for_approval_before_claim()
     {
         var task = OperationTask.Create(TaskId(), CreateRequest("idem-approval-001"), Template("lifecycle.restart", requiresApproval: true), Now);
-        task.AssignInitialAuditId(AuditId("audit-000001"));
+        task.AssignPendingAuditIds([AuditId("audit-000001"), AuditId("audit-000002")]);
 
-        var claimBeforeApproval = () => Claim(task, "attempt-000001", "audit-000003", "lease-001", "connector-host-001");
+        var claimBeforeApproval = () => Claim(task, "attempt-000001", "audit-000004", "lease-001", "connector-host-001");
 
         Assert.Equal("approval-pending", task.ToFact().Status);
         var pending = task.ToFact().Approval;
@@ -118,14 +118,14 @@ public sealed class OperationTaskAggregateTests
 
         task.Approve(
             new DecideOperationApprovalRequest("org-001", "env-dev", "ops-approver", "approved for maintenance window", "corr-approval"),
-            AuditId("audit-000002"),
+            AuditId("audit-000003"),
             Now.AddMinutes(1));
 
         Assert.Equal("queued", task.ToFact().Status);
         var approved = task.ToFact().Approval;
         Assert.NotNull(approved);
         Assert.Equal("approved", approved.Status);
-        var dispatch = Claim(task, "attempt-000001", "audit-000003", "lease-001", "connector-host-001");
+        var dispatch = Claim(task, "attempt-000001", "audit-000004", "lease-001", "connector-host-001");
         Assert.Equal("attempt-000001", dispatch.AttemptId);
     }
 
@@ -133,11 +133,11 @@ public sealed class OperationTaskAggregateTests
     public void Approval_required_task_can_be_rejected_as_terminal()
     {
         var task = OperationTask.Create(TaskId(), CreateRequest("idem-reject-001"), Template("lifecycle.restart", requiresApproval: true), Now);
-        task.AssignInitialAuditId(AuditId("audit-000001"));
+        task.AssignPendingAuditIds([AuditId("audit-000001"), AuditId("audit-000002")]);
 
         task.Reject(
             new DecideOperationApprovalRequest("org-001", "env-dev", "ops-approver", "not in change window", "corr-reject"),
-            AuditId("audit-000002"),
+            AuditId("audit-000003"),
             Now.AddMinutes(1));
 
         Assert.Equal("rejected", task.ToFact().Status);
@@ -145,7 +145,17 @@ public sealed class OperationTaskAggregateTests
         Assert.NotNull(approval);
         Assert.Equal("rejected", approval.Status);
         Assert.Equal("ops-approver", approval.DecidedBy);
-        Assert.Throws<InvalidOperationResultException>(() => Claim(task, "attempt-000001", "audit-000003", "lease-001", "connector-host-001"));
+        Assert.Throws<InvalidOperationResultException>(() => Claim(task, "attempt-000001", "audit-000004", "lease-001", "connector-host-001"));
+    }
+
+    [Fact]
+    public void Assign_initial_audit_id_requires_single_pending_audit()
+    {
+        var task = OperationTask.Create(TaskId(), CreateRequest("idem-approval-guard-001"), Template("lifecycle.restart", requiresApproval: true), Now);
+
+        var assignInitialAudit = () => task.AssignInitialAuditId(AuditId("audit-000001"));
+
+        Assert.Throws<InvalidOperationTaskRequestException>(assignInitialAudit);
     }
 
     [Fact]

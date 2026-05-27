@@ -129,7 +129,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         TimeSpan leaseDuration,
         int maxAttempts)
     {
-        if (!string.Equals(Status, "queued", StringComparison.Ordinal))
+        if (!CanBeClaimed())
         {
             throw new InvalidOperationResultException("Operation task is not claimable.");
         }
@@ -342,8 +342,13 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     public void AssignInitialAuditId(AuditRecordId auditRecordId)
     {
-        var audit = _auditRecords.First(x => x.Id.Id.Length == 0);
-        audit.AssignId(auditRecordId);
+        var pendingAudits = _auditRecords.Where(x => x.Id.Id.Length == 0).ToArray();
+        if (pendingAudits.Length != 1)
+        {
+            throw new InvalidOperationTaskRequestException("Initial audit id assignment requires exactly one pending audit record.");
+        }
+
+        pendingAudits[0].AssignId(auditRecordId);
     }
 
     public void AssignPendingAuditIds(IReadOnlyCollection<AuditRecordId> auditRecordIds)
@@ -404,6 +409,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         {
             throw new InvalidOperationTaskRequestException("Approval decision correlation id is required.");
         }
+    }
+
+    private bool CanBeClaimed()
+    {
+        return string.Equals(Status, "queued", StringComparison.Ordinal);
     }
 
     private IReadOnlyDictionary<string, string> Parameters =>

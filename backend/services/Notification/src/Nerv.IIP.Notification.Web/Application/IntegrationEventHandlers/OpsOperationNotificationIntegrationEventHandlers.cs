@@ -81,6 +81,7 @@ public sealed class OperationApprovalRequestedIntegrationEventHandlerForNotifica
     private async Task HandleValidEventAsync(OperationApprovalRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload ?? throw new KnownException("Operation approval requested payload is required.");
+        // TODO: Resolve approver recipients from ApprovalPolicy or OperationTemplate instead of the MVP ops-admin fallback.
         await OpsNotificationConsumer.SubmitOnceAsync(
             sender,
             dbContext,

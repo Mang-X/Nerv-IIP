@@ -472,6 +472,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
 
     private static void ValidateApprovalDecision(OperationTaskFact task, DecideOperationApprovalRequest request)
     {
+        // TODO: Keep this in-memory validation aligned with OperationTask.ValidateApprovalDecision.
         if (!string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
         {
