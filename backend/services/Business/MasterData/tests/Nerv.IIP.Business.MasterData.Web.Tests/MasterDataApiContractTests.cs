@@ -272,6 +272,50 @@ public sealed class MasterDataApiContractTests
         Assert.Contains("already exists", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Create_sku_command_generates_unique_server_codes_for_parallel_requests()
+    {
+        await using var provider = CreateInMemoryProvider();
+        var numbering = new MasterDataNumberingService();
+
+        var tasks = Enumerable.Range(1, 20)
+            .Select(async index =>
+            {
+                using var scope = provider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
+                var result = await handler.Handle(
+                    new CreateSkuCommand("org-001", "env-dev", null, $"Finished Good {index}", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], $"sku-create-{index}"),
+                    CancellationToken.None);
+                await dbContext.SaveChangesAsync(CancellationToken.None);
+                return result.Code;
+            });
+
+        var codes = await Task.WhenAll(tasks);
+
+        Assert.Equal(20, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(codes, code => Assert.Matches("^SKU-[0-9]{8}-[0-9]{6}$", code));
+    }
+
+    [Fact]
+    public async Task Create_sku_command_reuses_existing_result_for_same_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var numbering = new MasterDataNumberingService();
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
+        var command = new CreateSkuCommand("org-001", "env-dev", null, "Finished Good", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var second = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first.Code, second.Code);
+        Assert.Single(dbContext.Skus);
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();

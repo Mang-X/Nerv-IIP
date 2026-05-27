@@ -200,7 +200,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string | null;
     workCenterId?: string | null;
     dueUtc?: string | null;
-    idempotencyKey?: string;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -302,7 +302,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateRushWorkOrderRequest = {
     organizationId?: string;
     environmentId?: string;
-    workOrderId?: string;
+    workOrderId?: string | null;
     skuId?: string;
     productionVersionId?: string | null;
     quantity?: number;
@@ -311,6 +311,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     operationTaskId?: string | null;
     operationSequence?: number | null;
     durationMinutes?: number;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialReadinessResponse = NetCorePalExtensionsDtoResponseData & {
@@ -696,7 +697,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceItem = N
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSkuRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
     baseUomCode: string;
     category: string;
@@ -708,6 +709,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     defaultBarcodeRuleCode: string;
     qualityRequired?: boolean;
     complianceTags?: Array<string> | null;
+    idempotencyKey?: string | null;
 };
 
 /**

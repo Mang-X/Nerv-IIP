@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Infrastructure;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -44,17 +45,24 @@ public sealed record ConvertPlanToWorkOrderCommand(
     string EnvironmentId,
     string ProductionPlanId,
     string? WorkOrderId,
-    DateTimeOffset RequestedAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset RequestedAtUtc,
+    string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
 
-public sealed class ConvertPlanToWorkOrderCommandHandler
+public sealed class ConvertPlanToWorkOrderCommandHandler(MesNumberingService? numberingService = null)
     : ICommandHandler<ConvertPlanToWorkOrderCommand, MesAcceptedResponse>
 {
+    private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
+
     public Task<MesAcceptedResponse> Handle(ConvertPlanToWorkOrderCommand request, CancellationToken cancellationToken)
     {
-        var referenceId = string.IsNullOrWhiteSpace(request.WorkOrderId)
-            ? $"WO-{Guid.CreateVersion7():N}"
-            : request.WorkOrderId;
-        return Task.FromResult(new MesAcceptedResponse("Accepted", referenceId, request.RequestedAtUtc));
+        var allocation = _numberingService.AllocateWorkOrderId(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            request.IdempotencyKey,
+            $"{request.ProductionPlanId}|{request.WorkOrderId}");
+
+        return Task.FromResult(new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc));
     }
 }
 

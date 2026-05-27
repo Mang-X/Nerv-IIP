@@ -104,6 +104,8 @@ Expected: no unresolved placeholder is introduced. Product-copy forbidden exampl
 
 **Goal:** Remove user-generated system IDs from all create flows that produce durable business documents.
 
+**2026-05-27 implementation note:** The first #188 baseline now removes ordinary UI/manual number entry for Business Console SKU creation, MES rush order creation and MES plan-to-work-order conversion, and adds optional idempotency keys plus service-local in-process number allocation to MasterData, MES, ProductEngineering, DemandPlanning and ERP P0 create commands. This intentionally does not mark Step 1 complete: persistent numbering rule/counter tables, schema catalog entries, migrations and cross-process concurrency control are still required before this can be treated as production-grade multi-instance numbering.
+
 **Files:**
 - Modify: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/MasterData/MasterDataEndpoints.cs`
 - Modify: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/MasterData/CreateMasterDataCommands.cs`

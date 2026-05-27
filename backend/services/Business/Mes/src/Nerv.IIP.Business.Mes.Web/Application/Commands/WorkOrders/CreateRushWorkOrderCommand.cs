@@ -7,29 +7,48 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 public sealed record CreateRushWorkOrderCommand(
     string OrganizationId,
     string EnvironmentId,
-    string WorkOrderId,
+    string? WorkOrderId,
     string SkuId,
     string? ProductionVersionId,
     decimal Quantity,
     DateTimeOffset DueUtc,
     string WorkCenterId,
-    string OperationTaskId,
+    string? OperationTaskId,
     int OperationSequence,
     TimeSpan Duration,
-    DateTimeOffset RequestedAtUtc) : ICommand<CreateRushWorkOrderResponse>;
+    DateTimeOffset RequestedAtUtc,
+    string? IdempotencyKey = null) : ICommand<CreateRushWorkOrderResponse>;
 
 public sealed record CreateRushWorkOrderResponse(
     string WorkOrderId,
     MesScheduleResult Schedule,
     IReadOnlyCollection<string> AffectedWorkOrderIds);
 
-public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, RuleScheduler scheduler)
+public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, RuleScheduler scheduler, MesNumberingService? numberingService = null)
     : ICommandHandler<CreateRushWorkOrderCommand, CreateRushWorkOrderResponse>
 {
     private const int RushPriority = 1000;
+    private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
 
     public async Task<CreateRushWorkOrderResponse> Handle(CreateRushWorkOrderCommand request, CancellationToken cancellationToken)
     {
+        var allocation = _numberingService.AllocateWorkOrderId(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            request.IdempotencyKey,
+            WorkOrderPayloadFingerprint(request));
+        if (allocation.IsIdempotentReplay)
+        {
+            return new CreateRushWorkOrderResponse(
+                allocation.Number,
+                new MesScheduleResult(0, RescheduleTrigger.RushOrder, request.RequestedAtUtc, [], []),
+                []);
+        }
+
+        var operationTaskId = string.IsNullOrWhiteSpace(request.OperationTaskId)
+            ? $"{allocation.Number}-OP-{request.OperationSequence}"
+            : request.OperationTaskId.Trim();
         var baselinePlan = scheduler.Schedule(
             await store.GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
             await store.GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
@@ -37,15 +56,15 @@ public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, R
         store.AddWorkOrder(new PlannedWorkOrder(
             request.OrganizationId,
             request.EnvironmentId,
-            request.WorkOrderId,
+            allocation.Number,
             request.SkuId,
             request.ProductionVersionId,
             request.Quantity,
             RushPriority,
             request.DueUtc));
         store.AddOperationTask(new PlannedOperationTask(
-            request.WorkOrderId,
-            request.OperationTaskId,
+            allocation.Number,
+            operationTaskId,
             OperationTaskStatus.Queued,
             request.OperationSequence,
             request.WorkCenterId,
@@ -67,8 +86,22 @@ public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, R
             baselinePlan.Assignments,
             cancellationToken);
         return new CreateRushWorkOrderResponse(
-            request.WorkOrderId,
+            allocation.Number,
             schedule,
             schedule.AffectedWorkOrderIds);
+    }
+
+    private static string WorkOrderPayloadFingerprint(CreateRushWorkOrderCommand request)
+    {
+        return string.Join('|',
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuId,
+            request.ProductionVersionId,
+            request.Quantity,
+            request.DueUtc.ToUnixTimeMilliseconds(),
+            request.WorkCenterId,
+            request.OperationSequence,
+            request.Duration.Ticks);
     }
 }

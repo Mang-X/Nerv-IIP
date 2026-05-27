@@ -18,7 +18,6 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
   Input,
@@ -36,7 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, PlusIcon, RefreshCwIcon, WandSparklesIcon } from 'lucide-vue-next'
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 
 definePage({
@@ -79,7 +78,6 @@ const tableState = reactive({
 const createForm = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
-  code: '',
   name: '',
   baseUomCode: 'EA',
   category: '减振器总成',
@@ -91,6 +89,7 @@ const createForm = reactive({
   defaultBarcodeRuleCode: '减振器箱标',
   qualityRequired: true,
   complianceTags: 'IATF16949',
+  idempotencyKey: newSkuIdempotencyKey(),
 })
 const materialTypeOptions = [
   { label: '成品', value: 'finished-good', prefix: 'FG-SAD' },
@@ -137,7 +136,6 @@ const createErrorMessage = computed(() => formatError(createSkuError.value))
 const listErrorMessage = computed(() => formatError(skusError.value))
 const canCreateSku = computed(
   () =>
-    isNonEmpty(createForm.code) &&
     isNonEmpty(createForm.name) &&
     isNonEmpty(createForm.baseUomCode) &&
     isNonEmpty(createForm.category) &&
@@ -168,12 +166,6 @@ function clearFilters() {
   applyFilters()
 }
 
-function generateCode() {
-  const option = materialTypeOptions.find((item) => item.value === createForm.materialType)
-  const prefix = option?.prefix ?? 'SKU'
-  createForm.code = `${prefix}-${String(sourceSkus.value.length + localSkus.value.length + 1).padStart(3, '0')}`
-}
-
 function splitTags(value: string) {
   const tags = value
     .split(',')
@@ -184,7 +176,6 @@ function splitTags(value: string) {
 }
 
 function resetCreateForm() {
-  createForm.code = ''
   createForm.name = ''
   createForm.baseUomCode = 'EA'
   createForm.category = '减振器总成'
@@ -196,6 +187,7 @@ function resetCreateForm() {
   createForm.defaultBarcodeRuleCode = '减振器箱标'
   createForm.qualityRequired = true
   createForm.complianceTags = 'IATF16949'
+  createForm.idempotencyKey = newSkuIdempotencyKey()
 }
 
 async function submitSku() {
@@ -204,7 +196,6 @@ async function submitSku() {
   const body: BusinessConsoleCreateSkuRequest = {
     organizationId: createForm.organizationId.trim(),
     environmentId: createForm.environmentId.trim(),
-    code: createForm.code.trim(),
     name: createForm.name.trim(),
     baseUomCode: createForm.baseUomCode.trim(),
     category: createForm.category.trim(),
@@ -216,10 +207,11 @@ async function submitSku() {
     defaultBarcodeRuleCode: createForm.defaultBarcodeRuleCode.trim(),
     qualityRequired: createForm.qualityRequired,
     complianceTags: splitTags(createForm.complianceTags),
+    idempotencyKey: createForm.idempotencyKey,
   }
 
   const response = await createSku(body)
-  const createdCode = response?.data?.code ?? body.code
+  const createdCode = response?.data?.code ?? ''
   localSkus.value = [
     {
       resourceType: 'sku',
@@ -233,6 +225,10 @@ async function submitSku() {
   createSuccess.value = `物料 ${createdCode} 已提交。`
   resetCreateForm()
   createOpen.value = false
+}
+
+function newSkuIdempotencyKey() {
+  return `sku-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function syncContextFromFilters() {
@@ -301,17 +297,6 @@ function isNonEmpty(value: string) {
                 <BusinessFormStatus :error="createErrorMessage" />
 
                 <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                  <Field :data-invalid="!isNonEmpty(createForm.code)">
-                    <FieldLabel for="sku-code">物料编码 <span class="text-destructive">*</span></FieldLabel>
-                    <div class="flex gap-2">
-                      <Input id="sku-code" v-model="createForm.code" autocomplete="off" aria-required="true" required />
-                      <Button type="button" variant="outline" @click="generateCode">
-                        <WandSparklesIcon data-icon="inline-start" />
-                        生成
-                      </Button>
-                    </div>
-                    <FieldDescription>建议使用成品、半成品、原材料前缀自动生成。</FieldDescription>
-                  </Field>
                   <Field :data-invalid="!isNonEmpty(createForm.name)">
                     <FieldLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldLabel>
                     <Input id="sku-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />

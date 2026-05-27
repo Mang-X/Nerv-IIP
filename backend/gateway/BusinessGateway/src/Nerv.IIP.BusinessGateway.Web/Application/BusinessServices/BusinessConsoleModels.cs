@@ -29,7 +29,7 @@ public sealed record BusinessConsoleListSkusRequest(
 public sealed record BusinessConsoleCreateSkuRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string BaseUomCode,
     string Category,
@@ -40,7 +40,8 @@ public sealed record BusinessConsoleCreateSkuRequest(
     string StorageConditionCode,
     string DefaultBarcodeRuleCode,
     bool QualityRequired,
-    IReadOnlyCollection<string>? ComplianceTags);
+    IReadOnlyCollection<string>? ComplianceTags,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleInventoryAvailabilityRequest(
     string OrganizationId,
@@ -240,7 +241,7 @@ public sealed record BusinessConsoleMesOperationTaskItem(
 public sealed record BusinessConsoleCreateRushWorkOrderRequest(
     string OrganizationId,
     string EnvironmentId,
-    string WorkOrderId,
+    string? WorkOrderId,
     string SkuId,
     string? ProductionVersionId,
     decimal Quantity,
@@ -248,7 +249,8 @@ public sealed record BusinessConsoleCreateRushWorkOrderRequest(
     string WorkCenterId,
     string? OperationTaskId,
     int? OperationSequence,
-    int DurationMinutes);
+    int DurationMinutes,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleRunScheduleRequest(
     string OrganizationId,
@@ -362,7 +364,7 @@ public sealed record BusinessConsoleMesConvertPlanToWorkOrderRequest(
     string? WorkOrderId,
     string? WorkCenterId,
     DateTimeOffset? DueUtc,
-    string IdempotencyKey);
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleMesWorkOrderDetailRequest(
     [property: RouteParam] string WorkOrderId,

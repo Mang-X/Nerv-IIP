@@ -97,9 +97,9 @@ const tableState = reactive({
   sortDirection: 'asc' as 'asc' | 'desc',
 })
 const convertForm = reactive({
-  workOrderId: '',
   workCenterId: '',
   dueUtc: '',
+  idempotencyKey: newPlanIdempotencyKey('convert-plan'),
 })
 const planForm = reactive({
   productionPlanId: '',
@@ -257,9 +257,9 @@ function clearFilters() {
 function openConvertSheet(plan: BusinessConsoleMesProductionPlanRow) {
   selectedPlan.value = plan
   convertSuccess.value = ''
-  convertForm.workOrderId = plan.productionPlanId ? `WO-${plan.productionPlanId}` : ''
   convertForm.workCenterId = ''
   convertForm.dueUtc = toLocalDateTimeInput(plan.plannedEndUtc ?? plan.plannedStartUtc)
+  convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${plan.productionPlanId ?? 'plan'}`)
   convertSheetOpen.value = true
 }
 
@@ -269,7 +269,7 @@ async function submitConvertPlan() {
 
   const isApiPlan = productionPlans.value.some((plan) => plan.productionPlanId === planId)
   if (!isApiPlan && selectedPlan.value) {
-    const workOrderId = convertForm.workOrderId || `WO-${planId}`
+    const workOrderId = `WO-${planId}`
     const localWorkOrders = readLocalDemoWorkOrders()
     writeLocalDemoWorkOrders([
       toDemoWorkOrderFromPlan(selectedPlan.value, workOrderId, convertForm.workCenterId, toIsoFromLocalInput(convertForm.dueUtc)),
@@ -282,13 +282,12 @@ async function submitConvertPlan() {
   await convertPlanToWorkOrder(planId, {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
-    workOrderId: optionalText(convertForm.workOrderId),
     workCenterId: optionalText(convertForm.workCenterId),
     dueUtc: convertForm.dueUtc ? toIsoFromLocalInput(convertForm.dueUtc) : undefined,
-    idempotencyKey: `convert-${planId}-${Date.now()}`,
+    idempotencyKey: convertForm.idempotencyKey,
   })
-  const workOrderId = convertForm.workOrderId
-  convertSuccess.value = workOrderId ? `已生成工单 ${workOrderId}。` : '已提交转工单。'
+  convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${planId}`)
+  convertSuccess.value = '已提交转工单。'
 }
 
 function setSort(column: SortColumn) {
@@ -358,6 +357,10 @@ function dateCode() {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}${month}${day}`
+}
+
+function newPlanIdempotencyKey(scope: string) {
+  return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function formatError(error: unknown) {
@@ -636,7 +639,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       <BusinessActionSheet
         v-model:open="convertSheetOpen"
         title="生产计划转工单"
-        description="确认工单号、工作中心和交期后，将计划下达到 MES 执行。"
+        description="确认工作中心和交期后，将计划下达到 MES 执行。"
       >
         <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitConvertPlan">
           <div>
@@ -650,10 +653,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
             <p v-if="selectedPlan?.blockingReasons?.length">阻塞：{{ selectedPlan.blockingReasons.join('；') }}</p>
           </div>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="convert-work-order">工单号</FieldLabel>
-              <Input id="convert-work-order" v-model="convertForm.workOrderId" placeholder="可由系统生成" />
-            </Field>
             <Field>
               <FieldLabel for="convert-work-center">工作中心</FieldLabel>
               <Select v-if="workCenterOptions.length" v-model="convertForm.workCenterId">

@@ -22,7 +22,7 @@ public sealed record RunScheduleRequest(
 public sealed record CreateRushWorkOrderRequest(
     string OrganizationId,
     string EnvironmentId,
-    string WorkOrderId,
+    string? WorkOrderId,
     string SkuId,
     string? ProductionVersionId,
     decimal Quantity,
@@ -30,7 +30,8 @@ public sealed record CreateRushWorkOrderRequest(
     string WorkCenterId,
     string? OperationTaskId,
     int? OperationSequence,
-    int DurationMinutes);
+    int DurationMinutes,
+    string? IdempotencyKey = null);
 
 public sealed record ListMesWorkOrdersRequest(
     string OrganizationId,
@@ -110,7 +111,8 @@ public sealed record ConvertPlanToWorkOrderRequest(
     string EnvironmentId,
     [property: RouteParam] string ProductionPlanId,
     string? WorkOrderId,
-    DateTimeOffset? RequestedAtUtc);
+    DateTimeOffset? RequestedAtUtc,
+    string? IdempotencyKey = null);
 
 public sealed record ReleaseWorkOrderRequest(
     string OrganizationId,
@@ -341,7 +343,8 @@ public sealed class ConvertPlanToWorkOrderEndpoint(ISender sender, TimeProvider 
             req.EnvironmentId,
             req.ProductionPlanId,
             req.WorkOrderId,
-            req.RequestedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            req.RequestedAtUtc ?? timeProvider.GetUtcNow(),
+            req.IdempotencyKey), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -365,10 +368,11 @@ public sealed class CreateRushWorkOrderEndpoint(ISender sender, TimeProvider tim
             req.Quantity,
             req.DueUtc,
             req.WorkCenterId,
-            req.OperationTaskId ?? $"{req.WorkOrderId}-OP-10",
+            req.OperationTaskId,
             req.OperationSequence ?? 10,
             TimeSpan.FromMinutes(req.DurationMinutes),
-            timeProvider.GetUtcNow()), ct);
+            timeProvider.GetUtcNow(),
+            req.IdempotencyKey), ct);
         await Send.OkAsync(result, ct);
     }
 }

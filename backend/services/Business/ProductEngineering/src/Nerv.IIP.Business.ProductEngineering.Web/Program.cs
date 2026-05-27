@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NetCorePal.Context.CAP;
 using Nerv.IIP.Business.ProductEngineering.Domain;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
@@ -78,6 +79,7 @@ try
     }
 
     builder.Services.AddProductEngineeringPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddSingleton<ProductEngineeringNumberingService>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IProductEngineeringIntegrationEventContextAccessor, HttpProductEngineeringIntegrationEventContextAccessor>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();

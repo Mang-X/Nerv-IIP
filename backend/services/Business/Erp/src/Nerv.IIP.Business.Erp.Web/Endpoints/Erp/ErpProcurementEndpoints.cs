@@ -37,51 +37,56 @@ public abstract class ErpEndpoint<TRequest, TResponse> : Endpoint<TRequest, TRes
 public sealed record CreatePurchaseRequisitionFromSuggestionRequest(
     string OrganizationId,
     string EnvironmentId,
-    string RequisitionNo,
+    string? RequisitionNo,
     string SuggestionId,
     string SkuCode,
     string UomCode,
     string SiteCode,
     decimal Quantity,
-    DateOnly RequiredDate);
+    DateOnly RequiredDate,
+    string? IdempotencyKey = null);
 
 public sealed record CreatePurchaseRequisitionFromSuggestionResponse(PurchaseRequisitionId PurchaseRequisitionId);
 
 public sealed record CreateRequestForQuotationRequest(
     string OrganizationId,
     string EnvironmentId,
-    string RfqNo,
+    string? RfqNo,
     IReadOnlyCollection<string> SupplierCodes,
-    IReadOnlyCollection<RfqCommandLine> Lines);
+    IReadOnlyCollection<RfqCommandLine> Lines,
+    string? IdempotencyKey = null);
 
 public sealed record CreateRequestForQuotationResponse(RequestForQuotationId RequestForQuotationId);
 
 public sealed record ReceiveSupplierQuotationRequest(
     string OrganizationId,
     string EnvironmentId,
-    string QuotationNo,
+    string? QuotationNo,
     string RfqNo,
     string SupplierCode,
-    IReadOnlyCollection<SupplierQuotationCommandLine> Lines);
+    IReadOnlyCollection<SupplierQuotationCommandLine> Lines,
+    string? IdempotencyKey = null);
 
 public sealed record ReceiveSupplierQuotationResponse(SupplierQuotationId SupplierQuotationId);
 
 public sealed record CreatePurchaseOrderRequest(
     string OrganizationId,
     string EnvironmentId,
-    string PurchaseOrderNo,
+    string? PurchaseOrderNo,
     string SupplierCode,
     string SiteCode,
-    IReadOnlyCollection<PurchaseOrderCommandLine> Lines);
+    IReadOnlyCollection<PurchaseOrderCommandLine> Lines,
+    string? IdempotencyKey = null);
 
 public sealed record CreatePurchaseOrderResponse(PurchaseOrderId PurchaseOrderId);
 
 public sealed record RecordPurchaseReceiptRequest(
     string OrganizationId,
     string EnvironmentId,
-    string PurchaseReceiptNo,
+    string? PurchaseReceiptNo,
     string PurchaseOrderNo,
-    IReadOnlyCollection<PurchaseReceiptCommandLine> Lines);
+    IReadOnlyCollection<PurchaseReceiptCommandLine> Lines,
+    string? IdempotencyKey = null);
 
 public sealed record RecordPurchaseReceiptResponse(PurchaseReceiptId PurchaseReceiptId);
 
@@ -106,7 +111,8 @@ public sealed class CreatePurchaseRequisitionFromSuggestionEndpoint(ISender send
             req.UomCode,
             req.SiteCode,
             req.Quantity,
-            req.RequiredDate), ct);
+            req.RequiredDate,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(new CreatePurchaseRequisitionFromSuggestionResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -121,7 +127,7 @@ public sealed class CreateRequestForQuotationEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateRequestForQuotationRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateRequestForQuotationCommand(req.OrganizationId, req.EnvironmentId, req.RfqNo, req.SupplierCodes, req.Lines), ct);
+        var id = await sender.Send(new CreateRequestForQuotationCommand(req.OrganizationId, req.EnvironmentId, req.RfqNo, req.SupplierCodes, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateRequestForQuotationResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -136,7 +142,7 @@ public sealed class ReceiveSupplierQuotationEndpoint(ISender sender)
 
     public override async Task HandleAsync(ReceiveSupplierQuotationRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new ReceiveSupplierQuotationCommand(req.OrganizationId, req.EnvironmentId, req.QuotationNo, req.RfqNo, req.SupplierCode, req.Lines), ct);
+        var id = await sender.Send(new ReceiveSupplierQuotationCommand(req.OrganizationId, req.EnvironmentId, req.QuotationNo, req.RfqNo, req.SupplierCode, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new ReceiveSupplierQuotationResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -151,7 +157,7 @@ public sealed class CreatePurchaseOrderEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreatePurchaseOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreatePurchaseOrderCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.SupplierCode, req.SiteCode, req.Lines), ct);
+        var id = await sender.Send(new CreatePurchaseOrderCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.SupplierCode, req.SiteCode, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreatePurchaseOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -166,7 +172,7 @@ public sealed class RecordPurchaseReceiptEndpoint(ISender sender)
 
     public override async Task HandleAsync(RecordPurchaseReceiptRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new RecordPurchaseReceiptCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseReceiptNo, req.PurchaseOrderNo, req.Lines), ct);
+        var id = await sender.Send(new RecordPurchaseReceiptCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseReceiptNo, req.PurchaseOrderNo, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new RecordPurchaseReceiptResponse(id).AsResponseData(), cancellation: ct);
     }
 }

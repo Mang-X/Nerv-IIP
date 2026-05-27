@@ -16,6 +16,7 @@ using Hangfire.Redis.StackExchange;
 using Microsoft.AspNetCore.Http.Json;
 using Newtonsoft.Json;
 using Nerv.IIP.Business.MasterData.Domain;
+using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 using Nerv.IIP.Localization;
@@ -128,6 +129,7 @@ try
     builder.Services.AddMasterDataPostgreSqlPersistence(
         masterDataConnectionString,
         builder.Environment.IsDevelopment());
+    builder.Services.AddSingleton<MasterDataNumberingService>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IMasterDataIntegrationEventContextAccessor, HttpMasterDataIntegrationEventContextAccessor>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();

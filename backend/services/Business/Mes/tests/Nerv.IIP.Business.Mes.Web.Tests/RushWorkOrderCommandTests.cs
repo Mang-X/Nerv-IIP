@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
@@ -40,5 +41,122 @@ public sealed class RushWorkOrderCommandTests
         Assert.Equal(20, operation.OperationSequence);
         Assert.Equal(RescheduleTrigger.RushOrder, response.Schedule.Trigger);
         Assert.Contains("WO-NORMAL", response.AffectedWorkOrderIds);
+    }
+
+    [Fact]
+    public async Task CreateRushWorkOrderCommand_GeneratesWorkOrderAndOperationIdsWhenNotProvided()
+    {
+        var store = new InMemoryMesPlanningStore();
+        var numbering = new MesNumberingService();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), numbering);
+
+        var response = await handler.Handle(
+            new CreateRushWorkOrderCommand(
+                "org-001",
+                "env-dev",
+                null,
+                "SKU-R",
+                "production-version-from-issue-188",
+                1m,
+                now.AddHours(4),
+                "WC-A",
+                null,
+                10,
+                TimeSpan.FromHours(1),
+                now,
+                "rush-create-001"),
+            CancellationToken.None);
+
+        Assert.Matches("^WO-[0-9]{8}-[0-9]{6}$", response.WorkOrderId);
+        Assert.Equal(response.WorkOrderId, store.WorkOrders.Single().WorkOrderId);
+        Assert.Equal($"{response.WorkOrderId}-OP-10", store.OperationTasks.Single().OperationTaskId);
+    }
+
+    [Fact]
+    public async Task CreateRushWorkOrderCommand_ReusesExistingWorkOrderForSameIdempotencyKey()
+    {
+        var store = new InMemoryMesPlanningStore();
+        var numbering = new MesNumberingService();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), numbering);
+        var command = new CreateRushWorkOrderCommand(
+            "org-001",
+            "env-dev",
+            null,
+            "SKU-R",
+            "production-version-from-issue-188",
+            1m,
+            now.AddHours(4),
+            "WC-A",
+            null,
+            10,
+            TimeSpan.FromHours(1),
+            now,
+            "rush-create-002");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        var second = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first.WorkOrderId, second.WorkOrderId);
+        Assert.Single(store.WorkOrders);
+        Assert.Single(store.OperationTasks);
+    }
+
+    [Fact]
+    public async Task CreateRushWorkOrderCommand_GeneratesUniqueWorkOrdersForParallelRequests()
+    {
+        var numbering = new MesNumberingService();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+
+        var tasks = Enumerable.Range(1, 20)
+            .Select(async index =>
+            {
+                var store = new InMemoryMesPlanningStore();
+                var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), numbering);
+                var response = await handler.Handle(
+                    new CreateRushWorkOrderCommand(
+                        "org-001",
+                        "env-dev",
+                        null,
+                        $"SKU-R-{index}",
+                        "production-version-from-issue-188",
+                        1m,
+                        now.AddHours(4),
+                        "WC-A",
+                        null,
+                        10,
+                        TimeSpan.FromHours(1),
+                        now,
+                        $"rush-parallel-{index}"),
+                    CancellationToken.None);
+                return response.WorkOrderId;
+            });
+
+        var workOrderIds = await Task.WhenAll(tasks);
+
+        Assert.Equal(20, workOrderIds.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(workOrderIds, id => Assert.Matches("^WO-[0-9]{8}-[0-9]{6}$", id));
+    }
+
+    [Fact]
+    public async Task ConvertPlanToWorkOrderCommand_GeneratesWorkOrderAndReplaysIdempotentResult()
+    {
+        var numbering = new MesNumberingService();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        var handler = new ConvertPlanToWorkOrderCommandHandler(numbering);
+        var command = new ConvertPlanToWorkOrderCommand(
+            "org-001",
+            "env-dev",
+            "PLAN-001",
+            null,
+            now,
+            "convert-plan-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        var second = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first.ReferenceId, second.ReferenceId);
+        Assert.Matches("^WO-[0-9]{8}-[0-9]{6}$", first.ReferenceId);
     }
 }

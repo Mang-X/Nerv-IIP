@@ -51,7 +51,7 @@ public sealed record ListMasterDataResourcesRequest(
 public sealed record CreateSkuRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string BaseUomCode,
     string Category,
@@ -62,7 +62,8 @@ public sealed record CreateSkuRequest(
     string StorageConditionCode,
     string DefaultBarcodeRuleCode,
     bool QualityRequired,
-    IReadOnlyCollection<string>? ComplianceTags);
+    IReadOnlyCollection<string>? ComplianceTags,
+    string? IdempotencyKey = null);
 
 public sealed class ListMasterDataResourcesEndpoint(ISender sender)
     : MasterDataEndpoint<ListMasterDataResourcesRequest, ResponseData<ListMasterDataResourcesResponse>>
@@ -107,7 +108,8 @@ public sealed class CreateSkuEndpoint(ISender sender)
             req.StorageConditionCode,
             req.DefaultBarcodeRuleCode,
             req.QualityRequired,
-            req.ComplianceTags ?? []), ct);
+            req.ComplianceTags ?? [],
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }

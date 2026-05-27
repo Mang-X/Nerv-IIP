@@ -189,6 +189,35 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Register_engineering_document_generates_number_and_replays_idempotent_create()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var numbering = new ProductEngineeringNumberingService();
+        var handler = new RegisterEngineeringDocumentCommandHandler(new EngineeringDocumentRepository(dbContext), numbering);
+        var command = new RegisterEngineeringDocumentCommand(
+            "org-001",
+            "env-dev",
+            null,
+            "A",
+            "file-001",
+            "shock-absorber.dwg",
+            "application/dwg",
+            "cad-drawing",
+            "engineering-document-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var second = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first.Id, second.Id);
+        Assert.Matches("^EDOC-[0-9]{8}-[0-9]{6}$", first.Id);
+        Assert.Single(dbContext.EngineeringDocuments);
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();

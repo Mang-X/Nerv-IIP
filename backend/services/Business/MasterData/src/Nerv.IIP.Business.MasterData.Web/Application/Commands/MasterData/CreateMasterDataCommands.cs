@@ -21,7 +21,7 @@ public sealed record MasterDataResourceResult(string ResourceType, string Code, 
 public sealed record CreateSkuCommand(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string BaseUomCode,
     string Category,
@@ -32,22 +32,36 @@ public sealed record CreateSkuCommand(
     string StorageConditionCode,
     string DefaultBarcodeRuleCode,
     bool QualityRequired,
-    IReadOnlyCollection<string> ComplianceTags) : ICommand<MasterDataResourceResult>;
+    IReadOnlyCollection<string> ComplianceTags,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateSkuCommandHandler(ISkuRepository repository)
+public sealed class CreateSkuCommandHandler(ISkuRepository repository, MasterDataNumberingService? numberingService = null)
     : ICommandHandler<CreateSkuCommand, MasterDataResourceResult>
 {
+    private readonly MasterDataNumberingService _numberingService = numberingService ?? new MasterDataNumberingService();
+
     public async Task<MasterDataResourceResult> Handle(CreateSkuCommand request, CancellationToken cancellationToken)
     {
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, request.Code, cancellationToken))
+        var allocation = _numberingService.AllocateSkuCode(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Code,
+            request.IdempotencyKey,
+            SkuPayloadFingerprint(request));
+        if (allocation.IsIdempotentReplay)
         {
-            throw new KnownException($"SKU '{request.Code}' already exists.");
+            return new MasterDataResourceResult("sku", allocation.Code, request.Name);
+        }
+
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
+        {
+            throw new KnownException($"SKU '{allocation.Code}' already exists.");
         }
 
         var sku = Sku.CreateIndustrial(
             request.OrganizationId,
             request.EnvironmentId,
-            request.Code,
+            allocation.Code,
             request.Name,
             request.BaseUomCode,
             request.Category,
@@ -61,6 +75,24 @@ public sealed class CreateSkuCommandHandler(ISkuRepository repository)
             request.ComplianceTags);
         await repository.AddAsync(sku, cancellationToken);
         return new MasterDataResourceResult("sku", sku.Code, sku.Name);
+    }
+
+    private static string SkuPayloadFingerprint(CreateSkuCommand request)
+    {
+        return string.Join('|',
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Name,
+            request.BaseUomCode,
+            request.Category,
+            request.MaterialType,
+            request.BatchTrackingPolicy,
+            request.SerialTrackingPolicy,
+            request.ShelfLifePolicyCode,
+            request.StorageConditionCode,
+            request.DefaultBarcodeRuleCode,
+            request.QualityRequired,
+            string.Join(',', request.ComplianceTags.Order(StringComparer.Ordinal)));
     }
 }
 

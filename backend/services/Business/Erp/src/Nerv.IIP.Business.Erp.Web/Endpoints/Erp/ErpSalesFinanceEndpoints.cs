@@ -14,24 +14,24 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 
-public sealed record OpenOpportunityRequest(string OrganizationId, string EnvironmentId, string OpportunityNo, string CustomerCode, string Topic);
+public sealed record OpenOpportunityRequest(string OrganizationId, string EnvironmentId, string? OpportunityNo, string CustomerCode, string Topic, string? IdempotencyKey = null);
 public sealed record OpenOpportunityResponse(OpportunityId OpportunityId);
-public sealed record CreateQuotationRequest(string OrganizationId, string EnvironmentId, string QuotationNo, string CustomerCode, DateOnly ExpiresOn, IReadOnlyCollection<QuotationCommandLine> Lines);
+public sealed record CreateQuotationRequest(string OrganizationId, string EnvironmentId, string? QuotationNo, string CustomerCode, DateOnly ExpiresOn, IReadOnlyCollection<QuotationCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record CreateQuotationResponse(QuotationId QuotationId);
 public sealed record ApproveQuotationRequest(string OrganizationId, string EnvironmentId, string QuotationNo);
-public sealed record CreateSalesOrderRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string QuotationNo);
+public sealed record CreateSalesOrderRequest(string OrganizationId, string EnvironmentId, string? SalesOrderNo, string QuotationNo, string? IdempotencyKey = null);
 public sealed record CreateSalesOrderResponse(SalesOrderId SalesOrderId);
-public sealed record ReleaseDeliveryOrderRequest(string OrganizationId, string EnvironmentId, string DeliveryOrderNo, string SalesOrderNo, IReadOnlyCollection<DeliveryOrderCommandLine> Lines);
+public sealed record ReleaseDeliveryOrderRequest(string OrganizationId, string EnvironmentId, string? DeliveryOrderNo, string SalesOrderNo, IReadOnlyCollection<DeliveryOrderCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record ReleaseDeliveryOrderResponse(DeliveryOrderId DeliveryOrderId);
 public sealed record ListSalesOrdersRequest(string OrganizationId, string EnvironmentId);
 
-public sealed record CreateAccountPayableRequest(string OrganizationId, string EnvironmentId, string PayableNo, string SourceDocumentNo, string SupplierCode, decimal Amount, string CurrencyCode);
+public sealed record CreateAccountPayableRequest(string OrganizationId, string EnvironmentId, string? PayableNo, string SourceDocumentNo, string SupplierCode, decimal Amount, string CurrencyCode, string? IdempotencyKey = null);
 public sealed record CreateAccountPayableResponse(AccountPayableId AccountPayableId);
-public sealed record CreateAccountReceivableRequest(string OrganizationId, string EnvironmentId, string ReceivableNo, string SourceDocumentNo, string CustomerCode, decimal Amount, string CurrencyCode);
+public sealed record CreateAccountReceivableRequest(string OrganizationId, string EnvironmentId, string? ReceivableNo, string SourceDocumentNo, string CustomerCode, decimal Amount, string CurrencyCode, string? IdempotencyKey = null);
 public sealed record CreateAccountReceivableResponse(AccountReceivableId AccountReceivableId);
-public sealed record CreateCostCandidateRequest(string OrganizationId, string EnvironmentId, string CandidateNo, string SourceType, string SourceDocumentNo, decimal Amount, string CurrencyCode);
+public sealed record CreateCostCandidateRequest(string OrganizationId, string EnvironmentId, string? CandidateNo, string SourceType, string SourceDocumentNo, decimal Amount, string CurrencyCode, string? IdempotencyKey = null);
 public sealed record CreateCostCandidateResponse(CostCandidateId CostCandidateId);
-public sealed record PostJournalVoucherRequest(string OrganizationId, string EnvironmentId, string VoucherNo, DateOnly PostingDate, IReadOnlyCollection<JournalVoucherCommandLine> Lines);
+public sealed record PostJournalVoucherRequest(string OrganizationId, string EnvironmentId, string? VoucherNo, DateOnly PostingDate, IReadOnlyCollection<JournalVoucherCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record PostJournalVoucherResponse(JournalVoucherId JournalVoucherId);
 public sealed record GetFinanceSummaryRequest(string OrganizationId, string EnvironmentId);
 public sealed record GetAccountPayableBySourceDocumentRequest(string OrganizationId, string EnvironmentId, string SourceDocumentNo);
@@ -44,7 +44,7 @@ public sealed class OpenOpportunityEndpoint(ISender sender) : ErpEndpoint<OpenOp
 
     public override async Task HandleAsync(OpenOpportunityRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new OpenOpportunityCommand(req.OrganizationId, req.EnvironmentId, req.OpportunityNo, req.CustomerCode, req.Topic), ct);
+        var id = await sender.Send(new OpenOpportunityCommand(req.OrganizationId, req.EnvironmentId, req.OpportunityNo, req.CustomerCode, req.Topic, req.IdempotencyKey), ct);
         await Send.OkAsync(new OpenOpportunityResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -55,7 +55,7 @@ public sealed class CreateQuotationEndpoint(ISender sender) : ErpEndpoint<Create
 
     public override async Task HandleAsync(CreateQuotationRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateQuotationCommand(req.OrganizationId, req.EnvironmentId, req.QuotationNo, req.CustomerCode, req.ExpiresOn, req.Lines), ct);
+        var id = await sender.Send(new CreateQuotationCommand(req.OrganizationId, req.EnvironmentId, req.QuotationNo, req.CustomerCode, req.ExpiresOn, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateQuotationResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -77,7 +77,7 @@ public sealed class CreateSalesOrderEndpoint(ISender sender) : ErpEndpoint<Creat
 
     public override async Task HandleAsync(CreateSalesOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.QuotationNo), ct);
+        var id = await sender.Send(new CreateSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.QuotationNo, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateSalesOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -88,7 +88,7 @@ public sealed class ReleaseDeliveryOrderEndpoint(ISender sender) : ErpEndpoint<R
 
     public override async Task HandleAsync(ReleaseDeliveryOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new ReleaseDeliveryOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeliveryOrderNo, req.SalesOrderNo, req.Lines), ct);
+        var id = await sender.Send(new ReleaseDeliveryOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeliveryOrderNo, req.SalesOrderNo, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new ReleaseDeliveryOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -110,7 +110,7 @@ public sealed class CreateAccountPayableEndpoint(ISender sender) : ErpEndpoint<C
 
     public override async Task HandleAsync(CreateAccountPayableRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateAccountPayableCommand(req.OrganizationId, req.EnvironmentId, req.PayableNo, req.SourceDocumentNo, req.SupplierCode, req.Amount, req.CurrencyCode), ct);
+        var id = await sender.Send(new CreateAccountPayableCommand(req.OrganizationId, req.EnvironmentId, req.PayableNo, req.SourceDocumentNo, req.SupplierCode, req.Amount, req.CurrencyCode, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateAccountPayableResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -121,7 +121,7 @@ public sealed class CreateAccountReceivableEndpoint(ISender sender) : ErpEndpoin
 
     public override async Task HandleAsync(CreateAccountReceivableRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateAccountReceivableCommand(req.OrganizationId, req.EnvironmentId, req.ReceivableNo, req.SourceDocumentNo, req.CustomerCode, req.Amount, req.CurrencyCode), ct);
+        var id = await sender.Send(new CreateAccountReceivableCommand(req.OrganizationId, req.EnvironmentId, req.ReceivableNo, req.SourceDocumentNo, req.CustomerCode, req.Amount, req.CurrencyCode, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateAccountReceivableResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -132,7 +132,7 @@ public sealed class CreateCostCandidateEndpoint(ISender sender) : ErpEndpoint<Cr
 
     public override async Task HandleAsync(CreateCostCandidateRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateCostCandidateCommand(req.OrganizationId, req.EnvironmentId, req.CandidateNo, req.SourceType, req.SourceDocumentNo, req.Amount, req.CurrencyCode), ct);
+        var id = await sender.Send(new CreateCostCandidateCommand(req.OrganizationId, req.EnvironmentId, req.CandidateNo, req.SourceType, req.SourceDocumentNo, req.Amount, req.CurrencyCode, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateCostCandidateResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -143,7 +143,7 @@ public sealed class PostJournalVoucherEndpoint(ISender sender) : ErpEndpoint<Pos
 
     public override async Task HandleAsync(PostJournalVoucherRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new PostJournalVoucherCommand(req.OrganizationId, req.EnvironmentId, req.VoucherNo, req.PostingDate, req.Lines), ct);
+        var id = await sender.Send(new PostJournalVoucherCommand(req.OrganizationId, req.EnvironmentId, req.VoucherNo, req.PostingDate, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new PostJournalVoucherResponse(id).AsResponseData(), cancellation: ct);
     }
 }

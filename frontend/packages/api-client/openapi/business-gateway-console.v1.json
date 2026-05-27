@@ -4556,7 +4556,8 @@
             "nullable": true
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -4900,7 +4901,8 @@
             "type": "string"
           },
           "workOrderId": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "skuId": {
             "type": "string"
@@ -4932,6 +4934,10 @@
           "durationMinutes": {
             "type": "integer",
             "format": "int32"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -6190,7 +6196,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name",
           "baseUomCode",
           "category",
@@ -6218,7 +6223,7 @@
             "type": "string",
             "maxLength": 64,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
@@ -6283,6 +6288,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
