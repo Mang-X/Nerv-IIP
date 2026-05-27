@@ -9,6 +9,7 @@ public sealed record PerformanceBaselineSettings(
 {
     public const string ConnectionStringEnvironmentVariable = "NERV_IIP_PERF_POSTGRES";
     public const string ScenarioEnvironmentVariable = "NERV_IIP_PERF_SCENARIO";
+    public const string MetricsPathEnvironmentVariable = "NERV_IIP_PERF_METRICS_PATH";
 
     public static PerformanceBaselineSettings FromEnvironment()
     {

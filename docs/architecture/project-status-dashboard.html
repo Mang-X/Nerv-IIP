@@ -371,9 +371,9 @@
         </div>
         <h1>Nerv-IIP 项目状态看板</h1>
         <p>
-          生成时间：2026-05-25；2026-05-27 已按 APS/IIoT P0 重排更新（文档收口快照，非实时看板）。基于 <code>implementation-readiness.md</code>、代码目录、验证脚本、
+          生成时间：2026-05-26；2026-05-27 已按 APS/IIoT P0 重排更新（文档收口快照，非实时看板）。基于 <code>implementation-readiness.md</code>、代码目录、验证脚本、
           GitHub issue 与端口矩阵核查结果。当前判断：平台控制面、业务服务 MVP、BusinessGateway/BusinessConsole、
-          FileStorage MVP、事件可靠性、生产部署 artifacts、性能 smoke 与 #77 P0 full-chain acceptance 已形成基线；接下来应优先推进 #188-#207 的 MES operational foundation reset，并并行保留 #142 对象存储、PDA/mobile、事件可靠性和部署发布 hardening。
+          FileStorage MVP、事件可靠性、生产部署 artifacts、release rehearsal、性能阈值化与 #77 P0 full-chain acceptance 已形成基线；接下来应优先推进 #188-#207 的 MES operational foundation reset，并并行保留 #142 对象存储、PDA/mobile、事件可靠性和部署发布 hardening。
         </p>
       </div>
       <div class="panel hero-kpis" aria-label="项目关键指标">
@@ -469,15 +469,15 @@
         </tr>
       </thead>
       <tbody>
-        <tr><td>#77 Full-chain acceptance</td><td><span class="status done">P0 收口</span></td><td>默认 governed verify 覆盖 WMS live HTTP TestServer proof、MES/ERP public surfaces 和七条链路 acceptance evidence；合并 PR 后关闭。</td></tr>
+        <tr><td>#77 Full-chain acceptance</td><td><span class="status done">P0 收口</span></td><td>默认 governed verify 覆盖 WMS live HTTP TestServer proof、MES/ERP public surfaces 和七条链路 acceptance evidence；已完成关闭。</td></tr>
         <tr><td>#188-#207 MES operational foundation reset</td><td><span class="status gap">P0 主线</span></td><td>围绕减振器制造场景补自动编号、主数据、工程资料、MRP、采购供应、齐套领料、MES 生命周期、质量设备 readiness、PC 工作流、APS lite 和设备 IIoT 联动。</td></tr>
         <tr><td>#206 APS 调度内核</td><td><span class="status gap">P0 新边界</span></td><td>后端排程契约、有限产能启发式内核、资源负载和冲突解释；#78 甘特图只消费输出，不承担算法。</td></tr>
         <tr><td>#207 设备 IIoT 联动</td><td><span class="status gap">P0 新边界</span></td><td>设备状态、报警、停机、维护窗口进入 APS 可用性和 MES readiness；不控制 PLC/DCS/SCADA。</td></tr>
         <tr><td>#142 MinIO/S3 multipart</td><td><span class="status gap">开放补强</span></td><td>FileStorage MVP 与 tus hardening 已落地；#142 聚焦 post-MVP MinIO/S3 multipart/object storage provider。</td></tr>
         <tr><td>#78 甘特/RFC</td><td><span class="status gap">开放 RFC</span></td><td>保留为 shadcn-vue + Leafer UI 甘特/排产图技术方案评估；前端消费 #206 输出，不进入调度算法边界。</td></tr>
         <tr><td>#70 / #71 / #141 / #143</td><td><span class="status done">已关闭</span></td><td>平台一期/二期、FileStorage tus hardening 和 Business Console component readiness 已形成当前基线；后续增量另开 issue。</td></tr>
-        <tr><td>#127-#140</td><td><span class="status done">已关闭</span></td><td>业务 waves、ERP、全链路 baseline support 和 equipment reliability 已落地；#77 P0 收口 PR 承接最终关闭。</td></tr>
-        <tr><td>#166-#175</td><td><span class="status done">已关闭</span></td><td>Security、event reliability、ExternalClient、production deployment artifacts 与 performance baseline 已进入当前事实源。</td></tr>
+        <tr><td>#127-#140</td><td><span class="status done">已关闭</span></td><td>业务 waves、ERP、全链路 baseline support、equipment reliability 和 #77 P0 收口已落地。</td></tr>
+        <tr><td>#166-#175</td><td><span class="status done">已关闭</span></td><td>Security、event reliability、ExternalClient、production deployment artifacts、release rehearsal 与 performance threshold gate 已进入当前事实源。</td></tr>
       </tbody>
     </table>
 
@@ -510,8 +510,8 @@
       <article class="section-card lane violet">
         <h3>发布 / 可靠性硬化</h3>
         <ul>
-          <li>生产 artifacts 已有基线；下一步补 Windows Service/systemd、备份恢复演练、seed 清单和现场诊断。</li>
-          <li>真实 PostgreSQL/RabbitMQ/外部设备联调作为 hardening profile 增量，不阻塞 #77 P0 关闭。</li>
+          <li>生产 artifacts、release rehearsal 和性能阈值化已有基线；下一步补 Windows Service/systemd、备份恢复演练、seed 清单和现场诊断。</li>
+          <li>真实 PostgreSQL/RabbitMQ/外部设备联调作为 hardening profile 增量，不阻塞业务推进。</li>
           <li>新脚本必须 dot-source <code>scripts/lib/ScriptAutomation.ps1</code> 并过治理检查。</li>
         </ul>
       </article>
