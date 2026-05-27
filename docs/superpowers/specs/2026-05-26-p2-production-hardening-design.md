@@ -43,6 +43,8 @@ IAM 已有 persistent users/roles/permissions/sessions、JWT、refresh token、i
 
 ABAC 的第一版只覆盖组织、环境、资源类型和资源 id 范围，不引入复杂策略语言。Gateway 继续是终端用户 bearer 的 enforcement 边界，业务服务只接受 internal service token。
 
+2026-05-27 收口：IAM 已提供配置驱动的外部 OIDC callback 入口 `/api/iam/v1/auth/oidc/callback`，按 provider callback secret、subject、email、organizationId 和 environmentId 映射既有 IAM 用户与 membership；`RequireMfa=true` 时先返回 MFA challenge，再由 `/api/iam/v1/auth/mfa/challenges/{challengeId}/verify` 换发 session。`user_sessions` 增加 authentication method、external provider、external subject 和 MFA verified time，用于 SSO session binding。`authorization_grants` 增加 resource type/resource id，ExternalClient internal authorization check 会同时校验 permission、organization/environment 和资源范围；`*` 表示 wildcard。本阶段仍不实现完整 OAuth/OIDC 授权码服务器、id_token/JWKS 校验、consent 页面、动态客户端注册 UI、WebAuthn 或复杂策略语言。
+
 ## 验收口径
 
 - 默认本地验证仍保持轻量，不强制 Docker/PostgreSQL/RabbitMQ。

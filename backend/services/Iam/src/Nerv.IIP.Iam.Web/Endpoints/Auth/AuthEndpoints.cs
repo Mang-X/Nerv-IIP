@@ -75,6 +75,38 @@ public sealed class ClientCredentialsTokenEndpoint(IIamAuthService auth) : Endpo
     }
 }
 
+[HttpPost("/api/iam/v1/auth/oidc/callback")]
+[AllowAnonymous]
+public sealed class OidcLoginCallbackEndpoint(IIamAuthService auth) : Endpoint<OidcLoginCallbackRequest, ResponseData<EnterpriseAuthResponse>>
+{
+    public override async Task HandleAsync(OidcLoginCallbackRequest req, CancellationToken ct)
+    {
+        await IamEndpointResults.WriteAuthResultAsync(
+            HttpContext,
+            () => auth.HandleOidcCallbackAsync(req, UserAgent(), RemoteIp(), ct),
+            ct);
+    }
+
+    private string? UserAgent() => HttpContext.Request.Headers.UserAgent.ToString();
+    private string? RemoteIp() => HttpContext.Connection.RemoteIpAddress?.ToString();
+}
+
+[HttpPost("/api/iam/v1/auth/mfa/challenges/{challengeId}/verify")]
+[AllowAnonymous]
+public sealed class VerifyMfaChallengeEndpoint(IIamAuthService auth) : Endpoint<MfaChallengeVerifyRequest, ResponseData<EnterpriseAuthResponse>>
+{
+    public override async Task HandleAsync(MfaChallengeVerifyRequest req, CancellationToken ct)
+    {
+        await IamEndpointResults.WriteAuthResultAsync(
+            HttpContext,
+            () => auth.VerifyMfaChallengeAsync(Route<string>("challengeId")!, req.Code, UserAgent(), RemoteIp(), ct),
+            ct);
+    }
+
+    private string? UserAgent() => HttpContext.Request.Headers.UserAgent.ToString();
+    private string? RemoteIp() => HttpContext.Connection.RemoteIpAddress?.ToString();
+}
+
 [HttpGet("/api/iam/v1/me")]
 [AllowAnonymous]
 public sealed class GetMeEndpoint(IIamAuthService auth) : EndpointWithoutRequest<ResponseData<CurrentPrincipalResponse>>

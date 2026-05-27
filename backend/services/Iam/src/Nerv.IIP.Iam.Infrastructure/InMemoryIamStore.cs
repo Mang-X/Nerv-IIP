@@ -225,18 +225,76 @@ public sealed class InMemoryIamStore
 
     public bool ExternalClientHasPermission(string clientId, string organizationId, string environmentId, string permissionCode)
     {
+        return ExternalClientHasPermission(clientId, organizationId, environmentId, permissionCode, null, null);
+    }
+
+    public bool ExternalClientHasPermission(
+        string clientId,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        string? resourceType,
+        string? resourceId)
+    {
         lock (_gate)
         {
             var now = DateTimeOffset.UtcNow;
+            var normalizedResourceType = NormalizeResourceScope(resourceType);
+            var normalizedResourceId = NormalizeResourceScope(resourceId);
             return _authorizationGrants.Any(x =>
                 x.PrincipalType == "external-client"
                 && x.PrincipalId == clientId
                 && x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
                 && x.PermissionCode == permissionCode
+                && (x.ResourceType == "*"
+                    || (x.ResourceType == normalizedResourceType
+                        && (x.ResourceId == "*" || x.ResourceId == normalizedResourceId)))
                 && x.ValidFromUtc <= now
                 && (x.ValidToUtc is null || x.ValidToUtc > now)
                 && x.RevokedAtUtc is null);
+        }
+    }
+
+    public bool UserHasMembership(string userId, string organizationId, string environmentId)
+    {
+        lock (_gate)
+        {
+            return _memberships.Any(x =>
+                x.UserId == userId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId);
+        }
+    }
+
+    public UserFact? FindUserByEmail(string email)
+    {
+        lock (_gate)
+        {
+            return _users.SingleOrDefault(x =>
+                x.Enabled
+                && string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public AuthResult CreateEnterpriseSession(
+        string userId,
+        string organizationId,
+        string environmentId,
+        string authenticationMethod,
+        string externalProvider,
+        string externalSubject,
+        DateTimeOffset? mfaVerifiedAtUtc)
+    {
+        lock (_gate)
+        {
+            var user = _users.Single(x => x.UserId == userId && x.Enabled);
+            if (!UserHasMembership(userId, organizationId, environmentId))
+            {
+                throw new UnauthorizedAccessException("User is not a member of the requested organization environment.");
+            }
+
+            return CreateSession(user, organizationId, environmentId, authenticationMethod, externalProvider, externalSubject, mfaVerifiedAtUtc);
         }
     }
 
@@ -374,7 +432,18 @@ public sealed class InMemoryIamStore
         var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         var now = DateTimeOffset.UtcNow;
         var expiresAtUtc = now.AddMinutes(15);
-        var session = new UserSessionFact(sessionId, user.UserId, Hash(refreshToken), now, now.AddDays(14), null, user.PermissionVersion);
+        var session = new UserSessionFact(
+            sessionId,
+            user.UserId,
+            Hash(refreshToken),
+            now,
+            now.AddDays(14),
+            null,
+            user.PermissionVersion,
+            "password",
+            null,
+            null,
+            null);
         _sessions.Add(session);
         var membership = _memberships
             .OrderBy(x => x.OrganizationId, StringComparer.Ordinal)
@@ -396,6 +465,48 @@ public sealed class InMemoryIamStore
             membership?.EnvironmentId);
     }
 
+    private AuthResult CreateSession(
+        UserFact user,
+        string organizationId,
+        string environmentId,
+        string authenticationMethod,
+        string? externalProvider,
+        string? externalSubject,
+        DateTimeOffset? mfaVerifiedAtUtc)
+    {
+        var sessionId = Guid.NewGuid().ToString("n");
+        var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var now = DateTimeOffset.UtcNow;
+        var expiresAtUtc = now.AddMinutes(15);
+        var session = new UserSessionFact(
+            sessionId,
+            user.UserId,
+            Hash(refreshToken),
+            now,
+            now.AddDays(14),
+            null,
+            user.PermissionVersion,
+            authenticationMethod,
+            externalProvider,
+            externalSubject,
+            mfaVerifiedAtUtc);
+        _sessions.Add(session);
+        var accessToken = Convert.ToBase64String(Encoding.UTF8.GetBytes(
+            $"{sessionId}|{user.SecurityStamp}|{user.PermissionVersion}|{expiresAtUtc.ToUnixTimeSeconds()}"));
+        return new AuthResult(
+            accessToken,
+            refreshToken,
+            sessionId,
+            expiresAtUtc,
+            user.UserId,
+            user.SecurityStamp,
+            user.PermissionVersion,
+            user.LoginName,
+            user.Email,
+            organizationId,
+            environmentId);
+    }
+
     private void RevokeSession(string sessionId)
     {
         var session = _sessions.SingleOrDefault(x => x.SessionId == sessionId);
@@ -414,7 +525,9 @@ public sealed class InMemoryIamStore
         _memberships.Add(new MembershipFact("user-admin", "org-001", "env-dev", new HashSet<string> { "role-platform-admin" }));
         _connectorHostCredentials.Add(new ConnectorHostCredentialFact("connector-host-001", "org-001", "env-dev", new HashSet<string>(NervIipSeedPermissions.All.Where(x => x.StartsWith("connectors.", StringComparison.Ordinal))), Hash("local-connector-secret"), DateTimeOffset.UtcNow.AddDays(-1), null));
         _externalClients.Add(new ExternalClientFact("external-client-demo", "Demo External Client", "org-001", "env-dev", Hash("external-client-secret"), true, 1, DateTimeOffset.UtcNow.AddDays(-1), null));
-        _authorizationGrants.Add(new AuthorizationGrantFact("external-client", "external-client-demo", "org-001", "env-dev", "ops.tasks.create", DateTimeOffset.UtcNow.AddDays(-1), null, null));
+        _authorizationGrants.Add(new AuthorizationGrantFact("external-client", "external-client-demo", "org-001", "env-dev", "ops.tasks.create", "*", "*", DateTimeOffset.UtcNow.AddDays(-1), null, null));
+        _externalClients.Add(new ExternalClientFact("external-client-resource-demo", "Resource Scoped External Client", "org-001", "env-dev", Hash("external-client-resource-secret"), true, 1, DateTimeOffset.UtcNow.AddDays(-1), null));
+        _authorizationGrants.Add(new AuthorizationGrantFact("external-client", "external-client-resource-demo", "org-001", "env-dev", "ops.tasks.create", "operation-template", "restart-critical", DateTimeOffset.UtcNow.AddDays(-1), null, null));
     }
 
     private void EnsureUserIsUnique(string? currentUserId, string loginName, string email)
@@ -459,6 +572,9 @@ public sealed class InMemoryIamStore
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToHashSet(StringComparer.Ordinal);
     }
+
+    private static string NormalizeResourceScope(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "*" : value.Trim();
 }
 
 public sealed record AuthResult(
@@ -506,6 +622,8 @@ public sealed record AuthorizationGrantFact(
     string OrganizationId,
     string EnvironmentId,
     string PermissionCode,
+    string ResourceType,
+    string ResourceId,
     DateTimeOffset ValidFromUtc,
     DateTimeOffset? ValidToUtc,
     DateTimeOffset? RevokedAtUtc);

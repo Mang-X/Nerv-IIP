@@ -153,6 +153,11 @@ public interface IMembershipRepository : IRepository<Membership, MembershipId>
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         CancellationToken cancellationToken = default);
+    Task<bool> UserHasMembershipAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class MembershipRepository(ApplicationDbContext context)
@@ -226,6 +231,19 @@ public sealed class MembershipRepository(ApplicationDbContext context)
             .Distinct()
             .OrderBy(x => x)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> UserHasMembershipAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Memberships.AnyAsync(
+            x => x.UserId == userId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId,
+            cancellationToken);
     }
 }
 
@@ -330,6 +348,8 @@ public interface IExternalClientRepository : IRepository<ExternalClient, Externa
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         string permissionCode,
+        string? resourceType,
+        string? resourceId,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 }
@@ -361,11 +381,20 @@ public sealed class ExternalClientRepository(ApplicationDbContext context)
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         string permissionCode,
+        string? resourceType,
+        string? resourceId,
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        var normalizedResourceType = AuthorizationGrant.NormalizeResourceScope(resourceType);
+        var normalizedResourceId = AuthorizationGrant.NormalizeResourceScope(resourceId);
         return await ActiveGrantQuery(clientId, organizationId, environmentId, now)
-            .AnyAsync(x => x.PermissionCode == permissionCode, cancellationToken);
+            .AnyAsync(
+                x => x.PermissionCode == permissionCode
+                    && (x.ResourceType == "*"
+                        || (x.ResourceType == normalizedResourceType
+                            && (x.ResourceId == "*" || x.ResourceId == normalizedResourceId))),
+                cancellationToken);
     }
 
     private IQueryable<AuthorizationGrant> ActiveGrantQuery(

@@ -5,7 +5,18 @@ public sealed record IamEnvironmentFact(string EnvironmentId, string Organizatio
 public sealed record UserFact(string UserId, string LoginName, string Email, string PasswordHash, bool Enabled, string SecurityStamp, int PermissionVersion);
 public sealed record RoleFact(string RoleId, string RoleName, IReadOnlySet<string> PermissionCodes);
 public sealed record MembershipFact(string UserId, string OrganizationId, string EnvironmentId, IReadOnlySet<string> RoleIds);
-public sealed record UserSessionFact(string SessionId, string UserId, string RefreshTokenHash, DateTimeOffset IssuedAtUtc, DateTimeOffset ExpiresAtUtc, DateTimeOffset? RevokedAtUtc, int PermissionVersion);
+public sealed record UserSessionFact(
+    string SessionId,
+    string UserId,
+    string RefreshTokenHash,
+    DateTimeOffset IssuedAtUtc,
+    DateTimeOffset ExpiresAtUtc,
+    DateTimeOffset? RevokedAtUtc,
+    int PermissionVersion,
+    string AuthenticationMethod,
+    string? ExternalProvider,
+    string? ExternalSubject,
+    DateTimeOffset? MfaVerifiedAtUtc);
 public sealed record ConnectorHostCredentialFact(string ConnectorHostId, string OrganizationId, string EnvironmentId, IReadOnlySet<string> CapabilityScope, string SecretHash, DateTimeOffset ValidFromUtc, DateTimeOffset? ValidToUtc);
 
 public static class NervIipSeedPermissions

@@ -61,9 +61,11 @@ public sealed class AuthorizationGrantEntityTypeConfiguration : IEntityTypeConfi
             .HasMaxLength(64)
             .HasComment("Grant environment scope.");
         builder.Property(x => x.PermissionCode).IsRequired().HasMaxLength(160).HasComment("Granted permission code.");
+        builder.Property(x => x.ResourceType).IsRequired().HasMaxLength(128).HasDefaultValue("*").HasComment("ABAC resource type scope. '*' grants every resource type.");
+        builder.Property(x => x.ResourceId).IsRequired().HasMaxLength(160).HasDefaultValue("*").HasComment("ABAC resource identifier scope. '*' grants every resource id under the resource type.");
         builder.Property(x => x.ValidFromUtc).HasComment("Grant validity start time in UTC.");
         builder.Property(x => x.ValidToUtc).HasComment("Grant validity end time in UTC.");
         builder.Property(x => x.RevokedAtUtc).HasComment("Grant revocation time in UTC.");
-        builder.HasIndex(x => new { x.PrincipalType, x.PrincipalId, x.OrganizationId, x.EnvironmentId, x.PermissionCode }).IsUnique();
+        builder.HasIndex(x => new { x.PrincipalType, x.PrincipalId, x.OrganizationId, x.EnvironmentId, x.PermissionCode, x.ResourceType, x.ResourceId }).IsUnique();
     }
 }

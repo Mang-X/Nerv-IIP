@@ -80,6 +80,8 @@ public class AuthorizationGrant : Entity<AuthorizationGrantId>, IAggregateRoot
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         string permissionCode,
+        string resourceType,
+        string resourceId,
         DateTimeOffset validFromUtc,
         DateTimeOffset? validToUtc)
     {
@@ -89,6 +91,8 @@ public class AuthorizationGrant : Entity<AuthorizationGrantId>, IAggregateRoot
         OrganizationId = organizationId;
         EnvironmentId = environmentId;
         PermissionCode = permissionCode;
+        ResourceType = NormalizeResourceScope(resourceType);
+        ResourceId = NormalizeResourceScope(resourceId);
         ValidFromUtc = validFromUtc;
         ValidToUtc = validToUtc;
     }
@@ -98,6 +102,8 @@ public class AuthorizationGrant : Entity<AuthorizationGrantId>, IAggregateRoot
     public OrganizationId OrganizationId { get; private set; }
     public IamEnvironmentId EnvironmentId { get; private set; }
     public string PermissionCode { get; private set; } = string.Empty;
+    public string ResourceType { get; private set; } = "*";
+    public string ResourceId { get; private set; } = "*";
     public DateTimeOffset ValidFromUtc { get; private set; }
     public DateTimeOffset? ValidToUtc { get; private set; }
     public DateTimeOffset? RevokedAtUtc { get; private set; }
@@ -107,5 +113,19 @@ public class AuthorizationGrant : Entity<AuthorizationGrantId>, IAggregateRoot
         return ValidFromUtc <= now
             && (ValidToUtc is null || ValidToUtc > now)
             && RevokedAtUtc is null;
+    }
+
+    public bool MatchesResourceScope(string? resourceType, string? resourceId)
+    {
+        var normalizedResourceType = NormalizeResourceScope(resourceType);
+        var normalizedResourceId = NormalizeResourceScope(resourceId);
+        return ResourceType == "*"
+            || (string.Equals(ResourceType, normalizedResourceType, StringComparison.Ordinal)
+                && (ResourceId == "*" || string.Equals(ResourceId, normalizedResourceId, StringComparison.Ordinal)));
+    }
+
+    public static string NormalizeResourceScope(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "*" : value.Trim();
     }
 }

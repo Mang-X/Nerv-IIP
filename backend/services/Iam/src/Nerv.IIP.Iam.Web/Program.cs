@@ -30,6 +30,8 @@ builder.Services.AddNervIipObservability(builder.Configuration, "iam");
 builder.Services.AddNervIipLocalization();
 builder.Services.AddIamPersistence(builder.Configuration);
 builder.Services.Configure<IamSeedOptions>(builder.Configuration.GetSection("Iam:Seed"));
+builder.Services.Configure<EnterpriseIdentityOptions>(builder.Configuration.GetSection("Iam:EnterpriseIdentity"));
+builder.Services.AddSingleton<IMfaChallengeStore, InMemoryMfaChallengeStore>();
 builder.Services.AddScoped<IamPasswordService>();
 builder.Services.AddScoped<IamTokenService>();
 if (usesPostgreSql)

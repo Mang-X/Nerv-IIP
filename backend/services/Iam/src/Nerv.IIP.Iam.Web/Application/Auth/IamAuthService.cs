@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
@@ -5,6 +7,7 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
+using Microsoft.Extensions.Options;
 using NetCorePal.Extensions.Domain;
 
 namespace Nerv.IIP.Iam.Web.Application.Auth;
@@ -16,7 +19,9 @@ public sealed class PostgreSqlIamAuthService(
     IConnectorHostCredentialRepository connectorHostCredentialRepository,
     IExternalClientRepository externalClientRepository,
     IamPasswordService passwordService,
-    IamTokenService tokenService)
+    IamTokenService tokenService,
+    IOptions<EnterpriseIdentityOptions> enterpriseIdentityOptions,
+    IMfaChallengeStore mfaChallenges)
     : IIamAuthService
 {
     public async Task<AuthResponse> LoginAsync(
@@ -247,6 +252,8 @@ public sealed class PostgreSqlIamAuthService(
         string organizationId,
         string environmentId,
         string permissionCode,
+        string? resourceType,
+        string? resourceId,
         CancellationToken cancellationToken)
     {
         if (!string.Equals(principal.PrincipalType, "user", StringComparison.Ordinal))
@@ -256,6 +263,8 @@ public sealed class PostgreSqlIamAuthService(
                     new OrganizationId(organizationId),
                     new IamEnvironmentId(environmentId),
                     permissionCode,
+                    resourceType,
+                    resourceId,
                     DateTimeOffset.UtcNow,
                     cancellationToken);
         }
@@ -268,11 +277,104 @@ public sealed class PostgreSqlIamAuthService(
             cancellationToken);
     }
 
+    public async Task<EnterpriseAuthResponse> HandleOidcCallbackAsync(
+        OidcLoginCallbackRequest request,
+        string? clientInfo,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        var provider = GetEnabledProvider(request.Provider);
+        EnsureCallbackSecret(request.CallbackSecret, provider);
+        EnsureAllowedEmailDomain(request.Email, provider);
+        var user = await userRepository.GetByEmailAsync(request.Email, cancellationToken);
+        if (user is null || !user.Enabled)
+        {
+            throw Unauthorized();
+        }
+
+        var organizationId = new OrganizationId(request.OrganizationId);
+        var environmentId = new IamEnvironmentId(request.EnvironmentId);
+        if (!await membershipRepository.UserHasMembershipAsync(user.Id, organizationId, environmentId, cancellationToken))
+        {
+            throw Unauthorized();
+        }
+
+        user.RecordSuccessfulLogin(DateTimeOffset.UtcNow);
+        if (provider.RequireMfa)
+        {
+            var challengeId = mfaChallenges.Create(new MfaChallengeContext(
+                user.Id.Id,
+                request.Provider,
+                request.Subject,
+                request.OrganizationId,
+                request.EnvironmentId,
+                DateTimeOffset.UtcNow.AddMinutes(GetMfaChallengeMinutes())));
+            return EnterpriseAuthResponse.Challenge(challengeId);
+        }
+
+        return EnterpriseAuthResponse.Authenticated(await CreateSessionResponseAsync(
+            user,
+            clientInfo,
+            ipAddress,
+            cancellationToken,
+            "oidc",
+            request.Provider,
+            request.Subject,
+            null));
+    }
+
+    public async Task<EnterpriseAuthResponse> VerifyMfaChallengeAsync(
+        string challengeId,
+        string code,
+        string? clientInfo,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        var context = mfaChallenges.Consume(
+            challengeId,
+            code,
+            enterpriseIdentityOptions.Value.Mfa.DevelopmentCode);
+        if (context is null)
+        {
+            throw Unauthorized();
+        }
+
+        var user = await userRepository.GetByIdAsync(new UserId(context.UserId), cancellationToken);
+        if (user is null || !user.Enabled)
+        {
+            throw Unauthorized();
+        }
+
+        if (!await membershipRepository.UserHasMembershipAsync(
+                user.Id,
+                new OrganizationId(context.OrganizationId),
+                new IamEnvironmentId(context.EnvironmentId),
+                cancellationToken))
+        {
+            throw Unauthorized();
+        }
+
+        user.RecordSuccessfulLogin(DateTimeOffset.UtcNow);
+        return EnterpriseAuthResponse.Authenticated(await CreateSessionResponseAsync(
+            user,
+            clientInfo,
+            ipAddress,
+            cancellationToken,
+            "oidc",
+            context.Provider,
+            context.Subject,
+            DateTimeOffset.UtcNow));
+    }
+
     private async Task<AuthResponse> CreateSessionResponseAsync(
         User user,
         string? clientInfo,
         string? ipAddress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string authenticationMethod = "password",
+        string? externalProvider = null,
+        string? externalSubject = null,
+        DateTimeOffset? mfaVerifiedAtUtc = null)
     {
         var refreshToken = tokenService.CreateRefreshToken();
         var now = DateTimeOffset.UtcNow;
@@ -284,7 +386,11 @@ public sealed class PostgreSqlIamAuthService(
             now.AddDays(14),
             user.PermissionVersion,
             clientInfo,
-            ipAddress);
+            ipAddress,
+            authenticationMethod,
+            externalProvider,
+            externalSubject,
+            mfaVerifiedAtUtc);
 
         await userSessionRepository.AddAsync(session, cancellationToken);
         var membership = await membershipRepository.GetFirstByUserIdAsync(user.Id, cancellationToken);
@@ -315,5 +421,54 @@ public sealed class PostgreSqlIamAuthService(
         return scope
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private OidcProviderOptions GetEnabledProvider(string provider)
+    {
+        if (!enterpriseIdentityOptions.Value.OidcProviders.TryGetValue(provider, out var options)
+            || !options.Enabled)
+        {
+            throw Unauthorized();
+        }
+
+        return options;
+    }
+
+    private static void EnsureCallbackSecret(string callbackSecret, OidcProviderOptions provider)
+    {
+        if (string.IsNullOrWhiteSpace(provider.CallbackSecret)
+            || !FixedTimeEquals(callbackSecret, provider.CallbackSecret))
+        {
+            throw Unauthorized();
+        }
+    }
+
+    private static void EnsureAllowedEmailDomain(string email, OidcProviderOptions provider)
+    {
+        if (string.IsNullOrWhiteSpace(provider.AllowedEmailDomain))
+        {
+            return;
+        }
+
+        var suffix = $"@{provider.AllowedEmailDomain.TrimStart('@')}";
+        if (!email.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw Unauthorized();
+        }
+    }
+
+    private int GetMfaChallengeMinutes()
+    {
+        return enterpriseIdentityOptions.Value.Mfa.ChallengeMinutes > 0
+            ? enterpriseIdentityOptions.Value.Mfa.ChallengeMinutes
+            : 5;
+    }
+
+    private static bool FixedTimeEquals(string left, string right)
+    {
+        var leftBytes = Encoding.UTF8.GetBytes(left);
+        var rightBytes = Encoding.UTF8.GetBytes(right);
+        return leftBytes.Length == rightBytes.Length
+            && CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
     }
 }
