@@ -30,6 +30,12 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.DefaultMaxAttempts).HasComment("Template-provided default maximum execution attempts captured at task creation.");
         builder.Property(x => x.DefaultLeaseDurationSeconds).HasComment("Template-provided default connector lease duration captured at task creation.");
         builder.Property(x => x.RequiresApproval).HasComment("Whether the selected template requires approval before task execution.");
+        builder.Property(x => x.ApprovalStatus).HasMaxLength(32).HasComment("Operation approval status when approval is required.");
+        builder.Property(x => x.ApprovalRequestedBy).HasMaxLength(128).HasComment("Actor that requested approval for a high-risk operation.");
+        builder.Property(x => x.ApprovalRequestedAtUtc).HasComment("Approval request time in UTC.");
+        builder.Property(x => x.ApprovalDecidedBy).HasMaxLength(128).HasComment("Actor that approved or rejected the operation.");
+        builder.Property(x => x.ApprovalDecidedAtUtc).HasComment("Approval decision time in UTC.");
+        builder.Property(x => x.ApprovalDecisionReason).HasMaxLength(512).HasComment("Approval decision reason.");
         builder.Property(x => x.Deleted).HasConversion(x => x.Value, x => new Deleted(x)).HasComment("Soft delete flag.");
         builder.Property(x => x.RowVersion).HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version.");
 
