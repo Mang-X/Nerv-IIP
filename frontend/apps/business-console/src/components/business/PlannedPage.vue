@@ -16,12 +16,11 @@ defineProps<{
         <h1 class="text-xl font-semibold text-foreground">{{ routeName }}</h1>
         <p class="mt-1 max-w-3xl text-sm text-muted-foreground">{{ summary }}</p>
       </div>
-      <Badge variant="secondary">MVP route</Badge>
+      <Badge variant="secondary">待完善路由</Badge>
     </div>
 
     <div class="rounded-lg border bg-background p-4 text-sm text-muted-foreground">
-      This route is wired into the authenticated Business Console shell. Data tables and forms land
-      here in the next vertical-slice tasks.
+      当前路由已接入业务控制台认证壳，数据表格和表单将在后续纵切任务中落地。
     </div>
   </section>
 </template>

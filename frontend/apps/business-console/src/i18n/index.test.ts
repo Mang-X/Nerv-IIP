@@ -9,10 +9,10 @@ describe('business console i18n', () => {
     expect(i18n.global.t('login.title')).toBe('登录')
   })
 
-  it('renders English business navigation messages', () => {
+  it('keeps business navigation Chinese when en-US is requested', () => {
     const i18n = createBusinessConsoleI18n({ locale: 'en-US' })
 
-    expect(i18n.global.t('nav.inventory')).toBe('Inventory')
-    expect(i18n.global.t('routes.schedules')).toBe('MES schedules')
+    expect(i18n.global.t('nav.inventory')).toBe('库存')
+    expect(i18n.global.t('routes.schedules')).toBe('MES 排程')
   })
 })

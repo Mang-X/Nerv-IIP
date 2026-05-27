@@ -44,6 +44,7 @@ export type NervIipContractsOpsAuditRecordSummary = {
     actor?: string;
     occurredAtUtc?: string;
     correlationId?: string;
+    integrityHash?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseData = {

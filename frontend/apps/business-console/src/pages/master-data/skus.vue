@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
 import { useBusinessSkus } from '@/composables/useBusinessMasterData'
+import { demoSkus, mergeByKey } from '@/data/shockAbsorberDemo'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type { BusinessConsoleCreateSkuRequest, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
@@ -16,6 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
+  FieldDescription,
   FieldGroup,
   FieldLabel,
   Input,
@@ -33,15 +36,17 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, shallowRef } from 'vue'
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, PlusIcon, RefreshCwIcon, WandSparklesIcon } from 'lucide-vue-next'
+import { computed, reactive, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
     requiresAuth: true,
-    title: 'routes.skus',
+    title: '物料与产品',
   },
 })
+
+type SortColumn = 'code' | 'displayName' | 'resourceType' | 'active' | 'snapshotVersion'
 
 const {
   createSku,
@@ -56,32 +61,82 @@ const {
 
 const createOpen = shallowRef(false)
 const createSuccess = shallowRef('')
-
+const localSkus = shallowRef<BusinessConsoleResourceItem[]>([])
+const filterDraft = reactive({
+  keyword: '',
+  includeDisabled: false,
+})
+const appliedFilter = reactive({
+  keyword: '',
+  includeDisabled: false,
+})
+const tableState = reactive({
+  page: 1,
+  pageSize: '10',
+  sortBy: 'code' as SortColumn,
+  sortDirection: 'asc' as 'asc' | 'desc',
+})
 const createForm = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
   code: '',
   name: '',
   baseUomCode: 'EA',
-  category: '',
+  category: '减振器总成',
   materialType: 'finished-good',
-  batchTrackingPolicy: 'none',
-  serialTrackingPolicy: 'none',
-  shelfLifePolicyCode: 'none',
-  storageConditionCode: 'ambient',
-  defaultBarcodeRuleCode: 'default',
-  qualityRequired: false,
-  complianceTags: '',
+  batchTrackingPolicy: 'required',
+  serialTrackingPolicy: 'optional',
+  shelfLifePolicyCode: '无保质期',
+  storageConditionCode: '常温干燥',
+  defaultBarcodeRuleCode: '减振器箱标',
+  qualityRequired: true,
+  complianceTags: 'IATF16949',
 })
+const materialTypeOptions = [
+  { label: '成品', value: 'finished-good', prefix: 'FG-SAD' },
+  { label: '半成品', value: 'semi-finished', prefix: 'SF-SAD' },
+  { label: '原材料', value: 'raw-material', prefix: 'RM-SAD' },
+  { label: '包材', value: 'packaging', prefix: 'PK-SAD' },
+  { label: '服务', value: 'service', prefix: 'SV-SAD' },
+]
+const trackingOptions = [
+  { label: '不追踪', value: 'none' },
+  { label: '按需记录', value: 'optional' },
+  { label: '必须记录', value: 'required' },
+]
 
-const filteredSkus = computed(() => skus.value)
+const sourceSkus = computed(() => {
+  return mergeByKey([...localSkus.value, ...skus.value, ...demoSkus], (row) => row.code)
+})
+const listRows = computed(() => {
+  const keyword = appliedFilter.keyword.trim().toLowerCase()
+
+  return sourceSkus.value.filter((sku) => {
+    const activeMatched = appliedFilter.includeDisabled || sku.active !== false
+    const keywordMatched =
+      !keyword ||
+      [sku.code, sku.displayName, sku.resourceType, sku.snapshotVersion]
+        .some((value) => (value ?? '').toLowerCase().includes(keyword))
+
+    return activeMatched && keywordMatched
+  })
+})
+const sortedRows = computed(() => {
+  const direction = tableState.sortDirection === 'asc' ? 1 : -1
+
+  return [...listRows.value].sort((left, right) =>
+    String(left[tableState.sortBy] ?? '').localeCompare(String(right[tableState.sortBy] ?? ''), 'zh-Hans-CN') * direction,
+  )
+})
+const pageSizeNumber = computed(() => Number(tableState.pageSize) || 10)
+const pagedRows = computed(() => {
+  const start = (tableState.page - 1) * pageSizeNumber.value
+  return sortedRows.value.slice(start, start + pageSizeNumber.value)
+})
 const createErrorMessage = computed(() => formatError(createSkuError.value))
 const listErrorMessage = computed(() => formatError(skusError.value))
-
 const canCreateSku = computed(
   () =>
-    isNonEmpty(createForm.organizationId) &&
-    isNonEmpty(createForm.environmentId) &&
     isNonEmpty(createForm.code) &&
     isNonEmpty(createForm.name) &&
     isNonEmpty(createForm.baseUomCode) &&
@@ -93,6 +148,31 @@ const canCreateSku = computed(
     isNonEmpty(createForm.storageConditionCode) &&
     isNonEmpty(createForm.defaultBarcodeRuleCode),
 )
+
+watch(
+  () => [appliedFilter.keyword, appliedFilter.includeDisabled, tableState.pageSize, sourceSkus.value.length],
+  () => {
+    tableState.page = 1
+  },
+)
+
+function applyFilters() {
+  appliedFilter.keyword = filterDraft.keyword
+  appliedFilter.includeDisabled = filterDraft.includeDisabled
+  filters.includeDisabled = filterDraft.includeDisabled
+}
+
+function clearFilters() {
+  filterDraft.keyword = ''
+  filterDraft.includeDisabled = false
+  applyFilters()
+}
+
+function generateCode() {
+  const option = materialTypeOptions.find((item) => item.value === createForm.materialType)
+  const prefix = option?.prefix ?? 'SKU'
+  createForm.code = `${prefix}-${String(sourceSkus.value.length + localSkus.value.length + 1).padStart(3, '0')}`
+}
 
 function splitTags(value: string) {
   const tags = value
@@ -107,15 +187,15 @@ function resetCreateForm() {
   createForm.code = ''
   createForm.name = ''
   createForm.baseUomCode = 'EA'
-  createForm.category = ''
+  createForm.category = '减振器总成'
   createForm.materialType = 'finished-good'
-  createForm.batchTrackingPolicy = 'none'
-  createForm.serialTrackingPolicy = 'none'
-  createForm.shelfLifePolicyCode = 'none'
-  createForm.storageConditionCode = 'ambient'
-  createForm.defaultBarcodeRuleCode = 'default'
-  createForm.qualityRequired = false
-  createForm.complianceTags = ''
+  createForm.batchTrackingPolicy = 'required'
+  createForm.serialTrackingPolicy = 'optional'
+  createForm.shelfLifePolicyCode = '无保质期'
+  createForm.storageConditionCode = '常温干燥'
+  createForm.defaultBarcodeRuleCode = '减振器箱标'
+  createForm.qualityRequired = true
+  createForm.complianceTags = 'IATF16949'
 }
 
 async function submitSku() {
@@ -139,7 +219,18 @@ async function submitSku() {
   }
 
   const response = await createSku(body)
-  createSuccess.value = `SKU ${response?.data?.code ?? body.code} submitted.`
+  const createdCode = response?.data?.code ?? body.code
+  localSkus.value = [
+    {
+      resourceType: 'sku',
+      code: createdCode,
+      displayName: body.name,
+      active: true,
+      snapshotVersion: '本次录入',
+    },
+    ...localSkus.value,
+  ]
+  createSuccess.value = `物料 ${createdCode} 已提交。`
   resetCreateForm()
   createOpen.value = false
 }
@@ -149,12 +240,27 @@ function syncContextFromFilters() {
   createForm.environmentId = filters.environmentId
 }
 
+function setSort(column: SortColumn) {
+  if (tableState.sortBy === column) {
+    tableState.sortDirection = tableState.sortDirection === 'asc' ? 'desc' : 'asc'
+    return
+  }
+
+  tableState.sortBy = column
+  tableState.sortDirection = 'asc'
+}
+
+function sortIcon(column: SortColumn) {
+  if (tableState.sortBy !== column) return ArrowUpDownIcon
+  return tableState.sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon
+}
+
 function rowKey(item: BusinessConsoleResourceItem, index: number) {
   return `${item.resourceType ?? 'sku'}:${item.code ?? index}`
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? 'Request failed.' : ''
+  return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
 
 function isNonEmpty(value: string) {
@@ -166,34 +272,28 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MasterData"
-        title="SKU maintenance"
-        summary="List and create SKU master records through the BusinessGateway facade."
+        domain="主数据"
+        title="物料与产品"
+        summary="维护成品、半成品、原材料和包材，确保计划、采购、检验、生产和库存使用一致的物料档案。"
       >
         <template #actions>
-          <Button
-            size="sm"
-            variant="outline"
-            type="button"
-            :disabled="skusPending"
-            @click="refreshSkus"
-          >
+          <Button size="sm" variant="outline" type="button" :disabled="skusPending" @click="refreshSkus">
             <RefreshCwIcon data-icon="inline-start" />
-            Refresh
+            刷新
           </Button>
 
           <Dialog v-model:open="createOpen" @update:open="syncContextFromFilters">
             <DialogTrigger as-child>
               <Button size="sm" type="button">
                 <PlusIcon data-icon="inline-start" />
-                Create SKU
+                新建物料
               </Button>
             </DialogTrigger>
             <DialogContent class="sm:max-w-3xl">
               <DialogHeader>
-                <DialogTitle>Create SKU</DialogTitle>
+                <DialogTitle>新建物料</DialogTitle>
                 <DialogDescription>
-                  Submit a new MasterData SKU. Required fields mirror the BFF contract.
+                  用于减振器成品、零部件和原材料建档。带星号字段为必填。
                 </DialogDescription>
               </DialogHeader>
 
@@ -201,96 +301,116 @@ function isNonEmpty(value: string) {
                 <BusinessFormStatus :error="createErrorMessage" />
 
                 <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                  <Field>
-                    <FieldLabel for="sku-org">Organization</FieldLabel>
-                    <Input id="sku-org" v-model="createForm.organizationId" required />
+                  <Field :data-invalid="!isNonEmpty(createForm.code)">
+                    <FieldLabel for="sku-code">物料编码 <span class="text-destructive">*</span></FieldLabel>
+                    <div class="flex gap-2">
+                      <Input id="sku-code" v-model="createForm.code" autocomplete="off" aria-required="true" required />
+                      <Button type="button" variant="outline" @click="generateCode">
+                        <WandSparklesIcon data-icon="inline-start" />
+                        生成
+                      </Button>
+                    </div>
+                    <FieldDescription>建议使用成品、半成品、原材料前缀自动生成。</FieldDescription>
+                  </Field>
+                  <Field :data-invalid="!isNonEmpty(createForm.name)">
+                    <FieldLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldLabel>
+                    <Input id="sku-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
+                  </Field>
+                  <Field :data-invalid="!isNonEmpty(createForm.baseUomCode)">
+                    <FieldLabel for="sku-uom">基本单位 <span class="text-destructive">*</span></FieldLabel>
+                    <Select v-model="createForm.baseUomCode">
+                      <SelectTrigger id="sku-uom">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="EA">件</SelectItem>
+                        <SelectItem value="PCS">只</SelectItem>
+                        <SelectItem value="KG">千克</SelectItem>
+                        <SelectItem value="L">升</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field :data-invalid="!isNonEmpty(createForm.category)">
+                    <FieldLabel for="sku-category">产品分类 <span class="text-destructive">*</span></FieldLabel>
+                    <Select v-model="createForm.category">
+                      <SelectTrigger id="sku-category">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="减振器总成">减振器总成</SelectItem>
+                        <SelectItem value="活塞杆组件">活塞杆组件</SelectItem>
+                        <SelectItem value="筒体组件">筒体组件</SelectItem>
+                        <SelectItem value="油封与橡胶件">油封与橡胶件</SelectItem>
+                        <SelectItem value="工艺辅料">工艺辅料</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-env">Environment</FieldLabel>
-                    <Input id="sku-env" v-model="createForm.environmentId" required />
-                  </Field>
-                  <Field>
-                    <FieldLabel for="sku-code">SKU code</FieldLabel>
-                    <Input id="sku-code" v-model="createForm.code" autocomplete="off" required />
-                  </Field>
-                  <Field>
-                    <FieldLabel for="sku-name">Name</FieldLabel>
-                    <Input id="sku-name" v-model="createForm.name" autocomplete="off" required />
-                  </Field>
-                  <Field>
-                    <FieldLabel for="sku-uom">Base UOM</FieldLabel>
-                    <Input id="sku-uom" v-model="createForm.baseUomCode" required />
-                  </Field>
-                  <Field>
-                    <FieldLabel for="sku-category">Category</FieldLabel>
-                    <Input id="sku-category" v-model="createForm.category" required />
-                  </Field>
-                  <Field>
-                    <FieldLabel>Material type</FieldLabel>
+                    <FieldLabel>物料类型 <span class="text-destructive">*</span></FieldLabel>
                     <Select v-model="createForm.materialType">
-                      <SelectTrigger aria-label="Material type">
-                        <SelectValue placeholder="Material type" />
+                      <SelectTrigger aria-label="物料类型">
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="finished-good">Finished good</SelectItem>
-                        <SelectItem value="raw-material">Raw material</SelectItem>
-                        <SelectItem value="packaging">Packaging</SelectItem>
-                        <SelectItem value="service">Service</SelectItem>
+                        <SelectItem v-for="option in materialTypeOptions" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>
                   <Field>
-                    <FieldLabel>Batch tracking</FieldLabel>
+                    <FieldLabel>批次追踪 <span class="text-destructive">*</span></FieldLabel>
                     <Select v-model="createForm.batchTrackingPolicy">
-                      <SelectTrigger aria-label="Batch tracking">
-                        <SelectValue placeholder="Batch tracking" />
+                      <SelectTrigger aria-label="批次追踪">
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="optional">Optional</SelectItem>
-                        <SelectItem value="required">Required</SelectItem>
+                        <SelectItem v-for="option in trackingOptions" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>
                   <Field>
-                    <FieldLabel>Serial tracking</FieldLabel>
+                    <FieldLabel>序列号追踪 <span class="text-destructive">*</span></FieldLabel>
                     <Select v-model="createForm.serialTrackingPolicy">
-                      <SelectTrigger aria-label="Serial tracking">
-                        <SelectValue placeholder="Serial tracking" />
+                      <SelectTrigger aria-label="序列号追踪">
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="optional">Optional</SelectItem>
-                        <SelectItem value="required">Required</SelectItem>
+                        <SelectItem v-for="option in trackingOptions" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-shelf">Shelf-life policy</FieldLabel>
-                    <Input id="sku-shelf" v-model="createForm.shelfLifePolicyCode" />
+                    <FieldLabel for="sku-shelf">有效期策略 <span class="text-destructive">*</span></FieldLabel>
+                    <Input id="sku-shelf" v-model="createForm.shelfLifePolicyCode" required />
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-storage">Storage condition</FieldLabel>
-                    <Input id="sku-storage" v-model="createForm.storageConditionCode" />
+                    <FieldLabel for="sku-storage">存储要求 <span class="text-destructive">*</span></FieldLabel>
+                    <Input id="sku-storage" v-model="createForm.storageConditionCode" required />
                   </Field>
                   <Field>
-                    <FieldLabel for="sku-barcode">Default barcode rule</FieldLabel>
-                    <Input id="sku-barcode" v-model="createForm.defaultBarcodeRuleCode" />
+                    <FieldLabel for="sku-barcode">条码规则 <span class="text-destructive">*</span></FieldLabel>
+                    <Input id="sku-barcode" v-model="createForm.defaultBarcodeRuleCode" required />
                   </Field>
                   <Field class="sm:col-span-2">
-                    <FieldLabel for="sku-tags">Compliance tags</FieldLabel>
-                    <Input id="sku-tags" v-model="createForm.complianceTags" placeholder="GMP, export" />
+                    <FieldLabel for="sku-tags">质量/合规标签</FieldLabel>
+                    <Input id="sku-tags" v-model="createForm.complianceTags" placeholder="IATF16949, 客户特殊特性" />
                   </Field>
                   <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3 sm:col-span-2">
-                    <FieldLabel for="sku-quality">Quality inspection required</FieldLabel>
+                    <FieldLabel for="sku-quality">投产前需要质量检验</FieldLabel>
                     <Checkbox id="sku-quality" v-model:checked="createForm.qualityRequired" />
                   </Field>
                 </FieldGroup>
 
                 <DialogFooter>
+                  <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
                   <Button type="submit" :disabled="createSkuPending || !canCreateSku">
                     <Spinner v-if="createSkuPending" data-icon="inline-start" />
-                    Create SKU
+                    保存物料
                   </Button>
                 </DialogFooter>
               </form>
@@ -299,58 +419,95 @@ function isNonEmpty(value: string) {
         </template>
       </BusinessPageHeader>
 
-      <div class="grid gap-3 rounded-lg border bg-background p-4">
-        <div class="grid gap-3 sm:grid-cols-3">
-          <Field>
-            <FieldLabel for="sku-filter-org">Organization</FieldLabel>
-            <Input id="sku-filter-org" v-model="filters.organizationId" />
-          </Field>
-          <Field>
-            <FieldLabel for="sku-filter-env">Environment</FieldLabel>
-            <Input id="sku-filter-env" v-model="filters.environmentId" />
-          </Field>
-          <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
-            <FieldLabel for="sku-include-disabled">Include disabled</FieldLabel>
-            <Checkbox id="sku-include-disabled" v-model:checked="filters.includeDisabled" />
-          </Field>
+      <div class="rounded-lg border bg-background">
+        <div class="border-b px-4 py-3">
+          <h2 class="text-sm font-semibold text-foreground">查询条件</h2>
         </div>
-        <BusinessFormStatus :error="listErrorMessage" :success="createSuccess" />
+        <div class="p-4">
+          <FieldGroup class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto]">
+            <Field>
+              <FieldLabel for="sku-keyword">关键字</FieldLabel>
+              <Input id="sku-keyword" v-model="filterDraft.keyword" placeholder="物料编码、名称、版本" @keydown.enter="applyFilters" />
+            </Field>
+            <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
+              <FieldLabel for="sku-include-disabled">包含停用数据</FieldLabel>
+              <Checkbox id="sku-include-disabled" v-model:checked="filterDraft.includeDisabled" />
+            </Field>
+            <div class="flex items-end gap-2">
+              <Button type="button" @click="applyFilters">查询</Button>
+              <Button type="button" variant="outline" @click="clearFilters">清空</Button>
+            </div>
+          </FieldGroup>
+          <BusinessFormStatus :error="listErrorMessage" :success="createSuccess" />
+        </div>
       </div>
 
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">SKU list</h2>
-          <span class="text-sm text-muted-foreground">{{ filteredSkus.length }} returned</span>
+          <h2 class="text-sm font-semibold text-foreground">物料列表</h2>
+          <span class="text-sm text-muted-foreground">物料档案</span>
         </div>
         <div class="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Display name</TableHead>
-                <TableHead>Resource type</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Snapshot</TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('code')">
+                    物料编码
+                    <component :is="sortIcon('code')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('displayName')">
+                    物料名称
+                    <component :is="sortIcon('displayName')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('resourceType')">
+                    类型
+                    <component :is="sortIcon('resourceType')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('active')">
+                    状态
+                    <component :is="sortIcon('active')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('snapshotVersion')">
+                    版本
+                    <component :is="sortIcon('snapshotVersion')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-for="(sku, index) in filteredSkus" :key="rowKey(sku, index)">
-                <TableCell class="font-medium">{{ sku.code ?? 'n/a' }}</TableCell>
-                <TableCell>{{ sku.displayName ?? 'n/a' }}</TableCell>
-                <TableCell>{{ sku.resourceType ?? 'sku' }}</TableCell>
+              <TableRow v-for="(sku, index) in pagedRows" :key="rowKey(sku, index)">
+                <TableCell class="font-medium">{{ sku.code ?? '无' }}</TableCell>
+                <TableCell>{{ sku.displayName ?? '无' }}</TableCell>
+                <TableCell>{{ sku.resourceType === 'sku' ? '物料' : sku.resourceType }}</TableCell>
                 <TableCell>
                   <Badge :variant="sku.active === false ? 'secondary' : 'success'">
-                    {{ sku.active === false ? 'inactive' : 'active' }}
+                    {{ sku.active === false ? '停用' : '启用' }}
                   </Badge>
                 </TableCell>
-                <TableCell class="tabular-nums">{{ sku.snapshotVersion ?? 'n/a' }}</TableCell>
+                <TableCell class="tabular-nums">{{ sku.snapshotVersion ?? '无' }}</TableCell>
               </TableRow>
-              <TableEmpty v-if="!filteredSkus.length && !skusPending" :colspan="5">
-                No SKU data returned.
+              <TableEmpty v-if="!listRows.length && !skusPending" :colspan="5">
+                未找到物料。可以清空筛选或新建物料。
               </TableEmpty>
-              <TableEmpty v-if="skusPending" :colspan="5">Loading SKUs...</TableEmpty>
+              <TableEmpty v-if="skusPending" :colspan="5">正在加载物料...</TableEmpty>
             </TableBody>
           </Table>
+        </div>
+        <div class="border-t px-4 py-3">
+          <BusinessTablePagination
+            v-model:page="tableState.page"
+            v-model:page-size="tableState.pageSize"
+            :total-items="sortedRows.length"
+          />
         </div>
       </div>
     </section>

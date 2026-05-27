@@ -896,6 +896,45 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public BusinessConsoleMesListRequest? LastWorkOrderListRequest { get; private set; }
 
+    public Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
+        string internalBearerToken,
+        string areaCode,
+        BusinessConsoleMesFoundationReadinessRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesReadinessArea(areaCode, "Ready", []));
+    }
+
+    public Task<BusinessConsoleMesOverviewResponse> GetOverviewAsync(
+        string internalBearerToken,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesOverviewResponse([], [], []));
+    }
+
+    public Task<BusinessConsoleMesProductionPlanListResponse> ListProductionPlansAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesFoundationReadinessResponse> GetProductionPlanReadinessAsync(
+        string internalBearerToken,
+        string productionPlanId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleAcceptedResponse> ConvertPlanToWorkOrderAsync(
+        string internalBearerToken,
+        string productionPlanId,
+        BusinessConsoleMesConvertPlanToWorkOrderRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
         BusinessConsoleMesListRequest request,
@@ -918,11 +957,134 @@ internal sealed class RecordingMesClient : IBusinessMesClient
             ]));
     }
 
+    public Task<BusinessConsoleMesWorkOrderDetailResponse> GetWorkOrderDetailAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesWorkOrderDetailResponse(
+            workOrderId,
+            "SKU-001",
+            null,
+            10,
+            "released",
+            "Ready",
+            [],
+            []));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> ReleaseWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesReleaseWorkOrderRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
     public Task<BusinessConsoleCreateRushWorkOrderResponse> CreateRushWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateRushWorkOrderRequest request,
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesMaterialReadinessResponse> GetMaterialReadinessAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesMaterialReadinessResponse(workOrderId, "Ready", [], []));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesCreateMaterialIssueRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesMaterialIssueRequestListResponse> ListMaterialIssueRequestsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleAcceptedResponse> ConfirmLineSideMaterialReceiptAsync(
+        string internalBearerToken,
+        string requestId,
+        BusinessConsoleMesConfirmLineSideReceiptRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesDispatchTaskListResponse> ListDispatchTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleAcceptedResponse> AssignDispatchTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesAssignDispatchTaskRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesOperationTaskListResponse([]));
+    }
+
+    public Task<BusinessConsoleMesOperationTaskActionResponse> StartOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesOperationTaskActionResponse> PauseOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesOperationTaskActionResponse> ResumeOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesOperationTaskActionResponse> CompleteOperationTaskAsync(
+        string internalBearerToken,
+        string operationTaskId,
+        BusinessConsoleMesOperationTaskActionRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesWipSummaryResponse> GetWipSummaryAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesWipSummaryResponse([]));
+    }
+
+    public Task<BusinessConsoleMesProductionReportListResponse> ListProductionReportsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesProductionReportListResponse([]));
+    }
 
     public Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
         string internalBearerToken,
@@ -935,4 +1097,102 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         BusinessConsoleRecordProductionReportRequest request,
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
+
+    public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
+        string internalBearerToken,
+        BusinessConsoleMesRecordDefectRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesRelatedQualityItemListResponse> ListRelatedQualityItemsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesReceiptRequestListResponse> ListFinishedGoodsReceiptRequestsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesReceiptRequestListResponse([]));
+    }
+
+    public Task<BusinessConsoleMesCreateReceiptResponse> CreateFinishedGoodsReceiptRequestAsync(
+        string internalBearerToken,
+        BusinessConsoleMesCreateReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesCreateReceiptResponse("receipt-1"));
+    }
+
+    public Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleAcceptedResponse> RecordDowntimeEventAsync(
+        string internalBearerToken,
+        BusinessConsoleMesRecordDowntimeEventRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleAcceptedResponse> ConfirmDowntimeRecoveryAsync(
+        string internalBearerToken,
+        string downtimeEventId,
+        BusinessConsoleMesRecoverDowntimeEventRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleAcceptedResponse> CreateShiftHandoverAsync(
+        string internalBearerToken,
+        BusinessConsoleMesCreateShiftHandoverRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleAcceptedResponse> AcceptShiftHandoverAsync(
+        string internalBearerToken,
+        string handoverId,
+        BusinessConsoleMesAcceptShiftHandoverRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesTraceabilityResponse> GetBatchTraceabilityAsync(
+        string internalBearerToken,
+        string batchOrSerial,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesTraceabilityResponse> GetMaterialLotTraceabilityAsync(
+        string internalBearerToken,
+        string materialLotId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesCapacityImpactListResponse> ListCapacityImpactsAsync(
+        string internalBearerToken,
+        BusinessConsoleMesListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesCapacityImpactListResponse([]));
+    }
 }

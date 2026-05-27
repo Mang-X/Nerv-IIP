@@ -52,10 +52,31 @@ public static class BusinessGatewayPermissions
     public const string QualityInspectionRecordsCreate = "business.quality.inspection-records.create";
     public const string QualityNcrRead = "business.quality.ncr.read";
     public const string QualityNcrManage = "business.quality.ncr.manage";
+    public const string MesFoundationRead = "business.mes.foundation.read";
+    public const string MesOverviewRead = "business.mes.overview.read";
+    public const string MesPlansRead = "business.mes.plans.read";
     public const string MesWorkOrdersRead = "business.mes.work-orders.read";
     public const string MesWorkOrdersManage = "business.mes.work-orders.manage";
+    public const string MesMaterialsRead = "business.mes.materials.read";
+    public const string MesMaterialsManage = "business.mes.materials.manage";
+    public const string MesDispatchRead = "business.mes.dispatch.read";
+    public const string MesDispatchManage = "business.mes.dispatch.manage";
+    public const string MesOperationsRead = "business.mes.operations.read";
+    public const string MesOperationsManage = "business.mes.operations.manage";
+    public const string MesReportingRead = "business.mes.reporting.read";
     public const string MesReportingWrite = "business.mes.reporting.write";
+    public const string MesQualityRead = "business.mes.quality.read";
+    public const string MesQualityWrite = "business.mes.quality.write";
+    public const string MesReceiptsRead = "business.mes.receipts.read";
+    public const string MesReceiptsManage = "business.mes.receipts.manage";
+    public const string MesDowntimeRead = "business.mes.downtime.read";
+    public const string MesDowntimeManage = "business.mes.downtime.manage";
+    public const string MesHandoversRead = "business.mes.handovers.read";
+    public const string MesHandoversManage = "business.mes.handovers.manage";
+    public const string MesTraceabilityRead = "business.mes.traceability.read";
+    public const string MesSchedulesRead = "business.mes.schedules.read";
     public const string MesSchedulesManage = "business.mes.schedules.manage";
+    public const string MesCapacityRead = "business.mes.capacity.read";
 }
 
 public sealed class BusinessGatewayAuthorizationOptions

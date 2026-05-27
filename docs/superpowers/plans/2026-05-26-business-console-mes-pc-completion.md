@@ -2,11 +2,23 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **2026-05-27 Rebaseline:** This plan delivered a broad PC workbench surface, but it is no longer the canonical next-step plan for MES delivery. Future MES work must follow `docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.md`, which requires server-side numbering, complete source data, released engineering versions, MRP/procurement readiness, APS lite scheduling contracts, equipment IIoT runtime facts and durable MES execution facts before further page completion work is counted as delivered.
+
 **Goal:** Complete a PC-first, standard MES workbench so production planners, supervisors, shift leaders, material handlers, quality inspectors, and maintenance coordinators can run the real shop-floor loop from production plan readiness through work order release, material readiness, dispatching, operation execution, reporting, quality handling, finished-goods receipt, shift handover, and traceability before starting PDA/mobile work.
 
 **Architecture:** BusinessGateway remains the Business Console BFF and the only frontend-facing API for `/api/business-console/v1/**`; it performs user bearer validation, IAM permission checks, organization/environment context propagation, and internal service-token calls. MES owns shop-floor execution facts: work orders, operation tasks, dispatching, WIP state, production reports, material consumption evidence, downtime events, finished-goods receipt requests, shift handover, and genealogy snapshots. ProductEngineering, DemandPlanning, MasterData, Quality, WMS/Inventory, Maintenance/IndustrialTelemetry, and ERP are integrated through narrow read/action facades where the MES workbench must see or trigger their facts; MES must not take over their source-of-truth responsibilities. The first release uses direct Chinese UI copy in Vue pages and defers a full i18n catalog workflow.
 
 **Tech Stack:** .NET 10, FastEndpoints, CleanDDD service boundaries, BusinessGateway facade, Hey API generated `@nerv-iip/api-client`, Vue 3, Vite Plus, Pinia Colada, `@nerv-iip/ui`, Playwright.
+
+## Implementation Closure — 2026-05-26
+
+This plan is implemented in PR #185 for the PC-first Business Console MES workbench:
+
+- Backend MES now exposes the P0 workbench surface for production plans, readiness, work order release, material issue request, dispatch, operation task lifecycle, WIP, production reports, defects, downtime, receipt requests, shift handover, traceability, schedules, and capacity impacts.
+- BusinessGateway exposes the matching `/api/business-console/v1/mes/**` facade routes with narrow IAM permission codes and generated OpenAPI/client coverage.
+- Business Console now has Chinese PC routes for `生产驾驶舱`、`基础准备`、`生产计划`、`计划与工单`、`齐套与物料`、`派工看板`、`工序执行`、`报工与完工`、`质量与不良`、`完工入库`、`规则排程`、`设备与停机`、`班次交接`、`追溯查询` 和 `产能影响`。
+- `scripts/verify-business-console-mes-pc-workbench.ps1` is the focused verification gate. It covers MES tests, BusinessGateway tests, api-client generation/typecheck/test, and Business Console typecheck/test/build; e2e is opt-in through `-E2E`.
+- PDA/mobile remains deferred until these PC contracts stabilize.
 
 ---
 

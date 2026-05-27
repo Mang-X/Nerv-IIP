@@ -1408,6 +1408,9 @@
           },
           "correlationId": {
             "type": "string"
+          },
+          "integrityHash": {
+            "type": "string"
           }
         }
       },

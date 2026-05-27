@@ -197,18 +197,45 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Contains(catalog.Items, item => item.Code == "business.erp.finance.manage"
             && item.Domain == "business"
             && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.mes.foundation.read"
+            && item.Domain == "business"
+            && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.mes.overview.read"
+            && item.Domain == "business"
+            && item.Seeded);
         Assert.Contains(catalog.Items, item => item.Code == "business.mes.work-orders.read"
             && item.Domain == "business"
             && item.Seeded);
-        Assert.Contains(catalog.Items, item => item.Code == "business.mes.work-orders.manage"
-            && item.Domain == "business"
-            && item.Seeded);
-        Assert.Contains(catalog.Items, item => item.Code == "business.mes.reporting.write"
-            && item.Domain == "business"
-            && item.Seeded);
-        Assert.Contains(catalog.Items, item => item.Code == "business.mes.schedules.manage"
-            && item.Domain == "business"
-            && item.Seeded);
+        foreach (var permission in new[]
+        {
+            "business.mes.work-orders.manage",
+            "business.mes.plans.read",
+            "business.mes.materials.read",
+            "business.mes.materials.manage",
+            "business.mes.dispatch.read",
+            "business.mes.dispatch.manage",
+            "business.mes.operations.read",
+            "business.mes.operations.manage",
+            "business.mes.reporting.read",
+            "business.mes.reporting.write",
+            "business.mes.quality.read",
+            "business.mes.quality.write",
+            "business.mes.receipts.read",
+            "business.mes.receipts.manage",
+            "business.mes.downtime.read",
+            "business.mes.downtime.manage",
+            "business.mes.handovers.read",
+            "business.mes.handovers.manage",
+            "business.mes.traceability.read",
+            "business.mes.schedules.read",
+            "business.mes.schedules.manage",
+            "business.mes.capacity.read"
+        })
+        {
+            Assert.Contains(catalog.Items, item => item.Code == permission
+                && item.Domain == "business"
+                && item.Seeded);
+        }
 
         var create = await _client.PostAsJsonAsync(
             "/api/iam/v1/roles",
