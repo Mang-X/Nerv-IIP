@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MES 运转前置能力重排</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #59647a;
+      --line: #d8dde8;
+      --soft: #f5f7fb;
+      --panel: #ffffff;
+      --blue: #2563eb;
+      --green: #0f766e;
+      --amber: #b45309;
+      --red: #b91c1c;
+      --purple: #6d28d9;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      color: var(--ink);
+      background: #eef2f8;
+      line-height: 1.55;
+    }
+
+    header {
+      background: #101828;
+      color: white;
+      padding: 40px clamp(24px, 5vw, 72px);
+    }
+
+    header p {
+      max-width: 1080px;
+      margin: 12px 0 0;
+      color: #d8e0ee;
+      font-size: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 5vw, 48px);
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: 24px;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    main {
+      padding: 28px clamp(16px, 4vw, 72px) 56px;
+    }
+
+    section {
+      max-width: 1280px;
+      margin: 0 auto 24px;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .metric, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 24px rgb(16 24 40 / 6%);
+    }
+
+    .metric {
+      padding: 18px;
+      min-height: 128px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .panel {
+      padding: 22px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(10, minmax(120px, 1fr));
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+    }
+
+    .node {
+      border: 1px solid var(--line);
+      background: var(--soft);
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 96px;
+    }
+
+    .node b {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+
+    .node small {
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 11px 12px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      background: #f1f5fb;
+      color: #26344d;
+      font-weight: 700;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-width: 44px;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-weight: 700;
+      font-size: 12px;
+      color: white;
+    }
+
+    .p0 { background: var(--red); }
+    .p1 { background: var(--amber); }
+    .p2 { background: var(--purple); }
+    .done { background: var(--green); }
+    .gap { background: var(--blue); }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(170px, 1fr));
+      gap: 12px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+    }
+
+    .phase {
+      background: white;
+      border: 1px solid var(--line);
+      border-top: 5px solid var(--blue);
+      border-radius: 8px;
+      padding: 14px;
+      min-height: 190px;
+    }
+
+    .phase ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .rules {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .rule {
+      background: white;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--green);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .rule p {
+      margin: 6px 0 0;
+      color: var(--muted);
+    }
+
+    footer {
+      max-width: 1280px;
+      margin: 0 auto;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 4px 0 24px;
+    }
+
+    @media (max-width: 900px) {
+      .summary, .grid, .rules {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MES 运转前置能力重排</h1>
+    <p>目标不是再补几个页面，而是先把汽车减振器制造的主数据、工程资料、计划、采购、库存、质量、设备和编号能力打通，再交付可以真正使用的 MES PC 工作台。</p>
+  </header>
+
+  <main>
+    <section class="summary">
+      <div class="metric"><strong>1</strong><span>一条 P0 闭环：需求到 MRP、采购准备、工单、派工、报工、入库、追溯。</span></div>
+      <div class="metric"><strong>7</strong><span>先做七个基础阶段，再回到页面细化，避免继续页面先行。</span></div>
+      <div class="metric"><strong>0</strong><span>普通用户不再手填系统编号，也不需要点击生成。</span></div>
+      <div class="metric"><strong>P0</strong><span>APS/Gantt 不进入首轮阻塞项，规则排程和产能预警先满足执行。</span></div>
+    </section>
+
+    <section class="panel">
+      <h2>最小业务闭环</h2>
+      <div class="flow" aria-label="MES minimum operating loop">
+        <div class="node"><b>客户需求</b><small>销售订单、预测、安全库存</small></div>
+        <div class="node"><b>MRP</b><small>净需求、采购建议、计划工单建议</small></div>
+        <div class="node"><b>采购准备</b><small>供应商、采购订单、到货与质检</small></div>
+        <div class="node"><b>工程放行</b><small>MBOM、工艺路线、生产版本</small></div>
+        <div class="node"><b>工单释放</b><small>冻结版本、物料、质量和设备快照</small></div>
+        <div class="node"><b>齐套领料</b><small>库存、线边、批次和替代料</small></div>
+        <div class="node"><b>派工执行</b><small>班次、人员、设备、工序任务</small></div>
+        <div class="node"><b>报工质检</b><small>合格、不良、返工、首检/巡检</small></div>
+        <div class="node"><b>完工入库</b><small>请求、收货、库存入账</small></div>
+        <div class="node"><b>追溯</b><small>工单、物料批次、人员、设备、质量</small></div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <h2>P0 前置能力矩阵</h2>
+        <table>
+          <thead>
+            <tr><th>能力</th><th>优先级</th><th>交付要求</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>自动编号</td><td><span class="pill p0">P0</span></td><td>服务端生成，事务内分配，唯一索引兜底，幂等重试。</td></tr>
+            <tr><td>主数据</td><td><span class="pill p0">P0</span></td><td>物料、供应商、客户、工厂、产线、工作中心、设备、班次、日历、班组、技能。</td></tr>
+            <tr><td>工程资料</td><td><span class="pill p0">P0</span></td><td>EBOM、MBOM、工艺路线、工序、生产版本必须可维护、发布、解析。</td></tr>
+            <tr><td>MRP</td><td><span class="pill p0">P0</span></td><td>从需求、库存和生产版本生成计划工单建议、采购建议和 pegging。</td></tr>
+            <tr><td>采购供应</td><td><span class="pill p0">P0</span></td><td>供应商、采购申请/订单、到货、质检和库存可用量能影响 MES 齐套。</td></tr>
+            <tr><td>MES 执行</td><td><span class="pill p0">P0</span></td><td>工单来源、释放快照、齐套、派工、开工、报工、完工入库、追溯。</td></tr>
+            <tr><td>APS/Gantt</td><td><span class="pill p2">P2</span></td><td>首轮不做优化器，先做规则排程、产能预警和派工可视化。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>当前结论</h2>
+        <table>
+          <thead>
+            <tr><th>状态</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="pill done">已有</span></td><td>各业务服务骨架和部分后端事实已存在：MasterData、ProductEngineering、DemandPlanning、ERP、Inventory、Quality、MES。</td></tr>
+            <tr><td><span class="pill gap">缺口</span></td><td>Business Console 没有把这些事实组织成真实业务流；很多表单仍缺少联动、编号、选择器和可验证数据。</td></tr>
+            <tr><td><span class="pill p0">阻塞</span></td><td>没有服务端自动编号、真实生产版本、MRP 计划来源和齐套联动时，继续优化 MES 页面会继续变成空壳。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>推进顺序</h2>
+      <div class="timeline">
+        <div class="phase"><h3>P0-A 基准冻结</h3><ul><li>旧计划降级为页面层计划</li><li>新增交付门槛</li><li>确认减振器闭环</li></ul></div>
+        <div class="phase"><h3>P0-B 自动编号</h3><ul><li>服务端生成</li><li>并发锁/重试</li><li>幂等创建</li></ul></div>
+        <div class="phase"><h3>P0-C 主数据</h3><ul><li>物料/供应商</li><li>工厂/产线/设备</li><li>班次/日历/技能</li></ul></div>
+        <div class="phase"><h3>P0-D 工程资料</h3><ul><li>BOM 版本</li><li>工艺路线</li><li>生产版本发布</li></ul></div>
+        <div class="phase"><h3>P0-E MRP 与采购</h3><ul><li>需求来源</li><li>采购建议</li><li>供应到货</li></ul></div>
+        <div class="phase"><h3>P0-F MES 执行</h3><ul><li>工单来源</li><li>齐套派工</li><li>报工入库追溯</li></ul></div>
+        <div class="phase"><h3>P0-G PC 重构</h3><ul><li>业务导航</li><li>行上下文动作</li><li>浏览器验收截图</li></ul></div>
+      </div>
+    </section>
+
+    <section class="rules">
+      <div class="rule"><h3>先事实，后页面</h3><p>页面只能消费后端真实事实或明确的业务导入数据，不能靠页面元数据和静态样例支撑交付。</p></div>
+      <div class="rule"><h3>先联动，后录入</h3><p>工单、报工、领料、派工都应从当前行和上游数据带出上下文，减少手填。</p></div>
+      <div class="rule"><h3>先规则，后美化</h3><p>编号、状态、权限、生命周期和阻塞原因先闭环，再继续做布局和视觉精修。</p></div>
+    </section>
+  </main>
+
+  <footer>
+    来源文档：docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.md
+  </footer>
+</body>
+</html>

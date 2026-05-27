@@ -15,6 +15,21 @@ The first implementation exposed useful API surfaces, but several pages behaved 
 
 Pages may use realistic industry data, but they must not announce that data as `样例`, `内置`, `用于验证`, `联动测试`, `demo`, `mock` or `seed`. The UI should read as a live operating system. If reviewers need to know that data is synthetic, document it in PR notes, fixture docs or test setup, not in the product surface.
 
+## Operational Foundation Gate
+
+MES page delivery is gated by operational readiness, not by route existence. A page is not complete until the facts it depends on can be maintained or imported, resolved through backend contracts, selected through business controls, and verified in the shock absorber manufacturing scenario.
+
+Required before further MES page completion:
+
+1. Server-side numbering for durable business documents. Ordinary users must not enter or click-generate system IDs.
+2. Master data workflows for materials, customers, suppliers, plant, production lines, work centers, devices, shifts, calendars, teams, skills and resource capabilities.
+3. Product engineering workflows for EBOM, MBOM, routing, operation definitions and released production versions.
+4. Demand/MRP/procurement readiness so production plans come from sales, forecast, safety stock and planning suggestions instead of ad hoc work-order entry.
+5. Material, quality and equipment readiness from Inventory/WMS, Quality, Maintenance and IndustrialTelemetry before release, dispatch and start actions are shown.
+6. Row-context actions and linked selectors instead of free-text IDs. Work orders, operation tasks, material requests, reports and receipts should inherit context from the selected business object.
+
+`生产准备检查` remains a diagnostic support page. It must not become a substitute for the source workflows above, and it must not be used to maintain master data, engineering data, inventory, quality, barcode, maintenance or numbering rules.
+
 ## Reference Signals
 
 Mature MES and frontline systems organize around production execution, worklists and operator guidance rather than raw service methods. SAP Digital Manufacturing describes worklists, live operations, resource orchestration and shop-floor execution as core interaction surfaces. Tulip's Order Execution app centers on selecting a work order, executing operations, following instructions and logging production in one guided flow. These are directionally useful references, but Nerv-IIP should remain a dense industrial management UI, not a marketing dashboard.
