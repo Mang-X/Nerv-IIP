@@ -7,12 +7,14 @@ import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import BusinessRowActions from '@/components/business/BusinessRowActions.vue'
 import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
+import { useBusinessMasterDataResources, useBusinessSkus } from '@/composables/useBusinessMasterData'
 import { useMesWorkOrders } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type {
   BusinessConsoleCreateRushWorkOrderRequest,
   BusinessConsoleMesWorkOrderItem,
   BusinessConsoleRecordProductionReportRequest,
+  BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import {
   Button,
@@ -39,6 +41,10 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 import {
+  ArrowDownIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  CalendarCheckIcon,
   ClipboardCheckIcon,
   EyeIcon,
   FactoryIcon,
@@ -47,7 +53,7 @@ import {
   RouteIcon,
   WrenchIcon,
 } from 'lucide-vue-next'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -72,6 +78,11 @@ const {
 } = useMesWorkOrders()
 
 const router = useRouter()
+const { skus } = useBusinessSkus()
+const { resources: siteResources } = useBusinessMasterDataResources('site')
+const { resources: lineResources } = useBusinessMasterDataResources('production-line')
+const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
+const { resources: shiftResources } = useBusinessMasterDataResources('shift')
 const rushSuccess = shallowRef('')
 const reportSuccess = shallowRef('')
 const rushSheetOpen = shallowRef(false)
@@ -84,6 +95,15 @@ const executionContext = reactive({
   workCenterCode: '',
   shiftCode: '',
 })
+type SortColumn = 'workOrderId' | 'skuId' | 'status' | 'quantity' | 'dueUtc'
+
+const tableState = reactive({
+  keyword: '',
+  page: 1,
+  pageSize: '10',
+  sortBy: 'dueUtc' as SortColumn,
+  sortDirection: 'asc' as 'asc' | 'desc',
+})
 const statusOptions = [
   { label: '全部状态', value: 'all' },
   { label: '已下达', value: 'Released' },
@@ -92,6 +112,32 @@ const statusOptions = [
   { label: '已完成', value: 'Completed' },
   { label: '已关闭', value: 'Closed' },
   { label: '阻塞', value: 'Blocked' },
+]
+const demandEntries = [
+  {
+    title: '正常订单',
+    description: '由销售订单、客户订单或已确认需求进入生产计划，再转为正式工单。',
+    action: '去生产计划',
+    path: '/mes/plans',
+  },
+  {
+    title: '备货生产',
+    description: '按预测、主生产计划或备货策略生成计划，确认齐套后下达到车间。',
+    action: '查看计划来源',
+    path: '/mes/plans',
+  },
+  {
+    title: '安全库存补充',
+    description: '库存低于安全水位时由计划建议补货，不走急单通道。',
+    action: '处理补货计划',
+    path: '/mes/plans',
+  },
+  {
+    title: '急单插单',
+    description: '只用于临时插单、返工补单或现场加急，提交后触发排程影响评估。',
+    action: '创建急单',
+    path: '',
+  },
 ]
 
 const rushForm = reactive({
@@ -133,19 +179,19 @@ const reportQuantitiesAreValid = computed(
     reportGoodQuantity.value + reportScrapQuantity.value > 0,
 )
 const openOrderCount = computed(
-  () => workOrders.value.filter((order) => (order.status ?? '').toLowerCase() !== 'closed').length,
+  () => visibleWorkOrders.value.filter((order) => (order.status ?? '').toLowerCase() !== 'closed').length,
 )
 const blockedOrderCount = computed(
-  () => workOrders.value.filter((order) => ['blocked', 'hold', 'held'].includes((order.status ?? '').toLowerCase())).length,
+  () => visibleWorkOrders.value.filter((order) => ['blocked', 'hold', 'held'].includes((order.status ?? '').toLowerCase())).length,
 )
 const readyOrderCount = computed(
-  () => workOrders.value.filter((order) => ['ready', 'released'].includes((order.status ?? '').toLowerCase())).length,
+  () => visibleWorkOrders.value.filter((order) => ['ready', 'released'].includes((order.status ?? '').toLowerCase())).length,
 )
 const runningOrderCount = computed(
-  () => workOrders.value.filter((order) => ['running', 'inprogress', 'started'].includes((order.status ?? '').toLowerCase())).length,
+  () => visibleWorkOrders.value.filter((order) => ['running', 'inprogress', 'started'].includes((order.status ?? '').toLowerCase())).length,
 )
 const operationCount = computed(() =>
-  workOrders.value.reduce((total, order) => total + (order.operationTasks?.length ?? 0), 0),
+  visibleWorkOrders.value.reduce((total, order) => total + (order.operationTasks?.length ?? 0), 0),
 )
 const dispatchLanes = computed(() => [
   {
@@ -193,12 +239,82 @@ const statusFilter = computed({
     filters.status = value === 'all' ? undefined : value
   },
 })
+const siteOptions = computed(() => toResourceOptions(siteResources.value))
+const lineOptions = computed(() => toResourceOptions(lineResources.value))
+const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
+const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
+const skuOptions = computed(() => toResourceOptions(skus.value))
+const visibleWorkOrders = computed(() => {
+  const keyword = tableState.keyword.trim().toLowerCase()
+  const workCenter = executionContext.workCenterCode.trim().toLowerCase()
+
+  return workOrders.value.filter((order) => {
+    const statusMatched = !filters.status || order.status === filters.status
+    const keywordMatched =
+      !keyword ||
+      [order.workOrderId, order.skuId, order.productionVersionId, order.status]
+        .some((value) => (value ?? '').toLowerCase().includes(keyword))
+    const workCenterMatched =
+      !workCenter ||
+      (order.operationTasks ?? []).some((task) => (task.workCenterId ?? '').toLowerCase() === workCenter)
+
+    return statusMatched && keywordMatched && workCenterMatched
+  })
+})
+const sortedWorkOrders = computed(() => {
+  const direction = tableState.sortDirection === 'asc' ? 1 : -1
+
+  return [...visibleWorkOrders.value].sort((left, right) => {
+    const leftValue = sortValue(left, tableState.sortBy)
+    const rightValue = sortValue(right, tableState.sortBy)
+
+    if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+      return (leftValue - rightValue) * direction
+    }
+
+    return String(leftValue).localeCompare(String(rightValue), 'zh-Hans-CN') * direction
+  })
+})
+const pageSizeNumber = computed(() => Number(tableState.pageSize) || 10)
+const totalPages = computed(() => Math.max(1, Math.ceil(sortedWorkOrders.value.length / pageSizeNumber.value)))
+const pagedWorkOrders = computed(() => {
+  const start = (tableState.page - 1) * pageSizeNumber.value
+  return sortedWorkOrders.value.slice(start, start + pageSizeNumber.value)
+})
+const paginationSummary = computed(() => {
+  if (!sortedWorkOrders.value.length) return '0 条'
+  const start = (tableState.page - 1) * pageSizeNumber.value + 1
+  const end = Math.min(tableState.page * pageSizeNumber.value, sortedWorkOrders.value.length)
+  return `${start}-${end} / ${sortedWorkOrders.value.length} 条`
+})
+
+watch(
+  () => [
+    tableState.keyword,
+    tableState.pageSize,
+    filters.status,
+    executionContext.workCenterCode,
+    workOrders.value.length,
+  ],
+  () => {
+    tableState.page = 1
+  },
+)
 
 function syncContextFromFilters() {
   rushForm.organizationId = filters.organizationId
   rushForm.environmentId = filters.environmentId
   reportForm.organizationId = filters.organizationId
   reportForm.environmentId = filters.environmentId
+}
+
+function openDemandEntry(path: string) {
+  if (!path) {
+    rushSheetOpen.value = true
+    return
+  }
+
+  void router.push(path)
 }
 
 function useWorkOrder(order: BusinessConsoleMesWorkOrderItem) {
@@ -266,6 +382,35 @@ async function submitProductionReport() {
   reportSuccess.value = `生产报工 ${response?.data?.productionReportId ?? body.workOrderId} 已提交。`
 }
 
+function setSort(column: SortColumn) {
+  if (tableState.sortBy === column) {
+    tableState.sortDirection = tableState.sortDirection === 'asc' ? 'desc' : 'asc'
+    return
+  }
+
+  tableState.sortBy = column
+  tableState.sortDirection = 'asc'
+}
+
+function sortIcon(column: SortColumn) {
+  if (tableState.sortBy !== column) return ArrowUpDownIcon
+  return tableState.sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon
+}
+
+function sortValue(order: BusinessConsoleMesWorkOrderItem, column: SortColumn) {
+  if (column === 'quantity') return order.quantity ?? 0
+  if (column === 'dueUtc') return order.dueUtc ? new Date(order.dueUtc).getTime() : 0
+  return order[column] ?? ''
+}
+
+function previousPage() {
+  tableState.page = Math.max(1, tableState.page - 1)
+}
+
+function nextPage() {
+  tableState.page = Math.min(totalPages.value, tableState.page + 1)
+}
+
 function optionalText(value: string) {
   const trimmed = value.trim()
   return trimmed ? trimmed : undefined
@@ -307,6 +452,15 @@ function orderKey(order: BusinessConsoleMesWorkOrderItem, index: number) {
   return `${order.workOrderId ?? 'wo'}:${index}`
 }
 
+function toResourceOptions(items: BusinessConsoleResourceItem[]) {
+  return items
+    .filter((item) => item.active !== false && item.code)
+    .map((item) => ({
+      label: item.displayName ? `${item.displayName} (${item.code})` : item.code!,
+      value: item.code!,
+    }))
+}
+
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
@@ -326,6 +480,10 @@ function isNonEmpty(value: string) {
         summary="围绕工单安排生产顺序、查看工序任务、发起齐套检查和报工，避免一线人员在多个页面之间手工拼编号。"
       >
         <template #actions>
+          <Button size="sm" type="button" variant="outline" @click="router.push('/mes/plans')">
+            <CalendarCheckIcon data-icon="inline-start" />
+            生产计划
+          </Button>
           <Button size="sm" type="button" @click="rushSheetOpen = true">
             <FactoryIcon data-icon="inline-start" />
             创建急单
@@ -337,6 +495,20 @@ function isNonEmpty(value: string) {
         </template>
       </BusinessPageHeader>
 
+      <div class="grid gap-3 lg:grid-cols-4">
+        <button
+          v-for="entry in demandEntries"
+          :key="entry.title"
+          class="grid gap-2 rounded-lg border bg-background p-4 text-left transition-colors hover:border-primary/50 hover:bg-muted/40"
+          type="button"
+          @click="openDemandEntry(entry.path)"
+        >
+          <span class="text-sm font-semibold text-foreground">{{ entry.title }}</span>
+          <span class="min-h-12 text-sm leading-6 text-muted-foreground">{{ entry.description }}</span>
+          <span class="text-sm font-medium text-primary">{{ entry.action }}</span>
+        </button>
+      </div>
+
       <BusinessContextBar
         v-model:environment-id="filters.environmentId"
         v-model:line-code="executionContext.lineCode"
@@ -344,10 +516,18 @@ function isNonEmpty(value: string) {
         v-model:shift-code="executionContext.shiftCode"
         v-model:site-code="executionContext.siteCode"
         v-model:work-center-code="executionContext.workCenterCode"
+        :line-options="lineOptions"
+        :shift-options="shiftOptions"
+        :site-options="siteOptions"
         title="生产范围"
+        :work-center-options="workCenterOptions"
         @change="syncContextFromFilters"
       >
         <FieldGroup class="grid gap-3 md:grid-cols-2">
+          <Field>
+            <FieldLabel for="work-order-keyword">搜索</FieldLabel>
+            <Input id="work-order-keyword" v-model="tableState.keyword" placeholder="工单、SKU、生产版本" />
+          </Field>
           <Field>
             <FieldLabel for="work-order-status">状态</FieldLabel>
             <Select v-model="statusFilter">
@@ -362,8 +542,21 @@ function isNonEmpty(value: string) {
             </Select>
           </Field>
           <Field>
-            <FieldLabel for="work-order-take">数量</FieldLabel>
+            <FieldLabel for="work-order-take">加载数量</FieldLabel>
             <Input id="work-order-take" v-model.number="filters.take" inputmode="numeric" type="number" />
+          </Field>
+          <Field>
+            <FieldLabel for="work-order-page-size">每页显示</FieldLabel>
+            <Select v-model="tableState.pageSize">
+              <SelectTrigger id="work-order-page-size" aria-label="每页显示">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 条</SelectItem>
+                <SelectItem value="20">20 条</SelectItem>
+                <SelectItem value="50">50 条</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
         </FieldGroup>
         <BusinessFormStatus :error="listErrorMessage" />
@@ -385,7 +578,7 @@ function isNonEmpty(value: string) {
       </div>
 
       <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="工单数" :value="workOrders.length" detail="当前筛选结果" />
+        <BusinessMetricCell label="工单数" :value="visibleWorkOrders.length" detail="当前筛选结果" />
         <BusinessMetricCell label="未关闭工单" :value="openOrderCount" detail="非 Closed 状态" />
         <BusinessMetricCell label="工序任务" :value="operationCount" detail="工单下可见任务" />
       </div>
@@ -393,22 +586,42 @@ function isNonEmpty(value: string) {
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">工单列表</h2>
-          <span class="text-sm text-muted-foreground">返回 {{ workOrders.length }} 条</span>
+          <span class="text-sm text-muted-foreground">显示 {{ paginationSummary }}</span>
         </div>
         <div class="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>工单</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead class="text-right">数量</TableHead>
-                <TableHead>交期</TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('workOrderId')">
+                    工单
+                    <component :is="sortIcon('workOrderId')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('status')">
+                    状态
+                    <component :is="sortIcon('status')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
+                <TableHead class="text-right">
+                  <Button class="-mr-3" size="sm" type="button" variant="ghost" @click="setSort('quantity')">
+                    数量
+                    <component :is="sortIcon('quantity')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('dueUtc')">
+                    交期
+                    <component :is="sortIcon('dueUtc')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
                 <TableHead>工序</TableHead>
                 <TableHead class="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-for="(order, index) in workOrders" :key="orderKey(order, index)">
+              <TableRow v-for="(order, index) in pagedWorkOrders" :key="orderKey(order, index)">
                 <TableCell>
                   <div class="flex flex-col gap-0.5">
                     <RouterLink
@@ -467,16 +680,29 @@ function isNonEmpty(value: string) {
                   </BusinessRowActions>
                 </TableCell>
               </TableRow>
-              <TableEmpty v-if="!workOrders.length && !workOrdersPending" :colspan="6">
+              <TableEmpty v-if="!visibleWorkOrders.length && !workOrdersPending" :colspan="6">
                 <BusinessEmptyState
                   title="当前筛选下没有工单"
-                  description="可以调整状态筛选，或从右上角创建急单进入插单流程。"
-                  action="急单创建完成后会回到工单列表继续派工和报工。"
+                  description="可以调整状态、工作中心或搜索条件；正常生产请先进入生产计划，急单只处理临时插单。"
+                  action="生产计划转工单后会回到这里继续派工、齐套检查和报工。"
                 />
               </TableEmpty>
               <TableEmpty v-if="workOrdersPending" :colspan="6">正在加载工单...</TableEmpty>
             </TableBody>
           </Table>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+          <p class="text-sm text-muted-foreground">
+            第 {{ tableState.page }} / {{ totalPages }} 页
+          </p>
+          <div class="flex items-center gap-2">
+            <Button size="sm" type="button" variant="outline" :disabled="tableState.page <= 1" @click="previousPage">
+              上一页
+            </Button>
+            <Button size="sm" type="button" variant="outline" :disabled="tableState.page >= totalPages" @click="nextPage">
+              下一页
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -499,7 +725,17 @@ function isNonEmpty(value: string) {
             </Field>
             <Field>
               <FieldLabel for="rush-sku">SKU</FieldLabel>
-              <Input id="rush-sku" v-model="rushForm.skuId" required />
+              <Select v-if="skuOptions.length" v-model="rushForm.skuId">
+                <SelectTrigger id="rush-sku">
+                  <SelectValue placeholder="选择 SKU" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="option in skuOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Input v-else id="rush-sku" v-model="rushForm.skuId" required />
             </Field>
             <Field>
               <FieldLabel for="rush-version">生产版本</FieldLabel>
@@ -515,7 +751,17 @@ function isNonEmpty(value: string) {
             </Field>
             <Field>
               <FieldLabel for="rush-work-center">工作中心</FieldLabel>
-              <Input id="rush-work-center" v-model="rushForm.workCenterId" required />
+              <Select v-if="workCenterOptions.length" v-model="rushForm.workCenterId">
+                <SelectTrigger id="rush-work-center">
+                  <SelectValue placeholder="选择工作中心" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Input v-else id="rush-work-center" v-model="rushForm.workCenterId" required />
             </Field>
             <Field>
               <FieldLabel for="rush-operation-task">工序任务</FieldLabel>

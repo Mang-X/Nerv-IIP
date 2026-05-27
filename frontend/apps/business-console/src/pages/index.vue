@@ -10,7 +10,8 @@ definePage({
 })
 
 const workbenchItems = [
-  { path: '/mes/work-orders', domain: 'MES', label: '工单与派工', summary: '处理急单、派工和工单详情。' },
+  { path: '/mes/plans', domain: 'MES', label: '生产计划', summary: '处理正常订单、备货、安全库存和预测需求转工单。' },
+  { path: '/mes/work-orders', domain: 'MES', label: '工单与派工', summary: '处理计划工单、急单插单、派工和工单详情。' },
   { path: '/mes/operation-tasks', domain: 'MES', label: '工序执行', summary: '查看待开工、执行中和阻塞任务。' },
   { path: '/quality/ncrs', domain: '质量', label: '不合格品处理', summary: '跟进待处置、待关闭的质量异常。' },
   { path: '/inventory/availability', domain: '库存', label: '库存可用量', summary: '按物料、工厂、批次快速确认库存。' },

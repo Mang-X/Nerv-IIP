@@ -1,32 +1,56 @@
 <script setup lang="ts">
 import { useBusinessContextStore, type BusinessContextState } from '@/stores/businessContext'
-import { Button, Field, FieldGroup, FieldLabel, Input } from '@nerv-iip/ui'
+import {
+  Button,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
+
+export interface BusinessContextOption {
+  label: string
+  value: string
+}
 
 const props = withDefaults(
   defineProps<{
     environmentId: string
     lineCode?: string
+    lineOptions?: BusinessContextOption[]
     organizationId: string
     shiftCode?: string
+    shiftOptions?: BusinessContextOption[]
     showLine?: boolean
     showShift?: boolean
     showSite?: boolean
     showWorkCenter?: boolean
     siteCode?: string
+    siteOptions?: BusinessContextOption[]
     title?: string
     workCenterCode?: string
+    workCenterOptions?: BusinessContextOption[]
   }>(),
   {
     lineCode: '',
+    lineOptions: () => [],
     shiftCode: '',
+    shiftOptions: () => [],
     showLine: true,
     showShift: true,
     showSite: true,
     showWorkCenter: true,
     siteCode: '',
+    siteOptions: () => [],
     title: '生产范围',
     workCenterCode: '',
+    workCenterOptions: () => [],
   },
 )
 
@@ -121,19 +145,59 @@ function clearExecutionScope() {
     <FieldGroup class="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
       <Field v-if="showSite">
         <FieldLabel for="business-context-site">工厂</FieldLabel>
-        <Input id="business-context-site" v-model="siteValue" placeholder="可选" />
+        <Select v-if="siteOptions.length" v-model="siteValue">
+          <SelectTrigger id="business-context-site">
+            <SelectValue placeholder="全部工厂" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in siteOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Input v-else id="business-context-site" v-model="siteValue" placeholder="可选" />
       </Field>
       <Field v-if="showLine">
         <FieldLabel for="business-context-line">产线</FieldLabel>
-        <Input id="business-context-line" v-model="lineValue" placeholder="可选" />
+        <Select v-if="lineOptions.length" v-model="lineValue">
+          <SelectTrigger id="business-context-line">
+            <SelectValue placeholder="全部产线" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in lineOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Input v-else id="business-context-line" v-model="lineValue" placeholder="可选" />
       </Field>
       <Field v-if="showWorkCenter">
         <FieldLabel for="business-context-work-center">工作中心</FieldLabel>
-        <Input id="business-context-work-center" v-model="workCenterValue" placeholder="可选" />
+        <Select v-if="workCenterOptions.length" v-model="workCenterValue">
+          <SelectTrigger id="business-context-work-center">
+            <SelectValue placeholder="全部工作中心" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Input v-else id="business-context-work-center" v-model="workCenterValue" placeholder="可选" />
       </Field>
       <Field v-if="showShift">
         <FieldLabel for="business-context-shift">班次</FieldLabel>
-        <Input id="business-context-shift" v-model="shiftValue" placeholder="可选" />
+        <Select v-if="shiftOptions.length" v-model="shiftValue">
+          <SelectTrigger id="business-context-shift">
+            <SelectValue placeholder="全部班次" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in shiftOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Input v-else id="business-context-shift" v-model="shiftValue" placeholder="可选" />
       </Field>
     </FieldGroup>
     <slot />

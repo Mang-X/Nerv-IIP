@@ -77,6 +77,7 @@ describe('BusinessLayout', () => {
         title: 'MES',
         items: [
           { title: '生产驾驶舱', to: { path: '/mes' } },
+          { title: '生产计划', to: { path: '/mes/plans' } },
           { title: '工单与派工', to: { path: '/mes/work-orders' } },
           { title: '工序执行', to: { path: '/mes/operation-tasks' } },
           { title: '在制跟踪', to: { path: '/mes/wip' } },
