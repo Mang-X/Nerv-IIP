@@ -8,13 +8,16 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 
 1. ProductEngineering：PDM/PLM lite。
 2. DemandPlanning：MPS/MRP lite。
-3. BusinessMasterData：基础主数据。
-4. Inventory、Quality、BarcodeLabel、BusinessApproval：通用业务能力。
-5. ERP：Procurement/SRM-lite、Sales/CRM-lite/OMS-lite、Finance MVP。
-6. WMS：仓储执行和 WCS adapter 边界。
-7. MES：制造执行和规则排产。
-8. IndustrialTelemetry：IIoT/Telemetry lite，接入 PLC/DCS/SCADA 数据。
-9. Maintenance：CMMS lite。
+3. Scheduling/APS lite：排程契约、有限产能内核、资源负载和冲突解释。
+4. BusinessMasterData：基础主数据。
+5. Inventory、Quality、BarcodeLabel、BusinessApproval：通用业务能力。
+6. ERP：Procurement/SRM-lite、Sales/CRM-lite/OMS-lite、Finance MVP。
+7. WMS：仓储执行和 WCS adapter 边界。
+8. MES：制造执行和排程结果消费。
+9. IndustrialTelemetry：IIoT/Telemetry lite，接入 PLC/DCS/SCADA 数据。
+10. Maintenance：CMMS lite。
+
+2026-05-27 起，本 spec 的 APS 边界按 `docs/adr/0014-aps-and-iiot-scheduling-boundary.md` 修订：APS lite 进入 P0，高级优化器、仿真、自动重排和现场控制闭环仍后置。
 
 ## Goals
 
@@ -29,7 +32,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 1. 不在本阶段实现代码、迁移、OpenAPI 快照或前端页面。
 2. 不实现 CAD、SCADA、PLC/DCS、WCS、AGV/AMR 这类外部系统本体。
 3. 不做完整 PLM 套件，只做产品工程版本、BOM、工艺路线和工程变更 MVP。
-4. 不做完整 APS 优化求解器，首批只做 MPS/MRP 与 MES 规则派工。
+4. 不做完整 APS 优化求解器；P0 只做 APS lite 排程契约、确定性启发式有限产能调度、资源负载和冲突解释。
 5. 不做完整 CRM、SRM、CPQ、OMS；首批只把必要能力压缩进 ERP Sales/Procurement/WMS fulfillment。
 6. 不做完整 EAM，首批只做 CMMS lite。
 7. 不改变 IAM、AppHub、Ops、File Storage、Notification 的主平台事实源职责。
@@ -41,7 +44,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | PDM/PLM | ProductEngineering lite | EBOM、MBOM、工艺路线和工程变更是 MRP/MES 的前置事实。 |
 | CAD | 外部文件/集成来源 | 通过 File Storage 和 ProductEngineering 管理引用，不实现设计能力。 |
 | MPS/MRP | DemandPlanning lite | 解释为什么采购、为什么生产、数量如何计算。 |
-| APS | 后置 | 首批规则排产即可，复杂约束优化后续独立。 |
+| APS | Scheduling/APS lite | P0 先做排程契约、有限产能启发式内核、资源负载和冲突解释；复杂优化求解器后续独立。 |
 | SRM | ERP Procurement 子域 | 首批覆盖供应商、询价、报价和采购协同最小流程。 |
 | CRM | ERP Sales 子域 | 首批覆盖客户、商机、报价和销售订单。 |
 | CPQ | 预留边界 | 配置型产品或复杂报价成立时再独立。 |
@@ -66,7 +69,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | 供应商协同用户 | 响应询价、确认交期和发货信息 | external-client 或受控用户；范围受限 | SRM-lite。 |
 | 销售员 | 管理客户、商机、报价、销售订单和发货请求 | 不能直接改库存余额或应收台账 | CRM-lite/ERP Sales。 |
 | 仓储作业员 | 执行收货、上架、拣货、复核、盘点 | 只能处理分派或授权范围内的作业 | WMS/PDA。 |
-| 生产计划员 | 创建工单、释放工序、触发规则排产 | 不直接改库存余额 | MES。 |
+| 生产计划员 | 创建工单、释放工序、查看 APS 排程和触发派工 | 不直接改库存余额 | MES / Scheduling。 |
 | 车间操作员 | 报工、提交不良、记录完工和停机 | 只能提交所属工序/工单范围数据 | MES。 |
 | 质检员 | 执行收货检验、工序检验和不合格处置 | 不直接改采购、销售、库存财务事实 | Quality。 |
 | 设备运维人员 | 处理报警、维修、保养和点检 | 不拥有设备主数据，不控制 PLC/DCS | Maintenance。 |
@@ -106,7 +109,9 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | BP-WMS-003 | 发送 WCS adapter 任务并处理回执 | 仓储作业员、Connector Host | WcsTask | 创建/异步/补偿 | WCS 外部系统可选 | 不独立建 WCS。 |
 | BP-WMS-004 | 执行扫码盘点并提交差异 | 仓储作业员 | CountExecution | 创建/关闭 | 盘点任务来自 Inventory | PDA/扫码。 |
 | BP-MES-001 | 从计划工单建议创建正式工单 | 生产计划员 | WorkOrder | 创建/查看 | 引用已发布 MBOM/路线 | MRP 到 MES。 |
-| BP-MES-002 | 释放工序任务、规则排产和 Gantt 查询 | 生产计划员 | OperationTask/ScheduleResult | 创建/查看 | 工作中心日历有效 | APS 后置。 |
+| BP-SCH-001 | 生成排程方案、资源负载和冲突解释 | 生产计划员 | SchedulingProblem/SchedulePlan | 创建/查看 | 工单、工艺路线、日历、设备可用性和物料 readiness 有效 | APS lite。 |
+| BP-SCH-002 | 急单插入并解释延期影响 | 生产计划员 | SchedulePlan/Conflict | 创建/查看 | 已有锁定任务和设备维护窗口必须被保留 | APS lite。 |
+| BP-MES-002 | 释放工序任务并消费排程结果 | 生产计划员 | OperationTask/ScheduleResult | 创建/查看 | 工作中心日历和 APS 排程结果有效 | MES 不承担 APS 算法。 |
 | BP-MES-003 | 提交报工、工序检验和完工入库请求 | 车间操作员、质检员 | ProductionReport/FinishedReceiptRequest | 创建/修改/关闭 | 报工数量不超过可报数量 | MES 到 WMS/ERP 成本。 |
 | BP-TEL-001 | 建立 tag 映射和采集点 | 运维人员、Connector Host | TelemetryTag | 创建/修改/查看 | 设备资产存在；不保存控制密钥 | IIoT-lite。 |
 | BP-TEL-002 | 接收设备状态、报警和时序摘要 | Connector Host | DeviceStateSnapshot/AlarmEvent | 创建/查看 | 原始高频时序可后置 | SCADA/PLC/DCS 来源。 |

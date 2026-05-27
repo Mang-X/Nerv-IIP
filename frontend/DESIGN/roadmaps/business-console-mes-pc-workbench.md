@@ -26,7 +26,8 @@ Required before further MES page completion:
 3. Product engineering workflows for EBOM, MBOM, routing, operation definitions and released production versions.
 4. Demand/MRP/procurement readiness so production plans come from sales, forecast, safety stock and planning suggestions instead of ad hoc work-order entry.
 5. Material, quality and equipment readiness from Inventory/WMS, Quality, Maintenance and IndustrialTelemetry before release, dispatch and start actions are shown.
-6. Row-context actions and linked selectors instead of free-text IDs. Work orders, operation tasks, material requests, reports and receipts should inherit context from the selected business object.
+6. APS lite scheduling results from the backend before any Gantt or dispatch timeline is counted as delivered. The browser may preview and submit adjustment intent, but it must not calculate the official schedule.
+7. Row-context actions and linked selectors instead of free-text IDs. Work orders, operation tasks, material requests, reports and receipts should inherit context from the selected business object.
 
 `生产准备检查` remains a diagnostic support page. It must not become a substitute for the source workflows above, and it must not be used to maintain master data, engineering data, inventory, quality, barcode, maintenance or numbering rules.
 
@@ -41,12 +42,21 @@ References:
 
 ## Navigation Model
 
-Top-level domains remain:
+The initial MVP top-level domains were:
 
 1. `主数据`
 2. `库存`
 3. `质量`
 4. `MES`
+
+For the operational foundation reset, Business Console navigation should expand around the work roles rather than around service names:
+
+1. `主数据`
+2. `工程资料`
+3. `计划与采购`
+4. `生产执行`
+5. `质量与库存`
+6. `设备与排程`
 
 MES menu order:
 
@@ -59,7 +69,7 @@ MES menu order:
 | 报工记录 | `/mes/production-reports` | Report history; create action comes from work order or operation context. |
 | 完工入库 | `/mes/receipts` | Receipt requests; create action comes from completion context. |
 | 异常与产能 | `/mes/capacity` | Equipment/capacity impact and exception awareness. |
-| 规则排程 | `/mes/schedules` | Rule result and explicit schedule-run action, not a Gantt workspace. |
+| 规则排程 | `/mes/schedules` | Temporary MES rule result and explicit schedule-run action; APS/Gantt moves to a dedicated scheduling workspace. |
 | 生产准备检查 | `/mes/foundation` | Supporting readiness diagnostics for release/start/dispatch. |
 
 `基础就绪` must not be a primary operator label. Use `生产准备检查` and position it after execution pages.
@@ -180,7 +190,7 @@ P1:
 
 ## Non-Goals
 
-1. Do not implement APS/Gantt in this workbench pass.
+1. Do not implement APS/Gantt inside the MES workbench pass. APS belongs to #206, equipment IIoT facts belong to #207, and Gantt visualization belongs to #78; MES pages consume schedule and readiness results.
 2. Do not fake release, dispatch, start, pause or close APIs before backend support exists.
 3. Do not make MES maintain master data, engineering, inventory, quality, barcode or numbering rules.
 4. Do not build mobile/PDA screens in this PC workbench scope.

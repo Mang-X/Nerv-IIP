@@ -146,7 +146,7 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 
 ### Business Platform
 
-业务平台权限码用于 ADR 0012 定义的关键链路领域扩展。BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry 和 BusinessMaintenance 权限已随对应 MVP 进入 IAM seed 或服务授权基线。其他业务域权限在实现对应服务时，必须按本表进入 IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。
+业务平台权限码用于 ADR 0012 与 ADR 0014 定义的关键链路领域扩展。BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry 和 BusinessMaintenance 权限已随对应 MVP 进入 IAM seed 或服务授权基线。BusinessScheduling / APS lite 权限随 #206 实现时再进入本表、IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。其他业务域权限在实现对应服务时，也必须按本表进入 IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。
 
 | 权限码 | 建议 principalType | 建议 scope | 说明 |
 | --- | --- | --- | --- |

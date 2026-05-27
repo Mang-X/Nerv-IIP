@@ -4,7 +4,7 @@
 
 **Goal:** Rebase MES PC delivery on a real operational foundation so the shock absorber manufacturing flow can run from demand, engineering and supply readiness through work order release, dispatch, reporting, receipt and traceability.
 
-**Architecture:** Stop treating MES pages as the first deliverable. Build source facts and server-side business behavior first, expose them through BusinessGateway, then implement Chinese PC pages that guide real users through linked workflows. MES owns execution facts only; MasterData, ProductEngineering, DemandPlanning, ERP, Inventory, WMS, Quality, BarcodeLabel, Maintenance and IndustrialTelemetry remain the fact owners for their own domains.
+**Architecture:** Stop treating MES pages as the first deliverable. Build source facts and server-side business behavior first, expose them through BusinessGateway, then implement Chinese PC pages that guide real users through linked workflows. MES owns execution facts only; MasterData, ProductEngineering, DemandPlanning, Scheduling/APS lite, ERP, Inventory, WMS, Quality, BarcodeLabel, Maintenance and IndustrialTelemetry remain the fact owners for their own domains.
 
 **Tech Stack:** .NET 10, FastEndpoints, CleanDDD, EF Core PostgreSQL, BusinessGateway facade, Hey API generated `@nerv-iip/api-client`, Vue 3, Vite Plus, Pinia Colada, `@nerv-iip/ui`, Playwright.
 
@@ -68,7 +68,7 @@ Use one realistic product family to prove the system can run:
 | Quality gate | Resolve inspection plans, first-piece/in-process/final inspection, quality holds and NCR context. | Quality / MES | MES currently needs stronger quality readiness and drill-down. |
 | Equipment availability | Resolve static device capability plus runtime maintenance/alarm/downtime availability. | MasterData / Maintenance / IndustrialTelemetry / MES | Maintenance/telemetry facts exist but PC readiness linkage is incomplete. |
 | MES lifecycle | Convert accepted plan to work order, release snapshot, dispatch, start/pause/resume/complete, report, receipt, trace. | MES | Must stop accepting free-text work order IDs and fill sparse query handlers with durable facts. |
-| APS | Keep full APS/Gantt out of P0; retain rule dispatch scheduling and capacity warnings. | MES now, APS later | Do not block P0 on optimizer; block only on rule scheduling and capacity visibility. |
+| APS lite | Define scheduling input/output contracts, finite-capacity heuristic scheduling, resource load, conflict explanation, locked tasks and rush insertion. | Scheduling / MES / DemandPlanning / IndustrialTelemetry / Maintenance | P0 now includes #206 scheduling core and #207 equipment runtime facts. Full optimizer, simulation and auto-reschedule remain later. |
 
 ## Delivery Phases
 
@@ -230,9 +230,51 @@ Main pages show queue, filter, KPI and table/detail. Create/report/confirm actio
 
 Using the seeded shock absorber scenario, prove sales/forecast demand -> MRP -> purchase readiness -> production version -> work order -> material issue -> dispatch -> report -> receipt -> traceability. Capture screenshots for review.
 
+### P0-H: Scheduling / APS Lite Core
+
+**Goal:** Make dispatch decisions reproducible before the Gantt view becomes a delivery surface.
+
+**Files:**
+- Create or modify: Scheduling/APS contracts for `SchedulingProblem`, `SchedulePlan`, resource load and conflict reasons.
+- Modify: DemandPlanning/MES/BusinessGateway integration points once the contract exists.
+- Test: deterministic scheduling cases for the shock absorber scenario.
+
+- [ ] **Step 1: Freeze scheduling contracts**
+
+Define schedule input from work orders, operations, released production versions, resources, calendars, material readiness, quality blocks and equipment availability. Output must include assignments, start/end windows, resource loads, conflict reasons and impossible-to-schedule reasons.
+
+- [ ] **Step 2: Implement deterministic finite-capacity scheduling**
+
+The first algorithm is a heuristic, not a solver. It must handle operation precedence, device capacity, shift calendars, maintenance windows, active alarms, locked tasks, due-date priority and rush insertion.
+
+- [ ] **Step 3: Keep Gantt as a consumer**
+
+The Gantt/scheduling UI consumes `SchedulePlan` and sends adjustment intent. It does not calculate the official schedule in the browser.
+
+### P0-I: Equipment IIoT Runtime Facts
+
+**Goal:** Make device state, alarms, downtime and maintenance windows affect APS and MES readiness.
+
+**Files:**
+- Modify: IndustrialTelemetry and Maintenance query/event surfaces as needed.
+- Modify: MES readiness and Scheduling availability integration once contracts exist.
+- Create or modify: Business Console equipment/IIoT pages after backend facts exist.
+
+- [ ] **Step 1: Map device runtime facts**
+
+Device assets, work centers, telemetry tags, state mapping, alarm severity, sampling policy and source sequence must be explicit and idempotent.
+
+- [ ] **Step 2: Expose availability for APS**
+
+Scheduling must be able to query device availability for a time window, including active alarm, downtime, maintenance, inspection and substitute-device context.
+
+- [ ] **Step 3: Expose readiness for MES**
+
+MES release, dispatch and start actions must use the same equipment reason codes as Scheduling, instead of showing device problems only on a separate diagnostics page.
+
 ## P1 Scope
 
-1. Richer finite-capacity scheduling, visual timeline and dispatch simulation.
+1. Richer schedule comparison, visual timeline interaction and dispatch simulation on top of APS lite.
 2. Saved views, column visibility, export, batch action and approval handoffs.
 3. Advanced quality workflow: first-piece inspection, SPC, NCR detail and CAPA handoff.
 4. Tooling/mold lifecycle, preventive maintenance windows and OEE loss tree.
@@ -240,7 +282,7 @@ Using the seeded shock absorber scenario, prove sales/forecast demand -> MRP -> 
 
 ## P2 Scope
 
-1. Full APS/Gantt optimizer.
+1. Solver-grade APS optimization, scenario simulation and automatic rescheduling.
 2. PDA/mobile scanning and offline sync.
 3. WCS/AGV/AMR automation depth.
 4. Full QMS/LIMS and full CMMS/EAM.
@@ -254,5 +296,6 @@ P0 is complete only when all are true:
 2. All P0 forms use linked selectors or row context instead of free-text IDs.
 3. The shock absorber scenario can be created or seeded and then run through MRP, procurement readiness, work order release, dispatch, report, receipt and traceability.
 4. MES refuses release/start actions when production version, BOM/routing, material, quality, equipment, calendar, shift, barcode or numbering readiness is blocked.
-5. Business Console visible copy is Chinese business copy and contains no developer metadata such as gateway contracts, implementation context or sample-data explanations.
-6. Verification includes backend tests, BusinessGateway proxy/authorization tests, generated client refresh, frontend typecheck/test/build and browser screenshots of the P0 scenario.
+5. APS lite can produce a deterministic schedule plan or conflict explanation from the P0 work orders, resources, calendars, material readiness and equipment runtime facts.
+6. Business Console visible copy is Chinese business copy and contains no developer metadata such as gateway contracts, implementation context or sample-data explanations.
+7. Verification includes backend tests, BusinessGateway proxy/authorization tests, generated client refresh, frontend typecheck/test/build and browser screenshots of the P0 scenario.

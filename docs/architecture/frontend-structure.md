@@ -201,7 +201,7 @@ Business Console 登录、刷新、退出和 `/me` 可以先复用 PlatformGatew
 | `/mes/production-reports` | 旧报工记录查询路由；新增报工从工单或工序上下文进入。 | BusinessGateway MES facade。 |
 | `/mes/quality` | 质量与不良，展示 MES 缺陷上下文和关联 Quality 事项。 | BusinessGateway MES facade。 |
 | `/mes/receipts` | 完工入库请求；新增请求通过抽屉承载，行级入口可回到工单上下文。 | BusinessGateway MES facade。 |
-| `/mes/schedules` | 规则排程结果和显式运行动作；不包含甘特。 | BusinessGateway MES facade。 |
+| `/mes/schedules` | MES 规则排程结果和显式运行动作；不包含甘特，也不承担 APS 算法。 | BusinessGateway MES facade。 |
 | `/mes/downtime` | 设备与停机，展示停机、恢复和未结异常。 | BusinessGateway MES facade。 |
 | `/mes/handovers` | 班次交接，展示待交接事项和班组交接状态。 | BusinessGateway MES facade。 |
 | `/mes/traceability` | 追溯查询，可按工单、批次/序列、物料批次进入执行证据链。 | BusinessGateway MES facade。 |
@@ -226,6 +226,8 @@ scripts/verify-business-console-mes-pc-workbench.ps1 -E2E -ChromiumExecutablePat
 ```
 
 当前 e2e smoke 覆盖桌面与移动视口下的 SKU、库存可用量、Quality NCR 和 MES PC 主要路由；本地缺少 Playwright managed Chromium 时，可临时设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 或使用脚本的 `-ChromiumExecutablePath` 指向已安装 Chrome/Chromium 后运行。
+
+ADR 0014 后，APS/Gantt 不进入 `/mes/schedules` 页面内部。#206 负责后端 APS lite 排程契约和内核，#78 负责甘特/排产图展示；未来独立排程工作台应消费 APS 输出 DTO，并继续通过 BusinessGateway facade 访问业务数据。
 
 ### Console IAM Admin
 

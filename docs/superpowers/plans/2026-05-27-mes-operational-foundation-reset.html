@@ -104,7 +104,7 @@
 
     .flow {
       display: grid;
-      grid-template-columns: repeat(10, minmax(120px, 1fr));
+      grid-template-columns: repeat(12, minmax(120px, 1fr));
       gap: 10px;
       overflow-x: auto;
       padding-bottom: 8px;
@@ -181,7 +181,7 @@
 
     .timeline {
       display: grid;
-      grid-template-columns: repeat(7, minmax(170px, 1fr));
+      grid-template-columns: repeat(9, minmax(170px, 1fr));
       gap: 12px;
       overflow-x: auto;
       padding-bottom: 8px;
@@ -246,9 +246,9 @@
   <main>
     <section class="summary">
       <div class="metric"><strong>1</strong><span>一条 P0 闭环：需求到 MRP、采购准备、工单、派工、报工、入库、追溯。</span></div>
-      <div class="metric"><strong>7</strong><span>先做七个基础阶段，再回到页面细化，避免继续页面先行。</span></div>
+      <div class="metric"><strong>9</strong><span>先做九个基础阶段，再回到页面细化，避免继续页面先行。</span></div>
       <div class="metric"><strong>0</strong><span>普通用户不再手填系统编号，也不需要点击生成。</span></div>
-      <div class="metric"><strong>P0</strong><span>APS/Gantt 不进入首轮阻塞项，规则排程和产能预警先满足执行。</span></div>
+      <div class="metric"><strong>P0</strong><span>APS lite 进入首轮：后端排程契约、有限产能内核和设备运行事实先行，甘特图只消费结果。</span></div>
     </section>
 
     <section class="panel">
@@ -260,6 +260,8 @@
         <div class="node"><b>工程放行</b><small>MBOM、工艺路线、生产版本</small></div>
         <div class="node"><b>工单释放</b><small>冻结版本、物料、质量和设备快照</small></div>
         <div class="node"><b>齐套领料</b><small>库存、线边、批次和替代料</small></div>
+        <div class="node"><b>设备运行</b><small>状态、报警、停机、维护窗口</small></div>
+        <div class="node"><b>APS 排程</b><small>资源负载、冲突、急单插入</small></div>
         <div class="node"><b>派工执行</b><small>班次、人员、设备、工序任务</small></div>
         <div class="node"><b>报工质检</b><small>合格、不良、返工、首检/巡检</small></div>
         <div class="node"><b>完工入库</b><small>请求、收货、库存入账</small></div>
@@ -281,7 +283,9 @@
             <tr><td>MRP</td><td><span class="pill p0">P0</span></td><td>从需求、库存和生产版本生成计划工单建议、采购建议和 pegging。</td></tr>
             <tr><td>采购供应</td><td><span class="pill p0">P0</span></td><td>供应商、采购申请/订单、到货、质检和库存可用量能影响 MES 齐套。</td></tr>
             <tr><td>MES 执行</td><td><span class="pill p0">P0</span></td><td>工单来源、释放快照、齐套、派工、开工、报工、完工入库、追溯。</td></tr>
-            <tr><td>APS/Gantt</td><td><span class="pill p2">P2</span></td><td>首轮不做优化器，先做规则排程、产能预警和派工可视化。</td></tr>
+            <tr><td>APS lite</td><td><span class="pill p0">P0</span></td><td>排程输入输出契约、有限产能启发式内核、资源负载、冲突解释和急单插入。</td></tr>
+            <tr><td>设备 IIoT</td><td><span class="pill p0">P0</span></td><td>设备状态、报警、停机、维护窗口和 APS/MES readiness 联动。</td></tr>
+            <tr><td>高级 APS/Gantt</td><td><span class="pill p2">P2</span></td><td>全局优化器、仿真、自动重排和复杂甘特交互后置；甘特图只消费后端排程结果。</td></tr>
           </tbody>
         </table>
       </div>
@@ -311,6 +315,8 @@
         <div class="phase"><h3>P0-E MRP 与采购</h3><ul><li>需求来源</li><li>采购建议</li><li>供应到货</li></ul></div>
         <div class="phase"><h3>P0-F MES 执行</h3><ul><li>工单来源</li><li>齐套派工</li><li>报工入库追溯</li></ul></div>
         <div class="phase"><h3>P0-G PC 重构</h3><ul><li>业务导航</li><li>行上下文动作</li><li>浏览器验收截图</li></ul></div>
+        <div class="phase"><h3>P0-H APS lite</h3><ul><li>排程契约</li><li>有限产能内核</li><li>冲突解释</li></ul></div>
+        <div class="phase"><h3>P0-I 设备 IIoT</h3><ul><li>状态报警</li><li>维护窗口</li><li>APS/MES 联动</li></ul></div>
       </div>
     </section>
 

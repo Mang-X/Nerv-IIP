@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **2026-05-27 Rebaseline:** This plan delivered a broad PC workbench surface, but it is no longer the canonical next-step plan for MES delivery. Future MES work must follow `docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.md`, which requires server-side numbering, complete source data, released engineering versions, MRP/procurement readiness and durable MES execution facts before further page completion work is counted as delivered.
+> **2026-05-27 Rebaseline:** This plan delivered a broad PC workbench surface, but it is no longer the canonical next-step plan for MES delivery. Future MES work must follow `docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.md`, which requires server-side numbering, complete source data, released engineering versions, MRP/procurement readiness, APS lite scheduling contracts, equipment IIoT runtime facts and durable MES execution facts before further page completion work is counted as delivered.
 
 **Goal:** Complete a PC-first, standard MES workbench so production planners, supervisors, shift leaders, material handlers, quality inspectors, and maintenance coordinators can run the real shop-floor loop from production plan readiness through work order release, material readiness, dispatching, operation execution, reporting, quality handling, finished-goods receipt, shift handover, and traceability before starting PDA/mobile work.
 

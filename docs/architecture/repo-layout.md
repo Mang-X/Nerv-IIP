@@ -96,7 +96,7 @@ Nerv-IIP/
 7. 主平台代码不得引用 connector-hosts 下的项目；Connector Host 也不得引用 backend/services 或 backend/gateway 下的服务实现项目。
 8. backend/common/Sdk 下的项目不得引用 backend/services 或 backend/gateway 下的 Web、Domain、Infrastructure 项目。
 9. 每个平台服务不得各自创建长期维护的 Aspire AppHost；统一平台编排入口归 infra/aspire。
-10. 业务平台扩展不得把 PDM/PLM、MPS/MRP、MES、WMS、ERP、IIoT 或 CMMS 领域规则写入 PlatformGateway、IAM、AppHub、Ops 或主平台 console。
+10. 业务平台扩展不得把 PDM/PLM、MPS/MRP、Scheduling/APS、MES、WMS、ERP、IIoT 或 CMMS 领域规则写入 PlatformGateway、IAM、AppHub、Ops 或主平台 console。
 11. BusinessGateway 可以通过公开 HTTP 契约、OpenAPI DTO、Platform SDK、IAM 授权上下文和 internal service token 调用业务服务，但不得引用 `backend/services/Business` 下的 Web、Domain 或 Infrastructure 项目。
 
 ## 非目标
