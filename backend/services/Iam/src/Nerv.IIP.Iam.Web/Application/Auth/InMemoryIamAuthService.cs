@@ -306,7 +306,8 @@ public sealed class InMemoryIamAuthService(
     {
         var leftBytes = Encoding.UTF8.GetBytes(left);
         var rightBytes = Encoding.UTF8.GetBytes(right);
-        return leftBytes.Length == rightBytes.Length
-            && CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
+        var leftHash = SHA256.HashData(leftBytes);
+        var rightHash = SHA256.HashData(rightBytes);
+        return CryptographicOperations.FixedTimeEquals(leftHash, rightHash);
     }
 }

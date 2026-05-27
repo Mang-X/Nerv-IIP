@@ -263,6 +263,11 @@ public interface IUserSessionRepository : IRepository<UserSession, UserSessionId
         UserId userId,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<UserSession>> ListActiveByExternalIdentityAsync(
+        string externalProvider,
+        string externalSubject,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class UserSessionRepository(ApplicationDbContext context)
@@ -308,6 +313,21 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
     {
         return await DbContext.UserSessions
             .Where(x => x.UserId == userId && x.RevokedAtUtc == null && x.ExpiresAtUtc > now)
+            .OrderByDescending(x => x.IssuedAtUtc)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<UserSession>> ListActiveByExternalIdentityAsync(
+        string externalProvider,
+        string externalSubject,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        return await DbContext.UserSessions
+            .Where(x => x.ExternalProvider == externalProvider
+                && x.ExternalSubject == externalSubject
+                && x.RevokedAtUtc == null
+                && x.ExpiresAtUtc > now)
             .OrderByDescending(x => x.IssuedAtUtc)
             .ToListAsync(cancellationToken);
     }

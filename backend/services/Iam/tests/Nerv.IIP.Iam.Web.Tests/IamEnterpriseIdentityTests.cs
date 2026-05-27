@@ -76,8 +76,27 @@ public sealed class IamEnterpriseIdentityTests
             new { code = "111111" });
         Assert.Equal(HttpStatusCode.Unauthorized, wrongCode.StatusCode);
 
-        var verified = await client.PostAsJsonAsync(
+        var consumedChallenge = await client.PostAsJsonAsync(
             $"/api/iam/v1/auth/mfa/challenges/{challenge.MfaChallengeId}/verify",
+            new { code = "654321" });
+        Assert.Equal(HttpStatusCode.Unauthorized, consumedChallenge.StatusCode);
+
+        var secondCallback = await client.PostAsJsonAsync(
+            "/api/iam/v1/auth/oidc/callback",
+            new
+            {
+                provider = "demo-mfa",
+                subject = "entra-user-admin",
+                email = "admin@nerv-iip.local",
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                callbackSecret = "oidc-callback-secret"
+            });
+        secondCallback.EnsureSuccessStatusCode();
+        var secondChallenge = await ReadResponseDataAsync<EnterpriseAuthResponse>(secondCallback);
+
+        var verified = await client.PostAsJsonAsync(
+            $"/api/iam/v1/auth/mfa/challenges/{secondChallenge.MfaChallengeId}/verify",
             new { code = "654321" });
         verified.EnsureSuccessStatusCode();
         var response = await ReadResponseDataAsync<EnterpriseAuthResponse>(verified);
@@ -89,6 +108,61 @@ public sealed class IamEnterpriseIdentityTests
         var session = Assert.Single(store.Sessions, x => x.SessionId == response.Session!.SessionId);
         Assert.Equal("oidc", session.AuthenticationMethod);
         Assert.NotNull(session.MfaVerifiedAtUtc);
+    }
+
+    [Fact]
+    public async Task Oidc_callback_revokes_previous_active_sso_session_for_same_external_subject()
+    {
+        await using var factory = EnterpriseFactory("demo-rotate", requireMfa: false);
+        var client = factory.CreateClient();
+
+        var firstCallback = await client.PostAsJsonAsync(
+            "/api/iam/v1/auth/oidc/callback",
+            new
+            {
+                provider = "demo-rotate",
+                subject = "entra-user-admin",
+                email = "admin@nerv-iip.local",
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                callbackSecret = "oidc-callback-secret"
+            });
+        firstCallback.EnsureSuccessStatusCode();
+        var first = await ReadResponseDataAsync<EnterpriseAuthResponse>(firstCallback);
+
+        var secondCallback = await client.PostAsJsonAsync(
+            "/api/iam/v1/auth/oidc/callback",
+            new
+            {
+                provider = "demo-rotate",
+                subject = "entra-user-admin",
+                email = "admin@nerv-iip.local",
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                callbackSecret = "oidc-callback-secret"
+            });
+        secondCallback.EnsureSuccessStatusCode();
+        var second = await ReadResponseDataAsync<EnterpriseAuthResponse>(secondCallback);
+
+        var store = factory.Services.GetRequiredService<Nerv.IIP.Iam.Infrastructure.InMemoryIamStore>();
+        var firstSession = Assert.Single(store.Sessions, x => x.SessionId == first.Session!.SessionId);
+        var secondSession = Assert.Single(store.Sessions, x => x.SessionId == second.Session!.SessionId);
+        Assert.NotNull(firstSession.RevokedAtUtc);
+        Assert.Null(secondSession.RevokedAtUtc);
+    }
+
+    [Fact]
+    public void Iam_rejects_default_mfa_development_code_outside_development()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Iam:Jwt:SigningKey", "0123456789abcdef0123456789abcdef");
+            });
+
+        var ex = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Iam:EnterpriseIdentity:Mfa:DevelopmentCode", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

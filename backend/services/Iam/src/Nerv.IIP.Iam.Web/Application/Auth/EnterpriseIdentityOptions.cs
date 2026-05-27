@@ -55,13 +55,18 @@ public sealed class InMemoryMfaChallengeStore : IMfaChallengeStore
             return null;
         }
 
-        if (context.ExpiresAtUtc <= DateTimeOffset.UtcNow
-            || !string.Equals(code, expectedCode, StringComparison.Ordinal))
+        if (context.ExpiresAtUtc <= DateTimeOffset.UtcNow)
         {
+            _challenges.TryRemove(challengeId, out _);
             return null;
         }
 
         _challenges.TryRemove(challengeId, out _);
+        if (!string.Equals(code, expectedCode, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         return context;
     }
 }

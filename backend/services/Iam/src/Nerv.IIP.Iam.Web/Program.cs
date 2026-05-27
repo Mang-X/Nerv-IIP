@@ -75,6 +75,14 @@ if (!builder.Environment.IsDevelopment()
 {
     throw new InvalidOperationException("Iam:Jwt:AccessTokenMinutes must be between 1 and 60 outside Development.");
 }
+var enterpriseIdentityOptions = builder.Configuration
+    .GetSection("Iam:EnterpriseIdentity")
+    .Get<EnterpriseIdentityOptions>() ?? new EnterpriseIdentityOptions();
+if (!builder.Environment.IsDevelopment()
+    && string.Equals(enterpriseIdentityOptions.Mfa.DevelopmentCode, "000000", StringComparison.Ordinal))
+{
+    throw new InvalidOperationException("Iam:EnterpriseIdentity:Mfa:DevelopmentCode must be overridden outside Development.");
+}
 
 var app = builder.Build();
 app.UseNervIipCorrelation();

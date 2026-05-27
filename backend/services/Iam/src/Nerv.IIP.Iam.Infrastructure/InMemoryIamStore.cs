@@ -260,10 +260,7 @@ public sealed class InMemoryIamStore
     {
         lock (_gate)
         {
-            return _memberships.Any(x =>
-                x.UserId == userId
-                && x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId);
+            return UserHasMembershipCore(userId, organizationId, environmentId);
         }
     }
 
@@ -289,7 +286,7 @@ public sealed class InMemoryIamStore
         lock (_gate)
         {
             var user = _users.Single(x => x.UserId == userId && x.Enabled);
-            if (!UserHasMembership(userId, organizationId, environmentId))
+            if (!UserHasMembershipCore(userId, organizationId, environmentId))
             {
                 throw new UnauthorizedAccessException("User is not a member of the requested organization environment.");
             }
@@ -478,6 +475,12 @@ public sealed class InMemoryIamStore
         var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         var now = DateTimeOffset.UtcNow;
         var expiresAtUtc = now.AddMinutes(15);
+        if (!string.IsNullOrWhiteSpace(externalProvider)
+            && !string.IsNullOrWhiteSpace(externalSubject))
+        {
+            RevokeActiveExternalSessions(externalProvider, externalSubject, now);
+        }
+
         var session = new UserSessionFact(
             sessionId,
             user.UserId,
@@ -505,6 +508,29 @@ public sealed class InMemoryIamStore
             user.Email,
             organizationId,
             environmentId);
+    }
+
+    private bool UserHasMembershipCore(string userId, string organizationId, string environmentId)
+    {
+        return _memberships.Any(x =>
+            x.UserId == userId
+            && x.OrganizationId == organizationId
+            && x.EnvironmentId == environmentId);
+    }
+
+    private void RevokeActiveExternalSessions(string externalProvider, string externalSubject, DateTimeOffset now)
+    {
+        for (var i = 0; i < _sessions.Count; i++)
+        {
+            var session = _sessions[i];
+            if (session.ExternalProvider == externalProvider
+                && session.ExternalSubject == externalSubject
+                && session.RevokedAtUtc is null
+                && session.ExpiresAtUtc > now)
+            {
+                _sessions[i] = session with { RevokedAtUtc = now };
+            }
+        }
     }
 
     private void RevokeSession(string sessionId)

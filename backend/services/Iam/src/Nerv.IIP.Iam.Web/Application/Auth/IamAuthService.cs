@@ -299,7 +299,6 @@ public sealed class PostgreSqlIamAuthService(
             throw Unauthorized();
         }
 
-        user.RecordSuccessfulLogin(DateTimeOffset.UtcNow);
         if (provider.RequireMfa)
         {
             var challengeId = mfaChallenges.Create(new MfaChallengeContext(
@@ -312,6 +311,7 @@ public sealed class PostgreSqlIamAuthService(
             return EnterpriseAuthResponse.Challenge(challengeId);
         }
 
+        user.RecordSuccessfulLogin(DateTimeOffset.UtcNow);
         return EnterpriseAuthResponse.Authenticated(await CreateSessionResponseAsync(
             user,
             clientInfo,
@@ -378,6 +378,20 @@ public sealed class PostgreSqlIamAuthService(
     {
         var refreshToken = tokenService.CreateRefreshToken();
         var now = DateTimeOffset.UtcNow;
+        if (!string.IsNullOrWhiteSpace(externalProvider)
+            && !string.IsNullOrWhiteSpace(externalSubject))
+        {
+            var activeSsoSessions = await userSessionRepository.ListActiveByExternalIdentityAsync(
+                externalProvider,
+                externalSubject,
+                now,
+                cancellationToken);
+            foreach (var activeSsoSession in activeSsoSessions)
+            {
+                activeSsoSession.Revoke(now, "sso-rotated");
+            }
+        }
+
         var session = new UserSession(
             new UserSessionId($"session-{Guid.NewGuid():N}"),
             user.Id,
@@ -468,7 +482,8 @@ public sealed class PostgreSqlIamAuthService(
     {
         var leftBytes = Encoding.UTF8.GetBytes(left);
         var rightBytes = Encoding.UTF8.GetBytes(right);
-        return leftBytes.Length == rightBytes.Length
-            && CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
+        var leftHash = SHA256.HashData(leftBytes);
+        var rightHash = SHA256.HashData(rightBytes);
+        return CryptographicOperations.FixedTimeEquals(leftHash, rightHash);
     }
 }

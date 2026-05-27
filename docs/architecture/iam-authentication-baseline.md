@@ -164,7 +164,7 @@ IAM 首批公开接口建议包括：
 14. POST /api/iam/v1/sessions/{sessionId}/revoke
 
 ExternalClient、ConnectorHostCredential 和 AuthorizationGrant 可以先建领域骨架与内部命令，不要求第一批完成完整管理 UI。
-P2 已新增 `POST /api/iam/v1/auth/oidc/callback` 和 `POST /api/iam/v1/auth/mfa/challenges/{challengeId}/verify` 作为企业身份入口。该 callback 用配置启用的 provider、callback secret、subject、email、organizationId 和 environmentId 映射既有 IAM 用户和 membership；RequireMfa=true 时先返回 challenge，不直接签发 session。callback secret 是当前最小可信入口，完整 id_token/JWKS 校验留给后续 IdP adapter 或标准授权服务器实现。
+P2 已新增 `POST /api/iam/v1/auth/oidc/callback` 和 `POST /api/iam/v1/auth/mfa/challenges/{challengeId}/verify` 作为企业身份入口。该 callback 用配置启用的 provider、callback secret、subject、email、organizationId 和 environmentId 映射既有 IAM 用户和 membership；RequireMfa=true 时先返回一次性 challenge，不直接签发 session。非 Development 环境必须显式覆盖 `Iam:EnterpriseIdentity:Mfa:DevelopmentCode`，避免沿用本地固定验证码；同一 `(provider, subject)` 的新 SSO session 会撤销旧活跃 session。callback secret 是当前最小可信入口，完整 id_token/JWKS 校验留给后续 IdP adapter 或标准授权服务器实现。
 
 ## 非目标
 
