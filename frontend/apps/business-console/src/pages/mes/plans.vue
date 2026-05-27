@@ -5,8 +5,20 @@ import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
+import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { useMesProductionPlans } from '@/composables/useBusinessMes'
+import {
+  demoProductionPlans,
+  demoResourcesOf,
+  demoSkus,
+  mergeByKey,
+  readLocalDemoPlans,
+  readLocalDemoWorkOrders,
+  toDemoWorkOrderFromPlan,
+  writeLocalDemoPlans,
+  writeLocalDemoWorkOrders,
+} from '@/data/shockAbsorberDemo'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type {
   BusinessConsoleMesProductionPlanRow,
@@ -39,10 +51,11 @@ import {
   CalendarCheckIcon,
   ClipboardListIcon,
   FactoryIcon,
+  PlusIcon,
   RefreshCwIcon,
 } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '生产计划' } })
 
@@ -59,16 +72,27 @@ const {
   refreshProductionPlans,
 } = useMesProductionPlans()
 const router = useRouter()
+const route = useRoute()
+const initialSource = normalizeSourceQuery(route.query.source)
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
+const planSheetOpen = shallowRef(false)
 const convertSheetOpen = shallowRef(false)
 const selectedPlan = shallowRef<BusinessConsoleMesProductionPlanRow>()
 const convertSuccess = shallowRef('')
-const tableState = reactive({
+const localPlans = shallowRef<BusinessConsoleMesProductionPlanRow[]>(readLocalDemoPlans())
+const filterDraft = reactive({
   keyword: '',
+  source: initialSource,
+  readiness: 'all',
+})
+const appliedFilter = reactive({
+  keyword: '',
+  source: initialSource,
+  readiness: 'all',
+})
+const tableState = reactive({
   page: 1,
   pageSize: '10',
-  source: 'all',
-  readiness: 'all',
   sortBy: 'plannedStartUtc' as SortColumn,
   sortDirection: 'asc' as 'asc' | 'desc',
 })
@@ -76,6 +100,15 @@ const convertForm = reactive({
   workOrderId: '',
   workCenterId: '',
   dueUtc: '',
+})
+const planForm = reactive({
+  productionPlanId: '',
+  sourceSystem: 'sales-order',
+  sourceDocumentId: '',
+  skuId: 'FG-SAD-FRT-001',
+  plannedQuantity: '100',
+  plannedStartUtc: toLocalDateTimeInput(new Date().toISOString()),
+  plannedEndUtc: toLocalDateTimeInput(new Date(Date.now() + 86_400_000).toISOString()),
 })
 const sourceOptions = [
   { label: '全部来源', value: 'all' },
@@ -90,20 +123,27 @@ const readinessOptions = [
   { label: '有预警', value: 'Warning' },
   { label: '受阻', value: 'Blocked' },
 ]
-const sourceCards = [
-  { title: '正常订单', description: '销售订单或客户订单确认后进入计划池。', source: 'sales' },
-  { title: '备货生产', description: '按预测和主生产计划提前安排生产。', source: 'stock' },
-  { title: '安全库存补充', description: '库存水位触发补货建议，计划员确认后转工单。', source: 'safety' },
-  { title: '预测需求', description: '来自需求计划或预测模型的中长期生产建议。', source: 'forecast' },
+const sourceActions = [
+  { title: '正常订单', description: '销售订单确认', source: 'sales', createSource: 'sales-order' },
+  { title: '备货生产', description: '主生产计划', source: 'stock', createSource: 'stock-build' },
+  { title: '安全库存', description: '库存水位补充', source: 'safety', createSource: 'safety-stock' },
+  { title: '预测需求', description: '中长期需求', source: 'forecast', createSource: 'forecast' },
 ]
 
 const errorMessage = computed(() => formatError(productionPlansError.value))
 const convertErrorMessage = computed(() => formatError(convertPlanToWorkOrderError.value))
-const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
+const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value.length ? workCenterResources.value : demoResourcesOf('work-center')))
+const skuOptions = computed(() => toResourceOptions(demoSkus))
+const sourcePlans = computed(() => {
+  return mergeByKey(
+    [...localPlans.value, ...productionPlans.value, ...demoProductionPlans],
+    (row) => row.productionPlanId,
+  )
+})
 const visiblePlans = computed(() => {
-  const keyword = tableState.keyword.trim().toLowerCase()
+  const keyword = appliedFilter.keyword.trim().toLowerCase()
 
-  return productionPlans.value.filter((plan) => {
+  return sourcePlans.value.filter((plan) => {
     const sourceText = `${plan.sourceSystem ?? ''} ${plan.sourceDocumentId ?? ''}`.toLowerCase()
     const keywordMatched =
       !keyword ||
@@ -114,8 +154,8 @@ const visiblePlans = computed(() => {
         plan.skuId,
         plan.readinessStatus,
       ].some((value) => (value ?? '').toLowerCase().includes(keyword))
-    const sourceMatched = tableState.source === 'all' || sourceText.includes(tableState.source)
-    const readinessMatched = tableState.readiness === 'all' || plan.readinessStatus === tableState.readiness
+    const sourceMatched = appliedFilter.source === 'all' || sourceText.includes(appliedFilter.source)
+    const readinessMatched = appliedFilter.readiness === 'all' || plan.readinessStatus === appliedFilter.readiness
 
     return keywordMatched && sourceMatched && readinessMatched
   })
@@ -137,26 +177,27 @@ const sortedPlans = computed(() => {
   })
 })
 const pageSizeNumber = computed(() => Number(tableState.pageSize) || 10)
-const totalPages = computed(() => Math.max(1, Math.ceil(sortedPlans.value.length / pageSizeNumber.value)))
 const pagedPlans = computed(() => {
   const start = (tableState.page - 1) * pageSizeNumber.value
   return sortedPlans.value.slice(start, start + pageSizeNumber.value)
 })
-const paginationSummary = computed(() => {
-  if (!sortedPlans.value.length) return '0 条'
-  const start = (tableState.page - 1) * pageSizeNumber.value + 1
-  const end = Math.min(tableState.page * pageSizeNumber.value, sortedPlans.value.length)
-  return `${start}-${end} / ${sortedPlans.value.length} 条`
-})
 const canConvert = computed(() => Boolean(selectedPlan.value?.productionPlanId))
+const canAddPlan = computed(
+  () =>
+    isNonEmpty(planForm.productionPlanId) &&
+    isNonEmpty(planForm.sourceSystem) &&
+    isNonEmpty(planForm.sourceDocumentId) &&
+    isNonEmpty(planForm.skuId) &&
+    Number(planForm.plannedQuantity) > 0,
+)
 
 watch(
   () => [
-    tableState.keyword,
-    tableState.source,
-    tableState.readiness,
+    appliedFilter.keyword,
+    appliedFilter.source,
+    appliedFilter.readiness,
     tableState.pageSize,
-    productionPlans.value.length,
+    sourcePlans.value.length,
   ],
   () => {
     tableState.page = 1
@@ -164,7 +205,53 @@ watch(
 )
 
 function focusSource(source: string) {
-  tableState.source = source
+  filterDraft.source = source
+  applyFilters()
+}
+
+function openPlanSheet(source: string) {
+  planForm.sourceSystem = source
+  generatePlanId()
+  planForm.sourceDocumentId = source === 'sales-order' ? 'SO-NEW' : source === 'safety-stock' ? 'INV-REPL-NEW' : 'MPS-NEW'
+  planSheetOpen.value = true
+}
+
+function generatePlanId() {
+  const source = planForm.sourceSystem.replace(/[^a-z]/gi, '').toUpperCase() || 'PLAN'
+  planForm.productionPlanId = `PLAN-${source}-${dateCode()}-${String(sourcePlans.value.length + 1).padStart(3, '0')}`
+}
+
+function submitAddPlan() {
+  if (!canAddPlan.value) return
+
+  localPlans.value = [
+    {
+      productionPlanId: planForm.productionPlanId,
+      sourceSystem: planForm.sourceSystem,
+      sourceDocumentId: planForm.sourceDocumentId,
+      skuId: planForm.skuId,
+      plannedQuantity: Number(planForm.plannedQuantity),
+      readinessStatus: 'Ready',
+      plannedStartUtc: toIsoFromLocalInput(planForm.plannedStartUtc),
+      plannedEndUtc: toIsoFromLocalInput(planForm.plannedEndUtc),
+    },
+    ...localPlans.value.filter((row) => row.productionPlanId !== planForm.productionPlanId),
+  ]
+  writeLocalDemoPlans(localPlans.value)
+  planSheetOpen.value = false
+}
+
+function applyFilters() {
+  appliedFilter.keyword = filterDraft.keyword
+  appliedFilter.source = filterDraft.source
+  appliedFilter.readiness = filterDraft.readiness
+}
+
+function clearFilters() {
+  filterDraft.keyword = ''
+  filterDraft.source = 'all'
+  filterDraft.readiness = 'all'
+  applyFilters()
 }
 
 function openConvertSheet(plan: BusinessConsoleMesProductionPlanRow) {
@@ -179,6 +266,18 @@ function openConvertSheet(plan: BusinessConsoleMesProductionPlanRow) {
 async function submitConvertPlan() {
   const planId = selectedPlan.value?.productionPlanId
   if (!planId || !canConvert.value) return
+
+  const isApiPlan = productionPlans.value.some((plan) => plan.productionPlanId === planId)
+  if (!isApiPlan && selectedPlan.value) {
+    const workOrderId = convertForm.workOrderId || `WO-${planId}`
+    const localWorkOrders = readLocalDemoWorkOrders()
+    writeLocalDemoWorkOrders([
+      toDemoWorkOrderFromPlan(selectedPlan.value, workOrderId, convertForm.workCenterId, toIsoFromLocalInput(convertForm.dueUtc)),
+      ...localWorkOrders.filter((order) => order.workOrderId !== workOrderId),
+    ])
+    convertSuccess.value = `已生成工单 ${workOrderId}，可到工单与派工查看。`
+    return
+  }
 
   await convertPlanToWorkOrder(planId, {
     organizationId: filters.organizationId,
@@ -213,14 +312,6 @@ function sortValue(plan: BusinessConsoleMesProductionPlanRow, column: SortColumn
   return plan[column] ?? ''
 }
 
-function previousPage() {
-  tableState.page = Math.max(1, tableState.page - 1)
-}
-
-function nextPage() {
-  tableState.page = Math.min(totalPages.value, tableState.page + 1)
-}
-
 function optionalText(value: string) {
   const trimmed = value.trim()
   return trimmed ? trimmed : undefined
@@ -248,12 +339,42 @@ function formatQuantity(value?: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value ?? 0)
 }
 
+function formatPlanSource(value?: string | null) {
+  const map: Record<string, string> = {
+    forecast: '预测需求',
+    sales: '正常订单',
+    'sales-order': '正常订单',
+    safety: '安全库存补充',
+    'safety-stock': '安全库存补充',
+    stock: '备货生产',
+    'stock-build': '备货生产',
+  }
+  return value ? (map[value] ?? value) : '未指定'
+}
+
+function dateCode() {
+  const date = new Date()
+  const year = String(date.getFullYear()).slice(-2)
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}${month}${day}`
+}
+
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
 
+function isNonEmpty(value: string) {
+  return value.trim().length > 0
+}
+
 function rowKey(row: BusinessConsoleMesProductionPlanRow, index: number) {
   return `${row.productionPlanId ?? 'plan'}:${index}`
+}
+
+function normalizeSourceQuery(value: unknown) {
+  const source = Array.isArray(value) ? value[0] : value
+  return ['sales', 'stock', 'safety', 'forecast'].includes(String(source)) ? String(source) : 'all'
 }
 
 function toResourceOptions(items: BusinessConsoleResourceItem[]) {
@@ -280,6 +401,10 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
             <RefreshCwIcon data-icon="inline-start" />
             刷新
           </Button>
+          <Button size="sm" type="button" variant="outline" @click="openPlanSheet('sales-order')">
+            <PlusIcon data-icon="inline-start" />
+            新增计划
+          </Button>
           <Button size="sm" type="button" @click="router.push('/mes/work-orders')">
             <FactoryIcon data-icon="inline-start" />
             工单与派工
@@ -287,35 +412,37 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
         </template>
       </BusinessPageHeader>
 
-      <div class="grid gap-3 lg:grid-cols-4">
-        <button
-          v-for="card in sourceCards"
-          :key="card.title"
-          class="grid gap-2 rounded-lg border bg-background p-4 text-left transition-colors hover:border-primary/50 hover:bg-muted/40"
+      <div class="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-4 py-3">
+        <span class="text-sm font-semibold text-foreground">计划来源</span>
+        <Button
+          v-for="action in sourceActions"
+          :key="action.title"
+          size="sm"
           type="button"
-          @click="focusSource(card.source)"
+          variant="outline"
+          @click="focusSource(action.source)"
         >
-          <span class="text-sm font-semibold text-foreground">{{ card.title }}</span>
-          <span class="min-h-12 text-sm leading-6 text-muted-foreground">{{ card.description }}</span>
-          <span class="text-sm font-medium text-primary">筛选这类计划</span>
-        </button>
+          {{ action.title }}
+          <span class="text-xs text-muted-foreground">{{ action.description }}</span>
+        </Button>
+        <Button size="sm" type="button" class="ml-auto" @click="openPlanSheet('sales-order')">
+          <PlusIcon data-icon="inline-start" />
+          新增生产计划
+        </Button>
       </div>
 
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h2 class="text-sm font-semibold text-foreground">计划筛选</h2>
-          <Button size="sm" type="button" variant="ghost" @click="tableState.keyword = ''; tableState.source = 'all'; tableState.readiness = 'all'">
-            清空筛选
-          </Button>
         </div>
-        <FieldGroup class="grid gap-3 md:grid-cols-4">
+        <FieldGroup class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px_auto]">
           <Field>
             <FieldLabel for="plans-keyword">搜索</FieldLabel>
-            <Input id="plans-keyword" v-model="tableState.keyword" placeholder="计划号、来源单据、SKU" />
+            <Input id="plans-keyword" v-model="filterDraft.keyword" placeholder="计划号、来源单据、物料" @keydown.enter="applyFilters" />
           </Field>
           <Field>
             <FieldLabel for="plans-source">需求来源</FieldLabel>
-            <Select v-model="tableState.source">
+            <Select v-model="filterDraft.source">
               <SelectTrigger id="plans-source">
                 <SelectValue />
               </SelectTrigger>
@@ -328,7 +455,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
           </Field>
           <Field>
             <FieldLabel for="plans-readiness">就绪状态</FieldLabel>
-            <Select v-model="tableState.readiness">
+            <Select v-model="filterDraft.readiness">
               <SelectTrigger id="plans-readiness">
                 <SelectValue />
               </SelectTrigger>
@@ -339,19 +466,10 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
               </SelectContent>
             </Select>
           </Field>
-          <Field>
-            <FieldLabel for="plans-page-size">每页显示</FieldLabel>
-            <Select v-model="tableState.pageSize">
-              <SelectTrigger id="plans-page-size">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10 条</SelectItem>
-                <SelectItem value="20">20 条</SelectItem>
-                <SelectItem value="50">50 条</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
+          <div class="flex items-end gap-2">
+            <Button type="button" @click="applyFilters">查询</Button>
+            <Button type="button" variant="outline" @click="clearFilters">清空</Button>
+          </div>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </div>
@@ -365,7 +483,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">生产计划列表</h2>
-          <span class="text-sm text-muted-foreground">显示 {{ paginationSummary }}</span>
+          <span class="text-sm text-muted-foreground">汽车减振器制造样例</span>
         </div>
         <div class="overflow-x-auto">
           <Table>
@@ -415,7 +533,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
                 <TableCell class="font-medium">{{ row.productionPlanId ?? '无编号' }}</TableCell>
                 <TableCell>
                   <div class="grid gap-0.5">
-                    <span>{{ row.sourceSystem ?? '未指定' }}</span>
+                    <span>{{ formatPlanSource(row.sourceSystem) }}</span>
                     <span class="text-xs text-muted-foreground">{{ row.sourceDocumentId ?? '无来源单据' }}</span>
                   </div>
                 </TableCell>
@@ -443,20 +561,77 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
             </TableBody>
           </Table>
         </div>
-        <div class="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
-          <p class="text-sm text-muted-foreground">
-            第 {{ tableState.page }} / {{ totalPages }} 页
-          </p>
-          <div class="flex items-center gap-2">
-            <Button size="sm" type="button" variant="outline" :disabled="tableState.page <= 1" @click="previousPage">
-              上一页
-            </Button>
-            <Button size="sm" type="button" variant="outline" :disabled="tableState.page >= totalPages" @click="nextPage">
-              下一页
-            </Button>
-          </div>
+        <div class="border-t px-4 py-3">
+          <BusinessTablePagination
+            v-model:page="tableState.page"
+            v-model:page-size="tableState.pageSize"
+            :total-items="sortedPlans.length"
+          />
         </div>
       </div>
+
+      <BusinessActionSheet
+        v-model:open="planSheetOpen"
+        title="新增生产计划"
+        description="录入正常订单、备货、安全库存或预测需求，进入计划池后再确认齐套并转为工单。"
+      >
+        <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitAddPlan">
+          <FieldGroup class="grid gap-3 sm:grid-cols-2">
+            <Field>
+              <FieldLabel for="add-plan-id">计划号 <span class="text-destructive">*</span></FieldLabel>
+              <div class="flex gap-2">
+                <Input id="add-plan-id" v-model="planForm.productionPlanId" required />
+                <Button type="button" variant="outline" @click="generatePlanId">生成</Button>
+              </div>
+            </Field>
+            <Field>
+              <FieldLabel for="add-plan-source">需求来源 <span class="text-destructive">*</span></FieldLabel>
+              <Select v-model="planForm.sourceSystem">
+                <SelectTrigger id="add-plan-source"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sales-order">正常订单</SelectItem>
+                  <SelectItem value="stock-build">备货生产</SelectItem>
+                  <SelectItem value="safety-stock">安全库存补充</SelectItem>
+                  <SelectItem value="forecast">预测需求</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel for="add-plan-doc">来源单号 <span class="text-destructive">*</span></FieldLabel>
+              <Input id="add-plan-doc" v-model="planForm.sourceDocumentId" required />
+            </Field>
+            <Field>
+              <FieldLabel for="add-plan-sku">物料编码 <span class="text-destructive">*</span></FieldLabel>
+              <Select v-model="planForm.skuId">
+                <SelectTrigger id="add-plan-sku">
+                  <SelectValue placeholder="选择物料" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="option in skuOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel for="add-plan-qty">计划数量 <span class="text-destructive">*</span></FieldLabel>
+              <Input id="add-plan-qty" v-model="planForm.plannedQuantity" inputmode="decimal" min="1" required type="number" />
+            </Field>
+            <Field>
+              <FieldLabel for="add-plan-start">计划开始</FieldLabel>
+              <Input id="add-plan-start" v-model="planForm.plannedStartUtc" type="datetime-local" />
+            </Field>
+            <Field>
+              <FieldLabel for="add-plan-end">计划结束</FieldLabel>
+              <Input id="add-plan-end" v-model="planForm.plannedEndUtc" type="datetime-local" />
+            </Field>
+          </FieldGroup>
+          <div class="flex justify-end gap-2">
+            <Button type="button" variant="outline" @click="planSheetOpen = false">取消</Button>
+            <Button type="submit" :disabled="!canAddPlan">加入计划池</Button>
+          </div>
+        </form>
+      </BusinessActionSheet>
 
       <BusinessActionSheet
         v-model:open="convertSheetOpen"
@@ -470,7 +645,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
           </div>
           <BusinessFormStatus :error="convertErrorMessage" :success="convertSuccess" />
           <div class="grid gap-2 rounded-lg border p-3 text-sm text-muted-foreground">
-            <p>来源：{{ selectedPlan?.sourceSystem ?? '未指定' }} / {{ selectedPlan?.sourceDocumentId ?? '无来源单据' }}</p>
+            <p>来源：{{ formatPlanSource(selectedPlan?.sourceSystem) }} / {{ selectedPlan?.sourceDocumentId ?? '无来源单据' }}</p>
             <p>物料：{{ selectedPlan?.skuId ?? '未指定' }}，数量：{{ formatQuantity(selectedPlan?.plannedQuantity) }}</p>
             <p v-if="selectedPlan?.blockingReasons?.length">阻塞：{{ selectedPlan.blockingReasons.join('；') }}</p>
           </div>

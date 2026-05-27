@@ -56,7 +56,14 @@ describe('BusinessLayout', () => {
     expect(wrapper.getComponent(AppShellStub).props('title')).toBe('Nerv-IIP 业务控制台')
     expect(wrapper.getComponent(AppShellStub).props('navLabel')).toBe('业务模块')
     expect(navItems).toMatchObject([
-      { title: '主数据', items: [{ title: 'SKU 维护', to: { path: '/master-data/skus' } }] },
+      {
+        title: '主数据',
+        items: [
+          { title: '物料与产品', to: { path: '/master-data/skus' } },
+          { title: '工厂资源', to: { path: '/master-data/resources' } },
+          { title: '工艺与版本', to: { path: '/master-data/process' } },
+        ],
+      },
       {
         title: '库存',
         isActive: true,
@@ -71,6 +78,12 @@ describe('BusinessLayout', () => {
         items: [
           { title: '检验任务与记录', to: { path: '/quality/inspections' } },
           { title: '不合格品处理', to: { path: '/quality/ncrs' } },
+        ],
+      },
+      {
+        title: 'ERP',
+        items: [
+          { title: '业务协同', to: { path: '/erp' } },
         ],
       },
       {

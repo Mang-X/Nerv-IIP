@@ -6,8 +6,10 @@ import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import BusinessRowActions from '@/components/business/BusinessRowActions.vue'
 import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
+import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { useMesOperationTasks } from '@/composables/useBusinessMes'
+import { demoOperationTasks, demoResourcesOf, mergeByKey, readLocalDemoWorkOrders } from '@/data/shockAbsorberDemo'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
@@ -56,14 +58,27 @@ const { resources: lineResources } = useBusinessMasterDataResources('production-
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
 const errorMessage = computed(() => formatError(operationTasksError.value))
-type SortColumn = 'operationTaskId' | 'workOrderId' | 'status' | 'operationSequence' | 'workCenterId' | 'plannedStartUtc'
+type SortColumn = 'operationTaskId' | 'workOrderId' | 'status' | 'operationSequence' | 'workCenterId' | 'deviceAssetId' | 'shiftId' | 'plannedStartUtc' | 'qualityStatus'
 
 const tableState = reactive({
-  keyword: '',
   page: 1,
   pageSize: '10',
   sortBy: 'plannedStartUtc' as SortColumn,
   sortDirection: 'asc' as 'asc' | 'desc',
+})
+const filterDraft = reactive({
+  keyword: '',
+  status: 'all',
+})
+const appliedFilter = reactive({
+  keyword: '',
+  status: 'all',
+})
+const appliedScope = reactive({
+  siteCode: '',
+  lineCode: '',
+  workCenterCode: '',
+  shiftCode: '',
 })
 const readyCount = computed(() => visibleTasks.value.filter((item) => item.status === 'Ready').length)
 const runningCount = computed(() => visibleTasks.value.filter((item) => ['Running', 'Started', 'InProgress'].includes(item.status ?? '')).length)
@@ -102,23 +117,30 @@ const statusOptions = [
   { label: '已完成', value: 'Completed' },
   { label: '阻塞', value: 'Blocked' },
 ]
-const statusFilter = computed({
-  get: () => filters.status || 'all',
-  set: (value: string) => {
-    filters.status = value === 'all' ? undefined : value
-  },
-})
-const siteOptions = computed(() => toResourceOptions(siteResources.value))
-const lineOptions = computed(() => toResourceOptions(lineResources.value))
-const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
-const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
+const siteOptions = computed(() => toResourceOptions(siteResources.value.length ? siteResources.value : demoResourcesOf('site')))
+const lineOptions = computed(() => toResourceOptions(lineResources.value.length ? lineResources.value : demoResourcesOf('production-line')))
+const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value.length ? workCenterResources.value : demoResourcesOf('work-center')))
+const shiftOptions = computed(() => toResourceOptions(shiftResources.value.length ? shiftResources.value : demoResourcesOf('shift')))
+const localOperationTasks = computed(() => readLocalDemoWorkOrders().flatMap((order) =>
+  (order.operationTasks ?? []).map((task): BusinessConsoleMesOperationTaskRow => ({
+    ...task,
+    deviceAssetId: undefined,
+    qualityStatus: undefined,
+    shiftId: undefined,
+    workOrderId: order.workOrderId,
+    plannedStartUtc: task.earliestStartUtc,
+  })),
+))
+const sourceTasks = computed(() =>
+  mergeByKey([...operationTasks.value, ...localOperationTasks.value, ...demoOperationTasks], (task) => task.operationTaskId),
+)
 const visibleTasks = computed(() => {
-  const keyword = tableState.keyword.trim().toLowerCase()
-  const workCenter = executionContext.workCenterCode.trim().toLowerCase()
-  const shift = executionContext.shiftCode.trim().toLowerCase()
+  const keyword = appliedFilter.keyword.trim().toLowerCase()
+  const workCenter = appliedScope.workCenterCode.trim().toLowerCase()
+  const shift = appliedScope.shiftCode.trim().toLowerCase()
 
-  return operationTasks.value.filter((task) => {
-    const statusMatched = !filters.status || task.status === filters.status
+  return sourceTasks.value.filter((task) => {
+    const statusMatched = appliedFilter.status === 'all' || task.status === appliedFilter.status
     const keywordMatched =
       !keyword ||
       [
@@ -150,31 +172,44 @@ const sortedTasks = computed(() => {
   })
 })
 const pageSizeNumber = computed(() => Number(tableState.pageSize) || 10)
-const totalPages = computed(() => Math.max(1, Math.ceil(sortedTasks.value.length / pageSizeNumber.value)))
 const pagedTasks = computed(() => {
   const start = (tableState.page - 1) * pageSizeNumber.value
   return sortedTasks.value.slice(start, start + pageSizeNumber.value)
 })
-const paginationSummary = computed(() => {
-  if (!sortedTasks.value.length) return '0 条'
-  const start = (tableState.page - 1) * pageSizeNumber.value + 1
-  const end = Math.min(tableState.page * pageSizeNumber.value, sortedTasks.value.length)
-  return `${start}-${end} / ${sortedTasks.value.length} 条`
-})
 
 watch(
   () => [
-    tableState.keyword,
+    appliedFilter.keyword,
+    appliedFilter.status,
     tableState.pageSize,
-    filters.status,
-    executionContext.workCenterCode,
-    executionContext.shiftCode,
-    operationTasks.value.length,
+    appliedScope.workCenterCode,
+    appliedScope.shiftCode,
+    sourceTasks.value.length,
   ],
   () => {
     tableState.page = 1
   },
 )
+
+function applyFilters() {
+  appliedFilter.keyword = filterDraft.keyword
+  appliedFilter.status = filterDraft.status
+  appliedScope.siteCode = executionContext.siteCode
+  appliedScope.lineCode = executionContext.lineCode
+  appliedScope.workCenterCode = executionContext.workCenterCode
+  appliedScope.shiftCode = executionContext.shiftCode
+  filters.status = appliedFilter.status === 'all' ? undefined : appliedFilter.status
+}
+
+function clearFilters() {
+  filterDraft.keyword = ''
+  filterDraft.status = 'all'
+  executionContext.siteCode = ''
+  executionContext.lineCode = ''
+  executionContext.workCenterCode = ''
+  executionContext.shiftCode = ''
+  applyFilters()
+}
 
 function openWorkOrder(workOrderId?: string | null) {
   if (!workOrderId) return
@@ -221,14 +256,6 @@ function sortValue(task: BusinessConsoleMesOperationTaskRow, column: SortColumn)
   return task[column] ?? ''
 }
 
-function previousPage() {
-  tableState.page = Math.max(1, tableState.page - 1)
-}
-
-function nextPage() {
-  tableState.page = Math.min(totalPages.value, tableState.page + 1)
-}
-
 function toResourceOptions(items: BusinessConsoleResourceItem[]) {
   return items
     .filter((item) => item.active !== false && item.code)
@@ -273,14 +300,14 @@ function formatError(error: unknown) {
         title="生产范围"
         :work-center-options="workCenterOptions"
       >
-        <FieldGroup class="grid gap-3 md:grid-cols-4">
+        <FieldGroup class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto]">
           <Field>
             <FieldLabel for="operation-keyword">搜索</FieldLabel>
-            <Input id="operation-keyword" v-model="tableState.keyword" placeholder="任务、工单、设备" />
+            <Input id="operation-keyword" v-model="filterDraft.keyword" placeholder="任务、工单、设备" @keydown.enter="applyFilters" />
           </Field>
           <Field>
             <FieldLabel for="operation-status">状态</FieldLabel>
-            <Select v-model="statusFilter">
+            <Select v-model="filterDraft.status">
               <SelectTrigger id="operation-status" aria-label="工序状态">
                 <SelectValue placeholder="全部状态" />
               </SelectTrigger>
@@ -291,23 +318,10 @@ function formatError(error: unknown) {
               </SelectContent>
             </Select>
           </Field>
-          <Field>
-            <FieldLabel for="operation-take">加载数量</FieldLabel>
-            <Input id="operation-take" v-model.number="filters.take" inputmode="numeric" type="number" />
-          </Field>
-          <Field>
-            <FieldLabel for="operation-page-size">每页显示</FieldLabel>
-            <Select v-model="tableState.pageSize">
-              <SelectTrigger id="operation-page-size">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10 条</SelectItem>
-                <SelectItem value="20">20 条</SelectItem>
-                <SelectItem value="50">50 条</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
+          <div class="flex items-end gap-2">
+            <Button type="button" @click="applyFilters">查询</Button>
+            <Button type="button" variant="outline" @click="clearFilters">清空</Button>
+          </div>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </BusinessContextBar>
@@ -329,14 +343,14 @@ function formatError(error: unknown) {
 
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell label="任务数" :value="visibleTasks.length" detail="当前筛选结果" />
-        <BusinessMetricCell label="可开工" :value="readyCount" detail="Ready 状态任务" />
+        <BusinessMetricCell label="可开工" :value="readyCount" detail="可直接进入现场执行" />
         <BusinessMetricCell label="非可开工" :value="visibleTasks.length - readyCount" detail="需关注任务" />
       </div>
 
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">工序任务列表</h2>
-          <span class="text-sm text-muted-foreground">显示 {{ paginationSummary }}</span>
+          <span class="text-sm text-muted-foreground">汽车减振器制造样例</span>
         </div>
         <div class="overflow-x-auto">
           <Table>
@@ -372,15 +386,30 @@ function formatError(error: unknown) {
                     <component :is="sortIcon('workCenterId')" data-icon="inline-end" />
                   </Button>
                 </TableHead>
-                <TableHead>设备</TableHead>
-                <TableHead>班次</TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('deviceAssetId')">
+                    设备
+                    <component :is="sortIcon('deviceAssetId')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('shiftId')">
+                    班次
+                    <component :is="sortIcon('shiftId')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
                 <TableHead>
                   <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('plannedStartUtc')">
                     计划开始
                     <component :is="sortIcon('plannedStartUtc')" data-icon="inline-end" />
                   </Button>
                 </TableHead>
-                <TableHead>质量状态</TableHead>
+                <TableHead>
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('qualityStatus')">
+                    质量状态
+                    <component :is="sortIcon('qualityStatus')" data-icon="inline-end" />
+                  </Button>
+                </TableHead>
                 <TableHead class="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
@@ -444,18 +473,12 @@ function formatError(error: unknown) {
             </TableBody>
           </Table>
         </div>
-        <div class="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
-          <p class="text-sm text-muted-foreground">
-            第 {{ tableState.page }} / {{ totalPages }} 页
-          </p>
-          <div class="flex items-center gap-2">
-            <Button size="sm" type="button" variant="outline" :disabled="tableState.page <= 1" @click="previousPage">
-              上一页
-            </Button>
-            <Button size="sm" type="button" variant="outline" :disabled="tableState.page >= totalPages" @click="nextPage">
-              下一页
-            </Button>
-          </div>
+        <div class="border-t px-4 py-3">
+          <BusinessTablePagination
+            v-model:page="tableState.page"
+            v-model:page-size="tableState.pageSize"
+            :total-items="sortedTasks.length"
+          />
         </div>
       </div>
     </section>

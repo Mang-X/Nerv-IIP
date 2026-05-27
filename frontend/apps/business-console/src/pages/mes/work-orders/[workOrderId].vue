@@ -82,6 +82,19 @@ function formatQuantity(value?: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
 
+function formatStatus(value?: string | null) {
+  const map: Record<string, string> = {
+    blocked: '阻塞',
+    closed: '已关闭',
+    completed: '已完成',
+    ready: '可开工',
+    released: '已下达',
+    running: '执行中',
+    warning: '预警',
+  }
+  return value ? (map[value.toLowerCase()] ?? value) : '未知'
+}
+
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
@@ -134,10 +147,10 @@ function formatError(error: unknown) {
       </BusinessContextBar>
 
       <div class="grid gap-3 md:grid-cols-4">
-        <BusinessMetricCell label="工单状态" :value="detail?.status ?? '未知'" :detail="detail?.skuId ?? '无 SKU'" />
+        <BusinessMetricCell label="工单状态" :value="formatStatus(detail?.status)" :detail="detail?.skuId ?? '无物料'" />
         <BusinessMetricCell label="计划数量" :value="formatQuantity(detail?.quantity)" detail="工单计划量" />
         <BusinessMetricCell label="工序数" :value="operationTasks.length" detail="执行任务" />
-        <BusinessMetricCell label="用料状态" :value="materialReadiness?.readinessStatus ?? '未知'" detail="齐套检查" />
+        <BusinessMetricCell label="用料状态" :value="formatStatus(materialReadiness?.readinessStatus)" detail="齐套检查" />
       </div>
 
       <div v-if="blockingReasons.length" class="rounded-lg border bg-background p-4">

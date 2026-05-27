@@ -72,7 +72,7 @@ const form = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
   workOrderId: '',
-  skuId: 'SKU-001',
+  skuId: 'FG-SAD-FRT-001',
   quantity: '1',
   uomCode: 'EA',
   requestedAtUtc: toLocalDateTimeInput(new Date()),
@@ -235,7 +235,7 @@ function isNonEmpty(value: string) {
                   <TableRow>
                     <TableHead>请求号</TableHead>
                     <TableHead>工单</TableHead>
-                    <TableHead>SKU</TableHead>
+                    <TableHead>物料</TableHead>
                     <TableHead class="text-right">数量</TableHead>
                     <TableHead>状态</TableHead>
                     <TableHead>请求时间</TableHead>
@@ -294,7 +294,7 @@ function isNonEmpty(value: string) {
               <Input id="receipt-work-order" v-model="form.workOrderId" required />
             </Field>
             <Field>
-              <FieldLabel for="receipt-sku">SKU</FieldLabel>
+              <FieldLabel for="receipt-sku">物料</FieldLabel>
               <Input id="receipt-sku" v-model="form.skuId" required />
             </Field>
             <Field>

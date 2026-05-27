@@ -10,6 +10,9 @@ definePage({
 })
 
 const workbenchItems = [
+  { path: '/master-data/skus', domain: '主数据', label: '物料与产品', summary: '减振器成品、半成品、原材料和包材建档。' },
+  { path: '/master-data/resources', domain: '主数据', label: '工厂资源', summary: '维护工厂、产线、工作中心、设备和班次。' },
+  { path: '/erp', domain: 'ERP', label: '业务协同', summary: '查看销售、采购、财务与生产的样例联动。' },
   { path: '/mes/plans', domain: 'MES', label: '生产计划', summary: '处理正常订单、备货、安全库存和预测需求转工单。' },
   { path: '/mes/work-orders', domain: 'MES', label: '工单与派工', summary: '处理计划工单、急单插单、派工和工单详情。' },
   { path: '/mes/operation-tasks', domain: 'MES', label: '工序执行', summary: '查看待开工、执行中和阻塞任务。' },

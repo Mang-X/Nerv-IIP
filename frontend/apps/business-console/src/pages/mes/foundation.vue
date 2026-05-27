@@ -80,7 +80,7 @@ function formatError(error: unknown) {
             <Input id="foundation-work-center" v-model="filters.workCenterCode" placeholder="可选" />
           </Field>
           <Field>
-            <FieldLabel for="foundation-sku">物料/SKU</FieldLabel>
+            <FieldLabel for="foundation-sku">物料</FieldLabel>
             <Input id="foundation-sku" v-model="filters.skuId" placeholder="可选" />
           </Field>
           <Field>

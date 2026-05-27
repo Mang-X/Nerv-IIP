@@ -9,7 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@nerv-iip/ui'
-import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, PackageSearchIcon } from 'lucide-vue-next'
+import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, PackageSearchIcon, ReceiptTextIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -23,7 +23,11 @@ const navItems = computed<NavItem[]>(() => [
     title: '主数据',
     icon: BoxesIcon,
     isActive: route.path.startsWith('/master-data'),
-    items: [{ title: 'SKU 维护', to: { path: '/master-data/skus' } }],
+    items: [
+      { title: '物料与产品', to: { path: '/master-data/skus' } },
+      { title: '工厂资源', to: { path: '/master-data/resources' } },
+      { title: '工艺与版本', to: { path: '/master-data/process' } },
+    ],
   },
   {
     title: '库存',
@@ -42,6 +46,14 @@ const navItems = computed<NavItem[]>(() => [
     items: [
       { title: '检验任务与记录', to: { path: '/quality/inspections' } },
       { title: '不合格品处理', to: { path: '/quality/ncrs' } },
+    ],
+  },
+  {
+    title: 'ERP',
+    icon: ReceiptTextIcon,
+    isActive: route.path.startsWith('/erp'),
+    items: [
+      { title: '业务协同', to: { path: '/erp' } },
     ],
   },
   {
@@ -68,6 +80,7 @@ const { principal } = storeToRefs(auth)
 const router = useRouter()
 
 const breadcrumbSegmentLabels: Record<string, string> = {
+  erp: 'ERP',
   inventory: '库存',
   'master-data': '主数据',
   mes: 'MES',
