@@ -16,6 +16,8 @@ public interface IOperationTaskApplicationService
     Task<OperationTaskResponse> HeartbeatLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken);
     Task<OperationTaskResponse> RecordResultAsync(OperationResult result, CancellationToken cancellationToken);
     Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, DateTimeOffset now, CancellationToken cancellationToken);
+    Task<OperationTaskResponse> ApproveAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken);
+    Task<OperationTaskResponse> RejectAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryOperationTaskApplicationService(IOpsStateStore store) : IOperationTaskApplicationService
@@ -54,6 +56,16 @@ public sealed class InMemoryOperationTaskApplicationService(IOpsStateStore store
     {
         return Task.FromResult(store.SubmitAuditIntent(request, now));
     }
+
+    public Task<OperationTaskResponse> ApproveAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(store.Approve(operationTaskId, request, now));
+    }
+
+    public Task<OperationTaskResponse> RejectAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(store.Reject(operationTaskId, request, now));
+    }
 }
 
 public sealed class EfOperationTaskApplicationService(
@@ -71,7 +83,13 @@ public sealed class EfOperationTaskApplicationService(
 
         var template = await ResolveTemplateAsync(request.OperationCode, cancellationToken);
         var task = OperationTask.Create(await repository.NextTaskIdAsync(cancellationToken), request, template, now);
-        task.AssignInitialAuditId(await repository.NextAuditRecordIdAsync(cancellationToken));
+        var pendingAuditIds = new List<AuditRecordId>();
+        foreach (var _ in task.AuditRecords.Where(x => string.IsNullOrWhiteSpace(x.Id.Id)))
+        {
+            pendingAuditIds.Add(await repository.NextAuditRecordIdAsync(cancellationToken));
+        }
+
+        task.AssignPendingAuditIds(pendingAuditIds);
         await repository.AddAsync(task, cancellationToken);
         return task.ToResponse();
     }
@@ -150,6 +168,26 @@ public sealed class EfOperationTaskApplicationService(
         var task = await repository.GetByIdAsync(request.OperationTaskId, cancellationToken)
             ?? throw new OperationTaskNotFoundException(request.OperationTaskId);
         return task.SubmitAuditIntent(
+            request,
+            await repository.NextAuditRecordIdAsync(cancellationToken),
+            now);
+    }
+
+    public async Task<OperationTaskResponse> ApproveAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var task = await repository.GetByIdAsync(operationTaskId, cancellationToken)
+            ?? throw new OperationTaskNotFoundException(operationTaskId);
+        return task.Approve(
+            request,
+            await repository.NextAuditRecordIdAsync(cancellationToken),
+            now);
+    }
+
+    public async Task<OperationTaskResponse> RejectAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var task = await repository.GetByIdAsync(operationTaskId, cancellationToken)
+            ?? throw new OperationTaskNotFoundException(operationTaskId);
+        return task.Reject(
             request,
             await repository.NextAuditRecordIdAsync(cancellationToken),
             now);

@@ -51,6 +51,7 @@
 
 - 负责动作任务、执行尝试、审计记录、失败分类、审批挂点与结果回传。
 - 所有会改变目标系统状态的动作都应进入 Ops 的任务闭环。
+- `RequiresApproval=true` 的高风险动作先由 Ops 自有 approval gate 决策，通过后才进入 Connector Host claim/execute 流程；BusinessApproval 不接管平台运维审批。
 - 不成为实例最终状态的真相源。
 
 ### Notification

@@ -42,6 +42,51 @@ public sealed class OpsSdkEnvelopeCompatibilityTests
     }
 
     [Fact]
+    public async Task ApproveOperationTaskAsync_ResponseDataEnvelope_ReturnsData()
+    {
+        var expected = CreateOperationTaskResponse("op-approve");
+        HttpRequestMessage? captured = null;
+        using var httpClient = CreateHttpClient(request =>
+        {
+            captured = request;
+            return JsonResponse(new ResponseDataEnvelope<OperationTaskResponse>(expected));
+        });
+        var client = new HttpOpsClient(httpClient);
+
+        var result = await client.ApproveOperationTaskAsync(
+            "op-approve",
+            new DecideOperationApprovalRequest("org-001", "env-dev", "ops-approver", "approved", "corr-approval"));
+
+        Assert.Equal("op-approve", result.OperationTaskId);
+        Assert.NotNull(captured);
+        Assert.Equal(HttpMethod.Post, captured.Method);
+        Assert.Equal("/api/ops/v1/operation-tasks/op-approve/approval/approve", captured.RequestUri?.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task RejectOperationTaskAsync_ResponseDataEnvelope_ReturnsData()
+    {
+        var expected = CreateOperationTaskResponse("op-reject");
+        HttpRequestMessage? captured = null;
+        using var httpClient = CreateHttpClient(request =>
+        {
+            captured = request;
+            return JsonResponse(new ResponseDataEnvelope<OperationTaskResponse>(expected));
+        });
+        var client = new HttpOpsClient(httpClient);
+
+        var result = await client.RejectOperationTaskAsync(
+            "op-reject",
+            new DecideOperationApprovalRequest("org-001", "env-dev", "ops-approver", "rejected", "corr-approval"));
+
+        Assert.Equal("op-reject", result.OperationTaskId);
+        Assert.NotNull(captured);
+        Assert.Equal(HttpMethod.Post, captured.Method);
+        Assert.Equal("/api/ops/v1/operation-tasks/op-reject/approval/reject", captured.RequestUri?.PathAndQuery);
+    }
+
+
+    [Fact]
     public async Task GetPendingOperationTasksAsync_ResponseDataEnvelope_ReturnsData()
     {
         var expected = new PendingOperationTasksResponse([CreateDispatchItem("op-pending")]);
@@ -171,6 +216,7 @@ public sealed class OpsSdkEnvelopeCompatibilityTests
             "pending",
             "local-admin",
             DateTimeOffset.Parse("2026-05-15T00:00:00Z"),
+            null,
             null,
             [],
             []);

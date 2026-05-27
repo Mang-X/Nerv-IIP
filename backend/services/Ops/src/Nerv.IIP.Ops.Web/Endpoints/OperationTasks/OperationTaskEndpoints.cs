@@ -72,6 +72,54 @@ public sealed class GetOperationTaskEndpoint(IMediator mediator) : EndpointWitho
     }
 }
 
+[HttpPost("/api/ops/v1/operation-tasks/{operationTaskId}/approval/approve")]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+public sealed class ApproveOperationApprovalEndpoint(IMediator mediator)
+    : Endpoint<DecideOperationApprovalRequest, ResponseData<OperationTaskResponse>>
+{
+    public override async Task HandleAsync(DecideOperationApprovalRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var operationTaskId = Route<string>("operationTaskId")!;
+            var task = await mediator.Send(new ApproveOperationApprovalCommand(operationTaskId, req, DateTimeOffset.UtcNow), ct);
+            await Send.OkAsync(task.AsResponseData(), ct);
+        }
+        catch (InvalidOperationTaskRequestException ex)
+        {
+            await OpsEndpointResults.WriteBadRequestAsync(HttpContext, ex.Message, ct);
+        }
+        catch (OperationTaskNotFoundException ex)
+        {
+            await OpsEndpointResults.WriteNotFoundAsync(HttpContext, ex.Message, ct);
+        }
+    }
+}
+
+[HttpPost("/api/ops/v1/operation-tasks/{operationTaskId}/approval/reject")]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+public sealed class RejectOperationApprovalEndpoint(IMediator mediator)
+    : Endpoint<DecideOperationApprovalRequest, ResponseData<OperationTaskResponse>>
+{
+    public override async Task HandleAsync(DecideOperationApprovalRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var operationTaskId = Route<string>("operationTaskId")!;
+            var task = await mediator.Send(new RejectOperationApprovalCommand(operationTaskId, req, DateTimeOffset.UtcNow), ct);
+            await Send.OkAsync(task.AsResponseData(), ct);
+        }
+        catch (InvalidOperationTaskRequestException ex)
+        {
+            await OpsEndpointResults.WriteBadRequestAsync(HttpContext, ex.Message, ct);
+        }
+        catch (OperationTaskNotFoundException ex)
+        {
+            await OpsEndpointResults.WriteNotFoundAsync(HttpContext, ex.Message, ct);
+        }
+    }
+}
+
 [HttpGet("/api/ops/v1/operation-tasks/pending")]
 [Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class GetPendingOperationTasksEndpoint(
