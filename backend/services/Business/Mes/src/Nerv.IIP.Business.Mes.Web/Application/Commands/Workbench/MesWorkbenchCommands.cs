@@ -53,16 +53,17 @@ public sealed class ConvertPlanToWorkOrderCommandHandler(MesNumberingService? nu
 {
     private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
 
-    public Task<MesAcceptedResponse> Handle(ConvertPlanToWorkOrderCommand request, CancellationToken cancellationToken)
+    public async Task<MesAcceptedResponse> Handle(ConvertPlanToWorkOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.AllocateWorkOrderId(
+        var allocation = await _numberingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
             request.IdempotencyKey,
-            $"{request.ProductionPlanId}|{request.WorkOrderId}");
+            $"{request.ProductionPlanId}|{request.WorkOrderId}",
+            cancellationToken);
 
-        return Task.FromResult(new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc));
+        return new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc);
     }
 }
 
@@ -73,7 +74,8 @@ public sealed record CreateMaterialIssueRequestCommand(
     string? OperationTaskId,
     string? MaterialId,
     decimal? Quantity,
-    DateTimeOffset RequestedAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset RequestedAtUtc,
+    string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class CreateMaterialIssueRequestCommandValidator : AbstractValidator<CreateMaterialIssueRequestCommand>
 {
@@ -86,9 +88,11 @@ public sealed class CreateMaterialIssueRequestCommandValidator : AbstractValidat
     }
 }
 
-public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContext dbContext, MesNumberingService? numberingService = null)
     : ICommandHandler<CreateMaterialIssueRequestCommand, MesAcceptedResponse>
 {
+    private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
+
     public async Task<MesAcceptedResponse> Handle(CreateMaterialIssueRequestCommand request, CancellationToken cancellationToken)
     {
         var exists = await dbContext.WorkOrders.AnyAsync(
@@ -102,7 +106,16 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
-        return new MesAcceptedResponse("Accepted", $"MIR-{Guid.CreateVersion7():N}", request.RequestedAtUtc);
+        var allocation = await _numberingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "material-issue-request",
+            "MIR",
+            null,
+            request.IdempotencyKey,
+            MesNumberingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.MaterialId, request.Quantity, request.RequestedAtUtc),
+            cancellationToken);
+        return new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc);
     }
 }
 
@@ -198,11 +211,14 @@ public sealed record RecordDefectCommand(
     string? OperationTaskId,
     string DefectCode,
     decimal Quantity,
-    DateTimeOffset RecordedAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset RecordedAtUtc,
+    string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
 
-public sealed class RecordDefectCommandHandler(ApplicationDbContext dbContext)
+public sealed class RecordDefectCommandHandler(ApplicationDbContext dbContext, MesNumberingService? numberingService = null)
     : ICommandHandler<RecordDefectCommand, MesAcceptedResponse>
 {
+    private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
+
     public async Task<MesAcceptedResponse> Handle(RecordDefectCommand request, CancellationToken cancellationToken)
     {
         var exists = await dbContext.WorkOrders.AnyAsync(
@@ -216,7 +232,16 @@ public sealed class RecordDefectCommandHandler(ApplicationDbContext dbContext)
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
-        return new MesAcceptedResponse("Accepted", $"DEF-{Guid.CreateVersion7():N}", request.RecordedAtUtc);
+        var allocation = await _numberingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "defect",
+            "DEF",
+            null,
+            request.IdempotencyKey,
+            MesNumberingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.DefectCode, request.Quantity, request.RecordedAtUtc),
+            cancellationToken);
+        return new MesAcceptedResponse("Accepted", allocation.Number, request.RecordedAtUtc);
     }
 }
 
@@ -229,16 +254,34 @@ public sealed record RecordDowntimeEventCommand(
     string? DeviceAssetId,
     string Reason,
     DateTimeOffset FromUtc,
-    DateTimeOffset? ToUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset? ToUtc,
+    string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
 
-public sealed class RecordDowntimeEventCommandHandler(ApplicationDbContext dbContext)
+public sealed class RecordDowntimeEventCommandHandler(ApplicationDbContext dbContext, MesNumberingService? numberingService = null)
     : ICommandHandler<RecordDowntimeEventCommand, MesAcceptedResponse>
 {
+    private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
+
     public async Task<MesAcceptedResponse> Handle(RecordDowntimeEventCommand request, CancellationToken cancellationToken)
     {
+        var allocation = await _numberingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "downtime-event",
+            "DOWNTIME",
+            null,
+            request.IdempotencyKey,
+            MesNumberingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.WorkCenterId, request.DeviceAssetId, request.Reason, request.FromUtc, request.ToUtc),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MesAcceptedResponse("Accepted", allocation.Number, request.FromUtc);
+        }
+
         var downtime = WorkCenterUnavailability.Open(
             request.OrganizationId,
             request.EnvironmentId,
+            allocation.Number,
             request.WorkCenterId,
             request.FromUtc,
             request.ToUtc,
@@ -246,7 +289,7 @@ public sealed class RecordDowntimeEventCommandHandler(ApplicationDbContext dbCon
             request.DeviceAssetId);
         dbContext.WorkCenterUnavailabilities.Add(downtime);
         await Task.CompletedTask;
-        return new MesAcceptedResponse("Accepted", downtime.Id.ToString(), request.FromUtc);
+        return new MesAcceptedResponse("Accepted", downtime.DowntimeEventNo, request.FromUtc);
     }
 }
 
@@ -264,7 +307,8 @@ public sealed class ConfirmDowntimeRecoveryCommandHandler(ApplicationDbContext d
         var downtime = await dbContext.WorkCenterUnavailabilities.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.Id.Id.ToString() == request.DowntimeEventId,
+                (x.Id.Id.ToString() == request.DowntimeEventId ||
+                    x.DowntimeEventNo == request.DowntimeEventId),
             cancellationToken)
             ?? throw new KnownException($"未找到停机事件，DowntimeEventId = {request.DowntimeEventId}");
 
@@ -278,14 +322,26 @@ public sealed record CreateShiftHandoverCommand(
     string EnvironmentId,
     string ShiftId,
     string TeamId,
-    DateTimeOffset HandoverAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset HandoverAtUtc,
+    string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
 
-public sealed class CreateShiftHandoverCommandHandler
+public sealed class CreateShiftHandoverCommandHandler(MesNumberingService? numberingService = null)
     : ICommandHandler<CreateShiftHandoverCommand, MesAcceptedResponse>
 {
-    public Task<MesAcceptedResponse> Handle(CreateShiftHandoverCommand request, CancellationToken cancellationToken)
+    private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
+
+    public async Task<MesAcceptedResponse> Handle(CreateShiftHandoverCommand request, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new MesAcceptedResponse("Accepted", $"SHO-{Guid.CreateVersion7():N}", request.HandoverAtUtc));
+        var allocation = await _numberingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "shift-handover",
+            "SHO",
+            null,
+            request.IdempotencyKey,
+            MesNumberingService.Fingerprint(request.ShiftId, request.TeamId, request.HandoverAtUtc),
+            cancellationToken);
+        return new MesAcceptedResponse("Accepted", allocation.Number, request.HandoverAtUtc);
     }
 }
 

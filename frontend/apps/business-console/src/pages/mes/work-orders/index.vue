@@ -178,6 +178,7 @@ const reportForm = reactive({
   scrapQuantity: '0',
   completesOperation: true,
   reportedAtUtc: toLocalDateTimeInput(new Date()),
+  idempotencyKey: newMesIdempotencyKey('production-report'),
 })
 
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
@@ -418,10 +419,12 @@ async function submitProductionReport() {
     scrapQuantity: reportScrapQuantity.value,
     completesOperation: reportForm.completesOperation,
     reportedAtUtc: toIsoFromLocalInput(reportForm.reportedAtUtc),
+    idempotencyKey: reportForm.idempotencyKey,
   }
 
   const response = await recordProductionReport(body)
-  reportSuccess.value = `生产报工 ${response?.data?.productionReportId ?? body.workOrderId} 已提交。`
+  reportSuccess.value = `生产报工 ${response?.data?.reportNo ?? response?.data?.productionReportId ?? body.workOrderId} 已提交。`
+  reportForm.idempotencyKey = newMesIdempotencyKey('production-report')
 }
 
 function setSort(column: SortColumn) {

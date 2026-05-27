@@ -63,9 +63,11 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext, I
     public void AddUnavailability(WorkCenterUnavailability unavailability)
     {
         ArgumentNullException.ThrowIfNull(unavailability);
+        var workCenterSegment = unavailability.WorkCenterId.Length <= 30 ? unavailability.WorkCenterId : unavailability.WorkCenterId[..30];
         dbContext.WorkCenterUnavailabilities.Add(DomainWorkCenterUnavailability.Open(
             unavailability.OrganizationId,
             unavailability.EnvironmentId,
+            $"UNAV-{workCenterSegment}-{unavailability.FromUtc:yyyyMMddHHmmssfff}",
             unavailability.WorkCenterId,
             unavailability.FromUtc,
             unavailability.ToUtc,

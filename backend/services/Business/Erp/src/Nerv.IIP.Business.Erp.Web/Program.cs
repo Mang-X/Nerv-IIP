@@ -60,7 +60,7 @@ try
     }
 
     builder.Services.AddErpPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddSingleton<ErpNumberingService>();
+    builder.Services.AddScoped<ErpNumberingService>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)

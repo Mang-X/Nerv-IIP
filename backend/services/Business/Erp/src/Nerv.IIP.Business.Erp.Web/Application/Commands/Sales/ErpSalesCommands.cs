@@ -28,7 +28,7 @@ public sealed class OpenOpportunityCommandHandler(ApplicationDbContext dbContext
 
     public async Task<OpportunityId> Handle(OpenOpportunityCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.Allocate(request.OrganizationId, request.EnvironmentId, "opportunity", "OPP", request.OpportunityNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.CustomerCode, request.Topic));
+        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "opportunity", "OPP", request.OpportunityNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.CustomerCode, request.Topic), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.Opportunities.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.OpportunityNo == allocation.Number, cancellationToken)).Id;
@@ -79,7 +79,7 @@ public sealed class CreateQuotationCommandHandler(ApplicationDbContext dbContext
 
     public async Task<QuotationId> Handle(CreateQuotationCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.Allocate(request.OrganizationId, request.EnvironmentId, "quotation", "QUO", request.QuotationNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.CustomerCode, request.ExpiresOn, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.RequiredDate}")));
+        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "quotation", "QUO", request.QuotationNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.CustomerCode, request.ExpiresOn, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.RequiredDate}")), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.Quotations.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.QuotationNo == allocation.Number, cancellationToken)).Id;
@@ -142,7 +142,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
 
     public async Task<SalesOrderId> Handle(CreateSalesOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.Allocate(request.OrganizationId, request.EnvironmentId, "sales-order", "SO", request.SalesOrderNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.QuotationNo));
+        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "sales-order", "SO", request.SalesOrderNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.QuotationNo), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.SalesOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == allocation.Number, cancellationToken)).Id;
@@ -195,7 +195,7 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
 
     public async Task<DeliveryOrderId> Handle(ReleaseDeliveryOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.Allocate(request.OrganizationId, request.EnvironmentId, "delivery-order", "DO", request.DeliveryOrderNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.SalesOrderNo, request.Lines.Select(x => $"{x.SalesOrderLineNo}:{x.Quantity}")));
+        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "delivery-order", "DO", request.DeliveryOrderNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.SalesOrderNo, request.Lines.Select(x => $"{x.SalesOrderLineNo}:{x.Quantity}")), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.DeliveryOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.DeliveryOrderNo == allocation.Number, cancellationToken)).Id;

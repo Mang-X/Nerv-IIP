@@ -129,7 +129,7 @@ try
     builder.Services.AddMasterDataPostgreSqlPersistence(
         masterDataConnectionString,
         builder.Environment.IsDevelopment());
-    builder.Services.AddSingleton<MasterDataNumberingService>();
+    builder.Services.AddScoped<MasterDataNumberingService>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IMasterDataIntegrationEventContextAccessor, HttpMasterDataIntegrationEventContextAccessor>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();

@@ -316,6 +316,25 @@ public sealed class MasterDataApiContractTests
         Assert.Single(dbContext.Skus);
     }
 
+    [Fact]
+    public async Task Create_sku_command_persists_numbering_counter_and_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), new MasterDataNumberingService(dbContext));
+
+        var result = await handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", null, "Persisted Numbering", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-persisted-numbering"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Matches("^SKU-[0-9]{8}-[0-9]{6}$", result.Code);
+        Assert.Single(dbContext.NumberingCounters);
+        var idempotency = Assert.Single(dbContext.NumberingIdempotencyKeys);
+        Assert.Equal(result.Code, idempotency.Number);
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();

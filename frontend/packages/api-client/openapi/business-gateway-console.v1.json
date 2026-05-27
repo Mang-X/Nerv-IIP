@@ -5409,6 +5409,9 @@
           "productionReportId": {
             "type": "string"
           },
+          "reportNo": {
+            "type": "string"
+          },
           "workOrderId": {
             "type": "string"
           },
@@ -5460,6 +5463,9 @@
         "properties": {
           "productionReportId": {
             "type": "string"
+          },
+          "reportNo": {
+            "type": "string"
           }
         }
       },
@@ -5493,6 +5499,10 @@
           "reportedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -5631,6 +5641,9 @@
           "receiptRequestId": {
             "type": "string"
           },
+          "requestNo": {
+            "type": "string"
+          },
           "workOrderId": {
             "type": "string"
           },
@@ -5676,6 +5689,9 @@
         "additionalProperties": false,
         "properties": {
           "finishedGoodsReceiptRequestId": {
+            "type": "string"
+          },
+          "requestNo": {
             "type": "string"
           }
         }

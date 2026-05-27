@@ -42,12 +42,13 @@ public sealed class CreateSkuCommandHandler(ISkuRepository repository, MasterDat
 
     public async Task<MasterDataResourceResult> Handle(CreateSkuCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.AllocateSkuCode(
+        var allocation = await _numberingService.AllocateSkuCodeAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
             request.IdempotencyKey,
-            SkuPayloadFingerprint(request));
+            SkuPayloadFingerprint(request),
+            cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return new MasterDataResourceResult("sku", allocation.Code, request.Name);

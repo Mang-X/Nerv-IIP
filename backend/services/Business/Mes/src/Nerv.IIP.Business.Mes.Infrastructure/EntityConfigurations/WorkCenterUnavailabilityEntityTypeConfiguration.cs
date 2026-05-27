@@ -12,6 +12,7 @@ public sealed class WorkCenterUnavailabilityEntityTypeConfiguration : IEntityTyp
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Work center unavailability aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").HasMaxLength(100).HasComment("Organization tenant id; null means the scheduling constraint is global.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").HasMaxLength(100).HasComment("Environment id; null means the scheduling constraint is global.");
+        builder.Property(x => x.DowntimeEventNo).HasColumnName("downtime_event_no").IsRequired().HasMaxLength(100).HasComment("MES business downtime event number allocated by the service numbering counter.");
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").IsRequired().HasMaxLength(100).HasComment("MasterData work center public id unavailable for scheduling.");
         builder.Property(x => x.FromUtc).HasColumnName("from_utc").IsRequired().HasComment("UTC start of the unavailable window.");
         builder.Property(x => x.ToUtc).HasColumnName("to_utc").HasComment("UTC end of the unavailable window; null means still unavailable.");
@@ -21,5 +22,8 @@ public sealed class WorkCenterUnavailabilityEntityTypeConfiguration : IEntityTyp
             .HasDatabaseName("ix_wc_unavailability_scope_center_window");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.ToUtc })
             .HasDatabaseName("ix_wc_unavailability_scope_asset_open");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DowntimeEventNo })
+            .IsUnique()
+            .HasDatabaseName("ux_wc_unavailability_scope_downtime_no");
     }
 }

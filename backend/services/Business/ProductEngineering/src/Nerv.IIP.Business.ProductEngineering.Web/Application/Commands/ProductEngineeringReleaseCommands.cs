@@ -44,14 +44,15 @@ public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocume
 
     public async Task<EntityCommandResult> Handle(RegisterEngineeringDocumentCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.Allocate(
+        var allocation = await _numberingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "engineering-document",
             "EDOC",
             request.DocumentNumber,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.FileId, request.FileName, request.ContentType, request.DocumentType));
+            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.FileId, request.FileName, request.ContentType, request.DocumentType),
+            cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return new EntityCommandResult(allocation.Number);
@@ -104,14 +105,15 @@ public sealed class CreateEngineeringItemRevisionCommandHandler(IEngineeringItem
 
     public async Task<EntityCommandResult> Handle(CreateEngineeringItemRevisionCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.Allocate(
+        var allocation = await _numberingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "engineering-item",
             "ITEM",
             request.ItemCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.Name, request.Release));
+            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.Name, request.Release),
+            cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return new EntityCommandResult(allocation.Number);
@@ -172,14 +174,15 @@ public sealed class ReleaseEngineeringBomCommandHandler(IEngineeringBomRepositor
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringBomCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.Allocate(
+        var allocation = await _numberingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "engineering-bom",
             "EBOM",
             request.BomCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.ParentItemCode, request.EffectiveDate, request.Lines.Select(x => $"{x.ComponentCode}:{x.Quantity}:{x.UnitOfMeasureCode}")));
+            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.ParentItemCode, request.EffectiveDate, request.Lines.Select(x => $"{x.ComponentCode}:{x.Quantity}:{x.UnitOfMeasureCode}")),
+            cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return new EntityCommandResult(allocation.Number);
@@ -244,14 +247,15 @@ public sealed class ReleaseManufacturingBomCommandHandler(
 
     public async Task<EntityCommandResult> Handle(ReleaseManufacturingBomCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.Allocate(
+        var allocation = await _numberingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "manufacturing-bom",
             "MBOM",
             request.BomCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.SkuCode, request.EngineeringBomCode, request.EngineeringBomRevision, request.EffectiveDate));
+            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.SkuCode, request.EngineeringBomCode, request.EngineeringBomRevision, request.EffectiveDate),
+            cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return new EntityCommandResult(allocation.Number);
@@ -319,14 +323,15 @@ public sealed class ReleaseRoutingCommandHandler(IRoutingRepository repository, 
 
     public async Task<EntityCommandResult> Handle(ReleaseRoutingCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.Allocate(
+        var allocation = await _numberingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "routing",
             "RTG",
             request.RoutingCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.WorkCenterCode}:{x.OperationName}:{x.StandardMinutes}")));
+            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.WorkCenterCode}:{x.OperationName}:{x.StandardMinutes}")),
+            cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return new EntityCommandResult(allocation.Number);
@@ -381,14 +386,15 @@ public sealed class ReleaseEngineeringChangeCommandHandler(IEngineeringChangeRep
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringChangeCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.Allocate(
+        var allocation = await _numberingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "engineering-change",
             "ECO",
             request.ChangeNumber,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Reason, request.ApprovalReferenceId, request.EffectiveDate, request.AffectedVersions.Select(x => $"{x.VersionKind}:{x.VersionId}")));
+            ProductEngineeringNumberingService.Fingerprint(request.Reason, request.ApprovalReferenceId, request.EffectiveDate, request.AffectedVersions.Select(x => $"{x.VersionKind}:{x.VersionId}")),
+            cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return new EntityCommandResult(allocation.Number);

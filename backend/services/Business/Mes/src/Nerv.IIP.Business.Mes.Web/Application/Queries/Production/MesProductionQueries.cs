@@ -13,6 +13,7 @@ public sealed record ListProductionReportsResponse(IReadOnlyCollection<Productio
 
 public sealed record ProductionReportFact(
     string ProductionReportId,
+    string ReportNo,
     string WorkOrderId,
     string OperationTaskId,
     decimal GoodQuantity,
@@ -40,6 +41,7 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
             .Take(take)
             .Select(x => new ProductionReportFact(
                 x.Id.ToString(),
+                x.ReportNo,
                 x.WorkOrderId,
                 x.OperationTaskId,
                 x.GoodQuantity,
@@ -61,6 +63,7 @@ public sealed record ListFinishedGoodsReceiptRequestsResponse(IReadOnlyCollectio
 
 public sealed record FinishedGoodsReceiptRequestFact(
     string ReceiptRequestId,
+    string RequestNo,
     string WorkOrderId,
     string SkuId,
     decimal Quantity,
@@ -87,6 +90,7 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
             .Take(take)
             .Select(x => new FinishedGoodsReceiptRequestFact(
                 x.Id.ToString(),
+                x.RequestNo,
                 x.WorkOrderId,
                 x.SkuId,
                 x.Quantity,
@@ -133,7 +137,7 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
             .OrderByDescending(x => x.FromUtc)
             .Take(take)
             .Select(x => new CapacityImpactFact(
-                x.Id.Id.ToString(),
+                x.DowntimeEventNo,
                 x.WorkCenterId,
                 x.DeviceAssetId,
                 x.ToUtc == null ? "Open" : "Recovered",

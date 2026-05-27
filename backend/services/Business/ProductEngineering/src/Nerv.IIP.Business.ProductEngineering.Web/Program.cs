@@ -79,7 +79,7 @@ try
     }
 
     builder.Services.AddProductEngineeringPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddSingleton<ProductEngineeringNumberingService>();
+    builder.Services.AddScoped<ProductEngineeringNumberingService>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IProductEngineeringIntegrationEventContextAccessor, HttpProductEngineeringIntegrationEventContextAccessor>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();

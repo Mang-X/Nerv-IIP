@@ -8,6 +8,7 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringIte
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
+using Nerv.IIP.Business.ProductEngineering.Infrastructure.Numbering;
 
 namespace Nerv.IIP.Business.ProductEngineering.Infrastructure;
 
@@ -21,6 +22,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<Routing> Routings => Set<Routing>();
     public DbSet<EngineeringChange> EngineeringChanges => Set<EngineeringChange>();
     public DbSet<ProductionVersion> ProductionVersions => Set<ProductionVersion>();
+    public DbSet<NumberingCounter> NumberingCounters => Set<NumberingCounter>();
+    public DbSet<NumberingIdempotencyKey> NumberingIdempotencyKeys => Set<NumberingIdempotencyKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

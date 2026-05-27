@@ -1,17 +1,129 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.ProductEngineering.Infrastructure;
+using Nerv.IIP.Business.ProductEngineering.Infrastructure.Numbering;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 
 public sealed record ProductEngineeringNumberAllocation(string Number, bool IsIdempotentReplay);
 
-public sealed class ProductEngineeringNumberingService
+public sealed class ProductEngineeringNumberingService(ApplicationDbContext? dbContext = null)
 {
+    private readonly ApplicationDbContext? _dbContext = dbContext;
     private readonly Lock _lock = new();
     private readonly Dictionary<string, long> _counters = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ProductEngineeringIdempotentNumber> _idempotency = new(StringComparer.Ordinal);
 
-    public ProductEngineeringNumberAllocation Allocate(
+    public async Task<ProductEngineeringNumberAllocation> AllocateAsync(
+        string organizationId,
+        string environmentId,
+        string documentType,
+        string prefix,
+        string? requestedNumber,
+        string? idempotencyKey,
+        string payloadFingerprint,
+        CancellationToken cancellationToken)
+    {
+        if (_dbContext is null)
+        {
+            return AllocateInMemory(organizationId, environmentId, documentType, prefix, requestedNumber, idempotencyKey, payloadFingerprint);
+        }
+
+        var normalizedRequestedNumber = Normalize(requestedNumber);
+        var normalizedIdempotencyKey = Normalize(idempotencyKey);
+        var idempotencyRecord = normalizedIdempotencyKey is null
+            ? null
+            : await FindIdempotencyRecordAsync(organizationId, environmentId, documentType, normalizedIdempotencyKey, cancellationToken);
+        if (idempotencyRecord is not null)
+        {
+            if (!string.Equals(idempotencyRecord.PayloadFingerprint, payloadFingerprint, StringComparison.Ordinal))
+            {
+                throw new KnownException($"Idempotency key '{normalizedIdempotencyKey}' conflicts with a different ProductEngineering create payload.");
+            }
+
+            return new ProductEngineeringNumberAllocation(idempotencyRecord.Number, true);
+        }
+
+        var number = normalizedRequestedNumber ?? await NextNumberAsync(organizationId, environmentId, documentType, prefix, cancellationToken);
+        if (normalizedIdempotencyKey is not null)
+        {
+            _dbContext.NumberingIdempotencyKeys.Add(new NumberingIdempotencyKey(
+                organizationId,
+                environmentId,
+                documentType,
+                normalizedIdempotencyKey,
+                number,
+                payloadFingerprint,
+                DateTimeOffset.UtcNow));
+        }
+
+        return new ProductEngineeringNumberAllocation(number, false);
+    }
+
+    public static string Fingerprint(params object?[] parts)
+    {
+        return string.Join('|', parts.Select(part => part switch
+        {
+            null => string.Empty,
+            IEnumerable<string> values => string.Join(',', values.Order(StringComparer.Ordinal)),
+            _ => Convert.ToString(part, CultureInfo.InvariantCulture) ?? string.Empty
+        }));
+    }
+
+    private async Task<string> NextNumberAsync(
+        string organizationId,
+        string environmentId,
+        string documentType,
+        string prefix,
+        CancellationToken cancellationToken)
+    {
+        var dateSegment = DateTimeOffset.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        var counter = _dbContext!.NumberingCounters.Local.FirstOrDefault(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.DocumentType == documentType &&
+                x.SiteCode == string.Empty &&
+                x.DateSegment == dateSegment)
+            ?? await _dbContext.NumberingCounters.SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.DocumentType == documentType &&
+                x.SiteCode == string.Empty &&
+                x.DateSegment == dateSegment,
+                cancellationToken);
+
+        if (counter is null)
+        {
+            counter = new NumberingCounter(organizationId, environmentId, documentType, string.Empty, dateSegment, prefix);
+            _dbContext.NumberingCounters.Add(counter);
+        }
+
+        var next = counter.Advance();
+        return $"{prefix}-{dateSegment}-{next:000000}";
+    }
+
+    private async Task<NumberingIdempotencyKey?> FindIdempotencyRecordAsync(
+        string organizationId,
+        string environmentId,
+        string documentType,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        return _dbContext!.NumberingIdempotencyKeys.Local.FirstOrDefault(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.DocumentType == documentType &&
+                x.IdempotencyKey == idempotencyKey)
+            ?? await _dbContext.NumberingIdempotencyKeys.SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.DocumentType == documentType &&
+                x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+    }
+
+    private ProductEngineeringNumberAllocation AllocateInMemory(
         string organizationId,
         string environmentId,
         string documentType,
@@ -33,7 +145,7 @@ public sealed class ProductEngineeringNumberingService
             return new ProductEngineeringNumberAllocation(existing.Number, true);
         }
 
-        var number = normalizedRequestedNumber ?? NextNumber(organizationId, environmentId, documentType, prefix);
+        var number = normalizedRequestedNumber ?? NextNumberInMemory(organizationId, environmentId, documentType, prefix);
         if (normalizedIdempotencyKey is not null)
         {
             _idempotency.TryAdd(
@@ -44,17 +156,7 @@ public sealed class ProductEngineeringNumberingService
         return new ProductEngineeringNumberAllocation(number, false);
     }
 
-    public static string Fingerprint(params object?[] parts)
-    {
-        return string.Join('|', parts.Select(part => part switch
-        {
-            null => string.Empty,
-            IEnumerable<string> values => string.Join(',', values.Order(StringComparer.Ordinal)),
-            _ => Convert.ToString(part, CultureInfo.InvariantCulture) ?? string.Empty
-        }));
-    }
-
-    private string NextNumber(string organizationId, string environmentId, string documentType, string prefix)
+    private string NextNumberInMemory(string organizationId, string environmentId, string documentType, string prefix)
     {
         var dateSegment = DateTimeOffset.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
         var scope = Key(organizationId, environmentId, documentType, dateSegment);

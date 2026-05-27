@@ -47,9 +47,12 @@ public sealed record RecordProductionReportRequest(
     decimal GoodQuantity,
     decimal ScrapQuantity,
     bool CompletesOperation,
-    DateTimeOffset ReportedAtUtc);
+    DateTimeOffset ReportedAtUtc,
+    string? IdempotencyKey = null);
 
-public sealed record RecordProductionReportResponse(global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId);
+public sealed record RecordProductionReportResponse(
+    global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
+    string ReportNo);
 
 public sealed record ListProductionReportsRequest(
     string OrganizationId,
@@ -64,9 +67,12 @@ public sealed record CreateFinishedGoodsReceiptRequestRequest(
     string SkuId,
     decimal Quantity,
     string UomCode,
-    DateTimeOffset RequestedAtUtc);
+    DateTimeOffset RequestedAtUtc,
+    string? IdempotencyKey = null);
 
-public sealed record CreateFinishedGoodsReceiptRequestResponse(global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequestId FinishedGoodsReceiptRequestId);
+public sealed record CreateFinishedGoodsReceiptRequestResponse(
+    global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequestId FinishedGoodsReceiptRequestId,
+    string RequestNo);
 
 public sealed record ListFinishedGoodsReceiptRequestsRequest(
     string OrganizationId,
@@ -127,7 +133,8 @@ public sealed record CreateMaterialIssueRequestRequest(
     string? OperationTaskId,
     string? MaterialId,
     decimal? Quantity,
-    DateTimeOffset? RequestedAtUtc);
+    DateTimeOffset? RequestedAtUtc,
+    string? IdempotencyKey = null);
 
 public sealed record ListMaterialIssueRequestsRequest(
     string OrganizationId,
@@ -163,7 +170,8 @@ public sealed record RecordDefectRequest(
     string? OperationTaskId,
     string DefectCode,
     decimal Quantity,
-    DateTimeOffset? RecordedAtUtc);
+    DateTimeOffset? RecordedAtUtc,
+    string? IdempotencyKey = null);
 
 public sealed record ListRelatedQualityItemsRequest(
     string OrganizationId,
@@ -190,7 +198,8 @@ public sealed record RecordDowntimeEventRequest(
     string? Reason,
     DateTimeOffset? StartedAtUtc,
     DateTimeOffset? FromUtc,
-    DateTimeOffset? ToUtc);
+    DateTimeOffset? ToUtc,
+    string? IdempotencyKey = null);
 
 public sealed record RecoverDowntimeRequest(
     string OrganizationId,
@@ -209,7 +218,8 @@ public sealed record CreateShiftHandoverRequest(
     string EnvironmentId,
     string ShiftId,
     string TeamId,
-    DateTimeOffset? HandoverAtUtc);
+    DateTimeOffset? HandoverAtUtc,
+    string? IdempotencyKey = null);
 
 public sealed record AcceptShiftHandoverRequest(
     string OrganizationId,
@@ -448,7 +458,8 @@ public sealed class CreateMaterialIssueRequestEndpoint(ISender sender, TimeProvi
             req.OperationTaskId,
             req.MaterialId,
             req.Quantity,
-            req.RequestedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            req.RequestedAtUtc ?? timeProvider.GetUtcNow(),
+            req.IdempotencyKey), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -582,7 +593,7 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
 
     public override async Task HandleAsync(RecordProductionReportRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new RecordProductionReportCommand(
+        var result = await sender.Send(new RecordProductionReportCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.WorkOrderId,
@@ -590,8 +601,9 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
             req.GoodQuantity,
             req.ScrapQuantity,
             req.CompletesOperation,
-            req.ReportedAtUtc), ct);
-        await Send.OkAsync(new RecordProductionReportResponse(id), ct);
+            req.ReportedAtUtc,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
     }
 }
 
@@ -621,7 +633,8 @@ public sealed class RecordDefectEndpoint(ISender sender, TimeProvider timeProvid
             req.OperationTaskId,
             req.DefectCode,
             req.Quantity,
-            req.RecordedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            req.RecordedAtUtc ?? timeProvider.GetUtcNow(),
+            req.IdempotencyKey), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -650,15 +663,16 @@ public sealed class CreateFinishedGoodsReceiptRequestEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateFinishedGoodsReceiptRequestRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateFinishedGoodsReceiptRequestCommand(
+        var result = await sender.Send(new CreateFinishedGoodsReceiptRequestCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.WorkOrderId,
             req.SkuId,
             req.Quantity,
             req.UomCode,
-            req.RequestedAtUtc), ct);
-        await Send.OkAsync(new CreateFinishedGoodsReceiptRequestResponse(id), ct);
+            req.RequestedAtUtc,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(new CreateFinishedGoodsReceiptRequestResponse(result.Id, result.RequestNo), ct);
     }
 }
 
@@ -707,7 +721,8 @@ public sealed class RecordDowntimeEventEndpoint(ISender sender)
             req.DeviceAssetId,
             req.Reason ?? req.ReasonCode ?? "manual-downtime",
             req.FromUtc ?? req.StartedAtUtc ?? DateTimeOffset.UtcNow,
-            req.ToUtc), ct);
+            req.ToUtc,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -752,7 +767,8 @@ public sealed class CreateShiftHandoverEndpoint(ISender sender, TimeProvider tim
             req.EnvironmentId,
             req.ShiftId,
             req.TeamId,
-            req.HandoverAtUtc ?? timeProvider.GetUtcNow()), ct);
+            req.HandoverAtUtc ?? timeProvider.GetUtcNow(),
+            req.IdempotencyKey), ct);
         await Send.OkAsync(response, ct);
     }
 }

@@ -60,7 +60,7 @@ try
     }
 
     builder.Services.AddDemandPlanningPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddSingleton<DemandPlanningNumberingService>();
+    builder.Services.AddScoped<DemandPlanningNumberingService>();
     builder.Services.AddScoped<IPlanningInputSnapshotProvider, DemandPlanningFixtureInputSnapshotProvider>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();

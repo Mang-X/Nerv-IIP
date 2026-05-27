@@ -303,6 +303,7 @@ public sealed class MesEndpointContractTests
         dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
             "org-001",
             "env-dev",
+            "DOWNTIME-001",
             "WC-MIX-01",
             reportedAt,
             null,
@@ -321,13 +322,16 @@ public sealed class MesEndpointContractTests
             CancellationToken.None);
 
         var report = Assert.Single(reports.Items);
+        Assert.StartsWith("PRPT-", report.ReportNo, StringComparison.Ordinal);
         Assert.Equal("WO-001", report.WorkOrderId);
         Assert.Equal("OP-10", report.OperationTaskId);
         Assert.Equal(9m, report.GoodQuantity);
         var receipt = Assert.Single(receipts.Items);
+        Assert.StartsWith("FGR-", receipt.RequestNo, StringComparison.Ordinal);
         Assert.Equal("SKU-FG-1000", receipt.SkuId);
         Assert.Equal(9m, receipt.Quantity);
         var impact = Assert.Single(capacity.Items);
+        Assert.Equal("DOWNTIME-001", impact.ImpactId);
         Assert.Equal("ASSET-001", impact.DeviceAssetId);
         Assert.Equal("WC-MIX-01", impact.WorkCenterId);
         Assert.Null(impact.EffectiveToUtc);

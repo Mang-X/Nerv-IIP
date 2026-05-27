@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -158,5 +159,30 @@ public sealed class RushWorkOrderCommandTests
 
         Assert.Equal(first.ReferenceId, second.ReferenceId);
         Assert.Matches("^WO-[0-9]{8}-[0-9]{6}$", first.ReferenceId);
+    }
+
+    [Fact]
+    public async Task MesNumberingService_PersistsCounterAndIdempotencyKey()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var numbering = new MesNumberingService(dbContext);
+
+        var allocation = await numbering.AllocateAsync(
+            "org-001",
+            "env-dev",
+            "work-order",
+            "WO",
+            null,
+            "mes-persisted-numbering",
+            "payload",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Matches("^WO-[0-9]{8}-[0-9]{6}$", allocation.Number);
+        Assert.Single(dbContext.NumberingCounters);
+        var idempotency = Assert.Single(dbContext.NumberingIdempotencyKeys);
+        Assert.Equal(allocation.Number, idempotency.Number);
     }
 }

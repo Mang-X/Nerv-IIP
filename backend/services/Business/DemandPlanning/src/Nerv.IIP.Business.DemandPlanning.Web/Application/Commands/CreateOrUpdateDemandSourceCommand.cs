@@ -38,12 +38,13 @@ public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContex
 
     public async Task<DemandSourceId> Handle(CreateOrUpdateDemandSourceCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.AllocateDemandReference(
+        var allocation = await _numberingService.AllocateDemandReferenceAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.SourceReference,
             request.IdempotencyKey,
-            string.Join('|', request.DemandType, request.SkuCode, request.UomCode, request.SiteCode, request.Quantity, request.DueDate));
+            string.Join('|', request.DemandType, request.SkuCode, request.UomCode, request.SiteCode, request.Quantity, request.DueDate),
+            cancellationToken);
         var demand = await dbContext.DemandSources.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId

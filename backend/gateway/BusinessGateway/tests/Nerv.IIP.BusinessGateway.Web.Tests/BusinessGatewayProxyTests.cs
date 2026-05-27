@@ -1125,7 +1125,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMesCreateReceiptResponse("receipt-1"));
+        return Task.FromResult(new BusinessConsoleMesCreateReceiptResponse("receipt-1", "FGR-1"));
     }
 
     public Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(

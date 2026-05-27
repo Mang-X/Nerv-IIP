@@ -285,9 +285,10 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     decimal GoodQuantity,
     decimal ScrapQuantity,
     bool CompletesOperation,
-    DateTimeOffset ReportedAtUtc);
+    DateTimeOffset ReportedAtUtc,
+    string? IdempotencyKey = null);
 
-public sealed record BusinessConsoleRecordProductionReportResponse(string ProductionReportId);
+public sealed record BusinessConsoleRecordProductionReportResponse(string ProductionReportId, string ReportNo);
 
 public sealed record BusinessConsoleMesContextRequest(
     string OrganizationId,
@@ -499,6 +500,7 @@ public sealed record BusinessConsoleMesProductionReportListResponse(IReadOnlyCol
 
 public sealed record BusinessConsoleMesProductionReportRow(
     string ProductionReportId,
+    string ReportNo,
     string WorkOrderId,
     string OperationTaskId,
     decimal GoodQuantity,
@@ -531,6 +533,7 @@ public sealed record BusinessConsoleMesReceiptRequestListResponse(IReadOnlyColle
 
 public sealed record BusinessConsoleMesReceiptRequestRow(
     string ReceiptRequestId,
+    string RequestNo,
     string WorkOrderId,
     string SkuId,
     decimal Quantity,
@@ -547,7 +550,7 @@ public sealed record BusinessConsoleMesCreateReceiptRequest(
     DateTimeOffset RequestedAtUtc,
     string IdempotencyKey);
 
-public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGoodsReceiptRequestId);
+public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGoodsReceiptRequestId, string RequestNo);
 
 public sealed record BusinessConsoleMesDowntimeEventListResponse(IReadOnlyCollection<BusinessConsoleMesDowntimeEventRow> Items);
 

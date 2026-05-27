@@ -32,12 +32,13 @@ public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, R
 
     public async Task<CreateRushWorkOrderResponse> Handle(CreateRushWorkOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = _numberingService.AllocateWorkOrderId(
+        var allocation = await _numberingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
             request.IdempotencyKey,
-            WorkOrderPayloadFingerprint(request));
+            WorkOrderPayloadFingerprint(request),
+            cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return new CreateRushWorkOrderResponse(

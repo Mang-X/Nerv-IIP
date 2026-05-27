@@ -1,17 +1,112 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.DemandPlanning.Infrastructure;
+using Nerv.IIP.Business.DemandPlanning.Infrastructure.Numbering;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 
 public sealed record DemandPlanningNumberAllocation(string Number, bool IsIdempotentReplay);
 
-public sealed class DemandPlanningNumberingService
+public sealed class DemandPlanningNumberingService(ApplicationDbContext? dbContext = null)
 {
+    private readonly ApplicationDbContext? _dbContext = dbContext;
     private readonly Lock _lock = new();
     private readonly Dictionary<string, long> _counters = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DemandPlanningIdempotentNumber> _idempotency = new(StringComparer.Ordinal);
 
-    public DemandPlanningNumberAllocation AllocateDemandReference(
+    public async Task<DemandPlanningNumberAllocation> AllocateDemandReferenceAsync(
+        string organizationId,
+        string environmentId,
+        string? requestedReference,
+        string? idempotencyKey,
+        string payloadFingerprint,
+        CancellationToken cancellationToken)
+    {
+        if (_dbContext is null)
+        {
+            return AllocateDemandReferenceInMemory(organizationId, environmentId, requestedReference, idempotencyKey, payloadFingerprint);
+        }
+
+        var normalizedReference = Normalize(requestedReference);
+        var normalizedIdempotencyKey = Normalize(idempotencyKey);
+        var idempotencyRecord = normalizedIdempotencyKey is null
+            ? null
+            : await FindIdempotencyRecordAsync(organizationId, environmentId, "demand", normalizedIdempotencyKey, cancellationToken);
+        if (idempotencyRecord is not null)
+        {
+            if (!string.Equals(idempotencyRecord.PayloadFingerprint, payloadFingerprint, StringComparison.Ordinal))
+            {
+                throw new KnownException($"Idempotency key '{normalizedIdempotencyKey}' conflicts with a different demand create payload.");
+            }
+
+            return new DemandPlanningNumberAllocation(idempotencyRecord.Number, true);
+        }
+
+        var number = normalizedReference ?? await NextNumberAsync(organizationId, environmentId, cancellationToken);
+        if (normalizedIdempotencyKey is not null)
+        {
+            _dbContext.NumberingIdempotencyKeys.Add(new NumberingIdempotencyKey(
+                organizationId,
+                environmentId,
+                "demand",
+                normalizedIdempotencyKey,
+                number,
+                payloadFingerprint,
+                DateTimeOffset.UtcNow));
+        }
+
+        return new DemandPlanningNumberAllocation(number, false);
+    }
+
+    private async Task<string> NextNumberAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+    {
+        var dateSegment = DateTimeOffset.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        var counter = _dbContext!.NumberingCounters.Local.FirstOrDefault(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.DocumentType == "demand" &&
+                x.SiteCode == string.Empty &&
+                x.DateSegment == dateSegment)
+            ?? await _dbContext.NumberingCounters.SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.DocumentType == "demand" &&
+                x.SiteCode == string.Empty &&
+                x.DateSegment == dateSegment,
+                cancellationToken);
+
+        if (counter is null)
+        {
+            counter = new NumberingCounter(organizationId, environmentId, "demand", string.Empty, dateSegment, "DEMAND");
+            _dbContext.NumberingCounters.Add(counter);
+        }
+
+        var next = counter.Advance();
+        return $"DEMAND-{dateSegment}-{next:000000}";
+    }
+
+    private async Task<NumberingIdempotencyKey?> FindIdempotencyRecordAsync(
+        string organizationId,
+        string environmentId,
+        string documentType,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        return _dbContext!.NumberingIdempotencyKeys.Local.FirstOrDefault(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.DocumentType == documentType &&
+                x.IdempotencyKey == idempotencyKey)
+            ?? await _dbContext.NumberingIdempotencyKeys.SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.DocumentType == documentType &&
+                x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+    }
+
+    private DemandPlanningNumberAllocation AllocateDemandReferenceInMemory(
         string organizationId,
         string environmentId,
         string? requestedReference,

@@ -447,6 +447,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportRow = {
     productionReportId?: string;
+    reportNo?: string;
     workOrderId?: string;
     operationTaskId?: string;
     goodQuantity?: number;
@@ -461,6 +462,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProduction
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportResponse = {
     productionReportId?: string;
+    reportNo?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportRequest = {
@@ -472,6 +474,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     scrapQuantity?: number;
     completesOperation?: boolean;
     reportedAtUtc?: string;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest = {
@@ -513,6 +516,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptRequestRow = {
     receiptRequestId?: string;
+    requestNo?: string;
     workOrderId?: string;
     skuId?: string;
     quantity?: number;
@@ -526,6 +530,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesCreateReceipt
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateReceiptResponse = {
     finishedGoodsReceiptRequestId?: string;
+    requestNo?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateReceiptRequest = {

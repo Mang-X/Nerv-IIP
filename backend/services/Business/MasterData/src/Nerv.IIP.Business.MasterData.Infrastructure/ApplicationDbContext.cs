@@ -13,6 +13,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Infrastructure.Numbering;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
@@ -37,6 +38,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<WorkCenter> WorkCenters => Set<WorkCenter>();
     public DbSet<WorkCalendar> WorkCalendars => Set<WorkCalendar>();
     public DbSet<DeviceAsset> DeviceAssets => Set<DeviceAsset>();
+    public DbSet<NumberingCounter> NumberingCounters => Set<NumberingCounter>();
+    public DbSet<NumberingIdempotencyKey> NumberingIdempotencyKeys => Set<NumberingIdempotencyKey>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         if (modelBuilder is null)

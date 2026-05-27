@@ -79,6 +79,7 @@ public sealed class MesAggregateTests
         var report = ProductionReport.Record(
             "org-001",
             "env-dev",
+            "PRPT-001",
             "WO-001",
             "OP-10",
             9m,
@@ -87,6 +88,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T09:00:00Z"));
 
         Assert.Equal(9m, report.GoodQuantity);
+        Assert.Equal("PRPT-001", report.ReportNo);
         Assert.Equal(1m, report.ScrapQuantity);
         Assert.True(report.CompletesOperation);
     }
@@ -97,6 +99,7 @@ public sealed class MesAggregateTests
         var request = FinishedGoodsReceiptRequest.Create(
             "org-001",
             "env-dev",
+            "FGR-001",
             "WO-001",
             "SKU-001",
             9m,
@@ -104,6 +107,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T09:30:00Z"));
 
         Assert.Equal("WO-001", request.WorkOrderId);
+        Assert.Equal("FGR-001", request.RequestNo);
         Assert.Equal("SKU-001", request.SkuId);
         Assert.Equal(9m, request.Quantity);
         Assert.Equal("PCS", request.UomCode);
@@ -117,6 +121,7 @@ public sealed class MesAggregateTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ProductionReport.Record(
             "org-001",
             "env-dev",
+            "PRPT-001",
             "WO-001",
             "OP-10",
             -1m,
@@ -127,6 +132,7 @@ public sealed class MesAggregateTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ProductionReport.Record(
             "org-001",
             "env-dev",
+            "PRPT-002",
             "WO-001",
             "OP-10",
             0m,
@@ -142,8 +148,8 @@ public sealed class MesAggregateTests
 
         Assert.Throws<ArgumentException>(() => WorkOrder.Create("", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 10, dueUtc));
         Assert.Throws<ArgumentException>(() => OperationTask.Queue("", "env-dev", "WO-001", "OP-10", 10, "WC-A", [], dueUtc, TimeSpan.FromMinutes(30)));
-        Assert.Throws<ArgumentException>(() => ProductionReport.Record("", "env-dev", "WO-001", "OP-10", 1m, 0m, true, dueUtc));
-        Assert.Throws<ArgumentException>(() => FinishedGoodsReceiptRequest.Create("", "env-dev", "WO-001", "SKU-001", 1m, "PCS", dueUtc));
+        Assert.Throws<ArgumentException>(() => ProductionReport.Record("", "env-dev", "PRPT-001", "WO-001", "OP-10", 1m, 0m, true, dueUtc));
+        Assert.Throws<ArgumentException>(() => FinishedGoodsReceiptRequest.Create("", "env-dev", "FGR-001", "WO-001", "SKU-001", 1m, "PCS", dueUtc));
     }
 
     [Fact]
