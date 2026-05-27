@@ -209,6 +209,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         foreach (var permission in new[]
         {
             "business.mes.work-orders.manage",
+            "business.mes.plans.read",
             "business.mes.materials.read",
             "business.mes.materials.manage",
             "business.mes.dispatch.read",

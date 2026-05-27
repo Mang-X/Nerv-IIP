@@ -43,6 +43,7 @@ public static class IamPermissionCatalog
         ["business.inventory.counts.manage"] = "Create and complete inventory counts.",
         ["business.mes.foundation.read"] = "Read MES foundation readiness.",
         ["business.mes.overview.read"] = "Read MES execution overview.",
+        ["business.mes.plans.read"] = "Read MES production plans and readiness.",
         ["business.mes.work-orders.read"] = "Read MES work orders.",
         ["business.mes.work-orders.manage"] = "Create, release and close MES work orders.",
         ["business.mes.materials.read"] = "Read MES material readiness and issue requests.",

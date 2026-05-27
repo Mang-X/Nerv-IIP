@@ -47,6 +47,7 @@ public static class NervIipSeedPermissions
         "business.inventory.counts.manage",
         "business.mes.foundation.read",
         "business.mes.overview.read",
+        "business.mes.plans.read",
         "business.mes.work-orders.read",
         "business.mes.work-orders.manage",
         "business.mes.materials.read",
