@@ -192,7 +192,7 @@ Business Console 登录、刷新、退出和 `/me` 可以先复用 PlatformGatew
 | `/mes/plans` | 生产计划，展示可转入 MES 执行的计划和计划就绪状态。 | BusinessGateway MES facade。 |
 | `/mes/work-orders` | 计划与工单；急单创建、释放、行级操作和报工通过抽屉或详情路由承载。 | BusinessGateway MES facade。 |
 | `/mes/work-orders/:workOrderId` | 工单详情，展示工序、用料、开工阻塞，并作为报工、完工入库和质量检验的上下文入口。 | BusinessGateway MES facade。 |
-| `/mes/work-order-detail/:workOrderId` | 旧工单详情兼容路由，进入后重定向到 `/mes/work-orders/:workOrderId`。 | BusinessGateway MES facade。 |
+| `/mes/work-order-detail/:workOrderId` | 旧工单详情兼容路由，进入后重定向到 `/mes/work-orders/:workOrderId`；仅为兼容入口，清理由 #196 在 PC 工作流收口前处理。 | BusinessGateway MES facade。 |
 | `/mes/materials` | 齐套与物料，展示领料申请、齐套状态和线边接收入口。 | BusinessGateway MES facade。 |
 | `/mes/dispatch` | 派工看板，按工作中心、设备、班次和人员查看待派工任务。 | BusinessGateway MES facade。 |
 | `/mes/operation-tasks` | 工序执行任务列表，提供查看工单、查看报工、呼叫质检、记录异常和开工/暂停/恢复/完工入口。 | BusinessGateway MES facade。 |
@@ -218,7 +218,7 @@ pnpm -C frontend --filter @nerv-iip/business-console build
 pnpm -C frontend --filter @nerv-iip/business-console e2e -- business-console.spec.ts
 ```
 
-MES PC focused verification command:
+MES PC 工作台验证命令：
 
 ```powershell
 scripts/verify-business-console-mes-pc-workbench.ps1
