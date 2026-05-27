@@ -22,8 +22,6 @@ const errorMessage = computed(() => downtimeEventsError.value instanceof Error ?
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field><FieldLabel for="downtime-org">组织</FieldLabel><Input id="downtime-org" v-model="filters.organizationId" /></Field>
-          <Field><FieldLabel for="downtime-env">环境</FieldLabel><Input id="downtime-env" v-model="filters.environmentId" /></Field>
           <Field><FieldLabel for="downtime-status">状态</FieldLabel><Input id="downtime-status" v-model="filters.status" placeholder="可选" /></Field>
           <Field><FieldLabel for="downtime-take">数量上限</FieldLabel><Input id="downtime-take" v-model.number="filters.take" type="number" /></Field>
         </FieldGroup>

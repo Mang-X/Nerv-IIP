@@ -197,7 +197,7 @@ function isNonEmpty(value: string) {
             v-model:shift-code="executionContext.shiftCode"
             v-model:site-code="executionContext.siteCode"
             v-model:work-center-code="executionContext.workCenterCode"
-            title="入库上下文"
+            title="入库范围"
             @change="syncContextFromFilters"
           >
             <FieldGroup class="grid gap-3 md:grid-cols-2">
@@ -279,7 +279,7 @@ function isNonEmpty(value: string) {
       <BusinessActionSheet
         v-model:open="receiptSheetOpen"
         title="新增入库请求"
-        description="用于生产完成后的成品入库申请，常规场景应从工单或报工上下文带出字段。"
+        description="用于生产完成后的成品入库申请，常规场景应从工单或报工信息带出字段。"
       >
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitReceiptRequest">
           <div>
@@ -289,14 +289,6 @@ function isNonEmpty(value: string) {
           <BusinessFormStatus :error="createErrorMessage" :success="successMessage" />
 
           <FieldGroup class="grid gap-3">
-            <Field>
-              <FieldLabel for="receipt-org">组织</FieldLabel>
-              <Input id="receipt-org" v-model="form.organizationId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="receipt-env">环境</FieldLabel>
-              <Input id="receipt-env" v-model="form.environmentId" required />
-            </Field>
             <Field>
               <FieldLabel for="receipt-work-order">工单号</FieldLabel>
               <Input id="receipt-work-order" v-model="form.workOrderId" required />

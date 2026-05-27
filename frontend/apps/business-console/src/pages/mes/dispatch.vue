@@ -22,8 +22,6 @@ const errorMessage = computed(() => dispatchTasksError.value instanceof Error ? 
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field><FieldLabel for="dispatch-org">组织</FieldLabel><Input id="dispatch-org" v-model="filters.organizationId" /></Field>
-          <Field><FieldLabel for="dispatch-env">环境</FieldLabel><Input id="dispatch-env" v-model="filters.environmentId" /></Field>
           <Field><FieldLabel for="dispatch-status">状态</FieldLabel><Input id="dispatch-status" v-model="filters.status" placeholder="可选" /></Field>
           <Field><FieldLabel for="dispatch-take">数量上限</FieldLabel><Input id="dispatch-take" v-model.number="filters.take" type="number" /></Field>
         </FieldGroup>

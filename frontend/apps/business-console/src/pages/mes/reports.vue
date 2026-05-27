@@ -21,8 +21,6 @@ const errorMessage = computed(() => productionReportsError.value instanceof Erro
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field><FieldLabel for="reports-org">组织</FieldLabel><Input id="reports-org" v-model="filters.organizationId" /></Field>
-          <Field><FieldLabel for="reports-env">环境</FieldLabel><Input id="reports-env" v-model="filters.environmentId" /></Field>
           <Field><FieldLabel for="reports-status">状态</FieldLabel><Input id="reports-status" v-model="filters.status" placeholder="可选" /></Field>
           <Field><FieldLabel for="reports-take">数量上限</FieldLabel><Input id="reports-take" v-model.number="filters.take" type="number" /></Field>
         </FieldGroup>

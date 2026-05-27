@@ -38,14 +38,22 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
-import { ClipboardCheckIcon, EyeIcon, FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
+import {
+  ClipboardCheckIcon,
+  EyeIcon,
+  FactoryIcon,
+  PackageCheckIcon,
+  RefreshCwIcon,
+  RouteIcon,
+  WrenchIcon,
+} from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
   meta: {
     requiresAuth: true,
-    title: '计划与工单',
+    title: '工单与派工',
   },
 })
 
@@ -127,9 +135,38 @@ const reportQuantitiesAreValid = computed(
 const openOrderCount = computed(
   () => workOrders.value.filter((order) => (order.status ?? '').toLowerCase() !== 'closed').length,
 )
+const blockedOrderCount = computed(
+  () => workOrders.value.filter((order) => ['blocked', 'hold', 'held'].includes((order.status ?? '').toLowerCase())).length,
+)
+const readyOrderCount = computed(
+  () => workOrders.value.filter((order) => ['ready', 'released'].includes((order.status ?? '').toLowerCase())).length,
+)
+const runningOrderCount = computed(
+  () => workOrders.value.filter((order) => ['running', 'inprogress', 'started'].includes((order.status ?? '').toLowerCase())).length,
+)
 const operationCount = computed(() =>
   workOrders.value.reduce((total, order) => total + (order.operationTasks?.length ?? 0), 0),
 )
+const dispatchLanes = computed(() => [
+  {
+    title: '待派工',
+    value: readyOrderCount.value,
+    description: '已具备下达或开工条件，优先确认工作中心与班次。',
+    tone: 'border-primary/20 bg-primary/5',
+  },
+  {
+    title: '执行中',
+    value: runningOrderCount.value,
+    description: '现场已经开始生产，关注报工、质量和停机异常。',
+    tone: 'border-blue-500/20 bg-blue-500/5',
+  },
+  {
+    title: '受阻',
+    value: blockedOrderCount.value,
+    description: '先处理物料、质量、设备或准备检查问题。',
+    tone: blockedOrderCount.value > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-emerald-500/20 bg-emerald-500/5',
+  },
+])
 const canCreateRush = computed(
   () =>
     isNonEmpty(rushForm.organizationId) &&
@@ -176,6 +213,16 @@ function useWorkOrder(order: BusinessConsoleMesWorkOrderItem) {
 function openOrderDetail(order: BusinessConsoleMesWorkOrderItem) {
   if (!order.workOrderId) return
   void router.push({ path: `/mes/work-orders/${encodeURIComponent(order.workOrderId)}` })
+}
+
+function openRelatedPage(path: string, order: BusinessConsoleMesWorkOrderItem) {
+  void router.push({
+    path,
+    query: {
+      workOrderId: order.workOrderId ?? undefined,
+      skuId: order.skuId ?? undefined,
+    },
+  })
 }
 
 async function submitRushWorkOrder() {
@@ -274,8 +321,9 @@ function isNonEmpty(value: string) {
     <section class="grid gap-4">
       <BusinessPageHeader
         domain="MES"
-        title="计划与工单"
-        summary="以工单列表和工序上下文为中心处理急单、详情查看和报工动作。"
+        title="工单与派工"
+        kicker="调度员工作台"
+        summary="围绕工单安排生产顺序、查看工序任务、发起齐套检查和报工，避免一线人员在多个页面之间手工拼编号。"
       >
         <template #actions>
           <Button size="sm" type="button" @click="rushSheetOpen = true">
@@ -296,7 +344,7 @@ function isNonEmpty(value: string) {
         v-model:shift-code="executionContext.shiftCode"
         v-model:site-code="executionContext.siteCode"
         v-model:work-center-code="executionContext.workCenterCode"
-        title="派工上下文"
+        title="生产范围"
         @change="syncContextFromFilters"
       >
         <FieldGroup class="grid gap-3 md:grid-cols-2">
@@ -320,6 +368,21 @@ function isNonEmpty(value: string) {
         </FieldGroup>
         <BusinessFormStatus :error="listErrorMessage" />
       </BusinessContextBar>
+
+      <div class="grid gap-3 lg:grid-cols-3">
+        <div
+          v-for="lane in dispatchLanes"
+          :key="lane.title"
+          class="grid gap-3 rounded-lg border p-4"
+          :class="lane.tone"
+        >
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-semibold text-foreground">{{ lane.title }}</p>
+            <span class="text-2xl font-semibold tabular-nums">{{ lane.value }}</span>
+          </div>
+          <p class="text-sm leading-6 text-muted-foreground">{{ lane.description }}</p>
+        </div>
+      </div>
 
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell label="工单数" :value="workOrders.length" detail="当前筛选结果" />
@@ -384,10 +447,22 @@ function isNonEmpty(value: string) {
                       <EyeIcon data-icon="inline-start" />
                       查看详情
                     </DropdownMenuItem>
+                    <DropdownMenuItem @click="openRelatedPage('/mes/materials', order)">
+                      <PackageCheckIcon data-icon="inline-start" />
+                      齐套检查
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @click="openRelatedPage('/mes/operation-tasks', order)">
+                      <RouteIcon data-icon="inline-start" />
+                      查看工序
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem @click="useWorkOrder(order)">
                       <ClipboardCheckIcon data-icon="inline-start" />
                       生产报工
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @click="openRelatedPage('/mes/capacity', order)">
+                      <WrenchIcon data-icon="inline-start" />
+                      异常与产能
                     </DropdownMenuItem>
                   </BusinessRowActions>
                 </TableCell>
@@ -418,14 +493,6 @@ function isNonEmpty(value: string) {
           <BusinessFormStatus :error="rushErrorMessage" :success="rushSuccess" />
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="rush-org">组织</FieldLabel>
-              <Input id="rush-org" v-model="rushForm.organizationId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-env">环境</FieldLabel>
-              <Input id="rush-env" v-model="rushForm.environmentId" required />
-            </Field>
             <Field>
               <FieldLabel for="rush-work-order">工单号</FieldLabel>
               <Input id="rush-work-order" v-model="rushForm.workOrderId" required />
@@ -487,7 +554,7 @@ function isNonEmpty(value: string) {
       <BusinessActionSheet
         v-model:open="reportSheetOpen"
         title="生产报工"
-        description="从工单或工序任务进入报工，避免一线人员手动拼接上下文。"
+        description="从工单或工序任务进入报工，系统带出必要字段，一线人员只补充数量和完成状态。"
       >
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitProductionReport">
           <div>
@@ -497,14 +564,6 @@ function isNonEmpty(value: string) {
           <BusinessFormStatus :error="reportErrorMessage" :success="reportSuccess" />
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="report-org">组织</FieldLabel>
-              <Input id="report-org" v-model="reportForm.organizationId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="report-env">环境</FieldLabel>
-              <Input id="report-env" v-model="reportForm.environmentId" required />
-            </Field>
             <Field>
               <FieldLabel for="report-work-order">工单号</FieldLabel>
               <Input id="report-work-order" v-model="reportForm.workOrderId" required />

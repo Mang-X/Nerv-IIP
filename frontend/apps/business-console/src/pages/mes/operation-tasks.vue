@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
-import { ClipboardCheckIcon, EyeIcon, RefreshCwIcon, ShieldCheckIcon, WrenchIcon } from 'lucide-vue-next'
+import { ClipboardCheckIcon, EyeIcon, PlayCircleIcon, RefreshCwIcon, ShieldCheckIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -51,6 +51,28 @@ const {
 const router = useRouter()
 const errorMessage = computed(() => formatError(operationTasksError.value))
 const readyCount = computed(() => operationTasks.value.filter((item) => item.status === 'Ready').length)
+const runningCount = computed(() => operationTasks.value.filter((item) => ['Running', 'Started', 'InProgress'].includes(item.status ?? '')).length)
+const blockedCount = computed(() => operationTasks.value.filter((item) => ['Blocked', 'Held'].includes(item.status ?? '')).length)
+const queueCards = computed(() => [
+  {
+    title: '可开工',
+    value: readyCount.value,
+    description: '优先确认人员、设备、物料后进入报工。',
+    tone: 'border-emerald-500/20 bg-emerald-500/5',
+  },
+  {
+    title: '执行中',
+    value: runningCount.value,
+    description: '关注报工节拍、质量确认和异常停机。',
+    tone: 'border-blue-500/20 bg-blue-500/5',
+  },
+  {
+    title: '受阻',
+    value: blockedCount.value,
+    description: '需要班组长、质检或设备人员处理。',
+    tone: blockedCount.value > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-muted bg-muted/30',
+  },
+])
 const executionContext = reactive({
   siteCode: '',
   lineCode: '',
@@ -77,8 +99,17 @@ function openWorkOrder(workOrderId?: string | null) {
   void router.push({ path: `/mes/work-orders/${encodeURIComponent(workOrderId)}` })
 }
 
-function openRoute(path: string) {
-  void router.push({ path })
+function openRoute(path: string, task?: { operationTaskId?: string | null, workOrderId?: string | null, workCenterId?: string | null }) {
+  void router.push({
+    path,
+    query: task
+      ? {
+          operationTaskId: task.operationTaskId ?? undefined,
+          workOrderId: task.workOrderId ?? undefined,
+          workCenterId: task.workCenterId ?? undefined,
+        }
+      : undefined,
+  })
 }
 
 function formatDateTime(value?: string | null) {
@@ -98,7 +129,8 @@ function formatError(error: unknown) {
       <BusinessPageHeader
         domain="MES"
         title="工序执行"
-        summary="面向班组长和一线员工查看工序任务、工作中心、设备、班次和质量状态。"
+        kicker="班组长 / 操作员"
+        summary="以工序任务为现场工作单元，直接进入工单、报工、质检和异常处理，减少一线人员在系统里反复查找编号。"
       >
         <template #actions>
           <Button size="sm" type="button" variant="outline" :disabled="operationTasksPending" @click="refreshOperationTasks">
@@ -115,7 +147,7 @@ function formatError(error: unknown) {
         v-model:shift-code="executionContext.shiftCode"
         v-model:site-code="executionContext.siteCode"
         v-model:work-center-code="executionContext.workCenterCode"
-        title="执行上下文"
+        title="生产范围"
       >
         <FieldGroup class="grid gap-3 md:grid-cols-2">
           <Field>
@@ -138,6 +170,21 @@ function formatError(error: unknown) {
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </BusinessContextBar>
+
+      <div class="grid gap-3 lg:grid-cols-3">
+        <div
+          v-for="card in queueCards"
+          :key="card.title"
+          class="grid gap-3 rounded-lg border p-4"
+          :class="card.tone"
+        >
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-semibold text-foreground">{{ card.title }}</p>
+            <span class="text-2xl font-semibold tabular-nums">{{ card.value }}</span>
+          </div>
+          <p class="text-sm leading-6 text-muted-foreground">{{ card.description }}</p>
+        </div>
+      </div>
 
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell label="任务数" :value="operationTasks.length" detail="当前筛选结果" />
@@ -191,16 +238,20 @@ function formatError(error: unknown) {
                       <EyeIcon data-icon="inline-start" />
                       查看工单
                     </DropdownMenuItem>
-                    <DropdownMenuItem @click="openRoute('/mes/reports')">
+                    <DropdownMenuItem @click="openRoute('/mes/reports', task)">
+                      <PlayCircleIcon data-icon="inline-start" />
+                      进入执行
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @click="openRoute('/mes/reports', task)">
                       <ClipboardCheckIcon data-icon="inline-start" />
-                      查看报工
+                      生产报工
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem @click="openRoute('/quality/inspections')">
+                    <DropdownMenuItem @click="openRoute('/quality/inspections', task)">
                       <ShieldCheckIcon data-icon="inline-start" />
                       呼叫质检
                     </DropdownMenuItem>
-                    <DropdownMenuItem @click="openRoute('/mes/downtime')">
+                    <DropdownMenuItem @click="openRoute('/mes/downtime', task)">
                       <WrenchIcon data-icon="inline-start" />
                       记录异常
                     </DropdownMenuItem>
@@ -211,10 +262,10 @@ function formatError(error: unknown) {
                 <BusinessEmptyState
                   title="当前没有工序任务"
                   description="请检查工单释放、排程结果和工作中心筛选；可开工任务会出现在这里。"
-                  action="一线人员通常从此列表进入工单、报工、质检或异常处理。"
+                  action="建议先从工单与派工确认是否已经释放，再回到这里执行。"
                 />
               </TableEmpty>
-              <TableEmpty v-if="operationTasksPending" :colspan="10">正在加载工序任务...</TableEmpty>
+              <TableEmpty v-if="operationTasksPending" :colspan="10">正在加载工序任务…</TableEmpty>
             </TableBody>
           </Table>
         </div>

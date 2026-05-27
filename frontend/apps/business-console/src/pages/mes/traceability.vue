@@ -22,8 +22,6 @@ const errorMessage = computed(() => traceabilityError.value instanceof Error ? t
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-5">
-          <Field><FieldLabel for="trace-org">组织</FieldLabel><Input id="trace-org" v-model="filters.organizationId" /></Field>
-          <Field><FieldLabel for="trace-env">环境</FieldLabel><Input id="trace-env" v-model="filters.environmentId" /></Field>
           <Field>
             <FieldLabel for="trace-mode">查询类型</FieldLabel>
             <Select v-model="filters.mode"><SelectTrigger id="trace-mode"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="work-order">工单</SelectItem><SelectItem value="batch">批次/序列号</SelectItem><SelectItem value="material-lot">物料批</SelectItem></SelectContent></Select>

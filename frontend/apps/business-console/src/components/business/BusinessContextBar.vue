@@ -25,7 +25,7 @@ const props = withDefaults(
     showSite: true,
     showWorkCenter: true,
     siteCode: '',
-    title: '业务上下文',
+    title: '生产范围',
     workCenterCode: '',
   },
 )
@@ -42,8 +42,6 @@ const emit = defineEmits<{
 
 const context = useBusinessContextStore()
 
-const organizationValue = fieldModel('organizationId', 'update:organizationId')
-const environmentValue = fieldModel('environmentId', 'update:environmentId')
 const siteValue = fieldModel('siteCode', 'update:siteCode')
 const lineValue = fieldModel('lineCode', 'update:lineCode')
 const workCenterValue = fieldModel('workCenterCode', 'update:workCenterCode')
@@ -118,17 +116,9 @@ function clearExecutionScope() {
   <div class="grid gap-3 rounded-lg border bg-background p-4">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h2 class="text-sm font-semibold text-foreground">{{ title }}</h2>
-      <Button size="sm" type="button" variant="ghost" @click="clearExecutionScope">清空执行范围</Button>
+      <Button size="sm" type="button" variant="ghost" @click="clearExecutionScope">清空范围</Button>
     </div>
     <FieldGroup class="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
-      <Field>
-        <FieldLabel for="business-context-org">组织</FieldLabel>
-        <Input id="business-context-org" v-model="organizationValue" />
-      </Field>
-      <Field>
-        <FieldLabel for="business-context-env">环境</FieldLabel>
-        <Input id="business-context-env" v-model="environmentValue" />
-      </Field>
       <Field v-if="showSite">
         <FieldLabel for="business-context-site">工厂</FieldLabel>
         <Input id="business-context-site" v-model="siteValue" placeholder="可选" />

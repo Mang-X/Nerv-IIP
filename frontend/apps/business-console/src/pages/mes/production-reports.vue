@@ -65,7 +65,7 @@ function formatError(error: unknown) {
       <BusinessPageHeader
         domain="MES"
         title="报工记录"
-        summary="查看一线报工结果；新增报工从工单与派工或工序执行上下文进入。"
+        summary="查看一线报工结果；新增报工从工单与派工或工序执行范围进入。"
       >
         <template #actions>
           <Button size="sm" type="button" variant="outline" :disabled="productionReportsPending" @click="refreshProductionReports">
@@ -77,14 +77,6 @@ function formatError(error: unknown) {
 
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field>
-            <FieldLabel for="report-list-org">组织</FieldLabel>
-            <Input id="report-list-org" v-model="filters.organizationId" />
-          </Field>
-          <Field>
-            <FieldLabel for="report-list-env">环境</FieldLabel>
-            <Input id="report-list-env" v-model="filters.environmentId" />
-          </Field>
           <Field>
             <FieldLabel for="report-list-status">状态</FieldLabel>
             <Input id="report-list-status" v-model="filters.status" placeholder="可选" />

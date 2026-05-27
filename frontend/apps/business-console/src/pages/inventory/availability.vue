@@ -126,7 +126,7 @@ function formatError(error: unknown) {
         :show-line="false"
         :show-shift="false"
         :show-work-center="false"
-        title="库存上下文"
+        title="库存信息"
       >
         <FieldGroup class="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
           <Field>

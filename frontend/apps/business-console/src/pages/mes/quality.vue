@@ -21,8 +21,6 @@ const errorMessage = computed(() => qualityItemsError.value instanceof Error ? q
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field><FieldLabel for="quality-org">组织</FieldLabel><Input id="quality-org" v-model="filters.organizationId" /></Field>
-          <Field><FieldLabel for="quality-env">环境</FieldLabel><Input id="quality-env" v-model="filters.environmentId" /></Field>
           <Field><FieldLabel for="quality-status">状态</FieldLabel><Input id="quality-status" v-model="filters.status" placeholder="可选" /></Field>
           <Field><FieldLabel for="quality-take">数量上限</FieldLabel><Input id="quality-take" v-model.number="filters.take" type="number" /></Field>
         </FieldGroup>
@@ -40,7 +38,7 @@ const errorMessage = computed(() => qualityItemsError.value instanceof Error ? q
               <TableCell>{{ row.defectCode ?? '无' }}</TableCell>
               <TableCell>{{ row.ncrId ?? '无' }}</TableCell>
             </TableRow>
-            <TableEmpty v-if="qualityItemsPending" :colspan="6">正在加载质量上下文...</TableEmpty>
+            <TableEmpty v-if="qualityItemsPending" :colspan="6">正在加载质量信息...</TableEmpty>
             <TableEmpty v-if="!qualityItems.length && !qualityItemsPending" :colspan="6">暂无质量或不良记录。</TableEmpty>
           </TableBody>
         </Table>

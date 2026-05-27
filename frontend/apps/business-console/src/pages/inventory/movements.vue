@@ -138,7 +138,7 @@ function isNonEmpty(value: string) {
           <BusinessEmptyState
             title="暂未接入库存移动列表"
             description="库存过账属于高风险动作，先从右上角进入抽屉填写业务单据，技术字段由系统生成。"
-            action="建议优先从收货、完工入库、领料或盘点任务上下文发起。"
+            action="建议优先从收货、完工入库、领料或盘点任务信息发起。"
           />
         </section>
 
@@ -161,14 +161,6 @@ function isNonEmpty(value: string) {
         <BusinessFormStatus :error="errorMessage" :success="successMessage" />
 
         <FieldGroup class="grid gap-3 md:grid-cols-3">
-          <Field>
-            <FieldLabel for="movement-org">组织</FieldLabel>
-            <Input id="movement-org" v-model="form.organizationId" required />
-          </Field>
-          <Field>
-            <FieldLabel for="movement-env">环境</FieldLabel>
-            <Input id="movement-env" v-model="form.environmentId" required />
-          </Field>
           <Field>
             <FieldLabel>移动类型</FieldLabel>
             <Select v-model="form.movementType">

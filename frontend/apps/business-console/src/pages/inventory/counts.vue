@@ -137,7 +137,7 @@ function isNonEmpty(value: string) {
       <BusinessPageHeader
         domain="库存"
         title="库存盘点"
-        summary="以盘点任务为中心组织创建、实盘录入和差异确认。"
+        summary="以盘点任务为中心安排创建、实盘录入和差异确认。"
       >
         <template #actions>
           <Button size="sm" type="button" @click="taskSheetOpen = true">
@@ -152,14 +152,6 @@ function isNonEmpty(value: string) {
       </BusinessPageHeader>
 
       <div class="grid gap-3 rounded-lg border bg-background p-4 md:grid-cols-2">
-        <Field>
-          <FieldLabel for="count-org">组织</FieldLabel>
-          <Input id="count-org" v-model="filters.organizationId" />
-        </Field>
-        <Field>
-          <FieldLabel for="count-env">环境</FieldLabel>
-          <Input id="count-env" v-model="filters.environmentId" />
-        </Field>
       </div>
 
       <section class="rounded-lg border bg-background">

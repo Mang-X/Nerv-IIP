@@ -68,14 +68,6 @@ function formatError(error: unknown) {
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
           <Field>
-            <FieldLabel for="foundation-org">组织</FieldLabel>
-            <Input id="foundation-org" v-model="filters.organizationId" />
-          </Field>
-          <Field>
-            <FieldLabel for="foundation-env">环境</FieldLabel>
-            <Input id="foundation-env" v-model="filters.environmentId" />
-          </Field>
-          <Field>
             <FieldLabel for="foundation-site">工厂</FieldLabel>
             <Input id="foundation-site" v-model="filters.siteCode" placeholder="可选" />
           </Field>

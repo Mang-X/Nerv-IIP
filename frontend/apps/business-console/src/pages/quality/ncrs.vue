@@ -210,7 +210,7 @@ function isPresent(value: string | undefined | null): value is string {
         :show-shift="false"
         :show-site="false"
         :show-work-center="false"
-        title="质量上下文"
+        title="质量信息"
       >
         <FieldGroup class="grid gap-3 md:grid-cols-2">
           <Field>

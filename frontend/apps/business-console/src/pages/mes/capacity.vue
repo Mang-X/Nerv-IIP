@@ -70,14 +70,6 @@ function formatError(error: unknown) {
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
           <Field>
-            <FieldLabel for="capacity-org">组织</FieldLabel>
-            <Input id="capacity-org" v-model="filters.organizationId" />
-          </Field>
-          <Field>
-            <FieldLabel for="capacity-env">环境</FieldLabel>
-            <Input id="capacity-env" v-model="filters.environmentId" />
-          </Field>
-          <Field>
             <FieldLabel for="capacity-status">状态</FieldLabel>
             <Input id="capacity-status" v-model="filters.status" placeholder="可选" />
           </Field>

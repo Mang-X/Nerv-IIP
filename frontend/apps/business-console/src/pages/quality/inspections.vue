@@ -251,7 +251,7 @@ function isPresent(value: string | undefined | null): value is string {
       <BusinessPageHeader
         domain="质量"
         title="检验任务与记录"
-        summary="先确认检验方案和来源上下文，再进入抽屉提交检验记录。"
+        summary="先确认检验方案和来源信息，再进入抽屉提交检验记录。"
       >
         <template #actions>
           <Button size="sm" type="button" @click="recordSheetOpen = true">
@@ -273,14 +273,6 @@ function isPresent(value: string | undefined | null): value is string {
 
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field>
-            <FieldLabel for="inspection-org">组织</FieldLabel>
-            <Input id="inspection-org" v-model="filters.organizationId" @change="syncContextFromFilters" />
-          </Field>
-          <Field>
-            <FieldLabel for="inspection-env">环境</FieldLabel>
-            <Input id="inspection-env" v-model="filters.environmentId" @change="syncContextFromFilters" />
-          </Field>
           <Field>
             <FieldLabel for="inspection-status">状态</FieldLabel>
             <Input id="inspection-status" v-model="filters.status" placeholder="可选" />
@@ -335,7 +327,7 @@ function isPresent(value: string | undefined | null): value is string {
                 <TableEmpty v-if="!inspectionPlans.length && !inspectionPlansPending" :colspan="4">
                   <BusinessEmptyState
                     title="当前筛选下没有检验方案"
-                    description="检验记录应从工单、收货或检验任务上下文进入；缺少方案时请先维护质量规则。"
+                    description="检验记录应从工单、收货或检验任务信息进入；缺少方案时请先维护质量规则。"
                     action="也可以使用右上角创建检验记录进行临时补录。"
                   />
                 </TableEmpty>
@@ -349,7 +341,7 @@ function isPresent(value: string | undefined | null): value is string {
       <BusinessActionSheet
         v-model:open="recordSheetOpen"
         title="创建检验记录"
-        description="检验记录应尽量从方案、工单、收货或质量任务带出上下文，减少手输来源字段。"
+        description="检验记录应尽量从方案、工单、收货或质量任务带出信息，减少手输来源字段。"
       >
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitInspectionRecord">
           <div>
@@ -360,14 +352,6 @@ function isPresent(value: string | undefined | null): value is string {
           <BusinessFormStatus :error="createErrorMessage" :success="recordSuccess" />
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="record-org">组织</FieldLabel>
-              <Input id="record-org" v-model="recordForm.organizationId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="record-env">环境</FieldLabel>
-              <Input id="record-env" v-model="recordForm.environmentId" required />
-            </Field>
             <Field>
               <FieldLabel for="record-plan">检验方案 ID</FieldLabel>
               <Input id="record-plan" v-model="recordForm.inspectionPlanId" />

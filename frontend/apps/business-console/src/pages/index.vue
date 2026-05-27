@@ -19,8 +19,8 @@ const workbenchItems = [
 const exceptionItems = [
   { path: '/mes/foundation', label: '生产准备检查', status: '辅助', detail: '开工、释放、派工前的齐套和主数据检查。' },
   { path: '/mes/capacity', label: '异常与产能', status: '关注', detail: '设备停机、恢复和维护对产能的影响。' },
-  { path: '/inventory/counts', label: '库存盘点', status: '待办', detail: '创建盘点任务并从任务上下文确认差异。' },
-  { path: '/quality/inspections', label: '检验任务与记录', status: '待办', detail: '从方案、工单或收货上下文提交检验记录。' },
+  { path: '/inventory/counts', label: '库存盘点', status: '待办', detail: '创建盘点任务并从任务信息确认差异。' },
+  { path: '/quality/inspections', label: '检验任务与记录', status: '待办', detail: '从方案、工单或收货信息提交检验记录。' },
 ] as const
 </script>
 
@@ -55,7 +55,7 @@ const exceptionItems = [
         <section class="rounded-lg border bg-background">
           <div class="border-b px-4 py-3">
             <h2 class="text-sm font-semibold text-foreground">今日待处理</h2>
-            <p class="mt-1 text-sm text-muted-foreground">后续接入角色待办前，先按业务入口组织操作。</p>
+            <p class="mt-1 text-sm text-muted-foreground">后续接入角色待办前，先按业务入口安排操作。</p>
           </div>
           <div class="divide-y">
             <RouterLink
@@ -77,7 +77,7 @@ const exceptionItems = [
           <h2 class="text-sm font-semibold text-foreground">工作台原则</h2>
           <div class="mt-3 grid gap-3 text-sm text-muted-foreground">
             <p>高频查询留在主页面，创建、报工、入库、排程等动作进入抽屉或对象详情。</p>
-            <p>组织、环境、工厂、产线和班次逐步收敛为业务上下文，减少手输技术字段。</p>
+            <p>工厂、产线和班次逐步收敛为默认生产范围，减少手输技术字段。</p>
             <p>生产准备检查只作为开工/释放前的辅助判断，不作为一线主流程入口。</p>
           </div>
         </section>

@@ -121,20 +121,12 @@ function isNonEmpty(value: string) {
       <BusinessActionSheet
         v-model:open="scheduleSheetOpen"
         title="运行规则排程"
-        description="规则排程会重新计算工序分配，运行前请确认触发来源和业务上下文。"
+        description="规则排程会重新计算工序分配，运行前请确认触发来源和业务信息。"
       >
       <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitScheduleRun">
         <BusinessFormStatus :error="errorMessage" :success="runSuccess" />
 
         <FieldGroup class="grid gap-3 md:grid-cols-3">
-          <Field>
-            <FieldLabel for="schedule-org">组织</FieldLabel>
-            <Input id="schedule-org" v-model="runForm.organizationId" required />
-          </Field>
-          <Field>
-            <FieldLabel for="schedule-env">环境</FieldLabel>
-            <Input id="schedule-env" v-model="runForm.environmentId" required />
-          </Field>
           <Field>
             <FieldLabel>触发来源</FieldLabel>
             <Select v-model="runForm.trigger">

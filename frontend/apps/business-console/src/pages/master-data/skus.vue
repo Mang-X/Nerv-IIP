@@ -202,14 +202,6 @@ function isNonEmpty(value: string) {
 
                 <FieldGroup class="grid gap-3 sm:grid-cols-2">
                   <Field>
-                    <FieldLabel for="sku-org">组织</FieldLabel>
-                    <Input id="sku-org" v-model="createForm.organizationId" required />
-                  </Field>
-                  <Field>
-                    <FieldLabel for="sku-env">环境</FieldLabel>
-                    <Input id="sku-env" v-model="createForm.environmentId" required />
-                  </Field>
-                  <Field>
                     <FieldLabel for="sku-code">SKU 编码</FieldLabel>
                     <Input id="sku-code" v-model="createForm.code" autocomplete="off" required />
                   </Field>
@@ -301,14 +293,6 @@ function isNonEmpty(value: string) {
 
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <div class="grid gap-3 sm:grid-cols-3">
-          <Field>
-            <FieldLabel for="sku-filter-org">组织</FieldLabel>
-            <Input id="sku-filter-org" v-model="filters.organizationId" />
-          </Field>
-          <Field>
-            <FieldLabel for="sku-filter-env">环境</FieldLabel>
-            <Input id="sku-filter-env" v-model="filters.environmentId" />
-          </Field>
           <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
             <FieldLabel for="sku-include-disabled">包含停用数据</FieldLabel>
             <Checkbox id="sku-include-disabled" v-model:checked="filters.includeDisabled" />

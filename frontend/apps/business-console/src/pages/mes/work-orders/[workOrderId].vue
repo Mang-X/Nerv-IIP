@@ -122,7 +122,7 @@ function formatError(error: unknown) {
         :show-shift="false"
         :show-site="false"
         :show-work-center="false"
-        title="工单上下文"
+        title="生产范围"
       >
         <FieldGroup class="grid gap-3 md:grid-cols-2">
           <Field>

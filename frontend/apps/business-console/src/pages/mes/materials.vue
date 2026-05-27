@@ -22,8 +22,6 @@ const errorMessage = computed(() => materialIssueRequestsError.value instanceof 
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field><FieldLabel for="materials-org">组织</FieldLabel><Input id="materials-org" v-model="filters.organizationId" /></Field>
-          <Field><FieldLabel for="materials-env">环境</FieldLabel><Input id="materials-env" v-model="filters.environmentId" /></Field>
           <Field><FieldLabel for="materials-status">状态</FieldLabel><Input id="materials-status" v-model="filters.status" placeholder="可选" /></Field>
           <Field><FieldLabel for="materials-take">数量上限</FieldLabel><Input id="materials-take" v-model.number="filters.take" type="number" /></Field>
         </FieldGroup>
