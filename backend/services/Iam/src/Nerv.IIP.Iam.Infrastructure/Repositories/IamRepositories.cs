@@ -153,6 +153,11 @@ public interface IMembershipRepository : IRepository<Membership, MembershipId>
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         CancellationToken cancellationToken = default);
+    Task<bool> UserHasMembershipAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class MembershipRepository(ApplicationDbContext context)
@@ -227,6 +232,19 @@ public sealed class MembershipRepository(ApplicationDbContext context)
             .OrderBy(x => x)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<bool> UserHasMembershipAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Memberships.AnyAsync(
+            x => x.UserId == userId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId,
+            cancellationToken);
+    }
 }
 
 public interface IUserSessionRepository : IRepository<UserSession, UserSessionId>
@@ -243,6 +261,11 @@ public interface IUserSessionRepository : IRepository<UserSession, UserSessionId
     Task<IReadOnlyList<UserSession>> ListAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<UserSession>> ListActiveByUserIdAsync(
         UserId userId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<UserSession>> ListActiveByExternalIdentityAsync(
+        string externalProvider,
+        string externalSubject,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 }
@@ -293,6 +316,21 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
             .OrderByDescending(x => x.IssuedAtUtc)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<UserSession>> ListActiveByExternalIdentityAsync(
+        string externalProvider,
+        string externalSubject,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        return await DbContext.UserSessions
+            .Where(x => x.ExternalProvider == externalProvider
+                && x.ExternalSubject == externalSubject
+                && x.RevokedAtUtc == null
+                && x.ExpiresAtUtc > now)
+            .OrderByDescending(x => x.IssuedAtUtc)
+            .ToListAsync(cancellationToken);
+    }
 }
 
 public interface IConnectorHostCredentialRepository : IRepository<ConnectorHostCredential, ConnectorHostCredentialId>
@@ -330,6 +368,8 @@ public interface IExternalClientRepository : IRepository<ExternalClient, Externa
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         string permissionCode,
+        string? resourceType,
+        string? resourceId,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 }
@@ -361,11 +401,20 @@ public sealed class ExternalClientRepository(ApplicationDbContext context)
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         string permissionCode,
+        string? resourceType,
+        string? resourceId,
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        var normalizedResourceType = AuthorizationGrant.NormalizeResourceScope(resourceType);
+        var normalizedResourceId = AuthorizationGrant.NormalizeResourceScope(resourceId);
         return await ActiveGrantQuery(clientId, organizationId, environmentId, now)
-            .AnyAsync(x => x.PermissionCode == permissionCode, cancellationToken);
+            .AnyAsync(
+                x => x.PermissionCode == permissionCode
+                    && (x.ResourceType == "*"
+                        || (x.ResourceType == normalizedResourceType
+                            && (x.ResourceId == "*" || x.ResourceId == normalizedResourceId))),
+                cancellationToken);
     }
 
     private IQueryable<AuthorizationGrant> ActiveGrantQuery(

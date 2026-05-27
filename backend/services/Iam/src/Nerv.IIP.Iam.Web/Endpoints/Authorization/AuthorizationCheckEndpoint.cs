@@ -24,6 +24,8 @@ public sealed class AuthorizationCheckEndpoint(IIamAuthService auth) : Endpoint<
             req.OrganizationId,
             req.EnvironmentId,
             req.PermissionCode,
+            req.ResourceType,
+            req.ResourceId,
             ct);
 
         if (!allowed)
