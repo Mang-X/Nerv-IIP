@@ -483,7 +483,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">生产计划列表</h2>
-          <span class="text-sm text-muted-foreground">汽车减振器制造样例</span>
+          <span class="text-sm text-muted-foreground">订单 / 备货 / 安全库存 / 预测</span>
         </div>
         <div class="overflow-x-auto">
           <Table>

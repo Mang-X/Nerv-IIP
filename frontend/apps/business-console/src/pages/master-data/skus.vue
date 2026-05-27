@@ -274,7 +274,7 @@ function isNonEmpty(value: string) {
       <BusinessPageHeader
         domain="主数据"
         title="物料与产品"
-        summary="维护减振器成品、半成品、原材料和包材。当前页面内置汽车减振器制造样例数据，便于联动测试。"
+        summary="维护成品、半成品、原材料和包材，确保计划、采购、检验、生产和库存使用一致的物料档案。"
       >
         <template #actions>
           <Button size="sm" variant="outline" type="button" :disabled="skusPending" @click="refreshSkus">
@@ -445,7 +445,7 @@ function isNonEmpty(value: string) {
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">物料列表</h2>
-          <span class="text-sm text-muted-foreground">汽车减振器制造样例</span>
+          <span class="text-sm text-muted-foreground">物料档案</span>
         </div>
         <div class="overflow-x-auto">
           <Table>

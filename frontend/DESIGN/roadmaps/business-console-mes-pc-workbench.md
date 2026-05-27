@@ -6,11 +6,14 @@ This roadmap is the design source for the Business Console PC interaction model.
 
 The first implementation exposed useful API surfaces, but several pages behaved like interface test panels: filters, metrics, tables and large forms were stacked in one route. The PC workbench must be task-driven instead:
 
-1. Keep list/search/result surfaces on the main page.
-2. Move create, post, report, schedule and confirm actions into a sheet, dialog or object detail route.
-3. Use the current object context to prefill action forms.
-4. Hide or auto-generate technical fields such as idempotency keys and source service codes.
-5. Keep setup checks as supporting diagnostics, not as prominent primary operations.
+1. Treat every visible string as product copy for a real business user. Do not write page descriptions as developer notes, demo labels, validation evidence, seed-data explanations or interface-contract commentary.
+2. Keep list/search/result surfaces on the main page.
+3. Move create, post, report, schedule and confirm actions into a sheet, dialog or object detail route.
+4. Use the current object context to prefill action forms.
+5. Hide or auto-generate technical fields such as idempotency keys and source service codes.
+6. Keep setup checks as supporting diagnostics, not as prominent primary operations.
+
+Pages may use realistic industry data, but they must not announce that data as `样例`, `内置`, `用于验证`, `联动测试`, `demo`, `mock` or `seed`. The UI should read as a live operating system. If reviewers need to know that data is synthetic, document it in PR notes, fixture docs or test setup, not in the product surface.
 
 ## Reference Signals
 
@@ -47,6 +50,27 @@ MES menu order:
 `基础就绪` must not be a primary operator label. Use `生产准备检查` and position it after execution pages.
 
 ## Page Patterns
+
+### Product Copy
+
+Business Console copy must answer one of three user questions:
+
+1. What am I looking at?
+2. What needs attention?
+3. What can I do next?
+
+Do not use headings, summaries, table captions or empty states to explain implementation status. Examples that are forbidden in visible UI:
+
+1. `汽车减振器制造场景下的...用于验证...`
+2. `当前页面内置汽车减振器制造样例数据，便于联动测试`
+3. `汽车减振器制造样例`
+4. `业务网关契约`, `接口`, `上下文`, `组织`, `环境`, `sourceSystem`, `operationId`
+
+Preferred replacements:
+
+1. `销售订单`, `采购跟进`, `成本归集`, `生产计划`, `工单与派工`.
+2. `待排产订单`, `待齐套工单`, `待检来料`, `本班待报工任务`.
+3. `暂无待派工工单，请先确认生产计划并下达到车间。`
 
 ### List Workbench
 
@@ -88,12 +112,13 @@ Tabs belong inside detail pages only. They are not primary navigation.
 
 ## Field Rules
 
-1. `organizationId` and `environmentId` remain visible only until global business context is implemented.
-2. `site`, `line`, `work center` and `shift` should become compact business context controls.
+1. `organizationId`, `environmentId`, `context`, gateway names, API names and contract metadata are never user-facing labels.
+2. `site`, `line`, `work center` and `shift` should become compact business context controls with business labels: `工厂`, `产线`, `工作中心`, `班次`.
 3. `idempotencyKey` is optional and defaults to a generated value.
 4. `sourceService` is not a user-facing field; label source context as business source when it must be shown.
 5. Object IDs should be filled from selected rows whenever possible.
 6. Empty states must explain the next business action, not just say there is no data.
+7. Required fields must be visibly marked and should be minimized through auto-numbering, row-context prefill and Select controls.
 
 ## Status Rules
 

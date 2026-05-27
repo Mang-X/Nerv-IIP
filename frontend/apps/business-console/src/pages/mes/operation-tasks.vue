@@ -350,7 +350,7 @@ function formatError(error: unknown) {
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">工序任务列表</h2>
-          <span class="text-sm text-muted-foreground">汽车减振器制造样例</span>
+          <span class="text-sm text-muted-foreground">任务 / 设备 / 班次</span>
         </div>
         <div class="overflow-x-auto">
           <Table>

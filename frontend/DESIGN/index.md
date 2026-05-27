@@ -9,6 +9,28 @@ A calm, professional enterprise control plane built on **Vue 3 + Tailwind CSS v4
 
 ---
 
+## User-Facing Copy Rule
+
+Business pages are product surfaces for planners, operators, inspectors, warehouse users, buyers, accountants and managers. They are not implementation notes, test panels, seed-data viewers or PR acceptance evidence.
+
+Visible page copy must help the user decide, act, or understand a business state. Do not put development, validation or scaffolding language in headings, descriptions, empty states, captions, badges, table summaries, form help, toasts or menus.
+
+Forbidden examples in product UI:
+
+1. `样例数据`, `内置样例`, `用于验证`, `便于联动测试`, `当前页面`, `demo`, `mock`, `fallback`, `seed`.
+2. Technical ownership or gateway language such as `业务网关契约`, `接口`, `API`, `operationId`, `source service`, `organization`, `environment`, `context`.
+3. Scenario disclaimers such as `汽车减振器制造场景下...用于验证...`. Industry context can shape the data and labels, but the page should speak as the user's live business system.
+
+Allowed alternatives:
+
+1. Use concise business nouns: `销售订单`, `采购订单`, `生产计划`, `工单`, `物料`, `工艺路线`, `应收`, `应付`, `成本归集`.
+2. Use operational summaries: `今日待排产订单`, `待齐套工单`, `待检来料`, `本班待报工任务`.
+3. Use empty-state guidance tied to the next action: `暂无待派工工单，请先确认生产计划并下达到车间。`
+
+If data is demo-only or incomplete, keep that fact in developer docs, PR notes or test fixtures. Do not surface it in the application UI.
+
+---
+
 ## Component Quick Reference
 
 | Component | Export | Use when | Do NOT use when |
@@ -82,13 +104,14 @@ See `components/install-backlog.md` for full list and install commands.
 
 ## Rules All AI Agents Must Follow
 
-1. **Import boundary**: always import from `@nerv-iip/ui`, never from deep paths.
-2. **No raw palette classes**: `bg-blue-600`, `text-gray-500`, `border-zinc-*` are forbidden. Use semantic utilities (`bg-primary`, `text-muted-foreground`, `border-border`).
-3. **No raw hex in templates**: use token utilities.
-4. **No `--legacy-color-*` in new components**.
-5. **Badge variants for status**: use `success`/`warning`/`destructive`/`secondary` — never handcraft colors.
-6. **AlertDialog for destructive confirms**: never use `window.confirm` or a plain `Dialog`.
-7. **`<script setup lang="ts">`** with Composition API — Options API is not used.
-8. **Icon rules**: `size-4` default, `aria-hidden="true"` on decorative, `aria-label` on icon-only buttons.
-9. **New shadcn components**: install via CLI → export from `index.ts` → write spec in `DESIGN/components/`.
-10. **Scoped CSS exception**: only the login page (`login.vue`) uses `<style scoped>` for the fluid `clamp()` heading. All other new components use Tailwind utilities only.
+1. **User-facing copy first**: pages are for business users, not developers. Never expose demo/test/scaffolding/gateway/context wording in UI copy.
+2. **Import boundary**: always import from `@nerv-iip/ui`, never from deep paths.
+3. **No raw palette classes**: `bg-blue-600`, `text-gray-500`, `border-zinc-*` are forbidden. Use semantic utilities (`bg-primary`, `text-muted-foreground`, `border-border`).
+4. **No raw hex in templates**: use token utilities.
+5. **No `--legacy-color-*` in new components**.
+6. **Badge variants for status**: use `success`/`warning`/`destructive`/`secondary` — never handcraft colors.
+7. **AlertDialog for destructive confirms**: never use `window.confirm` or a plain `Dialog`.
+8. **`<script setup lang="ts">`** with Composition API — Options API is not used.
+9. **Icon rules**: `size-4` default, `aria-hidden="true"` on decorative, `aria-label` on icon-only buttons.
+10. **New shadcn components**: install via CLI → export from `index.ts` → write spec in `DESIGN/components/`.
+11. **Scoped CSS exception**: only the login page (`login.vue`) uses `<style scoped>` for the fluid `clamp()` heading. All other new components use Tailwind utilities only.

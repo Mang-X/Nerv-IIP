@@ -157,7 +157,7 @@ function formatAmount(value?: number) {
       <BusinessPageHeader
         domain="ERP"
         title="ERP 业务协同"
-        summary="汽车减振器制造场景下的销售订单、采购到货和财务候选单据样例，用于验证从客户需求到生产计划、采购供应和成本归集的链路。"
+        summary="查看销售订单、采购跟进、应收应付和成本归集进度，协调客户需求、供应到货与生产计划。"
       />
 
       <div class="grid gap-3 md:grid-cols-3">
@@ -210,7 +210,7 @@ function formatAmount(value?: number) {
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">业务单据</h2>
-          <span class="text-sm text-muted-foreground">样例数据</span>
+          <span class="text-sm text-muted-foreground">销售 / 采购 / 财务</span>
         </div>
         <div class="overflow-x-auto">
           <Table>

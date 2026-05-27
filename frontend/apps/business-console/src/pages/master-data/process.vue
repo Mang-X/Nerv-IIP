@@ -76,7 +76,7 @@ function sortIcon(column: SortColumn) {
       <BusinessPageHeader
         domain="主数据"
         title="工艺与版本"
-        summary="展示减振器量产所需的生产版本、BOM 和工艺路线样例，供生产计划和工单释放校验。"
+        summary="维护生产版本、BOM 和工艺路线，确保生产计划和工单释放使用已发布的制造依据。"
       />
 
       <div class="rounded-lg border bg-background">
@@ -100,7 +100,7 @@ function sortIcon(column: SortColumn) {
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">版本与路线</h2>
-          <span class="text-sm text-muted-foreground">汽车减振器制造样例</span>
+          <span class="text-sm text-muted-foreground">版本 / BOM / 工艺路线</span>
         </div>
         <div class="overflow-x-auto">
           <Table>

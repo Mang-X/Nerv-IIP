@@ -196,7 +196,7 @@ function isNonEmpty(value: string) {
                 <BusinessEmptyState
                   title="尚未生成排程结果"
                   description="运行排程后，这里会显示工序任务的工作中心、开始和结束时间。"
-                  action="当前页面只展示规则结果，不替代甘特排程工作台。"
+                  action="暂无排程结果，请选择规则并运行排程。"
                 />
               </TableEmpty>
               <TableEmpty v-if="runSchedulePending" :colspan="6">正在运行排程...</TableEmpty>

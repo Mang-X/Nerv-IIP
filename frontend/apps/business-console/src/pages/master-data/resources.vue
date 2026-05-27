@@ -112,7 +112,7 @@ function rowKey(row: BusinessConsoleResourceItem, index: number) {
       <BusinessPageHeader
         domain="主数据"
         title="工厂资源"
-        summary="减振器工厂的工厂、产线、工作中心、设备和班次样例，用于生产计划、派工和报工联动。"
+        summary="维护工厂、产线、工作中心、设备和班次，支撑生产计划、派工、报工和产能判断。"
       />
 
       <div class="rounded-lg border bg-background">
@@ -150,7 +150,7 @@ function rowKey(row: BusinessConsoleResourceItem, index: number) {
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">资源列表</h2>
-          <span class="text-sm text-muted-foreground">汽车减振器制造样例</span>
+          <span class="text-sm text-muted-foreground">工厂 / 产线 / 设备</span>
         </div>
         <div class="overflow-x-auto">
           <Table>
