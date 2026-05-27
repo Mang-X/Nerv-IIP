@@ -154,6 +154,14 @@ public sealed class OperationLoopTests
 
         public Task<OperationTaskResponse> CreateOperationTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<OperationTaskResponse> GetOperationTaskAsync(string operationTaskId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<OperationTaskResponse> ApproveOperationTaskAsync(
+            string operationTaskId,
+            DecideOperationApprovalRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<OperationTaskResponse> RejectOperationTaskAsync(
+            string operationTaskId,
+            DecideOperationApprovalRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PendingOperationTasksResponse> GetPendingOperationTasksAsync(string organizationId, string environmentId, string connectorHostId, int take, CancellationToken cancellationToken = default)
         {
