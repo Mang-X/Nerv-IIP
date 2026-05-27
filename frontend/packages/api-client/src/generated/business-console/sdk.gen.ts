@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CloseBusinessConsoleQualityNcrData, CloseBusinessConsoleQualityNcrErrors, CloseBusinessConsoleQualityNcrResponses, ConfirmBusinessConsoleInventoryCountAdjustmentData, ConfirmBusinessConsoleInventoryCountAdjustmentErrors, ConfirmBusinessConsoleInventoryCountAdjustmentResponses, CreateBusinessConsoleInventoryCountTaskData, CreateBusinessConsoleInventoryCountTaskErrors, CreateBusinessConsoleInventoryCountTaskResponses, CreateBusinessConsoleMesRushWorkOrderData, CreateBusinessConsoleMesRushWorkOrderErrors, CreateBusinessConsoleMesRushWorkOrderResponses, CreateBusinessConsoleQualityInspectionRecordData, CreateBusinessConsoleQualityInspectionRecordErrors, CreateBusinessConsoleQualityInspectionRecordResponses, CreateBusinessConsoleSkuData, CreateBusinessConsoleSkuErrors, CreateBusinessConsoleSkuResponses, GetBusinessConsoleInventoryAvailabilityData, GetBusinessConsoleInventoryAvailabilityErrors, GetBusinessConsoleInventoryAvailabilityResponses, HealthEndpointData, HealthEndpointResponses, ListBusinessConsoleMasterDataResourcesData, ListBusinessConsoleMasterDataResourcesErrors, ListBusinessConsoleMasterDataResourcesResponses, ListBusinessConsoleMesWorkOrdersData, ListBusinessConsoleMesWorkOrdersErrors, ListBusinessConsoleMesWorkOrdersResponses, ListBusinessConsoleQualityInspectionPlansData, ListBusinessConsoleQualityInspectionPlansErrors, ListBusinessConsoleQualityInspectionPlansResponses, ListBusinessConsoleQualityNcrsData, ListBusinessConsoleQualityNcrsErrors, ListBusinessConsoleQualityNcrsResponses, ListBusinessConsoleSkusData, ListBusinessConsoleSkusErrors, ListBusinessConsoleSkusResponses, PostBusinessConsoleInventoryMovementData, PostBusinessConsoleInventoryMovementErrors, PostBusinessConsoleInventoryMovementResponses, RecordBusinessConsoleMesProductionReportData, RecordBusinessConsoleMesProductionReportErrors, RecordBusinessConsoleMesProductionReportResponses, RunBusinessConsoleMesScheduleData, RunBusinessConsoleMesScheduleErrors, RunBusinessConsoleMesScheduleResponses, SubmitBusinessConsoleQualityNcrDispositionData, SubmitBusinessConsoleQualityNcrDispositionErrors, SubmitBusinessConsoleQualityNcrDispositionResponses } from './types.gen';
+import type { AcceptBusinessConsoleMesShiftHandoverData, AcceptBusinessConsoleMesShiftHandoverErrors, AcceptBusinessConsoleMesShiftHandoverResponses, AssignBusinessConsoleMesDispatchTaskData, AssignBusinessConsoleMesDispatchTaskErrors, AssignBusinessConsoleMesDispatchTaskResponses, CloseBusinessConsoleQualityNcrData, CloseBusinessConsoleQualityNcrErrors, CloseBusinessConsoleQualityNcrResponses, CompleteBusinessConsoleMesOperationTaskData, CompleteBusinessConsoleMesOperationTaskErrors, CompleteBusinessConsoleMesOperationTaskResponses, ConfirmBusinessConsoleInventoryCountAdjustmentData, ConfirmBusinessConsoleInventoryCountAdjustmentErrors, ConfirmBusinessConsoleInventoryCountAdjustmentResponses, ConfirmBusinessConsoleMesDowntimeRecoveryData, ConfirmBusinessConsoleMesDowntimeRecoveryErrors, ConfirmBusinessConsoleMesDowntimeRecoveryResponses, ConfirmBusinessConsoleMesLineSideMaterialReceiptData, ConfirmBusinessConsoleMesLineSideMaterialReceiptErrors, ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses, ConvertBusinessConsoleMesPlanToWorkOrderData, ConvertBusinessConsoleMesPlanToWorkOrderErrors, ConvertBusinessConsoleMesPlanToWorkOrderResponses, CreateBusinessConsoleInventoryCountTaskData, CreateBusinessConsoleInventoryCountTaskErrors, CreateBusinessConsoleInventoryCountTaskResponses, CreateBusinessConsoleMesFinishedGoodsReceiptRequestData, CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors, CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses, CreateBusinessConsoleMesMaterialIssueRequestData, CreateBusinessConsoleMesMaterialIssueRequestErrors, CreateBusinessConsoleMesMaterialIssueRequestResponses, CreateBusinessConsoleMesRushWorkOrderData, CreateBusinessConsoleMesRushWorkOrderErrors, CreateBusinessConsoleMesRushWorkOrderResponses, CreateBusinessConsoleMesShiftHandoverData, CreateBusinessConsoleMesShiftHandoverErrors, CreateBusinessConsoleMesShiftHandoverResponses, CreateBusinessConsoleQualityInspectionRecordData, CreateBusinessConsoleQualityInspectionRecordErrors, CreateBusinessConsoleQualityInspectionRecordResponses, CreateBusinessConsoleSkuData, CreateBusinessConsoleSkuErrors, CreateBusinessConsoleSkuResponses, GetBusinessConsoleInventoryAvailabilityData, GetBusinessConsoleInventoryAvailabilityErrors, GetBusinessConsoleInventoryAvailabilityResponses, GetBusinessConsoleMesBarcodeNumberingReadinessData, GetBusinessConsoleMesBarcodeNumberingReadinessErrors, GetBusinessConsoleMesBarcodeNumberingReadinessResponses, GetBusinessConsoleMesBatchTraceabilityData, GetBusinessConsoleMesBatchTraceabilityErrors, GetBusinessConsoleMesBatchTraceabilityResponses, GetBusinessConsoleMesEquipmentReadinessData, GetBusinessConsoleMesEquipmentReadinessErrors, GetBusinessConsoleMesEquipmentReadinessResponses, GetBusinessConsoleMesFoundationReadinessData, GetBusinessConsoleMesFoundationReadinessErrors, GetBusinessConsoleMesFoundationReadinessResponses, GetBusinessConsoleMesMasterDataReadinessData, GetBusinessConsoleMesMasterDataReadinessErrors, GetBusinessConsoleMesMasterDataReadinessResponses, GetBusinessConsoleMesMaterialLotTraceabilityData, GetBusinessConsoleMesMaterialLotTraceabilityErrors, GetBusinessConsoleMesMaterialLotTraceabilityResponses, GetBusinessConsoleMesMaterialReadinessData, GetBusinessConsoleMesMaterialReadinessErrors, GetBusinessConsoleMesMaterialReadinessResponses, GetBusinessConsoleMesOverviewData, GetBusinessConsoleMesOverviewErrors, GetBusinessConsoleMesOverviewResponses, GetBusinessConsoleMesProductEngineeringReadinessData, GetBusinessConsoleMesProductEngineeringReadinessErrors, GetBusinessConsoleMesProductEngineeringReadinessResponses, GetBusinessConsoleMesProductionPlanReadinessData, GetBusinessConsoleMesProductionPlanReadinessErrors, GetBusinessConsoleMesProductionPlanReadinessResponses, GetBusinessConsoleMesQualityReadinessData, GetBusinessConsoleMesQualityReadinessErrors, GetBusinessConsoleMesQualityReadinessResponses, GetBusinessConsoleMesSupplyReadinessData, GetBusinessConsoleMesSupplyReadinessErrors, GetBusinessConsoleMesSupplyReadinessResponses, GetBusinessConsoleMesWipSummaryData, GetBusinessConsoleMesWipSummaryErrors, GetBusinessConsoleMesWipSummaryResponses, GetBusinessConsoleMesWorkOrderDetailData, GetBusinessConsoleMesWorkOrderDetailErrors, GetBusinessConsoleMesWorkOrderDetailResponses, GetBusinessConsoleMesWorkOrderTraceabilityData, GetBusinessConsoleMesWorkOrderTraceabilityErrors, GetBusinessConsoleMesWorkOrderTraceabilityResponses, HealthEndpointData, HealthEndpointResponses, ListBusinessConsoleMasterDataResourcesData, ListBusinessConsoleMasterDataResourcesErrors, ListBusinessConsoleMasterDataResourcesResponses, ListBusinessConsoleMesCapacityImpactsData, ListBusinessConsoleMesCapacityImpactsErrors, ListBusinessConsoleMesCapacityImpactsResponses, ListBusinessConsoleMesDispatchTasksData, ListBusinessConsoleMesDispatchTasksErrors, ListBusinessConsoleMesDispatchTasksResponses, ListBusinessConsoleMesDowntimeEventsData, ListBusinessConsoleMesDowntimeEventsErrors, ListBusinessConsoleMesDowntimeEventsResponses, ListBusinessConsoleMesFinishedGoodsReceiptRequestsData, ListBusinessConsoleMesFinishedGoodsReceiptRequestsErrors, ListBusinessConsoleMesFinishedGoodsReceiptRequestsResponses, ListBusinessConsoleMesMaterialIssueRequestsData, ListBusinessConsoleMesMaterialIssueRequestsErrors, ListBusinessConsoleMesMaterialIssueRequestsResponses, ListBusinessConsoleMesOperationTasksData, ListBusinessConsoleMesOperationTasksErrors, ListBusinessConsoleMesOperationTasksResponses, ListBusinessConsoleMesProductionPlansData, ListBusinessConsoleMesProductionPlansErrors, ListBusinessConsoleMesProductionPlansResponses, ListBusinessConsoleMesProductionReportsData, ListBusinessConsoleMesProductionReportsErrors, ListBusinessConsoleMesProductionReportsResponses, ListBusinessConsoleMesRelatedQualityItemsData, ListBusinessConsoleMesRelatedQualityItemsErrors, ListBusinessConsoleMesRelatedQualityItemsResponses, ListBusinessConsoleMesShiftHandoversData, ListBusinessConsoleMesShiftHandoversErrors, ListBusinessConsoleMesShiftHandoversResponses, ListBusinessConsoleMesWorkOrdersData, ListBusinessConsoleMesWorkOrdersErrors, ListBusinessConsoleMesWorkOrdersResponses, ListBusinessConsoleQualityInspectionPlansData, ListBusinessConsoleQualityInspectionPlansErrors, ListBusinessConsoleQualityInspectionPlansResponses, ListBusinessConsoleQualityNcrsData, ListBusinessConsoleQualityNcrsErrors, ListBusinessConsoleQualityNcrsResponses, ListBusinessConsoleSkusData, ListBusinessConsoleSkusErrors, ListBusinessConsoleSkusResponses, PauseBusinessConsoleMesOperationTaskData, PauseBusinessConsoleMesOperationTaskErrors, PauseBusinessConsoleMesOperationTaskResponses, PostBusinessConsoleInventoryMovementData, PostBusinessConsoleInventoryMovementErrors, PostBusinessConsoleInventoryMovementResponses, RecordBusinessConsoleMesDefectData, RecordBusinessConsoleMesDefectErrors, RecordBusinessConsoleMesDefectResponses, RecordBusinessConsoleMesDowntimeEventData, RecordBusinessConsoleMesDowntimeEventErrors, RecordBusinessConsoleMesDowntimeEventResponses, RecordBusinessConsoleMesProductionReportData, RecordBusinessConsoleMesProductionReportErrors, RecordBusinessConsoleMesProductionReportResponses, ReleaseBusinessConsoleMesWorkOrderData, ReleaseBusinessConsoleMesWorkOrderErrors, ReleaseBusinessConsoleMesWorkOrderResponses, ResumeBusinessConsoleMesOperationTaskData, ResumeBusinessConsoleMesOperationTaskErrors, ResumeBusinessConsoleMesOperationTaskResponses, RunBusinessConsoleMesScheduleData, RunBusinessConsoleMesScheduleErrors, RunBusinessConsoleMesScheduleResponses, StartBusinessConsoleMesOperationTaskData, StartBusinessConsoleMesOperationTaskErrors, StartBusinessConsoleMesOperationTaskResponses, SubmitBusinessConsoleQualityNcrDispositionData, SubmitBusinessConsoleQualityNcrDispositionErrors, SubmitBusinessConsoleQualityNcrDispositionResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -60,10 +60,96 @@ export const closeBusinessConsoleQualityNcr = <ThrowOnError extends boolean = fa
     }
 });
 
+export const getBusinessConsoleMesFoundationReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesFoundationReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesFoundationReadinessResponses, GetBusinessConsoleMesFoundationReadinessErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/foundation-readiness',
+    ...options
+});
+
+export const getBusinessConsoleMesMasterDataReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesMasterDataReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesMasterDataReadinessResponses, GetBusinessConsoleMesMasterDataReadinessErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/foundation-readiness/master-data',
+    ...options
+});
+
+export const getBusinessConsoleMesProductEngineeringReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesProductEngineeringReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesProductEngineeringReadinessResponses, GetBusinessConsoleMesProductEngineeringReadinessErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/foundation-readiness/product-engineering',
+    ...options
+});
+
+export const getBusinessConsoleMesSupplyReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesSupplyReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesSupplyReadinessResponses, GetBusinessConsoleMesSupplyReadinessErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/foundation-readiness/supply',
+    ...options
+});
+
+export const getBusinessConsoleMesQualityReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesQualityReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesQualityReadinessResponses, GetBusinessConsoleMesQualityReadinessErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/foundation-readiness/quality',
+    ...options
+});
+
+export const getBusinessConsoleMesEquipmentReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesEquipmentReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesEquipmentReadinessResponses, GetBusinessConsoleMesEquipmentReadinessErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/foundation-readiness/equipment',
+    ...options
+});
+
+export const getBusinessConsoleMesBarcodeNumberingReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesBarcodeNumberingReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesBarcodeNumberingReadinessResponses, GetBusinessConsoleMesBarcodeNumberingReadinessErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/foundation-readiness/barcode-numbering',
+    ...options
+});
+
+export const getBusinessConsoleMesOverview = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesOverviewData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesOverviewResponses, GetBusinessConsoleMesOverviewErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/overview',
+    ...options
+});
+
+export const listBusinessConsoleMesProductionPlans = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesProductionPlansData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesProductionPlansResponses, ListBusinessConsoleMesProductionPlansErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/production-plans',
+    ...options
+});
+
+export const getBusinessConsoleMesProductionPlanReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesProductionPlanReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesProductionPlanReadinessResponses, GetBusinessConsoleMesProductionPlanReadinessErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/production-plans/{productionPlanId}/readiness',
+    ...options
+});
+
+export const convertBusinessConsoleMesPlanToWorkOrder = <ThrowOnError extends boolean = false>(options: Options<ConvertBusinessConsoleMesPlanToWorkOrderData, ThrowOnError>) => (options.client ?? client).post<ConvertBusinessConsoleMesPlanToWorkOrderResponses, ConvertBusinessConsoleMesPlanToWorkOrderErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/production-plans/{productionPlanId}/work-orders',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
 export const listBusinessConsoleMesWorkOrders = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesWorkOrdersData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesWorkOrdersResponses, ListBusinessConsoleMesWorkOrdersErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/mes/work-orders',
     ...options
+});
+
+export const getBusinessConsoleMesWorkOrderDetail = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesWorkOrderDetailData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesWorkOrderDetailResponses, GetBusinessConsoleMesWorkOrderDetailErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}',
+    ...options
+});
+
+export const releaseBusinessConsoleMesWorkOrder = <ThrowOnError extends boolean = false>(options: Options<ReleaseBusinessConsoleMesWorkOrderData, ThrowOnError>) => (options.client ?? client).post<ReleaseBusinessConsoleMesWorkOrderResponses, ReleaseBusinessConsoleMesWorkOrderErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/release',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 export const createBusinessConsoleMesRushWorkOrder = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleMesRushWorkOrderData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleMesRushWorkOrderResponses, CreateBusinessConsoleMesRushWorkOrderErrors, ThrowOnError>({
@@ -76,9 +162,15 @@ export const createBusinessConsoleMesRushWorkOrder = <ThrowOnError extends boole
     }
 });
 
-export const runBusinessConsoleMesSchedule = <ThrowOnError extends boolean = false>(options: Options<RunBusinessConsoleMesScheduleData, ThrowOnError>) => (options.client ?? client).post<RunBusinessConsoleMesScheduleResponses, RunBusinessConsoleMesScheduleErrors, ThrowOnError>({
+export const getBusinessConsoleMesMaterialReadiness = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesMaterialReadinessData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesMaterialReadinessResponses, GetBusinessConsoleMesMaterialReadinessErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/api/business-console/v1/mes/schedules/run',
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/material-readiness',
+    ...options
+});
+
+export const createBusinessConsoleMesMaterialIssueRequest = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleMesMaterialIssueRequestData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleMesMaterialIssueRequestResponses, CreateBusinessConsoleMesMaterialIssueRequestErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/material-issue-requests',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -86,9 +178,217 @@ export const runBusinessConsoleMesSchedule = <ThrowOnError extends boolean = fal
     }
 });
 
+export const listBusinessConsoleMesMaterialIssueRequests = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesMaterialIssueRequestsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesMaterialIssueRequestsResponses, ListBusinessConsoleMesMaterialIssueRequestsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/material-issue-requests',
+    ...options
+});
+
+export const confirmBusinessConsoleMesLineSideMaterialReceipt = <ThrowOnError extends boolean = false>(options: Options<ConfirmBusinessConsoleMesLineSideMaterialReceiptData, ThrowOnError>) => (options.client ?? client).post<ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses, ConfirmBusinessConsoleMesLineSideMaterialReceiptErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listBusinessConsoleMesDispatchTasks = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesDispatchTasksData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesDispatchTasksResponses, ListBusinessConsoleMesDispatchTasksErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/dispatch-tasks',
+    ...options
+});
+
+export const assignBusinessConsoleMesDispatchTask = <ThrowOnError extends boolean = false>(options: Options<AssignBusinessConsoleMesDispatchTaskData, ThrowOnError>) => (options.client ?? client).post<AssignBusinessConsoleMesDispatchTaskResponses, AssignBusinessConsoleMesDispatchTaskErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/dispatch-tasks/{operationTaskId}/assign',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listBusinessConsoleMesOperationTasks = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesOperationTasksData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesOperationTasksResponses, ListBusinessConsoleMesOperationTasksErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/operation-tasks',
+    ...options
+});
+
+export const startBusinessConsoleMesOperationTask = <ThrowOnError extends boolean = false>(options: Options<StartBusinessConsoleMesOperationTaskData, ThrowOnError>) => (options.client ?? client).post<StartBusinessConsoleMesOperationTaskResponses, StartBusinessConsoleMesOperationTaskErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const pauseBusinessConsoleMesOperationTask = <ThrowOnError extends boolean = false>(options: Options<PauseBusinessConsoleMesOperationTaskData, ThrowOnError>) => (options.client ?? client).post<PauseBusinessConsoleMesOperationTaskResponses, PauseBusinessConsoleMesOperationTaskErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/pause',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const resumeBusinessConsoleMesOperationTask = <ThrowOnError extends boolean = false>(options: Options<ResumeBusinessConsoleMesOperationTaskData, ThrowOnError>) => (options.client ?? client).post<ResumeBusinessConsoleMesOperationTaskResponses, ResumeBusinessConsoleMesOperationTaskErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/resume',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const completeBusinessConsoleMesOperationTask = <ThrowOnError extends boolean = false>(options: Options<CompleteBusinessConsoleMesOperationTaskData, ThrowOnError>) => (options.client ?? client).post<CompleteBusinessConsoleMesOperationTaskResponses, CompleteBusinessConsoleMesOperationTaskErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/complete',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getBusinessConsoleMesWipSummary = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesWipSummaryData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesWipSummaryResponses, GetBusinessConsoleMesWipSummaryErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/wip',
+    ...options
+});
+
+export const listBusinessConsoleMesProductionReports = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesProductionReportsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesProductionReportsResponses, ListBusinessConsoleMesProductionReportsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/production-reports',
+    ...options
+});
+
 export const recordBusinessConsoleMesProductionReport = <ThrowOnError extends boolean = false>(options: Options<RecordBusinessConsoleMesProductionReportData, ThrowOnError>) => (options.client ?? client).post<RecordBusinessConsoleMesProductionReportResponses, RecordBusinessConsoleMesProductionReportErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/mes/production-reports',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const recordBusinessConsoleMesDefect = <ThrowOnError extends boolean = false>(options: Options<RecordBusinessConsoleMesDefectData, ThrowOnError>) => (options.client ?? client).post<RecordBusinessConsoleMesDefectResponses, RecordBusinessConsoleMesDefectErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/defects',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listBusinessConsoleMesRelatedQualityItems = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesRelatedQualityItemsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesRelatedQualityItemsResponses, ListBusinessConsoleMesRelatedQualityItemsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/related-quality-items',
+    ...options
+});
+
+export const listBusinessConsoleMesFinishedGoodsReceiptRequests = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesFinishedGoodsReceiptRequestsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesFinishedGoodsReceiptRequestsResponses, ListBusinessConsoleMesFinishedGoodsReceiptRequestsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/finished-goods-receipt-requests',
+    ...options
+});
+
+export const createBusinessConsoleMesFinishedGoodsReceiptRequest = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleMesFinishedGoodsReceiptRequestData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses, CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/finished-goods-receipt-requests',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listBusinessConsoleMesDowntimeEvents = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesDowntimeEventsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesDowntimeEventsResponses, ListBusinessConsoleMesDowntimeEventsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/downtime-events',
+    ...options
+});
+
+export const recordBusinessConsoleMesDowntimeEvent = <ThrowOnError extends boolean = false>(options: Options<RecordBusinessConsoleMesDowntimeEventData, ThrowOnError>) => (options.client ?? client).post<RecordBusinessConsoleMesDowntimeEventResponses, RecordBusinessConsoleMesDowntimeEventErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/downtime-events',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const confirmBusinessConsoleMesDowntimeRecovery = <ThrowOnError extends boolean = false>(options: Options<ConfirmBusinessConsoleMesDowntimeRecoveryData, ThrowOnError>) => (options.client ?? client).post<ConfirmBusinessConsoleMesDowntimeRecoveryResponses, ConfirmBusinessConsoleMesDowntimeRecoveryErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/downtime-events/{downtimeEventId}/recover',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listBusinessConsoleMesShiftHandovers = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesShiftHandoversData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesShiftHandoversResponses, ListBusinessConsoleMesShiftHandoversErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/shift-handovers',
+    ...options
+});
+
+export const createBusinessConsoleMesShiftHandover = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleMesShiftHandoverData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleMesShiftHandoverResponses, CreateBusinessConsoleMesShiftHandoverErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/shift-handovers',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const acceptBusinessConsoleMesShiftHandover = <ThrowOnError extends boolean = false>(options: Options<AcceptBusinessConsoleMesShiftHandoverData, ThrowOnError>) => (options.client ?? client).post<AcceptBusinessConsoleMesShiftHandoverResponses, AcceptBusinessConsoleMesShiftHandoverErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/shift-handovers/{handoverId}/accept',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getBusinessConsoleMesWorkOrderTraceability = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesWorkOrderTraceabilityData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesWorkOrderTraceabilityResponses, GetBusinessConsoleMesWorkOrderTraceabilityErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/traceability/work-orders/{workOrderId}',
+    ...options
+});
+
+export const getBusinessConsoleMesBatchTraceability = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesBatchTraceabilityData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesBatchTraceabilityResponses, GetBusinessConsoleMesBatchTraceabilityErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/traceability/batches/{batchOrSerial}',
+    ...options
+});
+
+export const getBusinessConsoleMesMaterialLotTraceability = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMesMaterialLotTraceabilityData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMesMaterialLotTraceabilityResponses, GetBusinessConsoleMesMaterialLotTraceabilityErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/traceability/material-lots/{materialLotId}',
+    ...options
+});
+
+export const listBusinessConsoleMesCapacityImpacts = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMesCapacityImpactsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMesCapacityImpactsResponses, ListBusinessConsoleMesCapacityImpactsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/capacity-impacts',
+    ...options
+});
+
+export const runBusinessConsoleMesSchedule = <ThrowOnError extends boolean = false>(options: Options<RunBusinessConsoleMesScheduleData, ThrowOnError>) => (options.client ?? client).post<RunBusinessConsoleMesScheduleResponses, RunBusinessConsoleMesScheduleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/mes/schedules/run',
     ...options,
     headers: {
         'Content-Type': 'application/json',

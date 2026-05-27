@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
+import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useInventoryCounts } from '@/composables/useBusinessInventory'
@@ -30,6 +32,8 @@ const {
 
 const taskSuccess = shallowRef('')
 const adjustmentSuccess = shallowRef('')
+const taskSheetOpen = shallowRef(false)
+const adjustmentSheetOpen = shallowRef(false)
 
 const taskForm = reactive({
   countTaskCode: '',
@@ -67,7 +71,6 @@ const canConfirmAdjustment = computed(
     isNonEmpty(filters.organizationId) &&
     isNonEmpty(filters.environmentId) &&
     isNonEmpty(adjustmentForm.countTaskId) &&
-    isNonEmpty(adjustmentForm.idempotencyKey) &&
     toOptionalNumber(adjustmentForm.countedQuantity) !== undefined,
 )
 
@@ -91,7 +94,7 @@ async function submitTask() {
 
   const response = await createCountTask(body)
   const taskId = response?.data?.countTaskId
-  taskSuccess.value = `Count task ${taskId ?? body.countTaskCode} submitted.`
+  taskSuccess.value = `盘点任务 ${taskId ?? body.countTaskCode} 已提交。`
   if (taskId && !adjustmentForm.countTaskId) {
     adjustmentForm.countTaskId = taskId
   }
@@ -102,11 +105,11 @@ async function submitAdjustment() {
 
   const body: BusinessConsoleConfirmStockCountAdjustmentRequest = {
     countedQuantity: toOptionalNumber(adjustmentForm.countedQuantity),
-    idempotencyKey: adjustmentForm.idempotencyKey.trim(),
+    idempotencyKey: optionalText(adjustmentForm.idempotencyKey) ?? `count-${adjustmentForm.countTaskId.trim()}-${Date.now()}`,
   }
 
   const response = await confirmAdjustment(adjustmentForm.countTaskId.trim(), body)
-  adjustmentSuccess.value = `Adjustment ${response?.data?.movementId ?? body.idempotencyKey} submitted.`
+  adjustmentSuccess.value = `库存调整 ${response?.data?.movementId ?? body.idempotencyKey} 已提交。`
 }
 
 function optionalText(value: string) {
@@ -120,7 +123,7 @@ function toOptionalNumber(value: string) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? 'Request failed.' : ''
+  return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
 
 function isNonEmpty(value: string) {
@@ -132,34 +135,53 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="Inventory"
-        title="Stock counts"
-        summary="Create count tasks and confirm count adjustments without coupling the console to inventory internals."
-      />
+        domain="库存"
+        title="库存盘点"
+        summary="以盘点任务为中心安排创建、实盘录入和差异确认。"
+      >
+        <template #actions>
+          <Button size="sm" type="button" @click="taskSheetOpen = true">
+            <ClipboardPlusIcon data-icon="inline-start" />
+            创建盘点任务
+          </Button>
+          <Button size="sm" type="button" variant="outline" @click="adjustmentSheetOpen = true">
+            <CheckCircle2Icon data-icon="inline-start" />
+            确认差异
+          </Button>
+        </template>
+      </BusinessPageHeader>
 
       <div class="grid gap-3 rounded-lg border bg-background p-4 md:grid-cols-2">
-        <Field>
-          <FieldLabel for="count-org">Organization</FieldLabel>
-          <Input id="count-org" v-model="filters.organizationId" />
-        </Field>
-        <Field>
-          <FieldLabel for="count-env">Environment</FieldLabel>
-          <Input id="count-env" v-model="filters.environmentId" />
-        </Field>
       </div>
 
-      <div class="grid gap-4 xl:grid-cols-2">
+      <section class="rounded-lg border bg-background">
+        <div class="border-b px-4 py-3">
+          <h2 class="text-sm font-semibold text-foreground">盘点任务队列</h2>
+          <p class="mt-1 text-sm text-muted-foreground">后续接入盘点任务列表后，差异确认只从具体任务进入。</p>
+        </div>
+        <BusinessEmptyState
+          title="暂未接入盘点任务列表"
+          description="当前先保留任务创建和差异确认动作，但通过抽屉承载，避免两个表单堆在主页面。"
+          action="建议先创建盘点任务，再从返回的任务 ID 进入差异确认。"
+        />
+      </section>
+
+      <BusinessActionSheet
+        v-model:open="taskSheetOpen"
+        title="创建盘点任务"
+        description="指定物料、工厂、库位和批次后生成盘点任务。"
+      >
         <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitTask">
           <div>
-            <p class="text-xs font-bold uppercase text-primary">Task</p>
-            <h2 class="text-base font-semibold text-foreground">Create count task</h2>
+            <p class="text-xs font-bold uppercase text-primary">任务</p>
+            <h2 class="text-base font-semibold text-foreground">创建盘点任务</h2>
           </div>
 
           <BusinessFormStatus :error="taskErrorMessage" :success="taskSuccess" />
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
-              <FieldLabel for="count-task-code">Count task code</FieldLabel>
+              <FieldLabel for="count-task-code">盘点任务编码</FieldLabel>
               <Input id="count-task-code" v-model="taskForm.countTaskCode" required />
             </Field>
             <Field>
@@ -167,35 +189,35 @@ function isNonEmpty(value: string) {
               <Input id="count-task-sku" v-model="taskForm.skuCode" required />
             </Field>
             <Field>
-              <FieldLabel for="count-task-uom">UOM</FieldLabel>
+              <FieldLabel for="count-task-uom">单位</FieldLabel>
               <Input id="count-task-uom" v-model="taskForm.uomCode" required />
             </Field>
             <Field>
-              <FieldLabel for="count-task-site">Site</FieldLabel>
+              <FieldLabel for="count-task-site">工厂</FieldLabel>
               <Input id="count-task-site" v-model="taskForm.siteCode" required />
             </Field>
             <Field>
-              <FieldLabel for="count-task-location">Location</FieldLabel>
+              <FieldLabel for="count-task-location">库位</FieldLabel>
               <Input id="count-task-location" v-model="taskForm.locationCode" required />
             </Field>
             <Field>
-              <FieldLabel for="count-task-quality">Quality</FieldLabel>
+              <FieldLabel for="count-task-quality">质量状态</FieldLabel>
               <Input id="count-task-quality" v-model="taskForm.qualityStatus" />
             </Field>
             <Field>
-              <FieldLabel for="count-task-owner-type">Owner type</FieldLabel>
+              <FieldLabel for="count-task-owner-type">货主类型</FieldLabel>
               <Input id="count-task-owner-type" v-model="taskForm.ownerType" />
             </Field>
             <Field>
-              <FieldLabel for="count-task-owner-id">Owner ID</FieldLabel>
+              <FieldLabel for="count-task-owner-id">货主 ID</FieldLabel>
               <Input id="count-task-owner-id" v-model="taskForm.ownerId" />
             </Field>
             <Field>
-              <FieldLabel for="count-task-lot">Lot</FieldLabel>
+              <FieldLabel for="count-task-lot">批次</FieldLabel>
               <Input id="count-task-lot" v-model="taskForm.lotNo" />
             </Field>
             <Field>
-              <FieldLabel for="count-task-serial">Serial</FieldLabel>
+              <FieldLabel for="count-task-serial">序列号</FieldLabel>
               <Input id="count-task-serial" v-model="taskForm.serialNo" />
             </Field>
           </FieldGroup>
@@ -204,26 +226,32 @@ function isNonEmpty(value: string) {
             <Button type="submit" :disabled="createCountTaskPending || !canCreateTask">
               <Spinner v-if="createCountTaskPending" data-icon="inline-start" />
               <ClipboardPlusIcon v-else data-icon="inline-start" />
-              Create task
+              创建任务
             </Button>
           </div>
         </form>
+      </BusinessActionSheet>
 
+      <BusinessActionSheet
+        v-model:open="adjustmentSheetOpen"
+        title="确认盘点差异"
+        description="从已完成实盘的任务进入差异确认；幂等键默认由系统生成。"
+      >
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitAdjustment">
           <div>
-            <p class="text-xs font-bold uppercase text-primary">Adjustment</p>
-            <h2 class="text-base font-semibold text-foreground">Confirm adjustment</h2>
+            <p class="text-xs font-bold uppercase text-primary">调整</p>
+            <h2 class="text-base font-semibold text-foreground">确认盘点差异</h2>
           </div>
 
           <BusinessFormStatus :error="adjustmentErrorMessage" :success="adjustmentSuccess" />
 
           <FieldGroup class="grid gap-3">
             <Field>
-              <FieldLabel for="count-adjust-task-id">Count task ID</FieldLabel>
+              <FieldLabel for="count-adjust-task-id">盘点任务 ID</FieldLabel>
               <Input id="count-adjust-task-id" v-model="adjustmentForm.countTaskId" required />
             </Field>
             <Field>
-              <FieldLabel for="count-adjust-quantity">Counted quantity</FieldLabel>
+              <FieldLabel for="count-adjust-quantity">实盘数量</FieldLabel>
               <Input
                 id="count-adjust-quantity"
                 v-model="adjustmentForm.countedQuantity"
@@ -233,8 +261,8 @@ function isNonEmpty(value: string) {
               />
             </Field>
             <Field>
-              <FieldLabel for="count-adjust-idempotency">Idempotency key</FieldLabel>
-              <Input id="count-adjust-idempotency" v-model="adjustmentForm.idempotencyKey" required />
+              <FieldLabel for="count-adjust-idempotency">幂等键</FieldLabel>
+              <Input id="count-adjust-idempotency" v-model="adjustmentForm.idempotencyKey" placeholder="默认自动生成" />
             </Field>
           </FieldGroup>
 
@@ -242,11 +270,11 @@ function isNonEmpty(value: string) {
             <Button type="submit" :disabled="confirmAdjustmentPending || !canConfirmAdjustment">
               <Spinner v-if="confirmAdjustmentPending" data-icon="inline-start" />
               <CheckCircle2Icon v-else data-icon="inline-start" />
-              Confirm adjustment
+              确认调整
             </Button>
           </div>
         </form>
-      </div>
+      </BusinessActionSheet>
     </section>
   </BusinessLayout>
 </template>

@@ -6,6 +6,7 @@ public enum OperationTaskLifecycleStatus
 {
     Queued,
     InProgress,
+    Paused,
     Completed,
     Cancelled,
 }
@@ -123,6 +124,52 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             duration,
             existingStartUtc,
             existingEndUtc);
+    }
+
+    public void Start(DateTimeOffset startedAtUtc)
+    {
+        if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
+        {
+            throw new InvalidOperationException("Completed or cancelled operation task cannot be started.");
+        }
+
+        Status = OperationTaskLifecycleStatus.InProgress;
+        ExistingStartUtc ??= startedAtUtc;
+        ExistingEndUtc = null;
+    }
+
+    public void Pause()
+    {
+        if (Status != OperationTaskLifecycleStatus.InProgress)
+        {
+            throw new InvalidOperationException("Only in-progress operation task can be paused.");
+        }
+
+        Status = OperationTaskLifecycleStatus.Paused;
+    }
+
+    public void Resume(DateTimeOffset resumedAtUtc)
+    {
+        if (Status != OperationTaskLifecycleStatus.Paused)
+        {
+            throw new InvalidOperationException("Only paused operation task can be resumed.");
+        }
+
+        Status = OperationTaskLifecycleStatus.InProgress;
+        ExistingStartUtc ??= resumedAtUtc;
+        ExistingEndUtc = null;
+    }
+
+    public void Complete(DateTimeOffset completedAtUtc)
+    {
+        if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
+        {
+            throw new InvalidOperationException("Operation task is already closed.");
+        }
+
+        Status = OperationTaskLifecycleStatus.Completed;
+        ExistingStartUtc ??= completedAtUtc;
+        ExistingEndUtc = completedAtUtc;
     }
 
     private static string NormalizeAlternatives(IReadOnlyCollection<string> values)

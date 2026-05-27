@@ -9,12 +9,43 @@ import {
   submitConsoleNotificationIntentMutationOptions,
 } from './console'
 import {
+  acceptBusinessConsoleMesShiftHandoverMutationOptions,
+  assignBusinessConsoleMesDispatchTaskMutationOptions,
+  completeBusinessConsoleMesOperationTaskMutationOptions,
+  createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
+  createBusinessConsoleMesMaterialIssueRequestMutationOptions,
+  createBusinessConsoleMesShiftHandoverMutationOptions,
   createBusinessConsoleSkuMutationOptions,
+  getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleInventoryAvailabilityQueryOptions,
+  getBusinessConsoleMesFoundationReadinessQueryOptions,
+  getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
+  getBusinessConsoleMesMaterialReadinessQueryOptions,
+  getBusinessConsoleMesOverviewQueryOptions,
+  getBusinessConsoleMesProductionPlanReadinessQueryOptions,
+  getBusinessConsoleMesWipSummaryQueryOptions,
+  getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
+  listBusinessConsoleMesCapacityImpactsQueryOptions,
+  listBusinessConsoleMesDispatchTasksQueryOptions,
+  listBusinessConsoleMesDowntimeEventsQueryOptions,
+  listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
+  listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
+  listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesProductionPlansQueryOptions,
+  listBusinessConsoleMesProductionReportsQueryOptions,
+  listBusinessConsoleMesRelatedQualityItemsQueryOptions,
+  listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
   listBusinessConsoleSkusQueryOptions,
+  pauseBusinessConsoleMesOperationTaskMutationOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
+  recordBusinessConsoleMesDefectMutationOptions,
+  recordBusinessConsoleMesDowntimeEventMutationOptions,
+  releaseBusinessConsoleMesWorkOrderMutationOptions,
+  resumeBusinessConsoleMesOperationTaskMutationOptions,
+  startBusinessConsoleMesOperationTaskMutationOptions,
 } from './business-console'
 import {
   createConsoleIamRoleMutationOptions,
@@ -80,6 +111,37 @@ describe('generated API client contract', () => {
     expect(getBusinessConsoleInventoryAvailabilityQueryOptions).toBeTypeOf('function')
     expect(postBusinessConsoleInventoryMovementMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleQualityNcrsQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesFoundationReadinessQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesOverviewQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesProductionPlansQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesProductionPlanReadinessQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesWorkOrdersQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toBeTypeOf('function')
+    expect(releaseBusinessConsoleMesWorkOrderMutationOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesMaterialReadinessQueryOptions).toBeTypeOf('function')
+    expect(createBusinessConsoleMesMaterialIssueRequestMutationOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesMaterialIssueRequestsQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesDispatchTasksQueryOptions).toBeTypeOf('function')
+    expect(assignBusinessConsoleMesDispatchTaskMutationOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(startBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
+    expect(pauseBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
+    expect(resumeBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
+    expect(completeBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesWipSummaryQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesProductionReportsQueryOptions).toBeTypeOf('function')
+    expect(recordBusinessConsoleMesDefectMutationOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesRelatedQualityItemsQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toBeTypeOf('function')
+    expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesDowntimeEventsQueryOptions).toBeTypeOf('function')
+    expect(recordBusinessConsoleMesDowntimeEventMutationOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesShiftHandoversQueryOptions).toBeTypeOf('function')
+    expect(createBusinessConsoleMesShiftHandoverMutationOptions).toBeTypeOf('function')
+    expect(acceptBusinessConsoleMesShiftHandoverMutationOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesWorkOrderTraceabilityQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesBatchTraceabilityQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesMaterialLotTraceabilityQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesCapacityImpactsQueryOptions).toBeTypeOf('function')
   })
 })

@@ -9,7 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@nerv-iip/ui'
-import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, PackageSearchIcon } from 'lucide-vue-next'
+import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, PackageSearchIcon, ReceiptTextIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -20,37 +20,57 @@ const route = useRoute()
 
 const navItems = computed<NavItem[]>(() => [
   {
-    title: t('nav.masterData'),
+    title: '主数据',
     icon: BoxesIcon,
     isActive: route.path.startsWith('/master-data'),
-    items: [{ title: t('nav.skus'), to: { path: '/master-data/skus' } }],
+    items: [
+      { title: '物料与产品', to: { path: '/master-data/skus' } },
+      { title: '工厂资源', to: { path: '/master-data/resources' } },
+      { title: '工艺与版本', to: { path: '/master-data/process' } },
+    ],
   },
   {
-    title: t('nav.inventory'),
+    title: '库存',
     icon: PackageSearchIcon,
     isActive: route.path.startsWith('/inventory'),
     items: [
-      { title: t('nav.availability'), to: { path: '/inventory/availability' } },
-      { title: t('nav.movements'), to: { path: '/inventory/movements' } },
-      { title: t('nav.counts'), to: { path: '/inventory/counts' } },
+      { title: '库存可用量', to: { path: '/inventory/availability' } },
+      { title: '库存移动', to: { path: '/inventory/movements' } },
+      { title: '库存盘点', to: { path: '/inventory/counts' } },
     ],
   },
   {
-    title: t('nav.quality'),
+    title: '质量',
     icon: ClipboardCheckIcon,
     isActive: route.path.startsWith('/quality'),
     items: [
-      { title: t('nav.inspections'), to: { path: '/quality/inspections' } },
-      { title: t('nav.ncrs'), to: { path: '/quality/ncrs' } },
+      { title: '检验任务与记录', to: { path: '/quality/inspections' } },
+      { title: '不合格品处理', to: { path: '/quality/ncrs' } },
     ],
   },
   {
-    title: t('nav.mes'),
+    title: 'ERP',
+    icon: ReceiptTextIcon,
+    isActive: route.path.startsWith('/erp'),
+    items: [
+      { title: '业务协同', to: { path: '/erp' } },
+    ],
+  },
+  {
+    title: 'MES',
     icon: FactoryIcon,
     isActive: route.path.startsWith('/mes'),
     items: [
-      { title: t('nav.workOrders'), to: { path: '/mes/work-orders' } },
-      { title: t('nav.schedules'), to: { path: '/mes/schedules' } },
+      { title: '生产驾驶舱', to: { path: '/mes' } },
+      { title: '生产计划', to: { path: '/mes/plans' } },
+      { title: '工单与派工', to: { path: '/mes/work-orders' } },
+      { title: '工序执行', to: { path: '/mes/operation-tasks' } },
+      { title: '在制跟踪', to: { path: '/mes/wip' } },
+      { title: '报工记录', to: { path: '/mes/production-reports' } },
+      { title: '完工入库', to: { path: '/mes/receipts' } },
+      { title: '异常与产能', to: { path: '/mes/capacity' } },
+      { title: '规则排程', to: { path: '/mes/schedules' } },
+      { title: '生产准备检查', to: { path: '/mes/foundation' } },
     ],
   },
 ])
@@ -58,6 +78,14 @@ const navItems = computed<NavItem[]>(() => [
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
 const router = useRouter()
+
+const breadcrumbSegmentLabels: Record<string, string> = {
+  erp: 'ERP',
+  inventory: '库存',
+  'master-data': '主数据',
+  mes: 'MES',
+  quality: '质量',
+}
 
 const breadcrumbs = computed(() => {
   const titleKey = (route.meta.title as string) ?? 'breadcrumb.dashboard'
@@ -72,7 +100,7 @@ const breadcrumbs = computed(() => {
 
   for (let i = 0; i < segments.length - 1; i++) {
     const segment = segments[i]
-    items.push({ label: segment.replaceAll('-', ' ').replace(/^\w/, (c) => c.toUpperCase()) })
+    items.push({ label: breadcrumbSegmentLabels[segment] ?? segment.replaceAll('-', ' ') })
   }
 
   items.push({ label: title })
@@ -83,7 +111,7 @@ const shellUser = computed(() => {
   const p = principal.value
   if (!p) return undefined
   return {
-    name: p.loginName ?? p.principalId ?? t('nav.authenticatedUser'),
+    name: p.loginName ?? p.principalId ?? '已登录用户',
     email: p.email,
   }
 })
@@ -96,10 +124,10 @@ async function signOut() {
 
 <template>
   <AppShell
-    title="Nerv-IIP Business"
+    title="Nerv-IIP 业务控制台"
     :nav-items="navItems"
-    :nav-label="t('nav.business')"
-    :sign-out-label="t('nav.signOut')"
+    nav-label="业务模块"
+    sign-out-label="退出登录"
     :user="shellUser"
     @sign-out="signOut"
   >

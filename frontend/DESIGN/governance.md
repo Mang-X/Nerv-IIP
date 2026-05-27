@@ -55,6 +55,9 @@ This system is internal (no semver). Breaking changes to `@nerv-iip/ui` exports 
 
 ## Review Checklist (for UI PRs)
 
+- [ ] Visible page copy is written for business users, not developers or reviewers
+- [ ] No visible demo/test/scaffolding terms (`样例`, `内置`, `用于验证`, `联动测试`, `demo`, `mock`, `seed`)
+- [ ] No visible platform metadata or gateway/API wording (`组织`, `环境`, `上下文`, `业务网关契约`, `operationId`)
 - [ ] No raw palette classes (`bg-blue-*`, `text-gray-*`, etc.)
 - [ ] No raw hex values in `.vue` files
 - [ ] No `--legacy-color-*` in new components

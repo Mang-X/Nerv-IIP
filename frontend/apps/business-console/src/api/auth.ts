@@ -35,7 +35,7 @@ function assertData<T>(
 
   const status = result.response?.status
   throw new ConsoleAuthError(
-    status === 401 ? 'Invalid credentials or expired session.' : fallback,
+    status === 401 ? '账号密码错误或会话已过期。' : fallback,
     status,
   )
 }
@@ -43,7 +43,7 @@ function assertData<T>(
 export async function loginConsole(request: ConsoleLoginRequest): Promise<ConsoleAuthResponse> {
   return assertData(
     await loginConsoleUser({ body: request }) as { data?: ConsoleAuthEnvelope; response?: Response },
-    'Unable to connect to the authentication service.',
+    '无法连接认证服务。',
   )
 }
 
@@ -53,7 +53,7 @@ export async function refreshConsole(request: ConsoleRefreshRequest): Promise<Co
       data?: ConsoleAuthEnvelope
       response?: Response
     },
-    'Unable to refresh the session.',
+    '无法刷新会话。',
   )
 }
 
@@ -76,6 +76,6 @@ export async function getConsoleMe(accessToken: string): Promise<ConsolePrincipa
         Authorization: `Bearer ${accessToken}`,
       },
     }) as { data?: ConsolePrincipalEnvelope; response?: Response },
-    'Unable to load the current principal.',
+    '无法加载当前登录用户。',
   )
 }

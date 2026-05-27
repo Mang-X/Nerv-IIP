@@ -183,12 +183,29 @@ Business Console 登录、刷新、退出和 `/me` 可以先复用 PlatformGatew
 | --- | --- | --- |
 | `/master-data/skus` | SKU 列表、创建和基础资源选择。 | BusinessGateway MasterData facade。 |
 | `/inventory/availability` | 可用量查询。 | BusinessGateway Inventory facade。 |
-| `/inventory/movements` | 库存移动提交。 | BusinessGateway Inventory facade。 |
-| `/inventory/counts` | 盘点任务与调整确认。 | BusinessGateway Inventory facade。 |
-| `/quality/inspections` | 检验计划列表和检验记录创建。 | BusinessGateway Quality facade。 |
+| `/inventory/movements` | 库存移动工作台；新建移动通过抽屉承载。 | BusinessGateway Inventory facade。 |
+| `/inventory/counts` | 盘点任务工作台；创建任务和确认差异通过抽屉承载。 | BusinessGateway Inventory facade。 |
+| `/quality/inspections` | 检验任务与记录；检验记录创建通过抽屉承载。 | BusinessGateway Quality facade。 |
 | `/quality/ncrs` | NCR 列表、处置和关闭。 | BusinessGateway Quality facade。 |
-| `/mes/work-orders` | 工单列表和急单创建。 | BusinessGateway MES facade。 |
-| `/mes/schedules` | 规则排程运行和结果状态；不包含甘特。 | BusinessGateway MES facade。 |
+| `/mes` | 生产驾驶舱，展示工单、工序、在制、阻塞和角色待办。 | BusinessGateway MES facade。 |
+| `/mes/foundation` | 基础准备，展示 MasterData、ProductEngineering、Supply、Quality、Equipment、Barcode/Numbering 等开工前就绪结果。 | BusinessGateway MES facade。 |
+| `/mes/plans` | 生产计划，展示可转入 MES 执行的计划和计划就绪状态。 | BusinessGateway MES facade。 |
+| `/mes/work-orders` | 计划与工单；急单创建、释放、行级操作和报工通过抽屉或详情路由承载。 | BusinessGateway MES facade。 |
+| `/mes/work-orders/:workOrderId` | 工单详情，展示工序、用料、开工阻塞，并作为报工、完工入库和质量检验的上下文入口。 | BusinessGateway MES facade。 |
+| `/mes/work-order-detail/:workOrderId` | 旧工单详情兼容路由，进入后重定向到 `/mes/work-orders/:workOrderId`；仅为兼容入口，清理由 #196 在 PC 工作流收口前处理。 | BusinessGateway MES facade。 |
+| `/mes/materials` | 齐套与物料，展示领料申请、齐套状态和线边接收入口。 | BusinessGateway MES facade。 |
+| `/mes/dispatch` | 派工看板，按工作中心、设备、班次和人员查看待派工任务。 | BusinessGateway MES facade。 |
+| `/mes/operation-tasks` | 工序执行任务列表，提供查看工单、查看报工、呼叫质检、记录异常和开工/暂停/恢复/完工入口。 | BusinessGateway MES facade。 |
+| `/mes/wip` | 在制跟踪。 | BusinessGateway MES facade。 |
+| `/mes/reports` | 报工与完工，展示生产报工、良品、不良、返工和完工相关状态。 | BusinessGateway MES facade。 |
+| `/mes/production-reports` | 旧报工记录查询路由；新增报工从工单或工序上下文进入。 | BusinessGateway MES facade。 |
+| `/mes/quality` | 质量与不良，展示 MES 缺陷上下文和关联 Quality 事项。 | BusinessGateway MES facade。 |
+| `/mes/receipts` | 完工入库请求；新增请求通过抽屉承载，行级入口可回到工单上下文。 | BusinessGateway MES facade。 |
+| `/mes/schedules` | MES 规则排程结果和显式运行动作；不包含甘特，也不承担 APS 算法。 | BusinessGateway MES facade。 |
+| `/mes/downtime` | 设备与停机，展示停机、恢复和未结异常。 | BusinessGateway MES facade。 |
+| `/mes/handovers` | 班次交接，展示待交接事项和班组交接状态。 | BusinessGateway MES facade。 |
+| `/mes/traceability` | 追溯查询，可按工单、批次/序列、物料批次进入执行证据链。 | BusinessGateway MES facade。 |
+| `/mes/capacity` | 产能影响，展示工作中心/设备不可用对生产计划的影响。 | BusinessGateway MES facade。 |
 
 业务控制台的服务端状态统一放入 `src/composables/useBusinessMasterData.ts`、`useBusinessInventory.ts`、`useBusinessQuality.ts` 和 `useBusinessMes.ts`。这些 composable 只消费 `@nerv-iip/api-client` 的 business-console 稳定导出，不深 import generated，不手写业务服务 URL。
 
@@ -201,7 +218,16 @@ pnpm -C frontend --filter @nerv-iip/business-console build
 pnpm -C frontend --filter @nerv-iip/business-console e2e -- business-console.spec.ts
 ```
 
-当前 e2e smoke 覆盖桌面与移动视口下的 SKU、库存可用量、Quality NCR 和 MES 工单页面；本地缺少 Playwright managed Chromium 时，可临时设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指向已安装 Chrome/Chromium 后运行。
+MES PC 工作台验证命令：
+
+```powershell
+scripts/verify-business-console-mes-pc-workbench.ps1
+scripts/verify-business-console-mes-pc-workbench.ps1 -E2E -ChromiumExecutablePath "C:\Program Files\Google\Chrome\Application\chrome.exe"
+```
+
+当前 e2e smoke 覆盖桌面与移动视口下的 SKU、库存可用量、Quality NCR 和 MES PC 主要路由；本地缺少 Playwright managed Chromium 时，可临时设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 或使用脚本的 `-ChromiumExecutablePath` 指向已安装 Chrome/Chromium 后运行。
+
+ADR 0014 后，APS/Gantt 不进入 `/mes/schedules` 页面内部。#206 负责后端 APS lite 排程契约和内核，#78 负责甘特/排产图展示；未来独立排程工作台应消费 APS 输出 DTO，并继续通过 BusinessGateway facade 访问业务数据。
 
 ### Console IAM Admin
 
