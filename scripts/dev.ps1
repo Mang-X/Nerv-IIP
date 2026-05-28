@@ -59,6 +59,61 @@ function Assert-CommandAvailable {
     }
 }
 
+function Get-AppHostUserSecrets {
+    param(
+        [Parameter(Mandatory)]
+        [string] $AppHostProject
+    )
+
+    $result = Invoke-DotNetOutput -Arguments @('user-secrets', 'list', '--project', $AppHostProject) -WorkingDirectory $root -Name 'apphost-user-secrets'
+    $output = $result.Stdout -split '\r?\n'
+
+    $secrets = @{}
+    foreach ($line in $output) {
+        $parts = "$line" -split ' = ', 2
+        if ($parts.Count -eq 2) {
+            $secrets[$parts[0]] = $parts[1]
+        }
+    }
+
+    return $secrets
+}
+
+function Assert-AppHostUserSecrets {
+    param(
+        [Parameter(Mandatory)]
+        [string] $AppHostProject
+    )
+
+    $requiredSecrets = @(
+        'Parameters:iam-jwt-signing-key',
+        'Parameters:internal-service-bearer-token',
+        'Parameters:postgres-password',
+        'Parameters:redis-password',
+        'Parameters:minio-root-user',
+        'Parameters:minio-root-password',
+        'Parameters:iam-seed-admin-password',
+        'Parameters:iam-seed-connector-host-secret'
+    )
+    $secrets = Get-AppHostUserSecrets -AppHostProject $AppHostProject
+    $missing = @($requiredSecrets | Where-Object {
+        -not $secrets.ContainsKey($_) -or [string]::IsNullOrWhiteSpace($secrets[$_])
+    })
+
+    if ($missing.Count -gt 0) {
+        $commands = $missing | ForEach-Object {
+            "dotnet user-secrets set ""$_"" ""<local-value>"" --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj"
+        }
+        throw @"
+Missing required AppHost user secrets:
+$($missing -join "`n")
+
+Set them before running .\nerv.ps1 dev, for example:
+$($commands -join "`n")
+"@
+    }
+}
+
 if ($Help) {
     Write-DevHelp
     exit 0
@@ -84,10 +139,19 @@ if ($OpenDashboard) {
 }
 
 $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
+Assert-AppHostUserSecrets -AppHostProject $appHostProject
+
 $arguments = @('run', '--project', $appHostProject)
 if ($NoBuild) {
     $arguments += '--no-build'
 }
 
-$result = Invoke-DotNetInteractive -Arguments $arguments -WorkingDirectory $root -Name 'dev-apphost'
+$appHostEnvironment = @{
+    ASPNETCORE_ENVIRONMENT = 'Development'
+    DOTNET_ENVIRONMENT = 'Development'
+}
+
+$result = Invoke-WithScopedEnvironment -Variables $appHostEnvironment -ScriptBlock {
+    Invoke-DotNetInteractive -Arguments $arguments -WorkingDirectory $root -Name 'dev-apphost'
+}
 exit $result.ExitCode
