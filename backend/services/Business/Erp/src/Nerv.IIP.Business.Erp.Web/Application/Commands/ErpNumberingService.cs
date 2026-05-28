@@ -10,6 +10,9 @@ public sealed record ErpNumberAllocation(string Number, bool IsIdempotentReplay)
 
 public sealed class ErpNumberingService(ApplicationDbContext? dbContext = null)
 {
+    private const int MaxCounterSaveAttempts = 5;
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> CounterScopeLocks = new(StringComparer.Ordinal);
+
     private readonly ApplicationDbContext? _dbContext = dbContext;
     private readonly Lock _lock = new();
     private readonly Dictionary<string, long> _counters = new(StringComparer.Ordinal);
@@ -79,28 +82,60 @@ public sealed class ErpNumberingService(ApplicationDbContext? dbContext = null)
         CancellationToken cancellationToken)
     {
         var dateSegment = DateTimeOffset.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
-        var counter = _dbContext!.NumberingCounters.Local.FirstOrDefault(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                x.DocumentType == documentType &&
-                x.SiteCode == string.Empty &&
-                x.DateSegment == dateSegment)
-            ?? await _dbContext.NumberingCounters.SingleOrDefaultAsync(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                x.DocumentType == documentType &&
-                x.SiteCode == string.Empty &&
-                x.DateSegment == dateSegment,
-                cancellationToken);
-
-        if (counter is null)
+        var scope = Key(organizationId, environmentId, documentType, string.Empty, dateSegment);
+        var scopeLock = CounterScopeLocks.GetOrAdd(scope, _ => new SemaphoreSlim(1, 1));
+        for (var attempt = 1; attempt <= MaxCounterSaveAttempts; attempt++)
         {
-            counter = new NumberingCounter(organizationId, environmentId, documentType, string.Empty, dateSegment, prefix);
-            _dbContext.NumberingCounters.Add(counter);
+            await scopeLock.WaitAsync(cancellationToken);
+            try
+            {
+                var counter = _dbContext!.NumberingCounters.Local.FirstOrDefault(x =>
+                        x.OrganizationId == organizationId &&
+                        x.EnvironmentId == environmentId &&
+                        x.DocumentType == documentType &&
+                        x.SiteCode == string.Empty &&
+                        x.DateSegment == dateSegment)
+                    ?? await _dbContext.NumberingCounters.SingleOrDefaultAsync(x =>
+                        x.OrganizationId == organizationId &&
+                        x.EnvironmentId == environmentId &&
+                        x.DocumentType == documentType &&
+                        x.SiteCode == string.Empty &&
+                        x.DateSegment == dateSegment,
+                        cancellationToken);
+
+                if (counter is null)
+                {
+                    counter = new NumberingCounter(organizationId, environmentId, documentType, string.Empty, dateSegment, prefix);
+                    _dbContext.NumberingCounters.Add(counter);
+                }
+
+                var next = counter.Advance();
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                return $"{prefix}-{dateSegment}-{next:000000}";
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < MaxCounterSaveAttempts)
+            {
+                DetachCounterEntries();
+            }
+            catch (DbUpdateException) when (attempt < MaxCounterSaveAttempts)
+            {
+                DetachCounterEntries();
+            }
+            finally
+            {
+                scopeLock.Release();
+            }
         }
 
-        var next = counter.Advance();
-        return $"{prefix}-{dateSegment}-{next:000000}";
+        throw new KnownException($"Unable to allocate {documentType} number after {MaxCounterSaveAttempts} attempts.");
+    }
+
+    private void DetachCounterEntries()
+    {
+        foreach (var entry in _dbContext!.ChangeTracker.Entries<NumberingCounter>().ToArray())
+        {
+            entry.State = EntityState.Detached;
+        }
     }
 
     private async Task<NumberingIdempotencyKey?> FindIdempotencyRecordAsync(

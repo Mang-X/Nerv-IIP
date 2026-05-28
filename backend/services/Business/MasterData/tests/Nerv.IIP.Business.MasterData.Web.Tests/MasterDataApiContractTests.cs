@@ -317,6 +317,60 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Create_sku_command_rejects_same_idempotency_key_with_different_name()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var numbering = new MasterDataNumberingService(dbContext);
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
+
+        await handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", null, "Original Name", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-name"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", null, "Changed Name", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-name"),
+            CancellationToken.None));
+
+        Assert.Contains("different sku create payload", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Create_sku_command_db_numbering_generates_unique_codes_for_parallel_requests_after_counter_exists()
+    {
+        await using var provider = CreateInMemoryProvider("master-data-api-contract-db-numbering-parallel");
+        using (var seedScope = provider.CreateScope())
+        {
+            var seedContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var seedHandler = new CreateSkuCommandHandler(new SkuRepository(seedContext), new MasterDataNumberingService(seedContext));
+            await seedHandler.Handle(
+                new CreateSkuCommand("org-001", "env-dev", null, "Seed SKU", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-db-seed"),
+                CancellationToken.None);
+            await seedContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var tasks = Enumerable.Range(1, 8)
+            .Select(async index =>
+            {
+                using var scope = provider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), new MasterDataNumberingService(dbContext));
+                var result = await handler.Handle(
+                    new CreateSkuCommand("org-001", "env-dev", null, $"Parallel SKU {index}", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], $"sku-db-parallel-{index}"),
+                    CancellationToken.None);
+                await dbContext.SaveChangesAsync(CancellationToken.None);
+                return result.Code;
+            });
+
+        var codes = await Task.WhenAll(tasks);
+
+        Assert.Equal(8, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(codes, code => Assert.Matches("^SKU-[0-9]{8}-[0-9]{6}$", code));
+    }
+
+    [Fact]
     public async Task Create_sku_command_persists_numbering_counter_and_idempotency_key()
     {
         await using var provider = CreateInMemoryProvider();
@@ -335,15 +389,16 @@ public sealed class MasterDataApiContractTests
         Assert.Equal(result.Code, idempotency.Number);
     }
 
-    private static ServiceProvider CreateInMemoryProvider()
+    private static ServiceProvider CreateInMemoryProvider(string? databaseName = null)
     {
+        databaseName ??= $"master-data-api-contract-{Guid.NewGuid():N}";
         var services = new ServiceCollection();
         services.AddMediatR(configuration =>
         {
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
         });
         services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseInMemoryDatabase($"master-data-api-contract-{Guid.NewGuid():N}"));
+            options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();
     }
 
