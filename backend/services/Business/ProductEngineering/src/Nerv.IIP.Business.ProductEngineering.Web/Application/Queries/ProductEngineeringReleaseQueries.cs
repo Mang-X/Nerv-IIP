@@ -40,6 +40,14 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
         var versions = await query
             .OrderBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
+            .Select(x => new
+            {
+                x.BomCode,
+                x.Revision,
+                x.ParentItemCode,
+                x.Status,
+                x.EffectiveDate,
+            })
             .ToArrayAsync(cancellationToken);
 
         var items = versions
@@ -86,6 +94,14 @@ public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
         var versions = await query
             .OrderBy(x => x.RoutingCode)
             .ThenBy(x => x.Revision)
+            .Select(x => new
+            {
+                x.RoutingCode,
+                x.Revision,
+                x.SkuCode,
+                x.Status,
+                x.EffectiveDate,
+            })
             .ToArrayAsync(cancellationToken);
 
         var items = versions

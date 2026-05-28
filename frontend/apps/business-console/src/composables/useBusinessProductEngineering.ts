@@ -12,6 +12,7 @@ import {
   type BusinessConsoleRoutingItem,
   type BusinessConsoleRoutingListEnvelope,
 } from '@nerv-iip/api-client'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 
@@ -33,21 +34,21 @@ export interface EngineeringResolveFilters {
   lotSize: number
 }
 
-function defaultListFilters(): EngineeringListFilters {
+function defaultListFilters(organizationId: string, environmentId: string): EngineeringListFilters {
   return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
+    organizationId,
+    environmentId,
     bomStatus: 'Released',
     routingStatus: 'Released',
     productionVersionStatus: 'active',
   })
 }
 
-function defaultResolveFilters(): EngineeringResolveFilters {
+function defaultResolveFilters(organizationId: string, environmentId: string): EngineeringResolveFilters {
   return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-    skuCode: 'FG-FRONT-SHOCK',
+    organizationId,
+    environmentId,
+    skuCode: '',
     effectiveDate: new Date().toISOString().slice(0, 10),
     lotSize: 100,
   })
@@ -76,8 +77,10 @@ function unwrapResolved(
 }
 
 export function useBusinessProductEngineering() {
-  const filters = defaultListFilters()
-  const resolveFilters = defaultResolveFilters()
+  const context = useBusinessContextStore()
+  const filters = defaultListFilters(context.organizationId, context.environmentId)
+  const resolveFilters = defaultResolveFilters(context.organizationId, context.environmentId)
+  const resolveEnabled = computed(() => resolveFilters.skuCode.trim().length > 0)
 
   const bomsQuery = useQuery(() =>
     listBusinessConsoleEngineeringBomsQueryOptions({
@@ -109,8 +112,8 @@ export function useBusinessProductEngineering() {
       },
     }),
   )
-  const resolveQuery = useQuery(() =>
-    resolveBusinessConsoleEngineeringProductionVersionQueryOptions({
+  const resolveQuery = useQuery(() => ({
+    ...resolveBusinessConsoleEngineeringProductionVersionQueryOptions({
       query: {
         organizationId: resolveFilters.organizationId,
         environmentId: resolveFilters.environmentId,
@@ -119,7 +122,8 @@ export function useBusinessProductEngineering() {
         lotSize: resolveFilters.lotSize,
       },
     }),
-  )
+    enabled: resolveEnabled.value,
+  }))
 
   return {
     boms: computed<BusinessConsoleEngineeringBomItem[]>(() =>
@@ -136,12 +140,17 @@ export function useBusinessProductEngineering() {
     productionVersionsError: productionVersionsQuery.error,
     productionVersionsPending: productionVersionsQuery.isLoading,
     refreshEngineering: async () => {
-      await Promise.all([
+      const queries: Array<Promise<unknown>> = [
         bomsQuery.refetch(),
         routingsQuery.refetch(),
         productionVersionsQuery.refetch(),
-        resolveQuery.refetch(),
-      ])
+      ]
+
+      if (resolveEnabled.value) {
+        queries.push(resolveQuery.refetch())
+      }
+
+      await Promise.all(queries)
     },
     resolvedProductionVersion: computed(() =>
       unwrapResolved(resolveQuery.data.value as BusinessConsoleResolveProductionVersionEnvelope | undefined),

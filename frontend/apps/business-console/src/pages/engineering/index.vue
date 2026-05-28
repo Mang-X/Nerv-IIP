@@ -66,7 +66,7 @@ const errorMessage = computed(
 const releasedBomCount = computed(() => boms.value.filter((item) => isReleased(item.status)).length)
 const releasedRoutingCount = computed(() => routings.value.filter((item) => isReleased(item.status)).length)
 const activeProductionVersionCount = computed(
-  () => productionVersions.value.filter((item) => item.status === 'active').length,
+  () => productionVersions.value.filter((item) => item.status?.toLowerCase() === 'active').length,
 )
 const statusOptions = [
   { label: '已发布', value: 'Released' },
@@ -143,7 +143,7 @@ function formatError(error: unknown) {
             <Input
               id="engineering-sku"
               v-model="filters.skuCode"
-              placeholder="FG-FRONT-SHOCK"
+              placeholder="输入 SKU"
             />
           </Field>
           <Field>

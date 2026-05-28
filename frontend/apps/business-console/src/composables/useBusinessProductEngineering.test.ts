@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 import {
   listBusinessConsoleEngineeringBomsQueryOptions,
@@ -7,10 +8,12 @@ import {
   listBusinessConsoleEngineeringRoutingsQueryOptions,
   resolveBusinessConsoleEngineeringProductionVersionQueryOptions,
 } from '@nerv-iip/api-client'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import { useBusinessProductEngineering } from './useBusinessProductEngineering'
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
+  queryOptionsById: new Map<string, { enabled?: boolean }>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -37,6 +40,7 @@ vi.mock('@pinia/colada', () => ({
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    coladaState.queryOptionsById.set(id, options)
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
@@ -49,8 +53,10 @@ vi.mock('@pinia/colada', () => ({
 
 describe('business product engineering composable', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.queryDataById.clear()
+    coladaState.queryOptionsById.clear()
   })
 
   it('loads only released BOMs, routings, and active production versions by default', () => {
@@ -101,7 +107,51 @@ describe('business product engineering composable', () => {
     expect(productionVersions.value).toHaveLength(1)
   })
 
-  it('resolves the released production version for the selected SKU, date, and lot size', () => {
+  it('uses the business context store for organization and environment filters', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({
+      organizationId: 'org-002',
+      environmentId: 'prod',
+    })
+
+    useBusinessProductEngineering()
+
+    expect(listBusinessConsoleEngineeringBomsQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-002',
+        environmentId: 'prod',
+        status: 'Released',
+      },
+    })
+    expect(resolveBusinessConsoleEngineeringProductionVersionQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-002',
+        environmentId: 'prod',
+        skuCode: '',
+        effectiveDate: expect.any(String),
+        lotSize: 100,
+      },
+    })
+  })
+
+  it('does not resolve a production version until a SKU is selected', () => {
+    const { resolveFilters } = useBusinessProductEngineering()
+
+    expect(resolveBusinessConsoleEngineeringProductionVersionQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skuCode: '',
+        effectiveDate: expect.any(String),
+        lotSize: 100,
+      },
+    })
+    expect(resolveFilters.skuCode).toBe('')
+    expect(coladaState.queryOptionsById.get('resolveBusinessConsoleEngineeringProductionVersion')?.enabled)
+      .toBe(false)
+  })
+
+  it('unwraps a successful resolved production version envelope without a default SKU', () => {
     coladaState.queryDataById.set('resolveBusinessConsoleEngineeringProductionVersion', {
       success: true,
       data: {
@@ -119,12 +169,12 @@ describe('business product engineering composable', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        skuCode: 'FG-FRONT-SHOCK',
+        skuCode: '',
         effectiveDate: expect.any(String),
         lotSize: 100,
       },
     })
-    expect(resolveFilters.skuCode).toBe('FG-FRONT-SHOCK')
+    expect(resolveFilters.skuCode).toBe('')
     expect(resolvedProductionVersion.value?.productionVersionId).toBe('pv-front')
   })
 })

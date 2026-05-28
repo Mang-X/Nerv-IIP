@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -134,11 +135,11 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2026-05-28&lotSize=100");
+        var response = await client.GetAsync("/api/business-console/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", engineering.LastInternalToken);
-        Assert.Equal(new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2026-05-28"), 100), engineering.LastResolveRequest);
+        Assert.Equal(new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2025-01-15"), 100), engineering.LastResolveRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("pv-front-001", document.RootElement.GetProperty("data").GetProperty("productionVersionId").GetString());
         Assert.Equal("active", document.RootElement.GetProperty("data").GetProperty("status").GetString());
@@ -426,13 +427,40 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
         await client.ResolveProductionVersionAsync(
             "internal-token-001",
-            new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2026-05-28"), 100),
+            new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2025-01-15"), 100),
             CancellationToken.None);
 
         Assert.Equal("/api/business/v1/engineering/production-versions?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&status=active", handler.Requests[0].RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", handler.Requests[0].Headers.Authorization!.Parameter);
-        Assert.Equal("/api/business/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2026-05-28&lotSize=100", handler.Requests[1].RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100", handler.Requests[1].RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", handler.Requests[1].Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Product_engineering_http_client_formats_decimal_query_values_with_invariant_culture()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
+        try
+        {
+            var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, ResponseForEngineeringRequest(request)));
+            using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://engineering.local") };
+            var client = new HttpBusinessProductEngineeringClient(httpClient);
+
+            await client.ResolveProductionVersionAsync(
+                "internal-token-001",
+                new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2025-01-15"), 100.5m),
+                CancellationToken.None);
+
+            Assert.Equal("/api/business/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100.5", handler.Requests.Single().RequestUri!.PathAndQuery);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
     }
 
     [Fact]
@@ -782,7 +810,7 @@ public sealed class BusinessGatewayProxyTests
                     skuCode = "FG-FRONT-SHOCK",
                     mbomVersionId = "mbom-front-r1",
                     routingVersionId = "routing-front-r1",
-                    effectiveDate = "2026-05-28",
+                    effectiveDate = "2025-01-15",
                     lotSize = 100,
                     status = "active",
                 },

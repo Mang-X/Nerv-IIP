@@ -1,3 +1,4 @@
+using DotNetCore.CAP;
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Authentication;
@@ -80,6 +81,14 @@ public sealed class ProductEngineeringStartupGovernanceTests
             .Get(JwtBearerDefaults.AuthenticationScheme);
 
         Assert.True(options.RequireHttpsMetadata);
+    }
+
+    [Fact]
+    public async Task Testing_environment_does_not_register_cap_runtime()
+    {
+        await using var factory = CreateFactory();
+
+        Assert.Empty(factory.Services.GetServices<ICapPublisher>());
     }
 
     private static WebApplicationFactory<Program> CreateFactory(
