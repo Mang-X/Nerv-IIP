@@ -320,6 +320,98 @@ function Invoke-DotNet {
     Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
 }
 
+function Invoke-NativeCommandOutput {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Command,
+
+        [string[]] $Arguments = @(),
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [int] $TimeoutSeconds = 60,
+
+        [string] $Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        $Name = [System.IO.Path]::GetFileNameWithoutExtension($Command)
+    }
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Command
+    $startInfo.WorkingDirectory = $WorkingDirectory
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    foreach ($argument in $Arguments) {
+        [void] $startInfo.ArgumentList.Add($argument)
+    }
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+
+    try {
+        $displayArguments = Protect-ScriptAutomationText ($Arguments -join ' ')
+        Write-Diagnostic "Reading command output for $Name`: $Command $displayArguments (cwd=$WorkingDirectory)"
+
+        if (-not $process.Start()) {
+            throw "Failed to start command '$Command'."
+        }
+
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            Stop-ProcessTree -ProcessId $process.Id -Reason "Timeout while reading output for $Command" | Out-Null
+            throw "Command '$Command' timed out after $TimeoutSeconds seconds while reading output."
+        }
+
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+
+        if ($process.ExitCode -ne 0) {
+            throw "Command '$Command' exited with $($process.ExitCode). Output: $(Protect-ScriptAutomationText (($stdout, $stderr) -join [Environment]::NewLine))"
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+            Write-Diagnostic -Level 'WARN' -Message "Stderr from ${Name}: $stderr"
+        }
+
+        return [pscustomobject]@{
+            Command = $Command
+            Arguments = $Arguments
+            WorkingDirectory = $WorkingDirectory
+            ExitCode = $process.ExitCode
+            Stdout = $stdout
+            Stderr = $stderr
+        }
+    }
+    finally {
+        if ($process -and -not $process.HasExited) {
+            Stop-ProcessTree -ProcessId $process.Id -Reason "Finally cleanup for output command $Command" | Out-Null
+        }
+
+        $process.Dispose()
+    }
+}
+
+function Invoke-DotNetOutput {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [int] $TimeoutSeconds = 60,
+
+        [string] $Name = 'dotnet'
+    )
+
+    Invoke-NativeCommandOutput -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+}
+
 function Invoke-NativeCommandInteractive {
     param(
         [Parameter(Mandatory)]

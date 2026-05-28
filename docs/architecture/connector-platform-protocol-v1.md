@@ -48,21 +48,27 @@ Connector Host 机器身份认证、短期 access token、capability scope 到 p
 ### Ops.Web
 
 1. POST /api/ops/v1/operation-tasks
-作用：创建低风险 OperationTask，并记录任务请求审计事实。
+作用：创建 OperationTask，并记录任务请求审计事实；如果匹配的 operation template `RequiresApproval=true`，任务先进入 `approval-pending`。
 
 2. GET /api/ops/v1/operation-tasks/{operationTaskId}
 作用：查询 OperationTask、OperationAttempt 与 AuditRecord 明细。
 
-3. POST /api/ops/v1/operation-tasks/claims
+3. POST /api/ops/v1/operation-tasks/{operationTaskId}/approval/approve
+作用：批准高风险 OperationTask，使任务从 `approval-pending` 回到 `queued`，随后才可被 Connector Host 领取。
+
+4. POST /api/ops/v1/operation-tasks/{operationTaskId}/approval/reject
+作用：拒绝高风险 OperationTask，使任务进入 `rejected` 终态，不再进入执行队列。
+
+5. POST /api/ops/v1/operation-tasks/claims
 作用：Connector Host 按 organizationId、environmentId 和 connectorHostId 原子领取待执行任务，并获得 leaseId、leasedAtUtc、leasedUntilUtc、attemptNo 和 maxAttempts。GET /api/ops/v1/operation-tasks/pending 仅作为第二阶段兼容入口，语义等同于默认 5 分钟 lease 的 claim。
 
-4. POST /api/ops/v1/operation-tasks/{operationTaskId}/lease/heartbeat
+6. POST /api/ops/v1/operation-tasks/{operationTaskId}/lease/heartbeat
 作用：Connector Host 使用当前 leaseId 续期 leasedUntilUtc；leaseId、connectorHostId、organizationId 和 environmentId 必须匹配当前 active attempt。
 
-5. POST /api/ops/v1/operation-tasks/{operationTaskId}/lease/abandon
+7. POST /api/ops/v1/operation-tasks/{operationTaskId}/lease/abandon
 作用：Connector Host 使用当前 leaseId 主动放弃任务，写入 abandonReason；未耗尽 maxAttempts 时任务回到 queued，耗尽后转 failed。
 
-6. POST /api/ops/v1/operation-results
+8. POST /api/ops/v1/operation-results
 作用：接收 Connector Host 回传的执行结果，写入 OperationTask、OperationAttempt 与 AuditRecord；实例最终状态仍以后续状态同步驱动 AppHub 更新。
 
 ## 最小契约对象

@@ -5,8 +5,21 @@ public sealed record RefreshRequest(string RefreshToken);
 public sealed record LogoutRequest(string? SessionId);
 public sealed record ValidateConnectorCredentialRequest(string ConnectorHostId, string Secret);
 public sealed record ClientCredentialsTokenRequest(string ClientId, string ClientSecret, string? Scope);
+public sealed record OidcLoginCallbackRequest(
+    string Provider,
+    string Subject,
+    string Email,
+    string OrganizationId,
+    string EnvironmentId,
+    string CallbackSecret);
+public sealed record MfaChallengeVerifyRequest(string Code);
 public sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
 public sealed record ClientCredentialsTokenResponse(string AccessToken, string TokenType, DateTimeOffset ExpiresAtUtc, string Scope);
+public sealed record EnterpriseAuthResponse(bool MfaRequired, string? MfaChallengeId, AuthResponse? Session)
+{
+    public static EnterpriseAuthResponse Challenge(string challengeId) => new(true, challengeId, null);
+    public static EnterpriseAuthResponse Authenticated(AuthResponse session) => new(false, null, session);
+}
 public sealed record CurrentPrincipalResponse(
     string UserId,
     string LoginName,
@@ -57,10 +70,25 @@ public interface IIamAuthService
         string? scope,
         CancellationToken cancellationToken);
 
+    Task<EnterpriseAuthResponse> HandleOidcCallbackAsync(
+        OidcLoginCallbackRequest request,
+        string? clientInfo,
+        string? ipAddress,
+        CancellationToken cancellationToken);
+
+    Task<EnterpriseAuthResponse> VerifyMfaChallengeAsync(
+        string challengeId,
+        string code,
+        string? clientInfo,
+        string? ipAddress,
+        CancellationToken cancellationToken);
+
     Task<bool> PrincipalHasPermissionAsync(
         CurrentPrincipalResponse principal,
         string organizationId,
         string environmentId,
         string permissionCode,
+        string? resourceType,
+        string? resourceId,
         CancellationToken cancellationToken);
 }

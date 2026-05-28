@@ -13,8 +13,10 @@ export const demoSkus: BusinessConsoleResourceItem[] = [
   { resourceType: 'sku', code: 'FG-SAD-RR-001', displayName: '后减振器总成', active: true, snapshotVersion: '2026.05' },
   { resourceType: 'sku', code: 'SA-PISTON-32', displayName: '活塞杆 32mm 镀铬', active: true, snapshotVersion: '2026.05' },
   { resourceType: 'sku', code: 'SA-TUBE-45', displayName: '外筒 45mm 喷涂件', active: true, snapshotVersion: '2026.05' },
+  { resourceType: 'sku', code: 'SA-VALVE-A', displayName: '阀系组件 A 型', active: true, snapshotVersion: '2026.05' },
   { resourceType: 'sku', code: 'SA-OIL-HV32', displayName: '减振器油 HV32', active: true, snapshotVersion: '2026.05' },
   { resourceType: 'sku', code: 'SA-SEAL-KIT-A', displayName: '油封组件 A 型', active: true, snapshotVersion: '2026.05' },
+  { resourceType: 'sku', code: 'PK-SAD-CARTON', displayName: '减振器总成包装箱', active: true, snapshotVersion: '2026.05' },
 ]
 
 export const demoResourceGroups: { key: string; title: string; rows: BusinessConsoleResourceItem[] }[] = [
@@ -54,14 +56,48 @@ export const demoResourceGroups: { key: string; title: string; rows: BusinessCon
     ],
   },
   {
-    key: 'device',
+    key: 'device-asset',
     title: '设备',
     rows: [
-      { resourceType: 'device', code: 'EQ-WELD-01', displayName: '环焊机 01', active: true, snapshotVersion: '2026.05' },
-      { resourceType: 'device', code: 'EQ-FILL-02', displayName: '真空注油机 02', active: true, snapshotVersion: '2026.05' },
-      { resourceType: 'device', code: 'EQ-TEST-01', displayName: '阻尼力试验台 01', active: true, snapshotVersion: '2026.05' },
+      { resourceType: 'device-asset', code: 'EQ-WELD-01', displayName: '环焊机 01', active: true, snapshotVersion: '2026.05' },
+      { resourceType: 'device-asset', code: 'EQ-ROD-ASM-01', displayName: '活塞杆装配台 01', active: true, snapshotVersion: '2026.05' },
+      { resourceType: 'device-asset', code: 'EQ-FILL-02', displayName: '真空注油机 02', active: true, snapshotVersion: '2026.05' },
+      { resourceType: 'device-asset', code: 'EQ-TEST-01', displayName: '阻尼力试验台 01', active: true, snapshotVersion: '2026.05' },
     ],
   },
+  {
+    key: 'work-calendar',
+    title: '工作日历',
+    rows: [
+      { resourceType: 'work-calendar', code: 'CAL-SAD-STD', displayName: '减振器标准双班日历', active: true, snapshotVersion: '2026.05' },
+    ],
+  },
+  {
+    key: 'team',
+    title: '班组',
+    rows: [
+      { resourceType: 'team', code: 'TEAM-FRT-DAY', displayName: '前减 A 线白班组', active: true, snapshotVersion: '2026.05' },
+      { resourceType: 'team', code: 'TEAM-RR-NIGHT', displayName: '后减 B 线夜班组', active: true, snapshotVersion: '2026.05' },
+    ],
+  },
+  {
+    key: 'personnel-skill',
+    title: '人员技能',
+    rows: [
+      { resourceType: 'personnel-skill', code: 'user-ops-01:WELD', displayName: '焊接操作 L2', active: true, snapshotVersion: '2026.05' },
+      { resourceType: 'personnel-skill', code: 'user-ops-02:FILL_SEAL', displayName: '注油封口 L2', active: true, snapshotVersion: '2026.05' },
+      { resourceType: 'personnel-skill', code: 'user-quality-01:DAMP_TEST', displayName: '阻尼测试判定 L3', active: true, snapshotVersion: '2026.05' },
+    ],
+  },
+]
+
+export const demoPartners: (BusinessConsoleResourceItem & { role: 'customer' | 'supplier' })[] = [
+  { resourceType: 'business-partner', code: 'CUST-GAC', displayName: '广汽乘用车', active: true, snapshotVersion: '2026.05', role: 'customer' },
+  { resourceType: 'business-partner', code: 'CUST-BYD-CHASSIS', displayName: '比亚迪底盘事业部', active: true, snapshotVersion: '2026.05', role: 'customer' },
+  { resourceType: 'business-partner', code: 'SUP-PISTON-HD', displayName: '华东活塞杆', active: true, snapshotVersion: '2026.05', role: 'supplier' },
+  { resourceType: 'business-partner', code: 'SUP-SEAL-NB', displayName: '宁波密封件', active: true, snapshotVersion: '2026.05', role: 'supplier' },
+  { resourceType: 'business-partner', code: 'SUP-OIL-CC', displayName: '长城润滑油', active: true, snapshotVersion: '2026.05', role: 'supplier' },
+  { resourceType: 'business-partner', code: 'SUP-PACK-HZ', displayName: '杭州包装材料', active: true, snapshotVersion: '2026.05', role: 'supplier' },
 ]
 
 export function demoResourcesOf(resourceType: string) {

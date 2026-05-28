@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
+  FieldDescription,
   FieldGroup,
   FieldLabel,
   Input,
@@ -297,6 +298,13 @@ function isNonEmpty(value: string) {
                 <BusinessFormStatus :error="createErrorMessage" />
 
                 <FieldGroup class="grid gap-3 sm:grid-cols-2">
+                  <Field>
+                    <FieldLabel>物料编号</FieldLabel>
+                    <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                      保存后由系统分配
+                    </div>
+                    <FieldDescription>普通建档不需要填写系统编号。</FieldDescription>
+                  </Field>
                   <Field :data-invalid="!isNonEmpty(createForm.name)">
                     <FieldLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldLabel>
                     <Input id="sku-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />

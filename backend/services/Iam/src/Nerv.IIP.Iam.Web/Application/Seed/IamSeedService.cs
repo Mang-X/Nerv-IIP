@@ -168,6 +168,8 @@ public sealed class IamSeedService(
                         organizationId,
                         environmentId,
                         permissionCode,
+                        "*",
+                        "*",
                         now.AddDays(-1),
                         null));
                 }

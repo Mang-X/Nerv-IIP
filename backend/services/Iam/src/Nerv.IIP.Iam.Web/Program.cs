@@ -30,6 +30,8 @@ builder.Services.AddNervIipObservability(builder.Configuration, "iam");
 builder.Services.AddNervIipLocalization();
 builder.Services.AddIamPersistence(builder.Configuration);
 builder.Services.Configure<IamSeedOptions>(builder.Configuration.GetSection("Iam:Seed"));
+builder.Services.Configure<EnterpriseIdentityOptions>(builder.Configuration.GetSection("Iam:EnterpriseIdentity"));
+builder.Services.AddSingleton<IMfaChallengeStore, InMemoryMfaChallengeStore>();
 builder.Services.AddScoped<IamPasswordService>();
 builder.Services.AddScoped<IamTokenService>();
 if (usesPostgreSql)
@@ -72,6 +74,14 @@ if (!builder.Environment.IsDevelopment()
     && (configuredAccessTokenMinutes < 1 || configuredAccessTokenMinutes > 60))
 {
     throw new InvalidOperationException("Iam:Jwt:AccessTokenMinutes must be between 1 and 60 outside Development.");
+}
+var enterpriseIdentityOptions = builder.Configuration
+    .GetSection("Iam:EnterpriseIdentity")
+    .Get<EnterpriseIdentityOptions>() ?? new EnterpriseIdentityOptions();
+if (!builder.Environment.IsDevelopment()
+    && string.Equals(enterpriseIdentityOptions.Mfa.DevelopmentCode, "000000", StringComparison.Ordinal))
+{
+    throw new InvalidOperationException("Iam:EnterpriseIdentity:Mfa:DevelopmentCode must be overridden outside Development.");
 }
 
 var app = builder.Build();

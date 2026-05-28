@@ -24,6 +24,12 @@ export interface MasterDataResourceFilters extends MasterDataListFilters {
   resourceType: string
 }
 
+export interface BusinessMasterDataGroupDefinition {
+  key: string
+  title: string
+  resourceType?: string
+}
+
 function defaultContext(): BusinessContextFilters {
   return reactive({
     organizationId: 'org-001',
@@ -127,5 +133,36 @@ export function useBusinessMasterDataResources(resourceType: string) {
     ),
     resourcesError: resourcesQuery.error,
     resourcesPending: resourcesQuery.isLoading,
+  }
+}
+
+export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroupDefinition[]) {
+  const filters = defaultListFilters()
+  const queries = definitions.map((definition) =>
+    useQuery(() =>
+      listBusinessConsoleMasterDataResourcesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          resourceType: definition.resourceType ?? definition.key,
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
+          take: DEFAULT_TAKE,
+        },
+      }),
+    ),
+  )
+
+  return {
+    filters,
+    groups: computed(() =>
+      definitions.map((definition, index) => ({
+        ...definition,
+        resourceType: definition.resourceType ?? definition.key,
+        rows: resourceItems(queries[index]?.data.value),
+      })),
+    ),
+    groupsError: computed(() => queries.map((query) => query.error.value).find(Boolean)),
+    groupsPending: computed(() => queries.some((query) => query.isLoading.value)),
+    refreshGroups: () => Promise.all(queries.map((query) => query.refetch())),
   }
 }

@@ -75,6 +75,72 @@ public sealed record OperationTaskRequestedPayload(
     string RequestedBy,
     DateTimeOffset RequestedAtUtc);
 
+public sealed record OperationApprovalRequestedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationApprovalRequestedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationApprovalRequestedPayload(
+    string OperationTaskId,
+    string InstanceKey,
+    string OperationCode,
+    string RequestedBy,
+    DateTimeOffset RequestedAtUtc);
+
+public sealed record OperationApprovalApprovedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationApprovalDecidedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationApprovalRejectedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationApprovalDecidedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationApprovalDecidedPayload(
+    string OperationTaskId,
+    string InstanceKey,
+    string OperationCode,
+    string DecidedBy,
+    string DecisionReason,
+    DateTimeOffset DecidedAtUtc);
+
 public sealed record OperationTaskClaimedIntegrationEvent(
     string EventId,
     string EventType,
