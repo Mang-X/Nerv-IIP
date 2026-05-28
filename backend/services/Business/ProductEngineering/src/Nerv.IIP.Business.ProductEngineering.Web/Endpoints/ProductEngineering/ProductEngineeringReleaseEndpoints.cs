@@ -201,6 +201,23 @@ public sealed class ListEngineeringBomsEndpoint(ISender sender)
     }
 }
 
+public sealed record ListManufacturingBomsRequest(string OrganizationId, string EnvironmentId, string? SkuCode, string? Status);
+
+public sealed class ListManufacturingBomsEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<ListManufacturingBomsRequest, ResponseData<ListManufacturingBomsResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<ListManufacturingBomsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListManufacturingBomsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListManufacturingBomsQuery(req.OrganizationId, req.EnvironmentId, req.SkuCode, req.Status), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
 public sealed record ListRoutingsRequest(string OrganizationId, string EnvironmentId, string? SkuCode, string? Status);
 
 public sealed class ListRoutingsEndpoint(ISender sender)
@@ -236,6 +253,7 @@ public static class ProductEngineeringEndpointContracts
         new(typeof(ReleaseRoutingEndpoint), "POST", "/api/business/v1/engineering/routings/release", EngineeringPermissionCodes.RoutingsManage, "releaseBusinessRouting"),
         new(typeof(ReleaseEngineeringChangeEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/release", EngineeringPermissionCodes.ChangesManage, "releaseBusinessEngineeringChange"),
         new(typeof(ListEngineeringBomsEndpoint), "GET", "/api/business/v1/engineering/engineering-boms", EngineeringPermissionCodes.BomsRead, "listBusinessEngineeringBoms"),
+        new(typeof(ListManufacturingBomsEndpoint), "GET", "/api/business/v1/engineering/manufacturing-boms", EngineeringPermissionCodes.BomsRead, "listBusinessManufacturingBoms"),
         new(typeof(ListRoutingsEndpoint), "GET", "/api/business/v1/engineering/routings", EngineeringPermissionCodes.RoutingsRead, "listBusinessRoutings"),
     ];
 

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Globalization;
 using System.Text.Json;
 using Nerv.IIP.Sdk.Core;
 
@@ -93,6 +94,45 @@ public interface IBusinessProductEngineeringClient
     Task<BusinessConsoleResolveProductionVersionResponse> ResolveProductionVersionAsync(
         string internalBearerToken,
         BusinessConsoleResolveProductionVersionRequest request,
+        CancellationToken cancellationToken);
+}
+
+public interface IBusinessPlanningClient
+{
+    Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleDemandSourceResponse> CreateOrUpdateDemandSourceAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateDemandSourceRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
+        string internalBearerToken,
+        BusinessConsoleRunMrpRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
+        string internalBearerToken,
+        string runId,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsolePlanningSuggestionListResponse> ListSuggestionsAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningSuggestionListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> AcceptSuggestionAsync(
+        string internalBearerToken,
+        string suggestionId,
+        BusinessConsoleAcceptPlanningSuggestionRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -837,6 +877,220 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
                 ("lotSize", request.LotSize)),
             null,
             cancellationToken);
+}
+
+public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
+    : BusinessServiceHttpClient(httpClient), IBusinessPlanningClient
+{
+    public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningContextRequest request,
+        CancellationToken cancellationToken) =>
+        ListDemandSourcesCoreAsync(internalBearerToken, request, cancellationToken);
+
+    private async Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesCoreAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        var items = await SendAsync<IReadOnlyCollection<BusinessConsoleDemandSourceResponse>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/planning/demands?" + PlanningContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+        return new BusinessConsoleDemandSourceListResponse(items);
+    }
+
+    public async Task<BusinessConsoleDemandSourceResponse> CreateOrUpdateDemandSourceAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateDemandSourceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateOrUpdateDemandSourceResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/planning/demands",
+            request,
+            cancellationToken);
+        return new BusinessConsoleDemandSourceResponse(
+            response.DemandSourceId,
+            request.SourceReference ?? response.DemandSourceId,
+            request.DemandType,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.Quantity,
+            request.DueDate);
+    }
+
+    public async Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
+        string internalBearerToken,
+        BusinessConsoleRunMrpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamRunMrpResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/planning/mrp-runs",
+            request,
+            cancellationToken);
+        return new BusinessConsoleRunMrpResponse(Convert.ToString(response.RunId, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty, response.SuggestionCount);
+    }
+
+    public Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningContextRequest request,
+        CancellationToken cancellationToken) =>
+        ListMrpRunsCoreAsync(internalBearerToken, request, cancellationToken);
+
+    private async Task<BusinessConsoleMrpRunListResponse> ListMrpRunsCoreAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        var items = await SendAsync<IReadOnlyCollection<DownstreamMrpRunItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/planning/mrp-runs?" + PlanningContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+        return new BusinessConsoleMrpRunListResponse(items.Select(x => new BusinessConsoleMrpRunItem(
+            x.RunId,
+            x.HorizonStart,
+            x.HorizonEnd,
+            MrpRunStatusName(x.Status),
+            x.DemandCount,
+            x.AvailabilityCount,
+            x.SuggestionCount,
+            x.ProductionEngineeringSnapshotSource,
+            x.InventorySnapshotSource)).ToArray());
+    }
+
+    public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
+        string internalBearerToken,
+        string runId,
+        CancellationToken cancellationToken) =>
+        ListMrpPeggingCoreAsync(internalBearerToken, runId, cancellationToken);
+
+    private async Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingCoreAsync(
+        string internalBearerToken,
+        string runId,
+        CancellationToken cancellationToken)
+    {
+        var items = await SendAsync<IReadOnlyCollection<BusinessConsoleMrpPeggingItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/planning/mrp-runs/{Uri.EscapeDataString(runId)}/pegging",
+            null,
+            cancellationToken);
+        return new BusinessConsoleMrpPeggingListResponse(items);
+    }
+
+    public Task<BusinessConsolePlanningSuggestionListResponse> ListSuggestionsAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningSuggestionListRequest request,
+        CancellationToken cancellationToken) =>
+        ListSuggestionsCoreAsync(internalBearerToken, request, cancellationToken);
+
+    private async Task<BusinessConsolePlanningSuggestionListResponse> ListSuggestionsCoreAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningSuggestionListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var items = await SendAsync<IReadOnlyCollection<DownstreamPlanningSuggestionItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/planning/suggestions?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", request.Status)),
+            null,
+            cancellationToken);
+        return new BusinessConsolePlanningSuggestionListResponse(items.Select(x => new BusinessConsolePlanningSuggestionItem(
+            x.SuggestionId,
+            x.MrpRunId,
+            x.SuggestionType,
+            x.SkuCode,
+            x.UomCode,
+            x.SiteCode,
+            x.Quantity,
+            x.RequiredDate,
+            PlanningSuggestionStatusName(x.Status),
+            x.ReasonCode)).ToArray());
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> AcceptSuggestionAsync(
+        string internalBearerToken,
+        string suggestionId,
+        BusinessConsoleAcceptPlanningSuggestionRequest request,
+        CancellationToken cancellationToken) =>
+        AcceptSuggestionCoreAsync(internalBearerToken, suggestionId, request, cancellationToken);
+
+    private async Task<BusinessConsoleAcceptedResponse> AcceptSuggestionCoreAsync(
+        string internalBearerToken,
+        string suggestionId,
+        BusinessConsoleAcceptPlanningSuggestionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/planning/suggestions/{Uri.EscapeDataString(suggestionId)}/accept",
+            request,
+            cancellationToken);
+        return new BusinessConsoleAcceptedResponse(
+            string.Equals(result, "accepted", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string PlanningContextQuery(string organizationId, string environmentId) =>
+        Query(("organizationId", organizationId), ("environmentId", environmentId));
+
+    private static string MrpRunStatusName(int status) =>
+        status switch
+        {
+            0 => "Created",
+            1 => "Running",
+            2 => "Completed",
+            _ => status.ToString(CultureInfo.InvariantCulture),
+        };
+
+    private static string PlanningSuggestionStatusName(int status) =>
+        status switch
+        {
+            0 => "Open",
+            1 => "Accepted",
+            2 => "Rejected",
+            3 => "Closed",
+            _ => status.ToString(CultureInfo.InvariantCulture),
+        };
+
+    private sealed record DownstreamCreateOrUpdateDemandSourceResponse(string DemandSourceId);
+
+    private sealed record DownstreamRunMrpResponse(object RunId, int SuggestionCount);
+
+    private sealed record DownstreamMrpRunItem(
+        string RunId,
+        DateOnly HorizonStart,
+        DateOnly HorizonEnd,
+        int Status,
+        int DemandCount,
+        int AvailabilityCount,
+        int SuggestionCount,
+        string ProductionEngineeringSnapshotSource,
+        string InventorySnapshotSource);
+
+    private sealed record DownstreamPlanningSuggestionItem(
+        string SuggestionId,
+        string MrpRunId,
+        string SuggestionType,
+        string SkuCode,
+        string UomCode,
+        string SiteCode,
+        decimal Quantity,
+        DateOnly RequiredDate,
+        int Status,
+        string ReasonCode);
 }
 
 public sealed class HttpBusinessMesClient(HttpClient httpClient)

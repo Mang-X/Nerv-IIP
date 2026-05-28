@@ -55,6 +55,11 @@ public static class BusinessGatewayPermissions
     public const string EngineeringBomsRead = "business.engineering.boms.read";
     public const string EngineeringRoutingsRead = "business.engineering.routings.read";
     public const string EngineeringProductionVersionsRead = "business.engineering.production-versions.read";
+    public const string PlanningDemandsRead = "business.planning.demands.read";
+    public const string PlanningDemandsManage = "business.planning.demands.manage";
+    public const string PlanningMrpRead = "business.planning.mrp.read";
+    public const string PlanningMrpRun = "business.planning.mrp.run";
+    public const string PlanningSuggestionsManage = "business.planning.suggestions.manage";
     public const string MesFoundationRead = "business.mes.foundation.read";
     public const string MesOverviewRead = "business.mes.overview.read";
     public const string MesPlansRead = "business.mes.plans.read";

@@ -6,6 +6,7 @@
 #   Writes:
 #     - frontend/packages/api-client/openapi/platform-gateway.v1.json
 #     - frontend/packages/api-client/openapi/business-gateway-console.v1.json
+#     - artifacts/openapi-export/**
 #     - artifacts/script-logs/export-gateway-openapi/**
 #   Cleanup:
 #     - Stops managed gateway process trees
@@ -47,6 +48,18 @@ function Wait-Healthy {
   throw "Service did not become healthy at $Uri"
 }
 
+function Get-AvailableLoopbackUrl {
+  $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+  try {
+    $listener.Start()
+    $port = $listener.LocalEndpoint.Port
+    return "http://127.0.0.1:$port"
+  }
+  finally {
+    $listener.Stop()
+  }
+}
+
 function Export-GatewayOpenApi {
   param(
     [Parameter(Mandatory)]
@@ -64,15 +77,17 @@ function Export-GatewayOpenApi {
     [hashtable] $Environment = @{}
   )
 
+  $assemblyName = [System.IO.Path]::GetFileNameWithoutExtension($ProjectPath)
+  $buildOutputDirectory = Join-Path $root "artifacts/openapi-export/$Name"
+  New-Item -ItemType Directory -Force -Path $buildOutputDirectory | Out-Null
+
   Invoke-DotNet `
-    -Arguments @("build", $ProjectPath) `
+    -Arguments @("build", $ProjectPath, "-o", $buildOutputDirectory, "/p:UseSharedCompilation=false") `
     -WorkingDirectory $root `
     -TimeoutSeconds 600 `
     -Name "export-gateway-openapi-$Name-build" | Out-Null
 
-  $projectDirectory = Split-Path -Parent $ProjectPath
-  $assemblyName = [System.IO.Path]::GetFileNameWithoutExtension($ProjectPath)
-  $assemblyPath = Join-Path $projectDirectory "bin/Debug/net10.0/$assemblyName.dll"
+  $assemblyPath = Join-Path $buildOutputDirectory "$assemblyName.dll"
   if (-not (Test-Path -LiteralPath $assemblyPath -PathType Leaf)) {
     throw "Built gateway assembly was not found: $assemblyPath"
   }
@@ -112,11 +127,11 @@ function Export-GatewayOpenApi {
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $openApiDirectory = Join-Path $root "frontend/packages/api-client/openapi"
 
-$gatewayUrl = "http://127.0.0.1:58204"
+$gatewayUrl = Get-AvailableLoopbackUrl
 $gatewayProject = Join-Path $root "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj"
 $platformOutput = Join-Path $openApiDirectory "platform-gateway.v1.json"
 
-$businessGatewayUrl = "http://127.0.0.1:58205"
+$businessGatewayUrl = Get-AvailableLoopbackUrl
 $businessGatewayProject = Join-Path $root "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj"
 $businessOutput = Join-Path $openApiDirectory "business-gateway-console.v1.json"
 
@@ -141,5 +156,6 @@ Export-GatewayOpenApi `
     "MasterData__BaseUrl" = "http://127.0.0.1:5107"
     "Inventory__BaseUrl" = "http://127.0.0.1:5109"
     "Quality__BaseUrl" = "http://127.0.0.1:5110"
+    "DemandPlanning__BaseUrl" = "http://127.0.0.1:5112"
     "Mes__BaseUrl" = "http://127.0.0.1:5111"
   }

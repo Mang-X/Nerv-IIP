@@ -13,6 +13,8 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Context.CAP;
+using NetCorePal.Extensions.DistributedLocks;
+using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Newtonsoft.Json;
 using Prometheus;
 using Serilog;
@@ -35,6 +37,14 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<IPlanningProductEngineeringSnapshotClient, HttpPlanningProductEngineeringSnapshotClient>(client =>
+    {
+        client.BaseAddress = new Uri(builder.Configuration["ProductEngineering:BaseUrl"] ?? "http://localhost:5108");
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<IPlanningInventorySnapshotClient, HttpPlanningInventorySnapshotClient>(client =>
+    {
+        client.BaseAddress = new Uri(builder.Configuration["Inventory:BaseUrl"] ?? "http://localhost:5109");
+    }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
@@ -61,7 +71,16 @@ try
 
     builder.Services.AddDemandPlanningPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<DemandPlanningNumberingService>();
-    builder.Services.AddScoped<IPlanningInputSnapshotProvider, DemandPlanningFixtureInputSnapshotProvider>();
+    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
+    if (string.Equals(builder.Configuration["Planning:InputProvider"], "Fixture", StringComparison.OrdinalIgnoreCase))
+    {
+        builder.Services.AddScoped<IPlanningInputSnapshotProvider, DemandPlanningFixtureInputSnapshotProvider>();
+    }
+    else
+    {
+        builder.Services.AddScoped<IPlanningInputSnapshotProvider, DemandPlanningUpstreamInputSnapshotProvider>();
+    }
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)

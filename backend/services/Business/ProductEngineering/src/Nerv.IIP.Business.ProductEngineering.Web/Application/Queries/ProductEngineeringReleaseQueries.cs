@@ -57,6 +57,71 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
     }
 }
 
+public sealed record ListManufacturingBomsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode,
+    string? Status) : IQuery<ListManufacturingBomsResponse>;
+
+public sealed record ManufacturingBomListItem(
+    string BomCode,
+    string Revision,
+    string SkuCode,
+    string Status,
+    DateOnly? EffectiveDate,
+    IReadOnlyCollection<ManufacturingBomMaterialLineItem> MaterialLines);
+
+public sealed record ManufacturingBomMaterialLineItem(
+    string SkuCode,
+    decimal Quantity,
+    string UnitOfMeasureCode,
+    decimal ScrapRate);
+
+public sealed record ListManufacturingBomsResponse(IReadOnlyCollection<ManufacturingBomListItem> Items);
+
+public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListManufacturingBomsQuery, ListManufacturingBomsResponse>
+{
+    public async Task<ListManufacturingBomsResponse> Handle(ListManufacturingBomsQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.ManufacturingBoms
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (!string.IsNullOrWhiteSpace(request.SkuCode))
+        {
+            query = query.Where(x => x.SkuCode == request.SkuCode);
+        }
+
+        if (Enum.TryParse<EngineeringVersionStatus>(request.Status, true, out var status))
+        {
+            query = query.Where(x => x.Status == status);
+        }
+
+        var versions = await query
+            .OrderBy(x => x.SkuCode)
+            .ThenBy(x => x.BomCode)
+            .ThenBy(x => x.Revision)
+            .Select(x => new ManufacturingBomListItem(
+                x.BomCode,
+                x.Revision,
+                x.SkuCode,
+                x.Status.ToString(),
+                x.EffectiveDate,
+                x.MaterialLines
+                    .OrderBy(line => line.SkuCode)
+                    .Select(line => new ManufacturingBomMaterialLineItem(
+                        line.SkuCode,
+                        line.Quantity,
+                        line.UnitOfMeasureCode,
+                        line.ScrapRate))
+                    .ToArray()))
+            .ToArrayAsync(cancellationToken);
+
+        return new ListManufacturingBomsResponse(versions);
+    }
+}
+
 public sealed record ListRoutingsQuery(
     string OrganizationId,
     string EnvironmentId,

@@ -48,7 +48,9 @@ public sealed record MrpRunResponse(
     MrpRunStatus Status,
     int DemandCount,
     int AvailabilityCount,
-    int SuggestionCount);
+    int SuggestionCount,
+    string ProductionEngineeringSnapshotSource,
+    string InventorySnapshotSource);
 
 public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMrpRunsQuery, IReadOnlyCollection<MrpRunResponse>>
@@ -58,7 +60,16 @@ public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
         return await dbContext.MrpRuns.AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Select(x => new MrpRunResponse(x.Id, x.HorizonStart, x.HorizonEnd, x.Status, x.DemandCount, x.AvailabilityCount, x.SuggestionCount))
+            .Select(x => new MrpRunResponse(
+                x.Id,
+                x.HorizonStart,
+                x.HorizonEnd,
+                x.Status,
+                x.DemandCount,
+                x.AvailabilityCount,
+                x.SuggestionCount,
+                x.ProductionEngineeringSnapshotSource,
+                x.InventorySnapshotSource))
             .ToListAsync(cancellationToken);
     }
 }
@@ -75,6 +86,7 @@ public sealed record PlanningSuggestionResponse(
     decimal Quantity,
     DateOnly RequiredDate,
     PlanningSuggestionStatus Status,
+    string ReasonCode,
     string? AcceptedDownstreamDocumentId);
 
 public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbContext)
@@ -101,6 +113,7 @@ public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbC
                 x.Quantity,
                 x.RequiredDate,
                 x.Status,
+                x.ReasonCode,
                 x.AcceptedDownstreamDocumentId))
             .ToListAsync(cancellationToken);
     }

@@ -145,11 +145,41 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("active", document.RootElement.GetProperty("data").GetProperty("status").GetString());
     }
 
+    [Fact]
+    public async Task Planning_mrp_run_uses_internal_service_token_for_downstream_business_service()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/planning/mrp-runs?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            horizonStart = "2026-05-25",
+            horizonEnd = "2026-06-30",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal(new BusinessConsoleRunMrpRequest("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), planning.LastRunMrpRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("mrp-run-001", document.RootElement.GetProperty("data").GetProperty("runId").GetString());
+    }
+
     [Theory]
     [InlineData("/api/business-console/v1/inventory/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1", "inventory")]
     [InlineData("/api/business-console/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev", "quality")]
     [InlineData("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev", "mes")]
     [InlineData("/api/business-console/v1/engineering/production-versions?organizationId=org-001&environmentId=env-dev&status=active", "engineering")]
+    [InlineData("/api/business-console/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev", "planning")]
     public async Task New_domain_facade_endpoints_do_not_call_downstream_when_iam_denies_permission(
         string path,
         string domain)
@@ -158,6 +188,7 @@ public sealed class BusinessGatewayProxyTests
         var quality = new RecordingQualityClient();
         var mes = new RecordingMesClient();
         var engineering = new RecordingProductEngineeringClient();
+        var planning = new RecordingPlanningClient();
         await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Forbidden(), services =>
         {
             services.RemoveAll<IBusinessInventoryClient>();
@@ -168,6 +199,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessMesClient>(mes);
             services.RemoveAll<IBusinessProductEngineeringClient>();
             services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
         });
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
@@ -175,11 +208,12 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Contains(domain, new[] { "inventory", "quality", "mes", "engineering" });
+        Assert.Contains(domain, new[] { "inventory", "quality", "mes", "engineering", "planning" });
         Assert.Equal(0, inventory.AvailabilityCallCount);
         Assert.Equal(0, quality.NcrListCallCount);
         Assert.Equal(0, mes.WorkOrderListCallCount);
         Assert.Equal(0, engineering.ProductionVersionListCallCount);
+        Assert.Equal(0, planning.SuggestionListCallCount);
     }
 
     [Fact]
@@ -1094,6 +1128,89 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
             request.EffectiveDate,
             request.LotSize,
             "active"));
+    }
+}
+
+internal sealed class RecordingPlanningClient : IBusinessPlanningClient
+{
+    public int SuggestionListCallCount { get; private set; }
+
+    public string? LastInternalToken { get; private set; }
+
+    public BusinessConsoleRunMrpRequest? LastRunMrpRequest { get; private set; }
+
+    public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleDemandSourceListResponse([]));
+    }
+
+    public Task<BusinessConsoleDemandSourceResponse> CreateOrUpdateDemandSourceAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateDemandSourceRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleDemandSourceResponse(
+            "demand-001",
+            request.SourceReference ?? "DEMAND-001",
+            request.DemandType,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.Quantity,
+            request.DueDate));
+    }
+
+    public Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
+        string internalBearerToken,
+        BusinessConsoleRunMrpRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastRunMrpRequest = request;
+        return Task.FromResult(new BusinessConsoleRunMrpResponse("mrp-run-001", 2));
+    }
+
+    public Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMrpRunListResponse([]));
+    }
+
+    public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
+        string internalBearerToken,
+        string runId,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMrpPeggingListResponse([]));
+    }
+
+    public Task<BusinessConsolePlanningSuggestionListResponse> ListSuggestionsAsync(
+        string internalBearerToken,
+        BusinessConsolePlanningSuggestionListRequest request,
+        CancellationToken cancellationToken)
+    {
+        SuggestionListCallCount++;
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsolePlanningSuggestionListResponse([]));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> AcceptSuggestionAsync(
+        string internalBearerToken,
+        string suggestionId,
+        BusinessConsoleAcceptPlanningSuggestionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 }
 
