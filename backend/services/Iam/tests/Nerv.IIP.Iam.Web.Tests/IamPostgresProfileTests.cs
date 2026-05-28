@@ -1,11 +1,16 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Data.Common;
+using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
+using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application.Seed;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
@@ -236,6 +241,74 @@ public sealed class IamPostgresProfileTests
                 Assert.Equal(2, sessionCount);
                 Assert.Equal(1, activeSessionCount);
             }
+        }
+        finally
+        {
+            RestoreEnvironment(environment);
+        }
+    }
+
+    [Fact]
+    public async Task Postgres_refresh_token_consume_rolls_back_when_session_read_fails()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            return;
+        }
+
+        var environment = PreserveEnvironment(
+            "Persistence__Provider",
+            "ConnectionStrings__IamDb",
+            "Iam__Seed__Enabled",
+            "Iam__Seed__AdminPassword",
+            "Iam__Seed__ConnectorHostSecret");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
+            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString);
+            Environment.SetEnvironmentVariable("Iam__Seed__Enabled", "true");
+            Environment.SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!");
+            Environment.SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+
+            var interceptor = new FailNextSessionReadInterceptor();
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseNpgsql(
+                    postgresConnectionString,
+                    npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "iam"))
+                .AddInterceptors(interceptor)
+                .Options;
+            await using var db = new ApplicationDbContext(options, new NoopMediator());
+            await db.Database.EnsureDeletedAsync();
+            await db.Database.MigrateAsync();
+
+            var now = DateTimeOffset.UtcNow;
+            var session = new UserSession(
+                new UserSessionId("session-rollback-proof"),
+                new UserId("user-admin"),
+                "refresh-token-hash",
+                now,
+                now.AddDays(14),
+                1,
+                null,
+                null);
+            await db.UserSessions.AddAsync(session);
+            await db.SaveChangesAsync();
+
+            interceptor.FailNextSessionRead = true;
+            var repository = new UserSessionRepository(db);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.ConsumeActiveRefreshTokenAsync(
+                "refresh-token-hash",
+                now,
+                "refresh-rotated",
+                CancellationToken.None));
+            Assert.IsType<TimeoutException>(exception.InnerException);
+
+            db.ChangeTracker.Clear();
+            var originalSession = await db.UserSessions.SingleAsync(x => x.Id == new UserSessionId("session-rollback-proof"));
+            Assert.Null(originalSession.RevokedAtUtc);
         }
         finally
         {
@@ -670,6 +743,85 @@ public sealed class IamPostgresProfileTests
         Assert.True(envelope.Success, envelope.Message);
         Assert.NotNull(envelope.Data);
         return envelope.Data;
+    }
+
+    private sealed class FailNextSessionReadInterceptor : DbCommandInterceptor
+    {
+        public bool FailNextSessionRead { get; set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (FailNextSessionRead
+                && command.CommandText.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("user_sessions", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("RefreshTokenHash", StringComparison.OrdinalIgnoreCase))
+            {
+                FailNextSessionRead = false;
+                throw new TimeoutException("Injected session read failure.");
+            }
+
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default)
+        {
+            _ = notification;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification
+        {
+            _ = notification;
+            _ = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Test mediator cannot send requests.");
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Test mediator cannot send requests.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Test mediator cannot send requests.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Test mediator cannot create streams.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Test mediator cannot create streams.");
+        }
     }
 
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);

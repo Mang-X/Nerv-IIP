@@ -48,8 +48,8 @@ public sealed class PostgreSqlIamAuthService(
         {
             user.RecordFailedLogin(
                 now,
-                authenticationOptions.Value.EffectiveFailedLoginLockoutThreshold,
-                authenticationOptions.Value.EffectiveFailedLoginLockoutWindow);
+                authenticationOptions.Value.FailedLoginLockoutThreshold,
+                authenticationOptions.Value.FailedLoginLockoutWindow);
             await userRepository.PersistFailedLoginAsync(user, cancellationToken);
             throw Unauthorized();
         }

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
 using Nerv.IIP.BusinessGateway.Web;
+using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -134,6 +135,29 @@ public sealed class BusinessGatewayHttpClientResilienceTests
         Assert.Equal(invocations.Length, calls.Total);
     }
 
+    [Theory]
+    [InlineData(nameof(IBusinessGatewayAuthorizationClient), false)]
+    [InlineData(nameof(IBusinessMasterDataClient), true)]
+    [InlineData(nameof(IBusinessInventoryClient), true)]
+    [InlineData(nameof(IBusinessQualityClient), true)]
+    [InlineData(nameof(IBusinessProductEngineeringClient), true)]
+    [InlineData(nameof(IBusinessMesClient), true)]
+    public void DownstreamUnavailableHandlerFilter_only_stubs_business_service_clients(
+        string clientName,
+        bool expectedStubbed)
+    {
+        var calls = new DownstreamCallCounter();
+        var builder = new TestHttpMessageHandlerBuilder
+        {
+            Name = clientName,
+            PrimaryHandler = new HttpClientHandler()
+        };
+
+        new DownstreamUnavailableHandlerFilter(calls).Configure(_ => { })(builder);
+
+        Assert.Equal(expectedStubbed, builder.PrimaryHandler is DownstreamUnavailableHandler);
+    }
+
     private sealed class DownstreamCallCounter
     {
         private int callCount;
@@ -146,11 +170,20 @@ public sealed class BusinessGatewayHttpClientResilienceTests
     private sealed class DownstreamUnavailableHandlerFilter(DownstreamCallCounter calls)
         : IHttpMessageHandlerBuilderFilter
     {
+        private static readonly HashSet<string> StubbedClientNames =
+        [
+            nameof(IBusinessMasterDataClient),
+            nameof(IBusinessInventoryClient),
+            nameof(IBusinessQualityClient),
+            nameof(IBusinessProductEngineeringClient),
+            nameof(IBusinessMesClient)
+        ];
+
         public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) =>
             builder =>
             {
                 next(builder);
-                if (builder.Name?.Contains("Business", StringComparison.Ordinal) == true)
+                if (builder.Name is not null && StubbedClientNames.Contains(builder.Name))
                 {
                     builder.PrimaryHandler = new DownstreamUnavailableHandler(calls);
                 }
@@ -166,5 +199,15 @@ public sealed class BusinessGatewayHttpClientResilienceTests
             calls.Increment();
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
         }
+    }
+
+    private sealed class TestHttpMessageHandlerBuilder : HttpMessageHandlerBuilder
+    {
+        public override string? Name { get; set; }
+        public override HttpMessageHandler PrimaryHandler { get; set; } = new HttpClientHandler();
+        public override IList<DelegatingHandler> AdditionalHandlers { get; } = [];
+        public override IServiceProvider Services { get; } = new ServiceCollection().BuildServiceProvider();
+
+        public override HttpMessageHandler Build() => PrimaryHandler;
     }
 }

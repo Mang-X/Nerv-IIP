@@ -71,6 +71,8 @@ public class User : Entity<UserId>, IAggregateRoot
 
         LastFailedLoginAtUtc = now;
         FailedLoginCount++;
+        // The failed attempt that reaches the threshold creates the lockout;
+        // subsequent authentication attempts are rejected by IsLockedOut.
         if (FailedLoginCount >= lockoutThreshold)
         {
             LockoutUntilUtc = now.Add(lockoutWindow);

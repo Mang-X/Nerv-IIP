@@ -72,6 +72,26 @@ public sealed class GatewayAuthorizationClientTests
     }
 
     [Fact]
+    public async Task CheckAsync_treats_malformed_jwt_as_unknown_permission_version()
+    {
+        var handler = new CountingAuthorizationHandler();
+        var cache = new RecordingCache();
+        var client = CreateClient(handler, cache, Options.Create(new GatewayAuthorizationOptions()));
+        var requirement = new GatewayPermissionRequirement(
+            "iam.users.read",
+            "org-001",
+            "env-dev",
+            null,
+            null);
+
+        await client.CheckAsync("abc.def.ghi", requirement, CancellationToken.None);
+
+        Assert.Single(cache.Keys);
+        Assert.Contains(":permission-version:unknown:", cache.Keys[0], StringComparison.Ordinal);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
     public async Task CheckAsync_uses_configured_cache_ttl()
     {
         var handler = new CountingAuthorizationHandler();

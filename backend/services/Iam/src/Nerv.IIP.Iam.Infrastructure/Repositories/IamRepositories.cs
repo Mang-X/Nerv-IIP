@@ -309,6 +309,10 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
         string revokedReason,
         CancellationToken cancellationToken = default)
     {
+        await using var transaction = DbContext.Database.CurrentTransaction is null
+            ? await DbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
         var affectedRows = await DbContext.UserSessions
             .Where(x => x.RefreshTokenHash == refreshTokenHash && x.RevokedAtUtc == null && x.ExpiresAtUtc > now)
             .ExecuteUpdateAsync(
@@ -322,7 +326,13 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
             return null;
         }
 
-        return await DbContext.UserSessions.SingleAsync(x => x.RefreshTokenHash == refreshTokenHash, cancellationToken);
+        var session = await DbContext.UserSessions.SingleAsync(x => x.RefreshTokenHash == refreshTokenHash, cancellationToken);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        return session;
     }
 
     public async Task<IReadOnlyList<UserSession>> ListAsync(CancellationToken cancellationToken = default)

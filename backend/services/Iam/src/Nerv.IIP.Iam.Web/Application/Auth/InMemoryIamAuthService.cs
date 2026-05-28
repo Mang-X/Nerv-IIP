@@ -23,8 +23,8 @@ public sealed class InMemoryIamAuthService(
         return Task.FromResult(ToResponse(store.Login(
             loginName,
             password,
-            authenticationOptions.Value.EffectiveFailedLoginLockoutThreshold,
-            authenticationOptions.Value.EffectiveFailedLoginLockoutWindow)));
+            authenticationOptions.Value.FailedLoginLockoutThreshold,
+            authenticationOptions.Value.FailedLoginLockoutWindow)));
     }
 
     public Task<AuthResponse> RefreshAsync(

@@ -5,11 +5,5 @@ public sealed class IamAuthenticationOptions
     public int FailedLoginLockoutThreshold { get; init; } = 5;
     public int FailedLoginLockoutMinutes { get; init; } = 15;
 
-    public int EffectiveFailedLoginLockoutThreshold => FailedLoginLockoutThreshold > 0
-        ? FailedLoginLockoutThreshold
-        : 5;
-
-    public TimeSpan EffectiveFailedLoginLockoutWindow => TimeSpan.FromMinutes(FailedLoginLockoutMinutes > 0
-        ? FailedLoginLockoutMinutes
-        : 15);
+    public TimeSpan FailedLoginLockoutWindow => TimeSpan.FromMinutes(FailedLoginLockoutMinutes);
 }

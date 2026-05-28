@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.Iam;
 
@@ -101,7 +102,7 @@ public sealed class HttpGatewayAuthorizationClient(
                 ? permissionVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 : null;
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or SecurityTokenException)
         {
             return null;
         }
