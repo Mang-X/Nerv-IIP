@@ -29,8 +29,13 @@ public sealed class UserSessionEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.PermissionVersion).HasComment("Permission version captured when the session was issued.");
         builder.Property(x => x.ClientInfo).HasMaxLength(512).HasComment("Client information supplied during session creation.");
         builder.Property(x => x.IpAddress).HasMaxLength(64).HasComment("Client IP address supplied during session creation.");
+        builder.Property(x => x.AuthenticationMethod).IsRequired().HasMaxLength(32).HasDefaultValue("password").HasComment("Authentication method used to issue the session, for example password or oidc.");
+        builder.Property(x => x.ExternalProvider).HasMaxLength(64).HasComment("External identity provider name for SSO sessions.");
+        builder.Property(x => x.ExternalSubject).HasMaxLength(256).HasComment("External provider subject bound to the SSO session.");
+        builder.Property(x => x.MfaVerifiedAtUtc).HasComment("UTC time when MFA was verified for the session.");
 
         builder.HasIndex(x => x.RefreshTokenHash);
         builder.HasIndex(x => new { x.UserId, x.RevokedAtUtc });
+        builder.HasIndex(x => new { x.ExternalProvider, x.ExternalSubject });
     }
 }

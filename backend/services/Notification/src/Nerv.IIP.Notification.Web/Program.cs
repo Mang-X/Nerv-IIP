@@ -76,6 +76,10 @@ else
     builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
 }
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<OperationApprovalRequestedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<OperationApprovalApprovedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<OperationApprovalRejectedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
 if (usePostgreSql && autoMigrate)

@@ -138,6 +138,61 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     }
 
     [Fact]
+    public async Task Approval_required_task_is_not_claimable_until_approved()
+    {
+        var client = CreateAuthorizedClient("org-approval", "env-dev");
+
+        await CreateTemplateAsync(client, new CreateOperationTemplateRequest(
+            "lifecycle.high-risk-restart",
+            "High-risk restart",
+            "{}",
+            "high",
+            3,
+            300,
+            RequiresApproval: true));
+
+        var createRequest = CreateRestartRequest("idem-approval-endpoint-001", "org-approval") with
+        {
+            OperationCode = "lifecycle.high-risk-restart"
+        };
+        var createResponse = await client.PostAsJsonAsync("/api/ops/v1/operation-tasks", createRequest);
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        var created = await ReadResponseDataAsync<OperationTaskResponse>(createResponse);
+
+        Assert.NotNull(created);
+        Assert.Equal("approval-pending", created.Status);
+        Assert.NotNull(created.Approval);
+        Assert.Equal("pending", created.Approval.Status);
+        Assert.Contains(created.AuditRecords, x => x.Action == "operation.approval-requested");
+
+        var pendingBeforeApproval = await client.PostAsJsonAsync(
+            "/api/ops/v1/operation-tasks/claims",
+            new ClaimOperationTasksRequest("org-approval", "env-dev", "connector-host-001", 10));
+        Assert.Equal(HttpStatusCode.OK, pendingBeforeApproval.StatusCode);
+        var emptyClaims = await ReadResponseDataAsync<PendingOperationTasksResponse>(pendingBeforeApproval);
+        Assert.NotNull(emptyClaims);
+        Assert.Empty(emptyClaims.Items);
+
+        var approvalResponse = await client.PostAsJsonAsync(
+            $"/api/ops/v1/operation-tasks/{created.OperationTaskId}/approval/approve",
+            new DecideOperationApprovalRequest("org-approval", "env-dev", "ops-approver", "approved", "corr-approval"));
+        Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+        var approved = await ReadResponseDataAsync<OperationTaskResponse>(approvalResponse);
+        Assert.NotNull(approved);
+        Assert.Equal("queued", approved.Status);
+        Assert.NotNull(approved.Approval);
+        Assert.Equal("approved", approved.Approval.Status);
+
+        var claimAfterApproval = await client.PostAsJsonAsync(
+            "/api/ops/v1/operation-tasks/claims",
+            new ClaimOperationTasksRequest("org-approval", "env-dev", "connector-host-001", 10));
+        Assert.Equal(HttpStatusCode.OK, claimAfterApproval.StatusCode);
+        var claims = await ReadResponseDataAsync<PendingOperationTasksResponse>(claimAfterApproval);
+        Assert.NotNull(claims);
+        Assert.Equal(created.OperationTaskId, Assert.Single(claims.Items).OperationTaskId);
+    }
+
+    [Fact]
     public async Task Missing_operation_task_returns_404_json()
     {
         var client = CreateInternalServiceClient(factory);
@@ -853,6 +908,16 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
             new Dictionary<string, string>());
     }
 
+    private static async Task<OperationTemplateResponse> CreateTemplateAsync(
+        HttpClient client,
+        CreateOperationTemplateRequest request)
+    {
+        var response = await client.PostAsJsonAsync("/api/ops/v1/operation-templates", request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var template = await ReadResponseDataAsync<OperationTemplateResponse>(response);
+        return Assert.IsType<OperationTemplateResponse>(template);
+    }
+
     private static OperationResult CreateResult(
         string operationTaskId,
         string attemptId,
@@ -1009,6 +1074,20 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         public async Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, DateTimeOffset now, CancellationToken cancellationToken)
         {
             var response = await inner.SubmitAuditIntentAsync(request, now, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return response;
+        }
+
+        public async Task<OperationTaskResponse> ApproveAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            var response = await inner.ApproveAsync(operationTaskId, request, now, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            return response;
+        }
+
+        public async Task<OperationTaskResponse> RejectAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            var response = await inner.RejectAsync(operationTaskId, request, now, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             return response;
         }

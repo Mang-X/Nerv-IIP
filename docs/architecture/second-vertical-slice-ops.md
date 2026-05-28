@@ -50,19 +50,25 @@ AppHub 仍然是实例状态事实来源。Ops 只记录动作事实和执行结
 2. `GET /api/ops/v1/operation-tasks/{operationTaskId}`
    - 查询任务详情、attempts 和 audit records。
 
-3. `POST /api/ops/v1/operation-tasks/claims`
+3. `POST /api/ops/v1/operation-tasks/{operationTaskId}/approval/approve`
+   - P2 起可批准 `RequiresApproval=true` 的高风险任务，使其进入可领取队列。
+
+4. `POST /api/ops/v1/operation-tasks/{operationTaskId}/approval/reject`
+   - P2 起可拒绝 `RequiresApproval=true` 的高风险任务，使其进入 `rejected` 终态。
+
+5. `POST /api/ops/v1/operation-tasks/claims`
    - Connector Host 按 organizationId、environmentId、connectorHostId 原子领取待执行任务，返回 leaseId、leasedAtUtc、leasedUntilUtc、attemptNo、maxAttempts。
 
-4. `GET /api/ops/v1/operation-tasks/pending`
+6. `GET /api/ops/v1/operation-tasks/pending`
    - 第二阶段兼容入口，内部按默认 lease 参数执行 claim；新 Connector Host 应优先使用 claims。
 
-5. `POST /api/ops/v1/operation-tasks/{operationTaskId}/lease/heartbeat`
+7. `POST /api/ops/v1/operation-tasks/{operationTaskId}/lease/heartbeat`
    - Connector Host 携带当前 leaseId 续期 active attempt。
 
-6. `POST /api/ops/v1/operation-tasks/{operationTaskId}/lease/abandon`
+8. `POST /api/ops/v1/operation-tasks/{operationTaskId}/lease/abandon`
    - Connector Host 携带当前 leaseId 主动放弃任务，记录 abandonReason；未耗尽 maxAttempts 时任务重回 queued。
 
-7. `POST /api/ops/v1/operation-results`
+9. `POST /api/ops/v1/operation-results`
    - Connector Host 回传执行结果，Ops 写入 OperationAttempt 和完成/失败审计事实。
 
 ## 认证与范围

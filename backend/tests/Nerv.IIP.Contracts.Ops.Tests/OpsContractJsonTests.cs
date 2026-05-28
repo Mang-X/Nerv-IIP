@@ -19,6 +19,13 @@ public sealed class OpsContractJsonTests
             "completed",
             "local-admin",
             DateTimeOffset.Parse("2026-05-15T00:00:00Z"),
+            new OperationApprovalSummary(
+                "approved",
+                "local-admin",
+                DateTimeOffset.Parse("2026-05-15T00:00:00Z"),
+                "ops-approver",
+                DateTimeOffset.Parse("2026-05-15T00:00:30Z"),
+                "approved"),
             "attempt-000001",
             [new OperationAttemptSummary(
                 "attempt-000001",
@@ -43,6 +50,8 @@ public sealed class OpsContractJsonTests
 
         Assert.True(root.TryGetProperty("operationTaskId", out var operationTaskId));
         Assert.Equal("op-000001", operationTaskId.GetString());
+        Assert.True(root.TryGetProperty("approval", out var approval));
+        Assert.Equal("approved", approval.GetProperty("status").GetString());
         Assert.True(root.TryGetProperty("attempts", out var attempts));
         Assert.Equal(JsonValueKind.Array, attempts.ValueKind);
         Assert.True(attempts[0].TryGetProperty("failureCode", out var failureCode));
@@ -57,6 +66,7 @@ public sealed class OpsContractJsonTests
         Assert.NotNull(result);
         Assert.Equal("op-000001", result.OperationTaskId);
         Assert.Equal("completed", result.Status);
+        Assert.Equal("approved", result.Approval?.Status);
         Assert.Null(result.Attempts.Single().FailureCode);
         Assert.Equal("operation.completed", result.AuditRecords.Single().Action);
     }
@@ -278,5 +288,61 @@ public sealed class OpsContractJsonTests
         Assert.Equal("container-exited", root.GetProperty("payload").GetProperty("failureCode").GetString());
         Assert.NotNull(result);
         Assert.Equal("container-exited", result.Payload.FailureCode);
+    }
+
+    [Fact]
+    public void Operation_approval_events_round_trip_with_structured_payload()
+    {
+        var requested = new OperationApprovalRequestedIntegrationEvent(
+            "evt-approval-requested-001",
+            "ops.OperationApprovalRequested",
+            1,
+            DateTimeOffset.Parse("2026-05-26T09:00:00Z"),
+            "ops",
+            "corr-approval",
+            "op-000001",
+            "org-001",
+            "env-dev",
+            "local-admin",
+            "ops:operation-approval-requested:op-000001",
+            new OperationApprovalRequestedPayload(
+                "op-000001",
+                "docker-container-local-demo-001",
+                "lifecycle.high-risk-restart",
+                "local-admin",
+                DateTimeOffset.Parse("2026-05-26T09:00:00Z")));
+        var approved = new OperationApprovalApprovedIntegrationEvent(
+            "evt-approval-approved-001",
+            "ops.OperationApprovalApproved",
+            1,
+            DateTimeOffset.Parse("2026-05-26T09:01:00Z"),
+            "ops",
+            "corr-approval",
+            "op-000001",
+            "org-001",
+            "env-dev",
+            "ops-approver",
+            "ops:operation-approval-approved:op-000001",
+            new OperationApprovalDecidedPayload(
+                "op-000001",
+                "docker-container-local-demo-001",
+                "lifecycle.high-risk-restart",
+                "ops-approver",
+                "approved",
+                DateTimeOffset.Parse("2026-05-26T09:01:00Z")));
+
+        var requestedResult = JsonSerializer.Deserialize<OperationApprovalRequestedIntegrationEvent>(
+            JsonSerializer.Serialize(requested, JsonOptions),
+            JsonOptions);
+        var approvedResult = JsonSerializer.Deserialize<OperationApprovalApprovedIntegrationEvent>(
+            JsonSerializer.Serialize(approved, JsonOptions),
+            JsonOptions);
+
+        Assert.NotNull(requestedResult);
+        Assert.NotNull(approvedResult);
+        Assert.Equal("ops.OperationApprovalRequested", requestedResult.EventType);
+        Assert.Equal("op-000001", requestedResult.Payload.OperationTaskId);
+        Assert.Equal("ops.OperationApprovalApproved", approvedResult.EventType);
+        Assert.Equal("ops-approver", approvedResult.Payload.DecidedBy);
     }
 }

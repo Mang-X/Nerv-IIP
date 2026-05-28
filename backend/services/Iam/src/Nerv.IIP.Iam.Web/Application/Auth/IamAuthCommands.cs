@@ -62,6 +62,64 @@ public sealed class RefreshCommandHandler(IIamAuthService auth)
     }
 }
 
+public sealed record OidcLoginCallbackCommand(
+    OidcLoginCallbackRequest Request,
+    string? ClientInfo,
+    string? IpAddress) : ICommand<AuthCommandResult<EnterpriseAuthResponse>>;
+
+public sealed class OidcLoginCallbackCommandHandler(IIamAuthService auth)
+    : ICommandHandler<OidcLoginCallbackCommand, AuthCommandResult<EnterpriseAuthResponse>>
+{
+    public async Task<AuthCommandResult<EnterpriseAuthResponse>> Handle(
+        OidcLoginCallbackCommand request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await auth.HandleOidcCallbackAsync(
+                request.Request,
+                request.ClientInfo,
+                request.IpAddress,
+                cancellationToken);
+            return AuthCommandResult<EnterpriseAuthResponse>.Authorized(response);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return AuthCommandResult<EnterpriseAuthResponse>.Unauthorized(ex.Message);
+        }
+    }
+}
+
+public sealed record VerifyMfaChallengeCommand(
+    string ChallengeId,
+    string Code,
+    string? ClientInfo,
+    string? IpAddress) : ICommand<AuthCommandResult<EnterpriseAuthResponse>>;
+
+public sealed class VerifyMfaChallengeCommandHandler(IIamAuthService auth)
+    : ICommandHandler<VerifyMfaChallengeCommand, AuthCommandResult<EnterpriseAuthResponse>>
+{
+    public async Task<AuthCommandResult<EnterpriseAuthResponse>> Handle(
+        VerifyMfaChallengeCommand request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await auth.VerifyMfaChallengeAsync(
+                request.ChallengeId,
+                request.Code,
+                request.ClientInfo,
+                request.IpAddress,
+                cancellationToken);
+            return AuthCommandResult<EnterpriseAuthResponse>.Authorized(response);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return AuthCommandResult<EnterpriseAuthResponse>.Unauthorized(ex.Message);
+        }
+    }
+}
+
 public sealed record LogoutCommand(string SessionId) : ICommand;
 
 public sealed class LogoutCommandHandler(IIamAuthService auth)

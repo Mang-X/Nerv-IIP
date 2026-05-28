@@ -50,6 +50,77 @@ public sealed class OperationTaskFailedNotificationConsumerTests
     }
 
     [Fact]
+    public async Task Handle_completed_operation_creates_result_notification_for_ops_admin()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleCompletedAsync(factory, CreateCompletedEvent("event-completed", "operation-task-completed:task-001"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("ops.OperationTaskCompleted", intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Message, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityInfo, intent.Severity);
+        Assert.Equal("operation-task", intent.ResourceType);
+        Assert.Equal("task-001", intent.ResourceId);
+        Assert.Equal("role:ops-admin", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Empty(intent.Tasks);
+    }
+
+    [Fact]
+    public async Task Handle_approval_requested_creates_review_task_for_ops_admin()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalRequestedAsync(factory, CreateApprovalRequestedEvent("event-approval-requested", "operation-approval-requested:task-001"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("ops.OperationApprovalRequested", intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityWarning, intent.Severity);
+        Assert.Equal("operation-task", intent.ResourceType);
+        Assert.Equal("task-001", intent.ResourceId);
+        Assert.Equal("role:ops-admin", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
+    }
+
+    [Fact]
+    public async Task Handle_approval_decided_creates_message_for_ops_admin()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalApprovedAsync(factory, CreateApprovalApprovedEvent("event-approval-approved", "operation-approval-approved:task-001"));
+        await HandleApprovalRejectedAsync(factory, CreateApprovalRejectedEvent("event-approval-rejected", "operation-approval-rejected:task-002", operationTaskId: "task-002"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intents = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .OrderBy(x => x.SourceEventType)
+            .ToListAsync();
+
+        Assert.Contains(intents, x => x.SourceEventType == "ops.OperationApprovalApproved"
+            && x.IntentType == NotificationIntentTypes.Message
+            && x.ResourceId == "task-001");
+        Assert.Contains(intents, x => x.SourceEventType == "ops.OperationApprovalRejected"
+            && x.IntentType == NotificationIntentTypes.Message
+            && x.ResourceId == "task-002");
+        Assert.All(intents, x => Assert.Empty(x.Tasks));
+    }
+
+    [Fact]
     public async Task Handle_same_event_twice_does_not_create_duplicate_notification()
     {
         using var factory = new NotificationConsumerWebApplicationFactory();
@@ -154,6 +225,46 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
 
+    private static async Task HandleCompletedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        OperationTaskCompletedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<OperationTaskCompletedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<OperationTaskCompletedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleApprovalRequestedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        OperationApprovalRequestedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<OperationApprovalRequestedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<OperationApprovalRequestedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleApprovalApprovedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        OperationApprovalApprovedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<OperationApprovalApprovedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<OperationApprovalApprovedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleApprovalRejectedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        OperationApprovalRejectedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<OperationApprovalRejectedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<OperationApprovalRejectedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
     private static OperationTaskFailedIntegrationEvent CreateEvent(
         string eventId,
         string idempotencyKey,
@@ -179,6 +290,108 @@ public sealed class OperationTaskFailedNotificationConsumerTests
                 OperationCode: "lifecycle.restart",
                 FinishedAtUtc: DateTimeOffset.Parse("2026-05-21T08:00:05Z"),
                 FailureCode: "timeout"));
+    }
+
+    private static OperationTaskCompletedIntegrationEvent CreateCompletedEvent(
+        string eventId,
+        string idempotencyKey,
+        string operationTaskId = "task-001")
+    {
+        return new OperationTaskCompletedIntegrationEvent(
+            EventId: eventId,
+            EventType: "ops.OperationTaskCompleted",
+            EventVersion: 1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-05-21T08:00:00Z"),
+            SourceService: "ops",
+            CorrelationId: $"corr-{eventId}",
+            CausationId: $"cause-{eventId}",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "connector-host-001",
+            IdempotencyKey: idempotencyKey,
+            Payload: new OperationTaskCompletedPayload(
+                OperationTaskId: operationTaskId,
+                AttemptId: $"attempt-{eventId}",
+                InstanceKey: "demo-api-001",
+                OperationCode: "lifecycle.restart",
+                FinishedAtUtc: DateTimeOffset.Parse("2026-05-21T08:00:05Z")));
+    }
+
+    private static OperationApprovalRequestedIntegrationEvent CreateApprovalRequestedEvent(
+        string eventId,
+        string idempotencyKey,
+        string operationTaskId = "task-001")
+    {
+        return new OperationApprovalRequestedIntegrationEvent(
+            EventId: eventId,
+            EventType: "ops.OperationApprovalRequested",
+            EventVersion: 1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-05-21T08:00:00Z"),
+            SourceService: "ops",
+            CorrelationId: $"corr-{eventId}",
+            CausationId: operationTaskId,
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "local-admin",
+            IdempotencyKey: idempotencyKey,
+            Payload: new OperationApprovalRequestedPayload(
+                OperationTaskId: operationTaskId,
+                InstanceKey: "demo-api-001",
+                OperationCode: "lifecycle.restart",
+                RequestedBy: "local-admin",
+                RequestedAtUtc: DateTimeOffset.Parse("2026-05-21T08:00:00Z")));
+    }
+
+    private static OperationApprovalApprovedIntegrationEvent CreateApprovalApprovedEvent(
+        string eventId,
+        string idempotencyKey,
+        string operationTaskId = "task-001")
+    {
+        return new OperationApprovalApprovedIntegrationEvent(
+            EventId: eventId,
+            EventType: "ops.OperationApprovalApproved",
+            EventVersion: 1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-05-21T08:01:00Z"),
+            SourceService: "ops",
+            CorrelationId: $"corr-{eventId}",
+            CausationId: operationTaskId,
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "ops-approver",
+            IdempotencyKey: idempotencyKey,
+            Payload: new OperationApprovalDecidedPayload(
+                OperationTaskId: operationTaskId,
+                InstanceKey: "demo-api-001",
+                OperationCode: "lifecycle.restart",
+                DecidedBy: "ops-approver",
+                DecisionReason: "approved",
+                DecidedAtUtc: DateTimeOffset.Parse("2026-05-21T08:01:00Z")));
+    }
+
+    private static OperationApprovalRejectedIntegrationEvent CreateApprovalRejectedEvent(
+        string eventId,
+        string idempotencyKey,
+        string operationTaskId = "task-001")
+    {
+        return new OperationApprovalRejectedIntegrationEvent(
+            EventId: eventId,
+            EventType: "ops.OperationApprovalRejected",
+            EventVersion: 1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-05-21T08:01:00Z"),
+            SourceService: "ops",
+            CorrelationId: $"corr-{eventId}",
+            CausationId: operationTaskId,
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "ops-approver",
+            IdempotencyKey: idempotencyKey,
+            Payload: new OperationApprovalDecidedPayload(
+                OperationTaskId: operationTaskId,
+                InstanceKey: "demo-api-001",
+                OperationCode: "lifecycle.restart",
+                DecidedBy: "ops-approver",
+                DecisionReason: "rejected",
+                DecidedAtUtc: DateTimeOffset.Parse("2026-05-21T08:01:00Z")));
     }
 
     private sealed class NotificationConsumerWebApplicationFactory : WebApplicationFactory<Program>
