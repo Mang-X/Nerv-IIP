@@ -4,6 +4,7 @@ import BusinessTablePagination from '@/components/business/BusinessTablePaginati
 import { useBusinessMasterDataGroups } from '@/composables/useBusinessMasterData'
 import { demoPartners } from '@/data/shockAbsorberDemo'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { inferPartnerRole, roleLabel, type PartnerRole } from './masterDataPageHelpers'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
   Badge,
@@ -31,7 +32,6 @@ import { computed, reactive, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '客户与供应商' } })
 
-type PartnerRole = 'all' | 'customer' | 'supplier'
 type SortColumn = 'code' | 'displayName' | 'role' | 'active' | 'snapshotVersion'
 
 const { groups, groupsError, groupsPending, refreshGroups } = useBusinessMasterDataGroups([
@@ -117,19 +117,6 @@ function sortIcon(column: SortColumn) {
 
 function rowKey(row: BusinessConsoleResourceItem & { role: PartnerRole }, index: number) {
   return `${row.resourceType}:${row.code ?? index}`
-}
-
-function inferPartnerRole(row: BusinessConsoleResourceItem): PartnerRole {
-  const code = row.code?.toLowerCase() ?? ''
-  if (code.includes('cust')) return 'customer'
-  if (code.includes('sup')) return 'supplier'
-  return 'all'
-}
-
-function roleLabel(role: PartnerRole) {
-  if (role === 'customer') return '客户'
-  if (role === 'supplier') return '供应商'
-  return '未分配'
 }
 
 function mergePartners(rows: (BusinessConsoleResourceItem & { role: PartnerRole })[]) {

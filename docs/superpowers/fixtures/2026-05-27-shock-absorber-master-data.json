@@ -27,7 +27,8 @@
     ],
     "productionLines": [
       { "code": "LINE-FRT-A", "name": "前减 A 线", "siteCode": "PLANT-NB" },
-      { "code": "LINE-RR-B", "name": "后减 B 线", "siteCode": "PLANT-NB" }
+      { "code": "LINE-RR-B", "name": "后减 B 线", "siteCode": "PLANT-NB" },
+      { "code": "LINE-SPARE", "name": "重庆备件线", "siteCode": "PLANT-CQ" }
     ],
     "workCenters": [
       { "code": "WC-TUBE-WELD", "name": "筒体焊接工作中心", "lineCode": "LINE-FRT-A" },

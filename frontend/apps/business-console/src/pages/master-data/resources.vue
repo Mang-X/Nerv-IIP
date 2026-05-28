@@ -4,6 +4,7 @@ import BusinessTablePagination from '@/components/business/BusinessTablePaginati
 import { useBusinessMasterDataGroups, type BusinessMasterDataGroupDefinition } from '@/composables/useBusinessMasterData'
 import { demoResourceGroups } from '@/data/shockAbsorberDemo'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { matchesLinkedResourceSelectors, type ResourceScenarioRelations } from './masterDataPageHelpers'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
   Badge,
@@ -52,7 +53,6 @@ const filterDraft = reactive({
   siteCode: 'all',
   lineCode: 'all',
   workCenterCode: 'all',
-  effectiveDate: new Date().toISOString().slice(0, 10),
 })
 const appliedFilter = reactive({ ...filterDraft })
 const tableState = reactive({
@@ -62,7 +62,7 @@ const tableState = reactive({
   sortDirection: 'asc' as 'asc' | 'desc',
 })
 const resourceTitleByKey = Object.fromEntries(resourceDefinitions.map((definition) => [definition.key, definition.title]))
-const scenarioRelations: Record<string, { siteCode?: string; lineCode?: string; workCenterCode?: string; shiftCode?: string }> = {
+const scenarioRelations: ResourceScenarioRelations = {
   'LINE-FRT-A': { siteCode: 'PLANT-NB' },
   'LINE-RR-B': { siteCode: 'PLANT-NB' },
   'LINE-SPARE': { siteCode: 'PLANT-CQ' },
@@ -129,7 +129,6 @@ watch(
     appliedFilter.siteCode,
     appliedFilter.lineCode,
     appliedFilter.workCenterCode,
-    appliedFilter.effectiveDate,
     tableState.pageSize,
     allRows.value.length,
   ],
@@ -148,7 +147,6 @@ function clearFilters() {
   filterDraft.siteCode = 'all'
   filterDraft.lineCode = 'all'
   filterDraft.workCenterCode = 'all'
-  filterDraft.effectiveDate = new Date().toISOString().slice(0, 10)
   applyFilters()
 }
 
@@ -171,24 +169,7 @@ function rowKey(row: BusinessConsoleResourceItem, index: number) {
 }
 
 function linkedSelectorMatched(row: BusinessConsoleResourceItem) {
-  const relation = row.code ? scenarioRelations[row.code] : undefined
-
-  if (appliedFilter.siteCode !== 'all') {
-    if (row.resourceType === 'site') return row.code === appliedFilter.siteCode
-    if (relation?.siteCode !== appliedFilter.siteCode) return false
-  }
-
-  if (appliedFilter.lineCode !== 'all') {
-    if (row.resourceType === 'production-line') return row.code === appliedFilter.lineCode
-    if (relation?.lineCode !== appliedFilter.lineCode) return false
-  }
-
-  if (appliedFilter.workCenterCode !== 'all') {
-    if (row.resourceType === 'work-center') return row.code === appliedFilter.workCenterCode
-    if (relation?.workCenterCode !== appliedFilter.workCenterCode) return false
-  }
-
-  return true
+  return matchesLinkedResourceSelectors(row, appliedFilter, scenarioRelations)
 }
 
 function optionsFor(resourceType: string) {
@@ -238,7 +219,7 @@ function formatError(error: unknown) {
           <h2 class="text-sm font-semibold text-foreground">查询条件</h2>
         </div>
         <div class="p-4">
-          <FieldGroup class="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px_180px_180px_auto]">
+          <FieldGroup class="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px_180px_auto]">
             <Field>
               <FieldLabel for="resource-keyword">关键字</FieldLabel>
               <Input id="resource-keyword" v-model="filterDraft.keyword" placeholder="编码、名称、版本" @keydown.enter="applyFilters" />
@@ -298,10 +279,6 @@ function formatError(error: unknown) {
                   </SelectItem>
                 </SelectContent>
               </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="resource-effective-date">有效日期</FieldLabel>
-              <Input id="resource-effective-date" v-model="filterDraft.effectiveDate" type="date" />
             </Field>
             <div class="flex items-end gap-2">
               <Button type="button" @click="applyFilters">查询</Button>
