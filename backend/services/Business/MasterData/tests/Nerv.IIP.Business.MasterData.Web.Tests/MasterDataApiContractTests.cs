@@ -317,6 +317,27 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Create_sku_command_replay_returns_persisted_display_name()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), new MasterDataNumberingService(dbContext));
+        var command = new CreateSkuCommand("org-001", "env-dev", null, "Original Name", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-display-name");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var persisted = await dbContext.Skus.SingleAsync(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev" && x.Code == first.Code, CancellationToken.None);
+        persisted.Rename("Persisted Name");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first.Code, replay.Code);
+        Assert.Equal("Persisted Name", replay.DisplayName);
+    }
+
+    [Fact]
     public async Task Create_sku_command_rejects_same_idempotency_key_with_different_name()
     {
         await using var provider = CreateInMemoryProvider();

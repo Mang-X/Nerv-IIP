@@ -51,7 +51,17 @@ public sealed class CreateSkuCommandHandler(ISkuRepository repository, MasterDat
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new MasterDataResourceResult("sku", allocation.Code, request.Name);
+            var persisted = await repository.FindByBusinessKeyAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Code,
+                cancellationToken);
+            if (persisted is null)
+            {
+                throw new KnownException($"SKU '{allocation.Code}' idempotency record exists but resource was not found.");
+            }
+
+            return new MasterDataResourceResult("sku", persisted.Code, persisted.Name);
         }
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
