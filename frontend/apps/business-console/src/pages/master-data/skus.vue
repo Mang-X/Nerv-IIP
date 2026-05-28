@@ -36,7 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, PlusIcon, RefreshCwIcon, WandSparklesIcon } from 'lucide-vue-next'
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 
 definePage({
@@ -137,7 +137,6 @@ const createErrorMessage = computed(() => formatError(createSkuError.value))
 const listErrorMessage = computed(() => formatError(skusError.value))
 const canCreateSku = computed(
   () =>
-    isNonEmpty(createForm.code) &&
     isNonEmpty(createForm.name) &&
     isNonEmpty(createForm.baseUomCode) &&
     isNonEmpty(createForm.category) &&
@@ -168,10 +167,10 @@ function clearFilters() {
   applyFilters()
 }
 
-function generateCode() {
+function generateSubmissionCode() {
   const option = materialTypeOptions.find((item) => item.value === createForm.materialType)
   const prefix = option?.prefix ?? 'SKU'
-  createForm.code = `${prefix}-${String(sourceSkus.value.length + localSkus.value.length + 1).padStart(3, '0')}`
+  return `${prefix}-${String(sourceSkus.value.length + localSkus.value.length + 1).padStart(3, '0')}`
 }
 
 function splitTags(value: string) {
@@ -204,7 +203,7 @@ async function submitSku() {
   const body: BusinessConsoleCreateSkuRequest = {
     organizationId: createForm.organizationId.trim(),
     environmentId: createForm.environmentId.trim(),
-    code: createForm.code.trim(),
+    code: generateSubmissionCode(),
     name: createForm.name.trim(),
     baseUomCode: createForm.baseUomCode.trim(),
     category: createForm.category.trim(),
@@ -301,16 +300,12 @@ function isNonEmpty(value: string) {
                 <BusinessFormStatus :error="createErrorMessage" />
 
                 <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                  <Field :data-invalid="!isNonEmpty(createForm.code)">
-                    <FieldLabel for="sku-code">物料编码 <span class="text-destructive">*</span></FieldLabel>
-                    <div class="flex gap-2">
-                      <Input id="sku-code" v-model="createForm.code" autocomplete="off" aria-required="true" required />
-                      <Button type="button" variant="outline" @click="generateCode">
-                        <WandSparklesIcon data-icon="inline-start" />
-                        生成
-                      </Button>
+                  <Field>
+                    <FieldLabel>物料编号</FieldLabel>
+                    <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                      保存后由系统分配
                     </div>
-                    <FieldDescription>建议使用成品、半成品、原材料前缀自动生成。</FieldDescription>
+                    <FieldDescription>普通建档不需要填写系统编号。</FieldDescription>
                   </Field>
                   <Field :data-invalid="!isNonEmpty(createForm.name)">
                     <FieldLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldLabel>

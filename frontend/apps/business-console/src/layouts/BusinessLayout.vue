@@ -25,6 +25,7 @@ const navItems = computed<NavItem[]>(() => [
     isActive: route.path.startsWith('/master-data'),
     items: [
       { title: '物料与产品', to: { path: '/master-data/skus' } },
+      { title: '客户与供应商', to: { path: '/master-data/partners' } },
       { title: '工厂资源', to: { path: '/master-data/resources' } },
       { title: '工艺与版本', to: { path: '/master-data/process' } },
     ],

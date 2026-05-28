@@ -1,0 +1,60 @@
+{
+  "scenario": "shock-absorber-p0-master-data",
+  "organizationId": "org-001",
+  "environmentId": "env-dev",
+  "materials": [
+    { "code": "FG-SAD-FRT-001", "name": "前减振器总成 左/右通用", "type": "finished-good", "uom": "EA" },
+    { "code": "FG-SAD-RR-001", "name": "后减振器总成", "type": "finished-good", "uom": "EA" },
+    { "code": "SA-PISTON-32", "name": "活塞杆 32mm 镀铬", "type": "raw-material", "uom": "EA" },
+    { "code": "SA-TUBE-45", "name": "外筒 45mm 喷涂件", "type": "raw-material", "uom": "EA" },
+    { "code": "SA-VALVE-A", "name": "阀系组件 A 型", "type": "semi-finished", "uom": "EA" },
+    { "code": "SA-OIL-HV32", "name": "减振器油 HV32", "type": "raw-material", "uom": "L" },
+    { "code": "SA-SEAL-KIT-A", "name": "油封组件 A 型", "type": "raw-material", "uom": "EA" },
+    { "code": "PK-SAD-CARTON", "name": "减振器总成包装箱", "type": "packaging", "uom": "EA" }
+  ],
+  "partners": [
+    { "code": "CUST-GAC", "name": "广汽乘用车", "role": "customer" },
+    { "code": "CUST-BYD-CHASSIS", "name": "比亚迪底盘事业部", "role": "customer" },
+    { "code": "SUP-PISTON-HD", "name": "华东活塞杆", "role": "supplier" },
+    { "code": "SUP-SEAL-NB", "name": "宁波密封件", "role": "supplier" },
+    { "code": "SUP-OIL-CC", "name": "长城润滑油", "role": "supplier" },
+    { "code": "SUP-PACK-HZ", "name": "杭州包装材料", "role": "supplier" }
+  ],
+  "resources": {
+    "sites": [
+      { "code": "PLANT-NB", "name": "宁波减振器工厂" },
+      { "code": "PLANT-CQ", "name": "重庆售后备件工厂" }
+    ],
+    "productionLines": [
+      { "code": "LINE-FRT-A", "name": "前减 A 线", "siteCode": "PLANT-NB" },
+      { "code": "LINE-RR-B", "name": "后减 B 线", "siteCode": "PLANT-NB" },
+      { "code": "LINE-SPARE", "name": "重庆备件线", "siteCode": "PLANT-CQ" }
+    ],
+    "workCenters": [
+      { "code": "WC-TUBE-WELD", "name": "筒体焊接工作中心", "lineCode": "LINE-FRT-A" },
+      { "code": "WC-ROD-ASM", "name": "活塞杆装配工作中心", "lineCode": "LINE-FRT-A" },
+      { "code": "WC-OIL-FILL", "name": "注油封口工作中心", "lineCode": "LINE-RR-B" },
+      { "code": "WC-DAMP-TEST", "name": "阻尼测试工作中心", "lineCode": "LINE-RR-B" },
+      { "code": "WC-PACK", "name": "包装入库工作中心", "lineCode": "LINE-SPARE" }
+    ],
+    "devices": [
+      { "code": "EQ-WELD-01", "name": "环焊机 01", "workCenterCode": "WC-TUBE-WELD" },
+      { "code": "EQ-ROD-ASM-01", "name": "活塞杆装配台 01", "workCenterCode": "WC-ROD-ASM" },
+      { "code": "EQ-FILL-02", "name": "真空注油机 02", "workCenterCode": "WC-OIL-FILL" },
+      { "code": "EQ-TEST-01", "name": "阻尼力试验台 01", "workCenterCode": "WC-DAMP-TEST" }
+    ],
+    "shifts": [
+      { "code": "SHIFT-DAY", "name": "白班 08:00-20:00" },
+      { "code": "SHIFT-NIGHT", "name": "夜班 20:00-08:00" }
+    ],
+    "teams": [
+      { "code": "TEAM-FRT-DAY", "name": "前减 A 线白班组", "shiftCode": "SHIFT-DAY" },
+      { "code": "TEAM-RR-NIGHT", "name": "后减 B 线夜班组", "shiftCode": "SHIFT-NIGHT" }
+    ],
+    "skills": [
+      { "userId": "user-ops-01", "skillCode": "WELD", "level": "L2" },
+      { "userId": "user-ops-02", "skillCode": "FILL_SEAL", "level": "L2" },
+      { "userId": "user-quality-01", "skillCode": "DAMP_TEST", "level": "L3" }
+    ]
+  }
+}
