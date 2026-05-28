@@ -11,6 +11,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
     private FinishedGoodsReceiptRequest(
         string organizationId,
         string environmentId,
+        string requestNo,
         string workOrderId,
         string skuId,
         decimal quantity,
@@ -19,6 +20,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
+        RequestNo = DomainGuard.Required(requestNo, nameof(requestNo));
         WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
         SkuId = DomainGuard.Required(skuId, nameof(skuId));
         Quantity = DomainGuard.Positive(quantity, nameof(quantity));
@@ -28,6 +30,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
 
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
+    public string RequestNo { get; private set; } = string.Empty;
     public string WorkOrderId { get; private set; } = string.Empty;
     public string SkuId { get; private set; } = string.Empty;
     public decimal Quantity { get; private set; }
@@ -37,6 +40,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
     public static FinishedGoodsReceiptRequest Create(
         string organizationId,
         string environmentId,
+        string requestNo,
         string workOrderId,
         string skuId,
         decimal quantity,
@@ -46,6 +50,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         return new FinishedGoodsReceiptRequest(
             organizationId,
             environmentId,
+            requestNo,
             workOrderId,
             skuId,
             quantity,

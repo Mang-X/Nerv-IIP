@@ -32,12 +32,13 @@ public abstract class ProductEngineeringEndpoint<TRequest, TResponse> : Endpoint
 public sealed record RegisterEngineeringDocumentRequest(
     string OrganizationId,
     string EnvironmentId,
-    string DocumentNumber,
+    string? DocumentNumber,
     string Revision,
     string FileId,
     string FileName,
     string ContentType,
-    string DocumentType);
+    string DocumentType,
+    string? IdempotencyKey = null);
 
 public sealed record EntityResponse(string Id);
 
@@ -51,7 +52,7 @@ public sealed class RegisterEngineeringDocumentEndpoint(ISender sender)
 
     public override async Task HandleAsync(RegisterEngineeringDocumentRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RegisterEngineeringDocumentCommand(req.OrganizationId, req.EnvironmentId, req.DocumentNumber, req.Revision, req.FileId, req.FileName, req.ContentType, req.DocumentType), ct);
+        var result = await sender.Send(new RegisterEngineeringDocumentCommand(req.OrganizationId, req.EnvironmentId, req.DocumentNumber, req.Revision, req.FileId, req.FileName, req.ContentType, req.DocumentType, req.IdempotencyKey), ct);
         await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
     }
 }
@@ -59,10 +60,11 @@ public sealed class RegisterEngineeringDocumentEndpoint(ISender sender)
 public sealed record CreateEngineeringItemRevisionRequest(
     string OrganizationId,
     string EnvironmentId,
-    string ItemCode,
+    string? ItemCode,
     string Revision,
     string Name,
-    bool Release);
+    bool Release,
+    string? IdempotencyKey = null);
 
 public sealed class CreateEngineeringItemRevisionEndpoint(ISender sender)
     : ProductEngineeringEndpoint<CreateEngineeringItemRevisionRequest, ResponseData<EntityResponse>>
@@ -74,7 +76,7 @@ public sealed class CreateEngineeringItemRevisionEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateEngineeringItemRevisionRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new CreateEngineeringItemRevisionCommand(req.OrganizationId, req.EnvironmentId, req.ItemCode, req.Revision, req.Name, req.Release), ct);
+        var result = await sender.Send(new CreateEngineeringItemRevisionCommand(req.OrganizationId, req.EnvironmentId, req.ItemCode, req.Revision, req.Name, req.Release, req.IdempotencyKey), ct);
         await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
     }
 }
@@ -82,11 +84,12 @@ public sealed class CreateEngineeringItemRevisionEndpoint(ISender sender)
 public sealed record ReleaseEngineeringBomRequest(
     string OrganizationId,
     string EnvironmentId,
-    string BomCode,
+    string? BomCode,
     string Revision,
     string ParentItemCode,
     DateOnly EffectiveDate,
-    IReadOnlyCollection<BomLineCommand> Lines);
+    IReadOnlyCollection<BomLineCommand> Lines,
+    string? IdempotencyKey = null);
 
 public sealed class ReleaseEngineeringBomEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ReleaseEngineeringBomRequest, ResponseData<EntityResponse>>
@@ -98,7 +101,7 @@ public sealed class ReleaseEngineeringBomEndpoint(ISender sender)
 
     public override async Task HandleAsync(ReleaseEngineeringBomRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ReleaseEngineeringBomCommand(req.OrganizationId, req.EnvironmentId, req.BomCode, req.Revision, req.ParentItemCode, req.EffectiveDate, req.Lines), ct);
+        var result = await sender.Send(new ReleaseEngineeringBomCommand(req.OrganizationId, req.EnvironmentId, req.BomCode, req.Revision, req.ParentItemCode, req.EffectiveDate, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
     }
 }
@@ -106,14 +109,15 @@ public sealed class ReleaseEngineeringBomEndpoint(ISender sender)
 public sealed record ReleaseManufacturingBomRequest(
     string OrganizationId,
     string EnvironmentId,
-    string BomCode,
+    string? BomCode,
     string Revision,
     string SkuCode,
     string EngineeringBomCode,
     string EngineeringBomRevision,
     DateOnly EffectiveDate,
     IReadOnlyCollection<ManufacturingBomMaterialLineCommand> MaterialLines,
-    IReadOnlyCollection<RecipeLineCommand> RecipeLines);
+    IReadOnlyCollection<RecipeLineCommand> RecipeLines,
+    string? IdempotencyKey = null);
 
 public sealed class ReleaseManufacturingBomEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ReleaseManufacturingBomRequest, ResponseData<EntityResponse>>
@@ -125,7 +129,7 @@ public sealed class ReleaseManufacturingBomEndpoint(ISender sender)
 
     public override async Task HandleAsync(ReleaseManufacturingBomRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ReleaseManufacturingBomCommand(req.OrganizationId, req.EnvironmentId, req.BomCode, req.Revision, req.SkuCode, req.EngineeringBomCode, req.EngineeringBomRevision, req.EffectiveDate, req.MaterialLines, req.RecipeLines), ct);
+        var result = await sender.Send(new ReleaseManufacturingBomCommand(req.OrganizationId, req.EnvironmentId, req.BomCode, req.Revision, req.SkuCode, req.EngineeringBomCode, req.EngineeringBomRevision, req.EffectiveDate, req.MaterialLines, req.RecipeLines, req.IdempotencyKey), ct);
         await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
     }
 }
@@ -133,11 +137,12 @@ public sealed class ReleaseManufacturingBomEndpoint(ISender sender)
 public sealed record ReleaseRoutingRequest(
     string OrganizationId,
     string EnvironmentId,
-    string RoutingCode,
+    string? RoutingCode,
     string Revision,
     string SkuCode,
     DateOnly EffectiveDate,
-    IReadOnlyCollection<RoutingOperationCommand> Operations);
+    IReadOnlyCollection<RoutingOperationCommand> Operations,
+    string? IdempotencyKey = null);
 
 public sealed class ReleaseRoutingEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ReleaseRoutingRequest, ResponseData<EntityResponse>>
@@ -149,7 +154,7 @@ public sealed class ReleaseRoutingEndpoint(ISender sender)
 
     public override async Task HandleAsync(ReleaseRoutingRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ReleaseRoutingCommand(req.OrganizationId, req.EnvironmentId, req.RoutingCode, req.Revision, req.SkuCode, req.EffectiveDate, req.Operations), ct);
+        var result = await sender.Send(new ReleaseRoutingCommand(req.OrganizationId, req.EnvironmentId, req.RoutingCode, req.Revision, req.SkuCode, req.EffectiveDate, req.Operations, req.IdempotencyKey), ct);
         await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
     }
 }
@@ -157,11 +162,12 @@ public sealed class ReleaseRoutingEndpoint(ISender sender)
 public sealed record ReleaseEngineeringChangeRequest(
     string OrganizationId,
     string EnvironmentId,
-    string ChangeNumber,
+    string? ChangeNumber,
     string Reason,
     string ApprovalReferenceId,
     DateOnly EffectiveDate,
-    IReadOnlyCollection<AffectedVersionCommand> AffectedVersions);
+    IReadOnlyCollection<AffectedVersionCommand> AffectedVersions,
+    string? IdempotencyKey = null);
 
 public sealed class ReleaseEngineeringChangeEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ReleaseEngineeringChangeRequest, ResponseData<EntityResponse>>
@@ -173,7 +179,7 @@ public sealed class ReleaseEngineeringChangeEndpoint(ISender sender)
 
     public override async Task HandleAsync(ReleaseEngineeringChangeRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ReleaseEngineeringChangeCommand(req.OrganizationId, req.EnvironmentId, req.ChangeNumber, req.Reason, req.ApprovalReferenceId, req.EffectiveDate, req.AffectedVersions), ct);
+        var result = await sender.Send(new ReleaseEngineeringChangeCommand(req.OrganizationId, req.EnvironmentId, req.ChangeNumber, req.Reason, req.ApprovalReferenceId, req.EffectiveDate, req.AffectedVersions, req.IdempotencyKey), ct);
         await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
     }
 }

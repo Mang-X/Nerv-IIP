@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
+using Nerv.IIP.Business.Erp.Infrastructure.Numbering;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Business.Erp.Infrastructure;
@@ -33,6 +34,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<AccountReceivable> AccountReceivables => Set<AccountReceivable>();
     public DbSet<JournalVoucher> JournalVouchers => Set<JournalVoucher>();
     public DbSet<CostCandidate> CostCandidates => Set<CostCandidate>();
+    public DbSet<NumberingCounter> NumberingCounters => Set<NumberingCounter>();
+    public DbSet<NumberingIdempotencyKey> NumberingIdempotencyKeys => Set<NumberingIdempotencyKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

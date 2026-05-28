@@ -514,7 +514,7 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
             .OrderByDescending(x => x.FromUtc)
             .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new MesDowntimeEventRow(
-                x.Id.Id.ToString(),
+                x.DowntimeEventNo,
                 x.WorkCenterId,
                 null,
                 x.DeviceAssetId,
@@ -580,7 +580,7 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderId == request.WorkOrderId)
-            .Select(x => new { Id = x.Id.ToString(), x.OperationTaskId })
+            .Select(x => new { Id = x.ReportNo, x.OperationTaskId })
             .ToArrayAsync(cancellationToken);
 
         var nodes = new List<MesTraceabilityNode>

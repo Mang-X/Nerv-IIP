@@ -109,6 +109,7 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
     private WorkCenterUnavailability(
         string? organizationId,
         string? environmentId,
+        string downtimeEventNo,
         string workCenterId,
         DateTimeOffset fromUtc,
         DateTimeOffset? toUtc,
@@ -117,6 +118,7 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
     {
         OrganizationId = string.IsNullOrWhiteSpace(organizationId) ? null : organizationId.Trim();
         EnvironmentId = string.IsNullOrWhiteSpace(environmentId) ? null : environmentId.Trim();
+        DowntimeEventNo = DomainGuard.Required(downtimeEventNo, nameof(downtimeEventNo));
         WorkCenterId = DomainGuard.Required(workCenterId, nameof(workCenterId));
         FromUtc = fromUtc;
         ToUtc = toUtc;
@@ -125,6 +127,7 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
     }
 
     public string WorkCenterId { get; private set; } = string.Empty;
+    public string DowntimeEventNo { get; private set; } = string.Empty;
     public string? OrganizationId { get; private set; }
     public string? EnvironmentId { get; private set; }
     public DateTimeOffset FromUtc { get; private set; }
@@ -135,13 +138,14 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
     public static WorkCenterUnavailability Open(
         string? organizationId,
         string? environmentId,
+        string downtimeEventNo,
         string workCenterId,
         DateTimeOffset fromUtc,
         DateTimeOffset? toUtc,
         string reason,
         string? deviceAssetId)
     {
-        return new WorkCenterUnavailability(organizationId, environmentId, workCenterId, fromUtc, toUtc, reason, deviceAssetId);
+        return new WorkCenterUnavailability(organizationId, environmentId, downtimeEventNo, workCenterId, fromUtc, toUtc, reason, deviceAssetId);
     }
 
     public void Close(DateTimeOffset restoredAtUtc)

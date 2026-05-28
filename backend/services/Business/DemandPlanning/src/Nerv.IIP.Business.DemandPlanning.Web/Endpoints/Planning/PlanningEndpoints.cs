@@ -35,12 +35,13 @@ public sealed record CreateOrUpdateDemandSourceRequest(
     string OrganizationId,
     string EnvironmentId,
     string DemandType,
-    string SourceReference,
+    string? SourceReference,
     string SkuCode,
     string UomCode,
     string SiteCode,
     decimal Quantity,
-    DateOnly DueDate);
+    DateOnly DueDate,
+    string? IdempotencyKey = null);
 
 public sealed record CreateOrUpdateDemandSourceResponse(string DemandSourceId);
 
@@ -81,7 +82,8 @@ public sealed class CreateOrUpdateDemandSourceEndpoint(ISender sender)
             req.UomCode,
             req.SiteCode,
             req.Quantity,
-            req.DueDate), ct);
+            req.DueDate,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateOrUpdateDemandSourceResponse(id.ToString()).AsResponseData(), cancellation: ct);
     }
 }

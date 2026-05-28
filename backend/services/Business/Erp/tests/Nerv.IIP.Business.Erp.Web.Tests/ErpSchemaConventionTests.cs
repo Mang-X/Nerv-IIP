@@ -17,6 +17,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Infrastructure.Numbering;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -59,6 +60,8 @@ public sealed class ErpSchemaConventionTests
             typeof(AccountReceivable),
             typeof(JournalVoucher),
             typeof(CostCandidate),
+            typeof(NumberingCounter),
+            typeof(NumberingIdempotencyKey),
         };
 
         var failures = new List<string>();

@@ -6,6 +6,7 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.Planning;
 using Nerv.IIP.Localization;
@@ -59,6 +60,7 @@ try
     }
 
     builder.Services.AddDemandPlanningPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddScoped<DemandPlanningNumberingService>();
     builder.Services.AddScoped<IPlanningInputSnapshotProvider, DemandPlanningFixtureInputSnapshotProvider>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();

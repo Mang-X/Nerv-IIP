@@ -21,6 +21,8 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 public interface ISkuRepository : IRepository<Sku, SkuId>
 {
     Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default);
+
+    Task<Sku?> FindByBusinessKeyAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default);
 }
 
 public sealed class SkuRepository(ApplicationDbContext context)
@@ -33,6 +35,19 @@ public sealed class SkuRepository(ApplicationDbContext context)
             x.EnvironmentId == environmentId &&
             x.Code == code,
             cancellationToken);
+    }
+
+    public async Task<Sku?> FindByBusinessKeyAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default)
+    {
+        return DbContext.Skus.Local.FirstOrDefault(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.Code == code)
+            ?? await DbContext.Skus.SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.Code == code,
+                cancellationToken);
     }
 }
 

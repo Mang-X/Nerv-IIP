@@ -766,7 +766,7 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleResourceItem("sku", request.Code, request.Name, true, "v1"));
+        return Task.FromResult(new BusinessConsoleResourceItem("sku", request.Code ?? "SKU-GENERATED", request.Name, true, "v1"));
     }
 }
 
@@ -1125,7 +1125,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMesCreateReceiptResponse("receipt-1"));
+        return Task.FromResult(new BusinessConsoleMesCreateReceiptResponse("receipt-1", "FGR-1"));
     }
 
     public Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(

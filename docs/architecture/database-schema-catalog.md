@@ -24,6 +24,7 @@ Source:
 3. `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/*.cs`
 4. `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/Migrations/20260521074323_InitialBusinessMasterData.cs`
 5. `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/Migrations/20260521085711_RealignBusinessMasterData.cs`
+6. `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/Migrations/20260527073140_AddNumberingCounters.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -42,6 +43,8 @@ Source:
 | `work_calendars` | business | 工作日历聚合根，定义可用于工作中心或计划的日历代码。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + code` 是业务唯一键。 | 唯一索引保护日历 code；`disabled` 支持快速扫描活跃日历。 | 聚合创建后保留；停用表示日历不再分配给新计划。 |
 | `work_calendar_working_times` | business | 工作日历拥有的周期性工作时间窗口。 | `id` 为 owned row Guid；`work_calendar_id` 指向 `work_calendars`；`day_of_week + starts_at + ends_at` 表示本地工作窗口。 | `work_calendar_id` 支持按日历加载所有工作时间；随聚合级联维护。 | owned collection，生命周期完全跟随 `work_calendars` 聚合。 |
 | `device_assets` | business | 设备资产主数据，记录设备型号、产线、工作中心归属、资产类别、静态容量、关键等级和可维护/可遥测标记。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + code` 是业务唯一键；`line_code` 与 `work_center_code` 为跨聚合业务引用；`minimum_capacity`、`maximum_capacity` 与 `capacity_uom_code` 记录流程设备静态能力。 | 唯一索引保护设备 code；`work_center_code + disabled` 支持按工作中心列活跃设备。 | 聚合创建后保留；退役或不可用使用 `disabled` 停用；PLC/DCS/SCADA 密钥、tag、报警和状态快照不进入本表。 |
+| `numbering_counters` | business | MasterData service-local 编号计数器，用于普通创建请求自动分配 SKU 等业务号。 | `organization_id + environment_id + document_type + site_code + date_segment` 是计数器唯一范围；`current_value` 和 `version` 维护已分配序列与乐观并发。 | 唯一索引保护同一编号范围只有一个 counter。 | 创建请求按需创建并递增；不由用户直接维护。 |
+| `numbering_idempotency_keys` | business | MasterData 创建请求幂等键记录，把客户端 key 绑定到已分配业务号和 payload fingerprint。 | `organization_id + environment_id + document_type + idempotency_key` 是唯一键；`number` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一文档类型内重复创建不同单据。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于消费幂等、分组扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | 主键用于 CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -91,6 +94,7 @@ Source:
 3. `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/*.cs`
 4. `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/Migrations/20260522120104_InitialProductEngineeringSchema.cs`
 5. `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/Migrations/20260523014957_CompleteProductEngineeringReleaseFacts.cs`
+6. `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/Migrations/20260527073213_AddNumberingCounters.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -106,6 +110,8 @@ Source:
 | `engineering_changes` | business | ECO/ECN 工程变更聚合根，记录变更号、原因、审批引用、影响范围和发布时间。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + change_number` 是变更唯一键；`approval_reference_id` 是审批链业务引用。 | 变更号唯一索引防重复；`organization_id + environment_id + status` 支持按状态查询变更。 | 草稿记录影响范围，经审批引用确认后发布；发布后作为工程变更事实保留。 |
 | `engineering_change_affected_versions` | business | 工程变更影响版本行，记录受 ECO/ECN 影响的 EBOM、MBOM、Routing 或 ProductionVersion 业务版本 ID。 | owned row `id`；`engineering_change_id` 指向变更聚合；`version_kind + version_id` 标识受影响对象。 | `engineering_change_id + version_kind + version_id` 唯一，避免同一变更重复标注同一版本。 | owned collection，生命周期跟随 `engineering_changes`。 |
 | `production_versions` | business | ProductEngineering 拥有的生产版本绑定事实，将已发布 MBOM 版本和工艺路线版本绑定到 SKU、生效日期、批量区间和 MES 工单创建选择规则。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + sku_code` 定义租户环境内 SKU 范围；`mbom_version_id` 和 `routing_version_id` 为工程版本业务引用；`valid_from/valid_to`、`lot_size_min/lot_size_max`、`priority` 和 `is_default` 驱动解析选择。 | `organization_id + environment_id + sku_code + status` 支持 MES 解析活跃生产版本；`sku_code + is_default + valid_from + valid_to` 支持默认版本重叠校验；`mbom_version_id + routing_version_id` 支持按工程版本追踪生产版本。 | 创建后为 `active`；归档为 `archived` 后不再被 MES 解析；当前版本只允许绑定已发布 MBOM/route，暂不暴露锁定状态。 |
+| `numbering_counters` | business | ProductEngineering service-local 编号计数器，用于工程文档、工程物料、BOM、routing 和 ECO 普通创建请求自动分配业务号。 | `organization_id + environment_id + document_type + site_code + date_segment` 是计数器唯一范围；`current_value` 和 `version` 维护已分配序列与乐观并发。 | 唯一索引保护同一编号范围只有一个 counter。 | 创建请求按需创建并递增；不由用户直接维护。 |
+| `numbering_idempotency_keys` | business | ProductEngineering 创建请求幂等键记录，把客户端 key 绑定到已分配业务号和 payload fingerprint。 | `organization_id + environment_id + document_type + idempotency_key` 是唯一键；`number` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一文档类型内重复创建不同单据。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于消费幂等、分组扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | 主键用于 CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -158,16 +164,19 @@ Source:
 3. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/EntityConfigurations/*.cs`
 4. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260523025528_InitialMesExecutionSchema.cs`
 5. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260526022531_AddMesIntegrationEventDeadLetters.cs`
+6. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260527073156_AddNumberingCounters.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `work_orders` | business | MES 持久化工单事实，记录 SKU、生产版本引用、计划数量、优先级、交期和执行状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + work_order_id` 是业务唯一键；`production_version_id` 是 ProductEngineering 业务引用。 | 唯一约束保护同一组织/环境内工单号；SKU/交期索引用于排产扫描。 | 工单创建后进入 MES 执行生命周期，历史保留用于报工、入库请求和成本追踪。 |
 | `operation_tasks` | business | MES 工序任务事实，保存工序顺序、工作中心、可选工作中心、持续时间和执行窗口。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + operation_task_id` 是业务唯一键。 | 工单/工序顺序索引用于按工单加载工序；外键索引用于报工与工单追踪。 | 随工单创建或执行调整保留；状态表达排产和执行进度。 |
-| `production_reports` | business | MES 报工事实，记录工单/工序的良品数、报废数、完工标记和报工时间。 | `id` 为 Guid v7 强类型 ID；`work_order_id` 与 `operation_task_id` 为 MES 业务引用。 | 工单/工序/时间索引用于执行时间线查询。 | 报工创建后作为执行历史保留，不直接修改 Inventory、Quality 或 ERP 事实。 |
-| `finished_goods_receipt_requests` | business | MES 完工入库请求事实，向 WMS/Inventory 边界表达成品收货意图。 | `id` 为 Guid v7 强类型 ID；记录 `work_order_id`、`sku_id`、`quantity`、`uom_code` 和请求时间。 | 工单/SKU/时间索引用于入库请求追踪。 | 创建后由下游库存/仓储服务消费并回写自身事实；MES 只保存请求事实。 |
+| `production_reports` | business | MES 报工事实，记录工单/工序的良品数、报废数、完工标记和报工时间。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + report_no` 是报工业务号唯一键；`work_order_id` 与 `operation_task_id` 为 MES 业务引用。 | 报工号唯一索引用于重试和追踪；工单/工序/时间索引用于执行时间线查询。 | 报工创建后作为执行历史保留，不直接修改 Inventory、Quality 或 ERP 事实。 |
+| `finished_goods_receipt_requests` | business | MES 完工入库请求事实，向 WMS/Inventory 边界表达成品收货意图。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + request_no` 是入库请求业务号唯一键；记录 `work_order_id`、`sku_id`、`quantity`、`uom_code` 和请求时间。 | 请求号唯一索引用于下游引用；工单/SKU/时间索引用于入库请求追踪。 | 创建后由下游库存/仓储服务消费并回写自身事实；MES 只保存请求事实。 |
 | `schedule_results` | business | MES 规则排产结果事实，保存排产版本、触发原因、排产时间和 JSON assignment 结果。 | `schedule_version` 唯一；`assignments_json` 和 `affected_work_order_ids_json` 是 append-only JSON。 | 版本唯一索引支持读取当前/历史版本；触发源/时间索引用于诊断。 | 每次排产生成一条版本化结果，历史版本保留。 |
-| `work_center_unavailabilities` | business | MES 工作中心不可用窗口事实，来自维修或手工约束，用于排产避让。 | `work_center_id`、`from_utc`、`to_utc` 定义不可用窗口；`device_asset_id` 记录可选设备来源。 | 工作中心窗口索引用于排产查询；asset open 索引用于设备恢复处理。 | 打开窗口以 `to_utc = null` 表示仍不可用，关闭后保留历史。 |
+| `work_center_unavailabilities` | business | MES 工作中心不可用窗口事实，来自维修或手工约束，用于排产避让。 | `organization_id + environment_id + downtime_event_no` 是停机事件业务号唯一键；`work_center_id`、`from_utc`、`to_utc` 定义不可用窗口；`device_asset_id` 记录可选设备来源。 | 停机号唯一索引用于恢复和追踪；工作中心窗口索引用于排产查询；asset open 索引用于设备恢复处理。 | 打开窗口以 `to_utc = null` 表示仍不可用，关闭后保留历史。 |
 | `device_asset_work_center_mappings` | business | MES 本地设备资产到工作中心映射，用于把 Maintenance 设备事件转换为 MES 排产约束。 | `organization_id + environment_id + device_asset_id` 唯一；`work_center_id` 是 MasterData 工作中心公开 ID。 | 唯一索引防止同一设备映射到多个 MES 工作中心。 | 映射作为本地配置事实保留。 |
+| `numbering_counters` | business | MES service-local 编号计数器，用于工单、报工、物料请求、不良、停机、交接和完工入库请求等普通创建请求自动分配业务号。 | `organization_id + environment_id + document_type + site_code + date_segment` 是计数器唯一范围；`current_value` 和 `version` 维护已分配序列与乐观并发。 | 唯一索引保护同一编号范围只有一个 counter。 | 创建请求按需创建并递增；不由用户直接维护。 |
+| `numbering_idempotency_keys` | business | MES 创建请求幂等键记录，把客户端 key 绑定到已分配业务号和 payload fingerprint。 | `organization_id + environment_id + document_type + idempotency_key` 是唯一键；`number` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一文档类型内重复创建不同单据。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于消费幂等、分组扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | 主键用于 CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -189,6 +198,7 @@ Source:
 1. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/ApplicationDbContext.cs`
 2. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/EntityConfigurations/*.cs`
 3. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260523103405_InitialDemandPlanningSchema.cs`
+4. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260527073227_AddNumberingCounters.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -197,6 +207,8 @@ Source:
 | `mrp_runs` | business | MRP 计算运行头和输入快照元数据。 | `id` 为 Guid v7 强类型 ID；`run_id` 为外部可见运行编号；保存计划窗口、状态和输入快照摘要。 | run id 唯一索引支持幂等读取；状态/创建时间索引用于运行列表。 | 每次 MRP 运行生成独立事实；不直接创建 ERP/MES 正式单据。 |
 | `planning_suggestions` | business | MRP 生成的计划采购建议和计划工单建议。 | `id` 为 Guid v7 强类型 ID；记录 suggestion id、建议类型、SKU、数量、需求日期和状态。 | run id/status 索引用于按 MRP run 查看建议；SKU/date 索引用于计划员筛选。 | 可被接受、拒绝或关闭；接受只表达建议状态，不越权写 ERP/MES。 |
 | `mrp_pegging_links` | business | 从计划建议回溯到需求、BOM 展开和库存快照的 pegging 链路。 | `id` 为 Guid v7 强类型 ID；记录 suggestion、demand、parent/child 关系和数量。 | suggestion id 索引用于读取建议追溯；run id 索引用于诊断整次展开。 | 随 MRP run 与建议生成后保留，用于解释计划结果。 |
+| `numbering_counters` | business | DemandPlanning service-local 编号计数器，用于需求来源等普通创建请求自动分配业务号。 | `organization_id + environment_id + document_type + site_code + date_segment` 是计数器唯一范围；`current_value` 和 `version` 维护已分配序列与乐观并发。 | 唯一索引保护同一编号范围只有一个 counter。 | 创建请求按需创建并递增；不由用户直接维护。 |
+| `numbering_idempotency_keys` | business | DemandPlanning 创建请求幂等键记录，把客户端 key 绑定到已分配业务号和 payload fingerprint。 | `organization_id + environment_id + document_type + idempotency_key` 是唯一键；`number` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一文档类型内重复创建不同单据。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于消费幂等、分组扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | 主键用于 CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -288,6 +300,7 @@ Source:
 1. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
 2. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/*.cs`
 3. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/*_InitialErpProcurementSalesFinanceSchema.cs`
+4. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/20260527073242_AddNumberingCounters.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -304,6 +317,8 @@ Source:
 | `account_receivables` | business | 应收候选事实。 | `receivable_no` 是业务编号；记录来源单据、客户、金额和已收金额。 | AR no 唯一索引用于幂等生成。 | 收款推进不允许超过 open amount；完整收款核销后置。 |
 | `cost_candidates` | business | 成本候选事实，引用 MES、Inventory 或 WMS 公开事实。 | `candidate_no` 是业务编号；`source_type + source_document_no` 描述来源。 | candidate no 唯一索引用于成本候选幂等。 | 作为候选保留，不代表最终成本结转。 |
 | `journal_vouchers` / `journal_voucher_lines` | business | 平衡凭证事实和借贷行。 | `voucher_no` 是业务编号；行记录 account code、debit/credit。 | voucher no 唯一索引用于凭证审计。 | posted 后不可变，借贷必须平衡。 |
+| `numbering_counters` | business | ERP service-local 编号计数器，用于采购、销售和财务普通创建请求自动分配业务号。 | `organization_id + environment_id + document_type + site_code + date_segment` 是计数器唯一范围；`current_value` 和 `version` 维护已分配序列与乐观并发。 | 唯一索引保护同一编号范围只有一个 counter。 | 创建请求按需创建并递增；不由用户直接维护。 |
+| `numbering_idempotency_keys` | business | ERP 创建请求幂等键记录，把客户端 key 绑定到已分配业务号和 payload fingerprint。 | `organization_id + environment_id + document_type + idempotency_key` 是唯一键；`number` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一文档类型内重复创建不同单据。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -535,16 +550,16 @@ Known gaps:
 | --- | --- | --- | --- | --- | --- | --- |
 | IAM | `iam` | Implemented | Yes | Yes | No | 已有 PostgreSQL `iam` schema、初始 migration、schema convention tests、idempotent seed、登录/refresh/logout/`/me` 和 Connector Host credential validation；客户 release bundle 仍待后续。 |
 | FileStorage | `filestorage` | Implemented baseline | Yes | Yes | No | 已有 `stored_files`、`upload_sessions`、`download_grants` 初始 migration、schema convention tests、PostgreSQL-backed API service、server-proxy metadata API 和本地 tus MVP 传输能力；客户 release bundle 仍待后续；MinIO/S3 multipart 为 post-MVP 部署联调项。 |
-| BusinessMasterData | `business_masterdata` | Implemented | Yes | Yes | No | 已有 Layer 0 realignment schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
-| BusinessProductEngineering | `product_engineering` | Implemented | Yes | Yes | No | 已有 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN、ProductionVersion schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessMasterData | `business_masterdata` | Implemented | Yes | Yes | No | 已有 Layer 0 realignment schema、numbering counter/idempotency tables、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessProductEngineering | `product_engineering` | Implemented | Yes | Yes | No | 已有 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN、ProductionVersion、numbering counter/idempotency tables、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessInventory | `inventory` | Implemented | Yes | Yes | No | 已有库存地点、库存台账、库存移动、盘点任务和盘点调整 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessQuality | `quality` | Implemented | Yes | Yes | No | 已有 NCR、InspectionPlan、InspectionRecord schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
-| BusinessMES | `mes` | Implemented | Yes | Yes | No | 已有工单、工序任务、报工、完工入库请求、排产结果、工作中心不可用窗口、设备映射和 persistent DLQ schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
-| BusinessDemandPlanning | `demand_planning` | Implemented | Yes | Yes | No | 已有需求来源、MPS、MRP run、pegging 和计划建议 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessMES | `mes` | Implemented | Yes | Yes | No | 已有工单、工序任务、报工、完工入库请求、排产结果、工作中心不可用窗口、设备映射、numbering counter/idempotency tables 和 persistent DLQ schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessDemandPlanning | `demand_planning` | Implemented | Yes | Yes | No | 已有需求来源、MPS、MRP run、pegging、计划建议和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BarcodeLabel | `barcode` | Implemented | Yes | Yes | No | 已有条码规则、标签模板、打印批次、打印项和扫码记录 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessApproval | `business_approval` | Implemented | Yes | Yes | No | 已有审批模板、审批链、审批步骤和审批决定 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | WMS | `wms` | Implemented | Yes | Yes | No | 已有入库、出库、仓库任务、盘点执行、WCS 任务和库存移动请求元数据 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
-| ERP | `erp` | Implemented | Yes | Yes | No | 已有 Procurement、Sales 和 Finance MVP schema、migration、schema convention tests 和 verify scripts；客户 release bundle、完整总账月结和银行/税务对账仍待后续。 |
+| ERP | `erp` | Implemented | Yes | Yes | No | 已有 Procurement、Sales、Finance MVP 和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify scripts；客户 release bundle、完整总账月结和银行/税务对账仍待后续。 |
 | BusinessIndustrialTelemetry | `industrial_telemetry` | Implemented | Yes | Yes | No | 已有 tag、设备状态快照、报警事件和采集汇总 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessMaintenance | `maintenance` | Implemented | Yes | Yes | No | 已有维修工单、保养计划、点检、停机原因和备件行 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | Notification | `notification` | Implemented baseline | Yes | Yes | No | 已有通知意图、站内消息、任务、投递尝试、业务 inbox、CAP storage 和 persistent DLQ schema、migration、schema convention tests；偏好/订阅、外部渠道 provider、限流和模板映射仍待后续。 |

@@ -79,7 +79,6 @@ const tableState = reactive({
 const createForm = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
-  code: '',
   name: '',
   baseUomCode: 'EA',
   category: '减振器总成',
@@ -91,6 +90,7 @@ const createForm = reactive({
   defaultBarcodeRuleCode: '减振器箱标',
   qualityRequired: true,
   complianceTags: 'IATF16949',
+  idempotencyKey: newSkuIdempotencyKey(),
 })
 const materialTypeOptions = [
   { label: '成品', value: 'finished-good', prefix: 'FG-SAD' },
@@ -167,12 +167,6 @@ function clearFilters() {
   applyFilters()
 }
 
-function generateSubmissionCode() {
-  const option = materialTypeOptions.find((item) => item.value === createForm.materialType)
-  const prefix = option?.prefix ?? 'SKU'
-  return `${prefix}-${String(sourceSkus.value.length + localSkus.value.length + 1).padStart(3, '0')}`
-}
-
 function splitTags(value: string) {
   const tags = value
     .split(',')
@@ -183,7 +177,6 @@ function splitTags(value: string) {
 }
 
 function resetCreateForm() {
-  createForm.code = ''
   createForm.name = ''
   createForm.baseUomCode = 'EA'
   createForm.category = '减振器总成'
@@ -195,6 +188,7 @@ function resetCreateForm() {
   createForm.defaultBarcodeRuleCode = '减振器箱标'
   createForm.qualityRequired = true
   createForm.complianceTags = 'IATF16949'
+  createForm.idempotencyKey = newSkuIdempotencyKey()
 }
 
 async function submitSku() {
@@ -203,7 +197,6 @@ async function submitSku() {
   const body: BusinessConsoleCreateSkuRequest = {
     organizationId: createForm.organizationId.trim(),
     environmentId: createForm.environmentId.trim(),
-    code: generateSubmissionCode(),
     name: createForm.name.trim(),
     baseUomCode: createForm.baseUomCode.trim(),
     category: createForm.category.trim(),
@@ -215,10 +208,11 @@ async function submitSku() {
     defaultBarcodeRuleCode: createForm.defaultBarcodeRuleCode.trim(),
     qualityRequired: createForm.qualityRequired,
     complianceTags: splitTags(createForm.complianceTags),
+    idempotencyKey: createForm.idempotencyKey,
   }
 
   const response = await createSku(body)
-  const createdCode = response?.data?.code ?? body.code
+  const createdCode = response?.data?.code ?? ''
   localSkus.value = [
     {
       resourceType: 'sku',
@@ -232,6 +226,10 @@ async function submitSku() {
   createSuccess.value = `物料 ${createdCode} 已提交。`
   resetCreateForm()
   createOpen.value = false
+}
+
+function newSkuIdempotencyKey() {
+  return `sku-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function syncContextFromFilters() {

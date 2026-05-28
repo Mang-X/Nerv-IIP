@@ -7,6 +7,7 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionSc
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
+using Nerv.IIP.Business.DemandPlanning.Infrastructure.Numbering;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
@@ -41,6 +42,8 @@ public sealed class DemandPlanningSchemaConventionTests
             typeof(MrpRun),
             typeof(PlanningSuggestion),
             typeof(PeggingLink),
+            typeof(NumberingCounter),
+            typeof(NumberingIdempotencyKey),
         };
 
         var failures = new List<string>();

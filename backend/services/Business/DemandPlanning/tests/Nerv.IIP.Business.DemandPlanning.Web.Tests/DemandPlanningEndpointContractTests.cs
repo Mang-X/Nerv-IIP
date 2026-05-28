@@ -68,6 +68,36 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Demand_source_command_generates_source_reference_and_replays_idempotent_create()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var numbering = new DemandPlanningNumberingService();
+        var handler = new CreateOrUpdateDemandSourceCommandHandler(dbContext, numbering);
+        var command = new CreateOrUpdateDemandSourceCommand(
+            "org-001",
+            "env-dev",
+            "manual",
+            null,
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            10m,
+            new DateOnly(2026, 6, 1),
+            "demand-create-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var second = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first, second);
+        var demand = Assert.Single(dbContext.DemandSources);
+        Assert.Matches("^DEMAND-[0-9]{8}-[0-9]{6}$", demand.SourceReference);
+    }
+
+    [Fact]
     public async Task Mrp_run_command_creates_fixture_suggestions_and_pegging()
     {
         await using var provider = CreateInMemoryProvider();

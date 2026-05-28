@@ -272,15 +272,174 @@ public sealed class MasterDataApiContractTests
         Assert.Contains("already exists", exception.Message, StringComparison.Ordinal);
     }
 
-    private static ServiceProvider CreateInMemoryProvider()
+    [Fact]
+    public async Task Create_sku_command_generates_unique_server_codes_for_parallel_requests()
     {
+        await using var provider = CreateInMemoryProvider();
+        var numbering = new MasterDataNumberingService();
+
+        var tasks = Enumerable.Range(1, 20)
+            .Select(async index =>
+            {
+                using var scope = provider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
+                var result = await handler.Handle(
+                    new CreateSkuCommand("org-001", "env-dev", null, $"Finished Good {index}", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], $"sku-create-{index}"),
+                    CancellationToken.None);
+                await dbContext.SaveChangesAsync(CancellationToken.None);
+                return result.Code;
+            });
+
+        var codes = await Task.WhenAll(tasks);
+
+        Assert.Equal(20, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(codes, code => Assert.Matches("^SKU-[0-9]{8}-[0-9]{6}$", code));
+    }
+
+    [Fact]
+    public async Task Create_sku_command_reuses_existing_result_for_same_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var numbering = new MasterDataNumberingService();
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
+        var command = new CreateSkuCommand("org-001", "env-dev", null, "Finished Good", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var second = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first.Code, second.Code);
+        Assert.Single(dbContext.Skus);
+    }
+
+    [Fact]
+    public async Task Create_sku_command_replay_returns_persisted_display_name()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), new MasterDataNumberingService(dbContext));
+        var command = new CreateSkuCommand("org-001", "env-dev", null, "Original Name", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-display-name");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var persisted = await dbContext.Skus.SingleAsync(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev" && x.Code == first.Code, CancellationToken.None);
+        persisted.Rename("Persisted Name");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first.Code, replay.Code);
+        Assert.Equal("Persisted Name", replay.DisplayName);
+    }
+
+    [Fact]
+    public async Task Create_sku_command_rejects_same_idempotency_key_with_different_name()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var numbering = new MasterDataNumberingService(dbContext);
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
+
+        await handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", null, "Original Name", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-name"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", null, "Changed Name", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-name"),
+            CancellationToken.None));
+
+        Assert.Contains("different sku create payload", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Create_sku_command_db_numbering_generates_unique_codes_for_parallel_requests_after_counter_exists()
+    {
+        await using var provider = CreateInMemoryProvider("master-data-api-contract-db-numbering-parallel");
+        using (var seedScope = provider.CreateScope())
+        {
+            var seedContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var seedHandler = new CreateSkuCommandHandler(new SkuRepository(seedContext), new MasterDataNumberingService(seedContext));
+            await seedHandler.Handle(
+                new CreateSkuCommand("org-001", "env-dev", null, "Seed SKU", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-db-seed"),
+                CancellationToken.None);
+            await seedContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var tasks = Enumerable.Range(1, 8)
+            .Select(async index =>
+            {
+                using var scope = provider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), new MasterDataNumberingService(dbContext));
+                var result = await handler.Handle(
+                    new CreateSkuCommand("org-001", "env-dev", null, $"Parallel SKU {index}", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], $"sku-db-parallel-{index}"),
+                    CancellationToken.None);
+                await dbContext.SaveChangesAsync(CancellationToken.None);
+                return result.Code;
+            });
+
+        var codes = await Task.WhenAll(tasks);
+
+        Assert.Equal(8, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(codes, code => Assert.Matches("^SKU-[0-9]{8}-[0-9]{6}$", code));
+    }
+
+    [Fact]
+    public async Task Create_sku_command_db_numbering_does_not_commit_before_unit_of_work_save()
+    {
+        const string databaseName = "master-data-api-contract-db-numbering-uow";
+        await using var provider = CreateInMemoryProvider(databaseName);
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), new MasterDataNumberingService(dbContext));
+
+        await handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", null, "Deferred Numbering", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-deferred-numbering"),
+            CancellationToken.None);
+
+        using var observerScope = provider.CreateScope();
+        var observerContext = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(observerContext.NumberingCounters);
+        Assert.Empty(observerContext.NumberingIdempotencyKeys);
+        Assert.Empty(observerContext.Skus);
+    }
+
+    [Fact]
+    public async Task Create_sku_command_persists_numbering_counter_and_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), new MasterDataNumberingService(dbContext));
+
+        var result = await handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", null, "Persisted Numbering", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-persisted-numbering"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Matches("^SKU-[0-9]{8}-[0-9]{6}$", result.Code);
+        Assert.Single(dbContext.NumberingCounters);
+        var idempotency = Assert.Single(dbContext.NumberingIdempotencyKeys);
+        Assert.Equal(result.Code, idempotency.Number);
+    }
+
+    private static ServiceProvider CreateInMemoryProvider(string? databaseName = null)
+    {
+        databaseName ??= $"master-data-api-contract-{Guid.NewGuid():N}";
         var services = new ServiceCollection();
         services.AddMediatR(configuration =>
         {
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
         });
         services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseInMemoryDatabase($"master-data-api-contract-{Guid.NewGuid():N}"));
+            options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();
     }
 

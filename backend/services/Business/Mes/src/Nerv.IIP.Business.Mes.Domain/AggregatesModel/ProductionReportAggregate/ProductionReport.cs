@@ -11,6 +11,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     private ProductionReport(
         string organizationId,
         string environmentId,
+        string reportNo,
         string workOrderId,
         string operationTaskId,
         decimal goodQuantity,
@@ -20,6 +21,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
+        ReportNo = DomainGuard.Required(reportNo, nameof(reportNo));
         WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
         OperationTaskId = DomainGuard.Required(operationTaskId, nameof(operationTaskId));
         GoodQuantity = DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
@@ -35,6 +37,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
 
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
+    public string ReportNo { get; private set; } = string.Empty;
     public string WorkOrderId { get; private set; } = string.Empty;
     public string OperationTaskId { get; private set; } = string.Empty;
     public decimal GoodQuantity { get; private set; }
@@ -45,6 +48,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public static ProductionReport Record(
         string organizationId,
         string environmentId,
+        string reportNo,
         string workOrderId,
         string operationTaskId,
         decimal goodQuantity,
@@ -55,6 +59,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         return new ProductionReport(
             organizationId,
             environmentId,
+            reportNo,
             workOrderId,
             operationTaskId,
             goodQuantity,

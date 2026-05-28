@@ -188,8 +188,8 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dbContext.ProductionReports.Add(ProductionReport.Record("org-001", "env-dev", "WO-001", "OP-10", 9m, 1m, true, now));
-            dbContext.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "WO-001", "SKU-001", 9m, "PCS", now.AddMinutes(10)));
+            dbContext.ProductionReports.Add(ProductionReport.Record("org-001", "env-dev", "PRPT-001", "WO-001", "OP-10", 9m, 1m, true, now));
+            dbContext.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-001", "WO-001", "SKU-001", 9m, "PCS", now.AddMinutes(10)));
             await dbContext.SaveChangesAsync();
         }
 
@@ -199,7 +199,9 @@ public sealed class MesPersistenceContractTests
         var receiptRequest = await recreatedDbContext.FinishedGoodsReceiptRequests.SingleAsync();
 
         Assert.Equal(9m, report.GoodQuantity);
+        Assert.Equal("PRPT-001", report.ReportNo);
         Assert.Equal("WO-001", receiptRequest.WorkOrderId);
+        Assert.Equal("FGR-001", receiptRequest.RequestNo);
         Assert.Equal("PCS", receiptRequest.UomCode);
     }
 

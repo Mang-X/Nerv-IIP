@@ -29,7 +29,7 @@ public sealed record BusinessConsoleListSkusRequest(
 public sealed record BusinessConsoleCreateSkuRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string BaseUomCode,
     string Category,
@@ -40,7 +40,8 @@ public sealed record BusinessConsoleCreateSkuRequest(
     string StorageConditionCode,
     string DefaultBarcodeRuleCode,
     bool QualityRequired,
-    IReadOnlyCollection<string>? ComplianceTags);
+    IReadOnlyCollection<string>? ComplianceTags,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleInventoryAvailabilityRequest(
     string OrganizationId,
@@ -240,7 +241,7 @@ public sealed record BusinessConsoleMesOperationTaskItem(
 public sealed record BusinessConsoleCreateRushWorkOrderRequest(
     string OrganizationId,
     string EnvironmentId,
-    string WorkOrderId,
+    string? WorkOrderId,
     string SkuId,
     string? ProductionVersionId,
     decimal Quantity,
@@ -248,7 +249,8 @@ public sealed record BusinessConsoleCreateRushWorkOrderRequest(
     string WorkCenterId,
     string? OperationTaskId,
     int? OperationSequence,
-    int DurationMinutes);
+    int DurationMinutes,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleRunScheduleRequest(
     string OrganizationId,
@@ -283,9 +285,10 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     decimal GoodQuantity,
     decimal ScrapQuantity,
     bool CompletesOperation,
-    DateTimeOffset ReportedAtUtc);
+    DateTimeOffset ReportedAtUtc,
+    string? IdempotencyKey = null);
 
-public sealed record BusinessConsoleRecordProductionReportResponse(string ProductionReportId);
+public sealed record BusinessConsoleRecordProductionReportResponse(string ProductionReportId, string ReportNo);
 
 public sealed record BusinessConsoleMesContextRequest(
     string OrganizationId,
@@ -362,7 +365,7 @@ public sealed record BusinessConsoleMesConvertPlanToWorkOrderRequest(
     string? WorkOrderId,
     string? WorkCenterId,
     DateTimeOffset? DueUtc,
-    string IdempotencyKey);
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleMesWorkOrderDetailRequest(
     [property: RouteParam] string WorkOrderId,
@@ -497,6 +500,7 @@ public sealed record BusinessConsoleMesProductionReportListResponse(IReadOnlyCol
 
 public sealed record BusinessConsoleMesProductionReportRow(
     string ProductionReportId,
+    string ReportNo,
     string WorkOrderId,
     string OperationTaskId,
     decimal GoodQuantity,
@@ -529,6 +533,7 @@ public sealed record BusinessConsoleMesReceiptRequestListResponse(IReadOnlyColle
 
 public sealed record BusinessConsoleMesReceiptRequestRow(
     string ReceiptRequestId,
+    string RequestNo,
     string WorkOrderId,
     string SkuId,
     decimal Quantity,
@@ -545,7 +550,7 @@ public sealed record BusinessConsoleMesCreateReceiptRequest(
     DateTimeOffset RequestedAtUtc,
     string IdempotencyKey);
 
-public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGoodsReceiptRequestId);
+public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGoodsReceiptRequestId, string RequestNo);
 
 public sealed record BusinessConsoleMesDowntimeEventListResponse(IReadOnlyCollection<BusinessConsoleMesDowntimeEventRow> Items);
 

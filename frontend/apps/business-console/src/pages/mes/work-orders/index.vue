@@ -158,7 +158,6 @@ const demandEntries = [
 const rushForm = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
-  workOrderId: '',
   skuId: 'FG-SAD-FRT-001',
   productionVersionId: '',
   quantity: '1',
@@ -167,6 +166,7 @@ const rushForm = reactive({
   operationTaskId: '',
   operationSequence: '10',
   durationMinutes: '60',
+  idempotencyKey: newMesIdempotencyKey('rush-work-order'),
 })
 
 const reportForm = reactive({
@@ -178,6 +178,7 @@ const reportForm = reactive({
   scrapQuantity: '0',
   completesOperation: true,
   reportedAtUtc: toLocalDateTimeInput(new Date()),
+  idempotencyKey: newMesIdempotencyKey('production-report'),
 })
 
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
@@ -232,7 +233,6 @@ const canCreateRush = computed(
   () =>
     isNonEmpty(rushForm.organizationId) &&
     isNonEmpty(rushForm.environmentId) &&
-    isNonEmpty(rushForm.workOrderId) &&
     isNonEmpty(rushForm.skuId) &&
     toOptionalNumber(rushForm.quantity) !== undefined &&
     isNonEmpty(rushForm.dueUtc) &&
@@ -350,10 +350,6 @@ function clearFilters() {
   applyFilters()
 }
 
-function generateRushWorkOrderId() {
-  rushForm.workOrderId = `WO-RUSH-${dateCode()}-${String(sourceWorkOrders.value.length + 1).padStart(3, '0')}`
-}
-
 function openDemandEntry(path: string) {
   if (!path) {
     rushSheetOpen.value = true
@@ -393,7 +389,6 @@ async function submitRushWorkOrder() {
   const body: BusinessConsoleCreateRushWorkOrderRequest = {
     organizationId: rushForm.organizationId.trim(),
     environmentId: rushForm.environmentId.trim(),
-    workOrderId: rushForm.workOrderId.trim(),
     skuId: rushForm.skuId.trim(),
     productionVersionId: optionalText(rushForm.productionVersionId),
     quantity: toOptionalNumber(rushForm.quantity),
@@ -402,12 +397,14 @@ async function submitRushWorkOrder() {
     operationTaskId: optionalText(rushForm.operationTaskId),
     operationSequence: toOptionalInteger(rushForm.operationSequence),
     durationMinutes: toOptionalInteger(rushForm.durationMinutes),
+    idempotencyKey: rushForm.idempotencyKey,
   }
 
   const response = await createRushWorkOrder(body)
-  rushSuccess.value = `急单 ${response?.data?.workOrderId ?? body.workOrderId} 已提交。`
+  rushSuccess.value = `急单 ${response?.data?.workOrderId ?? '已提交'} 已提交。`
   lastRushAffectedWorkOrders.value = response?.data?.affectedWorkOrderIds ?? []
   lastRushScheduleVersion.value = response?.data?.schedule?.scheduleVersion
+  rushForm.idempotencyKey = newMesIdempotencyKey('rush-work-order')
 }
 
 async function submitProductionReport() {
@@ -422,10 +419,12 @@ async function submitProductionReport() {
     scrapQuantity: reportScrapQuantity.value,
     completesOperation: reportForm.completesOperation,
     reportedAtUtc: toIsoFromLocalInput(reportForm.reportedAtUtc),
+    idempotencyKey: reportForm.idempotencyKey,
   }
 
   const response = await recordProductionReport(body)
-  reportSuccess.value = `生产报工 ${response?.data?.productionReportId ?? body.workOrderId} 已提交。`
+  reportSuccess.value = `生产报工 ${response?.data?.reportNo ?? response?.data?.productionReportId ?? body.workOrderId} 已提交。`
+  reportForm.idempotencyKey = newMesIdempotencyKey('production-report')
 }
 
 function setSort(column: SortColumn) {
@@ -500,12 +499,8 @@ function formatStatus(value?: string | null) {
   return value ? (map[value.toLowerCase()] ?? value) : '未知'
 }
 
-function dateCode() {
-  const date = new Date()
-  const year = String(date.getFullYear()).slice(-2)
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}${month}${day}`
+function newMesIdempotencyKey(scope: string) {
+  return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function orderKey(order: BusinessConsoleMesWorkOrderItem, index: number) {
@@ -766,13 +761,6 @@ function isNonEmpty(value: string) {
           <BusinessFormStatus :error="rushErrorMessage" :success="rushSuccess" />
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="rush-work-order">工单号 <span class="text-destructive">*</span></FieldLabel>
-              <div class="flex gap-2">
-                <Input id="rush-work-order" v-model="rushForm.workOrderId" required />
-                <Button type="button" variant="outline" @click="generateRushWorkOrderId">生成</Button>
-              </div>
-            </Field>
             <Field>
               <FieldLabel for="rush-sku">物料 <span class="text-destructive">*</span></FieldLabel>
               <Select v-if="skuOptions.length" v-model="rushForm.skuId">

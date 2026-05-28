@@ -200,7 +200,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string | null;
     workCenterId?: string | null;
     dueUtc?: string | null;
-    idempotencyKey?: string;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -302,7 +302,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateRushWorkOrderRequest = {
     organizationId?: string;
     environmentId?: string;
-    workOrderId?: string;
+    workOrderId?: string | null;
     skuId?: string;
     productionVersionId?: string | null;
     quantity?: number;
@@ -311,6 +311,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     operationTaskId?: string | null;
     operationSequence?: number | null;
     durationMinutes?: number;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialReadinessResponse = NetCorePalExtensionsDtoResponseData & {
@@ -446,6 +447,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportRow = {
     productionReportId?: string;
+    reportNo?: string;
     workOrderId?: string;
     operationTaskId?: string;
     goodQuantity?: number;
@@ -460,6 +462,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProduction
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportResponse = {
     productionReportId?: string;
+    reportNo?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportRequest = {
@@ -471,6 +474,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     scrapQuantity?: number;
     completesOperation?: boolean;
     reportedAtUtc?: string;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest = {
@@ -512,6 +516,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptRequestRow = {
     receiptRequestId?: string;
+    requestNo?: string;
     workOrderId?: string;
     skuId?: string;
     quantity?: number;
@@ -525,6 +530,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesCreateReceipt
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateReceiptResponse = {
     finishedGoodsReceiptRequestId?: string;
+    requestNo?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateReceiptRequest = {
@@ -696,7 +702,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceItem = N
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSkuRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
     baseUomCode: string;
     category: string;
@@ -708,6 +714,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     defaultBarcodeRuleCode: string;
     qualityRequired?: boolean;
     complianceTags?: Array<string> | null;
+    idempotencyKey?: string | null;
 };
 
 /**

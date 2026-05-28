@@ -104,6 +104,8 @@ Expected: no unresolved placeholder is introduced. Product-copy forbidden exampl
 
 **Goal:** Remove user-generated system IDs from all create flows that produce durable business documents.
 
+**2026-05-27 implementation note:** #188 now removes ordinary UI/manual number entry for Business Console SKU creation, MES rush order creation, MES plan-to-work-order conversion and MES reporting, and adds optional idempotency keys plus service-local persistent number allocation to MasterData, MES, ProductEngineering, DemandPlanning and ERP P0 create commands. The owning services now include `numbering_counters` and `numbering_idempotency_keys` migrations, schema convention tests and schema catalog entries, with MES also assigning persistent business numbers to report, material issue, defect, downtime, handover and finished-goods receipt request flows.
+
 **Files:**
 - Modify: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/MasterData/MasterDataEndpoints.cs`
 - Modify: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/MasterData/CreateMasterDataCommands.cs`
@@ -112,15 +114,15 @@ Expected: no unresolved placeholder is introduced. Product-copy forbidden exampl
 - Modify: equivalent create command files in ProductEngineering, DemandPlanning and ERP where user-provided numbers are currently required.
 - Test: service-level endpoint and concurrency tests under each affected service.
 
-- [ ] **Step 1: Add service-local numbering rule and counter aggregates**
+- [x] **Step 1: Add service-local numbering rule and counter aggregates**
 
 Create per-service numbering rule and counter tables. Scope counters by organization, environment, document type, optional site/plant prefix and date segment. Use optimistic concurrency or row-level locking in Infrastructure; keep unique indexes on final document numbers.
 
-- [ ] **Step 2: Generate IDs inside the same transaction as document creation**
+- [x] **Step 2: Generate IDs inside the same transaction as document creation**
 
 Creation commands must allocate a number and persist the business document in one unit of work. UI requests may include an idempotency key; they must not include system IDs except privileged import/override paths.
 
-- [ ] **Step 3: Add duplicate and concurrency tests**
+- [x] **Step 3: Add duplicate and concurrency tests**
 
 Test 20 parallel create requests for SKU and MES work orders. Expected: all persisted system numbers are unique, ordered within rule scope, and retries do not create duplicate documents for the same idempotency key.
 

@@ -8,12 +8,13 @@ public sealed record CreateOrUpdateDemandSourceCommand(
     string OrganizationId,
     string EnvironmentId,
     string DemandType,
-    string SourceReference,
+    string? SourceReference,
     string SkuCode,
     string UomCode,
     string SiteCode,
     decimal Quantity,
-    DateOnly DueDate) : ICommand<DemandSourceId>;
+    DateOnly DueDate,
+    string? IdempotencyKey = null) : ICommand<DemandSourceId>;
 
 public sealed class CreateOrUpdateDemandSourceCommandValidator : AbstractValidator<CreateOrUpdateDemandSourceCommand>
 {
@@ -22,7 +23,7 @@ public sealed class CreateOrUpdateDemandSourceCommandValidator : AbstractValidat
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.DemandType).NotEmpty().MaximumLength(32);
-        RuleFor(x => x.SourceReference).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.SourceReference).MaximumLength(128);
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(64);
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(32);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(64);
@@ -30,16 +31,25 @@ public sealed class CreateOrUpdateDemandSourceCommandValidator : AbstractValidat
     }
 }
 
-public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContext dbContext, DemandPlanningNumberingService? numberingService = null)
     : ICommandHandler<CreateOrUpdateDemandSourceCommand, DemandSourceId>
 {
+    private readonly DemandPlanningNumberingService _numberingService = numberingService ?? new DemandPlanningNumberingService();
+
     public async Task<DemandSourceId> Handle(CreateOrUpdateDemandSourceCommand request, CancellationToken cancellationToken)
     {
+        var allocation = await _numberingService.AllocateDemandReferenceAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SourceReference,
+            request.IdempotencyKey,
+            string.Join('|', request.DemandType, request.SkuCode, request.UomCode, request.SiteCode, request.Quantity, request.DueDate),
+            cancellationToken);
         var demand = await dbContext.DemandSources.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
             && x.DemandType == request.DemandType.ToLower()
-            && x.SourceReference == request.SourceReference,
+            && x.SourceReference == allocation.Number,
             cancellationToken);
         if (demand is null)
         {
@@ -47,7 +57,7 @@ public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContex
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.DemandType,
-                request.SourceReference,
+                allocation.Number,
                 request.SkuCode,
                 request.UomCode,
                 request.SiteCode,

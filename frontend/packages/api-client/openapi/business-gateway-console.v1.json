@@ -4556,7 +4556,8 @@
             "nullable": true
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -4900,7 +4901,8 @@
             "type": "string"
           },
           "workOrderId": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "skuId": {
             "type": "string"
@@ -4932,6 +4934,10 @@
           "durationMinutes": {
             "type": "integer",
             "format": "int32"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -5403,6 +5409,9 @@
           "productionReportId": {
             "type": "string"
           },
+          "reportNo": {
+            "type": "string"
+          },
           "workOrderId": {
             "type": "string"
           },
@@ -5454,6 +5463,9 @@
         "properties": {
           "productionReportId": {
             "type": "string"
+          },
+          "reportNo": {
+            "type": "string"
           }
         }
       },
@@ -5487,6 +5499,10 @@
           "reportedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -5625,6 +5641,9 @@
           "receiptRequestId": {
             "type": "string"
           },
+          "requestNo": {
+            "type": "string"
+          },
           "workOrderId": {
             "type": "string"
           },
@@ -5670,6 +5689,9 @@
         "additionalProperties": false,
         "properties": {
           "finishedGoodsReceiptRequestId": {
+            "type": "string"
+          },
+          "requestNo": {
             "type": "string"
           }
         }
@@ -6190,7 +6212,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name",
           "baseUomCode",
           "category",
@@ -6218,7 +6239,7 @@
             "type": "string",
             "maxLength": 64,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
@@ -6283,6 +6304,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Infrastructure.Numbering;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Infrastructure;
@@ -26,6 +27,10 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<DeviceAssetWorkCenterMapping> DeviceAssetWorkCenterMappings => Set<DeviceAssetWorkCenterMapping>();
 
     public DbSet<FinishedGoodsReceiptRequest> FinishedGoodsReceiptRequests => Set<FinishedGoodsReceiptRequest>();
+
+    public DbSet<NumberingCounter> NumberingCounters => Set<NumberingCounter>();
+
+    public DbSet<NumberingIdempotencyKey> NumberingIdempotencyKeys => Set<NumberingIdempotencyKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -6,6 +6,7 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -59,6 +60,7 @@ try
     }
 
     builder.Services.AddErpPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddScoped<ErpNumberingService>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)

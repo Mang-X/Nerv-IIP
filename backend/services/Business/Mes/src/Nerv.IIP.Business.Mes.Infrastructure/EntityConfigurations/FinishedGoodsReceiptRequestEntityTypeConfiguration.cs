@@ -13,6 +13,7 @@ public sealed class FinishedGoodsReceiptRequestEntityTypeConfiguration : IEntity
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Finished goods receipt request aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id for the receipt request.");
+        builder.Property(x => x.RequestNo).HasColumnName("request_no").IsRequired().HasMaxLength(100).HasComment("MES business finished goods receipt request number allocated by the service numbering counter.");
         builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES business work order id that produced finished goods.");
         builder.Property(x => x.SkuId).HasColumnName("sku_id").IsRequired().HasMaxLength(100).HasComment("MasterData SKU public id to receive.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).IsRequired().HasComment("Finished goods quantity requested for receipt.");
@@ -29,5 +30,8 @@ public sealed class FinishedGoodsReceiptRequestEntityTypeConfiguration : IEntity
             .HasDatabaseName("ix_receipt_requests_scope_work_order_fk");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.SkuId, x.RequestedAtUtc })
             .HasDatabaseName("ix_receipt_requests_scope_work_order_sku_time");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.RequestNo })
+            .IsUnique()
+            .HasDatabaseName("ux_receipt_requests_scope_request_no");
     }
 }
