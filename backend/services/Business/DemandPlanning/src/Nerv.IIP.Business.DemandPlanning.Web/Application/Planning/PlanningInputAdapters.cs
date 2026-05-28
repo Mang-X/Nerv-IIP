@@ -150,59 +150,71 @@ public sealed class HttpPlanningProductEngineeringSnapshotClient(HttpClient http
         PlanningProductEngineeringSnapshotRequest request,
         CancellationToken cancellationToken)
     {
-        var versions = new List<ProductionVersionSnapshot>();
-        var components = new List<BomComponentSnapshot>();
-        foreach (var skuCode in request.ParentSkuCodes)
-        {
-            var productionVersions = await SendAsync<ListProductionVersionsResponse>(
-                internalBearerToken,
-                "/api/business/v1/engineering/production-versions?" + Query(
-                    ("organizationId", request.OrganizationId),
-                    ("environmentId", request.EnvironmentId),
-                    ("skuCode", skuCode),
-                    ("status", "active")),
-                cancellationToken);
-            var selectedVersion = productionVersions.Items
-                .OrderByDescending(x => x.IsDefault)
-                .ThenBy(x => x.Priority)
-                .FirstOrDefault();
-            if (selectedVersion is not null)
-            {
-                versions.Add(new ProductionVersionSnapshot(
-                    selectedVersion.SkuCode,
-                    selectedVersion.ProductionVersionId,
-                    selectedVersion.MbomVersionId,
-                    selectedVersion.RoutingVersionId));
-            }
+        var snapshots = await Task.WhenAll(request.ParentSkuCodes.Select(skuCode =>
+            GetSkuSnapshotAsync(internalBearerToken, request, skuCode, cancellationToken)));
+        var versions = snapshots
+            .Where(snapshot => snapshot.Version is not null)
+            .Select(snapshot => snapshot.Version!)
+            .ToArray();
+        var components = snapshots
+            .SelectMany(snapshot => snapshot.Components)
+            .ToArray();
 
-            var manufacturingBoms = await SendAsync<ListManufacturingBomsResponse>(
-                internalBearerToken,
-                "/api/business/v1/engineering/manufacturing-boms?" + Query(
-                    ("organizationId", request.OrganizationId),
-                    ("environmentId", request.EnvironmentId),
-                    ("skuCode", skuCode),
-                    ("status", "Published")),
-                cancellationToken);
-            var selectedBom = manufacturingBoms.Items
-                .OrderByDescending(x => string.Equals(x.BomCode, selectedVersion?.MbomVersionId, StringComparison.OrdinalIgnoreCase))
-                .ThenBy(x => x.BomCode)
-                .FirstOrDefault();
-            if (selectedBom is null)
-            {
-                continue;
-            }
+        return new PlanningProductEngineeringSnapshot(
+            $"product-engineering-http:{versions.Length + components.Length}",
+            versions,
+            components);
+    }
 
-            components.AddRange(selectedBom.MaterialLines.Select(line => new BomComponentSnapshot(
+    private async Task<ProductEngineeringSkuSnapshot> GetSkuSnapshotAsync(
+        string internalBearerToken,
+        PlanningProductEngineeringSnapshotRequest request,
+        string skuCode,
+        CancellationToken cancellationToken)
+    {
+        var productionVersionsTask = SendAsync<ListProductionVersionsResponse>(
+            internalBearerToken,
+            "/api/business/v1/engineering/production-versions?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", skuCode),
+                ("status", "active")),
+            cancellationToken);
+        var manufacturingBomsTask = SendAsync<ListManufacturingBomsResponse>(
+            internalBearerToken,
+            "/api/business/v1/engineering/manufacturing-boms?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", skuCode),
+                ("status", "Published")),
+            cancellationToken);
+        await Task.WhenAll(productionVersionsTask, manufacturingBomsTask);
+
+        var selectedVersion = productionVersionsTask.Result.Items
+            .OrderByDescending(x => x.IsDefault)
+            .ThenBy(x => x.Priority)
+            .FirstOrDefault();
+        var version = selectedVersion is null
+            ? null
+            : new ProductionVersionSnapshot(
+                selectedVersion.SkuCode,
+                selectedVersion.ProductionVersionId,
+                selectedVersion.MbomVersionId,
+                selectedVersion.RoutingVersionId);
+        var selectedBom = manufacturingBomsTask.Result.Items
+            .OrderByDescending(x => string.Equals(x.BomCode, selectedVersion?.MbomVersionId, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(x => x.BomCode)
+            .FirstOrDefault();
+        var components = selectedBom is null
+            ? []
+            : selectedBom.MaterialLines.Select(line => new BomComponentSnapshot(
                 selectedBom.SkuCode,
                 line.SkuCode,
                 line.UnitOfMeasureCode,
-                line.Quantity * (1 + line.ScrapRate))));
-        }
+                line.Quantity * (1 + line.ScrapRate)))
+                .ToArray();
 
-        return new PlanningProductEngineeringSnapshot(
-            $"product-engineering-http:{versions.Count + components.Count}",
-            versions,
-            components);
+        return new ProductEngineeringSkuSnapshot(version, components);
     }
 
     private async Task<T> SendAsync<T>(string internalBearerToken, string requestUri, CancellationToken cancellationToken)
@@ -228,34 +240,44 @@ public sealed class HttpPlanningInventorySnapshotClient(HttpClient httpClient) :
         PlanningInventorySnapshotRequest request,
         CancellationToken cancellationToken)
     {
-        var availability = new List<InventoryAvailabilitySnapshot>();
-        foreach (var item in request.Items)
-        {
-            using var httpRequest = new HttpRequestMessage(
-                HttpMethod.Get,
-                "/api/inventory/v1/availability?" + Query(
-                    ("organizationId", request.OrganizationId),
-                    ("environmentId", request.EnvironmentId),
-                    ("skuCode", item.SkuCode),
-                    ("uomCode", item.UomCode),
-                    ("siteCode", item.SiteCode)));
-            if (!string.IsNullOrWhiteSpace(internalBearerToken))
-            {
-                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
-            }
+        var availability = await Task.WhenAll(request.Items.Select(item =>
+            GetAvailabilityAsync(internalBearerToken, request.OrganizationId, request.EnvironmentId, item, cancellationToken)));
 
-            using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<InventoryAvailabilityResponse>>(cancellationToken);
-            var body = envelope?.Data ?? throw new InvalidOperationException("Inventory returned an empty response envelope.");
-            availability.Add(new InventoryAvailabilitySnapshot(body.SkuCode, body.UomCode, body.SiteCode, body.AvailableQuantity));
+        return new PlanningInventorySnapshot($"inventory-http:{availability.Length}", availability);
+    }
+
+    private async Task<InventoryAvailabilitySnapshot> GetAvailabilityAsync(
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        PlanningInventorySnapshotItem item,
+        CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/inventory/v1/availability?" + Query(
+                ("organizationId", organizationId),
+                ("environmentId", environmentId),
+                ("skuCode", item.SkuCode),
+                ("uomCode", item.UomCode),
+                ("siteCode", item.SiteCode)));
+        if (!string.IsNullOrWhiteSpace(internalBearerToken))
+        {
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
         }
 
-        return new PlanningInventorySnapshot($"inventory-http:{availability.Count}", availability);
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<InventoryAvailabilityResponse>>(cancellationToken);
+        var body = envelope?.Data ?? throw new InvalidOperationException("Inventory returned an empty response envelope.");
+        return new InventoryAvailabilitySnapshot(body.SkuCode, body.UomCode, body.SiteCode, body.AvailableQuantity);
     }
 }
 
 internal sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+internal sealed record ProductEngineeringSkuSnapshot(
+    ProductionVersionSnapshot? Version,
+    IReadOnlyCollection<BomComponentSnapshot> Components);
 
 internal sealed record ListProductionVersionsResponse(IReadOnlyCollection<ProductionVersionListItem> Items);
 

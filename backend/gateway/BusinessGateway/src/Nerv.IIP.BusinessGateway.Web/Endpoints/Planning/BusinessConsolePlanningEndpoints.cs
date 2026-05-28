@@ -131,6 +131,7 @@ public sealed class ListBusinessConsolePlanningSuggestionsEndpoint(
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsolePlanningSuggestionListRequest, BusinessConsolePlanningSuggestionListResponse>(
         auth,
+        // Suggestions are the public read surface of an MRP run, so they intentionally share the same read permission.
         BusinessGatewayPermissions.PlanningMrpRead)
 {
     protected override string OrganizationId(BusinessConsolePlanningSuggestionListRequest request) => request.OrganizationId;

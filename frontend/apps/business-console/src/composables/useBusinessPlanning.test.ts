@@ -128,6 +128,16 @@ describe('business planning composable', () => {
     expect(pegging.value[0]?.demandSourceReference).toBe('SO-1001')
   })
 
+  it('starts with a blank demand form instead of demo production values', () => {
+    const { demandForm } = useBusinessPlanning()
+
+    expect(demandForm.sourceReference).toBe('')
+    expect(demandForm.skuCode).toBe('')
+    expect(demandForm.uomCode).toBe('')
+    expect(demandForm.siteCode).toBe('')
+    expect(demandForm.quantity).toBe(0)
+  })
+
   it('submits demand, MRP run, and suggestion acceptance payloads through generated mutations', async () => {
     const { acceptSuggestion, createOrUpdateDemand, demandForm, runMrp, runRequest } = useBusinessPlanning()
 

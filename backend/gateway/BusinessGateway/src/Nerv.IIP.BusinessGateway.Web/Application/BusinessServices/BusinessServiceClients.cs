@@ -935,7 +935,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             "/api/business/v1/planning/mrp-runs",
             request,
             cancellationToken);
-        return new BusinessConsoleRunMrpResponse(Convert.ToString(response.RunId, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty, response.SuggestionCount);
+        return new BusinessConsoleRunMrpResponse(response.RunId, response.SuggestionCount);
     }
 
     public Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
@@ -1067,7 +1067,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
 
     private sealed record DownstreamCreateOrUpdateDemandSourceResponse(string DemandSourceId);
 
-    private sealed record DownstreamRunMrpResponse(object RunId, int SuggestionCount);
+    private sealed record DownstreamRunMrpResponse(string RunId, int SuggestionCount);
 
     private sealed record DownstreamMrpRunItem(
         string RunId,
