@@ -1,10 +1,14 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
@@ -13,6 +17,7 @@ using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.Planning;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
@@ -164,6 +169,30 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Fact]
+    public async Task DemandPlanning_authorized_http_write_endpoints_execute_command_pipeline()
+    {
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/planning/demands", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            demandType = "manual",
+            sourceReference = "DEMAND-HTTP-001",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            quantity = 10m,
+            dueDate = "2026-06-01",
+        });
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.True(response.IsSuccessStatusCode, $"Expected DemandPlanning demand write endpoint to execute, got {(int)response.StatusCode}: {body}");
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();
@@ -176,5 +205,49 @@ public sealed class DemandPlanningEndpointContractTests
     private static CreateOrUpdateDemandSourceCommand NewDemandCommand()
     {
         return new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "manual", "DEMAND-001", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1));
+    }
+
+    private sealed class DemandPlanningLiveHttpTestFactory : WebApplicationFactory<Program>
+    {
+        private readonly string databaseName = $"demand-planning-live-http-{Guid.NewGuid():N}";
+        private readonly ServiceProvider efServices = new ServiceCollection()
+            .AddEntityFrameworkInMemoryDatabase()
+            .BuildServiceProvider();
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ApplicationDbContext>();
+                services.RemoveAll<DbContextOptions>();
+                services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                services.RemoveAll<IIntegrationEventPublisher>();
+                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddDbContext<ApplicationDbContext>(options =>
+                    options
+                        .UseInMemoryDatabase(databaseName)
+                        .UseInternalServiceProvider(efServices)
+                        .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+            });
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                efServices.Dispose();
+            }
+        }
+    }
+
+    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 }

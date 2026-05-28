@@ -282,6 +282,95 @@ public sealed record BusinessConsoleResolveProductionVersionResponse(
     decimal LotSize,
     string Status);
 
+public sealed record BusinessConsolePlanningContextRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleCreateOrUpdateDemandSourceRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DemandType,
+    string? SourceReference,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    decimal Quantity,
+    DateOnly DueDate,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleDemandSourceResponse(
+    string DemandSourceId,
+    string SourceReference,
+    string DemandType,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    decimal Quantity,
+    DateOnly DueDate);
+
+public sealed record BusinessConsoleDemandSourceListResponse(IReadOnlyCollection<BusinessConsoleDemandSourceResponse> Items);
+
+public sealed record BusinessConsoleRunMrpRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly HorizonStart,
+    DateOnly HorizonEnd);
+
+public sealed record BusinessConsoleRunMrpResponse(string RunId, int SuggestionCount);
+
+public sealed record BusinessConsoleMrpRunItem(
+    string RunId,
+    DateOnly HorizonStart,
+    DateOnly HorizonEnd,
+    string Status,
+    int DemandCount,
+    int AvailabilityCount,
+    int SuggestionCount,
+    string ProductionEngineeringSnapshotSource,
+    string InventorySnapshotSource);
+
+public sealed record BusinessConsoleMrpRunListResponse(IReadOnlyCollection<BusinessConsoleMrpRunItem> Items);
+
+public sealed record BusinessConsoleMrpPeggingItem(
+    string SuggestionId,
+    string PeggingType,
+    string DemandSourceReference,
+    string ParentSkuCode,
+    string? ComponentSkuCode,
+    decimal Quantity,
+    string? ProductionVersionReference,
+    string? ManufacturingBomReference,
+    string? RoutingReference);
+
+public sealed record BusinessConsoleMrpPeggingListResponse(IReadOnlyCollection<BusinessConsoleMrpPeggingItem> Items);
+
+public sealed record BusinessConsolePlanningSuggestionListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null);
+
+public sealed record BusinessConsolePlanningSuggestionItem(
+    string SuggestionId,
+    string RunId,
+    string SuggestionType,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    decimal Quantity,
+    DateOnly RequiredDate,
+    string Status,
+    string ReasonCode);
+
+public sealed record BusinessConsolePlanningSuggestionListResponse(IReadOnlyCollection<BusinessConsolePlanningSuggestionItem> Items);
+
+public sealed record BusinessConsoleAcceptPlanningSuggestionRequest(
+    [property: RouteParam] string SuggestionId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string DownstreamService,
+    string DownstreamDocumentType,
+    string DownstreamDocumentId);
+
 public sealed record BusinessConsoleMesListRequest(
     string OrganizationId,
     string EnvironmentId,

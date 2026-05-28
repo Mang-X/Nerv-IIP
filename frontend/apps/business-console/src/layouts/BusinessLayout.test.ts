@@ -81,6 +81,12 @@ describe('BusinessLayout', () => {
         ],
       },
       {
+        title: '计划',
+        items: [
+          { title: '需求与 MRP', to: { path: '/planning' } },
+        ],
+      },
+      {
         title: '质量',
         items: [
           { title: '检验任务与记录', to: { path: '/quality/inspections' } },

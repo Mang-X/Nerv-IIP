@@ -53,6 +53,10 @@ builder.Services.AddHttpClient<IBusinessProductEngineeringClient, HttpBusinessPr
 {
     client.BaseAddress = new Uri(builder.Configuration["ProductEngineering:BaseUrl"] ?? "http://localhost:5108");
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<IBusinessPlanningClient, HttpBusinessPlanningClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["DemandPlanning:BaseUrl"] ?? "http://localhost:5112");
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Mes:BaseUrl"] ?? "http://localhost:5111");
