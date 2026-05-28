@@ -17,9 +17,19 @@ export type NervIipContractsOpsOperationTaskResponse = {
     status?: string;
     requestedBy?: string;
     requestedAtUtc?: string;
+    approval?: NervIipContractsOpsOperationApprovalSummary | null;
     currentAttemptId?: string | null;
     attempts?: Array<NervIipContractsOpsOperationAttemptSummary>;
     auditRecords?: Array<NervIipContractsOpsAuditRecordSummary>;
+};
+
+export type NervIipContractsOpsOperationApprovalSummary = {
+    status?: string;
+    requestedBy?: string;
+    requestedAtUtc?: string;
+    decidedBy?: string | null;
+    decidedAtUtc?: string | null;
+    decisionReason?: string | null;
 };
 
 export type NervIipContractsOpsOperationAttemptSummary = {

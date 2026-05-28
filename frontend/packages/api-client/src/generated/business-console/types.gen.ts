@@ -95,6 +95,94 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleN
     returnDocumentId?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringBomListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringBomListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringBomListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringBomItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringBomItem = {
+    bomCode?: string;
+    revision?: string;
+    parentItemCode?: string;
+    status?: string;
+    effectiveDate?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListEngineeringBomsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRoutingListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRoutingListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRoutingListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRoutingItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRoutingItem = {
+    routingCode?: string;
+    revision?: string;
+    skuCode?: string;
+    status?: string;
+    effectiveDate?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListRoutingsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleProductionVersionListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleProductionVersionListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleProductionVersionListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleProductionVersionItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleProductionVersionItem = {
+    productionVersionId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    skuCode?: string;
+    mbomVersionId?: string;
+    routingVersionId?: string;
+    validFrom?: string;
+    validTo?: string | null;
+    lotSizeMin?: number | null;
+    lotSizeMax?: number | null;
+    priority?: number;
+    isDefault?: boolean;
+    status?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListProductionVersionsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResolveProductionVersionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResolveProductionVersionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResolveProductionVersionResponse = {
+    productionVersionId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    skuCode?: string;
+    mbomVersionId?: string;
+    routingVersionId?: string;
+    effectiveDate?: string;
+    lotSize?: number;
+    status?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResolveProductionVersionRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFoundationReadinessResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesFoundationReadinessResponse | null;
 };
@@ -998,6 +1086,135 @@ export type CloseBusinessConsoleQualityNcrResponses = {
 };
 
 export type CloseBusinessConsoleQualityNcrResponse = CloseBusinessConsoleQualityNcrResponses[keyof CloseBusinessConsoleQualityNcrResponses];
+
+export type ListBusinessConsoleEngineeringBomsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        parentItemCode?: string | null;
+        status?: string | null;
+    };
+    url: '/api/business-console/v1/engineering/engineering-boms';
+};
+
+export type ListBusinessConsoleEngineeringBomsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleEngineeringBomsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringBomListResponse;
+};
+
+export type ListBusinessConsoleEngineeringBomsResponse = ListBusinessConsoleEngineeringBomsResponses[keyof ListBusinessConsoleEngineeringBomsResponses];
+
+export type ListBusinessConsoleEngineeringRoutingsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode?: string | null;
+        status?: string | null;
+    };
+    url: '/api/business-console/v1/engineering/routings';
+};
+
+export type ListBusinessConsoleEngineeringRoutingsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleEngineeringRoutingsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRoutingListResponse;
+};
+
+export type ListBusinessConsoleEngineeringRoutingsResponse = ListBusinessConsoleEngineeringRoutingsResponses[keyof ListBusinessConsoleEngineeringRoutingsResponses];
+
+export type ListBusinessConsoleEngineeringProductionVersionsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode?: string | null;
+        status?: string | null;
+    };
+    url: '/api/business-console/v1/engineering/production-versions';
+};
+
+export type ListBusinessConsoleEngineeringProductionVersionsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleEngineeringProductionVersionsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleProductionVersionListResponse;
+};
+
+export type ListBusinessConsoleEngineeringProductionVersionsResponse = ListBusinessConsoleEngineeringProductionVersionsResponses[keyof ListBusinessConsoleEngineeringProductionVersionsResponses];
+
+export type ResolveBusinessConsoleEngineeringProductionVersionData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode: string;
+        effectiveDate: string;
+        lotSize: number;
+    };
+    url: '/api/business-console/v1/engineering/production-versions/resolve';
+};
+
+export type ResolveBusinessConsoleEngineeringProductionVersionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ResolveBusinessConsoleEngineeringProductionVersionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResolveProductionVersionResponse;
+};
+
+export type ResolveBusinessConsoleEngineeringProductionVersionResponse = ResolveBusinessConsoleEngineeringProductionVersionResponses[keyof ResolveBusinessConsoleEngineeringProductionVersionResponses];
 
 export type GetBusinessConsoleMesFoundationReadinessData = {
     body?: never;

@@ -37,11 +37,14 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.Status == status);
         }
 
-        var items = await query
+        var versions = await query
             .OrderBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
-            .Select(x => new EngineeringBomListItem(x.BomCode, x.Revision, x.ParentItemCode, x.Status.ToString(), x.EffectiveDate))
             .ToArrayAsync(cancellationToken);
+
+        var items = versions
+            .Select(x => new EngineeringBomListItem(x.BomCode, x.Revision, x.ParentItemCode, x.Status.ToString(), x.EffectiveDate))
+            .ToArray();
         return new ListEngineeringBomsResponse(items);
     }
 }
@@ -80,11 +83,14 @@ public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
             query = query.Where(x => x.Status == status);
         }
 
-        var items = await query
+        var versions = await query
             .OrderBy(x => x.RoutingCode)
             .ThenBy(x => x.Revision)
-            .Select(x => new RoutingListItem(x.RoutingCode, x.Revision, x.SkuCode, x.Status.ToString(), x.EffectiveDate))
             .ToArrayAsync(cancellationToken);
+
+        var items = versions
+            .Select(x => new RoutingListItem(x.RoutingCode, x.Revision, x.SkuCode, x.Status.ToString(), x.EffectiveDate))
+            .ToArray();
         return new ListRoutingsResponse(items);
     }
 }

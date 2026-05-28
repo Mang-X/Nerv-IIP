@@ -73,6 +73,29 @@ public interface IBusinessQualityClient
         CancellationToken cancellationToken);
 }
 
+public interface IBusinessProductEngineeringClient
+{
+    Task<BusinessConsoleEngineeringBomListResponse> ListEngineeringBomsAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringBomsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleRoutingListResponse> ListRoutingsAsync(
+        string internalBearerToken,
+        BusinessConsoleListRoutingsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleProductionVersionListResponse> ListProductionVersionsAsync(
+        string internalBearerToken,
+        BusinessConsoleListProductionVersionsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResolveProductionVersionResponse> ResolveProductionVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleResolveProductionVersionRequest request,
+        CancellationToken cancellationToken);
+}
+
 public interface IBusinessMesClient
 {
     Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
@@ -749,6 +772,71 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? ReworkWorkOrderId,
         string? ScrapMovementId,
         string? ReturnDocumentId);
+}
+
+public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
+    : BusinessServiceHttpClient(httpClient), IBusinessProductEngineeringClient
+{
+    public Task<BusinessConsoleEngineeringBomListResponse> ListEngineeringBomsAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringBomsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringBomListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/engineering-boms?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("parentItemCode", request.ParentItemCode),
+                ("status", request.Status)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleRoutingListResponse> ListRoutingsAsync(
+        string internalBearerToken,
+        BusinessConsoleListRoutingsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleRoutingListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/routings?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("status", request.Status)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleProductionVersionListResponse> ListProductionVersionsAsync(
+        string internalBearerToken,
+        BusinessConsoleListProductionVersionsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleProductionVersionListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/production-versions?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("status", request.Status)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleResolveProductionVersionResponse> ResolveProductionVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleResolveProductionVersionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleResolveProductionVersionResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/production-versions/resolve?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("effectiveDate", request.EffectiveDate),
+                ("lotSize", request.LotSize)),
+            null,
+            cancellationToken);
 }
 
 public sealed class HttpBusinessMesClient(HttpClient httpClient)

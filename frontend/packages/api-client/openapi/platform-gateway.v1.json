@@ -1316,6 +1316,14 @@
             "type": "string",
             "format": "date-time"
           },
+          "approval": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsOpsOperationApprovalSummary"
+              }
+            ]
+          },
           "currentAttemptId": {
             "type": "string",
             "nullable": true
@@ -1331,6 +1339,35 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsOpsAuditRecordSummary"
             }
+          }
+        }
+      },
+      "NervIIPContractsOpsOperationApprovalSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "requestedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decidedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "decidedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "decisionReason": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

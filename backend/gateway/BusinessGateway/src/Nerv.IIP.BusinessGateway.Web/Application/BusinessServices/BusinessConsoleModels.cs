@@ -208,6 +208,80 @@ public sealed record BusinessConsoleNcrCloseRequest(
 
 public sealed record BusinessConsoleAcceptedResponse(bool Accepted);
 
+public sealed record BusinessConsoleListEngineeringBomsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? ParentItemCode = null,
+    string? Status = null);
+
+public sealed record BusinessConsoleEngineeringBomListResponse(
+    IReadOnlyCollection<BusinessConsoleEngineeringBomItem> Items);
+
+public sealed record BusinessConsoleEngineeringBomItem(
+    string BomCode,
+    string Revision,
+    string ParentItemCode,
+    string Status,
+    DateOnly? EffectiveDate);
+
+public sealed record BusinessConsoleListRoutingsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? Status = null);
+
+public sealed record BusinessConsoleRoutingListResponse(
+    IReadOnlyCollection<BusinessConsoleRoutingItem> Items);
+
+public sealed record BusinessConsoleRoutingItem(
+    string RoutingCode,
+    string Revision,
+    string SkuCode,
+    string Status,
+    DateOnly? EffectiveDate);
+
+public sealed record BusinessConsoleListProductionVersionsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? Status = null);
+
+public sealed record BusinessConsoleProductionVersionListResponse(
+    IReadOnlyCollection<BusinessConsoleProductionVersionItem> Items);
+
+public sealed record BusinessConsoleProductionVersionItem(
+    string ProductionVersionId,
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string MbomVersionId,
+    string RoutingVersionId,
+    DateOnly ValidFrom,
+    DateOnly? ValidTo,
+    decimal? LotSizeMin,
+    decimal? LotSizeMax,
+    int Priority,
+    bool IsDefault,
+    string Status);
+
+public sealed record BusinessConsoleResolveProductionVersionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    DateOnly EffectiveDate,
+    decimal LotSize);
+
+public sealed record BusinessConsoleResolveProductionVersionResponse(
+    string ProductionVersionId,
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string MbomVersionId,
+    string RoutingVersionId,
+    DateOnly EffectiveDate,
+    decimal LotSize,
+    string Status);
+
 public sealed record BusinessConsoleMesListRequest(
     string OrganizationId,
     string EnvironmentId,
