@@ -13,6 +13,7 @@ using Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConve
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
 using Nerv.IIP.Localization;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using Newtonsoft.Json;
 using Prometheus;
@@ -96,6 +97,15 @@ try
                 b.RegisterServicesFromAssemblies(typeof(Program));
                 b.AddContextIntegrationFilters();
             });
+
+        builder.Services.AddCap(x =>
+        {
+            x.Version = builder.Configuration["Cap:Version"] ?? "v1";
+            x.UseEntityFramework<ApplicationDbContext>();
+            x.JsonSerializerOptions.AddNetCorePalJsonConverters();
+            x.UseConfiguredTransport(builder.Configuration);
+            x.UseDashboard();
+        });
     }
 
     builder.Services.AddMediatR(cfg =>

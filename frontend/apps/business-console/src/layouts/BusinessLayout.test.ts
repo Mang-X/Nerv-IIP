@@ -75,6 +75,12 @@ describe('BusinessLayout', () => {
         ],
       },
       {
+        title: '工程资料',
+        items: [
+          { title: '发布工程版本', to: { path: '/engineering' } },
+        ],
+      },
+      {
         title: '质量',
         items: [
           { title: '检验任务与记录', to: { path: '/quality/inspections' } },

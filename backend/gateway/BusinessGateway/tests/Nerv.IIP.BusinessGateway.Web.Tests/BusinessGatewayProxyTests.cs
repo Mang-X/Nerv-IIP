@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -120,10 +121,35 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "released", 15), mes.LastWorkOrderListRequest);
     }
 
+    [Fact]
+    public async Task Engineering_production_version_resolve_uses_internal_service_token_for_downstream_business_service()
+    {
+        var engineering = new RecordingProductEngineeringClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", engineering.LastInternalToken);
+        Assert.Equal(new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2025-01-15"), 100), engineering.LastResolveRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("pv-front-001", document.RootElement.GetProperty("data").GetProperty("productionVersionId").GetString());
+        Assert.Equal("active", document.RootElement.GetProperty("data").GetProperty("status").GetString());
+    }
+
     [Theory]
     [InlineData("/api/business-console/v1/inventory/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1", "inventory")]
     [InlineData("/api/business-console/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev", "quality")]
     [InlineData("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev", "mes")]
+    [InlineData("/api/business-console/v1/engineering/production-versions?organizationId=org-001&environmentId=env-dev&status=active", "engineering")]
     public async Task New_domain_facade_endpoints_do_not_call_downstream_when_iam_denies_permission(
         string path,
         string domain)
@@ -131,6 +157,7 @@ public sealed class BusinessGatewayProxyTests
         var inventory = new RecordingInventoryClient();
         var quality = new RecordingQualityClient();
         var mes = new RecordingMesClient();
+        var engineering = new RecordingProductEngineeringClient();
         await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Forbidden(), services =>
         {
             services.RemoveAll<IBusinessInventoryClient>();
@@ -139,6 +166,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessQualityClient>(quality);
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
         });
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
@@ -146,10 +175,11 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Contains(domain, new[] { "inventory", "quality", "mes" });
+        Assert.Contains(domain, new[] { "inventory", "quality", "mes", "engineering" });
         Assert.Equal(0, inventory.AvailabilityCallCount);
         Assert.Equal(0, quality.NcrListCallCount);
         Assert.Equal(0, mes.WorkOrderListCallCount);
+        Assert.Equal(0, engineering.ProductionVersionListCallCount);
     }
 
     [Fact]
@@ -382,6 +412,55 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/inventory/v1/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-HTTP&uomCode=EA&siteCode=S1&qualityStatus=available&ownerType=owned", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Product_engineering_http_client_sends_internal_bearer_token_and_builds_released_queries()
+    {
+        var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, ResponseForEngineeringRequest(request)));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://engineering.local") };
+        var client = new HttpBusinessProductEngineeringClient(httpClient);
+
+        await client.ListProductionVersionsAsync(
+            "internal-token-001",
+            new BusinessConsoleListProductionVersionsRequest("org-001", "env-dev", "FG-FRONT-SHOCK", "active"),
+            CancellationToken.None);
+        await client.ResolveProductionVersionAsync(
+            "internal-token-001",
+            new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2025-01-15"), 100),
+            CancellationToken.None);
+
+        Assert.Equal("/api/business/v1/engineering/production-versions?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&status=active", handler.Requests[0].RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", handler.Requests[0].Headers.Authorization!.Parameter);
+        Assert.Equal("/api/business/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100", handler.Requests[1].RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", handler.Requests[1].Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Product_engineering_http_client_formats_decimal_query_values_with_invariant_culture()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
+        try
+        {
+            var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, ResponseForEngineeringRequest(request)));
+            using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://engineering.local") };
+            var client = new HttpBusinessProductEngineeringClient(httpClient);
+
+            await client.ResolveProductionVersionAsync(
+                "internal-token-001",
+                new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2025-01-15"), 100.5m),
+                CancellationToken.None);
+
+            Assert.Equal("/api/business/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100.5", handler.Requests.Single().RequestUri!.PathAndQuery);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
     }
 
     [Fact]
@@ -716,6 +795,61 @@ public sealed class BusinessGatewayProxyTests
         Content = JsonContent.Create(payload),
     };
 
+    private static object ResponseForEngineeringRequest(HttpRequestMessage request)
+    {
+        var path = request.RequestUri!.AbsolutePath;
+        if (path.EndsWith("/production-versions/resolve", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new
+                {
+                    productionVersionId = "pv-front-001",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    skuCode = "FG-FRONT-SHOCK",
+                    mbomVersionId = "mbom-front-r1",
+                    routingVersionId = "routing-front-r1",
+                    effectiveDate = "2025-01-15",
+                    lotSize = 100,
+                    status = "active",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        return new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        productionVersionId = "pv-front-001",
+                        organizationId = "org-001",
+                        environmentId = "env-dev",
+                        skuCode = "FG-FRONT-SHOCK",
+                        mbomVersionId = "mbom-front-r1",
+                        routingVersionId = "routing-front-r1",
+                        validFrom = "2026-05-01",
+                        validTo = (string?)null,
+                        lotSizeMin = 1,
+                        lotSizeMax = 500,
+                        priority = 10,
+                        isDefault = true,
+                        status = "active",
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        };
+    }
+
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 
     private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
@@ -886,6 +1020,81 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         BusinessConsoleNcrCloseRequest request,
         CancellationToken cancellationToken) =>
         Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+}
+
+internal sealed class RecordingProductEngineeringClient : IBusinessProductEngineeringClient
+{
+    public int ProductionVersionListCallCount { get; private set; }
+
+    public string? LastInternalToken { get; private set; }
+
+    public BusinessConsoleResolveProductionVersionRequest? LastResolveRequest { get; private set; }
+
+    public BusinessConsoleListProductionVersionsRequest? LastProductionVersionListRequest { get; private set; }
+
+    public Task<BusinessConsoleEngineeringBomListResponse> ListEngineeringBomsAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringBomsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringBomListResponse([]));
+    }
+
+    public Task<BusinessConsoleRoutingListResponse> ListRoutingsAsync(
+        string internalBearerToken,
+        BusinessConsoleListRoutingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleRoutingListResponse([]));
+    }
+
+    public Task<BusinessConsoleProductionVersionListResponse> ListProductionVersionsAsync(
+        string internalBearerToken,
+        BusinessConsoleListProductionVersionsRequest request,
+        CancellationToken cancellationToken)
+    {
+        ProductionVersionListCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastProductionVersionListRequest = request;
+        return Task.FromResult(new BusinessConsoleProductionVersionListResponse(
+            [
+                new BusinessConsoleProductionVersionItem(
+                    "pv-front-001",
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    "FG-FRONT-SHOCK",
+                    "mbom-front-r1",
+                    "routing-front-r1",
+                    DateOnly.Parse("2026-05-01"),
+                    null,
+                    1,
+                    500,
+                    10,
+                    true,
+                    "active"),
+            ]));
+    }
+
+    public Task<BusinessConsoleResolveProductionVersionResponse> ResolveProductionVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleResolveProductionVersionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastResolveRequest = request;
+        return Task.FromResult(new BusinessConsoleResolveProductionVersionResponse(
+            "pv-front-001",
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuCode,
+            "mbom-front-r1",
+            "routing-front-r1",
+            request.EffectiveDate,
+            request.LotSize,
+            "active"));
+    }
 }
 
 internal sealed class RecordingMesClient : IBusinessMesClient

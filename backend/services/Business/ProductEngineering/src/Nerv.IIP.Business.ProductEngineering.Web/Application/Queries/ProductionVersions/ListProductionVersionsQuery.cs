@@ -29,13 +29,32 @@ public sealed class ListProductionVersionsQueryHandler(ApplicationDbContext dbCo
             query = query.Where(x => x.Status == request.Status);
         }
 
-        var items = await query
+        var versions = await query
             .OrderBy(x => x.SkuCode)
             .ThenByDescending(x => x.IsDefault)
             .ThenBy(x => x.Priority)
             .ThenBy(x => x.ValidFrom)
+            .Select(x => new
+            {
+                Id = x.Id.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.SkuCode,
+                x.MbomVersionId,
+                x.RoutingVersionId,
+                x.ValidFrom,
+                x.ValidTo,
+                x.LotSizeMin,
+                x.LotSizeMax,
+                x.Priority,
+                x.IsDefault,
+                x.Status,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var items = versions
             .Select(x => new ProductionVersionListItem(
-                x.Id.Id.ToString("D"),
+                x.Id.ToString("D"),
                 x.OrganizationId,
                 x.EnvironmentId,
                 x.SkuCode,
@@ -48,7 +67,7 @@ public sealed class ListProductionVersionsQueryHandler(ApplicationDbContext dbCo
                 x.Priority,
                 x.IsDefault,
                 x.Status))
-            .ToListAsync(cancellationToken);
+            .ToArray();
 
         return new ListProductionVersionsResponse(items);
     }
