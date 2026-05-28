@@ -20,6 +20,7 @@ public sealed class PostgreSqlIamAuthService(
     IExternalClientRepository externalClientRepository,
     IamPasswordService passwordService,
     IamTokenService tokenService,
+    IOptions<IamAuthenticationOptions> authenticationOptions,
     IOptions<EnterpriseIdentityOptions> enterpriseIdentityOptions,
     IMfaChallengeStore mfaChallenges)
     : IIamAuthService
@@ -37,14 +38,23 @@ public sealed class PostgreSqlIamAuthService(
             throw Unauthorized();
         }
 
+        var now = DateTimeOffset.UtcNow;
+        if (user.IsLockedOut(now))
+        {
+            throw Unauthorized();
+        }
+
         if (!passwordService.Verify(user, password))
         {
-            user.RecordFailedLogin();
+            user.RecordFailedLogin(
+                now,
+                authenticationOptions.Value.EffectiveFailedLoginLockoutThreshold,
+                authenticationOptions.Value.EffectiveFailedLoginLockoutWindow);
             await userRepository.PersistFailedLoginAsync(user, cancellationToken);
             throw Unauthorized();
         }
 
-        user.RecordSuccessfulLogin(DateTimeOffset.UtcNow);
+        user.RecordSuccessfulLogin(now);
         return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken);
     }
 
@@ -56,7 +66,11 @@ public sealed class PostgreSqlIamAuthService(
     {
         var now = DateTimeOffset.UtcNow;
         var refreshTokenHash = tokenService.HashSecret(refreshToken);
-        var session = await userSessionRepository.GetActiveByRefreshTokenHashAsync(refreshTokenHash, now, cancellationToken);
+        var session = await userSessionRepository.ConsumeActiveRefreshTokenAsync(
+            refreshTokenHash,
+            now,
+            "refresh-rotated",
+            cancellationToken);
         if (session is null)
         {
             throw Unauthorized();
@@ -68,7 +82,6 @@ public sealed class PostgreSqlIamAuthService(
             throw Unauthorized();
         }
 
-        session.Revoke(now, "refresh-rotated");
         return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken);
     }
 

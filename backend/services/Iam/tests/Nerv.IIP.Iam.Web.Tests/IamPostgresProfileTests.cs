@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Seed;
 
@@ -163,6 +164,159 @@ public sealed class IamPostgresProfileTests
                     .Where(x => x.ConnectorHostId == "connector-host-001")
                     .ToListAsync();
                 Assert.Single(connectorCredentials);
+            }
+        }
+        finally
+        {
+            RestoreEnvironment(environment);
+        }
+    }
+
+    [Fact]
+    public async Task Postgres_refresh_token_rotation_consumes_token_once_under_parallel_replay()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            return;
+        }
+
+        var environment = PreserveEnvironment(
+            "Persistence__Provider",
+            "ConnectionStrings__IamDb",
+            "Iam__Seed__Enabled",
+            "Iam__Seed__AdminPassword",
+            "Iam__Seed__ConnectorHostSecret");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
+            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString);
+            Environment.SetEnvironmentVariable("Iam__Seed__Enabled", "true");
+            Environment.SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!");
+            Environment.SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+
+            await using var factory = new WebApplicationFactory<Program>();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                await db.Database.EnsureDeletedAsync();
+
+                var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
+                await migrations.MigrateAsync();
+
+                var seed = scope.ServiceProvider.GetRequiredService<IamSeedService>();
+                await seed.SeedAsync(CancellationToken.None);
+            }
+
+            var client = factory.CreateClient();
+            var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+            login.EnsureSuccessStatusCode();
+            var auth = await ReadResponseDataAsync<AuthResponse>(login);
+            Assert.NotNull(auth);
+
+            var refreshRequests = Enumerable
+                .Range(0, 12)
+                .Select(_ => client.PostAsJsonAsync("/api/iam/v1/auth/refresh", new { auth.RefreshToken }))
+                .ToArray();
+
+            var refreshResponses = await Task.WhenAll(refreshRequests);
+
+            Assert.Equal(1, refreshResponses.Count(response => response.IsSuccessStatusCode));
+            Assert.Equal(11, refreshResponses.Count(response => response.StatusCode == HttpStatusCode.Unauthorized));
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var adminUserId = new UserId("user-admin");
+                var sessionCount = await db.UserSessions.CountAsync(x => x.UserId == adminUserId);
+                var activeSessionCount = await db.UserSessions.CountAsync(x => x.UserId == adminUserId && x.RevokedAtUtc == null);
+
+                Assert.Equal(2, sessionCount);
+                Assert.Equal(1, activeSessionCount);
+            }
+        }
+        finally
+        {
+            RestoreEnvironment(environment);
+        }
+    }
+
+    [Fact]
+    public async Task Postgres_login_lockout_blocks_attempts_and_success_resets_failed_state()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            return;
+        }
+
+        var environment = PreserveEnvironment(
+            "Persistence__Provider",
+            "ConnectionStrings__IamDb",
+            "Iam__Seed__Enabled",
+            "Iam__Seed__AdminPassword",
+            "Iam__Seed__ConnectorHostSecret");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
+            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString);
+            Environment.SetEnvironmentVariable("Iam__Seed__Enabled", "true");
+            Environment.SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!");
+            Environment.SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+
+            await using var factory = new WebApplicationFactory<Program>();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                await db.Database.EnsureDeletedAsync();
+
+                var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
+                await migrations.MigrateAsync();
+
+                var seed = scope.ServiceProvider.GetRequiredService<IamSeedService>();
+                await seed.SeedAsync(CancellationToken.None);
+            }
+
+            var client = factory.CreateClient();
+
+            for (var attempt = 0; attempt < 4; attempt++)
+            {
+                var failed = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "wrong-password" });
+                Assert.Equal(HttpStatusCode.Unauthorized, failed.StatusCode);
+            }
+
+            var successfulLogin = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+            successfulLogin.EnsureSuccessStatusCode();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var admin = await db.Users.SingleAsync(x => x.LoginName == "admin");
+
+                Assert.Equal(0, admin.FailedLoginCount);
+                Assert.Null(admin.LockoutUntilUtc);
+            }
+
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                var failed = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "wrong-password" });
+                Assert.Equal(HttpStatusCode.Unauthorized, failed.StatusCode);
+            }
+
+            var blocked = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+            Assert.Equal(HttpStatusCode.Unauthorized, blocked.StatusCode);
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var admin = await db.Users.SingleAsync(x => x.LoginName == "admin");
+
+                Assert.Equal(5, admin.FailedLoginCount);
+                Assert.True(admin.LockoutUntilUtc > DateTimeOffset.UtcNow);
             }
         }
         finally

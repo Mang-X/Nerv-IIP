@@ -49,6 +49,29 @@ public sealed class GatewayAuthorizationClientTests
     }
 
     [Fact]
+    public async Task CheckAsync_cache_key_includes_permission_version_claim()
+    {
+        var handler = new CountingAuthorizationHandler();
+        var cache = new RecordingCache();
+        var client = CreateClient(handler, cache, Options.Create(new GatewayAuthorizationOptions()));
+        var requirement = new GatewayPermissionRequirement(
+            "iam.users.read",
+            "org-001",
+            "env-dev",
+            null,
+            null);
+
+        await client.CheckAsync(GatewayTestTokens.ValidAccessToken(permissionVersion: 7), requirement, CancellationToken.None);
+        await client.CheckAsync(GatewayTestTokens.ValidAccessToken(permissionVersion: 8), requirement, CancellationToken.None);
+
+        Assert.Collection(
+            cache.Keys,
+            key => Assert.Contains(":permission-version:7:", key, StringComparison.Ordinal),
+            key => Assert.Contains(":permission-version:8:", key, StringComparison.Ordinal));
+        Assert.NotEqual(cache.Keys[0], cache.Keys[1]);
+    }
+
+    [Fact]
     public async Task CheckAsync_uses_configured_cache_ttl()
     {
         var handler = new CountingAuthorizationHandler();
@@ -111,9 +134,11 @@ public sealed class GatewayAuthorizationClientTests
     private sealed class RecordingCache : IAppCache
     {
         public TimeSpan? LastTtl { get; private set; }
+        public List<string> Keys { get; } = [];
 
         public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl)
         {
+            Keys.Add(key);
             LastTtl = ttl;
             return await factory();
         }

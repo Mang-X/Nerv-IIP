@@ -258,6 +258,11 @@ public interface IUserSessionRepository : IRepository<UserSession, UserSessionId
         string refreshTokenHash,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
+    Task<UserSession?> ConsumeActiveRefreshTokenAsync(
+        string refreshTokenHash,
+        DateTimeOffset now,
+        string revokedReason,
+        CancellationToken cancellationToken = default);
     Task<IReadOnlyList<UserSession>> ListAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<UserSession>> ListActiveByUserIdAsync(
         UserId userId,
@@ -296,6 +301,28 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
             .SingleOrDefaultAsync(
                 x => x.RefreshTokenHash == refreshTokenHash && x.RevokedAtUtc == null && x.ExpiresAtUtc > now,
                 cancellationToken);
+    }
+
+    public async Task<UserSession?> ConsumeActiveRefreshTokenAsync(
+        string refreshTokenHash,
+        DateTimeOffset now,
+        string revokedReason,
+        CancellationToken cancellationToken = default)
+    {
+        var affectedRows = await DbContext.UserSessions
+            .Where(x => x.RefreshTokenHash == refreshTokenHash && x.RevokedAtUtc == null && x.ExpiresAtUtc > now)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.RevokedAtUtc, now)
+                    .SetProperty(x => x.RevokedReason, revokedReason),
+                cancellationToken);
+
+        if (affectedRows != 1)
+        {
+            return null;
+        }
+
+        return await DbContext.UserSessions.SingleAsync(x => x.RefreshTokenHash == refreshTokenHash, cancellationToken);
     }
 
     public async Task<IReadOnlyList<UserSession>> ListAsync(CancellationToken cancellationToken = default)

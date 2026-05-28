@@ -23,7 +23,9 @@ public sealed class UserEntityTypeConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.SecurityStamp).IsRequired().HasMaxLength(128).HasComment("Security stamp invalidating stale access tokens.");
         builder.Property(x => x.PermissionVersion).HasComment("Permission version embedded into issued credentials.");
         builder.Property(x => x.LastLoginAtUtc).HasComment("Last successful login time in UTC.");
+        builder.Property(x => x.LastFailedLoginAtUtc).HasComment("Last failed login time in UTC.");
         builder.Property(x => x.FailedLoginCount).HasComment("Consecutive failed login count.");
+        builder.Property(x => x.LockoutUntilUtc).HasComment("UTC time until which password login is locked after consecutive failures.");
         builder.Property(x => x.Deleted).HasConversion(x => x.Value, x => new Deleted(x)).HasComment("Soft delete flag.");
         builder.Property(x => x.RowVersion).HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version.");
 

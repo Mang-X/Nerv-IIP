@@ -524,9 +524,17 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasComment("Consecutive failed login count.");
 
+                    b.Property<DateTimeOffset?>("LastFailedLoginAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Last failed login time in UTC.");
+
                     b.Property<DateTimeOffset?>("LastLoginAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasComment("Last successful login time in UTC.");
+
+                    b.Property<DateTimeOffset?>("LockoutUntilUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC time until which password login is locked after consecutive failures.");
 
                     b.Property<string>("LoginName")
                         .IsRequired()
@@ -643,7 +651,8 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RefreshTokenHash");
+                    b.HasIndex("RefreshTokenHash")
+                        .IsUnique();
 
                     b.HasIndex("ExternalProvider", "ExternalSubject");
 
