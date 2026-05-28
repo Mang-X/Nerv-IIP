@@ -45,4 +45,16 @@ public sealed class NumberingCounter
         Version++;
         return CurrentValue;
     }
+
+    public long AdvanceTo(long value)
+    {
+        if (value <= CurrentValue)
+        {
+            return CurrentValue;
+        }
+
+        CurrentValue = value;
+        Version++;
+        return CurrentValue;
+    }
 }

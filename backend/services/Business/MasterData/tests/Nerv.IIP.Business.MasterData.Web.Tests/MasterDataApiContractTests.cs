@@ -371,6 +371,26 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Create_sku_command_db_numbering_does_not_commit_before_unit_of_work_save()
+    {
+        const string databaseName = "master-data-api-contract-db-numbering-uow";
+        await using var provider = CreateInMemoryProvider(databaseName);
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), new MasterDataNumberingService(dbContext));
+
+        await handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", null, "Deferred Numbering", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-deferred-numbering"),
+            CancellationToken.None);
+
+        using var observerScope = provider.CreateScope();
+        var observerContext = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(observerContext.NumberingCounters);
+        Assert.Empty(observerContext.NumberingIdempotencyKeys);
+        Assert.Empty(observerContext.Skus);
+    }
+
+    [Fact]
     public async Task Create_sku_command_persists_numbering_counter_and_idempotency_key()
     {
         await using var provider = CreateInMemoryProvider();
