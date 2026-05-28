@@ -375,6 +375,10 @@ function Invoke-NativeCommandOutput {
             throw "Command '$Command' exited with $($process.ExitCode). Output: $(Protect-ScriptAutomationText (($stdout, $stderr) -join [Environment]::NewLine))"
         }
 
+        if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+            Write-Diagnostic -Level 'WARN' -Message "Stderr from ${Name}: $stderr"
+        }
+
         return [pscustomobject]@{
             Command = $Command
             Arguments = $Arguments

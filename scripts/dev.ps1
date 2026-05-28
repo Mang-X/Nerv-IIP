@@ -65,7 +65,19 @@ function Get-AppHostUserSecrets {
         [string] $AppHostProject
     )
 
-    $result = Invoke-DotNetOutput -Arguments @('user-secrets', 'list', '--project', $AppHostProject) -WorkingDirectory $root -Name 'apphost-user-secrets'
+    try {
+        $result = Invoke-DotNetOutput -Arguments @('user-secrets', 'list', '--project', $AppHostProject) -WorkingDirectory $root -Name 'apphost-user-secrets'
+    }
+    catch {
+        $message = "$($_.Exception.Message)"
+        if ($message.Contains("Could not find the global property 'UserSecretsId'") -or $message.Contains('No UserSecretsId')) {
+            Write-Diagnostic -Level 'WARN' -Message "AppHost project has no initialized user-secrets store; treating all required AppHost secrets as missing."
+            return @{}
+        }
+
+        throw
+    }
+
     $output = $result.Stdout -split '\r?\n'
 
     $secrets = @{}

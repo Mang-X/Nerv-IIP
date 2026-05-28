@@ -46,7 +46,7 @@ Common symptoms and fixes:
 | `http://127.0.0.1:5102/api/iam/v1/me` returns `401`. | IAM is running and the request is unauthenticated. | This is expected before login. Use it as a quick liveness check. |
 | `http://127.0.0.1:5119/swagger/v1/swagger.json` returns `200`. | BusinessGateway is up. | Business Console API proxying can be tested from `5125` after login. |
 
-For the PostgreSQL password-mismatch case, avoid deleting `nerv-iip-postgres` unless losing local data is acceptable. To preserve data, temporarily relax `pg_hba.conf` inside the dev container, reset the `postgres` password, then restore the file immediately:
+For the PostgreSQL password-mismatch case, avoid deleting `nerv-iip-postgres` unless losing local data is acceptable. To preserve data, temporarily relax `pg_hba.conf` inside the dev container, reset the `postgres` password, then restore the file immediately. If the password reset command fails, manually run the restore command before doing anything else; otherwise the container can keep accepting local connections without a password.
 
 ```powershell
 $container = "<postgres-container-name>"
