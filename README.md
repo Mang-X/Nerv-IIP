@@ -1,5 +1,7 @@
 # Nerv-IIP
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Mang-X/Nerv-IIP)
+
 Nerv-IIP 是一个从 0 到 1 规划的原生 AI 应用管理平台，可面向多类行业和应用场景扩展。核心目标不是先做复杂业务系统，而是先建立一个稳定的控制面与应用管理底座，使平台能够统一管理身份权限、文件存储与对外受控访问能力，并接入、发现、观测、控制和治理真实运行中的应用实例。
 
 当前仓库以文档优先方式启动，并已经从首批架构冻结推进到平台控制面、业务平台 MVP、BusinessGateway/BusinessConsole、事件可靠性、生产安全和生产部署产物基线。当前事实源以 [docs/architecture/implementation-readiness.md](docs/architecture/implementation-readiness.md) 为准；README 只保留入口、导航和关键约束，避免和 readiness 形成第二套状态清单。
