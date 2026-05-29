@@ -152,7 +152,7 @@ try
             x.Version = builder.Configuration["Cap:Version"] ?? "v1";
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
-            x.UseConfiguredTransport(builder.Configuration);
+            x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
             x.UseDashboard(); //CAP Dashboard  path：  /cap
         });
     }
