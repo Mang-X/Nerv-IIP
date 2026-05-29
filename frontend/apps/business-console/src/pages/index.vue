@@ -27,7 +27,7 @@ const exceptionItems = [
 ] as const
 
 const diagnosticItems = [
-  { path: '/mes/foundation', label: '数据就绪检查', detail: '实施期诊断主数据、工程资料、供应、质量、设备和条码准备状态。' },
+  { path: '/mes/foundation', label: '数据就绪检查', detail: '系统管理员诊断主数据、工程资料、供应、质量、设备和条码准备状态。' },
 ] as const
 </script>
 

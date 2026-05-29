@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NavItem } from '@nerv-iip/app-shell'
+import type { NavItem, NavSubItem } from '@nerv-iip/app-shell'
 import { AppShell } from '@nerv-iip/app-shell'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -17,6 +17,44 @@ import { useRoute, useRouter } from 'vue-router'
 
 const { t, te } = useI18n()
 const route = useRoute()
+
+const mesNavItems: NavSubItem[] = [
+  { title: '生产驾驶舱', to: { path: '/mes' } },
+  { title: '生产计划', to: { path: '/mes/plans' } },
+  { title: '工单与派工', to: { path: '/mes/work-orders' } },
+  { title: '工序执行', to: { path: '/mes/operation-tasks' } },
+  { title: '在制跟踪', to: { path: '/mes/wip' } },
+  { title: '报工记录', to: { path: '/mes/production-reports' } },
+  { title: '完工入库', to: { path: '/mes/receipts' } },
+  { title: '异常与产能', to: { path: '/mes/capacity' } },
+  { title: '规则排程', to: { path: '/mes/schedules' } },
+]
+
+const systemNavItems: NavSubItem[] = [
+  { title: '数据就绪检查', to: { path: '/mes/foundation' } },
+]
+
+function navPath(item: NavSubItem) {
+  if (typeof item.to === 'string') {
+    return item.to
+  }
+
+  return 'path' in item.to ? item.to.path : undefined
+}
+
+function isRoutePathActive(path: string) {
+  const normalizedPath = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path
+  const supportsNestedRoutes = normalizedPath.split('/').filter(Boolean).length > 1
+
+  return route.path === normalizedPath || (supportsNestedRoutes && route.path.startsWith(`${normalizedPath}/`))
+}
+
+function isNavGroupActive(items: NavSubItem[]) {
+  return items.some((item) => {
+    const path = navPath(item)
+    return path ? isRoutePathActive(path) : false
+  })
+}
 
 const navItems = computed<NavItem[]>(() => [
   {
@@ -76,26 +114,14 @@ const navItems = computed<NavItem[]>(() => [
   {
     title: 'MES',
     icon: FactoryIcon,
-    isActive: route.path.startsWith('/mes') && !route.path.startsWith('/mes/foundation'),
-    items: [
-      { title: '生产驾驶舱', to: { path: '/mes' } },
-      { title: '生产计划', to: { path: '/mes/plans' } },
-      { title: '工单与派工', to: { path: '/mes/work-orders' } },
-      { title: '工序执行', to: { path: '/mes/operation-tasks' } },
-      { title: '在制跟踪', to: { path: '/mes/wip' } },
-      { title: '报工记录', to: { path: '/mes/production-reports' } },
-      { title: '完工入库', to: { path: '/mes/receipts' } },
-      { title: '异常与产能', to: { path: '/mes/capacity' } },
-      { title: '规则排程', to: { path: '/mes/schedules' } },
-    ],
+    isActive: isNavGroupActive(mesNavItems),
+    items: mesNavItems,
   },
   {
     title: '系统管理',
     icon: SettingsIcon,
-    isActive: route.path.startsWith('/mes/foundation'),
-    items: [
-      { title: '数据就绪检查', to: { path: '/mes/foundation' } },
-    ],
+    isActive: isNavGroupActive(systemNavItems),
+    items: systemNavItems,
   },
 ])
 
