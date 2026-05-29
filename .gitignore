@@ -1,5 +1,9 @@
 .agents/skills/
 .claude/skills/
+/.agents/worktrees/
+/.claude/worktrees/
+/.codex/worktrees/
+/worktrees/
 .codex-review
 bin/
 obj/
