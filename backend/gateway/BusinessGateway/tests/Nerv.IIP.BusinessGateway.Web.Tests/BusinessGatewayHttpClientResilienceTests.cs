@@ -43,6 +43,7 @@ public sealed class BusinessGatewayHttpClientResilienceTests
                 builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
                 builder.UseSetting("Quality:BaseUrl", "http://quality.local");
                 builder.UseSetting("ProductEngineering:BaseUrl", "http://engineering.local");
+                builder.UseSetting("DemandPlanning:BaseUrl", "http://planning.local");
                 builder.UseSetting("Mes:BaseUrl", "http://mes.local");
                 builder.ConfigureServices(services =>
                     services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
@@ -117,6 +118,14 @@ public sealed class BusinessGatewayHttpClientResilienceTests
                     new DateOnly(2026, 5, 28),
                     1),
                 CancellationToken.None),
+            services => services.GetRequiredService<IBusinessPlanningClient>().RunMrpAsync(
+                "internal-token",
+                new BusinessConsoleRunMrpRequest(
+                    "org-001",
+                    "env-dev",
+                    new DateOnly(2026, 5, 28),
+                    new DateOnly(2026, 6, 28)),
+                CancellationToken.None),
             services => services.GetRequiredService<IBusinessMesClient>().RunScheduleAsync(
                 "internal-token",
                 new BusinessConsoleRunScheduleRequest(
@@ -141,6 +150,7 @@ public sealed class BusinessGatewayHttpClientResilienceTests
     [InlineData(nameof(IBusinessInventoryClient), true)]
     [InlineData(nameof(IBusinessQualityClient), true)]
     [InlineData(nameof(IBusinessProductEngineeringClient), true)]
+    [InlineData(nameof(IBusinessPlanningClient), true)]
     [InlineData(nameof(IBusinessMesClient), true)]
     public void DownstreamUnavailableHandlerFilter_only_stubs_business_service_clients(
         string clientName,
@@ -176,6 +186,7 @@ public sealed class BusinessGatewayHttpClientResilienceTests
             nameof(IBusinessInventoryClient),
             nameof(IBusinessQualityClient),
             nameof(IBusinessProductEngineeringClient),
+            nameof(IBusinessPlanningClient),
             nameof(IBusinessMesClient)
         ];
 

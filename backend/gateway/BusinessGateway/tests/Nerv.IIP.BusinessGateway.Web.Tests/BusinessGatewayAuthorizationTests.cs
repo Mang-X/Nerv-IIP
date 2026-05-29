@@ -154,6 +154,34 @@ public sealed class BusinessGatewayAuthorizationTests
             countedQuantity = 1,
             idempotencyKey = "idem-001",
         },
+        "/api/business-console/v1/planning/demands" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            demandType = "sales-order",
+            sourceReference = "SO-001",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            quantity = 10,
+            dueDate = "2026-06-01",
+        },
+        "/api/business-console/v1/planning/mrp-runs" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            horizonStart = "2026-05-25",
+            horizonEnd = "2026-06-30",
+        },
+        "/api/business-console/v1/planning/suggestions/suggestion-001/accept" => new
+        {
+            suggestionId = "suggestion-001",
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            downstreamService = "mes",
+            downstreamDocumentType = "work-order",
+            downstreamDocumentId = "WO-001",
+        },
         _ => new { organizationId = "org-001", environmentId = "env-dev" },
     };
 
@@ -176,6 +204,13 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings", BusinessGatewayPermissions.EngineeringRoutingsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions/resolve", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mrp-runs", BusinessGatewayPermissions.PlanningMrpRun);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs", BusinessGatewayPermissions.PlanningMrpRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging", BusinessGatewayPermissions.PlanningMrpRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/suggestions", BusinessGatewayPermissions.PlanningMrpRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/suggestions/suggestion-001/accept", BusinessGatewayPermissions.PlanningSuggestionsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders", BusinessGatewayPermissions.MesWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/work-orders/rush", BusinessGatewayPermissions.MesWorkOrdersManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);

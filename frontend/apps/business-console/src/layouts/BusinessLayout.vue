@@ -9,7 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@nerv-iip/ui'
-import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, GitBranchIcon, PackageSearchIcon, ReceiptTextIcon } from 'lucide-vue-next'
+import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, GitBranchIcon, PackageSearchIcon, ReceiptTextIcon, RouteIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -46,6 +46,14 @@ const navItems = computed<NavItem[]>(() => [
     isActive: route.path.startsWith('/engineering'),
     items: [
       { title: '发布工程版本', to: { path: '/engineering' } },
+    ],
+  },
+  {
+    title: '计划',
+    icon: RouteIcon,
+    isActive: route.path.startsWith('/planning'),
+    items: [
+      { title: '需求与 MRP', to: { path: '/planning' } },
     ],
   },
   {
@@ -92,6 +100,7 @@ const breadcrumbSegmentLabels: Record<string, string> = {
   erp: 'ERP',
   inventory: '库存',
   engineering: '工程资料',
+  planning: '计划',
   'master-data': '主数据',
   mes: 'MES',
   quality: '质量',
