@@ -323,6 +323,11 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
 
         if (affectedRows != 1)
         {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
             return null;
         }
 
