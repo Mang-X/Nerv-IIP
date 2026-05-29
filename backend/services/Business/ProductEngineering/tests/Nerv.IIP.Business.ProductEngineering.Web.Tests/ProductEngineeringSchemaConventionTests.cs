@@ -11,7 +11,7 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringIte
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
-using Nerv.IIP.Business.ProductEngineering.Infrastructure.Numbering;
+using Nerv.IIP.Numbering;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;

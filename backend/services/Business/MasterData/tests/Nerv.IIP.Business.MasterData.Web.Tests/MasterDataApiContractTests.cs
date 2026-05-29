@@ -392,7 +392,7 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
-    public async Task Create_sku_command_db_numbering_does_not_commit_before_unit_of_work_save()
+    public async Task Create_sku_command_db_numbering_reserves_counter_before_unit_of_work_save()
     {
         const string databaseName = "master-data-api-contract-db-numbering-uow";
         await using var provider = CreateInMemoryProvider(databaseName);
@@ -406,7 +406,7 @@ public sealed class MasterDataApiContractTests
 
         using var observerScope = provider.CreateScope();
         var observerContext = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Empty(observerContext.NumberingCounters);
+        Assert.Single(observerContext.NumberingCounters);
         Assert.Empty(observerContext.NumberingIdempotencyKeys);
         Assert.Empty(observerContext.Skus);
     }

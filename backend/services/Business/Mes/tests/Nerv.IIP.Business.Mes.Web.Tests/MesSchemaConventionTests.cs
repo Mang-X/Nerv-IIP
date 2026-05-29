@@ -9,7 +9,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
-using Nerv.IIP.Business.Mes.Infrastructure.Numbering;
+using Nerv.IIP.Numbering;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
