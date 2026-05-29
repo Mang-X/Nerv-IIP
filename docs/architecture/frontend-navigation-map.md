@@ -81,15 +81,17 @@
 
 ### AppShell T 型导航解锁路径
 
-约束 #17 不是永久禁止 T 型导航，而是要求先把公共壳层能力做成稳定契约，再迁移 Console 和 Business Console。当前尚无对应 issue；新增 ERP/WMS/BarcodeLabel/Approval/Telemetry/Maintenance 等大域到可见导航前，必须先创建独立 issue 承接 AppShell 演进。
+约束 #17 不是永久禁止 T 型导航，而是要求先把公共壳层能力做成稳定契约，再迁移 Console 和 Business Console。AppShell 演进由 #236 承接；新增 ERP/WMS/BarcodeLabel/Approval/Telemetry/Maintenance 等大域到可见导航前，必须先完成该 issue 的公共 API 和迁移门禁。
 
 | 项 | 要求 |
 | --- | --- |
-| 入口 issue | 独立 issue，主题限定为 `@nerv-iip/app-shell` T 型导航公共 API、测试和双控制台迁移；不得混入具体业务页面开发。 |
+| 入口 issue | #236，主题限定为 `@nerv-iip/app-shell` T 型导航公共 API、测试和双控制台迁移；不得混入具体业务页面开发。 |
 | Owner | 前端平台/AppShell owner 牵头，Console 与 Business Console owner 作为迁移方评审。 |
+| 截止条件 | 第一个新增 ERP/WMS/BarcodeLabel/Approval/Telemetry/Maintenance 等大域到可见 Business Console 导航的 PR 之前完成；否则该业务导航 PR 不应合并。 |
 | 最小 API 契约 | 支持 `topDomains`、`currentDomainId`/`currentDomain`、`sideNavItems`、`overflowStrategy`、用户菜单、命令搜索入口、近期/星标入口；类型应位于 `@nerv-iip/app-shell` 稳定导出边界。 |
 | 溢出策略 | 至少支持“更多”下拉；如果要做九宫格应用切换器，应作为同一 API 的可替换 strategy，而不是业务 app 自己拼 DOM。 |
 | 迁移顺序 | 先让 AppShell 同时兼容旧 `navItems` 和新 T 型模型；再让 Business Console 用权限裁剪后的模型接入；最后考虑 Console 是否接入。 |
+| BusinessLayout 迁移触发 | 当前 `BusinessLayout.vue` 的静态 route-ready 侧边栏只允许服务现有已落地/过渡路由。任何新增大域、引入角色裁剪、引入顶部一级域或把 P2/P3 能力转为默认可见导航的 PR，都必须先基于 #236 切换到权限/角色/feature flag 驱动的导航模型。 |
 | 验证 | AppShell 变更至少跑 `pnpm -C frontend --filter @nerv-iip/app-shell typecheck`、`pnpm -C frontend --filter @nerv-iip/app-shell test`，并跑受影响应用的 typecheck/build。 |
 
 ## UX 方案决策（2026-05-29）
@@ -140,7 +142,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 ### 角色导航样例
 
-下表是第一版 RBAC 裁剪参考，不替代 IAM permission catalog、Gateway enforcement 或业务行级授权。导航隐藏只是 UX 优化，Gateway 仍必须按接口和动作返回 401/403。
+下表是第一版 RBAC 裁剪参考，不替代 IAM permission catalog、Gateway enforcement 或业务行级授权；与 IAM permission catalog 有差异时，以 IAM permission catalog 为准。导航隐藏只是 UX 优化，Gateway 仍必须按接口和动作返回 401/403。
 
 | 角色画像 | 默认可见能力区 | 不应默认可见 | 说明 |
 | --- | --- | --- | --- |
@@ -190,6 +192,14 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 3. 质量检验、NCR、库存冻结和返工之间应互相带入物料、批次、工单和检验记录上下文。
 4. ERP 采购收货、WMS 入库、Quality 收货检验、Inventory 入账应通过来源单据和行号互通，页面不要求用户手输跨域 ID。
 5. MES 报工、完工入库、WMS 入库和 ERP 成本候选应能从工单/报工记录一路下钻，不以服务名作为导航断点。
+
+### 上下文穿透验证口径
+
+上下文穿透不是静态菜单要求，只有触及对应页面或跨域链路的 PR 才需要验证。验证入口按变更范围就近落在页面测试或 focused gate 中：
+
+1. 新增或修改跨域链接、Drawer、Sheet 或详情跳转时，页面测试至少覆盖“从来源对象打开目标上下文”的 smoke path，并断言目标对象 ID/单号/设备/批次已被带入。
+2. MES 设备异常到设备监控/维修报修、WMS 作业到库存可用量、质量 NCR 到库存冻结/返工这类链路上线前，应补 Playwright 或组件测试；暂未具备目标 facade 时，页面必须保持不可点击、disabled 或 feature-flag hidden，而不是提供空跳转。
+3. `scripts/verify-business-console-mes-pc-workbench.ps1` 覆盖 MES PC 范围内的上下文 smoke；其它域在建立 focused gate 前，按受影响 app 的 typecheck/build 加页面测试执行。
 
 ## 平台 Console 菜单
 
@@ -287,7 +297,8 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 | 变更范围 | 最低门禁 |
 | --- | --- |
-| 仅本文档或导航文档 | `git diff --check`，并用 `rg` 检查是否残留错误状态、旧术语或 AI 来源措辞。 |
+| 普通文档 | `git diff --check`，并用 `rg` 检查是否残留错误状态、旧术语或 AI 来源措辞。 |
+| 架构导航文档、状态标签、路由状态表或菜单升级门禁 | 普通文档门禁，加至少一名架构 owner 明确 approval；同时用 `rg` 交叉检查 `docs/architecture/implementation-readiness.md`、`docs/architecture/business-platform-domain-architecture.md` 和本文档的状态口径是否冲突。 |
 | Business Console 路由、页面或布局 | `pnpm -C frontend --filter @nerv-iip/business-console typecheck`、`pnpm -C frontend --filter @nerv-iip/business-console test`、`pnpm -C frontend --filter @nerv-iip/business-console build`。 |
 | AppShell 公共 API 或导航模型 | `pnpm -C frontend --filter @nerv-iip/app-shell typecheck`、`pnpm -C frontend --filter @nerv-iip/app-shell test`，并跑受影响 consuming app 的 typecheck/build。 |
 | MES PC 工作台 | `scripts/verify-business-console-mes-pc-workbench.ps1`，以及对应 app 的 typecheck/build。 |
@@ -295,4 +306,4 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 ### 状态升级和退出条件
 
-“过渡”状态没有固定时间上限，但必须有明确退出条件。任何过渡页面进入主导航前，至少需要真实 facade、generated api-client 消费、权限 enforcement、中文业务文案、非 demo 数据来源和 focused gate 记录；否则应保留为诊断/过渡入口、挂 feature flag，或从默认导航中移除。新增大域不得靠静态菜单先占位，必须先满足 AppShell T 型导航解锁路径和 RBAC 裁剪要求。
+“过渡”状态没有固定时间上限，但必须有明确退出条件。任何过渡页面进入主导航或升级为“已落地”前，必须满足上文“菜单项升级门禁”六条；不得维护第二套措辞不同的退出标准。未满足门禁时，应保留为诊断/过渡入口、挂 feature flag，或从默认导航中移除。新增大域不得靠静态菜单先占位，必须先满足 AppShell T 型导航解锁路径和 RBAC 裁剪要求。
