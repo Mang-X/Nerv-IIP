@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-05-29；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-05-29；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 
@@ -56,12 +56,21 @@
 
 ### Gateway 覆盖
 
-| Gateway | 已有 facade | 尚未有正式 facade/页面的重点能力 |
+| Gateway | 已有 facade | 尚未有正式 facade/页面的重点能力与导航优先级 |
 | --- | --- | --- |
-| PlatformGateway | Console auth、AppHub 实例列表/详情、Ops restart 与任务详情、IAM 用户/角色/权限 catalog/会话、Notification 消息/任务。 | FileStorage 管理页、Ops 任务列表/模板/审批页、审计日志、服务健康聚合、DLQ 管理、ExternalClient/SSO/OIDC/MFA 管理 UI。 |
-| BusinessGateway | MasterData SKU/资源、Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、MES PC 工作台。 | ERP、WMS、BarcodeLabel、BusinessApproval、IndustrialTelemetry、Maintenance、BusinessScheduling/APS 的正式页面级 facade。 |
+| PlatformGateway | Console auth、AppHub 实例列表/详情、Ops restart 与任务详情、IAM 用户/角色/权限 catalog/会话、Notification 消息/任务。 | P1：Ops 任务列表/审批页、服务健康聚合；P2：FileStorage 管理页、审计日志、DLQ 管理、ExternalClient；P3：SSO/OIDC/MFA、性能基线和渠道配置。 |
+| BusinessGateway | MasterData SKU/资源、Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、MES PC 工作台。 | P1：当前 route-ready 页面硬化和工作台最低可用性；P2：ERP、WMS、BarcodeLabel、BusinessApproval、IndustrialTelemetry、Maintenance 页面级 facade；P2/#206：BusinessScheduling/APS facade；P3：预测、CRM-lite、CAPA 和高级分析。 |
 
 当前 `frontend/apps/business-console/src/pages/erp/index.vue` 是过渡聚合页，使用本地 `shockAbsorberDemo` 数据；不能据此把 ERP 前端标为已交付。
+
+### IAM Enforcement 口径
+
+前端导航裁剪只是体验优化，不是授权边界。Console/Business Console 必须以 Gateway 的 per-request enforcement 为权威：
+
+1. Gateway facade 按当前 bearer token、`organizationId`、`environmentId` 和 operation permission 做每请求授权；客户端不得因为菜单已隐藏或已显示而跳过 401/403 处理。
+2. 客户端可以用 permission catalog、`me` 上下文和 feature flag 预裁剪导航，但缓存只能作为展示优化，不能作为放行依据。
+3. 本文的导航规则默认只约束功能级权限；数据行级、对象级或组织范围权限必须由对应 facade 显式实现后，前端才能展示为“对象级可见/不可见”能力。
+4. 如果权限校验结果被 Gateway 或客户端缓存，缓存必须绑定当前用户、组织、环境和权限版本；权限撤销后的最终保护仍是 Gateway 返回 401/403。
 
 ### AppShell 覆盖
 
@@ -70,9 +79,22 @@
 | `frontend/packages/app-shell/src/AppShell.vue` | 只接收 `navItems` 并渲染左侧 Sidebar；`NavItem` 支持分组 + 子项两级可见导航。 | 尚无顶部一级域、溢出菜单、应用切换器、近期/星标或命令搜索入口契约。 |
 | `frontend/apps/business-console/src/layouts/BusinessLayout.vue` | 当前把主数据、库存、工程资料、计划、质量、ERP、MES、系统管理都放在左侧静态导航。 | 这只是当前 route-ready 阶段的实现，不是长期导航形态；新增大域前应先做 T 型导航和权限裁剪。 |
 
-## Gemini 方案裁决
+### AppShell T 型导航解锁路径
 
-Gemini 的 UX 原则采纳，但其 15 个业务域列表必须被解释为能力目录，不是可直接写入 `frontend/apps/business-console/src/layouts/BusinessLayout.vue` 的静态侧边栏。
+约束 #17 不是永久禁止 T 型导航，而是要求先把公共壳层能力做成稳定契约，再迁移 Console 和 Business Console。当前尚无对应 issue；新增 ERP/WMS/BarcodeLabel/Approval/Telemetry/Maintenance 等大域到可见导航前，必须先创建独立 issue 承接 AppShell 演进。
+
+| 项 | 要求 |
+| --- | --- |
+| 入口 issue | 独立 issue，主题限定为 `@nerv-iip/app-shell` T 型导航公共 API、测试和双控制台迁移；不得混入具体业务页面开发。 |
+| Owner | 前端平台/AppShell owner 牵头，Console 与 Business Console owner 作为迁移方评审。 |
+| 最小 API 契约 | 支持 `topDomains`、`currentDomainId`/`currentDomain`、`sideNavItems`、`overflowStrategy`、用户菜单、命令搜索入口、近期/星标入口；类型应位于 `@nerv-iip/app-shell` 稳定导出边界。 |
+| 溢出策略 | 至少支持“更多”下拉；如果要做九宫格应用切换器，应作为同一 API 的可替换 strategy，而不是业务 app 自己拼 DOM。 |
+| 迁移顺序 | 先让 AppShell 同时兼容旧 `navItems` 和新 T 型模型；再让 Business Console 用权限裁剪后的模型接入；最后考虑 Console 是否接入。 |
+| 验证 | AppShell 变更至少跑 `pnpm -C frontend --filter @nerv-iip/app-shell typecheck`、`pnpm -C frontend --filter @nerv-iip/app-shell test`，并跑受影响应用的 typecheck/build。 |
+
+## UX 方案决策（2026-05-29）
+
+本节记录 2026-05-29 对 15 域菜单方案、WMS/Inventory 融合、PDA/mobile 范式、RBAC 裁剪、全局搜索和 T 型导航的决策。结论已按当前代码事实校验；外部 AI 讨论只作为输入，不作为权威来源。15 个业务域列表必须被解释为能力目录，不是可直接写入 `frontend/apps/business-console/src/layouts/BusinessLayout.vue` 的静态侧边栏。
 
 | 建议/能力 | 裁决 | 调整口径 |
 | --- | --- | --- |
@@ -115,6 +137,36 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 全局搜索 | 横跨多部门的重度用户和管理员。 | 支持 `Cmd/Ctrl+K` 打开命令/对象搜索，按菜单、单号、物料、批次、设备、客户、供应商直达页面或详情。 |
 | 近期/星标 | 高频重复操作用户。 | 最近访问和星标页面固定在导航顶部，但不得绕过权限。 |
 | PDA/mobile | 一线报工、收货、拣货、盘点、巡检、报修、报警处理。 | 不复用 PC 菜单树；首页优先是我的任务、快捷应用墙和扫码直达。 |
+
+### 角色导航样例
+
+下表是第一版 RBAC 裁剪参考，不替代 IAM permission catalog、Gateway enforcement 或业务行级授权。导航隐藏只是 UX 优化，Gateway 仍必须按接口和动作返回 401/403。
+
+| 角色画像 | 默认可见能力区 | 不应默认可见 | 说明 |
+| --- | --- | --- | --- |
+| 生产计划员 | 数字化工作台、需求与计划、制造执行（生产计划/工单/派工）、库存台账只读、产品工程只读。 | 经营管理财务、设备运维、系统管理。 | 重点是从需求/MRP/MPS 到工单和齐套状态的闭环；采购/库存联动通过上下文链接和只读 Drawer 进入。 |
+| 仓库管理员 | 数字化工作台、仓储作业（WMS）、库存台账/库存移动、条码标签、质量收货检验入口。 | 产品工程、高级排程、财务管理、审批模板配置。 | 入库、上架、拣货、复核、发货、盘点是主入口；库存事实在作业页就地展示，不要求切换到库存菜单。 |
+| 质量工程师 | 数字化工作台、质量管理、MES 质量与不良、库存冻结/批次视图、供应商/物料只读。 | 销售订单、财务凭证、APS 排程设置。 | 检验计划、检验记录、NCR、冻结和返工穿透是主链路。 |
+| 设备工程师 | 数字化工作台、设备监控（IoT）、设备运维（CMMS）、MES 设备与停机、备件库存只读。 | 经营管理销售/财务、产品工程变更、审批模板配置。 | 设备异常应能从监控进入报修、维修工单、停机和 OEE，不把服务名当操作边界。 |
+| 一线操作员/PDA | 我的任务、扫码直达、快捷应用墙。 | PC 能力目录和完整菜单树。 | 报工、收货、拣货、盘点、巡检、报修、报警处理从任务或扫码进入。 |
+
+### 工作台最低可用性
+
+`/` 当前可以作为 Business Console 入口保留，但不得长期停留在“空壳首页”。在跨域 KPI、BusinessApproval 待办、Notification 消息和 Telemetry 预警全部接入前，最低可用版本必须满足：
+
+1. 按角色和权限显示 route-ready 页面快捷入口，不能展示用户无权限或 feature flag 未开启的能力区。
+2. 使用真实 facade 可得的数据展示待关注事项；缺少正式聚合 facade 时可以窄化为“工单、库存、检验、NCR、计划建议”等已有页面的入口和摘要，但不得使用 demo/seed 文案伪装成真实业务事实。
+3. 近期/星标和全局搜索结果必须经过当前登录主体的权限过滤。
+4. 工作台入口应服务跨域跳转，不替代各域页面内的上下文 Drawer、Sheet 和对象详情链接。
+
+### 权限过滤时机
+
+近期访问、星标、全局搜索和应用切换器不得因为客户端缓存而泄露已撤权能力：
+
+1. 写入近期/星标时只保存 route/object reference，不保存未授权后仍可见的业务名称、金额、客户、供应商或详情 payload。
+2. 每次读取和渲染时按当前 principal 的 permission catalog、feature flag 和组织/环境上下文过滤；写入时校验可以作为补充，但读时过滤是硬要求。
+3. 权限移除或 feature flag 关闭后，入口应隐藏或显示为不可访问状态；点击仍必须走 Gateway 401/403，不允许只靠前端判断。
+4. 对象级搜索结果的详情字段以 facade 返回结果为准；没有权限的对象不能仅因历史访问记录而显示名称或状态。
 
 ## 业务术语
 
@@ -228,3 +280,19 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 4. 页面文案是中文业务文案，不出现接口、样例、seed、demo、operationId、sourceSystem 等开发语义。
 5. 对象详情、动作表单和页面 Tabs 没有被提升成常驻菜单。
 6. touched route 的 typecheck/test/build 或对应 focused gate 已通过。
+
+### Focused Gate 映射
+
+当前仓库没有名为 `frontend-focused-check` 的统一 CI job；在该 job 建立前，PR 作者按变更范围执行下列命令并在 PR 中说明结果。
+
+| 变更范围 | 最低门禁 |
+| --- | --- |
+| 仅本文档或导航文档 | `git diff --check`，并用 `rg` 检查是否残留错误状态、旧术语或 AI 来源措辞。 |
+| Business Console 路由、页面或布局 | `pnpm -C frontend --filter @nerv-iip/business-console typecheck`、`pnpm -C frontend --filter @nerv-iip/business-console test`、`pnpm -C frontend --filter @nerv-iip/business-console build`。 |
+| AppShell 公共 API 或导航模型 | `pnpm -C frontend --filter @nerv-iip/app-shell typecheck`、`pnpm -C frontend --filter @nerv-iip/app-shell test`，并跑受影响 consuming app 的 typecheck/build。 |
+| MES PC 工作台 | `scripts/verify-business-console-mes-pc-workbench.ps1`，以及对应 app 的 typecheck/build。 |
+| Gateway facade 或 api-client 契约 | 后端测试、OpenAPI 导出、`pnpm -C frontend generate:api`，再跑消费页面的 typecheck/build。 |
+
+### 状态升级和退出条件
+
+“过渡”状态没有固定时间上限，但必须有明确退出条件。任何过渡页面进入主导航前，至少需要真实 facade、generated api-client 消费、权限 enforcement、中文业务文案、非 demo 数据来源和 focused gate 记录；否则应保留为诊断/过渡入口、挂 feature flag，或从默认导航中移除。新增大域不得靠静态菜单先占位，必须先满足 AppShell T 型导航解锁路径和 RBAC 裁剪要求。
