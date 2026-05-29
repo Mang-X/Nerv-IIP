@@ -4,8 +4,8 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggreg
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
-using Nerv.IIP.Business.DemandPlanning.Infrastructure.Numbering;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
+using Nerv.IIP.Numbering;
 
 namespace Nerv.IIP.Business.DemandPlanning.Infrastructure;
 

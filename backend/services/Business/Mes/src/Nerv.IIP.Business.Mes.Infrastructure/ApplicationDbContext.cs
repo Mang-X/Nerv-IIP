@@ -6,8 +6,8 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
-using Nerv.IIP.Business.Mes.Infrastructure.Numbering;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Numbering;
 
 namespace Nerv.IIP.Business.Mes.Infrastructure;
 

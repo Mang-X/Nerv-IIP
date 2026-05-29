@@ -13,11 +13,34 @@ public sealed class CapMessagingConfigurationTests
     {
         var options = new CapOptions();
 
-        options.UseConfiguredTransport(CreateConfiguration());
+        options.UseConfiguredTransport(CreateConfiguration(), "Development");
 
         var extensionTypeNames = GetExtensionTypeNames(options);
         Assert.Contains(extensionTypeNames, name => name.Contains("InMemory", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(extensionTypeNames, name => name.Contains("RabbitMQ", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("InMemory")]
+    public void UseConfiguredTransport_InMemoryProviderOutsideDevelopment_FailsFast(string? provider)
+    {
+        var options = new CapOptions();
+        var values = new Dictionary<string, string?>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+        };
+
+        if (provider is not null)
+        {
+            values["Messaging:Provider"] = provider;
+        }
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            options.UseConfiguredTransport(CreateConfiguration(values)));
+
+        Assert.Contains("CAP InMemory transport is only allowed in Development", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Messaging:Provider=RabbitMQ", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

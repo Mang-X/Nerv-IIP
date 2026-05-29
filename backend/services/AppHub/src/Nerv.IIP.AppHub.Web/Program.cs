@@ -42,7 +42,7 @@ if (usePostgreSql)
     {
         options.Version = builder.Configuration["Cap:Version"] ?? "v1";
         options.UseEntityFramework<ApplicationDbContext>();
-        options.UseConfiguredTransport(builder.Configuration);
+        options.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
     });
 }
 else

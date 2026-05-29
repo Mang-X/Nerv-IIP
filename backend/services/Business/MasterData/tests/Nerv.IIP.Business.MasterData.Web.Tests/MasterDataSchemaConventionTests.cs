@@ -17,7 +17,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
-using Nerv.IIP.Business.MasterData.Infrastructure.Numbering;
+using Nerv.IIP.Numbering;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;

@@ -13,8 +13,8 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
-using Nerv.IIP.Business.Erp.Infrastructure.Numbering;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
+using Nerv.IIP.Numbering;
 
 namespace Nerv.IIP.Business.Erp.Infrastructure;
 
