@@ -53,10 +53,10 @@ const pendingWorkCount = computed(() => pendingWork.value.reduce((total, item) =
 const commandCards = computed(() => [
   {
     title: '先处理阻塞',
-    description: blockerCount.value > 0 ? '物料、质量、设备或准备项存在阻塞，先排除再放行。' : '当前没有汇总阻塞，可以进入工单与派工继续推进。',
+    description: blockerCount.value > 0 ? '物料、质量、设备或产能存在阻塞，先排除再放行。' : '当前没有汇总阻塞，可以进入工单与派工继续推进。',
     value: blockerCount.value,
-    route: blockerCount.value > 0 ? '/mes/foundation' : '/mes/work-orders',
-    action: blockerCount.value > 0 ? '查看准备检查' : '进入工单与派工',
+    route: blockerCount.value > 0 ? '/mes/capacity' : '/mes/work-orders',
+    action: blockerCount.value > 0 ? '查看异常与产能' : '进入工单与派工',
     icon: ShieldAlertIcon,
     tone: blockerCount.value > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-emerald-500/20 bg-emerald-500/5',
   },
@@ -174,14 +174,14 @@ function formatError(error: unknown) {
               <h2 class="text-sm font-semibold text-foreground">现场阻塞</h2>
               <p class="mt-1 text-xs text-muted-foreground">按来源聚合，先处理会阻断开工或完工的事项。</p>
             </div>
-            <RouterLink class="text-sm font-medium text-primary hover:underline" :to="{ path: '/mes/foundation' }">
-              准备检查
+            <RouterLink class="text-sm font-medium text-primary hover:underline" :to="{ path: '/mes/capacity' }">
+              异常与产能
             </RouterLink>
           </div>
           <div v-if="!blockers.length && !overviewPending">
             <BusinessEmptyState
               title="当前没有生产阻塞"
-              description="可以进入工单与派工继续安排今日任务；如果现场仍无法开工，请检查工厂、产线、物料、质量和设备基础准备。"
+              description="可以进入工单与派工继续安排今日任务；如果仍怀疑基础数据缺失，可到系统管理的数据就绪检查做诊断。"
               action="建议从工单队列选择下一张可执行工单。"
             />
           </div>

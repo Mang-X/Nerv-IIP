@@ -222,6 +222,8 @@ PLC/DCS/SCADA data
 
 IndustrialTelemetry 不控制现场；Maintenance 不拥有设备主数据；Scheduling 不直接读取 PLC/DCS/SCADA；MES 不直接改维修事实。
 
+`IndustrialTelemetry.AlarmEvent` / `industrialTelemetry.AlarmRaised` 到 `Maintenance.MaintenanceWorkOrder`，再到 `maintenance.AssetUnavailable` / `maintenance.AssetRestored` 和 `MES.WorkCenterUnavailability` 的投影链路见 `docs/architecture/equipment-status-event-flow.md`。
+
 ### 仓储自动化
 
 ```text
