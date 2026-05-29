@@ -10,11 +10,16 @@ public sealed class DemandPlanningNumberingService
 {
     private readonly NumberingServiceCore _core;
 
-    public DemandPlanningNumberingService(ApplicationDbContext? dbContext = null, IServiceScopeFactory? serviceScopeFactory = null)
+    public DemandPlanningNumberingService()
     {
-        _core = new NumberingServiceCore(dbContext is null
-            ? null
-            : new EfCoreNumberingStore(dbContext, CreateCounterDbContextLeaseFactory(serviceScopeFactory)));
+        _core = new NumberingServiceCore();
+    }
+
+    public DemandPlanningNumberingService(ApplicationDbContext dbContext, IServiceScopeFactory serviceScopeFactory)
+    {
+        _core = new NumberingServiceCore(new EfCoreNumberingStore(
+            dbContext,
+            EfCoreNumberingStore.CreateDbContextLeaseFactory<ApplicationDbContext>(serviceScopeFactory)));
     }
 
     public async Task<DemandPlanningNumberAllocation> AllocateDemandReferenceAsync(
@@ -38,17 +43,5 @@ public sealed class DemandPlanningNumberingService
             cancellationToken);
 
         return new DemandPlanningNumberAllocation(allocation.Number, allocation.IsIdempotentReplay);
-    }
-
-    private static Func<CancellationToken, ValueTask<NumberingDbContextLease>> CreateCounterDbContextLeaseFactory(IServiceScopeFactory? serviceScopeFactory)
-    {
-        ArgumentNullException.ThrowIfNull(serviceScopeFactory);
-
-        return _ =>
-        {
-            var scope = serviceScopeFactory.CreateAsyncScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            return ValueTask.FromResult(new NumberingDbContextLease(dbContext, scope));
-        };
     }
 }

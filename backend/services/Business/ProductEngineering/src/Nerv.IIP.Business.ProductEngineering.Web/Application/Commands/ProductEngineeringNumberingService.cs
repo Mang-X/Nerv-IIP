@@ -10,11 +10,16 @@ public sealed class ProductEngineeringNumberingService
 {
     private readonly NumberingServiceCore _core;
 
-    public ProductEngineeringNumberingService(ApplicationDbContext? dbContext = null, IServiceScopeFactory? serviceScopeFactory = null)
+    public ProductEngineeringNumberingService()
     {
-        _core = new NumberingServiceCore(dbContext is null
-            ? null
-            : new EfCoreNumberingStore(dbContext, CreateCounterDbContextLeaseFactory(serviceScopeFactory)));
+        _core = new NumberingServiceCore();
+    }
+
+    public ProductEngineeringNumberingService(ApplicationDbContext dbContext, IServiceScopeFactory serviceScopeFactory)
+    {
+        _core = new NumberingServiceCore(new EfCoreNumberingStore(
+            dbContext,
+            EfCoreNumberingStore.CreateDbContextLeaseFactory<ApplicationDbContext>(serviceScopeFactory)));
     }
 
     public async Task<ProductEngineeringNumberAllocation> AllocateAsync(
@@ -45,17 +50,5 @@ public sealed class ProductEngineeringNumberingService
     public static string Fingerprint(params object?[] parts)
     {
         return NumberingServiceCore.Fingerprint(parts);
-    }
-
-    private static Func<CancellationToken, ValueTask<NumberingDbContextLease>> CreateCounterDbContextLeaseFactory(IServiceScopeFactory? serviceScopeFactory)
-    {
-        ArgumentNullException.ThrowIfNull(serviceScopeFactory);
-
-        return _ =>
-        {
-            var scope = serviceScopeFactory.CreateAsyncScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            return ValueTask.FromResult(new NumberingDbContextLease(dbContext, scope));
-        };
     }
 }

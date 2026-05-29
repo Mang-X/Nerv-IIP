@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Numbering;
 
@@ -18,6 +19,29 @@ public sealed class EfCoreNumberingStore(DbContext dbContext, Func<CancellationT
     private readonly DbContext _dbContext = dbContext;
     private readonly Func<CancellationToken, ValueTask<NumberingDbContextLease>> _counterDbContextLeaseFactory = counterDbContextLeaseFactory;
     private readonly DbSet<NumberingIdempotencyKey> _idempotencyKeys = dbContext.Set<NumberingIdempotencyKey>();
+
+    public static Func<CancellationToken, ValueTask<NumberingDbContextLease>> CreateDbContextLeaseFactory<TDbContext>(
+        IServiceScopeFactory serviceScopeFactory)
+        where TDbContext : DbContext
+    {
+        ArgumentNullException.ThrowIfNull(serviceScopeFactory);
+
+        return async cancellationToken =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var scope = serviceScopeFactory.CreateAsyncScope();
+            try
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
+                return new NumberingDbContextLease(dbContext, scope);
+            }
+            catch
+            {
+                await scope.DisposeAsync();
+                throw;
+            }
+        };
+    }
 
     public async Task<NumberingIdempotencyKey?> FindIdempotencyRecordAsync(
         string organizationId,
