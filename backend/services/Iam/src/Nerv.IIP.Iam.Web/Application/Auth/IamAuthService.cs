@@ -148,7 +148,7 @@ public sealed class PostgreSqlIamAuthService(
             return null;
         }
 
-        var membership = await membershipRepository.GetFirstByUserIdAsync(userId, cancellationToken);
+        var membership = await GetTokenMembershipAsync(principal, userId, cancellationToken);
         if (membership is null)
         {
             return null;
@@ -436,6 +436,24 @@ public sealed class PostgreSqlIamAuthService(
     private static UnauthorizedAccessException Unauthorized()
     {
         return new UnauthorizedAccessException("Unauthorized.");
+    }
+
+    private async Task<Membership?> GetTokenMembershipAsync(
+        AccessTokenPrincipal principal,
+        UserId userId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(principal.OrganizationId)
+            || string.IsNullOrWhiteSpace(principal.EnvironmentId))
+        {
+            return await membershipRepository.GetFirstByUserIdAsync(userId, cancellationToken);
+        }
+
+        return await membershipRepository.GetByUserIdAndOrgEnvAsync(
+            userId,
+            new OrganizationId(principal.OrganizationId),
+            new IamEnvironmentId(principal.EnvironmentId),
+            cancellationToken);
     }
 
     private static HashSet<string> SplitScope(string? scope)

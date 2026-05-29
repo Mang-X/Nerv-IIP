@@ -34,7 +34,7 @@ public sealed class UserRepository(ApplicationDbContext context)
 
     public async Task<User?> GetByLoginNameAsync(string loginName, CancellationToken cancellationToken = default)
     {
-        var normalizedLoginName = loginName.ToLower();
+        var normalizedLoginName = loginName.ToLowerInvariant();
         return await DbContext.Users.SingleOrDefaultAsync(
             x => x.LoginName.ToLower() == normalizedLoginName && x.Deleted == NotDeleted,
             cancellationToken);
@@ -42,7 +42,7 @@ public sealed class UserRepository(ApplicationDbContext context)
 
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = email.ToLower();
+        var normalizedEmail = email.ToLowerInvariant();
         return await DbContext.Users.SingleOrDefaultAsync(
             x => x.Email.ToLower() == normalizedEmail && x.Deleted == NotDeleted,
             cancellationToken);
@@ -141,6 +141,11 @@ public interface IMembershipRepository : IRepository<Membership, MembershipId>
 {
     // Returns the stable first membership by organization and environment identifiers.
     Task<Membership?> GetFirstByUserIdAsync(UserId userId, CancellationToken cancellationToken = default);
+    Task<Membership?> GetByUserIdAndOrgEnvAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default);
     Task<bool> UserHasPermissionAsync(UserId userId, string permissionCode, CancellationToken cancellationToken = default);
     Task<bool> UserHasPermissionAsync(
         UserId userId,
@@ -172,6 +177,19 @@ public sealed class MembershipRepository(ApplicationDbContext context)
             .OrderBy(x => x.OrganizationId)
             .ThenBy(x => x.EnvironmentId)
             .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<Membership?> GetByUserIdAndOrgEnvAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Memberships.SingleOrDefaultAsync(
+            x => x.UserId == userId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId,
+            cancellationToken);
     }
 
     public async Task<bool> UserHasPermissionAsync(
