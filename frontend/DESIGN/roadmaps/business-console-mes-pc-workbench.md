@@ -42,6 +42,16 @@ References:
 
 ## Navigation Model
 
+The canonical Console and Business Console navigation map now lives in
+`docs/architecture/frontend-navigation-map.md`. This section is scoped to the
+MES PC operational reset and describes role-oriented grouping around production
+execution; it does not override the global capability catalog, role-navigation
+rules or the route-ready upgrade rules in the architecture doc.
+
+The long-term PC shell is a top-left navigation model: the selected top-level
+business domain controls the left-side menu. The MES grouping below is therefore
+the MES domain's side menu candidate, not a full Business Console sidebar.
+
 The initial MVP top-level domains were:
 
 1. `主数据`

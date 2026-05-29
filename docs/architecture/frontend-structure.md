@@ -31,7 +31,7 @@ frontend/
 
 第三迭代只创建控制台纵切必需包：`api-client`、`ui`、`app-shell`。`layer-base`、`layer-platform`、`auth`、`shared-types` 是已冻结的长期边界，等第二个应用或跨包复用真正出现时再创建，避免首批脚手架提前空转。
 
-Business Console MVP 是第二个真实应用入口：`frontend/apps/business-console` 使用 Vite Plus + Vue 3 建立独立 app shell，承载 #166 到 #169 的 MasterData、Inventory、Quality 和 MES 业务页面。它消费 BusinessGateway 的 `/api/business-console/v1/**` facade，不直接调用业务服务 URL，也不把业务 CRUD 页面放回主平台 `frontend/apps/console`。
+Business Console MVP 是第二个真实应用入口：`frontend/apps/business-console` 使用 Vite Plus + Vue 3 建立独立 app shell，承载 #166 到 #169 的 MasterData、Inventory、Quality 和 MES 业务页面，并已补入 ProductEngineering、DemandPlanning 和 MES PC 工作台相关路由。它消费 BusinessGateway 的 `/api/business-console/v1/**` facade，不直接调用业务服务 URL，也不把业务 CRUD 页面放回主平台 `frontend/apps/console`。完整导航地图、能力目录、角色导航、分期和“后端存在但前端不得提前暴露”的规则见 `docs/architecture/frontend-navigation-map.md`。Business Console 的可见导航不得机械映射后端服务列表；实现时必须按 RBAC、角色任务、feature flag、近期/星标、全局搜索和上下文穿透组织入口。PC 端长期采用顶部-侧边 T 型导航，但当前 `@nerv-iip/app-shell` 只有侧边栏 `navItems` 契约；落地前必须先扩展 app-shell 公共 API 和测试，不得在业务页面局部硬拼顶部域导航。
 
 Console Auth + shadcn-vue Baseline 当前采用“app 内 auth”方案：`frontend/apps/console/src/stores/auth.ts` 管理会话状态，`src/api/auth.ts` 包装 Gateway Auth facade，路由守卫位于 app 内。完整 `frontend/packages/auth` 独立包方案留作后续参考；当 Console 之外出现第二个应用、插件宿主或跨包登录复用时再抽取，边界应包含 Gateway auth DTO mapping、storage adapter、refresh orchestration、logout/session revoke 组合、unauthorized handler 和 app-agnostic route helper，不直接耦合某个页面或 app shell。
 
@@ -177,11 +177,18 @@ Console 登录闭环通过 PlatformGateway Console Auth facade 调用 IAM。`sto
 
 Business Console 登录、刷新、退出和 `/me` 可以先复用 PlatformGateway Console Auth facade 的契约，业务数据页只消费 BusinessGateway 生成客户端。首版允许 app-local auth 代码与主平台 console 保持结构一致；当两个应用的会话恢复、刷新编排、退出处理和 unauthorized handler 出现真实复用压力时，再抽取 `frontend/packages/auth`。
 
-业务页面按领域目录组织：
+业务页面按领域目录组织。下表只描述当前代码中的 route/facade 事实；长期能力目录、角色导航、分期和升级门禁以 `docs/architecture/frontend-navigation-map.md` 为准。
 
 | 路由 | 页面范围 | 数据入口 |
 | --- | --- | --- |
+| `/` | 业务工作台入口；真实 KPI、跨域待办、消息和预警聚合后置。 | 当前路由入口 + 业务模块链接。 |
 | `/master-data/skus` | SKU 列表、创建和基础资源选择。 | BusinessGateway MasterData facade。 |
+| `/master-data/partners` | 客户与供应商过渡视图。 | BusinessGateway MasterData resource facade + 当前本地场景数据。 |
+| `/master-data/resources` | 工厂、产线、工作中心、设备、班次、日历、班组和技能过渡视图。 | BusinessGateway MasterData resource facade + 当前本地场景数据。 |
+| `/master-data/process` | 工艺与版本过渡视图；后续应收敛到 ProductEngineering，不继续扩展 MasterData 领域规则。 | 当前本地场景数据。 |
+| `/engineering` | MBOM、工艺路线、生产版本和生产版本 resolve 的窄化工程资料工作台。 | BusinessGateway ProductEngineering facade。 |
+| `/planning` | 需求、MRP run、pegging、计划建议和建议接受。 | BusinessGateway DemandPlanning facade。 |
+| `/erp` | ERP 业务协同过渡聚合页。 | 当前本地场景数据；正式 ERP facade/page 尚未落地。 |
 | `/inventory/availability` | 可用量查询。 | BusinessGateway Inventory facade。 |
 | `/inventory/movements` | 库存移动工作台；新建移动通过抽屉承载。 | BusinessGateway Inventory facade。 |
 | `/inventory/counts` | 盘点任务工作台；创建任务和确认差异通过抽屉承载。 | BusinessGateway Inventory facade。 |
