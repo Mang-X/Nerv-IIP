@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Numbering;
 
@@ -9,11 +10,11 @@ public sealed class MesNumberingService
 {
     private readonly NumberingServiceCore _core;
 
-    public MesNumberingService(ApplicationDbContext? dbContext = null)
+    public MesNumberingService(ApplicationDbContext? dbContext = null, IServiceScopeFactory? serviceScopeFactory = null)
     {
         _core = new NumberingServiceCore(dbContext is null
             ? null
-            : new EfCoreNumberingStore(dbContext, dbContext.NumberingCounters, dbContext.NumberingIdempotencyKeys));
+            : new EfCoreNumberingStore(dbContext, CreateCounterDbContextLeaseFactory(serviceScopeFactory)));
     }
 
     public async Task<MesNumberAllocation> AllocateWorkOrderIdAsync(
@@ -55,5 +56,17 @@ public sealed class MesNumberingService
     public static string Fingerprint(params object?[] parts)
     {
         return NumberingServiceCore.Fingerprint(parts);
+    }
+
+    private static Func<CancellationToken, ValueTask<NumberingDbContextLease>> CreateCounterDbContextLeaseFactory(IServiceScopeFactory? serviceScopeFactory)
+    {
+        ArgumentNullException.ThrowIfNull(serviceScopeFactory);
+
+        return _ =>
+        {
+            var scope = serviceScopeFactory.CreateAsyncScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            return ValueTask.FromResult(new NumberingDbContextLease(dbContext, scope));
+        };
     }
 }

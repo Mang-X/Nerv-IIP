@@ -2,12 +2,22 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Nerv.IIP.Numbering;
 
-public sealed class EfCoreNumberingStore(DbContext dbContext, DbSet<NumberingCounter> counters, DbSet<NumberingIdempotencyKey> idempotencyKeys)
+public sealed class NumberingDbContextLease(DbContext dbContext, IAsyncDisposable owner) : IAsyncDisposable
+{
+    public DbContext DbContext { get; } = dbContext;
+
+    public ValueTask DisposeAsync()
+    {
+        return owner.DisposeAsync();
+    }
+}
+
+public sealed class EfCoreNumberingStore(DbContext dbContext, Func<CancellationToken, ValueTask<NumberingDbContextLease>> counterDbContextLeaseFactory)
     : INumberingStore
 {
     private readonly DbContext _dbContext = dbContext;
-    private readonly DbSet<NumberingCounter> _counters = counters;
-    private readonly DbSet<NumberingIdempotencyKey> _idempotencyKeys = idempotencyKeys;
+    private readonly Func<CancellationToken, ValueTask<NumberingDbContextLease>> _counterDbContextLeaseFactory = counterDbContextLeaseFactory;
+    private readonly DbSet<NumberingIdempotencyKey> _idempotencyKeys = dbContext.Set<NumberingIdempotencyKey>();
 
     public async Task<NumberingIdempotencyKey?> FindIdempotencyRecordAsync(
         string organizationId,
@@ -36,8 +46,11 @@ public sealed class EfCoreNumberingStore(DbContext dbContext, DbSet<NumberingCou
 
     public async Task<long> ReserveNextCounterValueAsync(NumberingCounterScope scope, CancellationToken cancellationToken)
     {
-        var counter = _counters.Local.FirstOrDefault(x => IsScope(x, scope))
-            ?? await _counters.SingleOrDefaultAsync(x =>
+        await using var lease = await _counterDbContextLeaseFactory(cancellationToken);
+        var counterDbContext = lease.DbContext;
+        var counters = counterDbContext.Set<NumberingCounter>();
+        var counter = counters.Local.FirstOrDefault(x => IsScope(x, scope))
+            ?? await counters.SingleOrDefaultAsync(x =>
                 x.OrganizationId == scope.OrganizationId &&
                 x.EnvironmentId == scope.EnvironmentId &&
                 x.DocumentType == scope.DocumentType &&
@@ -54,23 +67,23 @@ public sealed class EfCoreNumberingStore(DbContext dbContext, DbSet<NumberingCou
                 scope.SiteCode,
                 scope.DateSegment,
                 scope.Prefix);
-            _counters.Add(counter);
+            counters.Add(counter);
         }
 
         var next = counter.Advance();
         try
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await counterDbContext.SaveChangesAsync(cancellationToken);
             return next;
         }
         catch (DbUpdateConcurrencyException exception)
         {
-            DetachChangedCounters();
+            DetachChangedCounters(counterDbContext);
             throw new NumberingConcurrencyException("Numbering counter was updated concurrently.", exception);
         }
         catch (DbUpdateException exception)
         {
-            DetachChangedCounters();
+            DetachChangedCounters(counterDbContext);
             throw new NumberingConcurrencyException("Numbering counter reservation collided with another writer.", exception);
         }
     }
@@ -84,9 +97,9 @@ public sealed class EfCoreNumberingStore(DbContext dbContext, DbSet<NumberingCou
             counter.DateSegment == scope.DateSegment;
     }
 
-    private void DetachChangedCounters()
+    private static void DetachChangedCounters(DbContext dbContext)
     {
-        foreach (var entry in _dbContext.ChangeTracker.Entries<NumberingCounter>()
+        foreach (var entry in dbContext.ChangeTracker.Entries<NumberingCounter>()
                      .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
                      .ToArray())
         {

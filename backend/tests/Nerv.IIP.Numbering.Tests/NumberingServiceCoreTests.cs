@@ -43,6 +43,20 @@ public sealed class NumberingServiceCoreTests
     }
 
     [Fact]
+    public async Task AllocateAsync_TreatsMaxConcurrencyAttemptsAsTotalAttempts()
+    {
+        var store = new InMemoryNumberingStore { ConcurrencyFailuresBeforeSuccess = 4 };
+        var service = new NumberingServiceCore(store, new FrozenTimeProvider(new DateTimeOffset(2026, 5, 29, 1, 2, 3, TimeSpan.Zero)));
+
+        var allocation = await service.AllocateAsync(
+            new NumberingAllocationRequest("org-001", "env-dev", "sku", "SKU", null, null, "payload-a", "sku"),
+            CancellationToken.None);
+
+        Assert.Equal("SKU-20260529-000001", allocation.Number);
+        Assert.Equal(5, store.ReservationAttempts);
+    }
+
+    [Fact]
     public async Task AllocateAsync_UsesInstanceStateOnlyForInMemoryCounters()
     {
         var timeProvider = new FrozenTimeProvider(new DateTimeOffset(2026, 5, 29, 1, 2, 3, TimeSpan.Zero));
@@ -55,6 +69,21 @@ public sealed class NumberingServiceCoreTests
 
         Assert.Equal("DEMAND-20260529-000001", first.Number);
         Assert.Equal("DEMAND-20260529-000001", second.Number);
+    }
+
+    [Fact]
+    public async Task AllocateAsync_SerializesInMemoryIdempotencyAllocation()
+    {
+        var timeProvider = new FrozenTimeProvider(new DateTimeOffset(2026, 5, 29, 1, 2, 3, TimeSpan.Zero));
+        var service = new NumberingServiceCore(store: null, timeProvider);
+        var request = new NumberingAllocationRequest("org-001", "env-dev", "demand", "DEMAND", null, "idem-001", "payload-a", "demand");
+
+        var allocations = await Task.WhenAll(Enumerable.Range(1, 20).Select(_ =>
+            Task.Run(() => service.AllocateAsync(request, CancellationToken.None))));
+
+        Assert.Single(allocations.Select(x => x.Number).Distinct(StringComparer.Ordinal));
+        Assert.Equal("DEMAND-20260529-000001", allocations[0].Number);
+        Assert.Equal(19, allocations.Count(x => x.IsIdempotentReplay));
     }
 
     private sealed class InMemoryNumberingStore : INumberingStore

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Globalization;
 using NetCorePal.Extensions.Primitives;
 
@@ -52,7 +51,7 @@ public sealed class NumberingServiceCore(
     private readonly NumberingServiceOptions _options = options ?? NumberingServiceOptions.Default;
     private readonly Lock _lock = new();
     private readonly Dictionary<string, long> _counters = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, NumberingIdempotencyKey> _idempotency = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, NumberingIdempotencyKey> _idempotency = new(StringComparer.Ordinal);
 
     public async Task<NumberingAllocation> AllocateAsync(NumberingAllocationRequest request, CancellationToken cancellationToken)
     {
@@ -60,9 +59,19 @@ public sealed class NumberingServiceCore(
 
         var normalizedRequestedNumber = Normalize(request.RequestedNumber);
         var normalizedIdempotencyKey = Normalize(request.IdempotencyKey);
+        if (_store is null)
+        {
+            return AllocateInMemory(request, normalizedRequestedNumber, normalizedIdempotencyKey);
+        }
+
         var idempotencyRecord = normalizedIdempotencyKey is null
             ? null
-            : await FindIdempotencyRecordAsync(request, normalizedIdempotencyKey, cancellationToken);
+            : await _store.FindIdempotencyRecordAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DocumentType,
+                normalizedIdempotencyKey,
+                cancellationToken);
         if (idempotencyRecord is not null)
         {
             if (!string.Equals(idempotencyRecord.PayloadFingerprint, request.PayloadFingerprint, StringComparison.Ordinal))
@@ -76,7 +85,7 @@ public sealed class NumberingServiceCore(
         var number = normalizedRequestedNumber ?? await NextNumberAsync(request, cancellationToken);
         if (normalizedIdempotencyKey is not null)
         {
-            AddIdempotencyRecord(new NumberingIdempotencyKey(
+            _store.AddIdempotencyRecord(new NumberingIdempotencyKey(
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.DocumentType,
@@ -124,7 +133,7 @@ public sealed class NumberingServiceCore(
             {
                 return await _store!.ReserveNextCounterValueAsync(scope, cancellationToken);
             }
-            catch (NumberingConcurrencyException) when (attempt < _options.MaxConcurrencyRetries)
+            catch (NumberingConcurrencyException) when (attempt < _options.MaxConcurrencyAttempts)
             {
                 await Task.Delay(_options.RetryBackoff(attempt), cancellationToken);
             }
@@ -143,36 +152,69 @@ public sealed class NumberingServiceCore(
         }
     }
 
-    private Task<NumberingIdempotencyKey?> FindIdempotencyRecordAsync(
+    private NumberingAllocation AllocateInMemory(
         NumberingAllocationRequest request,
-        string idempotencyKey,
-        CancellationToken cancellationToken)
+        string? normalizedRequestedNumber,
+        string? normalizedIdempotencyKey)
     {
-        if (_store is not null)
+        lock (_lock)
         {
-            return _store.FindIdempotencyRecordAsync(
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.DocumentType,
-                idempotencyKey,
-                cancellationToken);
-        }
+            var idempotencyRecord = normalizedIdempotencyKey is null
+                ? null
+                : FindIdempotencyRecordInMemory(request, normalizedIdempotencyKey);
+            if (idempotencyRecord is not null)
+            {
+                if (!string.Equals(idempotencyRecord.PayloadFingerprint, request.PayloadFingerprint, StringComparison.Ordinal))
+                {
+                    throw new KnownException($"Idempotency key '{normalizedIdempotencyKey}' conflicts with a different {request.ConflictResourceLabel} create payload.");
+                }
 
-        _idempotency.TryGetValue(Key(request.OrganizationId, request.EnvironmentId, request.DocumentType, idempotencyKey), out var record);
-        return Task.FromResult<NumberingIdempotencyKey?>(record);
+                return new NumberingAllocation(idempotencyRecord.Number, true);
+            }
+
+            var number = normalizedRequestedNumber ?? NextNumberInMemory(request);
+            if (normalizedIdempotencyKey is not null)
+            {
+                var idempotencyKey = new NumberingIdempotencyKey(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.DocumentType,
+                    normalizedIdempotencyKey,
+                    number,
+                    request.PayloadFingerprint,
+                    _timeProvider.GetUtcNow());
+                _idempotency.Add(
+                    Key(idempotencyKey.OrganizationId, idempotencyKey.EnvironmentId, idempotencyKey.DocumentType, idempotencyKey.IdempotencyKey),
+                    idempotencyKey);
+            }
+
+            return new NumberingAllocation(number, false);
+        }
     }
 
-    private void AddIdempotencyRecord(NumberingIdempotencyKey idempotencyKey)
+    private string NextNumberInMemory(NumberingAllocationRequest request)
     {
-        if (_store is not null)
-        {
-            _store.AddIdempotencyRecord(idempotencyKey);
-            return;
-        }
+        var dateSegment = _timeProvider.GetUtcNow().ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        var scope = new NumberingCounterScope(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DocumentType,
+            request.SiteCode,
+            dateSegment,
+            request.Prefix);
+        var key = Key(scope.OrganizationId, scope.EnvironmentId, scope.DocumentType, scope.SiteCode, scope.DateSegment);
+        _counters.TryGetValue(key, out var current);
+        var next = current + 1;
+        _counters[key] = next;
+        return $"{request.Prefix}-{dateSegment}-{next:000000}";
+    }
 
-        _idempotency.TryAdd(
-            Key(idempotencyKey.OrganizationId, idempotencyKey.EnvironmentId, idempotencyKey.DocumentType, idempotencyKey.IdempotencyKey),
-            idempotencyKey);
+    private NumberingIdempotencyKey? FindIdempotencyRecordInMemory(
+        NumberingAllocationRequest request,
+        string idempotencyKey)
+    {
+        _idempotency.TryGetValue(Key(request.OrganizationId, request.EnvironmentId, request.DocumentType, idempotencyKey), out var record);
+        return record;
     }
 
     private static string Key(params string[] parts)
@@ -186,7 +228,7 @@ public sealed class NumberingServiceCore(
     }
 }
 
-public sealed record NumberingServiceOptions(int MaxConcurrencyRetries, Func<int, TimeSpan> RetryBackoff)
+public sealed record NumberingServiceOptions(int MaxConcurrencyAttempts, Func<int, TimeSpan> RetryBackoff)
 {
     public static NumberingServiceOptions Default { get; } = new(5, attempt => TimeSpan.FromMilliseconds(attempt * 10));
 }

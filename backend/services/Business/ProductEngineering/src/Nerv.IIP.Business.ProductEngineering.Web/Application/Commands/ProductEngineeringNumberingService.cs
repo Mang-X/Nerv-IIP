@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Numbering;
 
@@ -9,11 +10,11 @@ public sealed class ProductEngineeringNumberingService
 {
     private readonly NumberingServiceCore _core;
 
-    public ProductEngineeringNumberingService(ApplicationDbContext? dbContext = null)
+    public ProductEngineeringNumberingService(ApplicationDbContext? dbContext = null, IServiceScopeFactory? serviceScopeFactory = null)
     {
         _core = new NumberingServiceCore(dbContext is null
             ? null
-            : new EfCoreNumberingStore(dbContext, dbContext.NumberingCounters, dbContext.NumberingIdempotencyKeys));
+            : new EfCoreNumberingStore(dbContext, CreateCounterDbContextLeaseFactory(serviceScopeFactory)));
     }
 
     public async Task<ProductEngineeringNumberAllocation> AllocateAsync(
@@ -44,5 +45,17 @@ public sealed class ProductEngineeringNumberingService
     public static string Fingerprint(params object?[] parts)
     {
         return NumberingServiceCore.Fingerprint(parts);
+    }
+
+    private static Func<CancellationToken, ValueTask<NumberingDbContextLease>> CreateCounterDbContextLeaseFactory(IServiceScopeFactory? serviceScopeFactory)
+    {
+        ArgumentNullException.ThrowIfNull(serviceScopeFactory);
+
+        return _ =>
+        {
+            var scope = serviceScopeFactory.CreateAsyncScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            return ValueTask.FromResult(new NumberingDbContextLease(dbContext, scope));
+        };
     }
 }
