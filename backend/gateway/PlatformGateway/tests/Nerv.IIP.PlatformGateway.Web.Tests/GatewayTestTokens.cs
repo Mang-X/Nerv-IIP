@@ -8,7 +8,7 @@ internal static class GatewayTestTokens
 {
     private const string SigningKey = "nerv-iip-iam-development-signing-key-local-only-0001";
 
-    public static string ValidAccessToken()
+    public static string ValidAccessToken(int permissionVersion = 7)
     {
         var now = DateTimeOffset.UtcNow;
         var header = Base64UrlEncode("""{"alg":"HS256","typ":"JWT"}"""u8.ToArray());
@@ -24,7 +24,7 @@ internal static class GatewayTestTokens
             ["organizationId"] = "org-001",
             ["environmentId"] = "env-dev",
             ["securityStamp"] = "security-stamp-001",
-            ["permissionVersion"] = 7,
+            ["permissionVersion"] = permissionVersion,
             ["iat"] = now.ToUnixTimeSeconds(),
             ["nbf"] = now.AddMinutes(-1).ToUnixTimeSeconds(),
             ["exp"] = now.AddMinutes(15).ToUnixTimeSeconds()

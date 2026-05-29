@@ -31,6 +31,12 @@ builder.Services.AddNervIipLocalization();
 builder.Services.AddIamPersistence(builder.Configuration);
 builder.Services.Configure<IamSeedOptions>(builder.Configuration.GetSection("Iam:Seed"));
 builder.Services.Configure<EnterpriseIdentityOptions>(builder.Configuration.GetSection("Iam:EnterpriseIdentity"));
+builder.Services
+    .AddOptions<IamAuthenticationOptions>()
+    .Bind(builder.Configuration.GetSection("Iam:Authentication"))
+    .Validate(options => options.FailedLoginLockoutThreshold > 0, "Iam:Authentication:FailedLoginLockoutThreshold must be positive.")
+    .Validate(options => options.FailedLoginLockoutMinutes > 0, "Iam:Authentication:FailedLoginLockoutMinutes must be positive.")
+    .ValidateOnStart();
 builder.Services.AddSingleton<IMfaChallengeStore, InMemoryMfaChallengeStore>();
 builder.Services.AddScoped<IamPasswordService>();
 builder.Services.AddScoped<IamTokenService>();

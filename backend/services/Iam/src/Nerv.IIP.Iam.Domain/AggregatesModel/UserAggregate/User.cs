@@ -37,20 +37,46 @@ public class User : Entity<UserId>, IAggregateRoot
     public string SecurityStamp { get; private set; } = string.Empty;
     public int PermissionVersion { get; private set; }
     public DateTimeOffset? LastLoginAtUtc { get; private set; }
+    public DateTimeOffset? LastFailedLoginAtUtc { get; private set; }
     public int FailedLoginCount { get; private set; }
+    public DateTimeOffset? LockoutUntilUtc { get; private set; }
     public Deleted Deleted { get; private set; } = new(false);
     public RowVersion RowVersion { get; private set; } = new(0);
+
+    public bool IsLockedOut(DateTimeOffset now)
+    {
+        return LockoutUntilUtc is not null && LockoutUntilUtc > now;
+    }
 
     public void RecordSuccessfulLogin(DateTimeOffset now)
     {
         LastLoginAtUtc = now;
         FailedLoginCount = 0;
+        LastFailedLoginAtUtc = null;
+        LockoutUntilUtc = null;
         this.AddDomainEvent(new UserLoggedInDomainEvent(Id.Id, now));
     }
 
-    public void RecordFailedLogin()
+    public void RecordFailedLogin(DateTimeOffset now, int lockoutThreshold, TimeSpan lockoutWindow)
     {
+        if (lockoutThreshold < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lockoutThreshold), "Lockout threshold must be positive.");
+        }
+
+        if (lockoutWindow <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lockoutWindow), "Lockout window must be positive.");
+        }
+
+        LastFailedLoginAtUtc = now;
         FailedLoginCount++;
+        // The failed attempt that reaches the threshold creates the lockout;
+        // subsequent authentication attempts are rejected by IsLockedOut.
+        if (FailedLoginCount >= lockoutThreshold)
+        {
+            LockoutUntilUtc = now.Add(lockoutWindow);
+        }
     }
 
     public void Disable()

@@ -3,7 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.IdentityModel.Tokens.Jwt;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.Iam;
 
@@ -72,6 +74,7 @@ public sealed class HttpGatewayAuthorizationClient(
     private static string BuildCacheKey(string bearerToken, GatewayPermissionRequirement requirement)
     {
         var tokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(bearerToken))).ToLowerInvariant();
+        var permissionVersion = TryReadPermissionVersion(bearerToken) ?? "unknown";
         var resourceType = requirement.ResourceType ?? "-";
         var resourceId = requirement.ResourceId ?? "-";
         return string.Join(
@@ -79,12 +82,30 @@ public sealed class HttpGatewayAuthorizationClient(
             "gateway",
             "authorization",
             tokenHash,
+            "permission-version",
+            permissionVersion,
             requirement.PermissionCode,
             requirement.OrganizationId,
             requirement.EnvironmentId,
             resourceType,
             resourceId,
             "v1");
+    }
+
+    private static string? TryReadPermissionVersion(string bearerToken)
+    {
+        try
+        {
+            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(bearerToken);
+            var value = jwt.Claims.FirstOrDefault(claim => claim.Type == "permissionVersion")?.Value;
+            return int.TryParse(value, out var permissionVersion)
+                ? permissionVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or SecurityTokenException)
+        {
+            return null;
+        }
     }
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);

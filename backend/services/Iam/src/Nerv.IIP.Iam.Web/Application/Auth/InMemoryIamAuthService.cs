@@ -9,6 +9,7 @@ namespace Nerv.IIP.Iam.Web.Application.Auth;
 public sealed class InMemoryIamAuthService(
     InMemoryIamStore store,
     IamTokenService tokenService,
+    IOptions<IamAuthenticationOptions> authenticationOptions,
     IOptions<EnterpriseIdentityOptions> enterpriseIdentityOptions,
     IMfaChallengeStore mfaChallenges) : IIamAuthService
 {
@@ -19,7 +20,11 @@ public sealed class InMemoryIamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
-        return Task.FromResult(ToResponse(store.Login(loginName, password)));
+        return Task.FromResult(ToResponse(store.Login(
+            loginName,
+            password,
+            authenticationOptions.Value.FailedLoginLockoutThreshold,
+            authenticationOptions.Value.FailedLoginLockoutWindow)));
     }
 
     public Task<AuthResponse> RefreshAsync(

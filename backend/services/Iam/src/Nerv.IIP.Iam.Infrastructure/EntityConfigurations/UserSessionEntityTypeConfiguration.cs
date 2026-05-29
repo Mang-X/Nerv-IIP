@@ -34,7 +34,7 @@ public sealed class UserSessionEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.ExternalSubject).HasMaxLength(256).HasComment("External provider subject bound to the SSO session.");
         builder.Property(x => x.MfaVerifiedAtUtc).HasComment("UTC time when MFA was verified for the session.");
 
-        builder.HasIndex(x => x.RefreshTokenHash);
+        builder.HasIndex(x => x.RefreshTokenHash).IsUnique();
         builder.HasIndex(x => new { x.UserId, x.RevokedAtUtc });
         builder.HasIndex(x => new { x.ExternalProvider, x.ExternalSubject });
     }

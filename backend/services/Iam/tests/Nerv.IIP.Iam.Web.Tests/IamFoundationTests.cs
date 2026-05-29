@@ -337,6 +337,44 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
+    public async Task Login_lockout_blocks_password_attempts_after_consecutive_failures_and_success_resets_state()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var loginName = $"lockout-{suffix}";
+        var password = "Lockout123!";
+        var create = await _client.PostAsJsonAsync(
+            "/api/iam/v1/users",
+            new { loginName, email = $"{loginName}@nerv-iip.local", password });
+        create.EnsureSuccessStatusCode();
+
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            var failed = await _client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName, password = "wrong-password" });
+            Assert.Equal(HttpStatusCode.Unauthorized, failed.StatusCode);
+        }
+
+        var resetLogin = await _client.PostAsJsonAsync(
+            "/api/iam/v1/auth/login",
+            new { loginName, password });
+        resetLogin.EnsureSuccessStatusCode();
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var failed = await _client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName, password = "wrong-password" });
+            Assert.Equal(HttpStatusCode.Unauthorized, failed.StatusCode);
+        }
+
+        var lockedLogin = await _client.PostAsJsonAsync(
+            "/api/iam/v1/auth/login",
+            new { loginName, password });
+        Assert.Equal(HttpStatusCode.Unauthorized, lockedLogin.StatusCode);
+    }
+
+    [Fact]
     public async Task User_list_supports_page_filter_and_sort_parameters()
     {
         var suffix = Guid.NewGuid().ToString("N");

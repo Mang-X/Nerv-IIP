@@ -24,15 +24,46 @@ public sealed class InMemoryIamStore
 
     public AuthResult Login(string loginName, string password)
     {
+        return Login(loginName, password, 5, TimeSpan.FromMinutes(15));
+    }
+
+    public AuthResult Login(string loginName, string password, int lockoutThreshold, TimeSpan lockoutWindow)
+    {
         lock (_gate)
         {
-            var user = _users.SingleOrDefault(x => x.LoginName == loginName && x.Enabled && x.PasswordHash == Hash(password));
+            var user = _users.SingleOrDefault(x => x.LoginName == loginName && x.Enabled);
             if (user is null)
             {
                 throw new UnauthorizedAccessException("Invalid login.");
             }
 
-            return CreateSession(user);
+            var now = DateTimeOffset.UtcNow;
+            if (user.LockoutUntilUtc is not null && user.LockoutUntilUtc > now)
+            {
+                throw new UnauthorizedAccessException("Invalid login.");
+            }
+
+            if (user.PasswordHash != Hash(password))
+            {
+                var failedLoginCount = user.FailedLoginCount + 1;
+                var updated = user with
+                {
+                    FailedLoginCount = failedLoginCount,
+                    LastFailedLoginAtUtc = now,
+                    LockoutUntilUtc = failedLoginCount >= lockoutThreshold ? now.Add(lockoutWindow) : null
+                };
+                _users[_users.IndexOf(user)] = updated;
+                throw new UnauthorizedAccessException("Invalid login.");
+            }
+
+            var successful = user with
+            {
+                FailedLoginCount = 0,
+                LastFailedLoginAtUtc = null,
+                LockoutUntilUtc = null
+            };
+            _users[_users.IndexOf(user)] = successful;
+            return CreateSession(successful);
         }
     }
 

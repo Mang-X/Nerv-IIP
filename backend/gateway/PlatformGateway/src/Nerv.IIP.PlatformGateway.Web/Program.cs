@@ -32,7 +32,7 @@ builder.Services
 builder.Services.AddNervIipCaching(builder.Configuration, "platform-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "platform-gateway");
 builder.Services.AddNervIipLocalization();
-builder.Services.AddNervIipInternalServiceTokenProvider(builder.Configuration, builder.Environment);
+builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, builder.Environment);
 builder.Services.Configure<GatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();

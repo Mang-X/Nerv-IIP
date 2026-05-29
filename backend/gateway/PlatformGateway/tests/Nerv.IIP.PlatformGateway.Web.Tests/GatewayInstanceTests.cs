@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.PlatformGateway.Web;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
 
@@ -37,7 +38,10 @@ public sealed class GatewayInstanceTests
         var cachedResponse = await client.GetAsync("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
         cachedResponse.EnsureSuccessStatusCode();
         var cached = await ReadResponseDataAsync<InstanceDetailResponse>(cachedResponse);
-        await client.PostAsync("/internal/gateway/cache/invalidate", null);
+        using var invalidateRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/gateway/cache/invalidate");
+        invalidateRequest.Headers.Authorization = new("Bearer", InternalServiceAuthentication.DefaultDevelopmentBearerToken);
+        var invalidateResponse = await client.SendAsync(invalidateRequest);
+        invalidateResponse.EnsureSuccessStatusCode();
         var refreshedResponse = await client.GetAsync("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
         refreshedResponse.EnsureSuccessStatusCode();
         var refreshed = await ReadResponseDataAsync<InstanceDetailResponse>(refreshedResponse);

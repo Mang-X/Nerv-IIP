@@ -2,7 +2,17 @@ namespace Nerv.IIP.Iam.Domain;
 
 public sealed record OrganizationFact(string OrganizationId, string Name, string Status);
 public sealed record IamEnvironmentFact(string EnvironmentId, string OrganizationId, string Name, string Status);
-public sealed record UserFact(string UserId, string LoginName, string Email, string PasswordHash, bool Enabled, string SecurityStamp, int PermissionVersion);
+public sealed record UserFact(
+    string UserId,
+    string LoginName,
+    string Email,
+    string PasswordHash,
+    bool Enabled,
+    string SecurityStamp,
+    int PermissionVersion,
+    int FailedLoginCount = 0,
+    DateTimeOffset? LastFailedLoginAtUtc = null,
+    DateTimeOffset? LockoutUntilUtc = null);
 public sealed record RoleFact(string RoleId, string RoleName, IReadOnlySet<string> PermissionCodes);
 public sealed record MembershipFact(string UserId, string OrganizationId, string EnvironmentId, IReadOnlySet<string> RoleIds);
 public sealed record UserSessionFact(

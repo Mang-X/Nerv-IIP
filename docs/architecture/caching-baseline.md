@@ -79,6 +79,7 @@ gateway:instance-detail:org-001:env-prod:instance:inst-456:v1
 3. IAM 用户、角色、权限或授权授予变化后，失效对应用户、角色、外部客户端和权限快照缓存。
 4. Gateway 聚合缓存的 TTL 必须短于其聚合来源中最短的业务容忍时间。
 5. 对安全敏感缓存，禁止长时间 fail-safe；权限变更后必须主动失效，不能只等待 TTL。
+6. PlatformGateway 的 `/internal/gateway/cache/invalidate` 只允许 InternalService 调用，并只失效当前进程内 `gateway:` 前缀缓存；在 Redis L2/backplane 接入前，它不是多实例广播失效机制。
 
 ## 一致性边界
 

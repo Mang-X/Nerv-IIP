@@ -465,7 +465,7 @@ Source:
 | --- | --- | --- | --- |
 | `organizations` | business | IAM 组织范围事实，用于租户与访问 scope 的基础边界。 | `Id` 为调用方提供的有界 string 强类型 ID；包含组织名称、状态、软删除和 row version。 |
 | `environments` | business | IAM 环境范围事实，用于把 membership、credential 和后续资源访问限制在组织内环境。 | `OrganizationId + Id` 唯一；`OrganizationId` 是跨表业务引用，不通过跨聚合外键扩大服务耦合。 |
-| `users` | business | 后台用户认证事实，记录 login name、email、password hash、启用状态、security stamp、permission version、登录时间和失败计数。 | `LoginName` 唯一；`Email` 唯一；`Id` 为调用方提供的有界 string 强类型 ID。 |
+| `users` | business | 后台用户认证事实，记录 login name、email、password hash、启用状态、security stamp、permission version、登录时间、失败计数、最近失败时间和锁定截止时间。 | `LoginName` 唯一；`Email` 唯一；`Id` 为调用方提供的有界 string 强类型 ID。 |
 | `roles` | business | IAM 角色事实，用于把权限码分组后授予 membership。 | `RoleName` 唯一；拥有 `role_permissions`。 |
 | `role_permissions` | business | 角色拥有的权限码集合。 | `RoleId` 指向 `roles`；`RoleId + PermissionCode` 唯一。 |
 | `memberships` | business | 用户在 organization/environment scope 内的成员身份。 | `UserId + OrganizationId + EnvironmentId` 唯一；拥有 `membership_roles`。 |
