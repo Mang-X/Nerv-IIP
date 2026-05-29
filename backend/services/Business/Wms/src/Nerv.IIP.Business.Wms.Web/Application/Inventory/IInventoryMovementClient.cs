@@ -1,7 +1,9 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Sdk.Core;
 using Nerv.IIP.ServiceAuth;
@@ -66,7 +68,10 @@ public sealed class HttpInventoryMovementClient(HttpClient httpClient, IInternal
 
 public static class WmsInventoryMovementClientServiceCollectionExtensions
 {
-    public static IServiceCollection AddWmsInventoryMovementClient(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddWmsInventoryMovementClient(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
     {
         if (configuration.GetValue<bool>("Inventory:UseNoopClient"))
         {
@@ -74,15 +79,33 @@ public static class WmsInventoryMovementClientServiceCollectionExtensions
             return services;
         }
 
-        var baseUrl = configuration["Inventory:BaseUrl"]
-            ?? configuration["Services:Inventory:BaseUrl"]
-            ?? "http://localhost:5109";
+        var baseUrl = ResolveServiceBaseAddress(configuration, environment, "Inventory:BaseUrl", "http://localhost:5109");
 
         services.AddHttpClient<IInventoryMovementClient, HttpInventoryMovementClient>(client =>
         {
-            client.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
+            client.BaseAddress = baseUrl;
         });
         return services;
+    }
+
+    private static Uri ResolveServiceBaseAddress(
+        IConfiguration configuration,
+        IWebHostEnvironment environment,
+        string configurationKey,
+        string developmentFallback)
+    {
+        var configuredBaseUrl = configuration[configurationKey];
+        if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
+        {
+            return new Uri(configuredBaseUrl, UriKind.Absolute);
+        }
+
+        if (environment.IsDevelopment())
+        {
+            return new Uri(developmentFallback, UriKind.Absolute);
+        }
+
+        throw new InvalidOperationException($"{configurationKey} is required outside Development.");
     }
 }
 

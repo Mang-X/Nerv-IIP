@@ -1,7 +1,9 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.ServiceAuth;
 
@@ -20,13 +22,25 @@ public sealed class WmsInventoryClientRegistrationTests
             .Build();
         var services = new ServiceCollection();
 
-        services.AddWmsInventoryMovementClient(configuration);
+        services.AddWmsInventoryMovementClient(configuration, new TestWebHostEnvironment("Production"));
 
         using var provider = services.BuildServiceProvider();
         var client = provider.GetRequiredService<IInventoryMovementClient>();
 
         Assert.IsType<HttpInventoryMovementClient>(client);
         Assert.IsNotType<NoopInventoryMovementClient>(client);
+    }
+
+    [Fact]
+    public void Production_inventory_movement_client_registration_requires_inventory_base_url()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddWmsInventoryMovementClient(configuration, new TestWebHostEnvironment("Production")));
+
+        Assert.Contains("Inventory:BaseUrl", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -98,5 +112,15 @@ public sealed class WmsInventoryClientRegistrationTests
     private sealed class TestInternalServiceTokenProvider : IInternalServiceTokenProvider
     {
         public string BearerToken => "test-internal-token";
+    }
+
+    private sealed class TestWebHostEnvironment(string environmentName) : IWebHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "Nerv.IIP.Business.Wms.Web.Tests";
+        public string WebRootPath { get; set; } = string.Empty;
+        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+        public string ContentRootPath { get; set; } = string.Empty;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }

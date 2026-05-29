@@ -150,6 +150,7 @@ public sealed class DemandPlanningEndpointContractTests
             {
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                ConfigureRequiredUpstreamBaseUrls(builder);
             });
         using var client = factory.CreateClient();
 
@@ -218,6 +219,7 @@ public sealed class DemandPlanningEndpointContractTests
         {
             builder.UseSetting("environment", "Testing");
             builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            ConfigureRequiredUpstreamBaseUrls(builder);
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ApplicationDbContext>();
@@ -241,6 +243,12 @@ public sealed class DemandPlanningEndpointContractTests
                 efServices.Dispose();
             }
         }
+    }
+
+    private static void ConfigureRequiredUpstreamBaseUrls(IWebHostBuilder builder)
+    {
+        builder.UseSetting("ProductEngineering:BaseUrl", "http://product-engineering.local");
+        builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

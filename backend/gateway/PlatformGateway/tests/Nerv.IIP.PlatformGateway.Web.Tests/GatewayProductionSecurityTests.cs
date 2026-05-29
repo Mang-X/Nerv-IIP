@@ -13,6 +13,7 @@ public sealed class GatewayProductionSecurityTests
             {
                 builder.UseEnvironment("Production");
                 builder.UseSetting("Iam:Jwt:SigningKey", "production-test-signing-key-that-is-long-enough");
+                ConfigureServiceBaseUrls(builder);
             });
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
@@ -30,6 +31,7 @@ public sealed class GatewayProductionSecurityTests
                 builder.UseSetting("Iam:Jwt:SigningKey", "production-test-signing-key-that-is-long-enough");
                 builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://console.example.test");
                 builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
+                ConfigureServiceBaseUrls(builder);
             });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -43,5 +45,33 @@ public sealed class GatewayProductionSecurityTests
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("https://console.example.test", response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+    }
+
+    [Fact]
+    public void Production_gateway_requires_apphub_base_url()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Iam:Jwt:SigningKey", "production-test-signing-key-that-is-long-enough");
+                builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://console.example.test");
+                builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
+                builder.UseSetting("Iam:BaseUrl", "http://iam.local");
+                builder.UseSetting("Ops:BaseUrl", "http://ops.local");
+                builder.UseSetting("Notification:BaseUrl", "http://notification.local");
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("AppHub:BaseUrl", exception.Message, StringComparison.Ordinal);
+    }
+
+    private static void ConfigureServiceBaseUrls(IWebHostBuilder builder)
+    {
+        builder.UseSetting("AppHub:BaseUrl", "http://apphub.local");
+        builder.UseSetting("Iam:BaseUrl", "http://iam.local");
+        builder.UseSetting("Ops:BaseUrl", "http://ops.local");
+        builder.UseSetting("Notification:BaseUrl", "http://notification.local");
     }
 }

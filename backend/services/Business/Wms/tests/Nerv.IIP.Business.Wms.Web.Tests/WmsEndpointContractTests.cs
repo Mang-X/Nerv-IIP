@@ -64,6 +64,7 @@ public sealed class WmsEndpointContractTests
             {
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
             });
         using var client = factory.CreateClient();
 
@@ -199,6 +200,7 @@ public sealed class WmsEndpointContractTests
         {
             builder.UseSetting("environment", "Testing");
             builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ApplicationDbContext>();

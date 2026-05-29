@@ -50,7 +50,7 @@ try
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
-    builder.Services.AddWmsInventoryMovementClient(builder.Configuration);
+    builder.Services.AddWmsInventoryMovementClient(builder.Configuration, builder.Environment);
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (isTesting && string.IsNullOrWhiteSpace(connectionString))

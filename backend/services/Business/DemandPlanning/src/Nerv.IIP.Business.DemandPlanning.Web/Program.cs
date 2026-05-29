@@ -37,13 +37,15 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
+    var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
+    var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
     builder.Services.AddHttpClient<IPlanningProductEngineeringSnapshotClient, HttpPlanningProductEngineeringSnapshotClient>(client =>
     {
-        client.BaseAddress = new Uri(builder.Configuration["ProductEngineering:BaseUrl"] ?? "http://localhost:5108");
+        client.BaseAddress = productEngineeringBaseAddress;
     }).UseHttpClientMetrics();
     builder.Services.AddHttpClient<IPlanningInventorySnapshotClient, HttpPlanningInventorySnapshotClient>(client =>
     {
-        client.BaseAddress = new Uri(builder.Configuration["Inventory:BaseUrl"] ?? "http://localhost:5109");
+        client.BaseAddress = inventoryBaseAddress;
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
@@ -170,6 +172,26 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
+}
+
+static Uri ResolveServiceBaseAddress(
+    IConfiguration configuration,
+    IWebHostEnvironment environment,
+    string configurationKey,
+    string developmentFallback)
+{
+    var configuredBaseUrl = configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
+    {
+        return new Uri(configuredBaseUrl, UriKind.Absolute);
+    }
+
+    if (environment.IsDevelopment())
+    {
+        return new Uri(developmentFallback, UriKind.Absolute);
+    }
+
+    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

@@ -207,6 +207,8 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_demand_planning;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      ProductEngineering__BaseUrl: http://business-product-engineering:8080
+      Inventory__BaseUrl: http://business-inventory:8080
     ports:
       - "${NERV_IIP_DEMAND_PLANNING_PORT:-5112}:8080"
 
@@ -333,6 +335,8 @@ services:
       Inventory__BaseUrl: http://business-inventory:8080
       Quality__BaseUrl: http://business-quality:8080
       Mes__BaseUrl: http://business-mes:8080
+      ProductEngineering__BaseUrl: http://business-product-engineering:8080
+      DemandPlanning__BaseUrl: http://business-demand-planning:8080
       Security__Cors__AllowedOrigins: ${NERV_IIP_CORS_ALLOWED_ORIGINS:?set NERV_IIP_CORS_ALLOWED_ORIGINS}
     ports:
       - "${NERV_IIP_BUSINESS_GATEWAY_PORT:-5119}:8080"

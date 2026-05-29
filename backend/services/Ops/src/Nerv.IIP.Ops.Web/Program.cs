@@ -65,9 +65,10 @@ builder.Services.AddOpsPersistence(builder.Configuration);
 builder.Services.Configure<OpsConnectorCredentialOptions>(
     builder.Configuration.GetSection(OpsConnectorCredentialOptions.SectionName));
 builder.Services.AddSingleton<ConfiguredOpsConnectorCredentialValidator>();
+var iamBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 builder.Services.AddHttpClient<IamOpsConnectorCredentialValidator>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102");
+    client.BaseAddress = iamBaseAddress;
 });
 builder.Services.AddTransient<IOpsConnectorCredentialValidator, OpsConnectorCredentialValidator>();
 if (usePostgreSql)
@@ -105,6 +106,26 @@ app.UseFastEndpoints(c =>
     c.Endpoints.NameGenerator = ctx => ToLowerCamelEndpointName(ctx.EndpointType.Name);
 }).UseSwaggerGen();
 app.Run();
+
+static Uri ResolveServiceBaseAddress(
+    IConfiguration configuration,
+    IWebHostEnvironment environment,
+    string configurationKey,
+    string developmentFallback)
+{
+    var configuredBaseUrl = configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
+    {
+        return new Uri(configuredBaseUrl, UriKind.Absolute);
+    }
+
+    if (environment.IsDevelopment())
+    {
+        return new Uri(developmentFallback, UriKind.Absolute);
+    }
+
+    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
+}
 
 static string ToLowerCamelEndpointName(string endpointTypeName)
 {

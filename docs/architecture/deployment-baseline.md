@@ -29,6 +29,17 @@
 7. 部署相关脚本必须通过脚本自动化治理；AppHost、Compose、安装包和脚本可以是不同入口，但不能绕过同一套超时、日志、进程清理和敏感信息处理要求。
 8. 生产和 PoC 部署 profile 必须为 PlatformGateway、Connector Host、Ops、FileStorage、Notification 配置同一组 `InternalService:BearerToken`（环境变量形态为 `InternalService__BearerToken`），用于内部服务调用认证；不得把该 token 写入仓库、Compose 明文模板或脚本日志。
 
+## 服务间 HTTP Endpoint 配置
+
+服务间 HTTP 调用的运行时地址属于部署模型输入，而不是服务代码的隐式 localhost 知识。当前基线继续使用既有 `Xxx:BaseUrl` 配置键，例如 `Iam:BaseUrl`、`MasterData:BaseUrl`、`Inventory:BaseUrl`，环境变量形态为 `Iam__BaseUrl`、`MasterData__BaseUrl`、`Inventory__BaseUrl`。不得为了本轮修复把配置键批量改名为 `Services:Xxx:BaseUrl`，也不为端点解析新建宽泛共享包。
+
+1. 平台级 AppHost 是本地开发和联调的服务拓扑真相源，必须为 Gateway、Ops、业务服务等 HTTP 下游调用方显式注入所需 `Xxx__BaseUrl`。
+2. 完整平台 Compose overlay、安装包和整合安装脚本必须消费同一组 `Xxx:BaseUrl` 配置键；Compose service DNS、客户域名、反向代理地址或脚本生成的配置文件都只是这些键的不同来源。
+3. 服务代码不得使用 `Configuration["Xxx:BaseUrl"] ?? "http://localhost:51xx"` 这类隐式 fallback。非 Development 环境缺少必需 BaseUrl 时必须启动失败，并用明确异常指出缺失的配置键。
+4. Development 环境可以保留显式本地 fallback 以支持单服务 `dotnet run`，但 fallback 必须受 `IsDevelopment()` 或等价开发 profile 保护，不能在 PoC、Compose、安装包或生产 profile 静默生效。
+5. 架构测试或 CI 检查应禁止新增 `?? "http://localhost:` 模式，防止后续服务绕过 fail-fast 规则。
+6. 当前不引入 Consul、etcd 或 Kubernetes DNS 作为新的必需服务发现层；Aspire AppHost、Compose overlay 和安装脚本已经覆盖当前部署目标的端点注入需求。若后续引入 Kubernetes，应按 ADR 0008 作为新的部署目标接入同一套配置口径。
+
 ## 工程落点
 
 ```text

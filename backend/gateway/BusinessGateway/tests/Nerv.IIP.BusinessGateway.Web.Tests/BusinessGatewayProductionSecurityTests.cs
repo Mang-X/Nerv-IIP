@@ -15,6 +15,7 @@ public sealed class BusinessGatewayProductionSecurityTests
                 builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
                 builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
                 builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
+                BusinessGatewayTestServiceBaseUrls.Configure(builder);
             });
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
@@ -34,6 +35,7 @@ public sealed class BusinessGatewayProductionSecurityTests
                 builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
                 builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://business.example.test");
                 builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
+                BusinessGatewayTestServiceBaseUrls.Configure(builder);
             });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -47,5 +49,30 @@ public sealed class BusinessGatewayProductionSecurityTests
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("https://business.example.test", response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+    }
+
+    [Fact]
+    public void Production_business_gateway_requires_demand_planning_base_url()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
+                builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
+                builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
+                builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://business.example.test");
+                builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
+                builder.UseSetting("Iam:BaseUrl", "http://iam.local");
+                builder.UseSetting("MasterData:BaseUrl", "http://master-data.local");
+                builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
+                builder.UseSetting("Quality:BaseUrl", "http://quality.local");
+                builder.UseSetting("ProductEngineering:BaseUrl", "http://engineering.local");
+                builder.UseSetting("Mes:BaseUrl", "http://mes.local");
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("DemandPlanning:BaseUrl", exception.Message, StringComparison.Ordinal);
     }
 }
