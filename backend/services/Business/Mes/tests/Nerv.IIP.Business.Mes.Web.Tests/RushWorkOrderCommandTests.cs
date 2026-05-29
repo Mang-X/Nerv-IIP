@@ -167,7 +167,7 @@ public sealed class RushWorkOrderCommandTests
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        var numbering = new MesNumberingService(dbContext);
+        var numbering = new MesNumberingService(dbContext, scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>());
 
         var allocation = await numbering.AllocateAsync(
             "org-001",
@@ -181,8 +181,10 @@ public sealed class RushWorkOrderCommandTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Matches("^WO-[0-9]{8}-[0-9]{6}$", allocation.Number);
-        Assert.Single(dbContext.NumberingCounters);
-        var idempotency = Assert.Single(dbContext.NumberingIdempotencyKeys);
+        using var observerScope = provider.CreateScope();
+        var observerContext = observerScope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        Assert.Single(observerContext.NumberingCounters);
+        var idempotency = Assert.Single(observerContext.NumberingIdempotencyKeys);
         Assert.Equal(allocation.Number, idempotency.Number);
     }
 }

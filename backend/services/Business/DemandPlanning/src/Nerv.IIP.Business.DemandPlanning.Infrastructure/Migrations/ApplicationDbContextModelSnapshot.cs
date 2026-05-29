@@ -455,7 +455,7 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Nerv.IIP.Business.DemandPlanning.Infrastructure.Numbering.NumberingCounter", b =>
+            modelBuilder.Entity("Nerv.IIP.Numbering.NumberingCounter", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -529,7 +529,7 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Nerv.IIP.Business.DemandPlanning.Infrastructure.Numbering.NumberingIdempotencyKey", b =>
+            modelBuilder.Entity("Nerv.IIP.Numbering.NumberingIdempotencyKey", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()

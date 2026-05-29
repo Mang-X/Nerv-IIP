@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Nerv.IIP.Numbering;
 
 namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Numbering;
 

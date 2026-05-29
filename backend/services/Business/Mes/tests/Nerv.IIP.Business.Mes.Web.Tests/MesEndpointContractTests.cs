@@ -388,9 +388,10 @@ internal static class MesTestProvider
     public static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();
+        var databaseName = $"mes-production-contract-{Guid.NewGuid():N}";
         services.AddSingleton<IMediator, NoopMediator>();
         services.AddDbContext<Infrastructure.ApplicationDbContext>(options =>
-            options.UseInMemoryDatabase($"mes-production-contract-{Guid.NewGuid():N}"));
+            options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();
     }
 }

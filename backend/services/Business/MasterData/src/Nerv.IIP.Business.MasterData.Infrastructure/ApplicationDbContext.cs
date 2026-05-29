@@ -13,9 +13,9 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
-using Nerv.IIP.Business.MasterData.Infrastructure.Numbering;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Numbering;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Business.MasterData.Infrastructure;
