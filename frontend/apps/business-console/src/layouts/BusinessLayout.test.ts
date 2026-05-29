@@ -1,16 +1,20 @@
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { createBusinessConsoleI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import BusinessLayout from './BusinessLayout.vue'
 
+const routeState = vi.hoisted(() => ({
+  path: '/inventory/availability',
+}))
+
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
   return {
     ...actual,
-    useRoute: () => ({ path: '/inventory/availability', meta: { title: 'routes.availability' } }),
+    useRoute: () => ({ path: routeState.path, meta: { title: 'routes.availability' } }),
     useRouter: () => ({ push: vi.fn() }),
   }
 })
@@ -39,6 +43,10 @@ const AppShellStub = defineComponent({
 })
 
 describe('BusinessLayout', () => {
+  beforeEach(() => {
+    routeState.path = '/inventory/availability'
+  })
+
   it('passes business domain navigation to AppShell', () => {
     const wrapper = mount(BusinessLayout, {
       global: {
@@ -111,10 +119,37 @@ describe('BusinessLayout', () => {
           { title: '完工入库', to: { path: '/mes/receipts' } },
           { title: '异常与产能', to: { path: '/mes/capacity' } },
           { title: '规则排程', to: { path: '/mes/schedules' } },
-          { title: '生产准备检查', to: { path: '/mes/foundation' } },
+        ],
+      },
+      {
+        title: '系统管理',
+        items: [
+          { title: '数据就绪检查', to: { path: '/mes/foundation' } },
         ],
       },
     ])
+  })
+
+  it('keeps MES foundation diagnostics under system management navigation', () => {
+    routeState.path = '/mes/foundation'
+
+    const wrapper = mount(BusinessLayout, {
+      global: {
+        plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
+        stubs: {
+          AppShell: AppShellStub,
+        },
+      },
+    })
+
+    const navItems = wrapper.getComponent(AppShellStub).props('navItems') as Record<string, unknown>[]
+    expect(navItems.find((item) => item.title === 'MES')).toMatchObject({ isActive: false })
+    expect(navItems.find((item) => item.title === '系统管理')).toMatchObject({
+      isActive: true,
+      items: [
+        { title: '数据就绪检查', to: { path: '/mes/foundation' } },
+      ],
+    })
   })
 
   it('uses a fallback for authenticated user display name', () => {

@@ -9,7 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@nerv-iip/ui'
-import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, GitBranchIcon, PackageSearchIcon, ReceiptTextIcon, RouteIcon } from 'lucide-vue-next'
+import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, GitBranchIcon, PackageSearchIcon, ReceiptTextIcon, RouteIcon, SettingsIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -76,7 +76,7 @@ const navItems = computed<NavItem[]>(() => [
   {
     title: 'MES',
     icon: FactoryIcon,
-    isActive: route.path.startsWith('/mes'),
+    isActive: route.path.startsWith('/mes') && !route.path.startsWith('/mes/foundation'),
     items: [
       { title: '生产驾驶舱', to: { path: '/mes' } },
       { title: '生产计划', to: { path: '/mes/plans' } },
@@ -87,7 +87,14 @@ const navItems = computed<NavItem[]>(() => [
       { title: '完工入库', to: { path: '/mes/receipts' } },
       { title: '异常与产能', to: { path: '/mes/capacity' } },
       { title: '规则排程', to: { path: '/mes/schedules' } },
-      { title: '生产准备检查', to: { path: '/mes/foundation' } },
+    ],
+  },
+  {
+    title: '系统管理',
+    icon: SettingsIcon,
+    isActive: route.path.startsWith('/mes/foundation'),
+    items: [
+      { title: '数据就绪检查', to: { path: '/mes/foundation' } },
     ],
   },
 ])

@@ -21,10 +21,13 @@ const workbenchItems = [
 ] as const
 
 const exceptionItems = [
-  { path: '/mes/foundation', label: '生产准备检查', status: '辅助', detail: '开工、释放、派工前的齐套和主数据检查。' },
   { path: '/mes/capacity', label: '异常与产能', status: '关注', detail: '设备停机、恢复和维护对产能的影响。' },
   { path: '/inventory/counts', label: '库存盘点', status: '待办', detail: '创建盘点任务并从任务信息确认差异。' },
   { path: '/quality/inspections', label: '检验任务与记录', status: '待办', detail: '从方案、工单或收货信息提交检验记录。' },
+] as const
+
+const diagnosticItems = [
+  { path: '/mes/foundation', label: '数据就绪检查', detail: '实施期诊断主数据、工程资料、供应、质量、设备和条码准备状态。' },
 ] as const
 </script>
 
@@ -82,7 +85,16 @@ const exceptionItems = [
           <div class="mt-3 grid gap-3 text-sm text-muted-foreground">
             <p>高频查询留在主页面，创建、报工、入库、排程等动作进入抽屉或对象详情。</p>
             <p>工厂、产线和班次逐步收敛为默认生产范围，减少手输技术字段。</p>
-            <p>生产准备检查只作为开工/释放前的辅助判断，不作为一线主流程入口。</p>
+            <p>数据就绪检查只作为系统管理诊断，不作为一线主流程入口。</p>
+            <RouterLink
+              v-for="item in diagnosticItems"
+              :key="item.path"
+              class="rounded-md border px-3 py-2 text-foreground transition-colors hover:border-primary/50 hover:bg-accent"
+              :to="item.path"
+            >
+              <span class="block text-sm font-medium">{{ item.label }}</span>
+              <span class="mt-0.5 block text-sm text-muted-foreground">{{ item.detail }}</span>
+            </RouterLink>
           </div>
         </section>
       </div>
