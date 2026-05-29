@@ -33,6 +33,7 @@ public sealed class BusinessGatewayAuthorizationTests
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Testing");
+            BusinessGatewayTestServiceBaseUrls.Configure(builder);
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IBusinessGatewayAuthorizationClient>();
@@ -226,6 +227,7 @@ public sealed class BusinessGatewayAuthorizationTests
             builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
             builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
             builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
+            BusinessGatewayTestServiceBaseUrls.Configure(builder);
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IBusinessGatewayAuthorizationClient>();

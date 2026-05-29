@@ -75,7 +75,7 @@ BusinessMasterData 的治理和字段口径见 `docs/adr/0013-business-master-da
 | BusinessMasterData | `backend/services/Business/MasterData` | `business_masterdata` | SKU、客户、供应商、承运商、业务部门、班组、人员业务属性、工作中心、工作日历、设备资产 | EBOM/MBOM 发布、IAM 用户角色、AppHub 实例、实时采集数据 | IAM、File Storage |
 | ProductEngineering | `backend/services/Business/ProductEngineering` | `product_engineering` | CAD 文件引用、工程物料、EBOM、MBOM、工艺路线版本、ProductionVersion、ECO、ECN、发布记录 | CAD 设计内容、库存、工单、采购订单 | MasterData、File Storage、Notification |
 | DemandPlanning | `backend/services/Business/DemandPlanning` | `demand_planning` | 需求来源、MPS、MRP run、计划采购建议、计划工单建议、pegging、净需求 | 正式采购订单、正式工单、库存余额 | ProductEngineering、Inventory、ERP、MES |
-| Scheduling / APS lite | `backend/services/Business/Scheduling` | `scheduling` | 排程问题、排程方案、资源负载、冲突项、不可排原因、锁定任务、排程版本 | MRP 需求、正式工单执行、库存余额、设备报警、维修工单 | MasterData、ProductEngineering、DemandPlanning、Inventory、WMS、Quality、MES、IndustrialTelemetry、Maintenance |
+| Scheduling / APS lite | `backend/services/Business/Scheduling` | `scheduling` | 排程问题、排程方案、资源负载、冲突项、不可排原因、锁定任务、排程版本 | MRP 需求、正式工单执行、库存余额、设备报警、维修工单 | 按 ADR 0014 分组接入：静态事实输入（snapshot/resolve 契约）来自 MasterData、ProductEngineering；计划输入来自 DemandPlanning 计划建议与 MES 工单候选；运行时约束通过事件投影表达 Inventory/WMS 齐套、Quality 阻断、IndustrialTelemetry 报警和 Maintenance 维护窗口。 |
 | Inventory | `backend/services/Business/Inventory` | `inventory` | 库存台账、库位、批次、序列号、库存移动、盘点任务与调整 | 仓储执行步骤、采购/销售/工单状态 | MasterData、Quality、Approval |
 | Quality | `backend/services/Business/Quality` | `quality` | 检验标准、检验计划、检验记录、NonconformanceReport 不合格品报告与处置闭环 | 库存余额、仓储作业状态、采购销售单据；处置后续动作只发布集成事件 | MasterData、Inventory、File Storage |
 | BarcodeLabel | `backend/services/Business/BarcodeLabel` | `barcode` | 条码规则、标签模板、标签打印批次、扫码记录 | 库存余额、业务单据状态 | MasterData、Inventory、File Storage |
@@ -86,6 +86,8 @@ BusinessMasterData 的治理和字段口径见 `docs/adr/0013-business-master-da
 | IndustrialTelemetry | `backend/services/Business/IndustrialTelemetry` | `industrial_telemetry` | tag 定义、采集点映射、设备状态快照、时序摘要、报警事件、OEE 输入事实 | PLC/DCS 控制、SCADA 画面、设备资产主数据 | Connector Host、MasterData、AppHub |
 | Maintenance | `backend/services/Business/Maintenance` | `maintenance` | 维修工单、保养计划、点检记录、故障、停机原因、备件需求 | 设备资产主数据、库存余额、生产工单状态 | MasterData、Telemetry、Inventory、MES |
 | BusinessGateway | `backend/gateway/BusinessGateway` | 无持久化默认值 | 业务页面聚合查询、业务前端 OpenAPI、上下文透传 | 领域规则、持久事实 | 业务服务 OpenAPI/Contracts、IAM |
+
+Scheduling / APS lite 当前尚未落地独立服务，后续由 #206 创建服务并落地排程契约；现有 MES 内部 `RuleScheduler` 只属于规则排程过渡能力。上表的“主要依赖”表示 `SchedulingProblem` 的输入事实来源、adapter 和事件投影边界，不表示 Scheduling 启动期或单次排程请求需要同步 fan-out 到全部上游服务。首个 #206 增量应按 ADR 0014 只接入必要事实，优先使用 MasterData 资源/日历、DemandPlanning 计划建议或 MES 工单候选，其他事实源以显式 snapshot/fixture adapter 渐进补齐。
 
 ## 业务控制台边界
 

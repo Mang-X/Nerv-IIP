@@ -273,12 +273,8 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.ConfigureAppConfiguration((_, configuration) =>
-                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["Iam:BaseUrl"] = "http://127.0.0.1:1",
-                        ["InternalService:BearerToken"] = "production-internal-token"
-                    }));
+                builder.UseSetting("Iam:BaseUrl", "http://127.0.0.1:1");
+                builder.UseSetting("InternalService:BearerToken", "production-internal-token");
             });
         var client = CreateInternalServiceClient(productionFactory, "production-internal-token");
         AddConnectorHeaders(client, "local-connector-secret");

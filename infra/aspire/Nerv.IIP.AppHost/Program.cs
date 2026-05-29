@@ -8,8 +8,11 @@ var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secre
 var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
 var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
-var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"]
-    ?? "http://localhost:5105,http://localhost:5125";
+var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
+if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
+{
+    gatewayCorsAllowedOrigins = "http://localhost:5105,http://localhost:5125";
+}
 
 var postgres = builder.AddPostgres("postgres")
     .WithDataVolume("nerv-iip-postgres");
@@ -228,11 +231,17 @@ var businessDemandPlanning = builder.AddProject<Projects.Nerv_IIP_Business_Deman
     .WithHttpEndpoint(port: 5112, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
+    .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessDemandPlanningDatabase, "PostgreSQL")
+    .WithReference(businessProductEngineering)
+    .WithReference(businessInventory)
     .WaitFor(businessDemandPlanningDatabase)
+    .WaitFor(businessProductEngineering)
+    .WaitFor(businessInventory)
     .WaitFor(otelCollector);
 if (rabbitmq is not null)
 {
@@ -397,6 +406,7 @@ var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>(
     .WithEnvironment("Quality__BaseUrl", businessQuality.GetEndpoint("http"))
     .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
+    .WithEnvironment("DemandPlanning__BaseUrl", businessDemandPlanning.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
@@ -406,6 +416,7 @@ var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>(
     .WithReference(businessQuality)
     .WithReference(businessMes)
     .WithReference(businessProductEngineering)
+    .WithReference(businessDemandPlanning)
     .WithReference(redis)
     .WaitFor(iam)
     .WaitFor(businessMasterData)
@@ -413,6 +424,7 @@ var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>(
     .WaitFor(businessQuality)
     .WaitFor(businessMes)
     .WaitFor(businessProductEngineering)
+    .WaitFor(businessDemandPlanning)
     .WaitFor(redis)
     .WaitFor(otelCollector);
 

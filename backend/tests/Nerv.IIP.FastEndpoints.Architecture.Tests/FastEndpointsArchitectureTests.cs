@@ -87,6 +87,31 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("./otel/otel-collector.dev.yaml:/etc/otelcol/config.yaml:ro", composeText);
     }
 
+    [Fact]
+    public void Runtime_code_does_not_use_implicit_localhost_service_endpoint_fallbacks()
+    {
+        var root = FindRepositoryRoot();
+        var searchRoots = new[]
+        {
+            Path.Combine(root, "backend"),
+            Path.Combine(root, "infra", "aspire")
+        };
+
+        var offenders = searchRoots
+            .SelectMany(searchRoot => Directory.GetFiles(searchRoot, "*.cs", SearchOption.AllDirectories))
+            .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            .Where(file => File.ReadAllText(file).Contains("?? \"http://localhost:", StringComparison.Ordinal))
+            .Select(file => Path.GetRelativePath(root, file))
+            .Order()
+            .ToArray();
+
+        Assert.True(
+            offenders.Length == 0,
+            "Service-to-service endpoint fallbacks must fail fast outside Development. Offenders: "
+            + string.Join(", ", offenders));
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

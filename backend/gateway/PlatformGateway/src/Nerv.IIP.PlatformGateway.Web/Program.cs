@@ -36,29 +36,33 @@ builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, b
 builder.Services.Configure<GatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
+var appHubBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "AppHub:BaseUrl", "http://localhost:5101");
+var opsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
+var notificationBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Notification:BaseUrl", "http://localhost:5106");
+var iamBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 builder.Services.AddHttpClient<IAppHubClient, HttpAppHubClient>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["AppHub:BaseUrl"] ?? "http://localhost:5101");
+    client.BaseAddress = appHubBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IGatewayOpsClient, GatewayOpsClient>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["Ops:BaseUrl"] ?? "http://localhost:5103");
+    client.BaseAddress = opsBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IGatewayNotificationClient, HttpGatewayNotificationClient>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["Notification:BaseUrl"] ?? "http://localhost:5106");
+    client.BaseAddress = notificationBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IGatewayAuthorizationClient, HttpGatewayAuthorizationClient>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102");
+    client.BaseAddress = iamBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IGatewayIamAuthClient, HttpGatewayIamAuthClient>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102");
+    client.BaseAddress = iamBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IGatewayIamAdminClient, HttpGatewayIamAdminClient>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102");
+    client.BaseAddress = iamBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddGatewayNonIdempotentSafeResilience();
 builder.Services.AddGatewayAuthentication(builder.Configuration, builder.Environment);
 var allowedCorsOrigins = ResolveGatewayCorsOrigins(builder.Configuration, builder.Environment);
@@ -111,6 +115,26 @@ app.UseFastEndpoints(c =>
     c.Endpoints.NameGenerator = GatewayOperationIdConvention.Generate;
 }).UseSwaggerGen();
 app.Run();
+
+static Uri ResolveServiceBaseAddress(
+    IConfiguration configuration,
+    IWebHostEnvironment environment,
+    string configurationKey,
+    string developmentFallback)
+{
+    var configuredBaseUrl = configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
+    {
+        return new Uri(configuredBaseUrl, UriKind.Absolute);
+    }
+
+    if (environment.IsDevelopment())
+    {
+        return new Uri(developmentFallback, UriKind.Absolute);
+    }
+
+    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
+}
 
 // Keep this gateway-local until another gateway shares the same production security policy shape.
 static string[] ResolveGatewayCorsOrigins(IConfiguration configuration, IWebHostEnvironment environment)
