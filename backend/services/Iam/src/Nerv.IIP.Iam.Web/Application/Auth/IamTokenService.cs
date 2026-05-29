@@ -8,7 +8,13 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 
 namespace Nerv.IIP.Iam.Web.Application.Auth;
 
-public sealed record AccessTokenPrincipal(string SessionId, string UserId, string SecurityStamp, int PermissionVersion);
+public sealed record AccessTokenPrincipal(
+    string SessionId,
+    string UserId,
+    string SecurityStamp,
+    int PermissionVersion,
+    string? OrganizationId,
+    string? EnvironmentId);
 public sealed record ExternalClientAccessTokenPrincipal(
     string ClientId,
     string OrganizationId,
@@ -160,6 +166,8 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
             var sessionId = principal.FindFirstValue("sessionId");
             var principalType = principal.FindFirstValue("principalType");
             var securityStamp = principal.FindFirstValue("securityStamp");
+            var organizationId = principal.FindFirstValue("organizationId");
+            var environmentId = principal.FindFirstValue("environmentId");
             var permissionVersionValue = principal.FindFirstValue("permissionVersion");
             if (string.IsNullOrWhiteSpace(userId)
                 || string.IsNullOrWhiteSpace(sessionId)
@@ -170,7 +178,13 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
                 return null;
             }
 
-            return new AccessTokenPrincipal(sessionId, userId, securityStamp, permissionVersion);
+            return new AccessTokenPrincipal(
+                sessionId,
+                userId,
+                securityStamp,
+                permissionVersion,
+                organizationId,
+                environmentId);
         }
         catch (SecurityTokenException)
         {
