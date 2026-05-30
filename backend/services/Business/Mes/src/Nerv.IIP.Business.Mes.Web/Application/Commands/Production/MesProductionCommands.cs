@@ -104,17 +104,33 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 throw new KnownException($"报工耗料必须引用线边领料申请，MaterialLotId = {lot.MaterialLotId}");
             }
 
-            var requestExists = await dbContext.MaterialIssueRequests.AnyAsync(
-                x => x.OrganizationId == request.OrganizationId &&
+            var materialIssueRequest = await dbContext.MaterialIssueRequests
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId &&
                     x.RequestNo == lot.MaterialIssueRequestNo &&
                     x.MaterialId == lot.MaterialId &&
-                    x.MaterialLotId == lot.MaterialLotId &&
-                    x.ReceivedQuantity >= lot.ConsumedQuantity,
-                cancellationToken);
-            if (!requestExists)
+                    x.MaterialLotId == lot.MaterialLotId)
+                .Select(x => new { x.RequestNo, x.ReceivedQuantity })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (materialIssueRequest is null)
             {
                 throw new KnownException($"报工引用的线边物料批次未接收或数量不足，MaterialLotId = {lot.MaterialLotId}");
+            }
+
+            var previouslyConsumedQuantity = await dbContext.ProductionReportMaterialConsumptions
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.MaterialIssueRequestNo == materialIssueRequest.RequestNo &&
+                    x.MaterialId == lot.MaterialId &&
+                    x.MaterialLotId == lot.MaterialLotId)
+                .SumAsync(x => x.ConsumedQuantity, cancellationToken);
+            if (previouslyConsumedQuantity + lot.ConsumedQuantity > materialIssueRequest.ReceivedQuantity)
+            {
+                throw new KnownException($"累计耗料超过线边接收数量，MaterialLotId = {lot.MaterialLotId}");
             }
 
             dbContext.ProductionReportMaterialConsumptions.Add(ProductionReportMaterialConsumption.Record(

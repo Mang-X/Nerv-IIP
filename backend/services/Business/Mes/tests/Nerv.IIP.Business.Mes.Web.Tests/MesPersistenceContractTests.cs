@@ -577,6 +577,76 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Production_report_rejects_cumulative_consumption_that_exceeds_received_line_side_quantity()
+    {
+        var services = CreateServices(nameof(Production_report_rejects_cumulative_consumption_that_exceeds_received_line_side_quantity));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-CUM-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-CUM-001",
+            "OP-CUM-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            now.AddMinutes(45)));
+        dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-CUM-001",
+            "WO-CUM-001",
+            "OP-CUM-10",
+            "MAT-OIL",
+            10m,
+            now.AddMinutes(1)));
+        await dbContext.SaveChangesAsync();
+        var request = await dbContext.MaterialIssueRequests.SingleAsync();
+        request.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
+        await dbContext.SaveChangesAsync();
+
+        var handler = new RecordProductionReportCommandHandler(dbContext);
+        await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-CUM-001",
+                "OP-CUM-10",
+                6m,
+                0m,
+                false,
+                now.AddMinutes(30),
+                "report-cumulative-first",
+                [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 6m, "MIR-CUM-001")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(
+                new RecordProductionReportCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-CUM-001",
+                    "OP-CUM-10",
+                    5m,
+                    0m,
+                    false,
+                    now.AddMinutes(40),
+                    "report-cumulative-second",
+                    [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 5m, "MIR-CUM-001")]),
+                CancellationToken.None));
+
+        Assert.Contains("累计耗料", exception.Message);
+    }
+
+    [Fact]
     public async Task Production_report_rejects_duplicate_consumed_material_lot_for_same_report()
     {
         var services = CreateServices(nameof(Production_report_rejects_duplicate_consumed_material_lot_for_same_report));
