@@ -51,9 +51,34 @@ const form = reactive({
   quantity: '1',
 })
 
+interface MovementQueueRow {
+  movementId: string
+  movementType: string
+  skuCode: string
+  siteCode: string
+  locationCode: string
+  quantity: number
+  status: string
+  sourceDocumentId: string
+}
+
 const successMessage = shallowRef('')
 const movementSheetOpen = shallowRef(false)
+const movementQueue = shallowRef<MovementQueueRow[]>([])
 const errorMessage = computed(() => formatError(postMovementError.value))
+const stableSubmissionKey = computed(() =>
+  [
+    form.movementType,
+    form.sourceDocumentId,
+    form.sourceDocumentLineId,
+    form.skuCode,
+    form.siteCode,
+    form.locationCode,
+    form.quantity,
+  ]
+    .map((part) => String(part || '').trim() || 'none')
+    .join('|'),
+)
 const canSubmit = computed(
   () =>
     isNonEmpty(form.organizationId) &&
@@ -77,7 +102,7 @@ async function submitMovement() {
     sourceService: form.sourceService.trim() || 'business-console',
     sourceDocumentId: form.sourceDocumentId.trim(),
     sourceDocumentLineId: optionalText(form.sourceDocumentLineId),
-    idempotencyKey: optionalText(form.idempotencyKey) ?? `movement-${Date.now()}`,
+    idempotencyKey: optionalText(form.idempotencyKey) ?? `movement-${stableSubmissionKey.value}`,
     skuCode: form.skuCode.trim(),
     uomCode: form.uomCode.trim(),
     siteCode: form.siteCode.trim(),
@@ -92,6 +117,19 @@ async function submitMovement() {
 
   const response = await postMovement(body)
   successMessage.value = `库存移动 ${response?.data?.movementId ?? body.idempotencyKey} 已受理。`
+  movementQueue.value = [
+    {
+      movementId: response?.data?.movementId ?? body.sourceDocumentId ?? '待返回',
+      movementType: body.movementType ?? '',
+      skuCode: body.skuCode ?? '',
+      siteCode: body.siteCode ?? '',
+      locationCode: body.locationCode ?? '',
+      quantity: body.quantity ?? 0,
+      status: '已受理',
+      sourceDocumentId: body.sourceDocumentId ?? '',
+    },
+    ...movementQueue.value,
+  ]
 }
 
 function optionalText(value: string) {
@@ -133,20 +171,45 @@ function isNonEmpty(value: string) {
         <section class="rounded-lg border bg-background">
           <div class="border-b px-4 py-3">
             <h2 class="text-sm font-semibold text-foreground">库存移动工作台</h2>
-            <p class="mt-1 text-sm text-muted-foreground">后续接入库存流水后，主页面展示待确认、失败和最近过账记录。</p>
+            <p class="mt-1 text-sm text-muted-foreground">提交后的库存移动会进入当前处理队列，正式流水由库存服务记录。</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-muted/40 text-left text-muted-foreground">
+                <tr>
+                  <th class="px-4 py-3 font-medium">移动号</th>
+                  <th class="px-4 py-3 font-medium">类型</th>
+                  <th class="px-4 py-3 font-medium">物料</th>
+                  <th class="px-4 py-3 font-medium">库位</th>
+                  <th class="px-4 py-3 text-right font-medium">数量</th>
+                  <th class="px-4 py-3 font-medium">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in movementQueue" :key="row.movementId" class="border-t">
+                  <td class="px-4 py-3 font-medium text-foreground">{{ row.movementId }}</td>
+                  <td class="px-4 py-3">{{ row.movementType }}</td>
+                  <td class="px-4 py-3">{{ row.skuCode }}</td>
+                  <td class="px-4 py-3">{{ row.siteCode }} / {{ row.locationCode }}</td>
+                  <td class="px-4 py-3 text-right tabular-nums">{{ row.quantity }}</td>
+                  <td class="px-4 py-3">{{ row.status }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <BusinessEmptyState
-            title="暂未接入库存移动列表"
-            description="库存过账属于高风险动作，先从右上角进入抽屉填写业务单据，技术字段由系统生成。"
-            action="建议优先从收货、完工入库、领料或盘点任务信息发起。"
+            v-if="!movementQueue.length"
+            title="当前没有待确认库存移动"
+            description="建议优先从收货、完工入库、领料或盘点任务信息发起。"
+            action="确需人工补录时，从右上角新建移动进入。"
           />
         </section>
 
         <section class="rounded-lg border bg-background p-4">
           <h2 class="text-sm font-semibold text-foreground">操作原则</h2>
           <div class="mt-3 grid gap-2 text-sm text-muted-foreground">
-            <p>来源服务固定为业务控制台，不让一线用户选择技术来源。</p>
-            <p>幂等键默认自动生成，只在排查重复过账时才展开。</p>
+            <p>移动来源由当前业务单据带出，不让一线用户选择系统来源。</p>
+            <p>重复提交保护由系统处理，用户只需要核对物料、库位和数量。</p>
             <p>库存移动完成后应回到库存流水和可用量页面确认影响。</p>
           </div>
         </section>
@@ -183,10 +246,6 @@ function isNonEmpty(value: string) {
             <FieldLabel for="movement-source-line">来源行</FieldLabel>
             <Input id="movement-source-line" v-model="form.sourceDocumentLineId" />
           </Field>
-          <Field class="md:col-span-3">
-            <FieldLabel for="movement-idempotency">幂等键</FieldLabel>
-            <Input id="movement-idempotency" v-model="form.idempotencyKey" placeholder="默认自动生成，排查重复过账时填写" />
-          </Field>
           <Field>
             <FieldLabel for="movement-sku">SKU</FieldLabel>
             <Input id="movement-sku" v-model="form.skuCode" required />
@@ -212,12 +271,8 @@ function isNonEmpty(value: string) {
             <Input id="movement-quality" v-model="form.qualityStatus" required />
           </Field>
           <Field>
-            <FieldLabel for="movement-owner-type">货主类型</FieldLabel>
-            <Input id="movement-owner-type" v-model="form.ownerType" required />
-          </Field>
-          <Field>
-            <FieldLabel for="movement-owner-id">货主 ID</FieldLabel>
-            <Input id="movement-owner-id" v-model="form.ownerId" />
+            <FieldLabel for="movement-owner-id">货主</FieldLabel>
+            <Input id="movement-owner-id" v-model="form.ownerId" placeholder="可选货主名称或编码" />
           </Field>
           <Field>
             <FieldLabel for="movement-lot">批次</FieldLabel>

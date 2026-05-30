@@ -9,10 +9,14 @@ import { MoreHorizontalIcon } from 'lucide-vue-next'
 
 withDefaults(
   defineProps<{
+    disabled?: boolean
     label?: string
+    widthClass?: string
   }>(),
   {
+    disabled: false,
     label: '更多操作',
+    widthClass: 'w-48',
   },
 )
 </script>
@@ -20,11 +24,19 @@ withDefaults(
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button class="h-8 w-8 p-0" size="sm" type="button" variant="ghost" :aria-label="label">
+      <Button
+        class="h-8 w-8 rounded-md p-0"
+        :disabled="disabled"
+        size="sm"
+        type="button"
+        variant="ghost"
+        :aria-label="label"
+        :title="label"
+      >
         <MoreHorizontalIcon class="h-4 w-4" />
       </Button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" class="w-44">
+    <DropdownMenuContent align="end" :class="[widthClass, 'max-w-72']">
       <slot />
     </DropdownMenuContent>
   </DropdownMenu>

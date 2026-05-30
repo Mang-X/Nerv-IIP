@@ -55,7 +55,7 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="产能影响"
         summary="查看设备停机、恢复和维护事件对工作中心产能和排程的影响。"
       >

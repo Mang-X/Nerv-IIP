@@ -32,8 +32,8 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 import { EyeIcon, PackageCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, shallowRef } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -53,6 +53,7 @@ const {
   refreshReceiptRequests,
 } = useMesFinishedGoodsReceipts()
 
+const route = useRoute()
 const router = useRouter()
 const successMessage = shallowRef('')
 const receiptSheetOpen = shallowRef(false)
@@ -72,7 +73,7 @@ const form = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
   workOrderId: '',
-  skuId: 'FG-SAD-FRT-001',
+  skuId: '',
   quantity: '1',
   uomCode: 'EA',
   requestedAtUtc: toLocalDateTimeInput(new Date()),
@@ -94,12 +95,28 @@ const canCreate = computed(
 const pendingCount = computed(
   () => receiptRequests.value.filter((item) => item.receiptStatus !== 'Completed').length,
 )
+const hasReceiptContext = computed(() => isNonEmpty(form.workOrderId) && isNonEmpty(form.skuId))
 const statusFilter = computed({
   get: () => filters.status || 'all',
   set: (value: string) => {
     filters.status = value === 'all' ? undefined : value
   },
 })
+
+watch(
+  () => route.query,
+  (query) => {
+    const workOrderId = firstQueryValue(query.workOrderId)
+    const skuId = firstQueryValue(query.skuId)
+    const quantity = firstQueryValue(query.quantity)
+
+    if (workOrderId) form.workOrderId = workOrderId
+    if (skuId) form.skuId = skuId
+    if (quantity) form.quantity = quantity
+    if (workOrderId && skuId) receiptSheetOpen.value = true
+  },
+  { immediate: true },
+)
 
 function syncContextFromFilters() {
   form.organizationId = filters.organizationId
@@ -109,6 +126,11 @@ function syncContextFromFilters() {
 function openWorkOrder(workOrderId?: string | null) {
   if (!workOrderId) return
   void router.push({ path: `/mes/work-orders/${encodeURIComponent(workOrderId)}` })
+}
+
+function openReceiptSheet() {
+  if (!hasReceiptContext.value) return
+  receiptSheetOpen.value = true
 }
 
 async function submitReceiptRequest() {
@@ -154,6 +176,11 @@ function optionalText(value: string) {
   return trimmed ? trimmed : undefined
 }
 
+function firstQueryValue(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
+  return typeof value === 'string' ? value : ''
+}
+
 function toOptionalNumber(value: string) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
@@ -172,14 +199,19 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="完工入库"
         summary="查看完工入库请求；新增入库尽量从报工完成、工单详情或质量放行后触发。"
       >
         <template #actions>
-          <Button size="sm" type="button" @click="receiptSheetOpen = true">
+          <Button
+            size="sm"
+            type="button"
+            :disabled="!hasReceiptContext"
+            @click="openReceiptSheet"
+          >
             <PackageCheckIcon data-icon="inline-start" />
-            新增入库请求
+            {{ hasReceiptContext ? '新增入库请求' : '从工单详情发起' }}
           </Button>
           <Button size="sm" type="button" variant="outline" :disabled="receiptRequestsPending" @click="refreshReceiptRequests">
             <RefreshCwIcon data-icon="inline-start" />
@@ -279,7 +311,7 @@ function isNonEmpty(value: string) {
       <BusinessActionSheet
         v-model:open="receiptSheetOpen"
         title="新增入库请求"
-        description="用于生产完成后的成品入库申请，常规场景应从工单或报工信息带出字段。"
+        description="用于生产完成后的成品入库申请，工单和物料由工单详情或报工完成结果带出。"
       >
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitReceiptRequest">
           <div>
@@ -291,11 +323,11 @@ function isNonEmpty(value: string) {
           <FieldGroup class="grid gap-3">
             <Field>
               <FieldLabel for="receipt-work-order">工单号</FieldLabel>
-              <Input id="receipt-work-order" v-model="form.workOrderId" required />
+              <Input id="receipt-work-order" v-model="form.workOrderId" readonly required />
             </Field>
             <Field>
               <FieldLabel for="receipt-sku">物料</FieldLabel>
-              <Input id="receipt-sku" v-model="form.skuId" required />
+              <Input id="receipt-sku" v-model="form.skuId" readonly required />
             </Field>
             <Field>
               <FieldLabel for="receipt-quantity">数量</FieldLabel>
@@ -308,10 +340,6 @@ function isNonEmpty(value: string) {
             <Field>
               <FieldLabel for="receipt-requested-at">请求时间</FieldLabel>
               <Input id="receipt-requested-at" v-model="form.requestedAtUtc" required type="datetime-local" />
-            </Field>
-            <Field>
-              <FieldLabel for="receipt-idempotency">幂等键</FieldLabel>
-              <Input id="receipt-idempotency" v-model="form.idempotencyKey" placeholder="默认按工单生成" />
             </Field>
           </FieldGroup>
 

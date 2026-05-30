@@ -16,7 +16,7 @@ const errorMessage = computed(() => handoversError.value instanceof Error ? hand
 <template>
   <BusinessLayout>
     <section class="grid gap-4">
-      <BusinessPageHeader domain="MES" title="班次交接" summary="承接未完成工单、物料、质量、设备和入库事项。">
+      <BusinessPageHeader domain="生产执行" title="班次交接" summary="承接未完成工单、物料、质量、设备和入库事项。">
         <template #actions><Button size="sm" variant="outline" :disabled="handoversPending" @click="refreshHandovers"><RefreshCwIcon data-icon="inline-start" />刷新</Button></template>
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">

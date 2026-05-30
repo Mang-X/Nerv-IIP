@@ -31,10 +31,11 @@ const emit = defineEmits<{
 
 const pageSizeNumber = computed(() => Number(props.pageSize) || 10)
 const totalPages = computed(() => Math.max(1, Math.ceil(props.totalItems / pageSizeNumber.value)))
+const currentPage = computed(() => Math.min(Math.max(1, props.page), totalPages.value))
 const summary = computed(() => {
   if (props.totalItems <= 0) return '0 条'
-  const start = (props.page - 1) * pageSizeNumber.value + 1
-  const end = Math.min(props.page * pageSizeNumber.value, props.totalItems)
+  const start = (currentPage.value - 1) * pageSizeNumber.value + 1
+  const end = Math.min(currentPage.value * pageSizeNumber.value, props.totalItems)
   return `${start}-${end} / ${props.totalItems} 条`
 })
 
@@ -50,13 +51,15 @@ function updatePageSize(value: unknown) {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <p class="text-sm text-muted-foreground">显示 {{ summary }}</p>
+  <div class="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t pt-3">
+    <p class="min-w-0 truncate text-sm text-muted-foreground" aria-live="polite">
+      显示 {{ summary }}
+    </p>
     <div class="flex flex-wrap items-center gap-3">
       <div class="flex items-center gap-2">
-        <span class="text-sm text-muted-foreground">每页</span>
+        <span class="shrink-0 text-sm text-muted-foreground">每页</span>
         <Select :model-value="pageSize" @update:model-value="updatePageSize">
-          <SelectTrigger class="h-8 w-24">
+          <SelectTrigger class="h-8 w-24" aria-label="每页条数">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -68,7 +71,7 @@ function updatePageSize(value: unknown) {
       </div>
       <Pagination
         :items-per-page="pageSizeNumber"
-        :page="page"
+        :page="currentPage"
         :sibling-count="1"
         :total="totalItems"
         show-edges
@@ -76,8 +79,8 @@ function updatePageSize(value: unknown) {
       >
         <PaginationContent>
           <PaginationPrevious size="sm">上一页</PaginationPrevious>
-          <span class="px-2 text-sm text-muted-foreground">
-            {{ page }} / {{ totalPages }}
+          <span class="min-w-14 px-2 text-center text-sm text-muted-foreground" aria-label="当前页">
+            {{ currentPage }} / {{ totalPages }}
           </span>
           <PaginationNext size="sm">下一页</PaginationNext>
         </PaginationContent>
