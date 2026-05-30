@@ -11,6 +11,12 @@ public sealed record ProductionReportCommandResult(ProductionReportId Id, string
 
 public sealed record FinishedGoodsReceiptRequestCommandResult(FinishedGoodsReceiptRequestId Id, string RequestNo);
 
+public sealed record ConsumedMaterialLotInput(
+    string MaterialId,
+    string MaterialLotId,
+    decimal ConsumedQuantity,
+    string MaterialIssueRequestNo);
+
 public sealed record RecordProductionReportCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -20,7 +26,8 @@ public sealed record RecordProductionReportCommand(
     decimal ScrapQuantity,
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
-    string? IdempotencyKey = null) : ICommand<ProductionReportCommandResult>;
+    string? IdempotencyKey = null,
+    IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null) : ICommand<ProductionReportCommandResult>;
 
 public sealed class RecordProductionReportCommandValidator : AbstractValidator<RecordProductionReportCommand>
 {
@@ -34,6 +41,13 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
         RuleFor(x => x.ScrapQuantity).GreaterThanOrEqualTo(0);
         RuleFor(x => x).Must(x => x.GoodQuantity + x.ScrapQuantity > 0)
             .WithMessage("At least one reported quantity must be positive.");
+        RuleForEach(x => x.ConsumedMaterialLots).ChildRules(lot =>
+        {
+            lot.RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
+            lot.RuleFor(x => x.MaterialLotId).NotEmpty().MaximumLength(100);
+            lot.RuleFor(x => x.ConsumedQuantity).GreaterThan(0);
+            lot.RuleFor(x => x.MaterialIssueRequestNo).NotEmpty().MaximumLength(100);
+        });
     }
 }
 
@@ -74,6 +88,63 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.CompletesOperation,
             request.ReportedAtUtc);
         dbContext.ProductionReports.Add(report);
+        var duplicateLot = (request.ConsumedMaterialLots ?? [])
+            .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
+            .FirstOrDefault(x => x.Count() > 1);
+        if (duplicateLot is not null)
+        {
+            var lot = duplicateLot.First();
+            throw new KnownException($"报工耗料批次重复，MaterialId = {lot.MaterialId}, MaterialLotId = {lot.MaterialLotId}");
+        }
+
+        foreach (var lot in request.ConsumedMaterialLots ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(lot.MaterialIssueRequestNo))
+            {
+                throw new KnownException($"报工耗料必须引用线边领料申请，MaterialLotId = {lot.MaterialLotId}");
+            }
+
+            var materialIssueRequest = await dbContext.MaterialIssueRequests
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.RequestNo == lot.MaterialIssueRequestNo &&
+                    x.MaterialId == lot.MaterialId &&
+                    x.MaterialLotId == lot.MaterialLotId)
+                .Select(x => new { x.RequestNo, x.ReceivedQuantity })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (materialIssueRequest is null)
+            {
+                throw new KnownException($"报工引用的线边物料批次未接收或数量不足，MaterialLotId = {lot.MaterialLotId}");
+            }
+
+            var previouslyConsumedQuantity = await dbContext.ProductionReportMaterialConsumptions
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.MaterialIssueRequestNo == materialIssueRequest.RequestNo &&
+                    x.MaterialId == lot.MaterialId &&
+                    x.MaterialLotId == lot.MaterialLotId)
+                .SumAsync(x => x.ConsumedQuantity, cancellationToken);
+            if (previouslyConsumedQuantity + lot.ConsumedQuantity > materialIssueRequest.ReceivedQuantity)
+            {
+                throw new KnownException($"累计耗料超过线边接收数量，MaterialLotId = {lot.MaterialLotId}");
+            }
+
+            dbContext.ProductionReportMaterialConsumptions.Add(ProductionReportMaterialConsumption.Record(
+                request.OrganizationId,
+                request.EnvironmentId,
+                report.ReportNo,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                lot.MaterialId,
+                lot.MaterialLotId,
+                lot.ConsumedQuantity,
+                lot.MaterialIssueRequestNo));
+        }
+
         await Task.CompletedTask;
         return new ProductionReportCommandResult(report.Id, report.ReportNo);
     }

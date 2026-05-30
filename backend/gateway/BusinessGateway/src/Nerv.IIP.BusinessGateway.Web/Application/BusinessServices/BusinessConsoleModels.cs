@@ -474,7 +474,14 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     decimal ScrapQuantity,
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    IReadOnlyCollection<BusinessConsoleConsumedMaterialLotInput>? ConsumedMaterialLots = null);
+
+public sealed record BusinessConsoleConsumedMaterialLotInput(
+    string MaterialId,
+    string MaterialLotId,
+    decimal ConsumedQuantity,
+    string MaterialIssueRequestNo);
 
 public sealed record BusinessConsoleRecordProductionReportResponse(string ProductionReportId, string ReportNo);
 
@@ -604,6 +611,8 @@ public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string? OperationTaskId,
+    string MaterialId,
+    decimal? Quantity,
     IReadOnlyCollection<string>? MaterialIds,
     string IdempotencyKey);
 
@@ -612,6 +621,11 @@ public sealed record BusinessConsoleMesMaterialIssueRequestListResponse(IReadOnl
 public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string RequestId,
     string WorkOrderId,
+    string? OperationTaskId,
+    string MaterialId,
+    string? MaterialLotId,
+    decimal RequestedQuantity,
+    decimal ReceivedQuantity,
     string Status,
     string? WmsRequestId,
     DateTimeOffset RequestedAtUtc);
@@ -620,6 +634,8 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: RouteParam] string RequestId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
+    string? MaterialLotId,
+    decimal? ReceivedQuantity,
     IReadOnlyCollection<string>? EvidenceFileIds,
     string IdempotencyKey);
 
