@@ -294,6 +294,29 @@ public sealed class MesEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var reportedAt = DateTimeOffset.Parse("2026-05-24T08:00:00Z");
+        var workOrder = Domain.AggregatesModel.WorkOrderAggregate.WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "SKU-FG-1000",
+            "PV-001",
+            10m,
+            1,
+            reportedAt.AddHours(8));
+        var tasks = workOrder.Release(
+            reportedAt.AddHours(-1),
+            [
+                new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
+                    "OP-10",
+                    10,
+                    "WC-MIX-01",
+                    [],
+                    TimeSpan.FromMinutes(30)),
+            ]);
+        tasks.Single().Start(reportedAt.AddMinutes(-10));
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.AddRange(tasks);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         await new RecordProductionReportCommandHandler(dbContext).Handle(
             new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 9m, 1m, true, reportedAt),
             CancellationToken.None);

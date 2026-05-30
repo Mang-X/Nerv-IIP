@@ -65,7 +65,14 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             "PRPT",
             null,
             request.IdempotencyKey,
-            MesNumberingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.GoodQuantity, request.ScrapQuantity, request.CompletesOperation, request.ReportedAtUtc),
+            MesNumberingService.Fingerprint(
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.GoodQuantity,
+                request.ScrapQuantity,
+                request.CompletesOperation,
+                request.ReportedAtUtc,
+                ConsumedMaterialLotsFingerprint(request.ConsumedMaterialLots)),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -88,6 +95,22 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.CompletesOperation,
             request.ReportedAtUtc);
         dbContext.ProductionReports.Add(report);
+        if (request.CompletesOperation)
+        {
+            var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.WorkOrderId == request.WorkOrderId &&
+                    x.OperationTaskIdValue == request.OperationTaskId,
+                cancellationToken);
+            if (operationTask is null)
+            {
+                throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
+            }
+
+            operationTask.Complete(request.ReportedAtUtc);
+        }
+
         var duplicateLot = (request.ConsumedMaterialLots ?? [])
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
             .FirstOrDefault(x => x.Count() > 1);
@@ -110,13 +133,15 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                     x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId &&
                     x.RequestNo == lot.MaterialIssueRequestNo &&
+                    x.WorkOrderId == request.WorkOrderId &&
+                    (x.OperationTaskId == null || x.OperationTaskId == request.OperationTaskId) &&
                     x.MaterialId == lot.MaterialId &&
                     x.MaterialLotId == lot.MaterialLotId)
                 .Select(x => new { x.RequestNo, x.ReceivedQuantity })
                 .SingleOrDefaultAsync(cancellationToken);
             if (materialIssueRequest is null)
             {
-                throw new KnownException($"报工引用的线边物料批次未接收或数量不足，MaterialLotId = {lot.MaterialLotId}");
+                throw new KnownException($"报工引用的线边物料批次未接收、数量不足，或不属于当前工单或工序，MaterialLotId = {lot.MaterialLotId}");
             }
 
             var previouslyConsumedQuantity = await dbContext.ProductionReportMaterialConsumptions
@@ -147,6 +172,15 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
 
         await Task.CompletedTask;
         return new ProductionReportCommandResult(report.Id, report.ReportNo);
+    }
+
+    private static string ConsumedMaterialLotsFingerprint(IReadOnlyCollection<ConsumedMaterialLotInput>? lots)
+    {
+        return string.Join(
+            ";",
+            (lots ?? [])
+                .Select(x => $"{x.MaterialId.Trim().ToUpperInvariant()}|{x.MaterialLotId.Trim().ToUpperInvariant()}|{x.ConsumedQuantity:0.######}|{x.MaterialIssueRequestNo.Trim().ToUpperInvariant()}")
+                .Order(StringComparer.Ordinal));
     }
 }
 

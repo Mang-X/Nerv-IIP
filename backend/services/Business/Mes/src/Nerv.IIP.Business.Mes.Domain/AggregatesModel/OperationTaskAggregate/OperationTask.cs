@@ -60,6 +60,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public long DurationTicks { get; private set; }
     public DateTimeOffset? ExistingStartUtc { get; private set; }
     public DateTimeOffset? ExistingEndUtc { get; private set; }
+    public string? AssignedUserId { get; private set; }
+    public string? DeviceAssetId { get; private set; }
+    public string? ShiftId { get; private set; }
+    public DateTimeOffset? AssignedAtUtc { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public string OperationTaskId => OperationTaskIdValue;
@@ -128,9 +132,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     public void Start(DateTimeOffset startedAtUtc)
     {
-        if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
+        if (Status != OperationTaskLifecycleStatus.Queued)
         {
-            throw new InvalidOperationException("Completed or cancelled operation task cannot be started.");
+            throw new InvalidOperationException("Only queued operation task can be started.");
         }
 
         Status = OperationTaskLifecycleStatus.InProgress;
@@ -162,9 +166,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     public void Complete(DateTimeOffset completedAtUtc)
     {
-        if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
+        if (Status != OperationTaskLifecycleStatus.InProgress)
         {
-            throw new InvalidOperationException("Operation task is already closed.");
+            throw new InvalidOperationException("Only in-progress operation task can be completed.");
         }
 
         Status = OperationTaskLifecycleStatus.Completed;
@@ -172,8 +176,30 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         ExistingEndUtc = completedAtUtc;
     }
 
+    public void Assign(
+        string? assignedUserId,
+        string? deviceAssetId,
+        string? shiftId,
+        DateTimeOffset assignedAtUtc)
+    {
+        if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
+        {
+            throw new InvalidOperationException("Closed operation task cannot be assigned.");
+        }
+
+        AssignedUserId = NormalizeOptional(assignedUserId);
+        DeviceAssetId = NormalizeOptional(deviceAssetId);
+        ShiftId = NormalizeOptional(shiftId);
+        AssignedAtUtc = assignedAtUtc;
+    }
+
     private static string NormalizeAlternatives(IReadOnlyCollection<string> values)
     {
         return string.Join('|', values.Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 }

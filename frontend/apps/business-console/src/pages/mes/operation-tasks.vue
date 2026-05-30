@@ -8,7 +8,7 @@ import BusinessRowActions from '@/components/business/BusinessRowActions.vue'
 import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { useMesOperationTasks } from '@/composables/useBusinessMes'
+import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { demoOperationTasks, demoResourcesOf, mergeByKey, readLocalDemoWorkOrders } from '@/data/shockAbsorberDemo'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
@@ -435,7 +435,17 @@ function formatError(error: unknown) {
                 <TableCell>{{ task.deviceAssetId ?? '未指定' }}</TableCell>
                 <TableCell>{{ task.shiftId ?? '未指定' }}</TableCell>
                 <TableCell>{{ formatDateTime(task.plannedStartUtc) }}</TableCell>
-                <TableCell>{{ task.qualityStatus ?? '未检' }}</TableCell>
+                <TableCell>
+                  <div class="grid gap-1">
+                    <span>{{ describeMesReadinessReason(task.qualityStatus ?? '未检').label }}</span>
+                    <span
+                      v-if="['QUALITY_PLAN_MISSING', 'QUALITY_HOLD_ACTIVE', 'EQUIPMENT_UNAVAILABLE', 'EQUIPMENT_MAINTENANCE_CONFLICT'].includes(describeMesReadinessReason(task.qualityStatus ?? '').code)"
+                      class="text-xs text-muted-foreground"
+                    >
+                      {{ describeMesReadinessReason(task.qualityStatus ?? '').nextStep }}
+                    </span>
+                  </div>
+                </TableCell>
                 <TableCell class="text-right">
                   <BusinessRowActions :label="`工序任务操作 ${task.operationTaskId ?? ''}`">
                     <DropdownMenuItem :disabled="!task.workOrderId" @click="openWorkOrder(task.workOrderId)">

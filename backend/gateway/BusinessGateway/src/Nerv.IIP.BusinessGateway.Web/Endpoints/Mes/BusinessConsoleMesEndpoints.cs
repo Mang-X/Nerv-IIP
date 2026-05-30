@@ -127,11 +127,51 @@ public abstract class GetBusinessConsoleMesReadinessAreaEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesFoundationReadinessRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesReadinessArea> ForwardAsync(
+    protected override async Task<BusinessConsoleMesReadinessArea> ForwardAsync(
         BusinessConsoleMesFoundationReadinessRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.GetFoundationReadinessAreaAsync(tokenProvider.BearerToken, areaCode, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await mes.GetFoundationReadinessAreaAsync(tokenProvider.BearerToken, areaCode, request, cancellationToken);
+        }
+        catch (BusinessServiceProxyException)
+        {
+            return SourceUnavailableArea(areaCode);
+        }
+        catch (HttpRequestException)
+        {
+            return SourceUnavailableArea(areaCode);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return SourceUnavailableArea(areaCode);
+        }
+        catch (InvalidOperationException)
+        {
+            return SourceUnavailableArea(areaCode);
+        }
+    }
+
+    private static BusinessConsoleMesReadinessArea SourceUnavailableArea(string areaCode) =>
+        new(
+            areaCode,
+            "Blocked",
+            [
+                new BusinessConsoleMesReadinessIssue(
+                    "SOURCE_SERVICE_UNAVAILABLE",
+                    "Blocked",
+                    "Source service is unavailable or returned invalid readiness data.",
+                    areaCode,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "请稍后重试或联系管理员检查来源服务"),
+            ]);
 }
 
 [Tags("Business Console MES")]
@@ -247,15 +287,54 @@ public sealed class GetBusinessConsoleMesProductionPlanReadinessEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesProductionPlanReadinessRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesFoundationReadinessResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesFoundationReadinessResponse> ForwardAsync(
         BusinessConsoleMesProductionPlanReadinessRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.GetProductionPlanReadinessAsync(
-            tokenProvider.BearerToken,
-            request.ProductionPlanId,
-            new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
-            cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await mes.GetProductionPlanReadinessAsync(
+                tokenProvider.BearerToken,
+                request.ProductionPlanId,
+                new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+                cancellationToken);
+        }
+        catch (BusinessServiceProxyException)
+        {
+            return SourceUnavailableReadiness(request.ProductionPlanId);
+        }
+        catch (HttpRequestException)
+        {
+            return SourceUnavailableReadiness(request.ProductionPlanId);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return SourceUnavailableReadiness(request.ProductionPlanId);
+        }
+        catch (InvalidOperationException)
+        {
+            return SourceUnavailableReadiness(request.ProductionPlanId);
+        }
+    }
+
+    private static BusinessConsoleMesFoundationReadinessResponse SourceUnavailableReadiness(string productionPlanId)
+    {
+        var issue = new BusinessConsoleMesReadinessIssue(
+            "SOURCE_SERVICE_UNAVAILABLE",
+            "Blocked",
+            "Business MES readiness service is unavailable or returned invalid readiness data.",
+            "BusinessMes",
+            "ProductionPlan",
+            productionPlanId,
+            productionPlanId,
+            null,
+            null,
+            null,
+            "请稍后重试或联系管理员检查 MES 就绪服务");
+        var area = new BusinessConsoleMesReadinessArea("mes-readiness", "Blocked", [issue]);
+        return new BusinessConsoleMesFoundationReadinessResponse("Blocked", [area], [issue], []);
+    }
 }
 
 [Tags("Business Console MES")]

@@ -26,6 +26,10 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.DurationTicks).HasColumnName("duration_ticks").IsRequired().HasComment("Operation duration stored as .NET ticks for deterministic scheduler reconstruction.");
         builder.Property(x => x.ExistingStartUtc).HasColumnName("existing_start_utc").HasComment("Existing UTC start time for in-progress operation preservation.");
         builder.Property(x => x.ExistingEndUtc).HasColumnName("existing_end_utc").HasComment("Existing UTC end time for in-progress operation preservation.");
+        builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id").HasMaxLength(100).HasComment("Assigned operator or person public id captured by MES dispatch.");
+        builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(100).HasComment("Assigned MasterData device asset public id captured by MES dispatch.");
+        builder.Property(x => x.ShiftId).HasColumnName("shift_id").HasMaxLength(100).HasComment("Assigned MasterData shift public id captured by MES dispatch.");
+        builder.Property(x => x.AssignedAtUtc).HasColumnName("assigned_at_utc").HasComment("UTC time when MES dispatch assignment facts were captured.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the operation task fact was created.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskIdValue })
             .HasName("ak_operation_tasks_scope_task");

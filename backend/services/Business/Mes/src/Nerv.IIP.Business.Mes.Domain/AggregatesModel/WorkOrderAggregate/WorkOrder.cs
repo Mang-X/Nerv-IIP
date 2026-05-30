@@ -16,6 +16,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 {
     public const string CreatedStatus = "created";
     public const string ReleasedStatus = "released";
+    public const string CompletedStatus = "completed";
+    public const string CancelledStatus = "cancelled";
 
     private WorkOrder()
     {
@@ -89,10 +91,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new ArgumentException("At least one routing step is required.", nameof(routingSteps));
         }
 
-        if (Status == ReleasedStatus)
-        {
-            throw new InvalidOperationException("Work order has already been released.");
-        }
+        ThrowIfCannotRelease();
 
         var tasks = routingSteps
             .OrderBy(x => x.OperationSequence)
@@ -112,4 +111,24 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         return tasks;
     }
 
+    public void MarkReleased()
+    {
+        ThrowIfCannotRelease();
+
+        Status = ReleasedStatus;
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, []));
+    }
+
+    private void ThrowIfCannotRelease()
+    {
+        if (Status == ReleasedStatus)
+        {
+            throw new InvalidOperationException("Work order has already been released.");
+        }
+
+        if (Status is CompletedStatus or CancelledStatus)
+        {
+            throw new InvalidOperationException("Work order is already in a closed state.");
+        }
+    }
 }

@@ -174,4 +174,27 @@ public sealed class MesAggregateTests
         Assert.Throws<InvalidOperationException>(() =>
             workOrder.Release(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), routingSteps));
     }
+
+    [Theory]
+    [InlineData("completed")]
+    [InlineData("cancelled")]
+    public void WorkOrder_mark_released_rejects_closed_states(string closedStatus)
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-CLOSED",
+            "SKU-001",
+            "PV-001",
+            5m,
+            10,
+            DateTimeOffset.Parse("2026-05-23T10:00:00Z"));
+
+        typeof(WorkOrder)
+            .GetProperty(nameof(WorkOrder.Status))!
+            .SetValue(workOrder, closedStatus);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => workOrder.MarkReleased());
+        Assert.Contains("closed", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

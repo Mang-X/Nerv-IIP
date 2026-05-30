@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
@@ -26,15 +27,20 @@ public sealed class ReleaseWorkOrderCommandHandler(ApplicationDbContext dbContex
 {
     public async Task<MesAcceptedResponse> Handle(ReleaseWorkOrderCommand request, CancellationToken cancellationToken)
     {
-        var exists = await dbContext.WorkOrders.AnyAsync(
+        var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderIdValue == request.WorkOrderId,
             cancellationToken);
 
-        if (!exists)
+        if (workOrder is null)
         {
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
+        }
+
+        if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+        {
+            throw new KnownException("QUALITY_PLAN_MISSING: 工单缺少已发布生产版本，无法放行。");
         }
 
         var shortages = await MaterialReadinessGuards.GetShortageReasonsAsync(
@@ -49,6 +55,30 @@ public sealed class ReleaseWorkOrderCommandHandler(ApplicationDbContext dbContex
             throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
         }
 
+        var hasOperationSnapshot = await dbContext.OperationTasks.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId,
+            cancellationToken);
+        if (!hasOperationSnapshot)
+        {
+            throw new KnownException($"工单缺少工艺路线快照，WorkOrderId = {request.WorkOrderId}");
+        }
+
+        var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            null,
+            request.WorkOrderId,
+            request.ReleasedAtUtc,
+            cancellationToken);
+        if (equipmentIssues.Count > 0)
+        {
+            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+        }
+
+        workOrder.MarkReleased();
         return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
     }
 }
@@ -212,17 +242,22 @@ public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbCont
 {
     public async Task<MesAcceptedResponse> Handle(AssignDispatchTaskCommand request, CancellationToken cancellationToken)
     {
-        var exists = await dbContext.OperationTasks.AnyAsync(
+        var task = await dbContext.OperationTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.OperationTaskIdValue == request.OperationTaskId,
             cancellationToken);
 
-        if (!exists)
+        if (task is null)
         {
             throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
         }
 
+        task.Assign(request.AssignedUserId, request.DeviceAssetId, request.ShiftId, request.AssignedAtUtc);
+        dbContext.Entry(task).Property(x => x.AssignedUserId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.DeviceAssetId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.ShiftId).IsModified = true;
+        dbContext.Entry(task).Property(x => x.AssignedAtUtc).IsModified = true;
         return new MesAcceptedResponse("Accepted", request.OperationTaskId, request.AssignedAtUtc);
     }
 }
@@ -248,6 +283,30 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
 
         if (request.Action == "start")
         {
+            var qualityIssues = await ReadinessReasonCodes.GetQualityBlockingIssuesAsync(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                task.WorkOrderId,
+                cancellationToken);
+            if (qualityIssues.Count > 0)
+            {
+                throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+            }
+
+            var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                task.WorkCenterId,
+                task.WorkOrderId,
+                request.ChangedAtUtc,
+                cancellationToken);
+            if (equipmentIssues.Count > 0)
+            {
+                throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+            }
+
             var shortages = await MaterialReadinessGuards.GetShortageReasonsAsync(
                 dbContext,
                 request.OrganizationId,
@@ -323,23 +382,29 @@ internal static class MaterialReadinessGuards
                 x.EnvironmentId == environmentId &&
                 x.WorkOrderId == workOrderId &&
                 (operationTaskId == null || x.OperationTaskId == null || x.OperationTaskId == operationTaskId))
-            .GroupBy(x => x.MaterialId)
-            .Select(x => new { MaterialId = x.Key, ReceivedQuantity = x.Sum(y => y.ReceivedQuantity) })
-            .ToDictionaryAsync(x => x.MaterialId, x => x.ReceivedQuantity, StringComparer.OrdinalIgnoreCase, cancellationToken);
+            .Select(x => new { x.MaterialId, x.MaterialLotId, x.ReceivedQuantity })
+            .ToArrayAsync(cancellationToken);
 
         return requirements
-            .GroupBy(x => x.MaterialId, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(x => new { x.MaterialId, x.MaterialLotId })
             .Select(x =>
             {
                 var required = x.Sum(y => y.RequiredQuantity);
                 var available = x.Sum(y => y.AvailableQuantity);
                 var staged = x.Sum(y => y.StagedQuantity);
-                var receivedQuantity = received.GetValueOrDefault(x.Key);
+                var receivedQuantity = received
+                    .Where(y =>
+                        string.Equals(y.MaterialId, x.Key.MaterialId, StringComparison.OrdinalIgnoreCase) &&
+                        (x.Key.MaterialLotId is null ||
+                            string.Equals(y.MaterialLotId, x.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)))
+                    .Sum(y => y.ReceivedQuantity);
                 var shortage = Math.Max(0m, required - available - staged - receivedQuantity);
-                return new { MaterialId = x.Key, Shortage = shortage };
+                return (x.Key.MaterialId, MaterialLotId: (string?)x.Key.MaterialLotId, Shortage: shortage);
             })
             .Where(x => x.Shortage > 0)
-            .Select(x => $"{x.MaterialId} shortage {x.Shortage:0.######}")
+            .Select(x => x.MaterialLotId is null
+                ? $"{x.MaterialId} shortage {x.Shortage:0.######}"
+                : $"{x.MaterialId} {x.MaterialLotId} shortage {x.Shortage:0.######}")
             .ToArray();
     }
 
@@ -373,6 +438,96 @@ internal static class MaterialReadinessGuards
         decimal AvailableQuantity,
         decimal StagedQuantity,
         DateTimeOffset CapturedAtUtc) : IMaterialRequirementSnapshot;
+}
+
+internal sealed record ReadinessBlockingIssue(
+    string Code,
+    string SourceSystem,
+    string ReferenceType,
+    string ReferenceId,
+    string Message);
+
+internal static class ReadinessReasonCodes
+{
+    public static async Task<IReadOnlyCollection<ReadinessBlockingIssue>> GetQualityBlockingIssuesAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        var productionVersionId = await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.WorkOrderIdValue == workOrderId)
+            .Select(x => x.ProductionVersionId)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return string.IsNullOrWhiteSpace(productionVersionId)
+            ? [
+                new ReadinessBlockingIssue(
+                    MesReadinessReasonCodes.QualityPlanMissing,
+                    "Quality",
+                    "InspectionPlan",
+                    workOrderId,
+                    "工单缺少已发布生产版本或检验方案。"),
+            ]
+            : [];
+    }
+
+    public static async Task<IReadOnlyCollection<ReadinessBlockingIssue>> GetEquipmentBlockingIssuesAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string? workCenterId,
+        string? workOrderId,
+        DateTimeOffset effectiveAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var scopedQuery = dbContext.WorkCenterUnavailabilities
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.FromUtc <= effectiveAtUtc &&
+                (x.ToUtc == null || x.ToUtc > effectiveAtUtc));
+
+        if (!string.IsNullOrWhiteSpace(workCenterId))
+        {
+            scopedQuery = scopedQuery.Where(x => x.WorkCenterId == workCenterId);
+        }
+        else if (!string.IsNullOrWhiteSpace(workOrderId))
+        {
+            var taskWorkCenters = dbContext.OperationTasks
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.WorkOrderId == workOrderId)
+                .Select(x => x.WorkCenterId);
+            scopedQuery = scopedQuery.Where(x => taskWorkCenters.Contains(x.WorkCenterId));
+        }
+
+        var unavailabilities = await scopedQuery
+            .OrderBy(x => x.FromUtc)
+            .Select(x => new { x.DowntimeEventNo, x.WorkCenterId, x.Reason })
+            .ToArrayAsync(cancellationToken);
+
+        return unavailabilities
+            .Select(x =>
+            {
+                var classification = MesReadinessReasonCodes.ClassifyEquipmentReason(x.Reason);
+                return new ReadinessBlockingIssue(
+                    classification.Code,
+                    classification.SourceSystem,
+                    "DowntimeEvent",
+                    x.DowntimeEventNo,
+                    $"设备或工作中心存在维护/报警/停机冲突，WorkCenterId = {x.WorkCenterId}");
+            })
+            .ToArray();
+    }
 }
 
 public sealed record RecordDefectCommand(

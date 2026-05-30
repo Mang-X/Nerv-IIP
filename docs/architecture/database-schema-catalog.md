@@ -166,11 +166,12 @@ Source:
 5. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260526022531_AddMesIntegrationEventDeadLetters.cs`
 6. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260527073156_AddNumberingCounters.cs`
 7. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260530095053_AddMesMaterialSupplyFacts.cs`
+8. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260530115744_AddMesDispatchAssignmentFacts.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `work_orders` | business | MES 持久化工单事实，记录 SKU、生产版本引用、计划数量、优先级、交期和执行状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + work_order_id` 是业务唯一键；`production_version_id` 是 ProductEngineering 业务引用。 | 唯一约束保护同一组织/环境内工单号；SKU/交期索引用于排产扫描。 | 工单创建后进入 MES 执行生命周期，历史保留用于报工、入库请求和成本追踪。 |
-| `operation_tasks` | business | MES 工序任务事实，保存工序顺序、工作中心、可选工作中心、持续时间和执行窗口。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + operation_task_id` 是业务唯一键。 | 工单/工序顺序索引用于按工单加载工序；外键索引用于报工与工单追踪。 | 随工单创建或执行调整保留；状态表达排产和执行进度。 |
+| `operation_tasks` | business | MES 工序任务事实，保存工序顺序、工作中心、可选工作中心、持续时间、执行窗口和派工班次/人员/设备事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + operation_task_id` 是业务唯一键；`assigned_user_id`、`device_asset_id`、`shift_id` 和 `assigned_at_utc` 记录当前派工事实。 | 工单/工序顺序索引用于按工单加载工序；外键索引用于报工与工单追踪。 | 随工单创建或执行调整保留；状态表达排产、派工和执行进度。 |
 | `production_reports` | business | MES 报工事实，记录工单/工序的良品数、报废数、完工标记和报工时间。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + report_no` 是报工业务号唯一键；`work_order_id` 与 `operation_task_id` 为 MES 业务引用。 | 报工号唯一索引用于重试和追踪；工单/工序/时间索引用于执行时间线查询。 | 报工创建后作为执行历史保留，不直接修改 Inventory、Quality 或 ERP 事实。 |
 | `production_report_material_consumptions` | business | MES 报工引用的实际物料批次消耗事实，用于工单、报工和物料批次追溯。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + report_no` 指向报工号；记录 `material_id`、`material_lot_id`、消耗数量和线边领料申请号。 | 物料批次索引用于按批次追溯；工单索引用于工单谱系；报工/物料/批次唯一索引用于报工明细加载和重复写入兜底。 | 随报工写入，作为执行追溯历史保留；不拥有 Inventory 批次余额。 |
 | `material_requirements` | business | MES 工单/工序级物料需求与供应快照，记录来自 released MBOM、Inventory 和 WMS readiness 的执行侧视图。 | `id` 为 Guid v7 强类型 ID；`work_order_id` 和可选 `operation_task_id` 绑定 MES 执行对象；`material_id`、`material_lot_id`、需求量、可用量、备料量和 source snapshot 保留来源。 | 工单/物料索引用于齐套检查；工序索引用于开工前阻断检查。 | 由上游 readiness/导入适配器或测试 fixture 捕获，后续重新计算可写新快照；MES 不把它作为库存余额真相源。 |

@@ -77,7 +77,15 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             throw new ArgumentOutOfRangeException(nameof(receivedQuantity), "Received quantity cannot exceed requested quantity.");
         }
 
-        MaterialLotId = string.IsNullOrWhiteSpace(materialLotId) ? MaterialLotId : materialLotId.Trim();
+        var normalizedMaterialLotId = string.IsNullOrWhiteSpace(materialLotId) ? null : materialLotId.Trim();
+        if (!string.IsNullOrWhiteSpace(MaterialLotId) &&
+            !string.IsNullOrWhiteSpace(normalizedMaterialLotId) &&
+            !string.Equals(MaterialLotId, normalizedMaterialLotId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("同一领料申请不能混用多个物料批次。");
+        }
+
+        MaterialLotId = normalizedMaterialLotId ?? MaterialLotId;
         ReceivedQuantity += quantity;
         ReceivedAtUtc = receivedAtUtc;
         Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
