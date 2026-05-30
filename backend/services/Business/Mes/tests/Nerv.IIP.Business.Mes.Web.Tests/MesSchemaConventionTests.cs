@@ -63,6 +63,7 @@ public sealed class MesSchemaConventionTests
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, MesFacts.ServiceName, MesFacts.Schema));
         failures.AddRange(ForeignKeysAreConfigured(fixture.DbContext));
         failures.AddRange(IndexNamesAreExplicit(fixture.DbContext, businessEntities));
+        failures.AddRange(MaterialConsumptionHasIdempotencyIndex(fixture.DbContext));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
@@ -101,6 +102,22 @@ public sealed class MesSchemaConventionTests
         }
 
         return failures;
+    }
+
+    private static IReadOnlyCollection<string> MaterialConsumptionHasIdempotencyIndex(ApplicationDbContext dbContext)
+    {
+        var entity = dbContext.Model.FindEntityType(typeof(ProductionReportMaterialConsumption));
+        if (entity is null)
+        {
+            return [$"{MesFacts.ServiceName}: missing entity type {nameof(ProductionReportMaterialConsumption)}."];
+        }
+
+        var hasUniqueIndex = entity.GetIndexes().Any(index =>
+            index.IsUnique &&
+            index.GetDatabaseName() == "ux_report_material_consumptions_report_material_lot");
+        return hasUniqueIndex
+            ? []
+            : [$"{MesFacts.ServiceName}: production report material consumption facts require a unique report/material/lot index."];
     }
 
     private static void AssertForeignKey(IModel model, Type entityType, string constraintName, List<string> failures)

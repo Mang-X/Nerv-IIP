@@ -132,7 +132,7 @@ public sealed record CreateMaterialIssueRequestRequest(
     string EnvironmentId,
     [property: RouteParam] string WorkOrderId,
     string? OperationTaskId,
-    string? MaterialId,
+    string MaterialId,
     decimal? Quantity,
     DateTimeOffset? RequestedAtUtc,
     string? IdempotencyKey = null);
@@ -148,6 +148,7 @@ public sealed record LineSideMaterialReceiptRequest(
     string EnvironmentId,
     [property: RouteParam] string RequestId,
     DateTimeOffset? ReceivedAtUtc,
+    decimal? ReceivedQuantity = null,
     string? MaterialLotId = null);
 
 public sealed record AssignDispatchTaskRequest(
@@ -490,6 +491,7 @@ public sealed class ConfirmLineSideMaterialReceiptEndpoint(ISender sender, TimeP
             req.EnvironmentId,
             req.RequestId,
             req.ReceivedAtUtc ?? timeProvider.GetUtcNow(),
+            req.ReceivedQuantity,
             req.MaterialLotId), ct);
         await Send.OkAsync(response, ct);
     }

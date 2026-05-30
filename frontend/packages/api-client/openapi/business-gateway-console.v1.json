@@ -6546,8 +6546,7 @@
             "nullable": true
           },
           "materialId": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "quantity": {
             "type": "number",
@@ -6647,6 +6646,11 @@
         "properties": {
           "materialLotId": {
             "type": "string",
+            "nullable": true
+          },
+          "receivedQuantity": {
+            "type": "number",
+            "format": "decimal",
             "nullable": true
           },
           "evidenceFileIds": {
@@ -7067,8 +7071,7 @@
             "format": "decimal"
           },
           "materialIssueRequestNo": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           }
         }
       },

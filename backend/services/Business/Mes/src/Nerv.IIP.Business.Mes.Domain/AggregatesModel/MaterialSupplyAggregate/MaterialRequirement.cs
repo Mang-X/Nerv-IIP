@@ -2,6 +2,9 @@ namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 
 public partial record MaterialRequirementId : IGuidStronglyTypedId;
 
+/// <summary>
+/// Immutable MES-owned material readiness snapshot captured from MBOM, Inventory, or WMS facts.
+/// </summary>
 public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggregateRoot
 {
     private MaterialRequirement()

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 
@@ -404,15 +405,16 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderId == request.WorkOrderId)
-            .Select(x => new
-            {
+            .Select(x => new MaterialReadinessGuards.MaterialRequirementSnapshot(
+                x.OperationTaskId,
                 x.MaterialId,
                 x.MaterialLotId,
                 x.RequiredQuantity,
                 x.AvailableQuantity,
                 x.StagedQuantity,
-            })
+                x.CapturedAtUtc))
             .ToArrayAsync(cancellationToken);
+        requirements = MaterialReadinessGuards.SelectLatestRequirementSnapshots(requirements);
 
         if (requirements.Length == 0)
         {

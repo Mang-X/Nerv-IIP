@@ -46,7 +46,7 @@ public sealed class ReleaseWorkOrderCommandHandler(ApplicationDbContext dbContex
             cancellationToken);
         if (shortages.Count > 0)
         {
-            return new MesAcceptedResponse("Blocked", request.WorkOrderId, request.ReleasedAtUtc);
+            throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
         }
 
         return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
@@ -97,6 +97,7 @@ public sealed class CreateMaterialIssueRequestCommandValidator : AbstractValidat
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0).When(x => x.Quantity.HasValue);
     }
 }
@@ -133,21 +134,12 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             return new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc);
         }
 
-        var materialId = string.IsNullOrWhiteSpace(request.MaterialId)
-            ? await dbContext.MaterialRequirements
-                .AsNoTracking()
-                .Where(x =>
-                    x.OrganizationId == request.OrganizationId &&
-                    x.EnvironmentId == request.EnvironmentId &&
-                    x.WorkOrderId == request.WorkOrderId)
-                .OrderBy(x => x.MaterialId)
-                .Select(x => x.MaterialId)
-                .FirstOrDefaultAsync(cancellationToken)
-            : request.MaterialId.Trim();
-        if (string.IsNullOrWhiteSpace(materialId))
+        if (string.IsNullOrWhiteSpace(request.MaterialId))
         {
-            throw new KnownException($"生产工单没有可领料的物料需求，WorkOrderId = {request.WorkOrderId}");
+            throw new KnownException("领料申请必须指定物料，MaterialId 不能为空。");
         }
+
+        var materialId = request.MaterialId.Trim();
 
         var requestedQuantity = request.Quantity ?? await dbContext.MaterialRequirements
             .AsNoTracking()
@@ -156,6 +148,7 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderId == request.WorkOrderId &&
                 x.MaterialId == materialId)
+            .OrderByDescending(x => x.CapturedAtUtc)
             .Select(x => x.RequiredQuantity)
             .FirstOrDefaultAsync(cancellationToken);
         if (requestedQuantity <= 0)
@@ -181,6 +174,7 @@ public sealed record ConfirmLineSideMaterialReceiptCommand(
     string EnvironmentId,
     string RequestId,
     DateTimeOffset ReceivedAtUtc,
+    decimal? ReceivedQuantity = null,
     string? MaterialLotId = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbContext dbContext)
@@ -188,14 +182,18 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbCo
 {
     public async Task<MesAcceptedResponse> Handle(ConfirmLineSideMaterialReceiptCommand request, CancellationToken cancellationToken)
     {
-        var materialRequest = await dbContext.MaterialIssueRequests.SingleOrDefaultAsync(
-            x => x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                (x.RequestNo == request.RequestId || x.Id.Id.ToString() == request.RequestId),
-            cancellationToken)
-            ?? throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
+        var scopedQuery = dbContext.MaterialIssueRequests.Where(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId);
+        var materialRequest = Guid.TryParse(request.RequestId, out var requestGuid)
+            ? await scopedQuery.SingleOrDefaultAsync(x => x.Id.Id == requestGuid, cancellationToken)
+            : await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == request.RequestId, cancellationToken);
+        if (materialRequest is null)
+        {
+            throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
+        }
 
-        materialRequest.ConfirmLineSideReceipt(request.ReceivedAtUtc, request.MaterialLotId);
+        materialRequest.ConfirmLineSideReceipt(request.ReceivedAtUtc, request.ReceivedQuantity, request.MaterialLotId);
         return new MesAcceptedResponse("Accepted", materialRequest.RequestNo, request.ReceivedAtUtc);
     }
 }
@@ -302,14 +300,16 @@ internal static class MaterialReadinessGuards
                 x.EnvironmentId == environmentId &&
                 x.WorkOrderId == workOrderId &&
                 (operationTaskId == null || x.OperationTaskId == null || x.OperationTaskId == operationTaskId))
-            .Select(x => new
-            {
+            .Select(x => new MaterialRequirementSnapshot(
+                x.OperationTaskId,
                 x.MaterialId,
+                x.MaterialLotId,
                 x.RequiredQuantity,
                 x.AvailableQuantity,
                 x.StagedQuantity,
-            })
+                x.CapturedAtUtc))
             .ToArrayAsync(cancellationToken);
+        requirements = SelectLatestRequirementSnapshots(requirements);
 
         if (requirements.Length == 0)
         {
@@ -342,6 +342,37 @@ internal static class MaterialReadinessGuards
             .Select(x => $"{x.MaterialId} shortage {x.Shortage:0.######}")
             .ToArray();
     }
+
+    internal static T[] SelectLatestRequirementSnapshots<T>(IEnumerable<T> requirements)
+        where T : IMaterialRequirementSnapshot
+    {
+        return requirements
+            .GroupBy(
+                x => $"{x.OperationTaskId?.ToUpperInvariant()}|{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId?.ToUpperInvariant()}",
+                StringComparer.Ordinal)
+            .Select(x => x.OrderByDescending(y => y.CapturedAtUtc).First())
+            .ToArray();
+    }
+
+    internal interface IMaterialRequirementSnapshot
+    {
+        string? OperationTaskId { get; }
+
+        string MaterialId { get; }
+
+        string? MaterialLotId { get; }
+
+        DateTimeOffset CapturedAtUtc { get; }
+    }
+
+    internal sealed record MaterialRequirementSnapshot(
+        string? OperationTaskId,
+        string MaterialId,
+        string? MaterialLotId,
+        decimal RequiredQuantity,
+        decimal AvailableQuantity,
+        decimal StagedQuantity,
+        DateTimeOffset CapturedAtUtc) : IMaterialRequirementSnapshot;
 }
 
 public sealed record RecordDefectCommand(

@@ -95,7 +95,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     material_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Material SKU id consumed by the production report."),
                     material_lot_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "Actual material lot id consumed by the production report."),
                     consumed_quantity = table.Column<decimal>(type: "numeric(18,6)", precision: 18, scale: 6, nullable: false, comment: "Consumed material quantity for this lot."),
-                    material_issue_request_no = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true, comment: "Optional MES material issue request number that supplied the consumed lot.")
+                    material_issue_request_no = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "MES material issue request number that supplied the consumed lot.")
                 },
                 constraints: table =>
                 {
@@ -148,16 +148,17 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 columns: new[] { "organization_id", "environment_id", "material_lot_id" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_report_material_consumptions_scope_report_material",
-                schema: "mes",
-                table: "production_report_material_consumptions",
-                columns: new[] { "organization_id", "environment_id", "report_no", "material_id", "material_lot_id" });
-
-            migrationBuilder.CreateIndex(
                 name: "ix_report_material_consumptions_scope_work_order",
                 schema: "mes",
                 table: "production_report_material_consumptions",
                 columns: new[] { "organization_id", "environment_id", "work_order_id" });
+
+            migrationBuilder.CreateIndex(
+                name: "ux_report_material_consumptions_report_material_lot",
+                schema: "mes",
+                table: "production_report_material_consumptions",
+                columns: new[] { "organization_id", "environment_id", "report_no", "material_id", "material_lot_id" },
+                unique: true);
         }
 
         /// <inheritdoc />

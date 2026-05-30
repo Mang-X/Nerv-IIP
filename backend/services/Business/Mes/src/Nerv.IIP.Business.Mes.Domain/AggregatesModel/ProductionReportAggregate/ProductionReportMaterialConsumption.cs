@@ -17,7 +17,7 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         string materialId,
         string materialLotId,
         decimal consumedQuantity,
-        string? materialIssueRequestNo)
+        string materialIssueRequestNo)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -27,7 +27,7 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         MaterialId = DomainGuard.Required(materialId, nameof(materialId));
         MaterialLotId = DomainGuard.Required(materialLotId, nameof(materialLotId));
         ConsumedQuantity = DomainGuard.Positive(consumedQuantity, nameof(consumedQuantity));
-        MaterialIssueRequestNo = string.IsNullOrWhiteSpace(materialIssueRequestNo) ? null : materialIssueRequestNo.Trim();
+        MaterialIssueRequestNo = DomainGuard.Required(materialIssueRequestNo, nameof(materialIssueRequestNo));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -38,7 +38,7 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
     public string MaterialId { get; private set; } = string.Empty;
     public string MaterialLotId { get; private set; } = string.Empty;
     public decimal ConsumedQuantity { get; private set; }
-    public string? MaterialIssueRequestNo { get; private set; }
+    public string MaterialIssueRequestNo { get; private set; } = string.Empty;
 
     public static ProductionReportMaterialConsumption Record(
         string organizationId,
@@ -49,7 +49,7 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         string materialId,
         string materialLotId,
         decimal consumedQuantity,
-        string? materialIssueRequestNo)
+        string materialIssueRequestNo)
     {
         return new ProductionReportMaterialConsumption(
             organizationId,

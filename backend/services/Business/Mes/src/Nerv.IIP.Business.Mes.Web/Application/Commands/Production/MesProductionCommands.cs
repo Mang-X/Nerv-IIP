@@ -15,7 +15,7 @@ public sealed record ConsumedMaterialLotInput(
     string MaterialId,
     string MaterialLotId,
     decimal ConsumedQuantity,
-    string? MaterialIssueRequestNo);
+    string MaterialIssueRequestNo);
 
 public sealed record RecordProductionReportCommand(
     string OrganizationId,
@@ -46,7 +46,7 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
             lot.RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
             lot.RuleFor(x => x.MaterialLotId).NotEmpty().MaximumLength(100);
             lot.RuleFor(x => x.ConsumedQuantity).GreaterThan(0);
-            lot.RuleFor(x => x.MaterialIssueRequestNo).MaximumLength(100);
+            lot.RuleFor(x => x.MaterialIssueRequestNo).NotEmpty().MaximumLength(100);
         });
     }
 }
@@ -88,22 +88,33 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.CompletesOperation,
             request.ReportedAtUtc);
         dbContext.ProductionReports.Add(report);
+        var duplicateLot = (request.ConsumedMaterialLots ?? [])
+            .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
+            .FirstOrDefault(x => x.Count() > 1);
+        if (duplicateLot is not null)
+        {
+            var lot = duplicateLot.First();
+            throw new KnownException($"报工耗料批次重复，MaterialId = {lot.MaterialId}, MaterialLotId = {lot.MaterialLotId}");
+        }
+
         foreach (var lot in request.ConsumedMaterialLots ?? [])
         {
-            if (!string.IsNullOrWhiteSpace(lot.MaterialIssueRequestNo))
+            if (string.IsNullOrWhiteSpace(lot.MaterialIssueRequestNo))
             {
-                var requestExists = await dbContext.MaterialIssueRequests.AnyAsync(
-                    x => x.OrganizationId == request.OrganizationId &&
-                        x.EnvironmentId == request.EnvironmentId &&
-                        x.RequestNo == lot.MaterialIssueRequestNo &&
-                        x.MaterialId == lot.MaterialId &&
-                        x.MaterialLotId == lot.MaterialLotId &&
-                        x.ReceivedQuantity >= lot.ConsumedQuantity,
-                    cancellationToken);
-                if (!requestExists)
-                {
-                    throw new KnownException($"报工引用的线边物料批次未接收或数量不足，MaterialLotId = {lot.MaterialLotId}");
-                }
+                throw new KnownException($"报工耗料必须引用线边领料申请，MaterialLotId = {lot.MaterialLotId}");
+            }
+
+            var requestExists = await dbContext.MaterialIssueRequests.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.RequestNo == lot.MaterialIssueRequestNo &&
+                    x.MaterialId == lot.MaterialId &&
+                    x.MaterialLotId == lot.MaterialLotId &&
+                    x.ReceivedQuantity >= lot.ConsumedQuantity,
+                cancellationToken);
+            if (!requestExists)
+            {
+                throw new KnownException($"报工引用的线边物料批次未接收或数量不足，MaterialLotId = {lot.MaterialLotId}");
             }
 
             dbContext.ProductionReportMaterialConsumptions.Add(ProductionReportMaterialConsumption.Record(

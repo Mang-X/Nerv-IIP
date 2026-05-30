@@ -481,7 +481,7 @@ public sealed record BusinessConsoleConsumedMaterialLotInput(
     string MaterialId,
     string MaterialLotId,
     decimal ConsumedQuantity,
-    string? MaterialIssueRequestNo);
+    string MaterialIssueRequestNo);
 
 public sealed record BusinessConsoleRecordProductionReportResponse(string ProductionReportId, string ReportNo);
 
@@ -611,7 +611,7 @@ public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string? OperationTaskId,
-    string? MaterialId,
+    string MaterialId,
     decimal? Quantity,
     IReadOnlyCollection<string>? MaterialIds,
     string IdempotencyKey);
@@ -635,6 +635,7 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string? MaterialLotId,
+    decimal? ReceivedQuantity,
     IReadOnlyCollection<string>? EvidenceFileIds,
     string IdempotencyKey);
 

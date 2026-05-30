@@ -531,10 +531,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasComment("Material SKU id consumed by the production report.");
 
                     b.Property<string>("MaterialIssueRequestNo")
+                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("material_issue_request_no")
-                        .HasComment("Optional MES material issue request number that supplied the consumed lot.");
+                        .HasComment("MES material issue request number that supplied the consumed lot.");
 
                     b.Property<string>("MaterialLotId")
                         .IsRequired()
@@ -580,7 +581,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasDatabaseName("ix_report_material_consumptions_scope_work_order");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo", "MaterialId", "MaterialLotId")
-                        .HasDatabaseName("ix_report_material_consumptions_scope_report_material");
+                        .IsUnique()
+                        .HasDatabaseName("ux_report_material_consumptions_report_material_lot");
 
                     b.ToTable("production_report_material_consumptions", "mes", t =>
                         {

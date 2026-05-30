@@ -5,6 +5,7 @@ public partial record MaterialIssueRequestId : IGuidStronglyTypedId;
 public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggregateRoot
 {
     public const string RequestedStatus = "Requested";
+    public const string PartiallyReceivedStatus = "PartiallyReceived";
     public const string ReceivedStatus = "Received";
 
     private MaterialIssueRequest()
@@ -67,11 +68,18 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             requestedAtUtc);
     }
 
-    public void ConfirmLineSideReceipt(DateTimeOffset receivedAtUtc, string? materialLotId = null)
+    public void ConfirmLineSideReceipt(DateTimeOffset receivedAtUtc, decimal? receivedQuantity = null, string? materialLotId = null)
     {
+        var quantity = receivedQuantity ?? RequestedQuantity - ReceivedQuantity;
+        DomainGuard.Positive(quantity, nameof(receivedQuantity));
+        if (ReceivedQuantity + quantity > RequestedQuantity)
+        {
+            throw new ArgumentOutOfRangeException(nameof(receivedQuantity), "Received quantity cannot exceed requested quantity.");
+        }
+
         MaterialLotId = string.IsNullOrWhiteSpace(materialLotId) ? MaterialLotId : materialLotId.Trim();
-        ReceivedQuantity = RequestedQuantity;
+        ReceivedQuantity += quantity;
         ReceivedAtUtc = receivedAtUtc;
-        Status = ReceivedStatus;
+        Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
     }
 }

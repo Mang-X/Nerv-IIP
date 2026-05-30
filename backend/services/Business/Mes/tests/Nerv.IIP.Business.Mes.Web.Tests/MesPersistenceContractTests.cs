@@ -261,7 +261,7 @@ public sealed class MesPersistenceContractTests
 
             var receiptHandler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext);
             await receiptHandler.Handle(
-                new ConfirmLineSideMaterialReceiptCommand("org-001", "env-dev", response.ReferenceId, now.AddMinutes(15)),
+                new ConfirmLineSideMaterialReceiptCommand("org-001", "env-dev", response.ReferenceId, now.AddMinutes(15), 4m),
                 CancellationToken.None);
 
             await dbContext.SaveChangesAsync();
@@ -324,17 +324,144 @@ public sealed class MesPersistenceContractTests
             capturedAtUtc: now));
         await dbContext.SaveChangesAsync();
 
-        var release = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
-            new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-BLOCKED-001", now.AddMinutes(30)),
-            CancellationToken.None);
-
-        Assert.Equal("Blocked", release.Status);
+        var releaseException = await Assert.ThrowsAsync<KnownException>(() =>
+            new ReleaseWorkOrderCommandHandler(dbContext).Handle(
+                new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-BLOCKED-001", now.AddMinutes(30)),
+                CancellationToken.None));
+        Assert.Contains("物料齐套未满足", releaseException.Message);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-BLOCKED-10", "start", now.AddMinutes(35)),
                 CancellationToken.None));
         Assert.Contains("物料齐套未满足", exception.Message);
+    }
+
+    [Fact]
+    public async Task Material_readiness_uses_latest_requirement_snapshot_per_material()
+    {
+        var services = CreateServices(nameof(Material_readiness_uses_latest_requirement_snapshot_per_material));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-SNAPSHOT-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-SNAPSHOT-001",
+            "OP-SNAPSHOT-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001",
+            "env-dev",
+            "WO-SNAPSHOT-001",
+            "OP-SNAPSHOT-10",
+            "MAT-OIL",
+            null,
+            requiredQuantity: 10m,
+            availableQuantity: 0m,
+            stagedQuantity: 0m,
+            sourceSystem: "Inventory",
+            sourceSnapshotId: "inv-snap-old",
+            capturedAtUtc: now));
+        dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001",
+            "env-dev",
+            "WO-SNAPSHOT-001",
+            "OP-SNAPSHOT-10",
+            "MAT-OIL",
+            null,
+            requiredQuantity: 10m,
+            availableQuantity: 10m,
+            stagedQuantity: 0m,
+            sourceSystem: "Inventory",
+            sourceSnapshotId: "inv-snap-new",
+            capturedAtUtc: now.AddMinutes(5)));
+        await dbContext.SaveChangesAsync();
+
+        var release = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
+            new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-SNAPSHOT-001", now.AddMinutes(10)),
+            CancellationToken.None);
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", "WO-SNAPSHOT-001"),
+            CancellationToken.None);
+
+        Assert.Equal("Accepted", release.Status);
+        Assert.Equal("Ready", readiness.ReadinessStatus);
+        var row = Assert.Single(readiness.Items);
+        Assert.Equal(10m, row.RequiredQuantity);
+        Assert.Equal(10m, row.AvailableQuantity);
+        Assert.Equal(0m, row.ShortageQuantity);
+    }
+
+    [Fact]
+    public async Task Partial_line_side_receipt_keeps_remaining_shortage_until_full_quantity_is_received()
+    {
+        var services = CreateServices(nameof(Partial_line_side_receipt_keeps_remaining_shortage_until_full_quantity_is_received));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-PARTIAL-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-PARTIAL-001",
+            "OP-PARTIAL-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001",
+            "env-dev",
+            "WO-PARTIAL-001",
+            "OP-PARTIAL-10",
+            "MAT-OIL",
+            null,
+            requiredQuantity: 10m,
+            availableQuantity: 0m,
+            stagedQuantity: 0m,
+            sourceSystem: "Inventory",
+            sourceSnapshotId: "inv-snap-001",
+            capturedAtUtc: now));
+        dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-PARTIAL-001",
+            "WO-PARTIAL-001",
+            "OP-PARTIAL-10",
+            "MAT-OIL",
+            10m,
+            now.AddMinutes(1)));
+        await dbContext.SaveChangesAsync();
+
+        await new ConfirmLineSideMaterialReceiptCommandHandler(dbContext).Handle(
+            new ConfirmLineSideMaterialReceiptCommand("org-001", "env-dev", "MIR-PARTIAL-001", now.AddMinutes(5), 4m, "LOT-OIL-A"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", "WO-PARTIAL-001"),
+            CancellationToken.None);
+
+        var row = Assert.Single(readiness.Items);
+        Assert.Equal("Blocked", readiness.ReadinessStatus);
+        Assert.Equal(4m, row.ReceivedQuantity);
+        Assert.Equal(6m, row.ShortageQuantity);
+        Assert.Equal(MaterialIssueRequest.PartiallyReceivedStatus, await dbContext.MaterialIssueRequests.Select(x => x.Status).SingleAsync());
     }
 
     [Fact]
@@ -405,6 +532,105 @@ public sealed class MesPersistenceContractTests
         Assert.Contains(traceability.Nodes, x => x.NodeType == "ProductionReport");
         Assert.Contains(traceability.Nodes, x => x.NodeId == "WO-TRACE-001" && x.NodeType == "WorkOrder");
         Assert.Contains(traceability.Edges, x => x.RelationType == "consumed-by-report");
+    }
+
+    [Fact]
+    public async Task Production_report_material_consumption_requires_received_line_side_request_reference()
+    {
+        var services = CreateServices(nameof(Production_report_material_consumption_requires_received_line_side_request_reference));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-CONSUME-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-CONSUME-001",
+            "OP-CONSUME-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            now.AddMinutes(45)));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new RecordProductionReportCommandHandler(dbContext).Handle(
+                new RecordProductionReportCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-CONSUME-001",
+                    "OP-CONSUME-10",
+                    1m,
+                    0m,
+                    false,
+                    now.AddMinutes(30),
+                    "report-without-material-issue",
+                    [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 1m, "")]),
+                CancellationToken.None));
+
+        Assert.Contains("线边领料申请", exception.Message);
+    }
+
+    [Fact]
+    public async Task Production_report_rejects_duplicate_consumed_material_lot_for_same_report()
+    {
+        var services = CreateServices(nameof(Production_report_rejects_duplicate_consumed_material_lot_for_same_report));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-DUP-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-DUP-001",
+            "OP-DUP-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            now.AddMinutes(45)));
+        dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-DUP-001",
+            "WO-DUP-001",
+            "OP-DUP-10",
+            "MAT-OIL",
+            10m,
+            now.AddMinutes(1)));
+        await dbContext.SaveChangesAsync();
+        var request = await dbContext.MaterialIssueRequests.SingleAsync();
+        request.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new RecordProductionReportCommandHandler(dbContext).Handle(
+                new RecordProductionReportCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-DUP-001",
+                    "OP-DUP-10",
+                    1m,
+                    0m,
+                    false,
+                    now.AddMinutes(30),
+                    "report-duplicate-lot",
+                    [
+                        new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 1m, "MIR-DUP-001"),
+                        new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 1m, "MIR-DUP-001"),
+                    ]),
+                CancellationToken.None));
+
+        Assert.Contains("重复", exception.Message);
     }
 
     [Fact]

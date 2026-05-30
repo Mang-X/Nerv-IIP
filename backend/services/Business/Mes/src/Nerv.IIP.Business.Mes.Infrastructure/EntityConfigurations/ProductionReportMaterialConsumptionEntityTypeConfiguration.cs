@@ -18,7 +18,7 @@ public sealed class ProductionReportMaterialConsumptionEntityTypeConfiguration :
         builder.Property(x => x.MaterialId).HasColumnName("material_id").IsRequired().HasMaxLength(100).HasComment("Material SKU id consumed by the production report.");
         builder.Property(x => x.MaterialLotId).HasColumnName("material_lot_id").IsRequired().HasMaxLength(100).HasComment("Actual material lot id consumed by the production report.");
         builder.Property(x => x.ConsumedQuantity).HasColumnName("consumed_quantity").HasPrecision(18, 6).IsRequired().HasComment("Consumed material quantity for this lot.");
-        builder.Property(x => x.MaterialIssueRequestNo).HasColumnName("material_issue_request_no").HasMaxLength(100).HasComment("Optional MES material issue request number that supplied the consumed lot.");
+        builder.Property(x => x.MaterialIssueRequestNo).HasColumnName("material_issue_request_no").IsRequired().HasMaxLength(100).HasComment("MES material issue request number that supplied the consumed lot.");
         builder.HasOne<ProductionReport>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
@@ -30,6 +30,7 @@ public sealed class ProductionReportMaterialConsumptionEntityTypeConfiguration :
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId })
             .HasDatabaseName("ix_report_material_consumptions_scope_work_order");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo, x.MaterialId, x.MaterialLotId })
-            .HasDatabaseName("ix_report_material_consumptions_scope_report_material");
+            .IsUnique()
+            .HasDatabaseName("ux_report_material_consumptions_report_material_lot");
     }
 }

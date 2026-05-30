@@ -570,7 +570,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest = {
     operationTaskId?: string | null;
-    materialId?: string | null;
+    materialId?: string;
     quantity?: number | null;
     materialIds?: Array<string> | null;
     idempotencyKey?: string;
@@ -599,6 +599,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {
     materialLotId?: string | null;
+    receivedQuantity?: number | null;
     evidenceFileIds?: Array<string> | null;
     idempotencyKey?: string;
 };
@@ -717,7 +718,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     materialId?: string;
     materialLotId?: string;
     consumedQuantity?: number;
-    materialIssueRequestNo?: string | null;
+    materialIssueRequestNo?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest = {
