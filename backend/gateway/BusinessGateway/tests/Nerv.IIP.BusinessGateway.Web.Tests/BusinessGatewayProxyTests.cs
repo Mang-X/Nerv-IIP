@@ -195,7 +195,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleErpContextRequest("org-001", "env-dev"), erp.LastPurchaseOrderListRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("PO-001", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("purchaseOrderNo").GetString());
-        Assert.Equal("incoming-inspection", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("receiptReadiness").GetString());
+        Assert.False(document.RootElement.GetProperty("data").GetProperty("items")[0].TryGetProperty("supplierName", out _));
+        Assert.Equal("partially-received", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("receiptReadiness").GetString());
     }
 
     [Theory]
@@ -1264,10 +1265,9 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                 new BusinessConsoleErpPurchaseOrderItem(
                     "PO-001",
                     "SUP-001",
-                    "密封件供应商",
                     "SITE-01",
                     "PartiallyReceived",
-                    "incoming-inspection",
+                    "partially-received",
                     2400m,
                     [
                         new BusinessConsoleErpPurchaseOrderLineItem(

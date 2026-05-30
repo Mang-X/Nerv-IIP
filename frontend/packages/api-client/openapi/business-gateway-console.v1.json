@@ -8226,9 +8226,6 @@
           "supplierCode": {
             "type": "string"
           },
-          "supplierName": {
-            "type": "string"
-          },
           "siteCode": {
             "type": "string"
           },

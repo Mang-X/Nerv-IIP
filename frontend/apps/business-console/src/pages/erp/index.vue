@@ -32,7 +32,7 @@ definePage({ meta: { requiresAuth: true, title: '采购与供应' } })
 type ProcurementRow = {
   purchaseOrderNo: string
   supplierCode: string
-  supplierName: string
+  lineNo: string
   siteCode: string
   skuCode: string
   orderedQuantity: number
@@ -43,7 +43,7 @@ type ProcurementRow = {
   receiptReadiness: string
   amount: number
 }
-type SortColumn = 'purchaseOrderNo' | 'supplierName' | 'skuCode' | 'openQuantity' | 'promisedDate' | 'receiptReadiness'
+type SortColumn = 'purchaseOrderNo' | 'supplierCode' | 'skuCode' | 'openQuantity' | 'promisedDate' | 'receiptReadiness'
 
 const { purchaseOrders, purchaseOrdersPending, refreshPurchaseOrders } = useBusinessErp()
 
@@ -61,7 +61,7 @@ const rows = computed<ProcurementRow[]>(() =>
     (order.lines ?? []).map((line) => ({
       purchaseOrderNo: order.purchaseOrderNo ?? '',
       supplierCode: order.supplierCode ?? '',
-      supplierName: order.supplierName || order.supplierCode || '',
+      lineNo: line.lineNo ?? '',
       siteCode: order.siteCode ?? '',
       skuCode: line.skuCode ?? '',
       orderedQuantity: Number(line.orderedQuantity),
@@ -80,7 +80,7 @@ const filteredRows = computed(() => {
     const readinessMatched = appliedFilter.readiness === 'all' || row.receiptReadiness === appliedFilter.readiness
     const keywordMatched =
       !keyword ||
-      [row.purchaseOrderNo, row.supplierCode, row.supplierName, row.siteCode, row.skuCode, row.status]
+      [row.purchaseOrderNo, row.supplierCode, row.siteCode, row.skuCode, row.status]
         .some((value) => value.toLowerCase().includes(keyword))
     return readinessMatched && keywordMatched
   })
@@ -108,7 +108,7 @@ const pendingArrivalCount = computed(() =>
   rows.value.filter((row) => row.receiptReadiness === 'awaiting-arrival').length,
 )
 const inspectionCount = computed(() =>
-  rows.value.filter((row) => row.receiptReadiness === 'incoming-inspection').length,
+  rows.value.filter((row) => row.receiptReadiness === 'partially-received').length,
 )
 const openQuantity = computed(() =>
   rows.value.reduce((total, row) => total + row.openQuantity, 0),
@@ -153,7 +153,7 @@ function sortValue(row: ProcurementRow, column: SortColumn) {
 function readinessLabel(value: string) {
   const labels: Record<string, string> = {
     'awaiting-arrival': '待到货',
-    'incoming-inspection': '来料待检',
+    'partially-received': '部分收货',
     received: '已收货',
     'no-lines': '无明细',
   }
@@ -175,7 +175,7 @@ function formatAmount(value: number) {
       <BusinessPageHeader
         domain="经营管理"
         title="采购与供应"
-        summary="跟进外购件采购订单、供应商承诺、预计到货和来料待检状态，支撑生产齐套判断。"
+        summary="跟进外购件采购订单、供应商承诺、预计到货和部分收货状态，支撑生产齐套判断。"
       />
 
       <div class="grid gap-3 md:grid-cols-3">
@@ -184,7 +184,7 @@ function formatAmount(value: number) {
           <p class="mt-2 text-2xl font-semibold tabular-nums">{{ pendingArrivalCount }}</p>
         </div>
         <div class="rounded-lg border bg-background p-4">
-          <p class="text-sm text-muted-foreground">来料待检</p>
+          <p class="text-sm text-muted-foreground">部分收货</p>
           <p class="mt-2 text-2xl font-semibold tabular-nums">{{ inspectionCount }}</p>
         </div>
         <div class="rounded-lg border bg-background p-4">
@@ -208,7 +208,7 @@ function formatAmount(value: number) {
                 <SelectContent>
                   <SelectItem value="all">全部</SelectItem>
                   <SelectItem value="awaiting-arrival">待到货</SelectItem>
-                  <SelectItem value="incoming-inspection">来料待检</SelectItem>
+                  <SelectItem value="partially-received">部分收货</SelectItem>
                   <SelectItem value="received">已收货</SelectItem>
                 </SelectContent>
               </Select>
@@ -245,9 +245,9 @@ function formatAmount(value: number) {
                   </Button>
                 </TableHead>
                 <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('supplierName')">
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('supplierCode')">
                     供应商
-                    <component :is="sortIcon('supplierName')" data-icon="inline-end" />
+                    <component :is="sortIcon('supplierCode')" data-icon="inline-end" />
                   </Button>
                 </TableHead>
                 <TableHead>
@@ -280,12 +280,11 @@ function formatAmount(value: number) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-for="row in pagedRows" :key="`${row.purchaseOrderNo}-${row.skuCode}`">
+              <TableRow v-for="row in pagedRows" :key="`${row.purchaseOrderNo}-${row.lineNo}`">
                 <TableCell class="font-medium">{{ row.purchaseOrderNo }}</TableCell>
                 <TableCell>
                   <div class="grid gap-1">
-                    <span>{{ row.supplierName }}</span>
-                    <span class="text-xs text-muted-foreground">{{ row.supplierCode }}</span>
+                    <span>{{ row.supplierCode }}</span>
                   </div>
                 </TableCell>
                 <TableCell>

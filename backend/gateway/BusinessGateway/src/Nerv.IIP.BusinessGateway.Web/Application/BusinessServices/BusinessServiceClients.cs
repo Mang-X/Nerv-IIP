@@ -1128,7 +1128,6 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             new BusinessConsoleErpPurchaseOrderItem(
                 x.PurchaseOrderNo,
                 x.SupplierCode,
-                x.SupplierCode,
                 x.SiteCode,
                 x.Status,
                 ReceiptReadiness(x),
@@ -1157,7 +1156,7 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
 
         if (order.Lines.Any(line => line.ReceivedQuantity > 0))
         {
-            return "incoming-inspection";
+            return "partially-received";
         }
 
         return "awaiting-arrival";

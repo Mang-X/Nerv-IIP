@@ -61,7 +61,7 @@
 | PlatformGateway | Console auth、AppHub 实例列表/详情、Ops restart 与任务详情、IAM 用户/角色/权限 catalog/会话、Notification 消息/任务。 | P1：Ops 任务列表/审批页、服务健康聚合；P2：FileStorage 管理页、审计日志、DLQ 管理、ExternalClient；P3：SSO/OIDC/MFA、性能基线和渠道配置。 |
 | BusinessGateway | MasterData SKU/资源、Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、ERP Procurement 采购订单供应明细、MES PC 工作台。 | P1：当前 route-ready 页面硬化和工作台最低可用性；P2：ERP 销售/财务、WMS、BarcodeLabel、BusinessApproval、IndustrialTelemetry、Maintenance 页面级 facade；P2/#206：BusinessScheduling/APS facade；P3：预测、CRM-lite、CAPA 和高级分析。 |
 
-当前 `frontend/apps/business-console/src/pages/erp/index.vue` 已窄化为采购与供应页，通过 BusinessGateway ERP Procurement facade 消费采购订单、供应商、预计到货和来料待检状态；不能据此把 ERP 销售、财务或完整 ERP 前端标为已交付。
+当前 `frontend/apps/business-console/src/pages/erp/index.vue` 已窄化为采购与供应页，通过 BusinessGateway ERP Procurement facade 消费采购订单、供应商编码、预计到货和部分收货状态；不能据此把 ERP 销售、财务或完整 ERP 前端标为已交付。
 
 ### IAM Enforcement 口径
 
@@ -235,7 +235,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 基础数据 | `/master-data/process` | 过渡 | 当前是本地演示数据；工程版本应收敛到产品工程域，不继续扩展在 MasterData 下。 |
 | 产品工程 | `/engineering` | 已落地/窄化 | 读取 MBOM、工艺路线、生产版本和 resolve；文档、工程物料、ECO/ECN 维护页待建。 |
 | 需求与计划 | `/planning` | 已落地/窄化 | 需求、MRP run、pegging、建议列表/接受已有 BusinessGateway facade；MPS 和计划执行分析待建。 |
-| 经营管理 | `/erp` | 已落地/窄化 | 当前是采购与供应页，消费 BusinessGateway ERP Procurement 采购订单 facade，展示供应商、预计到货、未到数量和来料待检状态；ERP 销售、财务和完整采购申请/RFQ/报价操作页仍按后续分期推进。 |
+| 经营管理 | `/erp` | 已落地/窄化 | 当前是采购与供应页，消费 BusinessGateway ERP Procurement 采购订单 facade，展示供应商编码、预计到货、未到数量和部分收货状态；ERP 销售、财务和完整采购申请/RFQ/报价操作页仍按后续分期推进。 |
 | 库存管理 | `/inventory/availability` | 已落地 | 库存可用量查询。 |
 | 库存管理 | `/inventory/movements` | 已落地 | 库存移动工作台。 |
 | 库存管理 | `/inventory/counts` | 已落地 | 盘点任务与调整确认。 |

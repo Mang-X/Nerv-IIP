@@ -381,7 +381,6 @@ public sealed record BusinessConsoleErpPurchaseOrderListResponse(
 public sealed record BusinessConsoleErpPurchaseOrderItem(
     string PurchaseOrderNo,
     string SupplierCode,
-    string SupplierName,
     string SiteCode,
     string Status,
     string ReceiptReadiness,

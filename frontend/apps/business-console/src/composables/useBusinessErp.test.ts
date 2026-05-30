@@ -51,8 +51,7 @@ describe('business ERP composable', () => {
           {
             purchaseOrderNo: 'PO-001',
             supplierCode: 'SUP-001',
-            supplierName: '密封件供应商',
-            receiptReadiness: 'incoming-inspection',
+            receiptReadiness: 'partially-received',
           },
         ],
       },
@@ -65,6 +64,6 @@ describe('business ERP composable', () => {
     })
     expect(purchaseOrders.value).toHaveLength(1)
     expect(purchaseOrders.value[0]?.supplierCode).toBe('SUP-001')
-    expect(purchaseOrders.value[0]?.receiptReadiness).toBe('incoming-inspection')
+    expect(purchaseOrders.value[0]?.receiptReadiness).toBe('partially-received')
   })
 })

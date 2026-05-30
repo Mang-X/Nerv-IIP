@@ -1062,7 +1062,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderItem = {
     purchaseOrderNo?: string;
     supplierCode?: string;
-    supplierName?: string;
     siteCode?: string;
     status?: string;
     receiptReadiness?: string;
