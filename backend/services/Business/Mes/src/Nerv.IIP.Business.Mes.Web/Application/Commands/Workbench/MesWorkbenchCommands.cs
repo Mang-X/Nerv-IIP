@@ -518,34 +518,15 @@ internal static class ReadinessReasonCodes
         return unavailabilities
             .Select(x =>
             {
-                var (code, sourceSystem) = ClassifyEquipmentReason(x.Reason);
+                var classification = MesReadinessReasonCodes.ClassifyEquipmentReason(x.Reason);
                 return new ReadinessBlockingIssue(
-                    code,
-                    sourceSystem,
+                    classification.Code,
+                    classification.SourceSystem,
                     "DowntimeEvent",
                     x.DowntimeEventNo,
                     $"设备或工作中心存在维护/报警/停机冲突，WorkCenterId = {x.WorkCenterId}");
             })
             .ToArray();
-    }
-
-    private static (string Code, string SourceSystem) ClassifyEquipmentReason(string reason)
-    {
-        if (reason.Contains("maintenance", StringComparison.OrdinalIgnoreCase) ||
-            reason.Contains("保养", StringComparison.OrdinalIgnoreCase) ||
-            reason.Contains("维修", StringComparison.OrdinalIgnoreCase))
-        {
-            return (MesReadinessReasonCodes.EquipmentMaintenanceConflict, "Maintenance");
-        }
-
-        if (reason.Contains("alarm", StringComparison.OrdinalIgnoreCase) ||
-            reason.Contains("telemetry", StringComparison.OrdinalIgnoreCase) ||
-            reason.Contains("报警", StringComparison.OrdinalIgnoreCase))
-        {
-            return (MesReadinessReasonCodes.EquipmentUnavailable, "IndustrialTelemetry");
-        }
-
-        return (MesReadinessReasonCodes.EquipmentUnavailable, "BusinessMes");
     }
 }
 

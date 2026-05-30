@@ -436,7 +436,7 @@ public sealed class MesPersistenceContractTests
             "ASSET-FILL-01"));
         await dbContext.SaveChangesAsync();
 
-        var handler = new GetMesFoundationReadinessAreaQueryHandler(dbContext);
+        var handler = new GetMesFoundationReadinessAreaQueryHandler(new MesFoundationReadinessService(dbContext));
         var quality = await handler.Handle(
             new GetMesFoundationReadinessAreaQuery(
                 "org-001",
@@ -512,6 +512,12 @@ public sealed class MesPersistenceContractTests
                 new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-QUALITY-001", now.AddMinutes(30)),
                 CancellationToken.None));
         Assert.Contains("QUALITY_PLAN_MISSING", qualityException.Message);
+
+        var releaseEquipmentException = await Assert.ThrowsAsync<KnownException>(() =>
+            new ReleaseWorkOrderCommandHandler(dbContext).Handle(
+                new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-EQUIP-001", now.AddMinutes(30)),
+                CancellationToken.None));
+        Assert.Contains("EQUIPMENT_MAINTENANCE_CONFLICT", releaseEquipmentException.Message);
 
         var startException = await Assert.ThrowsAsync<KnownException>(() =>
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
@@ -1166,7 +1172,7 @@ public sealed class MesPersistenceContractTests
                     "report-wrong-operation"),
                 CancellationToken.None));
 
-        Assert.Contains("工序任务不属于当前工单", exception.Message);
+        Assert.Contains("工序任务不存在或不属于当前工单", exception.Message);
     }
 
     [Fact]

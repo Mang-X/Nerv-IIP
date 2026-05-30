@@ -36,10 +36,20 @@ public sealed record MesReadinessIssue(
     string? Version,
     string? FixHint);
 
-public sealed class GetMesFoundationReadinessAreaQueryHandler(ApplicationDbContext dbContext)
+public sealed class GetMesFoundationReadinessAreaQueryHandler(MesFoundationReadinessService readinessService)
     : IQueryHandler<GetMesFoundationReadinessAreaQuery, MesReadinessArea>
 {
     public async Task<MesReadinessArea> Handle(
+        GetMesFoundationReadinessAreaQuery request,
+        CancellationToken cancellationToken)
+    {
+        return await readinessService.GetAreaAsync(request, cancellationToken);
+    }
+}
+
+public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext)
+{
+    public async Task<MesReadinessArea> GetAreaAsync(
         GetMesFoundationReadinessAreaQuery request,
         CancellationToken cancellationToken)
     {
@@ -133,7 +143,7 @@ public sealed class GetMesFoundationReadinessAreaQueryHandler(ApplicationDbConte
         return unavailabilities
             .Select(x =>
             {
-                var classification = ClassifyEquipmentIssue(x.Reason);
+                var classification = MesReadinessReasonCodes.ClassifyEquipmentReason(x.Reason);
                 return NewIssue(
                     classification.Code,
                     classification.Message,
@@ -146,37 +156,6 @@ public sealed class GetMesFoundationReadinessAreaQueryHandler(ApplicationDbConte
                     x.DeviceAssetId);
             })
             .ToArray();
-    }
-
-    private static (string Code, string SourceSystem, string Message, string FixHint) ClassifyEquipmentIssue(string reason)
-    {
-        if (reason.Contains("maintenance", StringComparison.OrdinalIgnoreCase) ||
-            reason.Contains("保养", StringComparison.OrdinalIgnoreCase) ||
-            reason.Contains("维修", StringComparison.OrdinalIgnoreCase))
-        {
-            return (
-                MesReadinessReasonCodes.EquipmentMaintenanceConflict,
-                "Maintenance",
-                "设备存在维修或保养占用，当前工序不能派工或开工。",
-                "调整维修窗口、选择替代设备或等待维修释放");
-        }
-
-        if (reason.Contains("alarm", StringComparison.OrdinalIgnoreCase) ||
-            reason.Contains("telemetry", StringComparison.OrdinalIgnoreCase) ||
-            reason.Contains("报警", StringComparison.OrdinalIgnoreCase))
-        {
-            return (
-                MesReadinessReasonCodes.EquipmentUnavailable,
-                "IndustrialTelemetry",
-                "工业遥测存在未解除报警，设备不可用于当前工序。",
-                "处理并解除设备报警后重新检查");
-        }
-
-        return (
-            MesReadinessReasonCodes.EquipmentUnavailable,
-            "BusinessMes",
-            "MES 停机记录显示设备或工作中心当前不可用。",
-            "关闭停机事件、选择替代设备或调整派工时间");
     }
 
     private static string StatusFromIssues(IReadOnlyCollection<MesReadinessIssue> issues)
@@ -254,12 +233,12 @@ public sealed record MesProductionPlanReadinessResponse(
     IReadOnlyCollection<MesReadinessIssue> BlockingIssues,
     IReadOnlyCollection<MesReadinessIssue> WarningIssues);
 
-public sealed class GetProductionPlanReadinessQueryHandler(ApplicationDbContext dbContext)
+public sealed class GetProductionPlanReadinessQueryHandler(MesFoundationReadinessService readinessService)
     : IQueryHandler<GetProductionPlanReadinessQuery, MesProductionPlanReadinessResponse>
 {
     public async Task<MesProductionPlanReadinessResponse> Handle(GetProductionPlanReadinessQuery request, CancellationToken cancellationToken)
     {
-        var quality = await new GetMesFoundationReadinessAreaQueryHandler(dbContext).Handle(
+        var quality = await readinessService.GetAreaAsync(
             new GetMesFoundationReadinessAreaQuery(
                 request.OrganizationId,
                 request.EnvironmentId,

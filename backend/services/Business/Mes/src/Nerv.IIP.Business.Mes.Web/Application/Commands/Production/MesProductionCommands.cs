@@ -105,7 +105,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 cancellationToken);
             if (operationTask is null)
             {
-                throw new KnownException($"报工工序任务不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
+                throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
             }
 
             operationTask.Complete(request.ReportedAtUtc);
