@@ -7,7 +7,7 @@ import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { useMesProductionPlans } from '@/composables/useBusinessMes'
+import { describeMesReadinessReason, useMesProductionPlans } from '@/composables/useBusinessMes'
 import {
   demoProductionPlans,
   demoResourcesOf,
@@ -80,6 +80,9 @@ const convertSheetOpen = shallowRef(false)
 const selectedPlan = shallowRef<BusinessConsoleMesProductionPlanRow>()
 const convertSuccess = shallowRef('')
 const localPlans = shallowRef<BusinessConsoleMesProductionPlanRow[]>(readLocalDemoPlans())
+const selectedPlanBlockingReasons = computed(() =>
+  (selectedPlan.value?.blockingReasons ?? []).map(describeMesReadinessReason),
+)
 const filterDraft = reactive({
   keyword: '',
   source: initialSource,
@@ -650,7 +653,16 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
           <div class="grid gap-2 rounded-lg border p-3 text-sm text-muted-foreground">
             <p>来源：{{ formatPlanSource(selectedPlan?.sourceSystem) }} / {{ selectedPlan?.sourceDocumentId ?? '无来源单据' }}</p>
             <p>物料：{{ selectedPlan?.skuId ?? '未指定' }}，数量：{{ formatQuantity(selectedPlan?.plannedQuantity) }}</p>
-            <p v-if="selectedPlan?.blockingReasons?.length">阻塞：{{ selectedPlan.blockingReasons.join('；') }}</p>
+            <div v-if="selectedPlanBlockingReasons.length" class="grid gap-2">
+              <p class="font-medium text-foreground">阻塞处理</p>
+              <div v-for="reason in selectedPlanBlockingReasons" :key="reason.code" class="grid gap-1 rounded-md border p-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <BusinessStatusBadge :value="reason.label" />
+                  <span class="font-mono text-xs text-muted-foreground">{{ reason.code }}</span>
+                </div>
+                <p class="text-xs text-muted-foreground">{{ reason.nextStep }}</p>
+              </div>
+            </div>
           </div>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>

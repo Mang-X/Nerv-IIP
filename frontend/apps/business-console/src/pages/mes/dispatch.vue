@@ -2,7 +2,8 @@
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
-import { useMesDispatchTasks } from '@/composables/useBusinessMes'
+import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
+import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { Button, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
@@ -34,7 +35,7 @@ const errorMessage = computed(() => dispatchTasksError.value instanceof Error ? 
       </div>
       <div class="overflow-hidden rounded-lg border bg-background">
         <Table>
-          <TableHeader><TableRow><TableHead>工序任务</TableHead><TableHead>工单</TableHead><TableHead>状态</TableHead><TableHead>工作中心</TableHead><TableHead>设备</TableHead><TableHead>班次</TableHead><TableHead>计划开始</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>工序任务</TableHead><TableHead>工单</TableHead><TableHead>状态</TableHead><TableHead>工作中心</TableHead><TableHead>设备</TableHead><TableHead>班次</TableHead><TableHead>计划开始</TableHead><TableHead>阻塞处理</TableHead></TableRow></TableHeader>
           <TableBody>
             <TableRow v-for="row in dispatchTasks" :key="row.operationTaskId">
               <TableCell class="font-medium">{{ row.operationTaskId }}</TableCell>
@@ -44,9 +45,21 @@ const errorMessage = computed(() => dispatchTasksError.value instanceof Error ? 
               <TableCell>{{ row.deviceAssetId ?? '未指定' }}</TableCell>
               <TableCell>{{ row.shiftId ?? '未指定' }}</TableCell>
               <TableCell>{{ row.plannedStartUtc ?? '未指定' }}</TableCell>
+              <TableCell>
+                <div v-if="row.blockingReasons?.length" class="grid gap-2">
+                  <div v-for="reason in row.blockingReasons.map(describeMesReadinessReason)" :key="`${row.operationTaskId}-${reason.code}`" class="grid gap-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <BusinessStatusBadge :value="reason.label" />
+                      <span class="font-mono text-xs text-muted-foreground">{{ reason.code }}</span>
+                    </div>
+                    <p class="text-xs text-muted-foreground">{{ reason.nextStep }}</p>
+                  </div>
+                </div>
+                <span v-else class="text-muted-foreground">可派工</span>
+              </TableCell>
             </TableRow>
-            <TableEmpty v-if="dispatchTasksPending" :colspan="7">正在加载派工任务...</TableEmpty>
-            <TableEmpty v-if="!dispatchTasks.length && !dispatchTasksPending" :colspan="7">暂无派工任务。</TableEmpty>
+            <TableEmpty v-if="dispatchTasksPending" :colspan="8">正在加载派工任务...</TableEmpty>
+            <TableEmpty v-if="!dispatchTasks.length && !dispatchTasksPending" :colspan="8">暂无派工任务。</TableEmpty>
           </TableBody>
         </Table>
       </div>

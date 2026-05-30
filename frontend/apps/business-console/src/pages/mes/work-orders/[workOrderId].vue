@@ -4,7 +4,7 @@ import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
-import { useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -59,6 +59,7 @@ const blockingReasons = computed(() => [
   ...(detail.value?.blockingReasons ?? []),
   ...(materialReadiness.value?.blockingReasons ?? []),
 ])
+const blockingReasonDisplays = computed(() => blockingReasons.value.map(describeMesReadinessReason))
 const errorMessage = computed(
   () => formatError(detailError.value) || formatError(materialReadinessError.value),
 )
@@ -155,8 +156,14 @@ function formatError(error: unknown) {
 
       <div v-if="blockingReasons.length" class="rounded-lg border bg-background p-4">
         <h2 class="text-sm font-semibold text-foreground">阻塞原因</h2>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <BusinessStatusBadge v-for="reason in blockingReasons" :key="reason" :value="reason" />
+        <div class="mt-3 grid gap-2">
+          <div v-for="reason in blockingReasonDisplays" :key="reason.code" class="rounded-md border p-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <BusinessStatusBadge :value="reason.label" />
+              <span class="font-mono text-xs text-muted-foreground">{{ reason.code }}</span>
+            </div>
+            <p class="mt-2 text-sm text-muted-foreground">{{ reason.nextStep }}</p>
+          </div>
         </div>
       </div>
 

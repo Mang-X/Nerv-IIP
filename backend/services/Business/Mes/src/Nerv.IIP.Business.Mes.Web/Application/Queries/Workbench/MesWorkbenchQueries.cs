@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 
@@ -35,15 +36,181 @@ public sealed record MesReadinessIssue(
     string? Version,
     string? FixHint);
 
-public sealed class GetMesFoundationReadinessAreaQueryHandler
+public sealed class GetMesFoundationReadinessAreaQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMesFoundationReadinessAreaQuery, MesReadinessArea>
 {
-    public Task<MesReadinessArea> Handle(
+    public async Task<MesReadinessArea> Handle(
         GetMesFoundationReadinessAreaQuery request,
         CancellationToken cancellationToken)
     {
-        return Task.FromResult(new MesReadinessArea(request.AreaCode, "Ready", []));
+        var normalizedAreaCode = NormalizeAreaCode(request.AreaCode);
+        var issues = normalizedAreaCode switch
+        {
+            "quality" => BuildQualityIssues(request),
+            "equipment" => await BuildEquipmentIssuesAsync(request, cancellationToken),
+            _ => [],
+        };
+
+        return new MesReadinessArea(normalizedAreaCode, StatusFromIssues(issues), issues);
     }
+
+    private static string NormalizeAreaCode(string areaCode) =>
+        string.IsNullOrWhiteSpace(areaCode) ? "unknown" : areaCode.Trim().ToLowerInvariant();
+
+    private static IReadOnlyCollection<MesReadinessIssue> BuildQualityIssues(GetMesFoundationReadinessAreaQuery request)
+    {
+        if (string.IsNullOrWhiteSpace(request.SkuId) && string.IsNullOrWhiteSpace(request.ProductionVersionId))
+        {
+            return
+            [
+                NewIssue(
+                    MesReadinessReasonCodes.QualityPlanMissing,
+                    "未解析到 SKU 或生产版本，无法确认首检、巡检和终检检验方案。",
+                    "Quality",
+                    "InspectionPlan",
+                    null,
+                    "选择已发布生产版本并同步检验方案"),
+            ];
+        }
+
+        return
+        [
+            NewIssue(
+                MesReadinessReasonCodes.QualityPlanMissing,
+                "未解析到已发布的 SKU/工序检验方案，首检、巡检和终检要求不能放行。",
+                "Quality",
+                "InspectionPlan",
+                request.ProductionVersionId ?? request.SkuId,
+                "维护并启用对应 SKU 与工序的检验方案"),
+        ];
+    }
+
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildEquipmentIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.WorkCenterCode))
+        {
+            return
+            [
+                NewIssue(
+                    MesReadinessReasonCodes.EquipmentUnavailable,
+                    "未指定工作中心，无法确认设备静态可用性、维修占用、报警和停机状态。",
+                    "MasterData",
+                    "WorkCenter",
+                    null,
+                    "选择工作中心或补齐工序资源快照"),
+            ];
+        }
+
+        var windowStart = request.PlannedStartUtc ?? DateTimeOffset.UtcNow;
+        var windowEnd = request.PlannedEndUtc ?? windowStart;
+        if (windowEnd < windowStart)
+        {
+            (windowStart, windowEnd) = (windowEnd, windowStart);
+        }
+
+        var workCenterCode = request.WorkCenterCode.Trim();
+        var unavailabilities = await dbContext.WorkCenterUnavailabilities
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkCenterId == workCenterCode &&
+                x.FromUtc <= windowEnd &&
+                (x.ToUtc == null || x.ToUtc >= windowStart))
+            .OrderBy(x => x.FromUtc)
+            .Select(x => new
+            {
+                x.DowntimeEventNo,
+                x.DeviceAssetId,
+                x.Reason,
+                x.FromUtc,
+                x.ToUtc,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return unavailabilities
+            .Select(x =>
+            {
+                var classification = ClassifyEquipmentIssue(x.Reason);
+                return NewIssue(
+                    classification.Code,
+                    classification.Message,
+                    classification.SourceSystem,
+                    "EquipmentAvailability",
+                    x.DowntimeEventNo,
+                    classification.FixHint,
+                    x.FromUtc,
+                    x.ToUtc,
+                    x.DeviceAssetId);
+            })
+            .ToArray();
+    }
+
+    private static (string Code, string SourceSystem, string Message, string FixHint) ClassifyEquipmentIssue(string reason)
+    {
+        if (reason.Contains("maintenance", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("保养", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("维修", StringComparison.OrdinalIgnoreCase))
+        {
+            return (
+                MesReadinessReasonCodes.EquipmentMaintenanceConflict,
+                "Maintenance",
+                "设备存在维修或保养占用，当前工序不能派工或开工。",
+                "调整维修窗口、选择替代设备或等待维修释放");
+        }
+
+        if (reason.Contains("alarm", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("telemetry", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("报警", StringComparison.OrdinalIgnoreCase))
+        {
+            return (
+                MesReadinessReasonCodes.EquipmentUnavailable,
+                "IndustrialTelemetry",
+                "工业遥测存在未解除报警，设备不可用于当前工序。",
+                "处理并解除设备报警后重新检查");
+        }
+
+        return (
+            MesReadinessReasonCodes.EquipmentUnavailable,
+            "BusinessMes",
+            "MES 停机记录显示设备或工作中心当前不可用。",
+            "关闭停机事件、选择替代设备或调整派工时间");
+    }
+
+    private static string StatusFromIssues(IReadOnlyCollection<MesReadinessIssue> issues)
+    {
+        if (issues.Any(x => string.Equals(x.Severity, "Blocked", StringComparison.Ordinal)))
+        {
+            return "Blocked";
+        }
+
+        return issues.Any(x => string.Equals(x.Severity, "Warning", StringComparison.Ordinal)) ? "Warning" : "Ready";
+    }
+
+    private static MesReadinessIssue NewIssue(
+        string code,
+        string message,
+        string sourceSystem,
+        string? referenceType,
+        string? referenceId,
+        string fixHint,
+        DateTimeOffset? effectiveFromUtc = null,
+        DateTimeOffset? effectiveToUtc = null,
+        string? referenceDisplayName = null) =>
+        new(
+            code,
+            "Blocked",
+            message,
+            sourceSystem,
+            referenceType,
+            referenceId,
+            referenceDisplayName,
+            effectiveFromUtc,
+            effectiveToUtc,
+            null,
+            fixHint);
 }
 
 public sealed record ListProductionPlansQuery(
@@ -87,21 +254,35 @@ public sealed record MesProductionPlanReadinessResponse(
     IReadOnlyCollection<MesReadinessIssue> BlockingIssues,
     IReadOnlyCollection<MesReadinessIssue> WarningIssues);
 
-public sealed class GetProductionPlanReadinessQueryHandler
+public sealed class GetProductionPlanReadinessQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetProductionPlanReadinessQuery, MesProductionPlanReadinessResponse>
 {
-    public Task<MesProductionPlanReadinessResponse> Handle(GetProductionPlanReadinessQuery request, CancellationToken cancellationToken)
+    public async Task<MesProductionPlanReadinessResponse> Handle(GetProductionPlanReadinessQuery request, CancellationToken cancellationToken)
     {
+        var quality = await new GetMesFoundationReadinessAreaQueryHandler(dbContext).Handle(
+            new GetMesFoundationReadinessAreaQuery(
+                request.OrganizationId,
+                request.EnvironmentId,
+                "quality",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null),
+            cancellationToken);
         var areas = new[]
         {
             new MesReadinessArea("master-data", "Ready", []),
             new MesReadinessArea("product-engineering", "Ready", []),
             new MesReadinessArea("supply", "Ready", []),
-            new MesReadinessArea("quality", "Ready", []),
+            quality,
             new MesReadinessArea("equipment", "Ready", []),
             new MesReadinessArea("barcode-numbering", "Ready", []),
         };
-        return Task.FromResult(new MesProductionPlanReadinessResponse("Ready", areas, [], []));
+        var blockingIssues = areas.SelectMany(x => x.Issues).Where(x => x.Severity == "Blocked").ToArray();
+        return new MesProductionPlanReadinessResponse(blockingIssues.Length > 0 ? "Blocked" : "Ready", areas, blockingIssues, []);
     }
 }
 
@@ -239,9 +420,9 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
                 x.Status.ToString(),
                 x.OperationSequence,
                 x.WorkCenterId,
-                null,
-                null,
-                null,
+                x.DeviceAssetId,
+                x.ShiftId,
+                x.AssignedUserId,
                 x.EarliestStartUtc,
                 x.ExistingStartUtc,
                 "Ready"));
@@ -430,32 +611,25 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
             .Select(x => new
             {
                 x.MaterialId,
+                x.MaterialLotId,
                 x.RequestedQuantity,
                 x.ReceivedQuantity,
             })
             .ToArrayAsync(cancellationToken);
 
-        var issueByMaterial = issues
-            .GroupBy(x => x.MaterialId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                x => x.Key,
-                x => new
-                {
-                    RequestedQuantity = x.Sum(y => y.RequestedQuantity),
-                    ReceivedQuantity = x.Sum(y => y.ReceivedQuantity),
-                },
-                StringComparer.OrdinalIgnoreCase);
-
         var rows = requirements
             .GroupBy(x => new { x.MaterialId, x.MaterialLotId })
             .Select(x =>
             {
-                issueByMaterial.TryGetValue(x.Key.MaterialId, out var issue);
+                var issueRows = issues.Where(y =>
+                    string.Equals(y.MaterialId, x.Key.MaterialId, StringComparison.OrdinalIgnoreCase) &&
+                    (x.Key.MaterialLotId is null ||
+                        string.Equals(y.MaterialLotId, x.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)));
                 var required = x.Sum(y => y.RequiredQuantity);
                 var available = x.Sum(y => y.AvailableQuantity);
                 var staged = x.Sum(y => y.StagedQuantity);
-                var requested = issue?.RequestedQuantity ?? 0m;
-                var received = issue?.ReceivedQuantity ?? 0m;
+                var requested = issueRows.Sum(y => y.RequestedQuantity);
+                var received = issueRows.Sum(y => y.ReceivedQuantity);
                 var shortage = Math.Max(0m, required - available - staged - received);
                 return new MesMaterialReadinessRow(
                     x.Key.MaterialId,
@@ -474,7 +648,9 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
 
         var blockingReasons = rows
             .Where(x => x.ShortageQuantity > 0)
-            .Select(x => $"{x.MaterialId} shortage {x.ShortageQuantity:0.######}")
+            .Select(x => x.MaterialLotId is null
+                ? $"{x.MaterialId} shortage {x.ShortageQuantity:0.######}"
+                : $"{x.MaterialId} {x.MaterialLotId} shortage {x.ShortageQuantity:0.######}")
             .ToArray();
         var status = blockingReasons.Length > 0 ? "Blocked" : "Ready";
         return new MesMaterialReadinessResponse(request.WorkOrderId, status, blockingReasons, rows);
@@ -738,14 +914,61 @@ public sealed record GetBatchTraceabilityQuery(
     string EnvironmentId,
     string BatchOrSerial) : IQuery<MesTraceabilityResponse>;
 
-public sealed class GetBatchTraceabilityQueryHandler
+public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetBatchTraceabilityQuery, MesTraceabilityResponse>
 {
-    public Task<MesTraceabilityResponse> Handle(GetBatchTraceabilityQuery request, CancellationToken cancellationToken)
+    public async Task<MesTraceabilityResponse> Handle(GetBatchTraceabilityQuery request, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new MesTraceabilityResponse(
-            [new MesTraceabilityNode(request.BatchOrSerial, "BatchOrSerial", request.BatchOrSerial, "Unknown")],
-            []));
+        var consumptions = await dbContext.ProductionReportMaterialConsumptions
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.MaterialLotId == request.BatchOrSerial)
+            .Select(x => new
+            {
+                x.ReportNo,
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.MaterialId,
+                x.MaterialLotId,
+                x.MaterialIssueRequestNo,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        if (consumptions.Length == 0)
+        {
+            return new MesTraceabilityResponse(
+                [new MesTraceabilityNode(request.BatchOrSerial, "BatchOrSerial", request.BatchOrSerial, "Unknown")],
+                []);
+        }
+
+        var nodes = new List<MesTraceabilityNode>
+        {
+            new(request.BatchOrSerial, "MaterialLot", request.BatchOrSerial, "Consumed"),
+        };
+        var edges = new List<MesTraceabilityEdge>();
+
+        foreach (var consumption in consumptions)
+        {
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, "Material", consumption.MaterialId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.WorkOrderId, "WorkOrder", consumption.WorkOrderId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.OperationTaskId, "OperationTask", consumption.OperationTaskId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.ReportNo, "ProductionReport", consumption.ReportNo, "Reported"));
+            edges.Add(new MesTraceabilityEdge(consumption.MaterialId, consumption.MaterialLotId, "has-lot"));
+            edges.Add(new MesTraceabilityEdge(consumption.MaterialLotId, consumption.ReportNo, "consumed-by-report"));
+            edges.Add(new MesTraceabilityEdge(consumption.ReportNo, consumption.OperationTaskId, "reported-operation"));
+            edges.Add(new MesTraceabilityEdge(consumption.OperationTaskId, consumption.WorkOrderId, "belongs-to-work-order"));
+            if (!string.IsNullOrWhiteSpace(consumption.MaterialIssueRequestNo))
+            {
+                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, "MaterialIssueRequest", consumption.MaterialIssueRequestNo, "Received"));
+                edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
+            }
+        }
+
+        return new MesTraceabilityResponse(
+            nodes.DistinctBy(x => new { x.NodeId, x.NodeType }).ToArray(),
+            edges.DistinctBy(x => new { x.FromNodeId, x.ToNodeId, x.RelationType }).ToArray());
     }
 }
 

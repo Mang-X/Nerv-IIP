@@ -122,6 +122,119 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_production_plan_readiness_returns_blocking_item_when_downstream_is_unavailable()
+    {
+        var mes = new RecordingMesClient
+        {
+            ProductionPlanReadinessFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "mes-unavailable"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/production-plans/PLAN-001/readiness?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("Blocked", data.GetProperty("status").GetString());
+        var issue = data.GetProperty("blockingIssues")[0];
+        Assert.Equal("SOURCE_SERVICE_UNAVAILABLE", issue.GetProperty("code").GetString());
+        Assert.Equal("BusinessMes", issue.GetProperty("sourceSystem").GetString());
+        Assert.Equal("PLAN-001", issue.GetProperty("referenceId").GetString());
+    }
+
+    [Fact]
+    public async Task Mes_foundation_readiness_area_returns_blocking_item_when_downstream_is_unavailable()
+    {
+        var mes = new RecordingMesClient
+        {
+            FoundationReadinessFailure = new HttpRequestException("connection refused"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/foundation-readiness/equipment?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("Blocked", data.GetProperty("status").GetString());
+        Assert.Equal("SOURCE_SERVICE_UNAVAILABLE", data.GetProperty("issues")[0].GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Mes_release_preserves_safe_downstream_readiness_reason_code()
+    {
+        var mes = new RecordingMesClient
+        {
+            ReleaseFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict,
+                "QUALITY_PLAN_MISSING"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/work-orders/WO-001/release?organizationId=org-001&environmentId=env-dev",
+            new { confirmWarnings = false, idempotencyKey = "release-001" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("QUALITY_PLAN_MISSING", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task Mes_operation_start_preserves_safe_downstream_readiness_reason_code()
+    {
+        var mes = new RecordingMesClient
+        {
+            StartOperationFailure = BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict,
+                "EQUIPMENT_MAINTENANCE_CONFLICT"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/operation-tasks/OP-001/start?organizationId=org-001&environmentId=env-dev",
+            new { reasonCode = "start", idempotencyKey = "start-001" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("EQUIPMENT_MAINTENANCE_CONFLICT", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task Engineering_production_version_resolve_uses_internal_service_token_for_downstream_business_service()
     {
         var engineering = new RecordingProductEngineeringClient();
@@ -1291,6 +1404,14 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public BusinessConsoleMesListRequest? LastWorkOrderListRequest { get; private set; }
 
+    public Exception? FoundationReadinessFailure { get; init; }
+
+    public Exception? ProductionPlanReadinessFailure { get; init; }
+
+    public Exception? ReleaseFailure { get; init; }
+
+    public Exception? StartOperationFailure { get; init; }
+
     public Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
         string internalBearerToken,
         string areaCode,
@@ -1298,6 +1419,11 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        if (FoundationReadinessFailure is not null)
+        {
+            throw FoundationReadinessFailure;
+        }
+
         return Task.FromResult(new BusinessConsoleMesReadinessArea(areaCode, "Ready", []));
     }
 
@@ -1320,8 +1446,16 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string productionPlanId,
         BusinessConsoleMesContextRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        if (ProductionPlanReadinessFailure is not null)
+        {
+            throw ProductionPlanReadinessFailure;
+        }
+
+        return Task.FromResult(new BusinessConsoleMesFoundationReadinessResponse("Ready", [], [], []));
+    }
 
     public Task<BusinessConsoleAcceptedResponse> ConvertPlanToWorkOrderAsync(
         string internalBearerToken,
@@ -1374,8 +1508,16 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleMesReleaseWorkOrderRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        if (ReleaseFailure is not null)
+        {
+            throw ReleaseFailure;
+        }
+
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
 
     public Task<BusinessConsoleCreateRushWorkOrderResponse> CreateRushWorkOrderAsync(
         string internalBearerToken,
@@ -1439,8 +1581,16 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string operationTaskId,
         BusinessConsoleMesOperationTaskActionRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        if (StartOperationFailure is not null)
+        {
+            throw StartOperationFailure;
+        }
+
+        return Task.FromResult(new BusinessConsoleMesOperationTaskActionResponse(operationTaskId, "in-progress", DateTimeOffset.Parse("2026-05-30T00:00:00Z")));
+    }
 
     public Task<BusinessConsoleMesOperationTaskActionResponse> PauseOperationTaskAsync(
         string internalBearerToken,

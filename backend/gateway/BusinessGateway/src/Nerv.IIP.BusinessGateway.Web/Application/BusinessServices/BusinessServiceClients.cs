@@ -401,18 +401,18 @@ public sealed class BusinessServiceProxyException : Exception
         }
 
         var first = downstreamMessage[0];
-        if (!IsLowerAsciiLetter(first) && !char.IsAsciiDigit(first))
+        if (!IsAsciiLetter(first) && !char.IsAsciiDigit(first))
         {
             return false;
         }
 
         return downstreamMessage.All(static value =>
-            IsLowerAsciiLetter(value) ||
+            IsAsciiLetter(value) ||
             char.IsAsciiDigit(value) ||
             value is '-' or '_' or '.');
     }
 
-    private static bool IsLowerAsciiLetter(char value) => value is >= 'a' and <= 'z';
+    private static bool IsAsciiLetter(char value) => value is >= 'a' and <= 'z' or >= 'A' and <= 'Z';
 }
 
 public abstract class BusinessServiceHttpClient(HttpClient httpClient)

@@ -13,6 +13,7 @@ import {
   runBusinessConsoleMesScheduleMutationOptions,
 } from '@nerv-iip/api-client'
 import {
+  describeMesReadinessReason,
   useMesFoundationReadiness,
   useMesFinishedGoodsReceipts,
   useMesOperationTasks,
@@ -248,6 +249,26 @@ describe('business MES composables', () => {
     vi.clearAllMocks()
     coladaState.invalidateQueries.mockClear()
     coladaState.queryDataById.clear()
+  })
+
+  it('maps backend MES readiness reason codes to shared labels and next steps', () => {
+    expect(describeMesReadinessReason('QUALITY_PLAN_MISSING')).toMatchObject({
+      code: 'QUALITY_PLAN_MISSING',
+      label: '检验方案缺失',
+      nextStep: '维护并启用 SKU 与工序检验方案后重新检查',
+    })
+    expect(describeMesReadinessReason('QUALITY_HOLD_ACTIVE')).toMatchObject({
+      label: '质量冻结中',
+      nextStep: '处理质量冻结、NCR 或放行状态后再执行',
+    })
+    expect(describeMesReadinessReason('EQUIPMENT_UNAVAILABLE')).toMatchObject({
+      label: '设备不可用',
+      nextStep: '处理报警/停机或改派可用设备',
+    })
+    expect(describeMesReadinessReason('EQUIPMENT_MAINTENANCE_CONFLICT')).toMatchObject({
+      label: '维修占用冲突',
+      nextStep: '调整维修窗口、等待释放或选择替代设备',
+    })
   })
 
   it('lists work orders with default context and safe items', () => {

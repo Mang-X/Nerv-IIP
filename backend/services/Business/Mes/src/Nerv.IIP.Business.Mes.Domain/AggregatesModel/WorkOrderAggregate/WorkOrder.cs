@@ -112,4 +112,15 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         return tasks;
     }
 
+    public void MarkReleased()
+    {
+        if (Status == ReleasedStatus)
+        {
+            throw new InvalidOperationException("Work order has already been released.");
+        }
+
+        Status = ReleasedStatus;
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, []));
+    }
+
 }

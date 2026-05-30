@@ -84,6 +84,50 @@ import { computed, reactive, shallowRef } from 'vue'
 
 const DEFAULT_TAKE = 100
 
+export interface MesReadinessReasonDisplay {
+  code: string
+  label: string
+  nextStep: string
+}
+
+const mesReadinessReasonDisplays: Record<string, MesReadinessReasonDisplay> = {
+  QUALITY_PLAN_MISSING: {
+    code: 'QUALITY_PLAN_MISSING',
+    label: '检验方案缺失',
+    nextStep: '维护并启用 SKU 与工序检验方案后重新检查',
+  },
+  QUALITY_HOLD_ACTIVE: {
+    code: 'QUALITY_HOLD_ACTIVE',
+    label: '质量冻结中',
+    nextStep: '处理质量冻结、NCR 或放行状态后再执行',
+  },
+  EQUIPMENT_UNAVAILABLE: {
+    code: 'EQUIPMENT_UNAVAILABLE',
+    label: '设备不可用',
+    nextStep: '处理报警/停机或改派可用设备',
+  },
+  EQUIPMENT_MAINTENANCE_CONFLICT: {
+    code: 'EQUIPMENT_MAINTENANCE_CONFLICT',
+    label: '维修占用冲突',
+    nextStep: '调整维修窗口、等待释放或选择替代设备',
+  },
+  SOURCE_SERVICE_UNAVAILABLE: {
+    code: 'SOURCE_SERVICE_UNAVAILABLE',
+    label: '来源服务不可用',
+    nextStep: '稍后重试或联系管理员检查来源服务',
+  },
+}
+
+export function describeMesReadinessReason(reason: string): MesReadinessReasonDisplay {
+  const trimmedReason = reason.trim()
+  const code = trimmedReason.split(':', 1)[0]?.trim() || trimmedReason
+  return mesReadinessReasonDisplays[code] ?? {
+    code,
+    label: trimmedReason,
+    nextStep: '查看阻塞详情并按来源业务页面处理',
+  }
+}
+
 export interface MesListFilters {
   organizationId: string
   environmentId: string
