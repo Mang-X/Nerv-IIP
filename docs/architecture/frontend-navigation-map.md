@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-05-29；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-05-30；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 
@@ -59,9 +59,9 @@
 | Gateway | 已有 facade | 尚未有正式 facade/页面的重点能力与导航优先级 |
 | --- | --- | --- |
 | PlatformGateway | Console auth、AppHub 实例列表/详情、Ops restart 与任务详情、IAM 用户/角色/权限 catalog/会话、Notification 消息/任务。 | P1：Ops 任务列表/审批页、服务健康聚合；P2：FileStorage 管理页、审计日志、DLQ 管理、ExternalClient；P3：SSO/OIDC/MFA、性能基线和渠道配置。 |
-| BusinessGateway | MasterData SKU/资源、Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、MES PC 工作台。 | P1：当前 route-ready 页面硬化和工作台最低可用性；P2：ERP、WMS、BarcodeLabel、BusinessApproval、IndustrialTelemetry、Maintenance 页面级 facade；P2/#206：BusinessScheduling/APS facade；P3：预测、CRM-lite、CAPA 和高级分析。 |
+| BusinessGateway | MasterData SKU/资源、Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、ERP Procurement 采购订单供应明细、MES PC 工作台。 | P1：当前 route-ready 页面硬化和工作台最低可用性；P2：ERP 销售/财务、WMS、BarcodeLabel、BusinessApproval、IndustrialTelemetry、Maintenance 页面级 facade；P2/#206：BusinessScheduling/APS facade；P3：预测、CRM-lite、CAPA 和高级分析。 |
 
-当前 `frontend/apps/business-console/src/pages/erp/index.vue` 是过渡聚合页，使用本地 `shockAbsorberDemo` 数据；不能据此把 ERP 前端标为已交付。
+当前 `frontend/apps/business-console/src/pages/erp/index.vue` 已窄化为采购与供应页，通过 BusinessGateway ERP Procurement facade 消费采购订单、供应商、预计到货和来料待检状态；不能据此把 ERP 销售、财务或完整 ERP 前端标为已交付。
 
 ### IAM Enforcement 口径
 
@@ -235,7 +235,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 基础数据 | `/master-data/process` | 过渡 | 当前是本地演示数据；工程版本应收敛到产品工程域，不继续扩展在 MasterData 下。 |
 | 产品工程 | `/engineering` | 已落地/窄化 | 读取 MBOM、工艺路线、生产版本和 resolve；文档、工程物料、ECO/ECN 维护页待建。 |
 | 需求与计划 | `/planning` | 已落地/窄化 | 需求、MRP run、pegging、建议列表/接受已有 BusinessGateway facade；MPS 和计划执行分析待建。 |
-| 经营管理 | `/erp` | 过渡 | 当前是本地演示聚合页；正式 ERP 菜单必须等 BusinessGateway ERP facade 和 api-client 完成。 |
+| 经营管理 | `/erp` | 已落地/窄化 | 当前是采购与供应页，消费 BusinessGateway ERP Procurement 采购订单 facade，展示供应商、预计到货、未到数量和来料待检状态；ERP 销售、财务和完整采购申请/RFQ/报价操作页仍按后续分期推进。 |
 | 库存管理 | `/inventory/availability` | 已落地 | 库存可用量查询。 |
 | 库存管理 | `/inventory/movements` | 已落地 | 库存移动工作台。 |
 | 库存管理 | `/inventory/counts` | 已落地 | 盘点任务与调整确认。 |
@@ -267,7 +267,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 数字化工作台 | 工作台首页、待办中心、消息中心、预警看板 | `/` 已有入口；待办、消息、预警需要 BusinessApproval/Notification/Telemetry/Quality/Inventory 等 facade 后再拆页。 |
 | 基础数据 | 物料列表、物料分类、UOM、单位换算、供应商、客户、承运商、工厂/产线、工作中心、设备资产、班次与日历、部门与团队、参考数据 | MasterData 后端和部分 facade 已有；前端先补齐真实维护页，再扩展二级菜单。物料详情不作为菜单项。 |
 | 产品工程（PLM） | 工程文档、工程物料、EBOM、MBOM、BOM 对比/有效性、工艺路线、工程变更、生产版本 | ProductEngineering 后端和 `/engineering` 读视图已有；细分维护页和详情页待建。仅面向工艺路线/MBOM 的页面可使用“工艺工程”标签。 |
-| 经营管理（ERP） | 采购申请、询价、采购订单、采购收货、采购退货、报价、销售订单、发货、RMA、应付、应收、财务凭证、成本核算、财务报表 | ERP 后端已落地；正式前端需先补 BusinessGateway ERP facade。商机事实虽在后端存在，但仍按 P3/CRM-lite 节奏暴露。 |
+| 经营管理（ERP） | 采购申请、询价、采购订单、采购收货、采购退货、报价、销售订单、发货、RMA、应付、应收、财务凭证、成本核算、财务报表 | ERP 后端已落地；采购订单供应明细已通过 BusinessGateway ERP Procurement facade 和 `/erp` 窄化页面落地。采购申请/RFQ/报价操作页、销售、财务和商机仍按后续分期暴露。 |
 | 需求与计划 | 需求管理、MPS、MRP 运行、计划建议、需求溯源、计划执行跟踪、需求预测 | DemandPlanning facade 和 `/planning` 已有窄化工作台；预测和高级分析后置。 |
 | 高级排程（APS） | 排程设置、排程执行、排程甘特图、资源负载、冲突管理、排程版本、排程发布 | `BusinessScheduling` 尚未建服务；#206 先做 APS lite 后端契约/内核，#78 只做消费 APS 输出的甘特展示。不得把 APS 算法写入 MES 页面或前端甘特。 |
 | 制造执行（MES） | 生产驾驶舱、生产计划、工单与派工、工序执行、在制跟踪、齐套与物料、报工与完工、质量与不良、设备与停机、班次交接、追溯、产能影响、规则排程过渡页 | 当前 PC 工作台已覆盖主线；PDA/mobile 后置。工单详情等对象页通过列表进入。 |

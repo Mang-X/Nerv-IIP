@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
-import { demoErpFinance, demoErpProcurement, demoErpSalesOrders } from '@/data/shockAbsorberDemo'
+import { useBusinessErp } from '@/composables/useBusinessErp'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Badge,
@@ -15,6 +15,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -23,70 +24,65 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-vue-next'
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, watch } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: 'ERP 业务协同' } })
+definePage({ meta: { requiresAuth: true, title: '采购与供应' } })
 
-type ErpRow = {
-  area: string
-  documentNo: string
-  partner: string
-  subject: string
-  quantity?: number
-  amount?: number
-  dueDate?: string
+type ProcurementRow = {
+  purchaseOrderNo: string
+  supplierCode: string
+  supplierName: string
+  siteCode: string
+  skuCode: string
+  orderedQuantity: number
+  receivedQuantity: number
+  openQuantity: number
+  promisedDate: string
   status: string
-  owner?: string
+  receiptReadiness: string
+  amount: number
 }
-type SortColumn = 'area' | 'documentNo' | 'partner' | 'subject' | 'quantity' | 'amount' | 'dueDate' | 'status'
+type SortColumn = 'purchaseOrderNo' | 'supplierName' | 'skuCode' | 'openQuantity' | 'promisedDate' | 'receiptReadiness'
 
-const filterDraft = reactive({ area: 'all', keyword: '' })
-const appliedFilter = reactive({ area: 'all', keyword: '' })
+const { purchaseOrders, purchaseOrdersPending, refreshPurchaseOrders } = useBusinessErp()
+
+const filterDraft = reactive({ readiness: 'all', keyword: '' })
+const appliedFilter = reactive({ readiness: 'all', keyword: '' })
 const tableState = reactive({
   page: 1,
   pageSize: '10',
-  sortBy: 'documentNo' as SortColumn,
+  sortBy: 'promisedDate' as SortColumn,
   sortDirection: 'asc' as 'asc' | 'desc',
 })
-const rows = computed<ErpRow[]>(() => [
-  ...demoErpSalesOrders.map((row) => ({
-    area: '销售',
-    documentNo: row.documentNo,
-    partner: row.customer,
-    subject: row.sku,
-    quantity: row.quantity,
-    dueDate: row.dueDate,
-    status: row.status,
-  })),
-  ...demoErpProcurement.map((row) => ({
-    area: '采购',
-    documentNo: row.documentNo,
-    partner: row.supplier,
-    subject: row.material,
-    quantity: row.quantity,
-    dueDate: row.dueDate,
-    status: row.status,
-  })),
-  ...demoErpFinance.map((row) => ({
-    area: '财务',
-    documentNo: row.documentNo,
-    partner: row.owner,
-    subject: row.source,
-    amount: row.amount,
-    status: row.status,
-    owner: row.owner,
-  })),
-])
+
+const rows = computed<ProcurementRow[]>(() =>
+  purchaseOrders.value.flatMap((order) =>
+    (order.lines ?? []).map((line) => ({
+      purchaseOrderNo: order.purchaseOrderNo ?? '',
+      supplierCode: order.supplierCode ?? '',
+      supplierName: order.supplierName || order.supplierCode || '',
+      siteCode: order.siteCode ?? '',
+      skuCode: line.skuCode ?? '',
+      orderedQuantity: Number(line.orderedQuantity),
+      receivedQuantity: Number(line.receivedQuantity),
+      openQuantity: Math.max(Number(line.orderedQuantity) - Number(line.receivedQuantity), 0),
+      promisedDate: String(line.promisedDate ?? ''),
+      status: order.status ?? '',
+      receiptReadiness: order.receiptReadiness ?? '',
+      amount: Number(line.orderedQuantity) * Number(line.unitPrice),
+    })),
+  ),
+)
 const filteredRows = computed(() => {
   const keyword = appliedFilter.keyword.trim().toLowerCase()
   return rows.value.filter((row) => {
-    const areaMatched = appliedFilter.area === 'all' || row.area === appliedFilter.area
+    const readinessMatched = appliedFilter.readiness === 'all' || row.receiptReadiness === appliedFilter.readiness
     const keywordMatched =
       !keyword ||
-      [row.area, row.documentNo, row.partner, row.subject, row.status, row.owner]
-        .some((value) => (value ?? '').toLowerCase().includes(keyword))
-    return areaMatched && keywordMatched
+      [row.purchaseOrderNo, row.supplierCode, row.supplierName, row.siteCode, row.skuCode, row.status]
+        .some((value) => value.toLowerCase().includes(keyword))
+    return readinessMatched && keywordMatched
   })
 })
 const pageSizeNumber = computed(() => Number(tableState.pageSize) || 10)
@@ -108,21 +104,30 @@ const pagedRows = computed(() => {
   const start = (tableState.page - 1) * pageSizeNumber.value
   return sortedRows.value.slice(start, start + pageSizeNumber.value)
 })
+const pendingArrivalCount = computed(() =>
+  rows.value.filter((row) => row.receiptReadiness === 'awaiting-arrival').length,
+)
+const inspectionCount = computed(() =>
+  rows.value.filter((row) => row.receiptReadiness === 'incoming-inspection').length,
+)
+const openQuantity = computed(() =>
+  rows.value.reduce((total, row) => total + row.openQuantity, 0),
+)
 
 watch(
-  () => [appliedFilter.area, appliedFilter.keyword, tableState.pageSize],
+  () => [appliedFilter.readiness, appliedFilter.keyword, tableState.pageSize],
   () => {
     tableState.page = 1
   },
 )
 
 function applyFilters() {
-  appliedFilter.area = filterDraft.area
+  appliedFilter.readiness = filterDraft.readiness
   appliedFilter.keyword = filterDraft.keyword
 }
 
 function clearFilters() {
-  filterDraft.area = 'all'
+  filterDraft.readiness = 'all'
   filterDraft.keyword = ''
   applyFilters()
 }
@@ -141,12 +146,25 @@ function sortIcon(column: SortColumn) {
   return tableState.sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon
 }
 
-function sortValue(row: ErpRow, column: SortColumn) {
+function sortValue(row: ProcurementRow, column: SortColumn) {
   return row[column] ?? ''
 }
 
-function formatAmount(value?: number) {
-  if (value === undefined) return '无'
+function readinessLabel(value: string) {
+  const labels: Record<string, string> = {
+    'awaiting-arrival': '待到货',
+    'incoming-inspection': '来料待检',
+    received: '已收货',
+    'no-lines': '无明细',
+  }
+  return labels[value] ?? value
+}
+
+function formatQuantity(value: number) {
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value)
+}
+
+function formatAmount(value: number) {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 0 }).format(value)
 }
 </script>
@@ -155,23 +173,23 @@ function formatAmount(value?: number) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="ERP"
-        title="ERP 业务协同"
-        summary="查看销售订单、采购跟进、应收应付和成本归集进度，协调客户需求、供应到货与生产计划。"
+        domain="经营管理"
+        title="采购与供应"
+        summary="跟进外购件采购订单、供应商承诺、预计到货和来料待检状态，支撑生产齐套判断。"
       />
 
       <div class="grid gap-3 md:grid-cols-3">
         <div class="rounded-lg border bg-background p-4">
-          <p class="text-sm text-muted-foreground">销售订单</p>
-          <p class="mt-2 text-2xl font-semibold tabular-nums">{{ demoErpSalesOrders.length }}</p>
+          <p class="text-sm text-muted-foreground">待到货明细</p>
+          <p class="mt-2 text-2xl font-semibold tabular-nums">{{ pendingArrivalCount }}</p>
         </div>
         <div class="rounded-lg border bg-background p-4">
-          <p class="text-sm text-muted-foreground">采购跟进</p>
-          <p class="mt-2 text-2xl font-semibold tabular-nums">{{ demoErpProcurement.length }}</p>
+          <p class="text-sm text-muted-foreground">来料待检</p>
+          <p class="mt-2 text-2xl font-semibold tabular-nums">{{ inspectionCount }}</p>
         </div>
         <div class="rounded-lg border bg-background p-4">
-          <p class="text-sm text-muted-foreground">财务候选</p>
-          <p class="mt-2 text-2xl font-semibold tabular-nums">{{ demoErpFinance.length }}</p>
+          <p class="text-sm text-muted-foreground">未到数量</p>
+          <p class="mt-2 text-2xl font-semibold tabular-nums">{{ formatQuantity(openQuantity) }}</p>
         </div>
       </div>
 
@@ -182,22 +200,22 @@ function formatAmount(value?: number) {
         <div class="p-4">
           <FieldGroup class="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto]">
             <Field>
-              <FieldLabel for="erp-area">业务范围</FieldLabel>
-              <Select v-model="filterDraft.area">
-                <SelectTrigger id="erp-area">
+              <FieldLabel for="erp-readiness">供应状态</FieldLabel>
+              <Select v-model="filterDraft.readiness">
+                <SelectTrigger id="erp-readiness">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部</SelectItem>
-                  <SelectItem value="销售">销售</SelectItem>
-                  <SelectItem value="采购">采购</SelectItem>
-                  <SelectItem value="财务">财务</SelectItem>
+                  <SelectItem value="awaiting-arrival">待到货</SelectItem>
+                  <SelectItem value="incoming-inspection">来料待检</SelectItem>
+                  <SelectItem value="received">已收货</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
             <Field>
               <FieldLabel for="erp-keyword">关键字</FieldLabel>
-              <Input id="erp-keyword" v-model="filterDraft.keyword" placeholder="单号、客户、供应商、物料" @keydown.enter="applyFilters" />
+              <Input id="erp-keyword" v-model="filterDraft.keyword" placeholder="采购单、供应商、物料、工厂" @keydown.enter="applyFilters" />
             </Field>
             <div class="flex items-end gap-2">
               <Button type="button" @click="applyFilters">查询</Button>
@@ -209,75 +227,81 @@ function formatAmount(value?: number) {
 
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">业务单据</h2>
-          <span class="text-sm text-muted-foreground">销售 / 采购 / 财务</span>
+          <h2 class="text-sm font-semibold text-foreground">采购订单供应明细</h2>
+          <Button size="sm" type="button" variant="outline" :disabled="purchaseOrdersPending" @click="refreshPurchaseOrders">
+            <Spinner v-if="purchaseOrdersPending" data-icon="inline-start" />
+            <RefreshCwIcon v-else data-icon="inline-start" />
+            刷新
+          </Button>
         </div>
         <div class="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('area')">
-                    范围
-                    <component :is="sortIcon('area')" data-icon="inline-end" />
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('purchaseOrderNo')">
+                    采购单
+                    <component :is="sortIcon('purchaseOrderNo')" data-icon="inline-end" />
                   </Button>
                 </TableHead>
                 <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('documentNo')">
-                    单号
-                    <component :is="sortIcon('documentNo')" data-icon="inline-end" />
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('supplierName')">
+                    供应商
+                    <component :is="sortIcon('supplierName')" data-icon="inline-end" />
                   </Button>
                 </TableHead>
                 <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('partner')">
-                    对象
-                    <component :is="sortIcon('partner')" data-icon="inline-end" />
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('skuCode')">
+                    物料
+                    <component :is="sortIcon('skuCode')" data-icon="inline-end" />
                   </Button>
                 </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('subject')">
-                    物料/来源
-                    <component :is="sortIcon('subject')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
+                <TableHead class="text-right">订单数量</TableHead>
+                <TableHead class="text-right">已收数量</TableHead>
                 <TableHead class="text-right">
-                  <Button class="-mr-3" size="sm" type="button" variant="ghost" @click="setSort('quantity')">
-                    数量
-                    <component :is="sortIcon('quantity')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead class="text-right">
-                  <Button class="-mr-3" size="sm" type="button" variant="ghost" @click="setSort('amount')">
-                    金额
-                    <component :is="sortIcon('amount')" data-icon="inline-end" />
+                  <Button class="-mr-3" size="sm" type="button" variant="ghost" @click="setSort('openQuantity')">
+                    未到数量
+                    <component :is="sortIcon('openQuantity')" data-icon="inline-end" />
                   </Button>
                 </TableHead>
                 <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('dueDate')">
-                    日期
-                    <component :is="sortIcon('dueDate')" data-icon="inline-end" />
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('promisedDate')">
+                    预计到货
+                    <component :is="sortIcon('promisedDate')" data-icon="inline-end" />
                   </Button>
                 </TableHead>
                 <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('status')">
-                    状态
-                    <component :is="sortIcon('status')" data-icon="inline-end" />
+                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('receiptReadiness')">
+                    供应状态
+                    <component :is="sortIcon('receiptReadiness')" data-icon="inline-end" />
                   </Button>
                 </TableHead>
+                <TableHead class="text-right">金额</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow v-for="row in pagedRows" :key="`${row.area}-${row.documentNo}`">
-                <TableCell>{{ row.area }}</TableCell>
-                <TableCell class="font-medium">{{ row.documentNo }}</TableCell>
-                <TableCell>{{ row.partner }}</TableCell>
-                <TableCell>{{ row.subject }}</TableCell>
-                <TableCell class="text-right tabular-nums">{{ row.quantity ?? '无' }}</TableCell>
+              <TableRow v-for="row in pagedRows" :key="`${row.purchaseOrderNo}-${row.skuCode}`">
+                <TableCell class="font-medium">{{ row.purchaseOrderNo }}</TableCell>
+                <TableCell>
+                  <div class="grid gap-1">
+                    <span>{{ row.supplierName }}</span>
+                    <span class="text-xs text-muted-foreground">{{ row.supplierCode }}</span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div class="grid gap-1">
+                    <span>{{ row.skuCode }}</span>
+                    <span class="text-xs text-muted-foreground">{{ row.siteCode }}</span>
+                  </div>
+                </TableCell>
+                <TableCell class="text-right tabular-nums">{{ formatQuantity(row.orderedQuantity) }}</TableCell>
+                <TableCell class="text-right tabular-nums">{{ formatQuantity(row.receivedQuantity) }}</TableCell>
+                <TableCell class="text-right tabular-nums">{{ formatQuantity(row.openQuantity) }}</TableCell>
+                <TableCell>{{ row.promisedDate }}</TableCell>
+                <TableCell><Badge variant="secondary">{{ readinessLabel(row.receiptReadiness) }}</Badge></TableCell>
                 <TableCell class="text-right tabular-nums">{{ formatAmount(row.amount) }}</TableCell>
-                <TableCell>{{ row.dueDate ?? '无' }}</TableCell>
-                <TableCell><Badge variant="secondary">{{ row.status }}</Badge></TableCell>
               </TableRow>
-              <TableEmpty v-if="!filteredRows.length" :colspan="8">未找到单据。</TableEmpty>
+              <TableEmpty v-if="!filteredRows.length" :colspan="9">未找到采购供应明细。</TableEmpty>
             </TableBody>
           </Table>
         </div>

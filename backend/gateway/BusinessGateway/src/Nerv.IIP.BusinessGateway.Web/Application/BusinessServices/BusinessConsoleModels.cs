@@ -371,6 +371,32 @@ public sealed record BusinessConsoleAcceptPlanningSuggestionRequest(
     string DownstreamDocumentType,
     string DownstreamDocumentId);
 
+public sealed record BusinessConsoleErpContextRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleErpPurchaseOrderListResponse(
+    IReadOnlyCollection<BusinessConsoleErpPurchaseOrderItem> Items);
+
+public sealed record BusinessConsoleErpPurchaseOrderItem(
+    string PurchaseOrderNo,
+    string SupplierCode,
+    string SupplierName,
+    string SiteCode,
+    string Status,
+    string ReceiptReadiness,
+    decimal TotalAmount,
+    IReadOnlyCollection<BusinessConsoleErpPurchaseOrderLineItem> Lines);
+
+public sealed record BusinessConsoleErpPurchaseOrderLineItem(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal OrderedQuantity,
+    decimal ReceivedQuantity,
+    decimal UnitPrice,
+    DateOnly PromisedDate);
+
 public sealed record BusinessConsoleMesListRequest(
     string OrganizationId,
     string EnvironmentId,

@@ -60,6 +60,8 @@ public static class BusinessGatewayPermissions
     public const string PlanningMrpRead = "business.planning.mrp.read";
     public const string PlanningMrpRun = "business.planning.mrp.run";
     public const string PlanningSuggestionsManage = "business.planning.suggestions.manage";
+    public const string ErpProcurementRead = "business.erp.procurement.read";
+    public const string ErpProcurementManage = "business.erp.procurement.manage";
     public const string MesFoundationRead = "business.mes.foundation.read";
     public const string MesOverviewRead = "business.mes.overview.read";
     public const string MesPlansRead = "business.mes.plans.read";
