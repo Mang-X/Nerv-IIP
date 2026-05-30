@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
@@ -278,15 +279,42 @@ public sealed record MesMaterialIssueRequestRow(
     string RequestId,
     string WorkOrderId,
     string? OperationTaskId,
+    string MaterialId,
+    string? MaterialLotId,
+    decimal RequestedQuantity,
+    decimal ReceivedQuantity,
     string Status,
     DateTimeOffset RequestedAtUtc);
 
-public sealed class ListMaterialIssueRequestsQueryHandler
+public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaterialIssueRequestsQuery, MesMaterialIssueRequestListResponse>
 {
-    public Task<MesMaterialIssueRequestListResponse> Handle(ListMaterialIssueRequestsQuery request, CancellationToken cancellationToken)
+    public async Task<MesMaterialIssueRequestListResponse> Handle(ListMaterialIssueRequestsQuery request, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new MesMaterialIssueRequestListResponse([]));
+        var query = dbContext.MaterialIssueRequests
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
+        {
+            query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
+        }
+
+        var items = await query
+            .OrderByDescending(x => x.RequestedAtUtc)
+            .Take(Math.Clamp(request.Take, 1, 500))
+            .Select(x => new MesMaterialIssueRequestRow(
+                x.RequestNo,
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.MaterialId,
+                x.MaterialLotId,
+                x.RequestedQuantity,
+                x.ReceivedQuantity,
+                x.Status,
+                x.RequestedAtUtc))
+            .ToArrayAsync(cancellationToken);
+        return new MesMaterialIssueRequestListResponse(items);
     }
 }
 
@@ -370,7 +398,84 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
-        return new MesMaterialReadinessResponse(request.WorkOrderId, "Ready", [], []);
+        var requirements = await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId)
+            .Select(x => new
+            {
+                x.MaterialId,
+                x.MaterialLotId,
+                x.RequiredQuantity,
+                x.AvailableQuantity,
+                x.StagedQuantity,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        if (requirements.Length == 0)
+        {
+            return new MesMaterialReadinessResponse(request.WorkOrderId, "Ready", [], []);
+        }
+
+        var issues = await dbContext.MaterialIssueRequests
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId)
+            .Select(x => new
+            {
+                x.MaterialId,
+                x.RequestedQuantity,
+                x.ReceivedQuantity,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var issueByMaterial = issues
+            .GroupBy(x => x.MaterialId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                x => x.Key,
+                x => new
+                {
+                    RequestedQuantity = x.Sum(y => y.RequestedQuantity),
+                    ReceivedQuantity = x.Sum(y => y.ReceivedQuantity),
+                },
+                StringComparer.OrdinalIgnoreCase);
+
+        var rows = requirements
+            .GroupBy(x => new { x.MaterialId, x.MaterialLotId })
+            .Select(x =>
+            {
+                issueByMaterial.TryGetValue(x.Key.MaterialId, out var issue);
+                var required = x.Sum(y => y.RequiredQuantity);
+                var available = x.Sum(y => y.AvailableQuantity);
+                var staged = x.Sum(y => y.StagedQuantity);
+                var requested = issue?.RequestedQuantity ?? 0m;
+                var received = issue?.ReceivedQuantity ?? 0m;
+                var shortage = Math.Max(0m, required - available - staged - received);
+                return new MesMaterialReadinessRow(
+                    x.Key.MaterialId,
+                    x.Key.MaterialLotId,
+                    required,
+                    available,
+                    requested,
+                    staged,
+                    received,
+                    shortage,
+                    shortage > 0 ? "Shortage" : "Ready");
+            })
+            .OrderBy(x => x.MaterialId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.MaterialLotId, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var blockingReasons = rows
+            .Where(x => x.ShortageQuantity > 0)
+            .Select(x => $"{x.MaterialId} shortage {x.ShortageQuantity:0.######}")
+            .ToArray();
+        var status = blockingReasons.Length > 0 ? "Blocked" : "Ready";
+        return new MesMaterialReadinessResponse(request.WorkOrderId, status, blockingReasons, rows);
     }
 }
 
@@ -601,6 +706,27 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
             edges.Add(new MesTraceabilityEdge(report.OperationTaskId, report.Id, "has-report"));
         }
 
+        var consumptions = await dbContext.ProductionReportMaterialConsumptions
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId)
+            .Select(x => new { x.ReportNo, x.MaterialId, x.MaterialLotId, x.MaterialIssueRequestNo })
+            .ToArrayAsync(cancellationToken);
+        foreach (var consumption in consumptions)
+        {
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, "Material", consumption.MaterialId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialLotId, "MaterialLot", consumption.MaterialLotId, "Consumed"));
+            edges.Add(new MesTraceabilityEdge(consumption.MaterialId, consumption.MaterialLotId, "has-lot"));
+            edges.Add(new MesTraceabilityEdge(consumption.MaterialLotId, consumption.ReportNo, "consumed-by-report"));
+            if (!string.IsNullOrWhiteSpace(consumption.MaterialIssueRequestNo))
+            {
+                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, "MaterialIssueRequest", consumption.MaterialIssueRequestNo, "Received"));
+                edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
+            }
+        }
+
         return new MesTraceabilityResponse(nodes, edges);
     }
 }
@@ -626,13 +752,53 @@ public sealed record GetMaterialLotTraceabilityQuery(
     string EnvironmentId,
     string MaterialLotId) : IQuery<MesTraceabilityResponse>;
 
-public sealed class GetMaterialLotTraceabilityQueryHandler
+public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMaterialLotTraceabilityQuery, MesTraceabilityResponse>
 {
-    public Task<MesTraceabilityResponse> Handle(GetMaterialLotTraceabilityQuery request, CancellationToken cancellationToken)
+    public async Task<MesTraceabilityResponse> Handle(GetMaterialLotTraceabilityQuery request, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new MesTraceabilityResponse(
-            [new MesTraceabilityNode(request.MaterialLotId, "MaterialLot", request.MaterialLotId, "Unknown")],
-            []));
+        var consumptions = await dbContext.ProductionReportMaterialConsumptions
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.MaterialLotId == request.MaterialLotId)
+            .Select(x => new
+            {
+                x.ReportNo,
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.MaterialId,
+                x.MaterialLotId,
+                x.MaterialIssueRequestNo,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var nodes = new List<MesTraceabilityNode>
+        {
+            new(request.MaterialLotId, "MaterialLot", request.MaterialLotId, consumptions.Length > 0 ? "Consumed" : "Unknown"),
+        };
+        var edges = new List<MesTraceabilityEdge>();
+
+        foreach (var consumption in consumptions)
+        {
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, "Material", consumption.MaterialId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.WorkOrderId, "WorkOrder", consumption.WorkOrderId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.OperationTaskId, "OperationTask", consumption.OperationTaskId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.ReportNo, "ProductionReport", consumption.ReportNo, "Reported"));
+            edges.Add(new MesTraceabilityEdge(consumption.MaterialId, consumption.MaterialLotId, "has-lot"));
+            edges.Add(new MesTraceabilityEdge(consumption.MaterialLotId, consumption.ReportNo, "consumed-by-report"));
+            edges.Add(new MesTraceabilityEdge(consumption.ReportNo, consumption.OperationTaskId, "reported-operation"));
+            edges.Add(new MesTraceabilityEdge(consumption.OperationTaskId, consumption.WorkOrderId, "belongs-to-work-order"));
+            if (!string.IsNullOrWhiteSpace(consumption.MaterialIssueRequestNo))
+            {
+                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, "MaterialIssueRequest", consumption.MaterialIssueRequestNo, "Received"));
+                edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
+            }
+        }
+
+        return new MesTraceabilityResponse(
+            nodes.DistinctBy(x => new { x.NodeId, x.NodeType }).ToArray(),
+            edges.DistinctBy(x => new { x.FromNodeId, x.ToNodeId, x.RelationType }).ToArray());
     }
 }

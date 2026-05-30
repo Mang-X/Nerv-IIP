@@ -2,6 +2,7 @@ using MediatR;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
@@ -19,6 +20,12 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<OperationTask> OperationTasks => Set<OperationTask>();
 
     public DbSet<ProductionReport> ProductionReports => Set<ProductionReport>();
+
+    public DbSet<ProductionReportMaterialConsumption> ProductionReportMaterialConsumptions => Set<ProductionReportMaterialConsumption>();
+
+    public DbSet<MaterialRequirement> MaterialRequirements => Set<MaterialRequirement>();
+
+    public DbSet<MaterialIssueRequest> MaterialIssueRequests => Set<MaterialIssueRequest>();
 
     public DbSet<ScheduleResult> ScheduleResults => Set<ScheduleResult>();
 

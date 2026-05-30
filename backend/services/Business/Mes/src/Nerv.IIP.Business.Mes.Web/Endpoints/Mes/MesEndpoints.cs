@@ -48,7 +48,8 @@ public sealed record RecordProductionReportRequest(
     decimal ScrapQuantity,
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null);
 
 public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
@@ -146,7 +147,8 @@ public sealed record LineSideMaterialReceiptRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string RequestId,
-    DateTimeOffset? ReceivedAtUtc);
+    DateTimeOffset? ReceivedAtUtc,
+    string? MaterialLotId = null);
 
 public sealed record AssignDispatchTaskRequest(
     string OrganizationId,
@@ -487,7 +489,8 @@ public sealed class ConfirmLineSideMaterialReceiptEndpoint(ISender sender, TimeP
             req.OrganizationId,
             req.EnvironmentId,
             req.RequestId,
-            req.ReceivedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            req.ReceivedAtUtc ?? timeProvider.GetUtcNow(),
+            req.MaterialLotId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -602,7 +605,8 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
             req.ScrapQuantity,
             req.CompletesOperation,
             req.ReportedAtUtc,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.ConsumedMaterialLots), ct);
         await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
     }
 }

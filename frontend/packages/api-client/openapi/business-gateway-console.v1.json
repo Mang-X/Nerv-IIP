@@ -6545,6 +6545,15 @@
             "type": "string",
             "nullable": true
           },
+          "materialId": {
+            "type": "string",
+            "nullable": true
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
           "materialIds": {
             "type": "array",
             "nullable": true,
@@ -6600,6 +6609,25 @@
           "workOrderId": {
             "type": "string"
           },
+          "operationTaskId": {
+            "type": "string",
+            "nullable": true
+          },
+          "materialId": {
+            "type": "string"
+          },
+          "materialLotId": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "receivedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
           "status": {
             "type": "string"
           },
@@ -6617,6 +6645,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "materialLotId": {
+            "type": "string",
+            "nullable": true
+          },
           "evidenceFileIds": {
             "type": "array",
             "nullable": true,
@@ -7008,6 +7040,33 @@
             "format": "date-time"
           },
           "idempotencyKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "consumedMaterialLots": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "materialId": {
+            "type": "string"
+          },
+          "materialLotId": {
+            "type": "string"
+          },
+          "consumedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "materialIssueRequestNo": {
             "type": "string",
             "nullable": true
           }

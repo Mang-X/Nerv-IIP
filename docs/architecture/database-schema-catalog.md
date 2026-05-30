@@ -165,12 +165,16 @@ Source:
 4. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260523025528_InitialMesExecutionSchema.cs`
 5. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260526022531_AddMesIntegrationEventDeadLetters.cs`
 6. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260527073156_AddNumberingCounters.cs`
+7. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260530095053_AddMesMaterialSupplyFacts.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `work_orders` | business | MES 持久化工单事实，记录 SKU、生产版本引用、计划数量、优先级、交期和执行状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + work_order_id` 是业务唯一键；`production_version_id` 是 ProductEngineering 业务引用。 | 唯一约束保护同一组织/环境内工单号；SKU/交期索引用于排产扫描。 | 工单创建后进入 MES 执行生命周期，历史保留用于报工、入库请求和成本追踪。 |
 | `operation_tasks` | business | MES 工序任务事实，保存工序顺序、工作中心、可选工作中心、持续时间和执行窗口。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + operation_task_id` 是业务唯一键。 | 工单/工序顺序索引用于按工单加载工序；外键索引用于报工与工单追踪。 | 随工单创建或执行调整保留；状态表达排产和执行进度。 |
 | `production_reports` | business | MES 报工事实，记录工单/工序的良品数、报废数、完工标记和报工时间。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + report_no` 是报工业务号唯一键；`work_order_id` 与 `operation_task_id` 为 MES 业务引用。 | 报工号唯一索引用于重试和追踪；工单/工序/时间索引用于执行时间线查询。 | 报工创建后作为执行历史保留，不直接修改 Inventory、Quality 或 ERP 事实。 |
+| `production_report_material_consumptions` | business | MES 报工引用的实际物料批次消耗事实，用于工单、报工和物料批次追溯。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + report_no` 指向报工号；记录 `material_id`、`material_lot_id`、消耗数量和可选领料申请号。 | 物料批次索引用于按批次追溯；工单索引用于工单谱系；报工/物料/批次索引用于报工明细加载。 | 随报工写入，作为执行追溯历史保留；不拥有 Inventory 批次余额。 |
+| `material_requirements` | business | MES 工单/工序级物料需求与供应快照，记录来自 released MBOM、Inventory 和 WMS readiness 的执行侧视图。 | `id` 为 Guid v7 强类型 ID；`work_order_id` 和可选 `operation_task_id` 绑定 MES 执行对象；`material_id`、`material_lot_id`、需求量、可用量、备料量和 source snapshot 保留来源。 | 工单/物料索引用于齐套检查；工序索引用于开工前阻断检查。 | 由上游 readiness/导入适配器或测试 fixture 捕获，后续重新计算可写新快照；MES 不把它作为库存余额真相源。 |
+| `material_issue_requests` | business | MES 领料/备料申请与线边接收事实，跟踪 requested/received 数量和实际接收批次。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + request_no` 是领料申请业务号唯一键；记录工单、工序、物料、批次、请求/接收数量和状态。 | 请求号唯一索引用于重试和下游引用；工单/物料索引用于齐套汇总；工序索引用于工序开工检查。 | 创建后作为 MES 执行事实保留；WMS/Inventory 作业仍由各自服务拥有。 |
 | `finished_goods_receipt_requests` | business | MES 完工入库请求事实，向 WMS/Inventory 边界表达成品收货意图。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + request_no` 是入库请求业务号唯一键；记录 `work_order_id`、`sku_id`、`quantity`、`uom_code` 和请求时间。 | 请求号唯一索引用于下游引用；工单/SKU/时间索引用于入库请求追踪。 | 创建后由下游库存/仓储服务消费并回写自身事实；MES 只保存请求事实。 |
 | `schedule_results` | business | MES 规则排产结果事实，保存排产版本、触发原因、排产时间和 JSON assignment 结果。 | `schedule_version` 唯一；`assignments_json` 和 `affected_work_order_ids_json` 是 append-only JSON。 | 版本唯一索引支持读取当前/历史版本；触发源/时间索引用于诊断。 | 每次排产生成一条版本化结果，历史版本保留。 |
 | `work_center_unavailabilities` | business | MES 工作中心不可用窗口事实，来自维修或手工约束，用于排产避让。 | `organization_id + environment_id + downtime_event_no` 是停机事件业务号唯一键；`work_center_id`、`from_utc`、`to_utc` 定义不可用窗口；`device_asset_id` 记录可选设备来源。 | 停机号唯一索引用于恢复和追踪；工作中心窗口索引用于排产查询；asset open 索引用于设备恢复处理。 | 打开窗口以 `to_utc = null` 表示仍不可用，关闭后保留历史。 |
@@ -185,7 +189,7 @@ Source:
 
 Known gaps:
 
-1. MES 当前完成持久化执行 MVP，仍需后续扩展工艺路线完整快照、物料消耗、批次谱系、停机/OEE 和与 Inventory/WMS/Quality/ERP 的事件闭环。
+1. MES 当前已有物料需求快照、领料/线边接收和报工消耗批次追溯事实；仍需后续把 released MBOM、Inventory/WMS 作业状态、Quality hold 和 ERP/采购到货通过正式 adapter/event 持续刷新这些执行快照。
 
 ## BusinessDemandPlanning Schema
 
@@ -554,7 +558,7 @@ Known gaps:
 | BusinessProductEngineering | `product_engineering` | Implemented | Yes | Yes | No | 已有 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN、ProductionVersion、numbering counter/idempotency tables、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessInventory | `inventory` | Implemented | Yes | Yes | No | 已有库存地点、库存台账、库存移动、盘点任务和盘点调整 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessQuality | `quality` | Implemented | Yes | Yes | No | 已有 NCR、InspectionPlan、InspectionRecord schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
-| BusinessMES | `mes` | Implemented | Yes | Yes | No | 已有工单、工序任务、报工、完工入库请求、排产结果、工作中心不可用窗口、设备映射、numbering counter/idempotency tables 和 persistent DLQ schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessMES | `mes` | Implemented | Yes | Yes | No | 已有工单、工序任务、物料需求快照、领料/线边接收、报工、报工物料批次消耗、完工入库请求、排产结果、工作中心不可用窗口、设备映射、numbering counter/idempotency tables 和 persistent DLQ schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessDemandPlanning | `demand_planning` | Implemented | Yes | Yes | No | 已有需求来源、MPS、MRP run、pegging、计划建议和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BarcodeLabel | `barcode` | Implemented | Yes | Yes | No | 已有条码规则、标签模板、打印批次、打印项和扫码记录 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessApproval | `business_approval` | Implemented | Yes | Yes | No | 已有审批模板、审批链、审批步骤和审批决定 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |

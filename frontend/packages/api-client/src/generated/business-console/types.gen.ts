@@ -570,6 +570,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest = {
     operationTaskId?: string | null;
+    materialId?: string | null;
+    quantity?: number | null;
     materialIds?: Array<string> | null;
     idempotencyKey?: string;
 };
@@ -585,12 +587,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow = {
     requestId?: string;
     workOrderId?: string;
+    operationTaskId?: string | null;
+    materialId?: string;
+    materialLotId?: string | null;
+    requestedQuantity?: number;
+    receivedQuantity?: number;
     status?: string;
     wmsRequestId?: string | null;
     requestedAtUtc?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {
+    materialLotId?: string | null;
     evidenceFileIds?: Array<string> | null;
     idempotencyKey?: string;
 };
@@ -702,6 +710,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     completesOperation?: boolean;
     reportedAtUtc?: string;
     idempotencyKey?: string | null;
+    consumedMaterialLots?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput = {
+    materialId?: string;
+    materialLotId?: string;
+    consumedQuantity?: number;
+    materialIssueRequestNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest = {

@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -34,6 +35,18 @@ public sealed class ReleaseWorkOrderCommandHandler(ApplicationDbContext dbContex
         if (!exists)
         {
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
+        }
+
+        var shortages = await MaterialReadinessGuards.GetShortageReasonsAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            null,
+            cancellationToken);
+        if (shortages.Count > 0)
+        {
+            return new MesAcceptedResponse("Blocked", request.WorkOrderId, request.ReleasedAtUtc);
         }
 
         return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
@@ -115,6 +128,50 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             request.IdempotencyKey,
             MesNumberingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.MaterialId, request.Quantity, request.RequestedAtUtc),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc);
+        }
+
+        var materialId = string.IsNullOrWhiteSpace(request.MaterialId)
+            ? await dbContext.MaterialRequirements
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.WorkOrderId == request.WorkOrderId)
+                .OrderBy(x => x.MaterialId)
+                .Select(x => x.MaterialId)
+                .FirstOrDefaultAsync(cancellationToken)
+            : request.MaterialId.Trim();
+        if (string.IsNullOrWhiteSpace(materialId))
+        {
+            throw new KnownException($"生产工单没有可领料的物料需求，WorkOrderId = {request.WorkOrderId}");
+        }
+
+        var requestedQuantity = request.Quantity ?? await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId &&
+                x.MaterialId == materialId)
+            .Select(x => x.RequiredQuantity)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (requestedQuantity <= 0)
+        {
+            throw new KnownException($"领料申请数量必须大于 0，WorkOrderId = {request.WorkOrderId}");
+        }
+
+        dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Number,
+            request.WorkOrderId,
+            request.OperationTaskId,
+            materialId,
+            requestedQuantity,
+            request.RequestedAtUtc));
         return new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc);
     }
 }
@@ -123,14 +180,23 @@ public sealed record ConfirmLineSideMaterialReceiptCommand(
     string OrganizationId,
     string EnvironmentId,
     string RequestId,
-    DateTimeOffset ReceivedAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset ReceivedAtUtc,
+    string? MaterialLotId = null) : ICommand<MesAcceptedResponse>;
 
-public sealed class ConfirmLineSideMaterialReceiptCommandHandler
+public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<ConfirmLineSideMaterialReceiptCommand, MesAcceptedResponse>
 {
-    public Task<MesAcceptedResponse> Handle(ConfirmLineSideMaterialReceiptCommand request, CancellationToken cancellationToken)
+    public async Task<MesAcceptedResponse> Handle(ConfirmLineSideMaterialReceiptCommand request, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new MesAcceptedResponse("Accepted", request.RequestId, request.ReceivedAtUtc));
+        var materialRequest = await dbContext.MaterialIssueRequests.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                (x.RequestNo == request.RequestId || x.Id.Id.ToString() == request.RequestId),
+            cancellationToken)
+            ?? throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
+
+        materialRequest.ConfirmLineSideReceipt(request.ReceivedAtUtc, request.MaterialLotId);
+        return new MesAcceptedResponse("Accepted", materialRequest.RequestNo, request.ReceivedAtUtc);
     }
 }
 
@@ -182,6 +248,21 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
             cancellationToken)
             ?? throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
 
+        if (request.Action == "start")
+        {
+            var shortages = await MaterialReadinessGuards.GetShortageReasonsAsync(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                task.WorkOrderId,
+                task.OperationTaskIdValue,
+                cancellationToken);
+            if (shortages.Count > 0)
+            {
+                throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
+            }
+        }
+
         switch (request.Action)
         {
             case "start":
@@ -201,6 +282,65 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
         }
 
         return new MesOperationActionResponse(task.OperationTaskIdValue, task.Status.ToString(), request.ChangedAtUtc);
+    }
+}
+
+internal static class MaterialReadinessGuards
+{
+    public static async Task<IReadOnlyCollection<string>> GetShortageReasonsAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string? operationTaskId,
+        CancellationToken cancellationToken)
+    {
+        var requirements = await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.WorkOrderId == workOrderId &&
+                (operationTaskId == null || x.OperationTaskId == null || x.OperationTaskId == operationTaskId))
+            .Select(x => new
+            {
+                x.MaterialId,
+                x.RequiredQuantity,
+                x.AvailableQuantity,
+                x.StagedQuantity,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        if (requirements.Length == 0)
+        {
+            return [];
+        }
+
+        var received = await dbContext.MaterialIssueRequests
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.WorkOrderId == workOrderId &&
+                (operationTaskId == null || x.OperationTaskId == null || x.OperationTaskId == operationTaskId))
+            .GroupBy(x => x.MaterialId)
+            .Select(x => new { MaterialId = x.Key, ReceivedQuantity = x.Sum(y => y.ReceivedQuantity) })
+            .ToDictionaryAsync(x => x.MaterialId, x => x.ReceivedQuantity, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+        return requirements
+            .GroupBy(x => x.MaterialId, StringComparer.OrdinalIgnoreCase)
+            .Select(x =>
+            {
+                var required = x.Sum(y => y.RequiredQuantity);
+                var available = x.Sum(y => y.AvailableQuantity);
+                var staged = x.Sum(y => y.StagedQuantity);
+                var receivedQuantity = received.GetValueOrDefault(x.Key);
+                var shortage = Math.Max(0m, required - available - staged - receivedQuantity);
+                return new { MaterialId = x.Key, Shortage = shortage };
+            })
+            .Where(x => x.Shortage > 0)
+            .Select(x => $"{x.MaterialId} shortage {x.Shortage:0.######}")
+            .ToArray();
     }
 }
 

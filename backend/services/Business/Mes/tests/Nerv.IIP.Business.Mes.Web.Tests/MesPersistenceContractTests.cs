@@ -1,15 +1,20 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.Repositories;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Maintenance;
@@ -203,6 +208,203 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("WO-001", receiptRequest.WorkOrderId);
         Assert.Equal("FGR-001", receiptRequest.RequestNo);
         Assert.Equal("PCS", receiptRequest.UomCode);
+    }
+
+    [Fact]
+    public async Task Material_readiness_uses_persisted_requirement_issue_and_line_side_receipt_facts()
+    {
+        var services = CreateServices(nameof(Material_readiness_uses_persisted_requirement_issue_and_line_side_receipt_facts));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-MAT-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-MAT-001",
+                "OP-MAT-10",
+                OperationTaskLifecycleStatus.Queued,
+                10,
+                "WC-FILL",
+                [],
+                now,
+                TimeSpan.FromMinutes(45),
+                null,
+                null));
+            dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+                "org-001",
+                "env-dev",
+                "WO-MAT-001",
+                "OP-MAT-10",
+                "MAT-OIL",
+                "LOT-OIL-A",
+                requiredQuantity: 10m,
+                availableQuantity: 3m,
+                stagedQuantity: 1m,
+                sourceSystem: "Inventory",
+                sourceSnapshotId: "inv-snap-001",
+                capturedAtUtc: now));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var createHandler = new CreateMaterialIssueRequestCommandHandler(dbContext);
+            var response = await createHandler.Handle(
+                new CreateMaterialIssueRequestCommand("org-001", "env-dev", "WO-MAT-001", "OP-MAT-10", "MAT-OIL", 4m, now.AddMinutes(5), "issue-001"),
+                CancellationToken.None);
+
+            await dbContext.SaveChangesAsync();
+
+            var receiptHandler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext);
+            await receiptHandler.Handle(
+                new ConfirmLineSideMaterialReceiptCommand("org-001", "env-dev", response.ReferenceId, now.AddMinutes(15)),
+                CancellationToken.None);
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", "WO-MAT-001"),
+            CancellationToken.None);
+
+        Assert.Equal("Blocked", readiness.ReadinessStatus);
+        Assert.Contains("MAT-OIL shortage 2", readiness.BlockingReasons);
+        var row = Assert.Single(readiness.Items);
+        Assert.Equal("MAT-OIL", row.MaterialId);
+        Assert.Equal("LOT-OIL-A", row.MaterialLotId);
+        Assert.Equal(10m, row.RequiredQuantity);
+        Assert.Equal(3m, row.AvailableQuantity);
+        Assert.Equal(4m, row.RequestedQuantity);
+        Assert.Equal(1m, row.StagedQuantity);
+        Assert.Equal(4m, row.ReceivedQuantity);
+        Assert.Equal(2m, row.ShortageQuantity);
+        Assert.Equal("Shortage", row.Status);
+    }
+
+    [Fact]
+    public async Task Release_and_start_are_blocked_when_material_readiness_has_shortage()
+    {
+        var services = CreateServices(nameof(Release_and_start_are_blocked_when_material_readiness_has_shortage));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-BLOCKED-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-BLOCKED-001",
+            "OP-BLOCKED-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001",
+            "env-dev",
+            "WO-BLOCKED-001",
+            "OP-BLOCKED-10",
+            "MAT-SEAL",
+            null,
+            requiredQuantity: 10m,
+            availableQuantity: 2m,
+            stagedQuantity: 0m,
+            sourceSystem: "Inventory",
+            sourceSnapshotId: "inv-snap-002",
+            capturedAtUtc: now));
+        await dbContext.SaveChangesAsync();
+
+        var release = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
+            new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-BLOCKED-001", now.AddMinutes(30)),
+            CancellationToken.None);
+
+        Assert.Equal("Blocked", release.Status);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
+                new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-BLOCKED-10", "start", now.AddMinutes(35)),
+                CancellationToken.None));
+        Assert.Contains("物料齐套未满足", exception.Message);
+    }
+
+    [Fact]
+    public async Task Production_report_can_reference_consumed_material_lots_for_traceability()
+    {
+        var services = CreateServices(nameof(Production_report_can_reference_consumed_material_lots_for_traceability));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-TRACE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                OperationTaskLifecycleStatus.InProgress,
+                10,
+                "WC-FILL",
+                [],
+                now,
+                TimeSpan.FromMinutes(45),
+                now,
+                now.AddMinutes(45)));
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001",
+                "env-dev",
+                "MIR-TRACE-001",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                "MAT-OIL",
+                4m,
+                now.AddMinutes(5)));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var request = await dbContext.MaterialIssueRequests.SingleAsync();
+            request.ConfirmLineSideReceipt(now.AddMinutes(10), materialLotId: "LOT-OIL-A");
+            await dbContext.SaveChangesAsync();
+
+            var handler = new RecordProductionReportCommandHandler(dbContext);
+            await handler.Handle(
+                new RecordProductionReportCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-TRACE-001",
+                    "OP-TRACE-10",
+                    9m,
+                    1m,
+                    true,
+                    now.AddMinutes(30),
+                    "report-001",
+                    [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 4m, request.RequestNo)]),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var traceability = await new GetMaterialLotTraceabilityQueryHandler(
+            recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
+            .Handle(new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-OIL-A"), CancellationToken.None);
+
+        Assert.Contains(traceability.Nodes, x => x.NodeId == "LOT-OIL-A" && x.NodeType == "MaterialLot");
+        Assert.Contains(traceability.Nodes, x => x.NodeType == "ProductionReport");
+        Assert.Contains(traceability.Nodes, x => x.NodeId == "WO-TRACE-001" && x.NodeType == "WorkOrder");
+        Assert.Contains(traceability.Edges, x => x.RelationType == "consumed-by-report");
     }
 
     [Fact]
