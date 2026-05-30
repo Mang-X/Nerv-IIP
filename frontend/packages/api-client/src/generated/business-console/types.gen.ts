@@ -1051,6 +1051,38 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     idempotencyKey: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseOrderListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderItem = {
+    purchaseOrderNo?: string;
+    supplierCode?: string;
+    siteCode?: string;
+    status?: string;
+    receiptReadiness?: string;
+    totalAmount?: number;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderLineItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderLineItem = {
+    lineNo?: string;
+    skuCode?: string;
+    uomCode?: string;
+    orderedQuantity?: number;
+    receivedQuantity?: number;
+    unitPrice?: number;
+    promisedDate?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpContextRequest = {
+    [key: string]: never;
+};
+
 export type ListBusinessConsoleQualityInspectionPlansData = {
     body?: never;
     path?: never;
@@ -3212,3 +3244,39 @@ export type HealthEndpointResponses = {
 };
 
 export type HealthEndpointResponse = HealthEndpointResponses[keyof HealthEndpointResponses];
+
+export type ListBusinessConsoleErpPurchaseOrdersData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/erp/procurement/purchase-orders';
+};
+
+export type ListBusinessConsoleErpPurchaseOrdersErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpPurchaseOrdersError = ListBusinessConsoleErpPurchaseOrdersErrors[keyof ListBusinessConsoleErpPurchaseOrdersErrors];
+
+export type ListBusinessConsoleErpPurchaseOrdersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseOrderListResponse;
+};
+
+export type ListBusinessConsoleErpPurchaseOrdersResponse = ListBusinessConsoleErpPurchaseOrdersResponses[keyof ListBusinessConsoleErpPurchaseOrdersResponses];

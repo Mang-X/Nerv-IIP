@@ -136,6 +136,14 @@ public interface IBusinessPlanningClient
         CancellationToken cancellationToken);
 }
 
+public interface IBusinessErpClient
+{
+    Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken);
+}
+
 public interface IBusinessMesClient
 {
     Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
@@ -1091,6 +1099,87 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         DateOnly RequiredDate,
         int Status,
         string ReasonCode);
+}
+
+public sealed class HttpBusinessErpClient(HttpClient httpClient)
+    : BusinessServiceHttpClient(httpClient), IBusinessErpClient
+{
+    public Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken) =>
+        ListPurchaseOrdersCoreAsync(internalBearerToken, request, cancellationToken);
+
+    private async Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersCoreAsync(
+        string internalBearerToken,
+        BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamPurchaseOrderListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/purchase-orders?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+
+        return new BusinessConsoleErpPurchaseOrderListResponse(response.Items.Select(x =>
+            new BusinessConsoleErpPurchaseOrderItem(
+                x.PurchaseOrderNo,
+                x.SupplierCode,
+                x.SiteCode,
+                x.Status,
+                ReceiptReadiness(x),
+                x.TotalAmount,
+                x.Lines.Select(line => new BusinessConsoleErpPurchaseOrderLineItem(
+                    line.LineNo,
+                    line.SkuCode,
+                    line.UomCode,
+                    line.OrderedQuantity,
+                    line.ReceivedQuantity,
+                    line.UnitPrice,
+                    line.PromisedDate)).ToArray())).ToArray());
+    }
+
+    private static string ReceiptReadiness(DownstreamPurchaseOrderItem order)
+    {
+        if (order.Lines.Count == 0)
+        {
+            return "no-lines";
+        }
+
+        if (order.Lines.All(line => line.ReceivedQuantity >= line.OrderedQuantity))
+        {
+            return "received";
+        }
+
+        if (order.Lines.Any(line => line.ReceivedQuantity > 0))
+        {
+            return "partially-received";
+        }
+
+        return "awaiting-arrival";
+    }
+
+    private sealed record DownstreamPurchaseOrderListResponse(IReadOnlyCollection<DownstreamPurchaseOrderItem> Items);
+
+    private sealed record DownstreamPurchaseOrderItem(
+        string PurchaseOrderNo,
+        string SupplierCode,
+        string SiteCode,
+        string Status,
+        decimal TotalAmount,
+        IReadOnlyCollection<DownstreamPurchaseOrderLineItem> Lines);
+
+    private sealed record DownstreamPurchaseOrderLineItem(
+        string LineNo,
+        string SkuCode,
+        string UomCode,
+        decimal OrderedQuantity,
+        decimal ReceivedQuantity,
+        decimal UnitPrice,
+        DateOnly PromisedDate);
 }
 
 public sealed class HttpBusinessMesClient(HttpClient httpClient)

@@ -40,6 +40,7 @@ var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, buil
 var qualityBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Quality:BaseUrl", "http://localhost:5110");
 var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
 var demandPlanningBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "DemandPlanning:BaseUrl", "http://localhost:5112");
+var erpBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
 var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
 builder.Services.AddHttpClient<IBusinessGatewayAuthorizationClient, HttpBusinessGatewayAuthorizationClient>(client =>
 {
@@ -64,6 +65,10 @@ builder.Services.AddHttpClient<IBusinessProductEngineeringClient, HttpBusinessPr
 builder.Services.AddHttpClient<IBusinessPlanningClient, HttpBusinessPlanningClient>(client =>
 {
     client.BaseAddress = demandPlanningBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessErpClient, HttpBusinessErpClient>(client =>
+{
+    client.BaseAddress = erpBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client =>
 {

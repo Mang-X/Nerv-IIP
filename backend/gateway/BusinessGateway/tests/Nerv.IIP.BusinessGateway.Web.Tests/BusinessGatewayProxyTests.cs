@@ -174,12 +174,38 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("mrp-run-001", document.RootElement.GetProperty("data").GetProperty("runId").GetString());
     }
 
+    [Fact]
+    public async Task Erp_procurement_purchase_order_list_uses_internal_service_token_for_downstream_business_service()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/erp/procurement/purchase-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal(new BusinessConsoleErpContextRequest("org-001", "env-dev"), erp.LastPurchaseOrderListRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("PO-001", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("purchaseOrderNo").GetString());
+        Assert.False(document.RootElement.GetProperty("data").GetProperty("items")[0].TryGetProperty("supplierName", out _));
+        Assert.Equal("partially-received", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("receiptReadiness").GetString());
+    }
+
     [Theory]
     [InlineData("/api/business-console/v1/inventory/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1", "inventory")]
     [InlineData("/api/business-console/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev", "quality")]
     [InlineData("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev", "mes")]
     [InlineData("/api/business-console/v1/engineering/production-versions?organizationId=org-001&environmentId=env-dev&status=active", "engineering")]
     [InlineData("/api/business-console/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev", "planning")]
+    [InlineData("/api/business-console/v1/erp/procurement/purchase-orders?organizationId=org-001&environmentId=env-dev", "erp")]
     public async Task New_domain_facade_endpoints_do_not_call_downstream_when_iam_denies_permission(
         string path,
         string domain)
@@ -189,6 +215,7 @@ public sealed class BusinessGatewayProxyTests
         var mes = new RecordingMesClient();
         var engineering = new RecordingProductEngineeringClient();
         var planning = new RecordingPlanningClient();
+        var erp = new RecordingErpClient();
         await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Forbidden(), services =>
         {
             services.RemoveAll<IBusinessInventoryClient>();
@@ -201,6 +228,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
             services.RemoveAll<IBusinessPlanningClient>();
             services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
         });
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
@@ -208,12 +237,13 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Contains(domain, new[] { "inventory", "quality", "mes", "engineering", "planning" });
+        Assert.Contains(domain, new[] { "inventory", "quality", "mes", "engineering", "planning", "erp" });
         Assert.Equal(0, inventory.AvailabilityCallCount);
         Assert.Equal(0, quality.NcrListCallCount);
         Assert.Equal(0, mes.WorkOrderListCallCount);
         Assert.Equal(0, engineering.ProductionVersionListCallCount);
         Assert.Equal(0, planning.SuggestionListCallCount);
+        Assert.Equal(0, erp.PurchaseOrderListCallCount);
     }
 
     [Fact]
@@ -1211,6 +1241,45 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+}
+
+internal sealed class RecordingErpClient : IBusinessErpClient
+{
+    public int PurchaseOrderListCallCount { get; private set; }
+
+    public string? LastInternalToken { get; private set; }
+
+    public BusinessConsoleErpContextRequest? LastPurchaseOrderListRequest { get; private set; }
+
+    public Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        PurchaseOrderListCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastPurchaseOrderListRequest = request;
+        return Task.FromResult(new BusinessConsoleErpPurchaseOrderListResponse(
+            [
+                new BusinessConsoleErpPurchaseOrderItem(
+                    "PO-001",
+                    "SUP-001",
+                    "SITE-01",
+                    "PartiallyReceived",
+                    "partially-received",
+                    2400m,
+                    [
+                        new BusinessConsoleErpPurchaseOrderLineItem(
+                            "10",
+                            "RM-SEAL-KIT",
+                            "EA",
+                            120m,
+                            40m,
+                            20m,
+                            DateOnly.Parse("2026-06-06")),
+                    ]),
+            ]));
     }
 }
 

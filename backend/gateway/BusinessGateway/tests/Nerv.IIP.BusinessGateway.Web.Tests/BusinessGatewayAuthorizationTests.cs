@@ -212,6 +212,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/suggestions", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/suggestions/suggestion-001/accept", BusinessGatewayPermissions.PlanningSuggestionsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders", BusinessGatewayPermissions.MesWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/work-orders/rush", BusinessGatewayPermissions.MesWorkOrdersManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);
