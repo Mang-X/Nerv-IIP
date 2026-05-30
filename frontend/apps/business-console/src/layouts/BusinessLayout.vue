@@ -9,7 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@nerv-iip/ui'
-import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, GitBranchIcon, PackageSearchIcon, ReceiptTextIcon, RouteIcon, SettingsIcon } from 'lucide-vue-next'
+import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, GitBranchIcon, PackageSearchIcon, ReceiptTextIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -22,16 +22,33 @@ const mesNavItems: NavSubItem[] = [
   { title: '生产驾驶舱', to: { path: '/mes' } },
   { title: '生产计划', to: { path: '/mes/plans' } },
   { title: '工单与派工', to: { path: '/mes/work-orders' } },
+  { title: '齐套与物料', to: { path: '/mes/materials' } },
+  { title: '派工看板', to: { path: '/mes/dispatch' } },
   { title: '工序执行', to: { path: '/mes/operation-tasks' } },
   { title: '在制跟踪', to: { path: '/mes/wip' } },
   { title: '报工记录', to: { path: '/mes/production-reports' } },
   { title: '完工入库', to: { path: '/mes/receipts' } },
-  { title: '异常与产能', to: { path: '/mes/capacity' } },
-  { title: '规则排程', to: { path: '/mes/schedules' } },
 ]
 
-const systemNavItems: NavSubItem[] = [
-  { title: '数据就绪检查', to: { path: '/mes/foundation' } },
+const qualityInventoryNavItems: NavSubItem[] = [
+  { title: '检验任务与记录', to: { path: '/quality/inspections' } },
+  { title: '不合格品处理', to: { path: '/quality/ncrs' } },
+  { title: '质量与不良', to: { path: '/mes/quality' } },
+  { title: '库存可用量', to: { path: '/inventory/availability' } },
+  { title: '库存移动', to: { path: '/inventory/movements' } },
+  { title: '库存盘点', to: { path: '/inventory/counts' } },
+]
+
+const exceptionScheduleNavItems: NavSubItem[] = [
+  { title: '设备与停机', to: { path: '/mes/downtime' } },
+  { title: '异常与产能', to: { path: '/mes/capacity' } },
+  { title: '规则排程', to: { path: '/mes/schedules' } },
+  { title: '班次交接', to: { path: '/mes/handovers' } },
+]
+
+const traceabilityNavItems: NavSubItem[] = [
+  { title: '追溯查询', to: { path: '/mes/traceability' } },
+  { title: '生产准备检查', to: { path: '/mes/foundation' } },
 ]
 
 function navPath(item: NavSubItem) {
@@ -58,70 +75,56 @@ function isNavGroupActive(items: NavSubItem[]) {
 
 const navItems = computed<NavItem[]>(() => [
   {
-    title: '主数据',
+    title: '基础数据',
     icon: BoxesIcon,
-    isActive: route.path.startsWith('/master-data'),
+    isActive: route.path.startsWith('/master-data') && !route.path.startsWith('/master-data/process'),
     items: [
       { title: '物料与产品', to: { path: '/master-data/skus' } },
       { title: '客户与供应商', to: { path: '/master-data/partners' } },
       { title: '工厂资源', to: { path: '/master-data/resources' } },
-      { title: '工艺与版本', to: { path: '/master-data/process' } },
-    ],
-  },
-  {
-    title: '库存',
-    icon: PackageSearchIcon,
-    isActive: route.path.startsWith('/inventory'),
-    items: [
-      { title: '库存可用量', to: { path: '/inventory/availability' } },
-      { title: '库存移动', to: { path: '/inventory/movements' } },
-      { title: '库存盘点', to: { path: '/inventory/counts' } },
     ],
   },
   {
     title: '工程资料',
     icon: GitBranchIcon,
-    isActive: route.path.startsWith('/engineering'),
+    isActive: route.path.startsWith('/engineering') || route.path.startsWith('/master-data/process'),
     items: [
+      { title: '工艺与版本', to: { path: '/master-data/process' } },
       { title: '发布工程版本', to: { path: '/engineering' } },
     ],
   },
   {
-    title: '计划',
-    icon: RouteIcon,
-    isActive: route.path.startsWith('/planning'),
-    items: [
-      { title: '需求与 MRP', to: { path: '/planning' } },
-    ],
-  },
-  {
-    title: '质量',
-    icon: ClipboardCheckIcon,
-    isActive: route.path.startsWith('/quality'),
-    items: [
-      { title: '检验任务与记录', to: { path: '/quality/inspections' } },
-      { title: '不合格品处理', to: { path: '/quality/ncrs' } },
-    ],
-  },
-  {
-    title: 'ERP',
+    title: '计划与采购',
     icon: ReceiptTextIcon,
-    isActive: route.path.startsWith('/erp'),
+    isActive: route.path.startsWith('/planning') || route.path.startsWith('/erp'),
     items: [
-      { title: '业务协同', to: { path: '/erp' } },
+      { title: '需求与物料计划', to: { path: '/planning' } },
+      { title: '采购与供应', to: { path: '/erp' } },
     ],
   },
   {
-    title: 'MES',
+    title: '生产执行',
     icon: FactoryIcon,
     isActive: isNavGroupActive(mesNavItems),
     items: mesNavItems,
   },
   {
-    title: '系统管理',
-    icon: SettingsIcon,
-    isActive: isNavGroupActive(systemNavItems),
-    items: systemNavItems,
+    title: '质量与库存',
+    icon: ClipboardCheckIcon,
+    isActive: isNavGroupActive(qualityInventoryNavItems),
+    items: qualityInventoryNavItems,
+  },
+  {
+    title: '设备异常',
+    icon: PackageSearchIcon,
+    isActive: isNavGroupActive(exceptionScheduleNavItems),
+    items: exceptionScheduleNavItems,
+  },
+  {
+    title: '追溯报表',
+    icon: ReceiptTextIcon,
+    isActive: isNavGroupActive(traceabilityNavItems),
+    items: traceabilityNavItems,
   },
 ])
 
@@ -130,13 +133,13 @@ const { principal } = storeToRefs(auth)
 const router = useRouter()
 
 const breadcrumbSegmentLabels: Record<string, string> = {
-  erp: 'ERP',
-  inventory: '库存',
+  erp: '计划与采购',
+  inventory: '质量与库存',
   engineering: '工程资料',
-  planning: '计划',
-  'master-data': '主数据',
-  mes: 'MES',
-  quality: '质量',
+  planning: '计划与采购',
+  'master-data': '基础数据',
+  mes: '生产执行',
+  quality: '质量与库存',
 }
 
 const breadcrumbs = computed(() => {

@@ -18,7 +18,7 @@ const errorMessage = computed(() => dispatchTasksError.value instanceof Error ? 
 <template>
   <BusinessLayout>
     <section class="grid gap-4">
-      <BusinessPageHeader domain="MES" title="派工看板" summary="按工作中心、人员、设备和班次查看待派工工序。">
+      <BusinessPageHeader domain="生产执行" title="派工看板" summary="按工作中心、人员、设备和班次查看待派工工序。">
         <template #actions><Button size="sm" variant="outline" :disabled="dispatchTasksPending" @click="refreshDispatchTasks"><RefreshCwIcon data-icon="inline-start" />刷新</Button></template>
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">

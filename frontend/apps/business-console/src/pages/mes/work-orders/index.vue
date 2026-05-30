@@ -10,7 +10,6 @@ import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
 import { useBusinessMasterDataResources, useBusinessSkus } from '@/composables/useBusinessMasterData'
 import { useMesWorkOrders } from '@/composables/useBusinessMes'
-import { demoResourcesOf, demoSkus, demoWorkOrders, mergeByKey, readLocalDemoWorkOrders } from '@/data/shockAbsorberDemo'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type {
   BusinessConsoleCreateRushWorkOrderRequest,
@@ -56,7 +55,7 @@ import {
   WrenchIcon,
 } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -79,6 +78,7 @@ const {
   workOrdersPending,
 } = useMesWorkOrders()
 
+const route = useRoute()
 const router = useRouter()
 const { skus } = useBusinessSkus()
 const { resources: siteResources } = useBusinessMasterDataResources('site')
@@ -248,15 +248,12 @@ const canRecordReport = computed(
     reportQuantitiesAreValid.value &&
     isNonEmpty(reportForm.reportedAtUtc),
 )
-const siteOptions = computed(() => toResourceOptions(siteResources.value.length ? siteResources.value : demoResourcesOf('site')))
-const lineOptions = computed(() => toResourceOptions(lineResources.value.length ? lineResources.value : demoResourcesOf('production-line')))
-const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value.length ? workCenterResources.value : demoResourcesOf('work-center')))
-const shiftOptions = computed(() => toResourceOptions(shiftResources.value.length ? shiftResources.value : demoResourcesOf('shift')))
-const skuOptions = computed(() => toResourceOptions(skus.value.length ? skus.value : demoSkus))
-const localWorkOrders = shallowRef<BusinessConsoleMesWorkOrderItem[]>(readLocalDemoWorkOrders())
-const sourceWorkOrders = computed(() =>
-  mergeByKey([...localWorkOrders.value, ...workOrders.value, ...demoWorkOrders], (order) => order.workOrderId),
-)
+const siteOptions = computed(() => toResourceOptions(siteResources.value))
+const lineOptions = computed(() => toResourceOptions(lineResources.value))
+const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
+const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
+const skuOptions = computed(() => toResourceOptions(skus.value))
+const sourceWorkOrders = computed(() => workOrders.value)
 const visibleWorkOrders = computed(() => {
   const keyword = appliedFilter.keyword.trim().toLowerCase()
   const workCenter = appliedScope.workCenterCode.trim().toLowerCase()
@@ -323,6 +320,20 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => route.query,
+  (query) => {
+    const workOrderId = firstQueryValue(query.workOrderId)
+    const operationTaskId = firstQueryValue(query.operationTaskId)
+    if (!workOrderId || !operationTaskId) return
+
+    reportForm.workOrderId = workOrderId
+    reportForm.operationTaskId = operationTaskId
+    reportSheetOpen.value = true
+  },
+  { immediate: true },
+)
+
 function syncContextFromFilters() {
   rushForm.organizationId = filters.organizationId
   rushForm.environmentId = filters.environmentId
@@ -365,7 +376,14 @@ function useWorkOrder(order: BusinessConsoleMesWorkOrderItem) {
   if (firstTask?.operationTaskId) {
     reportForm.operationTaskId = firstTask.operationTaskId
   }
+  else {
+    reportForm.operationTaskId = ''
+  }
   reportSheetOpen.value = true
+}
+
+function canReportOrder(order: BusinessConsoleMesWorkOrderItem) {
+  return Boolean(order.workOrderId && order.operationTasks?.some((task) => task.operationTaskId))
 }
 
 function openOrderDetail(order: BusinessConsoleMesWorkOrderItem) {
@@ -516,6 +534,11 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
     }))
 }
 
+function firstQueryValue(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
+  return typeof value === 'string' ? value : ''
+}
+
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败。' : ''
 }
@@ -529,7 +552,7 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="工单与派工"
         kicker="调度员工作台"
         summary="围绕工单安排生产顺序、查看工序任务、发起齐套检查和报工，避免一线人员在多个页面之间手工拼编号。"
@@ -717,9 +740,9 @@ function isNonEmpty(value: string) {
                       查看工序
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem @click="useWorkOrder(order)">
+                    <DropdownMenuItem :disabled="!canReportOrder(order)" @click="useWorkOrder(order)">
                       <ClipboardCheckIcon data-icon="inline-start" />
-                      生产报工
+                      {{ canReportOrder(order) ? '生产报工' : '暂无工序，不能报工' }}
                     </DropdownMenuItem>
                     <DropdownMenuItem @click="openRelatedPage('/mes/capacity', order)">
                       <WrenchIcon data-icon="inline-start" />
@@ -848,13 +871,19 @@ function isNonEmpty(value: string) {
           <BusinessFormStatus :error="reportErrorMessage" :success="reportSuccess" />
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
+            <Field class="sm:col-span-2">
+              <FieldLabel>报工对象</FieldLabel>
+              <div class="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                工单与工序来自所选行，只能从工单列表或工序任务带入。
+              </div>
+            </Field>
             <Field>
               <FieldLabel for="report-work-order">工单号 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="report-work-order" v-model="reportForm.workOrderId" required />
+              <Input id="report-work-order" v-model="reportForm.workOrderId" readonly required />
             </Field>
             <Field>
               <FieldLabel for="report-operation-task">工序任务 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="report-operation-task" v-model="reportForm.operationTaskId" required />
+              <Input id="report-operation-task" v-model="reportForm.operationTaskId" readonly required />
             </Field>
             <Field>
               <FieldLabel for="report-good">良品数 <span class="text-destructive">*</span></FieldLabel>

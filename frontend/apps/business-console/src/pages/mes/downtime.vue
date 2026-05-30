@@ -17,7 +17,7 @@ const errorMessage = computed(() => downtimeEventsError.value instanceof Error ?
 <template>
   <BusinessLayout>
     <section class="grid gap-4">
-      <BusinessPageHeader domain="MES" title="设备与停机" summary="记录和查看影响生产执行的设备停机、恢复与未结异常。">
+      <BusinessPageHeader domain="生产执行" title="设备与停机" summary="记录和查看影响生产执行的设备停机、恢复与未结异常。">
         <template #actions><Button size="sm" variant="outline" :disabled="downtimeEventsPending" @click="refreshDowntimeEvents"><RefreshCwIcon data-icon="inline-start" />刷新</Button></template>
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">

@@ -8,17 +8,6 @@ import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesProductionPlans } from '@/composables/useBusinessMes'
-import {
-  demoProductionPlans,
-  demoResourcesOf,
-  demoSkus,
-  mergeByKey,
-  readLocalDemoPlans,
-  readLocalDemoWorkOrders,
-  toDemoWorkOrderFromPlan,
-  writeLocalDemoPlans,
-  writeLocalDemoWorkOrders,
-} from '@/data/shockAbsorberDemo'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type {
   BusinessConsoleMesProductionPlanRow,
@@ -51,7 +40,6 @@ import {
   CalendarCheckIcon,
   ClipboardListIcon,
   FactoryIcon,
-  PlusIcon,
   RefreshCwIcon,
 } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
@@ -75,11 +63,9 @@ const router = useRouter()
 const route = useRoute()
 const initialSource = normalizeSourceQuery(route.query.source)
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
-const planSheetOpen = shallowRef(false)
 const convertSheetOpen = shallowRef(false)
 const selectedPlan = shallowRef<BusinessConsoleMesProductionPlanRow>()
 const convertSuccess = shallowRef('')
-const localPlans = shallowRef<BusinessConsoleMesProductionPlanRow[]>(readLocalDemoPlans())
 const selectedPlanBlockingReasons = computed(() =>
   (selectedPlan.value?.blockingReasons ?? []).map(describeMesReadinessReason),
 )
@@ -104,15 +90,6 @@ const convertForm = reactive({
   dueUtc: '',
   idempotencyKey: newPlanIdempotencyKey('convert-plan'),
 })
-const planForm = reactive({
-  productionPlanId: '',
-  sourceSystem: 'sales-order',
-  sourceDocumentId: '',
-  skuId: 'FG-SAD-FRT-001',
-  plannedQuantity: '100',
-  plannedStartUtc: toLocalDateTimeInput(new Date().toISOString()),
-  plannedEndUtc: toLocalDateTimeInput(new Date(Date.now() + 86_400_000).toISOString()),
-})
 const sourceOptions = [
   { label: '全部来源', value: 'all' },
   { label: '正常订单', value: 'sales' },
@@ -135,14 +112,8 @@ const sourceActions = [
 
 const errorMessage = computed(() => formatError(productionPlansError.value))
 const convertErrorMessage = computed(() => formatError(convertPlanToWorkOrderError.value))
-const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value.length ? workCenterResources.value : demoResourcesOf('work-center')))
-const skuOptions = computed(() => toResourceOptions(demoSkus))
-const sourcePlans = computed(() => {
-  return mergeByKey(
-    [...localPlans.value, ...productionPlans.value, ...demoProductionPlans],
-    (row) => row.productionPlanId,
-  )
-})
+const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
+const sourcePlans = computed(() => productionPlans.value)
 const visiblePlans = computed(() => {
   const keyword = appliedFilter.keyword.trim().toLowerCase()
 
@@ -185,14 +156,6 @@ const pagedPlans = computed(() => {
   return sortedPlans.value.slice(start, start + pageSizeNumber.value)
 })
 const canConvert = computed(() => Boolean(selectedPlan.value?.productionPlanId))
-const canAddPlan = computed(
-  () =>
-    isNonEmpty(planForm.productionPlanId) &&
-    isNonEmpty(planForm.sourceSystem) &&
-    isNonEmpty(planForm.sourceDocumentId) &&
-    isNonEmpty(planForm.skuId) &&
-    Number(planForm.plannedQuantity) > 0,
-)
 
 watch(
   () => [
@@ -210,38 +173,6 @@ watch(
 function focusSource(source: string) {
   filterDraft.source = source
   applyFilters()
-}
-
-function openPlanSheet(source: string) {
-  planForm.sourceSystem = source
-  generatePlanId()
-  planForm.sourceDocumentId = source === 'sales-order' ? 'SO-NEW' : source === 'safety-stock' ? 'INV-REPL-NEW' : 'MPS-NEW'
-  planSheetOpen.value = true
-}
-
-function generatePlanId() {
-  const source = planForm.sourceSystem.replace(/[^a-z]/gi, '').toUpperCase() || 'PLAN'
-  planForm.productionPlanId = `PLAN-${source}-${dateCode()}-${String(sourcePlans.value.length + 1).padStart(3, '0')}`
-}
-
-function submitAddPlan() {
-  if (!canAddPlan.value) return
-
-  localPlans.value = [
-    {
-      productionPlanId: planForm.productionPlanId,
-      sourceSystem: planForm.sourceSystem,
-      sourceDocumentId: planForm.sourceDocumentId,
-      skuId: planForm.skuId,
-      plannedQuantity: Number(planForm.plannedQuantity),
-      readinessStatus: 'Ready',
-      plannedStartUtc: toIsoFromLocalInput(planForm.plannedStartUtc),
-      plannedEndUtc: toIsoFromLocalInput(planForm.plannedEndUtc),
-    },
-    ...localPlans.value.filter((row) => row.productionPlanId !== planForm.productionPlanId),
-  ]
-  writeLocalDemoPlans(localPlans.value)
-  planSheetOpen.value = false
 }
 
 function applyFilters() {
@@ -269,18 +200,6 @@ function openConvertSheet(plan: BusinessConsoleMesProductionPlanRow) {
 async function submitConvertPlan() {
   const planId = selectedPlan.value?.productionPlanId
   if (!planId || !canConvert.value) return
-
-  const isApiPlan = productionPlans.value.some((plan) => plan.productionPlanId === planId)
-  if (!isApiPlan && selectedPlan.value) {
-    const workOrderId = `WO-${planId}`
-    const localWorkOrders = readLocalDemoWorkOrders()
-    writeLocalDemoWorkOrders([
-      toDemoWorkOrderFromPlan(selectedPlan.value, workOrderId, convertForm.workCenterId, toIsoFromLocalInput(convertForm.dueUtc)),
-      ...localWorkOrders.filter((order) => order.workOrderId !== workOrderId),
-    ])
-    convertSuccess.value = `已生成工单 ${workOrderId}，可到工单与派工查看。`
-    return
-  }
 
   await convertPlanToWorkOrder(planId, {
     organizationId: filters.organizationId,
@@ -354,24 +273,12 @@ function formatPlanSource(value?: string | null) {
   return value ? (map[value] ?? value) : '未指定'
 }
 
-function dateCode() {
-  const date = new Date()
-  const year = String(date.getFullYear()).slice(-2)
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}${month}${day}`
-}
-
 function newPlanIdempotencyKey(scope: string) {
   return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败。' : ''
-}
-
-function isNonEmpty(value: string) {
-  return value.trim().length > 0
 }
 
 function rowKey(row: BusinessConsoleMesProductionPlanRow, index: number) {
@@ -397,7 +304,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="生产计划"
         kicker="计划员工作台"
         summary="正常订单、备货、安全库存和预测需求先在这里确认就绪，再转为车间可执行工单；急单不替代计划流程。"
@@ -406,10 +313,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
           <Button size="sm" type="button" variant="outline" :disabled="productionPlansPending" @click="refreshProductionPlans">
             <RefreshCwIcon data-icon="inline-start" />
             刷新
-          </Button>
-          <Button size="sm" type="button" variant="outline" @click="openPlanSheet('sales-order')">
-            <PlusIcon data-icon="inline-start" />
-            新增计划
           </Button>
           <Button size="sm" type="button" @click="router.push('/mes/work-orders')">
             <FactoryIcon data-icon="inline-start" />
@@ -430,10 +333,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
         >
           {{ action.title }}
           <span class="text-xs text-muted-foreground">{{ action.description }}</span>
-        </Button>
-        <Button size="sm" type="button" class="ml-auto" @click="openPlanSheet('sales-order')">
-          <PlusIcon data-icon="inline-start" />
-          新增生产计划
         </Button>
       </div>
 
@@ -561,7 +460,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
                 <BusinessEmptyState
                   title="当前筛选下没有生产计划"
                   description="可以切换需求来源、就绪状态或搜索条件。正常订单、备货和安全库存补充都会先进入计划池。"
-                  action="没有计划时，应先从需求计划、销售订单或库存策略生成计划建议。"
+                  action="没有计划时，应先到需求与物料计划查看已接受的生产建议。"
                 />
               </TableEmpty>
             </TableBody>
@@ -575,69 +474,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
           />
         </div>
       </div>
-
-      <BusinessActionSheet
-        v-model:open="planSheetOpen"
-        title="新增生产计划"
-        description="录入正常订单、备货、安全库存或预测需求，进入计划池后再确认齐套并转为工单。"
-      >
-        <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitAddPlan">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="add-plan-id">计划号 <span class="text-destructive">*</span></FieldLabel>
-              <div class="flex gap-2">
-                <Input id="add-plan-id" v-model="planForm.productionPlanId" required />
-                <Button type="button" variant="outline" @click="generatePlanId">生成</Button>
-              </div>
-            </Field>
-            <Field>
-              <FieldLabel for="add-plan-source">需求来源 <span class="text-destructive">*</span></FieldLabel>
-              <Select v-model="planForm.sourceSystem">
-                <SelectTrigger id="add-plan-source"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sales-order">正常订单</SelectItem>
-                  <SelectItem value="stock-build">备货生产</SelectItem>
-                  <SelectItem value="safety-stock">安全库存补充</SelectItem>
-                  <SelectItem value="forecast">预测需求</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="add-plan-doc">来源单号 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="add-plan-doc" v-model="planForm.sourceDocumentId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="add-plan-sku">物料编码 <span class="text-destructive">*</span></FieldLabel>
-              <Select v-model="planForm.skuId">
-                <SelectTrigger id="add-plan-sku">
-                  <SelectValue placeholder="选择物料" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="option in skuOptions" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="add-plan-qty">计划数量 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="add-plan-qty" v-model="planForm.plannedQuantity" inputmode="decimal" min="1" required type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="add-plan-start">计划开始</FieldLabel>
-              <Input id="add-plan-start" v-model="planForm.plannedStartUtc" type="datetime-local" />
-            </Field>
-            <Field>
-              <FieldLabel for="add-plan-end">计划结束</FieldLabel>
-              <Input id="add-plan-end" v-model="planForm.plannedEndUtc" type="datetime-local" />
-            </Field>
-          </FieldGroup>
-          <div class="flex justify-end gap-2">
-            <Button type="button" variant="outline" @click="planSheetOpen = false">取消</Button>
-            <Button type="submit" :disabled="!canAddPlan">加入计划池</Button>
-          </div>
-        </form>
-      </BusinessActionSheet>
 
       <BusinessActionSheet
         v-model:open="convertSheetOpen"

@@ -63,7 +63,7 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="报工记录"
         summary="查看一线报工结果；新增报工从工单与派工或工序执行范围进入。"
       >

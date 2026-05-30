@@ -8,25 +8,35 @@ const props = defineProps<{
 
 const statusLabels: Record<string, string> = {
   active: '启用',
+  approved: '已批准',
   available: '可用',
   blocked: '阻塞',
+  cancelled: '已取消',
   closed: '已关闭',
   completed: '已完成',
   'conditional-release': '条件放行',
+  conditionalrelease: '条件放行',
+  created: '已创建',
+  disabled: '停用',
   failed: '失败',
   held: '暂停',
   inprogress: '执行中',
   'in-progress': '执行中',
+  issued: '已下发',
   manual: '手工处理',
+  open: '待处理',
   passed: '通过',
   paused: '暂停',
   pending: '待处理',
+  planned: '已计划',
   queued: '排队中',
   ready: '可开工',
   rejected: '已拒绝',
   released: '已下达',
   running: '执行中',
+  scheduled: '已排程',
   started: '已开工',
+  submitted: '已提交',
   unavailable: '不可用',
   warning: '预警',
 }
@@ -34,16 +44,16 @@ const rawValue = computed(() => props.value?.trim() || '')
 const label = computed(() => statusLabels[rawValue.value.toLowerCase()] ?? (rawValue.value || '未知'))
 const variant = computed(() => {
   const value = rawValue.value.toLowerCase()
-  if (['ready', 'completed', 'closed', 'passed', 'available', 'active'].includes(value)) {
+  if (['ready', 'completed', 'closed', 'passed', 'available', 'active', 'approved'].includes(value)) {
     return 'success'
   }
-  if (['running', 'inprogress', 'in-progress', 'started', 'manual'].includes(value)) {
+  if (['running', 'inprogress', 'in-progress', 'started', 'manual', 'released', 'issued', 'scheduled'].includes(value)) {
     return 'default'
   }
-  if (['blocked', 'failed', 'rejected', 'unavailable'].includes(value)) {
+  if (['blocked', 'failed', 'rejected', 'unavailable', 'cancelled', 'disabled'].includes(value)) {
     return 'destructive'
   }
-  if (['pending', 'warning', 'conditional-release'].includes(value)) {
+  if (['pending', 'warning', 'conditional-release', 'conditionalrelease', 'held', 'paused', 'open', 'created', 'planned', 'queued', 'submitted'].includes(value)) {
     return 'warning'
   }
   return 'secondary'
@@ -51,5 +61,7 @@ const variant = computed(() => {
 </script>
 
 <template>
-  <Badge :variant="variant">{{ label }}</Badge>
+  <Badge class="max-w-32 truncate rounded-sm" :aria-label="`状态：${label}`" :variant="variant">
+    {{ label }}
+  </Badge>
 </template>

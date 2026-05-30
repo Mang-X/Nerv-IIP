@@ -106,7 +106,7 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="规则排程"
         summary="查看最近一次规则排程结果；运行排程作为显式动作进入抽屉。"
       >
@@ -194,7 +194,7 @@ function isNonEmpty(value: string) {
               </TableRow>
               <TableEmpty v-if="!assignments.length && !runSchedulePending" :colspan="6">
                 <BusinessEmptyState
-                  title="尚未生成排程结果"
+                  title="尚无排程结果"
                   description="运行排程后，这里会显示工序任务的工作中心、开始和结束时间。"
                   action="暂无排程结果，请选择规则并运行排程。"
                 />
