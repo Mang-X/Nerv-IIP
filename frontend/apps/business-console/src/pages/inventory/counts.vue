@@ -9,7 +9,20 @@ import type {
   BusinessConsoleConfirmStockCountAdjustmentRequest,
   BusinessConsoleCreateStockCountTaskRequest,
 } from '@nerv-iip/api-client'
-import { Button, Field, FieldGroup, FieldLabel, Input, Spinner } from '@nerv-iip/ui'
+import {
+  Button,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@nerv-iip/ui'
 import { CheckCircle2Icon, ClipboardPlusIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
@@ -34,6 +47,7 @@ const taskSuccess = shallowRef('')
 const adjustmentSuccess = shallowRef('')
 const taskSheetOpen = shallowRef(false)
 const adjustmentSheetOpen = shallowRef(false)
+let adjustmentKeySequence = 0
 
 const taskForm = reactive({
   countTaskCode: '',
@@ -123,7 +137,7 @@ async function submitAdjustment() {
 
   const body: BusinessConsoleConfirmStockCountAdjustmentRequest = {
     countedQuantity: toOptionalNumber(adjustmentForm.countedQuantity),
-    idempotencyKey: optionalText(adjustmentForm.idempotencyKey) ?? `count-${adjustmentForm.countTaskId.trim()}-adjustment`,
+    idempotencyKey: optionalText(adjustmentForm.idempotencyKey) ?? createAdjustmentIdempotencyKey(adjustmentForm.countTaskId.trim()),
   }
 
   const response = await confirmAdjustment(adjustmentForm.countTaskId.trim(), body)
@@ -139,8 +153,13 @@ function openAdjustment(row: CountTaskQueueRow) {
   selectedCountTask.value = row
   adjustmentForm.countTaskId = row.countTaskId
   adjustmentForm.countedQuantity = String(row.countedQuantity ?? 0)
-  adjustmentForm.idempotencyKey = ''
+  adjustmentForm.idempotencyKey = createAdjustmentIdempotencyKey(row.countTaskId)
   adjustmentSheetOpen.value = true
+}
+
+function createAdjustmentIdempotencyKey(countTaskId: string) {
+  adjustmentKeySequence += 1
+  return `count-${countTaskId}-${Date.now()}-${adjustmentKeySequence}`
 }
 
 function optionalText(value: string) {
@@ -188,28 +207,28 @@ function isNonEmpty(value: string) {
           <p class="mt-1 text-sm text-muted-foreground">任务创建后进入当前处理队列，差异确认从任务行进入。</p>
         </div>
         <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead class="bg-muted/40 text-left text-muted-foreground">
-              <tr>
-                <th class="px-4 py-3 font-medium">任务号</th>
-                <th class="px-4 py-3 font-medium">物料</th>
-                <th class="px-4 py-3 font-medium">库位</th>
-                <th class="px-4 py-3 font-medium">状态</th>
-                <th class="px-4 py-3 text-right font-medium">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in countTaskQueue" :key="row.countTaskId" class="border-t">
-                <td class="px-4 py-3 font-medium text-foreground">{{ row.countTaskId }}</td>
-                <td class="px-4 py-3">{{ row.skuCode }}</td>
-                <td class="px-4 py-3">{{ row.siteCode }} / {{ row.locationCode }}</td>
-                <td class="px-4 py-3">{{ row.status }}</td>
-                <td class="px-4 py-3 text-right">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>任务号</TableHead>
+                <TableHead>物料</TableHead>
+                <TableHead>库位</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead class="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="row in countTaskQueue" :key="row.countTaskId">
+                <TableCell class="font-medium text-foreground">{{ row.countTaskId }}</TableCell>
+                <TableCell>{{ row.skuCode }}</TableCell>
+                <TableCell>{{ row.siteCode }} / {{ row.locationCode }}</TableCell>
+                <TableCell>{{ row.status }}</TableCell>
+                <TableCell class="text-right">
                   <Button size="sm" type="button" variant="outline" @click="openAdjustment(row)">确认差异</Button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
         <BusinessEmptyState
           v-if="!countTaskQueue.length"

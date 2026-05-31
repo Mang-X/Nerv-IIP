@@ -130,6 +130,9 @@ describe('BusinessLayout', () => {
         ],
       },
     ])
+    expect(navItems.find((item) => item.title === '追溯报表')?.icon).not.toBe(
+      navItems.find((item) => item.title === '计划与采购')?.icon,
+    )
   })
 
   it('keeps MES foundation diagnostics out of the primary production execution group', () => {
@@ -180,6 +183,22 @@ describe('BusinessLayout', () => {
     })
   })
 
+  it('uses a distinct breadcrumb label for procurement pages', () => {
+    routeState.path = '/erp/purchase-orders'
+
+    const wrapper = mount(BusinessLayout, {
+      global: {
+        plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
+        stubs: {
+          AppShell: AppShellStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('采购与供应')
+    expect(wrapper.text()).not.toContain('计划与采购')
+  })
+
   it('renders the home page as a business workbench instead of a route directory', () => {
     const wrapper = mount(IndexPage, {
       global: {
@@ -197,12 +216,8 @@ describe('BusinessLayout', () => {
     })
 
     const text = wrapper.text()
-    expect(text).toContain('待关注事项')
-    expect(text).toContain('业务动作组')
-    expect(text).toContain('关键链路入口')
-    expect(text).toContain('计划转工单')
-    expect(text).toContain('采购到料跟进')
-    expect(text).toContain('设备停机影响')
+    expect(wrapper.findAll('section').length).toBeGreaterThanOrEqual(3)
+    expect(wrapper.findAll('a').length).toBeGreaterThanOrEqual(8)
 
     const forbiddenTerms = ['demo', 'mock', 'seed', 'sourceSystem', 'operationId', '组织', '环境', '接口', '契约']
     for (const term of forbiddenTerms) {

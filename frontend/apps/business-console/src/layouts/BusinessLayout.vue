@@ -9,7 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@nerv-iip/ui'
-import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, GitBranchIcon, PackageSearchIcon, ReceiptTextIcon } from 'lucide-vue-next'
+import { BoxesIcon, ClipboardCheckIcon, FactoryIcon, GitBranchIcon, PackageSearchIcon, ReceiptTextIcon, ScanLineIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -122,7 +122,7 @@ const navItems = computed<NavItem[]>(() => [
   },
   {
     title: '追溯报表',
-    icon: ReceiptTextIcon,
+    icon: ScanLineIcon,
     isActive: isNavGroupActive(traceabilityNavItems),
     items: traceabilityNavItems,
   },
@@ -133,7 +133,7 @@ const { principal } = storeToRefs(auth)
 const router = useRouter()
 
 const breadcrumbSegmentLabels: Record<string, string> = {
-  erp: '计划与采购',
+  erp: '采购与供应',
   inventory: '质量与库存',
   engineering: '工程资料',
   planning: '计划与采购',

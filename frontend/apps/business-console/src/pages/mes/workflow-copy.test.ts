@@ -233,6 +233,10 @@ function mountMesPage(component: unknown) {
       stubs: {
         ...businessStubs,
         ...uiStubs,
+        RouterLink: {
+          props: ['to'],
+          template: '<a data-router-link><slot /></a>',
+        },
       },
     },
   })
@@ -268,6 +272,21 @@ describe('MES workflow copy', () => {
     expect(wrapper.text()).toContain('带入工单报工')
     expect(wrapper.text()).not.toContain('进入执行')
     expectNoForbiddenVisibleTerms(wrapper.text())
+  })
+
+  it('carries operation-task context into the work-order reporting sheet route', async () => {
+    const wrapper = mountMesPage(OperationTasksPage)
+
+    await wrapper.findAll('button').find((button) => button.text().includes('带入工单报工'))!.trigger('click')
+
+    expect(routerState.push).toHaveBeenCalledWith({
+      path: '/mes/work-orders',
+      query: {
+        operationTaskId: 'OP-001-10',
+        workCenterId: 'WC-01',
+        workOrderId: 'WO-001',
+      },
+    })
   })
 
   it('keeps production plans business-facing without manual system number generation', () => {

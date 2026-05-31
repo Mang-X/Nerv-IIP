@@ -18,6 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
   Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@nerv-iip/ui'
 import { SendIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
@@ -174,28 +180,28 @@ function isNonEmpty(value: string) {
             <p class="mt-1 text-sm text-muted-foreground">提交后的库存移动会进入当前处理队列，正式流水由库存服务记录。</p>
           </div>
           <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-muted/40 text-left text-muted-foreground">
-                <tr>
-                  <th class="px-4 py-3 font-medium">移动号</th>
-                  <th class="px-4 py-3 font-medium">类型</th>
-                  <th class="px-4 py-3 font-medium">物料</th>
-                  <th class="px-4 py-3 font-medium">库位</th>
-                  <th class="px-4 py-3 text-right font-medium">数量</th>
-                  <th class="px-4 py-3 font-medium">状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in movementQueue" :key="row.movementId" class="border-t">
-                  <td class="px-4 py-3 font-medium text-foreground">{{ row.movementId }}</td>
-                  <td class="px-4 py-3">{{ row.movementType }}</td>
-                  <td class="px-4 py-3">{{ row.skuCode }}</td>
-                  <td class="px-4 py-3">{{ row.siteCode }} / {{ row.locationCode }}</td>
-                  <td class="px-4 py-3 text-right tabular-nums">{{ row.quantity }}</td>
-                  <td class="px-4 py-3">{{ row.status }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>移动号</TableHead>
+                  <TableHead>类型</TableHead>
+                  <TableHead>物料</TableHead>
+                  <TableHead>库位</TableHead>
+                  <TableHead class="text-right">数量</TableHead>
+                  <TableHead>状态</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="row in movementQueue" :key="row.movementId">
+                  <TableCell class="font-medium text-foreground">{{ row.movementId }}</TableCell>
+                  <TableCell>{{ row.movementType }}</TableCell>
+                  <TableCell>{{ row.skuCode }}</TableCell>
+                  <TableCell>{{ row.siteCode }} / {{ row.locationCode }}</TableCell>
+                  <TableCell class="text-right tabular-nums">{{ row.quantity }}</TableCell>
+                  <TableCell>{{ row.status }}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
           <BusinessEmptyState
             v-if="!movementQueue.length"
