@@ -1009,6 +1009,17 @@ export type InvalidateGatewayCacheEndpointData = {
     url: '/internal/gateway/cache/invalidate';
 };
 
+export type InvalidateGatewayCacheEndpointErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
 export type InvalidateGatewayCacheEndpointResponses = {
     /**
      * No Content

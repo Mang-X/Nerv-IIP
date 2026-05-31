@@ -158,4 +158,5 @@ Export-GatewayOpenApi `
     "Quality__BaseUrl" = "http://127.0.0.1:5110"
     "DemandPlanning__BaseUrl" = "http://127.0.0.1:5112"
     "Mes__BaseUrl" = "http://127.0.0.1:5111"
+    "Scheduling__BaseUrl" = "http://127.0.0.1:5120"
   }

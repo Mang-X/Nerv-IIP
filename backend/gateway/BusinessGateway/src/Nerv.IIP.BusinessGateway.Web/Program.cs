@@ -42,6 +42,7 @@ var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configurat
 var demandPlanningBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "DemandPlanning:BaseUrl", "http://localhost:5112");
 var erpBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
 var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
+var schedulingBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Scheduling:BaseUrl", "http://localhost:5120");
 builder.Services.AddHttpClient<IBusinessGatewayAuthorizationClient, HttpBusinessGatewayAuthorizationClient>(client =>
 {
     client.BaseAddress = iamBaseAddress;
@@ -73,6 +74,10 @@ builder.Services.AddHttpClient<IBusinessErpClient, HttpBusinessErpClient>(client
 builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client =>
 {
     client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessSchedulingClient, HttpBusinessSchedulingClient>(client =>
+{
+    client.BaseAddress = schedulingBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddBusinessGatewayAuthentication(builder.Configuration, builder.Environment);
 var allowedCorsOrigins = ResolveGatewayCorsOrigins(builder.Configuration, builder.Environment);

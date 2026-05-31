@@ -371,6 +371,25 @@ public sealed record BusinessConsoleAcceptPlanningSuggestionRequest(
     string DownstreamDocumentType,
     string DownstreamDocumentId);
 
+public sealed record BusinessConsoleSchedulingContextRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleSchedulePlanSummaryResponse(
+    string PlanId,
+    string ProblemId,
+    Nerv.IIP.Contracts.Scheduling.SchedulePlanStatusContract Status,
+    DateTimeOffset GeneratedAtUtc,
+    DateTimeOffset? ReleasedAtUtc,
+    int AssignmentCount,
+    int ConflictCount,
+    int UnscheduledOperationCount);
+
+public sealed record BusinessConsoleReleaseSchedulePlanResponse(
+    string PlanId,
+    Nerv.IIP.Contracts.Scheduling.SchedulePlanStatusContract Status,
+    DateTimeOffset? ReleasedAtUtc);
+
 public sealed record BusinessConsoleErpContextRequest(
     string OrganizationId,
     string EnvironmentId);

@@ -36,6 +36,7 @@
     <ProjectReference Include="..\..\..\backend\services\Business\IndustrialTelemetry\src\Nerv.IIP.Business.IndustrialTelemetry.Web\Nerv.IIP.Business.IndustrialTelemetry.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\services\Business\Maintenance\src\Nerv.IIP.Business.Maintenance.Web\Nerv.IIP.Business.Maintenance.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\services\Business\Erp\src\Nerv.IIP.Business.Erp.Web\Nerv.IIP.Business.Erp.Web.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\..\backend\services\Business\Scheduling\src\Nerv.IIP.Business.Scheduling.Web\Nerv.IIP.Business.Scheduling.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\gateway\PlatformGateway\src\Nerv.IIP.PlatformGateway.Web\Nerv.IIP.PlatformGateway.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\gateway\BusinessGateway\src\Nerv.IIP.BusinessGateway.Web\Nerv.IIP.BusinessGateway.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\connector-hosts\src\Nerv.IIP.ConnectorHost.Host\Nerv.IIP.ConnectorHost.Host.csproj" IsAspireProjectResource="true" />

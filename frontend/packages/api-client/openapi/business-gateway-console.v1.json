@@ -11,6 +11,378 @@
     }
   ],
   "paths": {
+    "/api/business-console/v1/scheduling/plans/preview": {
+      "post": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "previewBusinessConsoleSchedulingPlan",
+        "requestBody": {
+          "x-name": "BusinessConsoleSchedulingProblemRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/scheduling/plans": {
+      "post": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleSchedulingPlan",
+        "requestBody": {
+          "x-name": "BusinessConsoleSchedulingProblemRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleSchedulingPlans",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleSchedulePlanSummaryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/scheduling/plans/{planId}": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleSchedulingPlan",
+        "parameters": [
+          {
+            "name": "planId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/scheduling/plans/{planId}/gantt": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleSchedulingPlanGantt",
+        "parameters": [
+          {
+            "name": "planId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfGanttScheduleItemContract"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/scheduling/plans/{planId}/release": {
+      "post": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "releaseBusinessConsoleSchedulingPlan",
+        "parameters": [
+          {
+            "name": "planId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseSchedulePlanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/quality/inspection-plans": {
       "get": {
         "tags": [
@@ -4637,6 +5009,882 @@
   },
   "components": {
     "schemas": {
+      "NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanContract"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulePlanContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "problemId": {
+            "type": "string"
+          },
+          "problemFingerprint": {
+            "type": "string"
+          },
+          "algorithmVersion": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanStatusContract"
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "assignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentContract"
+            }
+          },
+          "resourceLoads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleResourceLoadContract"
+            }
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleConflictContract"
+            }
+          },
+          "unscheduledOperations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingUnscheduledOperationContract"
+            }
+          },
+          "changeSummary": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleChangeContract"
+            }
+          },
+          "ganttItems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingGanttScheduleItemContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanStatusContract": {
+        "type": "integer",
+        "description": "",
+        "x-enumNames": [
+          "Preview",
+          "Generated",
+          "Released"
+        ],
+        "enum": [
+          0,
+          1,
+          2
+        ]
+      },
+      "NervIIPContractsSchedulingScheduleAssignmentContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "assignmentId": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "operationSequence": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isLocked": {
+            "type": "boolean"
+          },
+          "explanationCode": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleResourceLoadContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resourceId": {
+            "type": "string"
+          },
+          "windowStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowEndUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "assignedMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "availableMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "utilization": {
+            "type": "number",
+            "format": "decimal"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleConflictContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "conflictId": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleConflictReasonCodeContract"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleConflictSeverityContract"
+          },
+          "orderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "resourceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleConflictReasonCodeContract": {
+        "type": "integer",
+        "description": "",
+        "x-enumNames": [
+          "DueDate",
+          "Capacity",
+          "Calendar",
+          "Material",
+          "Quality",
+          "Equipment",
+          "NoEligibleResource",
+          "OutsideHorizon",
+          "InvalidLockedAssignment",
+          "PredecessorUnscheduled"
+        ],
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ]
+      },
+      "NervIIPContractsSchedulingScheduleConflictSeverityContract": {
+        "type": "integer",
+        "description": "",
+        "x-enumNames": [
+          "Info",
+          "Warning",
+          "Error"
+        ],
+        "enum": [
+          0,
+          1,
+          2
+        ]
+      },
+      "NervIIPContractsSchedulingUnscheduledOperationContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleConflictReasonCodeContract"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleChangeContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "changeType": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleChangeTypeContract"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleChangeTypeContract": {
+        "type": "integer",
+        "description": "",
+        "x-enumNames": [
+          "Added",
+          "Moved",
+          "Delayed",
+          "Preserved",
+          "Blocked"
+        ],
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "NervIIPContractsSchedulingGanttScheduleItemContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "operationSequence": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanStatusContract"
+          },
+          "hasConflict": {
+            "type": "boolean"
+          },
+          "conflictReasonCode": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleConflictReasonCodeContract"
+              }
+            ]
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseData": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errorData": {
+            "type": "array",
+            "items": {}
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "problem"
+        ],
+        "properties": {
+          "problem": {
+            "nullable": false,
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingProblemContract"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingProblemContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId"
+        ],
+        "properties": {
+          "contractVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "problemId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "horizonStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "horizonEndUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingOrderContract"
+            }
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingResourceContract"
+            }
+          },
+          "calendars": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingCalendarContract"
+            }
+          },
+          "unavailabilityWindows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingUnavailabilityWindowContract"
+            }
+          },
+          "materialReadiness": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingMaterialReadinessContract"
+            }
+          },
+          "qualityBlocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingQualityBlockContract"
+            }
+          },
+          "lockedAssignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingLockedAssignmentContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingOrderContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "dueUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isRush": {
+            "type": "boolean"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingOperationContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingOperationContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "operationSequence": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "predecessorOperationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requiredCapabilityCode": {
+            "type": "string"
+          },
+          "eligibleResourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "primaryResourceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "earliestStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isRush": {
+            "type": "boolean"
+          },
+          "splitPolicy": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleSplitPolicyContract"
+          },
+          "materialReadyUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "qualityBlockReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceReference": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleSplitPolicyContract": {
+        "type": "integer",
+        "description": "",
+        "x-enumNames": [
+          "NonSplittable"
+        ],
+        "enum": [
+          0
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulingResourceContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resourceId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "capabilityCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "capacityUnits": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "calendarId": {
+            "type": "string"
+          },
+          "sortKey": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingCalendarContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "calendarId": {
+            "type": "string"
+          },
+          "shiftWindows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingTimeWindowContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingTimeWindowContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reasonCode": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingUnavailabilityWindowContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resourceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reasonCode": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingMaterialReadinessContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scopeType": {
+            "type": "string"
+          },
+          "scopeId": {
+            "type": "string"
+          },
+          "materialReadyUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "isReady": {
+            "type": "boolean"
+          },
+          "reasonCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingQualityBlockContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scopeType": {
+            "type": "string"
+          },
+          "scopeId": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "blockedUntilUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingLockedAssignmentContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "assignmentId": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "operationSequence": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lockReasonCode": {
+            "type": "string"
+          }
+        }
+      },
+      "FastEndpointsErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "format": "int32",
+            "default": 400
+          },
+          "message": {
+            "type": "string",
+            "default": "One or more errors occurred!"
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleSchedulePlanSummaryResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "planId": {
+            "type": "string"
+          },
+          "problemId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanStatusContract"
+          },
+          "generatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "releasedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "assignmentCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "conflictCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unscheduledOperationCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingContextRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NervIIPBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingPlanRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfGanttScheduleItemContract": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "$ref": "#/components/schemas/NervIIPContractsSchedulingGanttScheduleItemContract"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseSchedulePlanResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseSchedulePlanResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseSchedulePlanResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "planId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanStatusContract"
+          },
+          "releasedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse": {
         "allOf": [
           {
@@ -4731,26 +5979,6 @@
           "serialNo": {
             "type": "string",
             "nullable": true
-          }
-        }
-      },
-      "NetCorePalExtensionsDtoResponseData": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "message": {
-            "type": "string"
-          },
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "errorData": {
-            "type": "array",
-            "items": {}
           }
         }
       },
@@ -5378,30 +6606,6 @@
             "maxLength": 150,
             "minLength": 0,
             "nullable": true
-          }
-        }
-      },
-      "FastEndpointsErrorResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "statusCode": {
-            "type": "integer",
-            "format": "int32",
-            "default": 400
-          },
-          "message": {
-            "type": "string",
-            "default": "One or more errors occurred!"
-          },
-          "errors": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
           }
         }
       },

@@ -11,14 +11,15 @@ internal static class ResponseDataEndpointResults
         HttpContext context,
         int statusCode,
         T data,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        JsonSerializerOptions? jsonOptions = null)
     {
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
         await JsonSerializer.SerializeAsync(
             context.Response.Body,
             data.AsResponseData(),
-            JsonOptions,
+            jsonOptions ?? JsonOptions,
             cancellationToken);
     }
 
