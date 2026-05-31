@@ -10,6 +10,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
+using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -312,6 +314,169 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("partially-received", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("receiptReadiness").GetString());
     }
 
+    [Fact]
+    public async Task Scheduling_facade_uses_internal_service_token_and_forwards_stable_dtos()
+    {
+        var scheduling = new RecordingSchedulingClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var preview = await client.PostAsJsonAsync("/api/business-console/v1/scheduling/plans/preview?organizationId=org-001&environmentId=env-dev", new
+        {
+            problem = CreateSchedulingProblem(),
+        });
+        var create = await client.PostAsJsonAsync("/api/business-console/v1/scheduling/plans?organizationId=org-001&environmentId=env-dev", new
+        {
+            problem = CreateSchedulingProblem(),
+        });
+        var list = await client.GetAsync("/api/business-console/v1/scheduling/plans?organizationId=org-001&environmentId=env-dev");
+        var detail = await client.GetAsync("/api/business-console/v1/scheduling/plans/plan-001?organizationId=org-001&environmentId=env-dev");
+        var gantt = await client.GetAsync("/api/business-console/v1/scheduling/plans/plan-001/gantt?organizationId=org-001&environmentId=env-dev");
+        var release = await client.PostAsync("/api/business-console/v1/scheduling/plans/plan-001/release?organizationId=org-001&environmentId=env-dev", null);
+
+        Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, gantt.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, release.StatusCode);
+        Assert.Equal("internal-test-token", scheduling.LastInternalToken);
+        Assert.Equal("problem-001", scheduling.LastProblem!.ProblemId);
+        Assert.Equal(new BusinessConsoleSchedulingContextRequest("org-001", "env-dev"), scheduling.LastListRequest);
+        Assert.Equal("plan-001", scheduling.LastPlanId);
+        Assert.Equal(new BusinessConsoleSchedulingPlanRequest("plan-001", "org-001", "env-dev"), scheduling.LastPlanRequest);
+
+        using var listDocument = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var summary = listDocument.RootElement.GetProperty("data")[0];
+        Assert.Equal("plan-001", summary.GetProperty("planId").GetString());
+        Assert.Equal("generated", summary.GetProperty("status").GetString());
+        Assert.Equal(1, summary.GetProperty("assignmentCount").GetInt32());
+        Assert.Equal(0, summary.GetProperty("conflictCount").GetInt32());
+
+        using var ganttDocument = JsonDocument.Parse(await gantt.Content.ReadAsStringAsync());
+        var item = ganttDocument.RootElement.GetProperty("data")[0];
+        Assert.Equal("gantt-001", item.GetProperty("itemId").GetString());
+        Assert.Equal("op-001", item.GetProperty("operationId").GetString());
+        Assert.Equal("generated", item.GetProperty("status").GetString());
+        Assert.Equal("dueDate", item.GetProperty("conflictReasonCode").GetString());
+
+        using var releaseDocument = JsonDocument.Parse(await release.Content.ReadAsStringAsync());
+        Assert.Equal("plan-001", releaseDocument.RootElement.GetProperty("data").GetProperty("planId").GetString());
+        Assert.Equal("released", releaseDocument.RootElement.GetProperty("data").GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Scheduling_facade_accepts_generated_client_string_enum_payloads()
+    {
+        var scheduling = new RecordingSchedulingClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var requestJson = JsonSerializer.Serialize(
+            new BusinessConsoleSchedulingProblemRequest(CreateSchedulingProblemWithOperation()),
+            SchedulingJson.Options);
+        using var content = new StringContent(
+            requestJson,
+            System.Text.Encoding.UTF8,
+            System.Net.Http.Headers.MediaTypeHeaderValue.Parse("application/json"));
+
+        var response = await client.PostAsync(
+            "/api/business-console/v1/scheduling/plans/preview?organizationId=org-001&environmentId=env-dev",
+            content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("\"splitPolicy\":\"nonSplittable\"", requestJson, StringComparison.Ordinal);
+        Assert.Equal(ScheduleSplitPolicyContract.NonSplittable, scheduling.LastProblem!.Orders.Single().Operations.Single().SplitPolicy);
+        Assert.Contains("\"status\":\"preview\"", responseBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Scheduling_facade_does_not_call_downstream_when_iam_denies_permission()
+    {
+        var scheduling = new RecordingSchedulingClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Forbidden(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/scheduling/plans?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, scheduling.ListCallCount);
+    }
+
+    [Fact]
+    public async Task Scheduling_http_client_sends_internal_token_and_downstream_routes()
+    {
+        var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, SchedulingResponseFor(request)));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        var client = new HttpBusinessSchedulingClient(httpClient);
+
+        await client.PreviewPlanAsync("internal-token-001", CreateSchedulingProblem(), CancellationToken.None);
+        await client.CreatePlanAsync("internal-token-001", CreateSchedulingProblem(), CancellationToken.None);
+        await client.ListPlansAsync("internal-token-001", new BusinessConsoleSchedulingContextRequest("org-001", "env-dev"), CancellationToken.None);
+        var planRequest = new BusinessConsoleSchedulingPlanRequest("plan-001", "org-001", "env-dev");
+        await client.GetPlanAsync("internal-token-001", planRequest, CancellationToken.None);
+        await client.GetPlanGanttAsync("internal-token-001", planRequest, CancellationToken.None);
+        await client.ReleasePlanAsync("internal-token-001", planRequest, CancellationToken.None);
+
+        Assert.All(handler.Requests, request => Assert.Equal("Bearer", request.Headers.Authorization?.Scheme));
+        Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization?.Parameter));
+        Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
+        Assert.Equal("/api/business/v1/scheduling/plans/preview", handler.Requests[0].RequestUri!.AbsolutePath);
+        Assert.Equal(HttpMethod.Post, handler.Requests[1].Method);
+        Assert.Equal("/api/business/v1/scheduling/plans", handler.Requests[1].RequestUri!.AbsolutePath);
+        Assert.Equal(HttpMethod.Get, handler.Requests[2].Method);
+        Assert.Equal("/api/business/v1/scheduling/plans", handler.Requests[2].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[2].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("/api/business/v1/scheduling/plans/plan-001", handler.Requests[3].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[3].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("/api/business/v1/scheduling/plans/plan-001/gantt", handler.Requests[4].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[4].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal(HttpMethod.Post, handler.Requests[5].Method);
+        Assert.Equal("/api/business/v1/scheduling/plans/plan-001/release", handler.Requests[5].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[5].RequestUri!.Query.TrimStart('?'));
+    }
+
+    [Fact]
+    public async Task Scheduling_http_client_uses_scheduling_contract_enum_json()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            var requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            Assert.Contains("\"splitPolicy\":\"nonSplittable\"", requestBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"splitPolicy\":0", requestBody, StringComparison.Ordinal);
+            return StringJsonResponse(HttpStatusCode.OK, SchedulingStringEnumPlanJson);
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        var client = new HttpBusinessSchedulingClient(httpClient);
+
+        var plan = await client.PreviewPlanAsync("internal-token-001", CreateSchedulingProblemWithOperation(), CancellationToken.None);
+
+        Assert.Equal(SchedulePlanStatusContract.Generated, plan.Status);
+        Assert.Contains(plan.Conflicts, x => x.ReasonCode == ScheduleConflictReasonCodeContract.DueDate);
+        Assert.Contains(plan.GanttItems, x =>
+            x.Status == SchedulePlanStatusContract.Generated &&
+            x.ConflictReasonCode == ScheduleConflictReasonCodeContract.DueDate);
+    }
+
     [Theory]
     [InlineData("/api/business-console/v1/inventory/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1", "inventory")]
     [InlineData("/api/business-console/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev", "quality")]
@@ -319,6 +484,7 @@ public sealed class BusinessGatewayProxyTests
     [InlineData("/api/business-console/v1/engineering/production-versions?organizationId=org-001&environmentId=env-dev&status=active", "engineering")]
     [InlineData("/api/business-console/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev", "planning")]
     [InlineData("/api/business-console/v1/erp/procurement/purchase-orders?organizationId=org-001&environmentId=env-dev", "erp")]
+    [InlineData("/api/business-console/v1/scheduling/plans?organizationId=org-001&environmentId=env-dev", "scheduling")]
     public async Task New_domain_facade_endpoints_do_not_call_downstream_when_iam_denies_permission(
         string path,
         string domain)
@@ -329,6 +495,7 @@ public sealed class BusinessGatewayProxyTests
         var engineering = new RecordingProductEngineeringClient();
         var planning = new RecordingPlanningClient();
         var erp = new RecordingErpClient();
+        var scheduling = new RecordingSchedulingClient();
         await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Forbidden(), services =>
         {
             services.RemoveAll<IBusinessInventoryClient>();
@@ -343,6 +510,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessPlanningClient>(planning);
             services.RemoveAll<IBusinessErpClient>();
             services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
         });
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
@@ -350,13 +519,14 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Contains(domain, new[] { "inventory", "quality", "mes", "engineering", "planning", "erp" });
+        Assert.Contains(domain, new[] { "inventory", "quality", "mes", "engineering", "planning", "erp", "scheduling" });
         Assert.Equal(0, inventory.AvailabilityCallCount);
         Assert.Equal(0, quality.NcrListCallCount);
         Assert.Equal(0, mes.WorkOrderListCallCount);
         Assert.Equal(0, engineering.ProductionVersionListCallCount);
         Assert.Equal(0, planning.SuggestionListCallCount);
         Assert.Equal(0, erp.PurchaseOrderListCallCount);
+        Assert.Equal(0, scheduling.ListCallCount);
     }
 
     [Fact]
@@ -972,6 +1142,235 @@ public sealed class BusinessGatewayProxyTests
         Content = JsonContent.Create(payload),
     };
 
+    private static HttpResponseMessage StringJsonResponse(HttpStatusCode statusCode, string payload) => new(statusCode)
+    {
+        Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
+    };
+
+    private static SchedulingProblemContract CreateSchedulingProblem() => new(
+        ContractVersion: 1,
+        ProblemId: "problem-001",
+        OrganizationId: "org-001",
+        EnvironmentId: "env-dev",
+        HorizonStartUtc: DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+        HorizonEndUtc: DateTimeOffset.Parse("2026-06-01T16:00:00Z", CultureInfo.InvariantCulture),
+        Orders: [],
+        Resources: [],
+        Calendars: [],
+        UnavailabilityWindows: [],
+        MaterialReadiness: [],
+        QualityBlocks: [],
+        LockedAssignments: []);
+
+    private static SchedulingProblemContract CreateSchedulingProblemWithOperation() => CreateSchedulingProblem() with
+    {
+        Orders =
+        [
+            new SchedulingOrderContract(
+                "order-001",
+                "SKU-001",
+                1,
+                DateTimeOffset.Parse("2026-06-01T16:00:00Z", CultureInfo.InvariantCulture),
+                1,
+                false,
+                [
+                    new SchedulingOperationContract(
+                        "op-001",
+                        10,
+                        [],
+                        60,
+                        "CAP-001",
+                        ["res-001"],
+                        "res-001",
+                        DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                        DateTimeOffset.Parse("2026-06-01T16:00:00Z", CultureInfo.InvariantCulture),
+                        1,
+                        false,
+                        ScheduleSplitPolicyContract.NonSplittable,
+                        null,
+                        null,
+                        "source-001"),
+                ]),
+        ],
+    };
+
+    internal static SchedulePlanContract CreateSchedulePlan(SchedulePlanStatusContract status = SchedulePlanStatusContract.Generated) => new(
+        ContractVersion: 1,
+        PlanId: "plan-001",
+        ProblemId: "problem-001",
+        ProblemFingerprint: "fingerprint-001",
+        AlgorithmVersion: "aps-lite-v1",
+        Status: status,
+        GeneratedAtUtc: DateTimeOffset.Parse("2026-06-01T08:05:00Z", CultureInfo.InvariantCulture),
+        Assignments:
+        [
+            new ScheduleAssignmentContract(
+                "assign-001",
+                "order-001",
+                "op-001",
+                10,
+                "res-001",
+                "wc-001",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture),
+                false,
+                "scheduled"),
+        ],
+        ResourceLoads: [],
+        Conflicts: [],
+        UnscheduledOperations: [],
+        ChangeSummary: [],
+        GanttItems:
+        [
+            new GanttScheduleItemContract(
+                "gantt-001",
+                "order-001",
+                "op-001",
+                10,
+                "res-001",
+                "wc-001",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture),
+                status,
+                true,
+                ScheduleConflictReasonCodeContract.DueDate),
+        ]);
+
+    private const string SchedulingStringEnumPlanJson = """
+        {
+          "data": {
+            "contractVersion": 1,
+            "planId": "plan-001",
+            "problemId": "problem-001",
+            "problemFingerprint": "fingerprint-001",
+            "algorithmVersion": "aps-lite-v1",
+            "status": "generated",
+            "generatedAtUtc": "2026-06-01T08:05:00Z",
+            "assignments": [
+              {
+                "assignmentId": "assign-001",
+                "orderId": "order-001",
+                "operationId": "op-001",
+                "operationSequence": 10,
+                "resourceId": "res-001",
+                "workCenterId": "wc-001",
+                "startUtc": "2026-06-01T08:00:00Z",
+                "endUtc": "2026-06-01T09:00:00Z",
+                "isLocked": false,
+                "explanationCode": "scheduled"
+              }
+            ],
+            "resourceLoads": [],
+            "conflicts": [
+              {
+                "conflictId": "conflict-001",
+                "reasonCode": "dueDate",
+                "severity": "warning",
+                "orderId": "order-001",
+                "operationId": "op-001",
+                "resourceId": "res-001",
+                "message": "Due date conflict"
+              }
+            ],
+            "unscheduledOperations": [
+              {
+                "orderId": "order-002",
+                "operationId": "op-002",
+                "reasonCode": "dueDate",
+                "message": "Outside due date"
+              }
+            ],
+            "changeSummary": [
+              {
+                "orderId": "order-001",
+                "operationId": "op-001",
+                "changeType": "delayed",
+                "message": "Delayed by rush order"
+              }
+            ],
+            "ganttItems": [
+              {
+                "itemId": "gantt-001",
+                "orderId": "order-001",
+                "operationId": "op-001",
+                "operationSequence": 10,
+                "resourceId": "res-001",
+                "workCenterId": "wc-001",
+                "startUtc": "2026-06-01T08:00:00Z",
+                "endUtc": "2026-06-01T09:00:00Z",
+                "status": "generated",
+                "hasConflict": true,
+                "conflictReasonCode": "dueDate"
+              }
+            ]
+          },
+          "success": true,
+          "message": "",
+          "code": 0
+        }
+        """;
+
+    private static object SchedulingResponseFor(HttpRequestMessage request)
+    {
+        var path = request.RequestUri!.AbsolutePath;
+        if (path.EndsWith("/gantt", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = CreateSchedulePlan().GanttItems,
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        if (path.EndsWith("/release", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new BusinessConsoleReleaseSchedulePlanResponse(
+                    "plan-001",
+                    SchedulePlanStatusContract.Released,
+                    DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)),
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        if (request.Method == HttpMethod.Get && path.EndsWith("/plans", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new[]
+                {
+                    new BusinessConsoleSchedulePlanSummaryResponse(
+                        "plan-001",
+                        "problem-001",
+                        SchedulePlanStatusContract.Generated,
+                        DateTimeOffset.Parse("2026-06-01T08:05:00Z", CultureInfo.InvariantCulture),
+                        null,
+                        1,
+                        0,
+                        0),
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        return new
+        {
+            data = CreateSchedulePlan(path.EndsWith("/preview", StringComparison.Ordinal)
+                ? SchedulePlanStatusContract.Preview
+                : SchedulePlanStatusContract.Generated),
+            success = true,
+            message = string.Empty,
+            code = 0,
+        };
+    }
+
     private static object ResponseForEngineeringRequest(HttpRequestMessage request)
     {
         var path = request.RequestUri!.AbsolutePath;
@@ -1393,6 +1792,100 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                             DateOnly.Parse("2026-06-06")),
                     ]),
             ]));
+    }
+}
+
+internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
+{
+    public int ListCallCount { get; private set; }
+
+    public string? LastInternalToken { get; private set; }
+
+    public SchedulingProblemContract? LastProblem { get; private set; }
+
+    public BusinessConsoleSchedulingContextRequest? LastListRequest { get; private set; }
+
+    public string? LastPlanId { get; private set; }
+
+    public BusinessConsoleSchedulingPlanRequest? LastPlanRequest { get; private set; }
+
+    public Task<SchedulePlanContract> PreviewPlanAsync(
+        string internalBearerToken,
+        SchedulingProblemContract problem,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProblem = problem;
+        return Task.FromResult(BusinessGatewayProxyTests.CreateSchedulePlan(SchedulePlanStatusContract.Preview));
+    }
+
+    public Task<SchedulePlanContract> CreatePlanAsync(
+        string internalBearerToken,
+        SchedulingProblemContract problem,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProblem = problem;
+        return Task.FromResult(BusinessGatewayProxyTests.CreateSchedulePlan(SchedulePlanStatusContract.Generated));
+    }
+
+    public Task<IReadOnlyCollection<BusinessConsoleSchedulePlanSummaryResponse>> ListPlansAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        ListCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastListRequest = request;
+        return Task.FromResult<IReadOnlyCollection<BusinessConsoleSchedulePlanSummaryResponse>>(
+        [
+            new(
+                "plan-001",
+                "problem-001",
+                SchedulePlanStatusContract.Generated,
+                DateTimeOffset.Parse("2026-06-01T08:05:00Z", CultureInfo.InvariantCulture),
+                null,
+                1,
+                0,
+                0),
+        ]);
+    }
+
+    public Task<SchedulePlanContract> GetPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPlanId = request.PlanId;
+        LastPlanRequest = request;
+        return Task.FromResult(BusinessGatewayProxyTests.CreateSchedulePlan());
+    }
+
+    public Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPlanId = request.PlanId;
+        LastPlanRequest = request;
+        return Task.FromResult<IReadOnlyCollection<GanttScheduleItemContract>>(
+            BusinessGatewayProxyTests.CreateSchedulePlan().GanttItems);
+    }
+
+    public Task<BusinessConsoleReleaseSchedulePlanResponse> ReleasePlanAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPlanId = request.PlanId;
+        LastPlanRequest = request;
+        return Task.FromResult(new BusinessConsoleReleaseSchedulePlanResponse(
+            request.PlanId,
+            SchedulePlanStatusContract.Released,
+            DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)));
     }
 }
 

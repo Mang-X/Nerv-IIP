@@ -32,6 +32,7 @@ var businessWmsDatabase = postgres.AddDatabase("business-wms-db", "nerv_iip_wms"
 var businessIndustrialTelemetryDatabase = postgres.AddDatabase("business-industrial-telemetry-db", "nerv_iip_industrial_telemetry");
 var businessMaintenanceDatabase = postgres.AddDatabase("business-maintenance-db", "nerv_iip_maintenance");
 var businessErpDatabase = postgres.AddDatabase("business-erp-db", "nerv_iip_erp");
+var businessSchedulingDatabase = postgres.AddDatabase("business-scheduling-db", "nerv_iip_scheduling");
 var redis = builder.AddRedis("redis")
     .WithDataVolume("nerv-iip-redis");
 var rabbitmq = useRabbitMq
@@ -357,6 +358,23 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+var businessScheduling = builder.AddProject<Projects.Nerv_IIP_Business_Scheduling_Web>("business-scheduling")
+    .WithHttpEndpoint(port: 5120, name: "http")
+    .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
+    .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
+    .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+    .WithReference(businessSchedulingDatabase, "PostgreSQL")
+    .WaitFor(businessSchedulingDatabase)
+    .WaitFor(otelCollector);
+if (rabbitmq is not null)
+{
+    businessScheduling = businessScheduling
+        .WithReference(rabbitmq)
+        .WaitFor(rabbitmq);
+}
+
 var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")
     .WithHttpEndpoint(port: 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
@@ -386,6 +404,7 @@ var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway
     .WithReference(businessIndustrialTelemetry)
     .WithReference(businessMaintenance)
     .WithReference(businessErp)
+    .WithReference(businessScheduling)
     .WithReference(redis)
     .WaitFor(apphub)
     .WaitFor(iam)
@@ -407,6 +426,7 @@ var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>(
     .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("DemandPlanning__BaseUrl", businessDemandPlanning.GetEndpoint("http"))
+    .WithEnvironment("Scheduling__BaseUrl", businessScheduling.GetEndpoint("http"))
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
@@ -417,6 +437,7 @@ var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>(
     .WithReference(businessMes)
     .WithReference(businessProductEngineering)
     .WithReference(businessDemandPlanning)
+    .WithReference(businessScheduling)
     .WithReference(redis)
     .WaitFor(iam)
     .WaitFor(businessMasterData)
@@ -425,6 +446,7 @@ var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>(
     .WaitFor(businessMes)
     .WaitFor(businessProductEngineering)
     .WaitFor(businessDemandPlanning)
+    .WaitFor(businessScheduling)
     .WaitFor(redis)
     .WaitFor(otelCollector);
 

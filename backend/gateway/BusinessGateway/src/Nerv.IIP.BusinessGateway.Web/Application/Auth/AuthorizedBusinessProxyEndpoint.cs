@@ -2,6 +2,7 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using NetCorePal.Extensions.Dto;
+using System.Text.Json;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
 
@@ -31,7 +32,7 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
         try
         {
             var response = await ForwardAsync(req, bearerToken, ct);
-            await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCode, response, ct);
+            await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCode, response, ct, ResponseJsonOptions);
         }
         catch (BusinessServiceProxyException ex)
         {
@@ -44,6 +45,8 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     }
 
     protected virtual int StatusCode => StatusCodes.Status200OK;
+
+    protected virtual JsonSerializerOptions? ResponseJsonOptions => null;
 
     protected virtual string? ResourceType(TRequest request) => null;
 

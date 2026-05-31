@@ -259,11 +259,11 @@ public sealed class FileStorageTusProviderTests
         var rootPath = CreateTempDirectory();
         try
         {
-            await using var factory = CreateFactoryWithTusProvider(rootPath, uploadSessionTtlSeconds: 0.1);
+            await using var factory = CreateFactoryWithTusProvider(rootPath, uploadSessionTtlSeconds: 2);
             var client = CreateInternalServiceClient(factory);
             var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 5);
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
-            await Task.Delay(TimeSpan.FromMilliseconds(300));
+            await Task.Delay(TimeSpan.FromMilliseconds(2500));
 
             var response = await SendTusHeadAsync(client, created.Upload.Url);
 

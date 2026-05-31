@@ -102,6 +102,20 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Equal(0, auth.CallCount);
     }
 
+    [Fact]
+    public async Task Business_console_scheduling_endpoint_rejects_missing_problem_before_permission_check()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/scheduling/plans/preview", new { });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+    }
+
     [Theory]
     [MemberData(nameof(BusinessConsoleRoutes))]
     public async Task Business_console_routes_return_forbidden_when_iam_denies_permission(
@@ -122,7 +136,10 @@ public sealed class BusinessGatewayAuthorizationTests
 
         var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.True(
+            response.StatusCode == HttpStatusCode.Forbidden,
+            $"Expected Forbidden for {method} {path}, got {(int)response.StatusCode}: {responseBody}");
         Assert.Equal(1, auth.CallCount);
         Assert.Equal(expectedPermission, auth.LastRequirement!.PermissionCode);
         Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
@@ -174,6 +191,10 @@ public sealed class BusinessGatewayAuthorizationTests
             horizonStart = "2026-05-25",
             horizonEnd = "2026-06-30",
         },
+        "/api/business-console/v1/scheduling/plans/preview" or "/api/business-console/v1/scheduling/plans" => new
+        {
+            problem = SchedulingProblemBody(),
+        },
         "/api/business-console/v1/planning/suggestions/suggestion-001/accept" => new
         {
             suggestionId = "suggestion-001",
@@ -212,6 +233,12 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/suggestions", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/suggestions/suggestion-001/accept", BusinessGatewayPermissions.PlanningSuggestionsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/preview", BusinessGatewayPermissions.SchedulingPlansManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001", BusinessGatewayPermissions.SchedulingPlansRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001/gantt", BusinessGatewayPermissions.SchedulingPlansRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/plan-001/release", BusinessGatewayPermissions.SchedulingPlansRelease);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders", BusinessGatewayPermissions.MesWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/work-orders/rush", BusinessGatewayPermissions.MesWorkOrdersManage);
@@ -219,6 +246,23 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/production-reports", BusinessGatewayPermissions.MesReportingWrite);
         return routes;
     }
+
+    private static object SchedulingProblemBody() => new
+    {
+        contractVersion = 1,
+        problemId = "problem-001",
+        organizationId = "org-001",
+        environmentId = "env-dev",
+        horizonStartUtc = "2026-06-01T08:00:00Z",
+        horizonEndUtc = "2026-06-01T16:00:00Z",
+        orders = Array.Empty<object>(),
+        resources = Array.Empty<object>(),
+        calendars = Array.Empty<object>(),
+        unavailabilityWindows = Array.Empty<object>(),
+        materialReadiness = Array.Empty<object>(),
+        qualityBlocks = Array.Empty<object>(),
+        lockedAssignments = Array.Empty<object>(),
+    };
 
     private static WebApplicationFactory<Program> CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,

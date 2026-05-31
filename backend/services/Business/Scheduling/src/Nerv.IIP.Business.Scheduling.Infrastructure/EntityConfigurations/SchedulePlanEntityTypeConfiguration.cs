@@ -1,0 +1,29 @@
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+
+namespace Nerv.IIP.Business.Scheduling.Infrastructure.EntityConfigurations;
+
+public sealed class SchedulePlanEntityTypeConfiguration : IEntityTypeConfiguration<SchedulePlan>
+{
+    public void Configure(EntityTypeBuilder<SchedulePlan> builder)
+    {
+        builder.ToTable("schedule_plans", table => table.HasComment("BusinessScheduling generated and released schedule plan headers."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Schedule plan aggregate row id.");
+        builder.Property(x => x.OrganizationId).HasColumnName("organization_id").HasMaxLength(64).IsRequired().HasComment("Tenant organization id.");
+        builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").HasMaxLength(64).IsRequired().HasComment("Business environment id.");
+        builder.Property(x => x.PlanId).HasColumnName("plan_id").HasMaxLength(96).IsRequired().HasComment("Public schedule plan id.");
+        builder.Property(x => x.ProblemId).HasColumnName("problem_id").HasMaxLength(96).IsRequired().HasComment("Public scheduling problem id used to generate this plan.");
+        builder.Property(x => x.ProblemFingerprint).HasColumnName("problem_fingerprint").HasMaxLength(128).IsRequired().HasComment("Deterministic fingerprint of the scheduling problem input.");
+        builder.Property(x => x.AlgorithmVersion).HasColumnName("algorithm_version").HasMaxLength(64).IsRequired().HasComment("APS lite algorithm version used to generate the plan.");
+        builder.Property(x => x.ContractVersion).HasColumnName("contract_version").HasComment("Schedule plan contract version.");
+        builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(32).HasComment("Persisted plan lifecycle status.");
+        builder.Property(x => x.GeneratedAtUtc).HasColumnName("generated_at_utc").HasComment("UTC timestamp when the plan was generated.");
+        builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").HasComment("UTC timestamp when the plan was released.");
+        builder.HasIndex(x => x.PlanId).IsUnique();
+
+        builder.HasMany(x => x.Assignments).WithOne().HasForeignKey(x => x.SchedulePlanId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.ResourceLoads).WithOne().HasForeignKey(x => x.SchedulePlanId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.Conflicts).WithOne().HasForeignKey(x => x.SchedulePlanId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.UnscheduledOperations).WithOne().HasForeignKey(x => x.SchedulePlanId).OnDelete(DeleteBehavior.Cascade);
+    }
+}

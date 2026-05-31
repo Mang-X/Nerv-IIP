@@ -4,6 +4,251 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulePlanContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulePlanContract = {
+    contractVersion?: number;
+    planId?: string;
+    problemId?: string;
+    problemFingerprint?: string;
+    algorithmVersion?: string;
+    status?: NervIipContractsSchedulingSchedulePlanStatusContract;
+    generatedAtUtc?: string;
+    assignments?: Array<NervIipContractsSchedulingScheduleAssignmentContract>;
+    resourceLoads?: Array<NervIipContractsSchedulingScheduleResourceLoadContract>;
+    conflicts?: Array<NervIipContractsSchedulingScheduleConflictContract>;
+    unscheduledOperations?: Array<NervIipContractsSchedulingUnscheduledOperationContract>;
+    changeSummary?: Array<NervIipContractsSchedulingScheduleChangeContract>;
+    ganttItems?: Array<NervIipContractsSchedulingGanttScheduleItemContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released';
+
+export type NervIipContractsSchedulingScheduleAssignmentContract = {
+    assignmentId?: string;
+    orderId?: string;
+    operationId?: string;
+    operationSequence?: number;
+    resourceId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    isLocked?: boolean;
+    explanationCode?: string;
+};
+
+export type NervIipContractsSchedulingScheduleResourceLoadContract = {
+    resourceId?: string;
+    windowStartUtc?: string;
+    windowEndUtc?: string;
+    assignedMinutes?: number;
+    availableMinutes?: number;
+    utilization?: number;
+};
+
+export type NervIipContractsSchedulingScheduleConflictContract = {
+    conflictId?: string;
+    reasonCode?: NervIipContractsSchedulingScheduleConflictReasonCodeContract;
+    severity?: NervIipContractsSchedulingScheduleConflictSeverityContract;
+    orderId?: string | null;
+    operationId?: string | null;
+    resourceId?: string | null;
+    message?: string;
+};
+
+export type NervIipContractsSchedulingScheduleConflictReasonCodeContract = 'dueDate' | 'capacity' | 'calendar' | 'material' | 'quality' | 'equipment' | 'noEligibleResource' | 'outsideHorizon' | 'invalidLockedAssignment' | 'predecessorUnscheduled';
+
+export type NervIipContractsSchedulingScheduleConflictSeverityContract = 'info' | 'warning' | 'error';
+
+export type NervIipContractsSchedulingUnscheduledOperationContract = {
+    orderId?: string;
+    operationId?: string;
+    reasonCode?: NervIipContractsSchedulingScheduleConflictReasonCodeContract;
+    message?: string;
+};
+
+export type NervIipContractsSchedulingScheduleChangeContract = {
+    orderId?: string;
+    operationId?: string;
+    changeType?: NervIipContractsSchedulingScheduleChangeTypeContract;
+    message?: string;
+};
+
+export type NervIipContractsSchedulingScheduleChangeTypeContract = 'added' | 'moved' | 'delayed' | 'preserved' | 'blocked';
+
+export type NervIipContractsSchedulingGanttScheduleItemContract = {
+    itemId?: string;
+    orderId?: string;
+    operationId?: string;
+    operationSequence?: number;
+    resourceId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    status?: NervIipContractsSchedulingSchedulePlanStatusContract;
+    hasConflict?: boolean;
+    conflictReasonCode?: NervIipContractsSchedulingScheduleConflictReasonCodeContract | null;
+};
+
+export type NetCorePalExtensionsDtoResponseData = {
+    success?: boolean;
+    message?: string;
+    code?: number;
+    errorData?: Array<unknown>;
+};
+
+export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
+    problem: NervIipContractsSchedulingSchedulingProblemContract;
+};
+
+export type NervIipContractsSchedulingSchedulingProblemContract = {
+    contractVersion?: number;
+    problemId?: string;
+    organizationId: string;
+    environmentId: string;
+    horizonStartUtc?: string;
+    horizonEndUtc?: string;
+    orders?: Array<NervIipContractsSchedulingSchedulingOrderContract>;
+    resources?: Array<NervIipContractsSchedulingSchedulingResourceContract>;
+    calendars?: Array<NervIipContractsSchedulingSchedulingCalendarContract>;
+    unavailabilityWindows?: Array<NervIipContractsSchedulingSchedulingUnavailabilityWindowContract>;
+    materialReadiness?: Array<NervIipContractsSchedulingSchedulingMaterialReadinessContract>;
+    qualityBlocks?: Array<NervIipContractsSchedulingSchedulingQualityBlockContract>;
+    lockedAssignments?: Array<NervIipContractsSchedulingSchedulingLockedAssignmentContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingOrderContract = {
+    orderId?: string;
+    skuCode?: string;
+    quantity?: number;
+    dueUtc?: string;
+    priority?: number;
+    isRush?: boolean;
+    operations?: Array<NervIipContractsSchedulingSchedulingOperationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingOperationContract = {
+    operationId?: string;
+    operationSequence?: number;
+    predecessorOperationIds?: Array<string>;
+    durationMinutes?: number;
+    requiredCapabilityCode?: string;
+    eligibleResourceIds?: Array<string>;
+    primaryResourceId?: string | null;
+    earliestStartUtc?: string;
+    dueUtc?: string;
+    priority?: number;
+    isRush?: boolean;
+    splitPolicy?: NervIipContractsSchedulingScheduleSplitPolicyContract;
+    materialReadyUtc?: string | null;
+    qualityBlockReason?: string | null;
+    sourceReference?: string | null;
+};
+
+export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable';
+
+export type NervIipContractsSchedulingSchedulingResourceContract = {
+    resourceId?: string;
+    workCenterId?: string;
+    capabilityCodes?: Array<string>;
+    capacityUnits?: number;
+    calendarId?: string;
+    sortKey?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingCalendarContract = {
+    calendarId?: string;
+    shiftWindows?: Array<NervIipContractsSchedulingSchedulingTimeWindowContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingTimeWindowContract = {
+    startUtc?: string;
+    endUtc?: string;
+    reasonCode?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingUnavailabilityWindowContract = {
+    resourceId?: string | null;
+    workCenterId?: string | null;
+    startUtc?: string;
+    endUtc?: string;
+    reasonCode?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingMaterialReadinessContract = {
+    scopeType?: string;
+    scopeId?: string;
+    materialReadyUtc?: string | null;
+    isReady?: boolean;
+    reasonCodes?: Array<string>;
+};
+
+export type NervIipContractsSchedulingSchedulingQualityBlockContract = {
+    scopeType?: string;
+    scopeId?: string;
+    reasonCode?: string;
+    blockedUntilUtc?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingLockedAssignmentContract = {
+    assignmentId?: string;
+    orderId?: string;
+    operationId?: string;
+    operationSequence?: number;
+    resourceId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    lockReasonCode?: string;
+};
+
+export type FastEndpointsErrorResponse = {
+    statusCode?: number;
+    message?: string;
+    errors?: {
+        [key: string]: Array<string>;
+    };
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleSchedulePlanSummaryResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse = {
+    planId?: string;
+    problemId?: string;
+    status?: NervIipContractsSchedulingSchedulePlanStatusContract;
+    generatedAtUtc?: string;
+    releasedAtUtc?: string | null;
+    assignmentCount?: number;
+    conflictCount?: number;
+    unscheduledOperationCount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingContextRequest = {
+    [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingPlanRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfGanttScheduleItemContract = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipContractsSchedulingGanttScheduleItemContract> | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseSchedulePlanResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseSchedulePlanResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseSchedulePlanResponse = {
+    planId?: string;
+    status?: NervIipContractsSchedulingSchedulePlanStatusContract;
+    releasedAtUtc?: string | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListResponse | null;
 };
@@ -28,13 +273,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     defectReason?: string | null;
     batchNo?: string | null;
     serialNo?: string | null;
-};
-
-export type NetCorePalExtensionsDtoResponseData = {
-    success?: boolean;
-    message?: string;
-    code?: number;
-    errorData?: Array<unknown>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest = {
@@ -221,14 +459,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     quantity?: number;
     dueDate?: string;
     idempotencyKey?: string | null;
-};
-
-export type FastEndpointsErrorResponse = {
-    statusCode?: number;
-    message?: string;
-    errors?: {
-        [key: string]: Array<string>;
-    };
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRunMrpResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1099,6 +1329,222 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpContextRequest = {
     [key: string]: never;
 };
+
+export type PreviewBusinessConsoleSchedulingPlanData = {
+    body: NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/plans/preview';
+};
+
+export type PreviewBusinessConsoleSchedulingPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PreviewBusinessConsoleSchedulingPlanError = PreviewBusinessConsoleSchedulingPlanErrors[keyof PreviewBusinessConsoleSchedulingPlanErrors];
+
+export type PreviewBusinessConsoleSchedulingPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract;
+};
+
+export type PreviewBusinessConsoleSchedulingPlanResponse = PreviewBusinessConsoleSchedulingPlanResponses[keyof PreviewBusinessConsoleSchedulingPlanResponses];
+
+export type ListBusinessConsoleSchedulingPlansData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans';
+};
+
+export type ListBusinessConsoleSchedulingPlansErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleSchedulingPlansError = ListBusinessConsoleSchedulingPlansErrors[keyof ListBusinessConsoleSchedulingPlansErrors];
+
+export type ListBusinessConsoleSchedulingPlansResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleSchedulePlanSummaryResponse;
+};
+
+export type ListBusinessConsoleSchedulingPlansResponse = ListBusinessConsoleSchedulingPlansResponses[keyof ListBusinessConsoleSchedulingPlansResponses];
+
+export type CreateBusinessConsoleSchedulingPlanData = {
+    body: NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/plans';
+};
+
+export type CreateBusinessConsoleSchedulingPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleSchedulingPlanError = CreateBusinessConsoleSchedulingPlanErrors[keyof CreateBusinessConsoleSchedulingPlanErrors];
+
+export type CreateBusinessConsoleSchedulingPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract;
+};
+
+export type CreateBusinessConsoleSchedulingPlanResponse = CreateBusinessConsoleSchedulingPlanResponses[keyof CreateBusinessConsoleSchedulingPlanResponses];
+
+export type GetBusinessConsoleSchedulingPlanData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}';
+};
+
+export type GetBusinessConsoleSchedulingPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingPlanError = GetBusinessConsoleSchedulingPlanErrors[keyof GetBusinessConsoleSchedulingPlanErrors];
+
+export type GetBusinessConsoleSchedulingPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract;
+};
+
+export type GetBusinessConsoleSchedulingPlanResponse = GetBusinessConsoleSchedulingPlanResponses[keyof GetBusinessConsoleSchedulingPlanResponses];
+
+export type GetBusinessConsoleSchedulingPlanGanttData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/gantt';
+};
+
+export type GetBusinessConsoleSchedulingPlanGanttErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingPlanGanttError = GetBusinessConsoleSchedulingPlanGanttErrors[keyof GetBusinessConsoleSchedulingPlanGanttErrors];
+
+export type GetBusinessConsoleSchedulingPlanGanttResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfGanttScheduleItemContract;
+};
+
+export type GetBusinessConsoleSchedulingPlanGanttResponse = GetBusinessConsoleSchedulingPlanGanttResponses[keyof GetBusinessConsoleSchedulingPlanGanttResponses];
+
+export type ReleaseBusinessConsoleSchedulingPlanData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/release';
+};
+
+export type ReleaseBusinessConsoleSchedulingPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReleaseBusinessConsoleSchedulingPlanError = ReleaseBusinessConsoleSchedulingPlanErrors[keyof ReleaseBusinessConsoleSchedulingPlanErrors];
+
+export type ReleaseBusinessConsoleSchedulingPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseSchedulePlanResponse;
+};
+
+export type ReleaseBusinessConsoleSchedulingPlanResponse = ReleaseBusinessConsoleSchedulingPlanResponses[keyof ReleaseBusinessConsoleSchedulingPlanResponses];
 
 export type ListBusinessConsoleQualityInspectionPlansData = {
     body?: never;

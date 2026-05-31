@@ -146,7 +146,7 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 
 ### Business Platform
 
-业务平台权限码用于 ADR 0012 与 ADR 0014 定义的关键链路领域扩展。BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry 和 BusinessMaintenance 权限已随对应 MVP 进入 IAM seed 或服务授权基线。BusinessScheduling / APS lite 权限随 #206 实现时再进入本表、IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。其他业务域权限在实现对应服务时，也必须按本表进入 IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。
+业务平台权限码用于 ADR 0012 与 ADR 0014 定义的关键链路领域扩展。BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry、BusinessMaintenance 和 BusinessScheduling / APS lite 权限已随对应 MVP 或 #206 进入 IAM seed 或服务授权基线。BusinessScheduling 当前已完成服务端 Endpoint permission metadata、IAM seed 和 BusinessGateway facade 最终用户权限 enforcement。其他业务域权限在实现对应服务时，也必须按本表进入 IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。
 
 | 权限码 | 建议 principalType | 建议 scope | 说明 |
 | --- | --- | --- | --- |
@@ -193,6 +193,9 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `business.erp.sales.manage` | `user` / `external-client` | environment + resource | 创建和推进商机、报价、销售订单、发货和退货；承载 CRM-lite/OMS-lite。 |
 | `business.erp.finance.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看应收、应付、凭证、成本核算和财务汇总。 |
 | `business.erp.finance.manage` | `user` / `internal-service` | environment + resource | 创建凭证、生成应收应付和成本核算；首批不包含完整总账月结。 |
+| `business.scheduling.plans.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 APS lite 排程方案、资源负载、冲突、不可排原因和 Gantt DTO；当前 IAM seed、服务端 Endpoint metadata 与 BusinessGateway facade enforcement 已实现。 |
+| `business.scheduling.plans.manage` | `user` / `internal-service` | environment + resource | 预览和生成 APS lite 排程方案；当前 IAM seed、服务端 Endpoint metadata 与 BusinessGateway facade enforcement 已实现。 |
+| `business.scheduling.plans.release` | `user` / `internal-service` | environment + resource | 发布已生成的 APS lite 排程方案供 MES 等下游消费；当前 IAM seed、服务端 Endpoint metadata 与 BusinessGateway facade enforcement 已实现。 |
 | `business.wms.receipts.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看收货通知、入库单和上架任务。 |
 | `business.wms.receipts.manage` | `user` / `external-client` | environment + resource | 创建和完成收货、入库、上架作业。 |
 | `business.wms.shipments.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看出库单、拣货任务和复核包装。 |

@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Globalization;
 using System.Text.Json;
+using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Sdk.Core;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
@@ -133,6 +134,39 @@ public interface IBusinessPlanningClient
         string internalBearerToken,
         string suggestionId,
         BusinessConsoleAcceptPlanningSuggestionRequest request,
+        CancellationToken cancellationToken);
+}
+
+public interface IBusinessSchedulingClient
+{
+    Task<SchedulePlanContract> PreviewPlanAsync(
+        string internalBearerToken,
+        SchedulingProblemContract problem,
+        CancellationToken cancellationToken);
+
+    Task<SchedulePlanContract> CreatePlanAsync(
+        string internalBearerToken,
+        SchedulingProblemContract problem,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<BusinessConsoleSchedulePlanSummaryResponse>> ListPlansAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<SchedulePlanContract> GetPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleReleaseSchedulePlanResponse> ReleasePlanAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -424,13 +458,14 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         HttpMethod method,
         string requestUri,
         object? body,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        JsonSerializerOptions? jsonOptions = null)
     {
         using var request = new HttpRequestMessage(method, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
         if (body is not null)
         {
-            request.Content = JsonContent.Create(body, options: JsonOptions);
+            request.Content = JsonContent.Create(body, options: jsonOptions ?? JsonOptions);
         }
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
@@ -443,7 +478,9 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         try
         {
-            return await PlatformApiClient.ReadResponseDataAsync<TResponse>(response, cancellationToken);
+            return jsonOptions is null
+                ? await PlatformApiClient.ReadResponseDataAsync<TResponse>(response, cancellationToken)
+                : await ReadResponseDataAsync<TResponse>(response, jsonOptions, cancellationToken);
         }
         catch (JsonException ex)
         {
@@ -459,6 +496,33 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 "downstream-invalid-response",
                 ex);
         }
+    }
+
+    private static async Task<TResponse> ReadResponseDataAsync<TResponse>(
+        HttpResponseMessage response,
+        JsonSerializerOptions jsonOptions,
+        CancellationToken cancellationToken)
+    {
+        var content = response.Content
+            ?? throw new InvalidOperationException("Platform API returned an empty response.");
+        var json = await content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            throw new InvalidOperationException("Platform API returned an empty response.");
+        }
+
+        using var document = JsonDocument.Parse(json);
+        var payload = document.RootElement.TryGetProperty("data", out var data)
+            ? data
+            : document.RootElement;
+
+        if (payload.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            throw new InvalidOperationException("Platform API returned an empty response data payload.");
+        }
+
+        return payload.Deserialize<TResponse>(jsonOptions)
+            ?? throw new InvalidOperationException("Platform API returned an empty response data payload.");
     }
 
     private static async Task<string?> ReadDownstreamEnvelopeMessageAsync(
@@ -1099,6 +1163,89 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         DateOnly RequiredDate,
         int Status,
         string ReasonCode);
+}
+
+public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
+    : BusinessServiceHttpClient(httpClient), IBusinessSchedulingClient
+{
+    public Task<SchedulePlanContract> PreviewPlanAsync(
+        string internalBearerToken,
+        SchedulingProblemContract problem,
+        CancellationToken cancellationToken) =>
+        SendAsync<SchedulePlanContract>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/scheduling/plans/preview",
+            new SchedulingProblemRequest(problem),
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<SchedulePlanContract> CreatePlanAsync(
+        string internalBearerToken,
+        SchedulingProblemContract problem,
+        CancellationToken cancellationToken) =>
+        SendAsync<SchedulePlanContract>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/scheduling/plans",
+            new SchedulingProblemRequest(problem),
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<IReadOnlyCollection<BusinessConsoleSchedulePlanSummaryResponse>> ListPlansAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<IReadOnlyCollection<BusinessConsoleSchedulePlanSummaryResponse>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/scheduling/plans?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<SchedulePlanContract> GetPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<SchedulePlanContract>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<IReadOnlyCollection<GanttScheduleItemContract>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/gantt?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<BusinessConsoleReleaseSchedulePlanResponse> ReleasePlanAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleReleaseSchedulePlanResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/release?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    private sealed record SchedulingProblemRequest(SchedulingProblemContract Problem);
+
+    private static string ContextQuery(string organizationId, string environmentId) =>
+        Query(("organizationId", organizationId), ("environmentId", environmentId));
 }
 
 public sealed class HttpBusinessErpClient(HttpClient httpClient)

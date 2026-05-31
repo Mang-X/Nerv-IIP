@@ -2,7 +2,7 @@
 
 本文档记录当前 Nerv-IIP 已落地和计划落地的数据库 schema。物理结构仍以 EF Core migrations 和 EntityConfigurations 为准；本文档负责解释业务语义、边界、索引意图和可视化上下文。
 
-当前 catalog 覆盖第五阶段已经迁移验证通过、并在第六阶段完成 schema governance hardening 的 AppHub 与 Ops，第七阶段已经落地 IAM Persistent Auth Foundation 的 IAM，以及 BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry、BusinessMaintenance、Notification 和 FileStorage 第一阶段 MVP 的 schema 基线。Knowledge、AI Integration 和 Observability 索引在真正建表前必须补充相同粒度的条目和 convention tests。
+当前 catalog 覆盖第五阶段已经迁移验证通过、并在第六阶段完成 schema governance hardening 的 AppHub 与 Ops，第七阶段已经落地 IAM Persistent Auth Foundation 的 IAM，以及 BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry、BusinessMaintenance、BusinessScheduling、Notification 和 FileStorage 第一阶段 MVP 的 schema 基线。Knowledge、AI Integration 和 Observability 索引在真正建表前必须补充相同粒度的条目和 convention tests。
 
 ## 读法
 
@@ -378,6 +378,32 @@ Source:
 | `CAPReceivedMessage` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 BusinessMaintenance 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `maintenance` schema；业务代码不直接读写。 |
 
+## BusinessScheduling Schema
+
+Schema: `scheduling`
+
+Owner: `backend/services/Business/Scheduling`
+
+Source:
+
+1. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/ApplicationDbContext.cs`
+2. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/SchedulingPersistenceServiceCollectionExtensions.cs`
+3. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/EntityConfigurations/*.cs`
+4. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260531111947_InitialSchedulingSchema.cs`
+
+| Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
+| --- | --- | --- | --- | --- | --- |
+| `schedule_problems` | business | APS lite 排程问题快照，保留输入 problem id、组织/环境、计划窗口和 deterministic fingerprint。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + problem_id` 是排程问题幂等范围；`problem_fingerprint` 记录输入快照指纹；`horizon_start_utc` / `horizon_end_utc` 记录排程窗口。 | `organization_id + environment_id + problem_id` 唯一索引用于同一业务上下文内重放、幂等诊断和从 plan 追溯输入。 | 生成排程方案时捕获并保留；不由下游服务直接修改。 |
+| `schedule_plans` | business | APS lite 排程方案头，记录生成/发布状态、算法版本、合同版本和问题指纹。 | `id` 为 Guid v7 强类型 ID；`plan_id` 是公开方案 ID；`problem_id` 和 `problem_fingerprint` 指向输入快照；`status` 表示 generated/released 等生命周期。 | `plan_id` 唯一索引用于 detail、Gantt 和 release 查询。 | 生成后可发布；发布后作为 MES 和 Gantt 消费的稳定事实保留。 |
+| `schedule_plan_assignments` | business | 排程方案内的工序到资源分配结果。 | `schedule_plan_id` 归属方案；`assignment_id` 是方案内公开分配 ID；`work_order_id`、`operation_id`、`resource_id`、`work_center_id` 和 `start_utc` / `end_utc` 描述分配事实。 | `schedule_plan_id + assignment_id` 唯一；`schedule_plan_id` 外键索引用于按方案加载。 | 生命周期随方案保留；不直接表达 MES 工序执行状态。 |
+| `schedule_plan_resource_loads` | business | 排程方案的资源负载窗口和利用率。 | `schedule_plan_id` 归属方案；`resource_id`、`window_start_utc`、`window_end_utc`、`assigned_minutes`、`available_minutes` 和 `utilization` 描述负载。 | `schedule_plan_id` 外键索引用于读取方案负载。 | 由排程算法生成并随方案保留，可供产能/Gantt 查询。 |
+| `schedule_plan_conflicts` | business | 排程方案生成过程中识别的交期、产能、日历、物料、质量或设备冲突。 | `schedule_plan_id` 归属方案；`conflict_id` 是公开冲突 ID；`reason_code`、`severity`、`work_order_id`、`operation_id`、`resource_id` 和 `message` 描述冲突。 | `schedule_plan_id` 外键索引用于按方案加载冲突。 | 生成时追加到方案；用于解释和前端展示，不替代下游执行异常。 |
+| `schedule_plan_unscheduled_operations` | business | 在当前 horizon 内无法安排的工序及原因。 | `schedule_plan_id` 归属方案；`work_order_id`、`operation_id`、`reason_code` 和 `message` 描述不可排结果。 | `schedule_plan_id` 外键索引用于按方案加载不可排清单。 | 生成时写入并随方案保留；人工调整或新事实输入通过新方案表达。 |
+| `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `__EFMigrationsHistory` | system | EF Core migration history table，记录 BusinessScheduling 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `scheduling` schema；业务代码不直接读写。 |
+
 ## AppHub Schema
 
 Schema: `apphub`
@@ -567,6 +593,7 @@ Known gaps:
 | ERP | `erp` | Implemented | Yes | Yes | No | 已有 Procurement、Sales、Finance MVP 和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify scripts；客户 release bundle、完整总账月结和银行/税务对账仍待后续。 |
 | BusinessIndustrialTelemetry | `industrial_telemetry` | Implemented | Yes | Yes | No | 已有 tag、设备状态快照、报警事件和采集汇总 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessMaintenance | `maintenance` | Implemented | Yes | Yes | No | 已有维修工单、保养计划、点检、停机原因和备件行 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessScheduling | `scheduling` | Implemented | Yes | Yes | No | 已有排程问题快照、排程方案、分配、资源负载、冲突、不可排工序和 CAP system tables schema、migration、schema convention tests、BusinessGateway facade 和 verify script；客户 release bundle、高级优化器仍待后续。 |
 | Notification | `notification` | Implemented baseline | Yes | Yes | No | 已有通知意图、站内消息、任务、投递尝试、业务 inbox、CAP storage 和 persistent DLQ schema、migration、schema convention tests；偏好/订阅、外部渠道 provider、限流和模板映射仍待后续。 |
 | Knowledge | `knowledge` | Planned only | No | No | No | 知识源、文档、分片、索引状态、向量/全文索引边界和重建策略；关系库保存索引元数据，外部向量库保存可重建索引。 |
 | AI Integration | `ai` or `ai_integration` | Planned only | No | No | No | 模型/provider 配置、工具授权、调用审计、配额周期、prompt/version 归档、审批挂点和敏感信息边界。 |
