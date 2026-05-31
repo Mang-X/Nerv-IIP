@@ -61,6 +61,14 @@ Invoke-DotNet -Name "business-scheduling-gateway-facade-tests" -WorkingDirectory
     "FullyQualifiedName~Scheduling"
 ) | Out-Null
 
+Invoke-DotNet -Name "business-scheduling-gateway-openapi-tests" -WorkingDirectory $root -Arguments @(
+    "test",
+    "backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj",
+    "--no-restore",
+    "--filter",
+    "FullyQualifiedName~BusinessGatewayOpenApiTests"
+) | Out-Null
+
 Invoke-DotNet -Name "business-scheduling-apphost-build" -WorkingDirectory $root -Arguments @(
     "build",
     "infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj",

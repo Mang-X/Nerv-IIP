@@ -103,6 +103,10 @@ public sealed class SchedulingEndpointContractTests
         Assert.NotEmpty(detail.Conflicts);
         Assert.NotEmpty(detail.UnscheduledOperations);
         Assert.NotEmpty(detail.ResourceLoads);
+        Assert.Contains(detail.ChangeSummary, x =>
+            x.OrderId == "WO-NO-CAP-001"
+            && x.OperationId == "WO-NO-CAP-001-PAINT"
+            && x.ChangeType == ScheduleChangeTypeContract.Blocked);
         Assert.NotEmpty(detail.GanttItems);
         Assert.True(await dbContext.ScheduleProblems.AnyAsync(x => x.ProblemId == created.ProblemId, CancellationToken.None));
         Assert.True(await dbContext.SchedulePlans.AnyAsync(x => x.PlanId == created.PlanId, CancellationToken.None));

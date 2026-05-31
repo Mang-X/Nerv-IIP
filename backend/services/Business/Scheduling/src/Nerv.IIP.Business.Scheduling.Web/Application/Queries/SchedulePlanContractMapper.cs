@@ -40,7 +40,18 @@ internal static class SchedulePlanContractMapper
         var conflictByOperation = conflicts
             .Where(x => x.OperationId is not null)
             .GroupBy(x => (x.OrderId ?? string.Empty, x.OperationId!))
-            .ToDictionary(x => x.Key, x => x.First().ReasonCode);
+            .ToDictionary(x => x.Key, x => x.First());
+        var changeSummary = assignments
+            .Select(x => ToChangeSummary(x, conflictByOperation))
+            .Concat(plan.UnscheduledOperations
+                .OrderBy(x => x.WorkOrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.OperationId, StringComparer.Ordinal)
+                .Select(x => new ScheduleChangeContract(
+                    x.WorkOrderId,
+                    x.OperationId,
+                    ScheduleChangeTypeContract.Blocked,
+                    x.Message)))
+            .ToArray();
 
         return new SchedulePlanContract(
             ContractVersion: plan.ContractVersion,
@@ -72,10 +83,11 @@ internal static class SchedulePlanContractMapper
                     x.ReasonCode,
                     x.Message))
                 .ToArray(),
-            ChangeSummary: [],
+            ChangeSummary: changeSummary,
             GanttItems: assignments.Select(x =>
             {
                 var key = (x.OrderId, x.OperationId);
+                var hasConflict = conflictByOperation.TryGetValue(key, out var conflict);
                 return new GanttScheduleItemContract(
                     ItemId: $"gantt-{x.AssignmentId}",
                     OrderId: x.OrderId,
@@ -86,9 +98,40 @@ internal static class SchedulePlanContractMapper
                     StartUtc: x.StartUtc,
                     EndUtc: x.EndUtc,
                     Status: status,
-                    HasConflict: conflictByOperation.ContainsKey(key),
-                    ConflictReasonCode: conflictByOperation.GetValueOrDefault(key));
+                    HasConflict: hasConflict,
+                    ConflictReasonCode: hasConflict ? conflict!.ReasonCode : null);
             }).ToArray());
+    }
+
+    private static ScheduleChangeContract ToChangeSummary(
+        ScheduleAssignmentContract assignment,
+        IReadOnlyDictionary<(string OrderId, string OperationId), ScheduleConflictContract> conflictByOperation)
+    {
+        var key = (assignment.OrderId, assignment.OperationId);
+        if (assignment.IsLocked)
+        {
+            return new ScheduleChangeContract(
+                assignment.OrderId,
+                assignment.OperationId,
+                ScheduleChangeTypeContract.Preserved,
+                "Locked assignment reserved before APS lite scheduling.");
+        }
+
+        if (conflictByOperation.TryGetValue(key, out var conflict)
+            && conflict.ReasonCode == ScheduleConflictReasonCodeContract.DueDate)
+        {
+            return new ScheduleChangeContract(
+                assignment.OrderId,
+                assignment.OperationId,
+                ScheduleChangeTypeContract.Delayed,
+                conflict.Message);
+        }
+
+        return new ScheduleChangeContract(
+            assignment.OrderId,
+            assignment.OperationId,
+            ScheduleChangeTypeContract.Added,
+            "Scheduled by APS lite.");
     }
 
     public static SchedulePlanContract WithStatus(SchedulePlanContract plan, SchedulePlanStatusContract status)
