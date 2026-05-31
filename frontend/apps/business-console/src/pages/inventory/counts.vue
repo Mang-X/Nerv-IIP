@@ -96,6 +96,7 @@ const canConfirmAdjustment = computed(
     isNonEmpty(filters.organizationId) &&
     isNonEmpty(filters.environmentId) &&
     isNonEmpty(adjustmentForm.countTaskId) &&
+    isNonEmpty(adjustmentForm.idempotencyKey) &&
     toOptionalNumber(adjustmentForm.countedQuantity) !== undefined,
 )
 
@@ -137,7 +138,7 @@ async function submitAdjustment() {
 
   const body: BusinessConsoleConfirmStockCountAdjustmentRequest = {
     countedQuantity: toOptionalNumber(adjustmentForm.countedQuantity),
-    idempotencyKey: optionalText(adjustmentForm.idempotencyKey) ?? createAdjustmentIdempotencyKey(adjustmentForm.countTaskId.trim()),
+    idempotencyKey: adjustmentForm.idempotencyKey.trim(),
   }
 
   const response = await confirmAdjustment(adjustmentForm.countTaskId.trim(), body)

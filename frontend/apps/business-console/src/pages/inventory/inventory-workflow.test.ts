@@ -156,4 +156,14 @@ describe('inventory workflow pages', () => {
     expect(secondKey).toMatch(/^count-COUNT-TASK-1-\d+-\d+$/)
     expect(secondKey).not.toBe(firstKey)
   })
+
+  it('requires the adjustment action to be opened from a count task row before submitting', async () => {
+    const wrapper = mountInventoryPage(CountsPage)
+
+    await wrapper.find('#count-adjust-task-id').setValue('COUNT-TASK-ORPHAN')
+    await wrapper.find('#count-adjust-quantity').setValue('7')
+    await wrapper.findAll('form')[1]!.trigger('submit')
+
+    expect(inventoryState.confirmAdjustment).not.toHaveBeenCalled()
+  })
 })

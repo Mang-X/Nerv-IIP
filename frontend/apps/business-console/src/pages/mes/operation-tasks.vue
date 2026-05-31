@@ -445,7 +445,7 @@ function formatError(error: unknown) {
                     </DropdownMenuItem>
                     <DropdownMenuItem :disabled="!canOpenReport(task)" @click="openRoute('/mes/work-orders', task)">
                       <ClipboardCheckIcon data-icon="inline-start" />
-                      {{ canOpenReport(task) ? '带入工单报工' : '缺少工单上下文' }}
+                      {{ canOpenReport(task) ? '打开报工表单' : '缺少工单上下文' }}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem @click="openRoute('/quality/inspections', task)">
