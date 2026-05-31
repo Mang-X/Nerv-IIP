@@ -9,7 +9,20 @@ import type {
   BusinessConsoleConfirmStockCountAdjustmentRequest,
   BusinessConsoleCreateStockCountTaskRequest,
 } from '@nerv-iip/api-client'
-import { Button, Field, FieldGroup, FieldLabel, Input, Spinner } from '@nerv-iip/ui'
+import {
+  Button,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@nerv-iip/ui'
 import { CheckCircle2Icon, ClipboardPlusIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
@@ -34,6 +47,7 @@ const taskSuccess = shallowRef('')
 const adjustmentSuccess = shallowRef('')
 const taskSheetOpen = shallowRef(false)
 const adjustmentSheetOpen = shallowRef(false)
+let adjustmentKeySequence = 0
 
 const taskForm = reactive({
   countTaskCode: '',
@@ -54,13 +68,24 @@ const adjustmentForm = reactive({
   idempotencyKey: '',
 })
 
+interface CountTaskQueueRow {
+  countTaskId: string
+  countTaskCode: string
+  skuCode: string
+  siteCode: string
+  locationCode: string
+  status: string
+  countedQuantity?: number
+}
+
 const taskErrorMessage = computed(() => formatError(createCountTaskError.value))
 const adjustmentErrorMessage = computed(() => formatError(confirmAdjustmentError.value))
+const countTaskQueue = shallowRef<CountTaskQueueRow[]>([])
+const selectedCountTask = shallowRef<CountTaskQueueRow>()
 const canCreateTask = computed(
   () =>
     isNonEmpty(filters.organizationId) &&
     isNonEmpty(filters.environmentId) &&
-    isNonEmpty(taskForm.countTaskCode) &&
     isNonEmpty(taskForm.skuCode) &&
     isNonEmpty(taskForm.uomCode) &&
     isNonEmpty(taskForm.siteCode) &&
@@ -71,6 +96,7 @@ const canConfirmAdjustment = computed(
     isNonEmpty(filters.organizationId) &&
     isNonEmpty(filters.environmentId) &&
     isNonEmpty(adjustmentForm.countTaskId) &&
+    isNonEmpty(adjustmentForm.idempotencyKey) &&
     toOptionalNumber(adjustmentForm.countedQuantity) !== undefined,
 )
 
@@ -80,7 +106,7 @@ async function submitTask() {
   const body: BusinessConsoleCreateStockCountTaskRequest = {
     organizationId: filters.organizationId.trim(),
     environmentId: filters.environmentId.trim(),
-    countTaskCode: taskForm.countTaskCode.trim(),
+    countTaskCode: taskForm.countTaskCode.trim() || `COUNT-${Date.now()}`,
     skuCode: taskForm.skuCode.trim(),
     uomCode: taskForm.uomCode.trim(),
     siteCode: taskForm.siteCode.trim(),
@@ -95,9 +121,16 @@ async function submitTask() {
   const response = await createCountTask(body)
   const taskId = response?.data?.countTaskId
   taskSuccess.value = `盘点任务 ${taskId ?? body.countTaskCode} 已提交。`
-  if (taskId && !adjustmentForm.countTaskId) {
-    adjustmentForm.countTaskId = taskId
+  const row: CountTaskQueueRow = {
+    countTaskId: taskId ?? body.countTaskCode ?? '待返回',
+    countTaskCode: body.countTaskCode ?? '',
+    skuCode: body.skuCode ?? '',
+    siteCode: body.siteCode ?? '',
+    locationCode: body.locationCode ?? '',
+    status: '待实盘',
   }
+  countTaskQueue.value = [row, ...countTaskQueue.value]
+  taskSheetOpen.value = false
 }
 
 async function submitAdjustment() {
@@ -105,11 +138,29 @@ async function submitAdjustment() {
 
   const body: BusinessConsoleConfirmStockCountAdjustmentRequest = {
     countedQuantity: toOptionalNumber(adjustmentForm.countedQuantity),
-    idempotencyKey: optionalText(adjustmentForm.idempotencyKey) ?? `count-${adjustmentForm.countTaskId.trim()}-${Date.now()}`,
+    idempotencyKey: adjustmentForm.idempotencyKey.trim(),
   }
 
   const response = await confirmAdjustment(adjustmentForm.countTaskId.trim(), body)
   adjustmentSuccess.value = `库存调整 ${response?.data?.movementId ?? body.idempotencyKey} 已提交。`
+  countTaskQueue.value = countTaskQueue.value.map((row) =>
+    row.countTaskId === adjustmentForm.countTaskId
+      ? { ...row, countedQuantity: body.countedQuantity, status: '已确认' }
+      : row,
+  )
+}
+
+function openAdjustment(row: CountTaskQueueRow) {
+  selectedCountTask.value = row
+  adjustmentForm.countTaskId = row.countTaskId
+  adjustmentForm.countedQuantity = String(row.countedQuantity ?? 0)
+  adjustmentForm.idempotencyKey = createAdjustmentIdempotencyKey(row.countTaskId)
+  adjustmentSheetOpen.value = true
+}
+
+function createAdjustmentIdempotencyKey(countTaskId: string) {
+  adjustmentKeySequence += 1
+  return `count-${countTaskId}-${Date.now()}-${adjustmentKeySequence}`
 }
 
 function optionalText(value: string) {
@@ -144,32 +195,54 @@ function isNonEmpty(value: string) {
             <ClipboardPlusIcon data-icon="inline-start" />
             创建盘点任务
           </Button>
-          <Button size="sm" type="button" variant="outline" @click="adjustmentSheetOpen = true">
+          <Button size="sm" type="button" variant="outline" :disabled="!selectedCountTask" @click="selectedCountTask && openAdjustment(selectedCountTask)">
             <CheckCircle2Icon data-icon="inline-start" />
-            确认差异
+            {{ selectedCountTask ? '确认差异' : '从任务行确认差异' }}
           </Button>
         </template>
       </BusinessPageHeader>
 
-      <div class="grid gap-3 rounded-lg border bg-background p-4 md:grid-cols-2">
-      </div>
-
       <section class="rounded-lg border bg-background">
         <div class="border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">盘点任务队列</h2>
-          <p class="mt-1 text-sm text-muted-foreground">后续接入盘点任务列表后，差异确认只从具体任务进入。</p>
+          <p class="mt-1 text-sm text-muted-foreground">任务创建后进入当前处理队列，差异确认从任务行进入。</p>
+        </div>
+        <div class="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>任务号</TableHead>
+                <TableHead>物料</TableHead>
+                <TableHead>库位</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead class="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="row in countTaskQueue" :key="row.countTaskId">
+                <TableCell class="font-medium text-foreground">{{ row.countTaskId }}</TableCell>
+                <TableCell>{{ row.skuCode }}</TableCell>
+                <TableCell>{{ row.siteCode }} / {{ row.locationCode }}</TableCell>
+                <TableCell>{{ row.status }}</TableCell>
+                <TableCell class="text-right">
+                  <Button size="sm" type="button" variant="outline" @click="openAdjustment(row)">确认差异</Button>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
         <BusinessEmptyState
+          v-if="!countTaskQueue.length"
           title="暂未接入盘点任务列表"
           description="当前先保留任务创建和差异确认动作，但通过抽屉承载，避免两个表单堆在主页面。"
-          action="建议先创建盘点任务，再从返回的任务 ID 进入差异确认。"
+          action="建议先创建盘点任务，再从任务行进入差异确认。"
         />
       </section>
 
       <BusinessActionSheet
         v-model:open="taskSheetOpen"
         title="创建盘点任务"
-        description="指定物料、工厂、库位和批次后生成盘点任务。"
+        description="指定物料、工厂、库位和批次后创建盘点任务。"
       >
         <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitTask">
           <div>
@@ -180,10 +253,6 @@ function isNonEmpty(value: string) {
           <BusinessFormStatus :error="taskErrorMessage" :success="taskSuccess" />
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="count-task-code">盘点任务编码</FieldLabel>
-              <Input id="count-task-code" v-model="taskForm.countTaskCode" required />
-            </Field>
             <Field>
               <FieldLabel for="count-task-sku">SKU</FieldLabel>
               <Input id="count-task-sku" v-model="taskForm.skuCode" required />
@@ -209,8 +278,8 @@ function isNonEmpty(value: string) {
               <Input id="count-task-owner-type" v-model="taskForm.ownerType" />
             </Field>
             <Field>
-              <FieldLabel for="count-task-owner-id">货主 ID</FieldLabel>
-              <Input id="count-task-owner-id" v-model="taskForm.ownerId" />
+              <FieldLabel for="count-task-owner-id">货主</FieldLabel>
+              <Input id="count-task-owner-id" v-model="taskForm.ownerId" placeholder="可选货主名称或编码" />
             </Field>
             <Field>
               <FieldLabel for="count-task-lot">批次</FieldLabel>
@@ -235,7 +304,7 @@ function isNonEmpty(value: string) {
       <BusinessActionSheet
         v-model:open="adjustmentSheetOpen"
         title="确认盘点差异"
-        description="从已完成实盘的任务进入差异确认；幂等键默认由系统生成。"
+        description="从已完成实盘的任务进入差异确认，重复提交保护由系统处理。"
       >
         <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitAdjustment">
           <div>
@@ -247,8 +316,8 @@ function isNonEmpty(value: string) {
 
           <FieldGroup class="grid gap-3">
             <Field>
-              <FieldLabel for="count-adjust-task-id">盘点任务 ID</FieldLabel>
-              <Input id="count-adjust-task-id" v-model="adjustmentForm.countTaskId" required />
+              <FieldLabel for="count-adjust-task-id">盘点任务</FieldLabel>
+              <Input id="count-adjust-task-id" v-model="adjustmentForm.countTaskId" readonly required />
             </Field>
             <Field>
               <FieldLabel for="count-adjust-quantity">实盘数量</FieldLabel>
@@ -259,10 +328,6 @@ function isNonEmpty(value: string) {
                 required
                 type="number"
               />
-            </Field>
-            <Field>
-              <FieldLabel for="count-adjust-idempotency">幂等键</FieldLabel>
-              <Input id="count-adjust-idempotency" v-model="adjustmentForm.idempotencyKey" placeholder="默认自动生成" />
             </Field>
           </FieldGroup>
 

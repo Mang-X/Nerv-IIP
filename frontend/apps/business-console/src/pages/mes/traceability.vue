@@ -17,7 +17,7 @@ const errorMessage = computed(() => traceabilityError.value instanceof Error ? t
 <template>
   <BusinessLayout>
     <section class="grid gap-4">
-      <BusinessPageHeader domain="MES" title="追溯查询" summary="从工单、批次/序列号或物料批查询执行证据链。">
+      <BusinessPageHeader domain="生产执行" title="追溯查询" summary="从工单、批次/序列号或物料批查询执行证据链。">
         <template #actions><Button size="sm" variant="outline" :disabled="traceabilityPending" @click="refreshTraceability"><RefreshCwIcon data-icon="inline-start" />刷新</Button></template>
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">

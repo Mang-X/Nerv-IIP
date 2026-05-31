@@ -16,7 +16,7 @@ const errorMessage = computed(() => qualityItemsError.value instanceof Error ? q
 <template>
   <BusinessLayout>
     <section class="grid gap-4">
-      <BusinessPageHeader domain="MES" title="质量与不良" summary="查看工单和工序关联的不良、检验、NCR 和质量阻塞。">
+      <BusinessPageHeader domain="生产执行" title="质量与不良" summary="查看工单和工序关联的不良、检验、NCR 和质量阻塞。">
         <template #actions><Button size="sm" variant="outline" :disabled="qualityItemsPending" @click="refreshQualityItems"><RefreshCwIcon data-icon="inline-start" />刷新</Button></template>
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">

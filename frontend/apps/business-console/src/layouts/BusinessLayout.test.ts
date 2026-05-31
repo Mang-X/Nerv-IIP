@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { createBusinessConsoleI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
+import IndexPage from '@/pages/index.vue'
 import BusinessLayout from './BusinessLayout.vue'
 
 const routeState = vi.hoisted(() => ({
@@ -47,7 +48,7 @@ describe('BusinessLayout', () => {
     routeState.path = '/inventory/availability'
   })
 
-  it('passes business domain navigation to AppShell', () => {
+  it('passes workflow-oriented business navigation to AppShell', () => {
     const wrapper = mount(BusinessLayout, {
       global: {
         plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
@@ -65,72 +66,76 @@ describe('BusinessLayout', () => {
     expect(wrapper.getComponent(AppShellStub).props('navLabel')).toBe('业务模块')
     expect(navItems).toMatchObject([
       {
-        title: '主数据',
+        title: '基础数据',
         items: [
           { title: '物料与产品', to: { path: '/master-data/skus' } },
           { title: '客户与供应商', to: { path: '/master-data/partners' } },
           { title: '工厂资源', to: { path: '/master-data/resources' } },
-          { title: '工艺与版本', to: { path: '/master-data/process' } },
         ],
       },
       {
-        title: '库存',
+        title: '工程资料',
+        items: [
+          { title: '工艺与版本', to: { path: '/master-data/process' } },
+          { title: '发布工程版本', to: { path: '/engineering' } },
+        ],
+      },
+      {
+        title: '计划与采购',
+        items: [
+          { title: '需求与物料计划', to: { path: '/planning' } },
+          { title: '采购与供应', to: { path: '/erp' } },
+        ],
+      },
+      {
+        title: '生产执行',
+        items: [
+          { title: '生产驾驶舱', to: { path: '/mes' } },
+          { title: '生产计划', to: { path: '/mes/plans' } },
+          { title: '工单与派工', to: { path: '/mes/work-orders' } },
+          { title: '齐套与物料', to: { path: '/mes/materials' } },
+          { title: '派工看板', to: { path: '/mes/dispatch' } },
+          { title: '工序执行', to: { path: '/mes/operation-tasks' } },
+          { title: '在制跟踪', to: { path: '/mes/wip' } },
+          { title: '报工记录', to: { path: '/mes/production-reports' } },
+          { title: '完工入库', to: { path: '/mes/receipts' } },
+        ],
+      },
+      {
+        title: '质量与库存',
         isActive: true,
         items: [
+          { title: '检验任务与记录', to: { path: '/quality/inspections' } },
+          { title: '不合格品处理', to: { path: '/quality/ncrs' } },
+          { title: '质量与不良', to: { path: '/mes/quality' } },
           { title: '库存可用量', to: { path: '/inventory/availability' } },
           { title: '库存移动', to: { path: '/inventory/movements' } },
           { title: '库存盘点', to: { path: '/inventory/counts' } },
         ],
       },
       {
-        title: '工程资料',
+        title: '设备异常',
         items: [
-          { title: '发布工程版本', to: { path: '/engineering' } },
-        ],
-      },
-      {
-        title: '计划',
-        items: [
-          { title: '需求与 MRP', to: { path: '/planning' } },
-        ],
-      },
-      {
-        title: '质量',
-        items: [
-          { title: '检验任务与记录', to: { path: '/quality/inspections' } },
-          { title: '不合格品处理', to: { path: '/quality/ncrs' } },
-        ],
-      },
-      {
-        title: 'ERP',
-        items: [
-          { title: '业务协同', to: { path: '/erp' } },
-        ],
-      },
-      {
-        title: 'MES',
-        items: [
-          { title: '生产驾驶舱', to: { path: '/mes' } },
-          { title: '生产计划', to: { path: '/mes/plans' } },
-          { title: '工单与派工', to: { path: '/mes/work-orders' } },
-          { title: '工序执行', to: { path: '/mes/operation-tasks' } },
-          { title: '在制跟踪', to: { path: '/mes/wip' } },
-          { title: '报工记录', to: { path: '/mes/production-reports' } },
-          { title: '完工入库', to: { path: '/mes/receipts' } },
+          { title: '设备与停机', to: { path: '/mes/downtime' } },
           { title: '异常与产能', to: { path: '/mes/capacity' } },
           { title: '规则排程', to: { path: '/mes/schedules' } },
+          { title: '班次交接', to: { path: '/mes/handovers' } },
         ],
       },
       {
-        title: '系统管理',
+        title: '追溯报表',
         items: [
-          { title: '数据就绪检查', to: { path: '/mes/foundation' } },
+          { title: '追溯查询', to: { path: '/mes/traceability' } },
+          { title: '生产准备检查', to: { path: '/mes/foundation' } },
         ],
       },
     ])
+    expect(navItems.find((item) => item.title === '追溯报表')?.icon).not.toBe(
+      navItems.find((item) => item.title === '计划与采购')?.icon,
+    )
   })
 
-  it('keeps MES foundation diagnostics under system management navigation', () => {
+  it('keeps MES foundation diagnostics out of the primary production execution group', () => {
     routeState.path = '/mes/foundation'
 
     const wrapper = mount(BusinessLayout, {
@@ -143,11 +148,12 @@ describe('BusinessLayout', () => {
     })
 
     const navItems = wrapper.getComponent(AppShellStub).props('navItems') as Record<string, unknown>[]
-    expect(navItems.find((item) => item.title === 'MES')).toMatchObject({ isActive: false })
-    expect(navItems.find((item) => item.title === '系统管理')).toMatchObject({
+    expect(navItems.find((item) => item.title === '生产执行')).toMatchObject({ isActive: false })
+    expect(navItems.find((item) => item.title === '追溯报表')).toMatchObject({
       isActive: true,
       items: [
-        { title: '数据就绪检查', to: { path: '/mes/foundation' } },
+        { title: '追溯查询', to: { path: '/mes/traceability' } },
+        { title: '生产准备检查', to: { path: '/mes/foundation' } },
       ],
     })
   })
@@ -175,5 +181,47 @@ describe('BusinessLayout', () => {
     expect(wrapper.getComponent(AppShellStub).props('user')).toMatchObject({
       name: '已登录用户',
     })
+  })
+
+  it('uses a distinct breadcrumb label for procurement pages', () => {
+    routeState.path = '/erp/purchase-orders'
+
+    const wrapper = mount(BusinessLayout, {
+      global: {
+        plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
+        stubs: {
+          AppShell: AppShellStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('采购与供应')
+    expect(wrapper.text()).not.toContain('计划与采购')
+  })
+
+  it('renders the home page as a business workbench instead of a route directory', () => {
+    const wrapper = mount(IndexPage, {
+      global: {
+        plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
+        stubs: {
+          BusinessLayout: {
+            template: '<main><slot /></main>',
+          },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(wrapper.findAll('section').length).toBeGreaterThanOrEqual(3)
+    expect(wrapper.findAll('a').length).toBeGreaterThanOrEqual(8)
+
+    const forbiddenTerms = ['demo', 'mock', 'seed', 'sourceSystem', 'operationId', '组织', '环境', '接口', '契约']
+    for (const term of forbiddenTerms) {
+      expect(text).not.toContain(term)
+    }
   })
 })

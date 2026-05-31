@@ -17,7 +17,7 @@ const errorMessage = computed(() => materialIssueRequestsError.value instanceof 
 <template>
   <BusinessLayout>
     <section class="grid gap-4">
-      <BusinessPageHeader domain="MES" title="齐套与物料" summary="跟踪工单齐套、领料申请和线边收料状态。">
+      <BusinessPageHeader domain="生产执行" title="齐套与物料" summary="跟踪工单齐套、领料申请和线边收料状态。">
         <template #actions><Button size="sm" variant="outline" :disabled="materialIssueRequestsPending" @click="refreshMaterialIssueRequests"><RefreshCwIcon data-icon="inline-start" />刷新</Button></template>
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">
@@ -40,7 +40,7 @@ const errorMessage = computed(() => materialIssueRequestsError.value instanceof 
               <TableCell class="font-medium">{{ row.requestId }}</TableCell>
               <TableCell>{{ row.workOrderId }}</TableCell>
               <TableCell>{{ row.status ?? '未知' }}</TableCell>
-              <TableCell>{{ row.wmsRequestId ?? '未生成' }}</TableCell>
+              <TableCell>{{ row.wmsRequestId ?? '未下发' }}</TableCell>
               <TableCell>{{ row.requestedAtUtc ?? '未指定' }}</TableCell>
             </TableRow>
             <TableEmpty v-if="materialIssueRequestsPending" :colspan="5">正在加载领料申请...</TableEmpty>

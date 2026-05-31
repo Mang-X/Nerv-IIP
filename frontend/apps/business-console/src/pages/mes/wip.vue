@@ -52,7 +52,7 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="在制跟踪"
         summary="按工单和工序查看计划数量、良品、报废和阻塞原因。"
       >

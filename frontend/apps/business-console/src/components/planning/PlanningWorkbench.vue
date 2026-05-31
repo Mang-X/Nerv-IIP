@@ -140,6 +140,33 @@ function formatSource(value?: string | null) {
   return value && value.length > 0 ? value : '未采集'
 }
 
+function formatDemandType(value?: string | null) {
+  const map: Record<string, string> = {
+    forecast: '预测',
+    'safety-stock': '安全库存',
+    'sales-order': '销售订单',
+  }
+  return value ? (map[value] ?? value) : '未指定'
+}
+
+function formatSuggestionType(value?: string | null) {
+  const map: Record<string, string> = {
+    'planned-purchase': '采购建议',
+    'planned-work-order': '生产建议',
+  }
+  return value ? (map[value] ?? value) : '未指定'
+}
+
+function formatReasonCode(value?: string | null) {
+  const map: Record<string, string> = {
+    inventory_shortage: '库存不足',
+    material_shortage: '物料不足',
+    demand_pegging: '需求驱动',
+    safety_stock: '安全库存',
+  }
+  return value ? (map[value] ?? value) : '按计划规则形成'
+}
+
 function isAcceptedSuggestion(status?: string | null) {
   return status?.toLowerCase() === 'accepted'
 }
@@ -189,7 +216,7 @@ function formatError(error: unknown) {
     </BusinessContextBar>
 
     <div class="grid gap-3 sm:grid-cols-3">
-      <BusinessMetricCell label="需求总量" :value="demandQuantity" detail="当前组织环境" />
+      <BusinessMetricCell label="需求总量" :value="demandQuantity" detail="当前计划范围" />
       <BusinessMetricCell label="生产建议" :value="proposedWorkOrders" detail="待评审" />
       <BusinessMetricCell label="采购建议" :value="proposedPurchases" detail="待评审" />
     </div>
@@ -238,10 +265,6 @@ function formatError(error: unknown) {
             <FieldLabel for="planning-due">需求日期</FieldLabel>
             <Input id="planning-due" v-model="demandForm.dueDate" type="date" />
           </Field>
-          <Field>
-            <FieldLabel for="planning-idempotency">幂等键</FieldLabel>
-            <Input id="planning-idempotency" v-model="demandForm.idempotencyKey" placeholder="可选" />
-          </Field>
         </FieldGroup>
         <div class="flex justify-end border-t px-4 py-3">
           <Button size="sm" type="submit" :disabled="createDemandPending">
@@ -279,7 +302,7 @@ function formatError(error: unknown) {
             </Select>
           </Field>
           <Field>
-            <FieldLabel for="planning-selected-run">Pegging Run</FieldLabel>
+            <FieldLabel for="planning-selected-run">追溯批次</FieldLabel>
             <Input id="planning-selected-run" v-model="runSelection.runId" placeholder="选择一次 MRP 运行" />
           </Field>
         </FieldGroup>
@@ -312,7 +335,7 @@ function formatError(error: unknown) {
           <TableBody>
             <TableRow v-for="item in demands" :key="item.demandSourceId">
               <TableCell class="font-medium">{{ item.sourceReference }}</TableCell>
-              <TableCell>{{ item.demandType }}</TableCell>
+              <TableCell>{{ formatDemandType(item.demandType) }}</TableCell>
               <TableCell>{{ item.skuCode }}</TableCell>
               <TableCell>{{ item.siteCode }}</TableCell>
               <TableCell>{{ formatQuantity(item.quantity, item.uomCode) }}</TableCell>
@@ -337,7 +360,7 @@ function formatError(error: unknown) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Run</TableHead>
+                <TableHead>运行批次</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>建议</TableHead>
                 <TableHead>工程快照</TableHead>
@@ -369,7 +392,7 @@ function formatError(error: unknown) {
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center gap-2 border-b px-4 py-3">
           <LinkIcon class="size-4 text-muted-foreground" />
-          <h2 class="text-sm font-semibold text-foreground">Pegging 追溯</h2>
+          <h2 class="text-sm font-semibold text-foreground">需求追溯</h2>
         </div>
         <div class="overflow-x-auto">
           <Table>
@@ -391,9 +414,9 @@ function formatError(error: unknown) {
                 <TableCell>{{ item.manufacturingBomReference ?? item.productionVersionReference ?? '-' }}</TableCell>
               </TableRow>
               <TableEmpty v-if="!pegging.length && !peggingPending" :colspan="5">
-                选择一条 MRP 运行查看 pegging。
+                选择一条 MRP 运行查看需求与物料来源。
               </TableEmpty>
-              <TableEmpty v-if="peggingPending" :colspan="5">正在加载 pegging...</TableEmpty>
+              <TableEmpty v-if="peggingPending" :colspan="5">正在加载需求追溯...</TableEmpty>
             </TableBody>
           </Table>
         </div>
@@ -404,12 +427,11 @@ function formatError(error: unknown) {
       <div class="grid gap-3 border-b px-4 py-3 lg:grid-cols-[1fr_260px]">
         <div>
           <h2 class="text-sm font-semibold text-foreground">计划建议评审</h2>
-          <p class="mt-1 text-sm text-muted-foreground">生产建议接受到 MES，采购建议接受到 ERP。</p>
+          <p class="mt-1 text-sm text-muted-foreground">生产建议进入车间执行，采购建议进入采购跟进。</p>
         </div>
-        <Field>
-          <FieldLabel for="planning-downstream-id">下游单据号</FieldLabel>
-          <Input id="planning-downstream-id" v-model="acceptTarget.downstreamDocumentId" placeholder="可选" />
-        </Field>
+        <p class="text-sm text-muted-foreground">
+          接受后由对应业务服务分配生产或采购单据号。
+        </p>
       </div>
       <div class="overflow-x-auto">
         <Table>
@@ -428,11 +450,11 @@ function formatError(error: unknown) {
           <TableBody>
             <TableRow v-for="item in suggestions" :key="item.suggestionId">
               <TableCell class="font-medium">{{ item.suggestionId }}</TableCell>
-              <TableCell>{{ item.suggestionType }}</TableCell>
+              <TableCell>{{ formatSuggestionType(item.suggestionType) }}</TableCell>
               <TableCell>{{ item.skuCode }}</TableCell>
               <TableCell>{{ formatQuantity(item.quantity, item.uomCode) }}</TableCell>
               <TableCell>{{ formatDate(item.requiredDate) }}</TableCell>
-              <TableCell>{{ item.reasonCode }}</TableCell>
+              <TableCell>{{ formatReasonCode(item.reasonCode) }}</TableCell>
               <TableCell><BusinessStatusBadge :value="item.status" /></TableCell>
               <TableCell>
                 <Button

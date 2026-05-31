@@ -9,7 +9,6 @@ import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
-import { demoOperationTasks, demoResourcesOf, mergeByKey, readLocalDemoWorkOrders } from '@/data/shockAbsorberDemo'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
@@ -33,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, ClipboardCheckIcon, EyeIcon, PlayCircleIcon, RefreshCwIcon, ShieldCheckIcon, WrenchIcon } from 'lucide-vue-next'
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, ClipboardCheckIcon, EyeIcon, RefreshCwIcon, ShieldCheckIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -117,23 +116,11 @@ const statusOptions = [
   { label: '已完成', value: 'Completed' },
   { label: '阻塞', value: 'Blocked' },
 ]
-const siteOptions = computed(() => toResourceOptions(siteResources.value.length ? siteResources.value : demoResourcesOf('site')))
-const lineOptions = computed(() => toResourceOptions(lineResources.value.length ? lineResources.value : demoResourcesOf('production-line')))
-const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value.length ? workCenterResources.value : demoResourcesOf('work-center')))
-const shiftOptions = computed(() => toResourceOptions(shiftResources.value.length ? shiftResources.value : demoResourcesOf('shift')))
-const localOperationTasks = computed(() => readLocalDemoWorkOrders().flatMap((order) =>
-  (order.operationTasks ?? []).map((task): BusinessConsoleMesOperationTaskRow => ({
-    ...task,
-    deviceAssetId: undefined,
-    qualityStatus: undefined,
-    shiftId: undefined,
-    workOrderId: order.workOrderId,
-    plannedStartUtc: task.earliestStartUtc,
-  })),
-))
-const sourceTasks = computed(() =>
-  mergeByKey([...operationTasks.value, ...localOperationTasks.value, ...demoOperationTasks], (task) => task.operationTaskId),
-)
+const siteOptions = computed(() => toResourceOptions(siteResources.value))
+const lineOptions = computed(() => toResourceOptions(lineResources.value))
+const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
+const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
+const sourceTasks = computed(() => operationTasks.value)
 const visibleTasks = computed(() => {
   const keyword = appliedFilter.keyword.trim().toLowerCase()
   const workCenter = appliedScope.workCenterCode.trim().toLowerCase()
@@ -229,6 +216,10 @@ function openRoute(path: string, task?: { operationTaskId?: string | null, workO
   })
 }
 
+function canOpenReport(task: BusinessConsoleMesOperationTaskRow) {
+  return Boolean(task.workOrderId && task.operationTaskId)
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
@@ -274,7 +265,7 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="工序执行"
         kicker="班组长 / 操作员"
         summary="以工序任务为现场工作单元，直接进入工单、报工、质检和异常处理，减少一线人员在系统里反复查找编号。"
@@ -452,13 +443,9 @@ function formatError(error: unknown) {
                       <EyeIcon data-icon="inline-start" />
                       查看工单
                     </DropdownMenuItem>
-                    <DropdownMenuItem @click="openRoute('/mes/reports', task)">
-                      <PlayCircleIcon data-icon="inline-start" />
-                      进入执行
-                    </DropdownMenuItem>
-                    <DropdownMenuItem @click="openRoute('/mes/reports', task)">
+                    <DropdownMenuItem :disabled="!canOpenReport(task)" @click="openRoute('/mes/work-orders', task)">
                       <ClipboardCheckIcon data-icon="inline-start" />
-                      生产报工
+                      {{ canOpenReport(task) ? '打开报工表单' : '缺少工单上下文' }}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem @click="openRoute('/quality/inspections', task)">

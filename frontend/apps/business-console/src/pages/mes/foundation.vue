@@ -53,7 +53,7 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="基础准备"
         summary="作为开工、释放和派工前的辅助检查，不替代主数据、工程、库存和质量维护入口。"
       >

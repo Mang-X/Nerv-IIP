@@ -16,7 +16,7 @@ const errorMessage = computed(() => productionReportsError.value instanceof Erro
 <template>
   <BusinessLayout>
     <section class="grid gap-4">
-      <BusinessPageHeader domain="MES" title="报工与完工" summary="查看合格数、不良数、完工标记和后续入库请求依据。">
+      <BusinessPageHeader domain="生产执行" title="报工与完工" summary="查看合格数、不良数、完工标记和后续入库请求依据。">
         <template #actions><Button size="sm" variant="outline" :disabled="productionReportsPending" @click="refreshProductionReports"><RefreshCwIcon data-icon="inline-start" />刷新</Button></template>
       </BusinessPageHeader>
       <div class="grid gap-3 rounded-lg border bg-background p-4">

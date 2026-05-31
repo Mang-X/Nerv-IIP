@@ -120,7 +120,7 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="生产驾驶舱"
         kicker="班组长 / 调度员首屏"
         summary="先看阻塞，再进工单和工序。这里把计划、物料、质量、设备和班次待办压缩成可行动的现场指挥视图。"

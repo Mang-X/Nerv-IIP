@@ -70,7 +70,14 @@ function refreshAll() {
 }
 
 function openRoute(path: string) {
-  void router.push({ path })
+  void router.push({
+    path,
+    query: {
+      workOrderId: filters.workOrderId,
+      skuId: detail.value?.skuId ?? undefined,
+      quantity: detail.value?.quantity?.toString() ?? undefined,
+    },
+  })
 }
 
 function formatDateTime(value?: string | null) {
@@ -105,7 +112,7 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <section class="grid gap-4">
       <BusinessPageHeader
-        domain="MES"
+        domain="生产执行"
         title="工单详情"
         :summary="`查看工单 ${filters.workOrderId} 的工序、用料和开工阻塞。`"
       >
@@ -141,7 +148,7 @@ function formatError(error: unknown) {
         <FieldGroup class="grid gap-3 md:grid-cols-2">
           <Field>
             <FieldLabel for="detail-work-order">工单号</FieldLabel>
-            <Input id="detail-work-order" v-model="filters.workOrderId" />
+            <Input id="detail-work-order" v-model="filters.workOrderId" readonly />
           </Field>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
