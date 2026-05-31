@@ -13,9 +13,16 @@ public sealed class CreateSchedulePlanCommandValidator : AbstractValidator<Creat
     public CreateSchedulePlanCommandValidator()
     {
         RuleFor(x => x.Problem).NotNull();
-        RuleFor(x => x.Problem.OrganizationId).NotEmpty().MaximumLength(64);
-        RuleFor(x => x.Problem.EnvironmentId).NotEmpty().MaximumLength(64);
-        RuleFor(x => x.Problem.HorizonEndUtc).GreaterThan(x => x.Problem.HorizonStartUtc);
+        RuleFor(x => x.Problem.OrganizationId).NotEmpty().MaximumLength(64).When(x => x.Problem is not null);
+        RuleFor(x => x.Problem.EnvironmentId).NotEmpty().MaximumLength(64).When(x => x.Problem is not null);
+        RuleFor(x => x.Problem.HorizonEndUtc).GreaterThan(x => x.Problem.HorizonStartUtc).When(x => x.Problem is not null);
+        RuleFor(x => x.Problem).Custom((problem, context) =>
+        {
+            foreach (var error in SchedulingProblemNormalizer.ValidateForErrors(problem))
+            {
+                context.AddFailure(error);
+            }
+        });
     }
 }
 

@@ -55,7 +55,7 @@ All contract times are UTC `DateTimeOffset`. Local plant calendars are represent
 Each operation carries:
 
 1. `orderId`, `operationId`, `operationSequence` and optional `predecessorOperationIds`.
-2. `durationMinutes`, `quantity`, `requiredCapabilityCode` and eligible `resourceIds`.
+2. `durationMinutes`, `requiredCapabilityCode` and eligible `resourceIds`. P0 operation duration is already quantity-adjusted; order-level `quantity` remains available for traceability and future duration expansion.
 3. `primaryResourceId` when the route has a preferred work center/device.
 4. `earliestStartUtc`, `dueUtc`, `priority` and `isRush`.
 5. `splitPolicy`, with P0 supporting only `nonSplittable`.
@@ -74,7 +74,7 @@ Each operation carries:
 | `resourceLoads` | Resource/day or resource/window load and utilization. |
 | `conflicts` | Due-date, capacity, calendar, material, quality or equipment conflicts. |
 | `unscheduledOperations` | Operations that cannot be scheduled in the horizon with reason codes. |
-| `changeSummary` | Added, moved, delayed, preserved and blocked operation references compared with a previous plan or locked assignments. |
+| `changeSummary` | Added, delayed, preserved and blocked operation references compared with locked assignments and the current run result. `moved` is a reserved enum value for a later previous-plan diff input. |
 | `ganttItems` | Stable read DTO for #78, derived from assignments/conflicts without browser-side scheduling. |
 
 Scheduling enum fields are serialized as camel-case strings, for example `generated`, `released`, `dueDate` and `nonSplittable`. Gateway OpenAPI snapshots and generated clients must preserve those string values rather than integer enum ordinals.
@@ -83,16 +83,18 @@ Scheduling enum fields are serialized as camel-case strings, for example `genera
 
 The P0 algorithm is a deterministic finite-capacity heuristic:
 
-1. Validate the problem and normalize resources, calendars, operations and windows.
-2. Reserve locked or in-progress assignments first. Invalid locks are preserved in output but also reported as conflicts.
+1. Validate the problem and normalize resources, calendars, operations and windows before computing the fingerprint. Duplicate resource/calendar IDs, non-positive operation durations, invalid windows and duplicate operation IDs within an order are rejected as input errors instead of becoming unclassified runtime failures.
+2. Reserve locked or in-progress assignments first. Invalid locks are preserved in output but also reported as conflicts. Locked assignments are invalid when they reference a missing resource, fall outside the horizon/calendar/availability, have an invalid time range, or exceed the resource's finite capacity together with other locked assignments.
 3. Sort open operations by `isRush` descending, `priority` descending, `dueUtc`, `orderId`, `operationSequence`, then `operationId`.
 4. Enforce operation precedence by making each operation's earliest start at least the latest scheduled predecessor end.
 5. Enforce material readiness and quality blocks by moving earliest start or marking unscheduled when the block is open-ended.
 6. For each eligible resource, find the earliest slot that fits duration, capacity, shift calendar and unavailability windows.
 7. Choose the earliest feasible slot; ties prefer primary resource, then lower deterministic resource sort key, then resource ID.
-8. If the operation cannot fit before `horizonEndUtc`, return it in `unscheduledOperations` with a reason code instead of dropping it.
+8. If the operation cannot fit, return it in `unscheduledOperations` with the most specific reason code available instead of dropping it: `capacity` for saturated finite capacity, `calendar` for no fitting shift/calendar window, and `outsideHorizon` only when the normalized earliest start or required duration cannot fit inside the horizon.
 9. If an assignment ends after `dueUtc`, keep the assignment and add a due-date conflict.
-10. Compute resource load from actual assigned minutes over explicit calendar capacity.
+10. Compute resource load from actual assigned minutes over explicit calendar capacity. Overlapping unavailability windows are merged before subtracting available minutes.
+
+The canonical fingerprint sorts all unordered input collections by stable business keys before JSON serialization. It must be independent of upstream collection order while still changing when any semantic scheduling input changes.
 
 The algorithm must not call databases, HTTP services, clocks, random number generators or static local-time APIs.
 

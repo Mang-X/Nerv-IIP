@@ -16,10 +16,205 @@ public sealed class FiniteCapacityScheduler
     {
         ArgumentNullException.ThrowIfNull(problem);
 
-        var state = SchedulerState.From(problem, planId, generatedAtUtc);
+        var normalizedProblem = SchedulingProblemNormalizer.Normalize(problem);
+        var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc);
         state.ReserveLockedAssignments();
         state.ScheduleOpenOperations();
         return state.ToPlan();
+    }
+}
+
+internal static class SchedulingProblemNormalizer
+{
+    public static SchedulingProblemContract Normalize(SchedulingProblemContract problem)
+    {
+        Validate(problem);
+
+        return problem with
+        {
+            Orders = problem.Orders
+                .OrderBy(x => x.OrderId, StringComparer.Ordinal)
+                .Select(x => x with
+                {
+                    Operations = x.Operations
+                        .OrderBy(y => y.OperationSequence)
+                        .ThenBy(y => y.OperationId, StringComparer.Ordinal)
+                        .Select(y => y with
+                        {
+                            PredecessorOperationIds = y.PredecessorOperationIds
+                                .OrderBy(id => id, StringComparer.Ordinal)
+                                .ToArray(),
+                            EligibleResourceIds = y.EligibleResourceIds
+                                .OrderBy(id => id, StringComparer.Ordinal)
+                                .ToArray()
+                        })
+                        .ToArray()
+                })
+                .ToArray(),
+            Resources = problem.Resources
+                .OrderBy(x => x.ResourceId, StringComparer.Ordinal)
+                .Select(x => x with
+                {
+                    CapabilityCodes = x.CapabilityCodes
+                        .OrderBy(code => code, StringComparer.Ordinal)
+                        .ToArray()
+                })
+                .ToArray(),
+            Calendars = problem.Calendars
+                .OrderBy(x => x.CalendarId, StringComparer.Ordinal)
+                .Select(x => x with
+                {
+                    ShiftWindows = x.ShiftWindows
+                        .OrderBy(y => y.StartUtc)
+                        .ThenBy(y => y.EndUtc)
+                        .ThenBy(y => y.ReasonCode, StringComparer.Ordinal)
+                        .ToArray()
+                })
+                .ToArray(),
+            UnavailabilityWindows = problem.UnavailabilityWindows
+                .OrderBy(x => x.ResourceId, StringComparer.Ordinal)
+                .ThenBy(x => x.WorkCenterId, StringComparer.Ordinal)
+                .ThenBy(x => x.StartUtc)
+                .ThenBy(x => x.EndUtc)
+                .ThenBy(x => x.ReasonCode, StringComparer.Ordinal)
+                .ToArray(),
+            MaterialReadiness = problem.MaterialReadiness
+                .OrderBy(x => x.ScopeType, StringComparer.Ordinal)
+                .ThenBy(x => x.ScopeId, StringComparer.Ordinal)
+                .ThenBy(x => x.MaterialReadyUtc)
+                .ThenBy(x => x.IsReady)
+                .Select(x => x with
+                {
+                    ReasonCodes = x.ReasonCodes
+                        .OrderBy(code => code, StringComparer.Ordinal)
+                        .ToArray()
+                })
+                .ToArray(),
+            QualityBlocks = problem.QualityBlocks
+                .OrderBy(x => x.ScopeType, StringComparer.Ordinal)
+                .ThenBy(x => x.ScopeId, StringComparer.Ordinal)
+                .ThenBy(x => x.BlockedUntilUtc)
+                .ThenBy(x => x.ReasonCode, StringComparer.Ordinal)
+                .ToArray(),
+            LockedAssignments = problem.LockedAssignments
+                .OrderBy(x => x.StartUtc)
+                .ThenBy(x => x.ResourceId, StringComparer.Ordinal)
+                .ThenBy(x => x.OrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.OperationSequence)
+                .ThenBy(x => x.OperationId, StringComparer.Ordinal)
+                .ThenBy(x => x.AssignmentId, StringComparer.Ordinal)
+                .ToArray()
+        };
+    }
+
+    public static IReadOnlyCollection<string> ValidateForErrors(SchedulingProblemContract? problem)
+    {
+        if (problem is null)
+        {
+            return ["Problem is required."];
+        }
+
+        try
+        {
+            Validate(problem);
+            return [];
+        }
+        catch (ArgumentException exception)
+        {
+            return [exception.Message];
+        }
+    }
+
+    private static void Validate(SchedulingProblemContract problem)
+    {
+        if (string.IsNullOrWhiteSpace(problem.ProblemId))
+        {
+            throw new ArgumentException("ProblemId is required.", nameof(problem));
+        }
+
+        if (problem.HorizonEndUtc <= problem.HorizonStartUtc)
+        {
+            throw new ArgumentException("HorizonEndUtc must be greater than HorizonStartUtc.", nameof(problem));
+        }
+
+        ThrowIfDuplicate(problem.Resources, x => x.ResourceId, "resourceId", nameof(problem));
+        ThrowIfDuplicate(problem.Calendars, x => x.CalendarId, "calendarId", nameof(problem));
+
+        foreach (var calendar in problem.Calendars)
+        {
+            RequireNonEmpty(calendar.CalendarId, "calendarId", nameof(problem));
+            foreach (var shift in calendar.ShiftWindows)
+            {
+                RequireValidWindow(shift.StartUtc, shift.EndUtc, "calendar shift", nameof(problem));
+            }
+        }
+
+        foreach (var resource in problem.Resources)
+        {
+            RequireNonEmpty(resource.ResourceId, "resourceId", nameof(problem));
+            RequireNonEmpty(resource.CalendarId, "resource calendarId", nameof(problem));
+        }
+
+        foreach (var order in problem.Orders)
+        {
+            RequireNonEmpty(order.OrderId, "orderId", nameof(problem));
+            ThrowIfDuplicate(order.Operations, x => x.OperationId, $"operationId in order {order.OrderId}", nameof(problem));
+            foreach (var operation in order.Operations)
+            {
+                RequireNonEmpty(operation.OperationId, "operationId", nameof(problem));
+                if (operation.DurationMinutes <= 0)
+                {
+                    throw new ArgumentException(
+                        $"DurationMinutes must be greater than zero for orderId '{order.OrderId}', operationId '{operation.OperationId}'.",
+                        nameof(problem));
+                }
+            }
+        }
+
+        foreach (var window in problem.UnavailabilityWindows)
+        {
+            RequireValidWindow(window.StartUtc, window.EndUtc, "unavailability window", nameof(problem));
+        }
+
+        foreach (var locked in problem.LockedAssignments)
+        {
+            RequireNonEmpty(locked.AssignmentId, "locked assignmentId", nameof(problem));
+            RequireNonEmpty(locked.ResourceId, "locked resourceId", nameof(problem));
+            RequireValidWindow(locked.StartUtc, locked.EndUtc, "locked assignment", nameof(problem));
+        }
+    }
+
+    private static void ThrowIfDuplicate<T>(
+        IEnumerable<T> items,
+        Func<T, string> keySelector,
+        string label,
+        string paramName)
+    {
+        var duplicates = items
+            .GroupBy(keySelector, StringComparer.Ordinal)
+            .Where(x => string.IsNullOrWhiteSpace(x.Key) || x.Count() > 1)
+            .Select(x => x.Key)
+            .ToList();
+        if (duplicates.Count != 0)
+        {
+            throw new ArgumentException($"Duplicate {label} values are not allowed: {string.Join(",", duplicates)}.", paramName);
+        }
+    }
+
+    private static void RequireNonEmpty(string value, string label, string paramName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException($"{label} is required.", paramName);
+        }
+    }
+
+    private static void RequireValidWindow(DateTimeOffset startUtc, DateTimeOffset endUtc, string label, string paramName)
+    {
+        if (endUtc <= startUtc)
+        {
+            throw new ArgumentException($"{label} end must be greater than start.", paramName);
+        }
     }
 }
 
@@ -58,6 +253,13 @@ file sealed class SchedulerState
                      .ThenBy(x => x.ResourceId, StringComparer.Ordinal)
                      .ThenBy(x => x.OperationId, StringComparer.Ordinal))
         {
+            var hasResource = resources.TryGetValue(locked.ResourceId, out var resource);
+            var invalidLock = !hasResource
+                || locked.StartUtc < problem.HorizonStartUtc
+                || locked.EndUtc > problem.HorizonEndUtc
+                || !IsInsideCalendar(resource!, locked.StartUtc, locked.EndUtc)
+                || IsUnavailable(resource!, locked.StartUtc, locked.EndUtc);
+
             var assignment = new ScheduleAssignmentContract(
                 AssignmentId: locked.AssignmentId,
                 OrderId: locked.OrderId,
@@ -76,11 +278,7 @@ file sealed class SchedulerState
                 ScheduleChangeTypeContract.Preserved,
                 "Locked assignment reserved before APS lite scheduling."));
 
-            if (!resources.TryGetValue(locked.ResourceId, out var resource)
-                || locked.StartUtc < problem.HorizonStartUtc
-                || locked.EndUtc > problem.HorizonEndUtc
-                || !IsInsideCalendar(resource, locked.StartUtc, locked.EndUtc)
-                || IsUnavailable(resource, locked.StartUtc, locked.EndUtc))
+            if (invalidLock)
             {
                 AddConflict(
                     ScheduleConflictReasonCodeContract.InvalidLockedAssignment,
@@ -91,6 +289,8 @@ file sealed class SchedulerState
                     "Locked assignment is outside the scheduling horizon, calendar, resource set, or availability.");
             }
         }
+
+        ReportLockedCapacityConflicts();
     }
 
     public void ScheduleOpenOperations()
@@ -325,7 +525,8 @@ file sealed class SchedulerState
                 return null;
             }
 
-            AddUnscheduled(item, ScheduleConflictReasonCodeContract.OutsideHorizon, "No feasible capacity slot exists inside the scheduling horizon.");
+            var reasonCode = InferNoFeasibleSlotReason(candidates, item, earliestStart);
+            AddUnscheduled(item, reasonCode, NoFeasibleSlotMessage(reasonCode));
             return null;
         }
 
@@ -467,6 +668,70 @@ file sealed class SchedulerState
         return CapacityBlockEnd(resource, startUtc, endUtc, capacity);
     }
 
+    private void ReportLockedCapacityConflicts()
+    {
+        var lockedAssignments = assignments
+            .Where(x => x.IsLocked)
+            .ToList();
+        var overbookedAssignmentIds = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var resource in resources.Values)
+        {
+            var resourceLocks = lockedAssignments
+                .Where(x => x.ResourceId == resource.ResourceId)
+                .ToList();
+            if (resourceLocks.Count <= Math.Max(1, resource.CapacityUnits))
+            {
+                continue;
+            }
+
+            var capacity = Math.Max(1, resource.CapacityUnits);
+            var boundaries = resourceLocks
+                .SelectMany(x => new[] { x.StartUtc, x.EndUtc })
+                .Distinct()
+                .OrderBy(x => x)
+                .ToList();
+
+            for (var i = 0; i < boundaries.Count - 1; i++)
+            {
+                var segmentStart = boundaries[i];
+                var segmentEnd = boundaries[i + 1];
+                if (segmentStart >= segmentEnd)
+                {
+                    continue;
+                }
+
+                var concurrentLocks = resourceLocks
+                    .Where(x => x.StartUtc < segmentEnd && x.EndUtc > segmentStart)
+                    .ToList();
+                if (concurrentLocks.Count <= capacity)
+                {
+                    continue;
+                }
+
+                foreach (var locked in concurrentLocks)
+                {
+                    overbookedAssignmentIds.Add(locked.AssignmentId);
+                }
+            }
+        }
+
+        foreach (var locked in lockedAssignments
+                     .Where(x => overbookedAssignmentIds.Contains(x.AssignmentId))
+                     .OrderBy(x => x.StartUtc)
+                     .ThenBy(x => x.ResourceId, StringComparer.Ordinal)
+                     .ThenBy(x => x.OperationId, StringComparer.Ordinal))
+        {
+            AddConflict(
+                ScheduleConflictReasonCodeContract.InvalidLockedAssignment,
+                ScheduleConflictSeverityContract.Error,
+                locked.OrderId,
+                locked.OperationId,
+                locked.ResourceId,
+                "Locked assignments exceed the resource finite capacity.");
+        }
+    }
+
     private DateTimeOffset? CapacityBlockEnd(
         SchedulingResourceContract resource,
         DateTimeOffset startUtc,
@@ -520,6 +785,146 @@ file sealed class SchedulerState
             && calendar.ShiftWindows.Any(x => x.StartUtc <= startUtc && x.EndUtc >= endUtc);
     }
 
+    private ScheduleConflictReasonCodeContract InferNoFeasibleSlotReason(
+        IReadOnlyCollection<SchedulingResourceContract> candidates,
+        OperationWorkItem item,
+        DateTimeOffset earliestStart)
+    {
+        var durationMinutes = item.Operation.DurationMinutes;
+        if (!candidates.Any(resource => HasCalendarFitIgnoringHorizonEnd(resource, earliestStart, durationMinutes)))
+        {
+            return ScheduleConflictReasonCodeContract.Calendar;
+        }
+
+        if (!candidates.Any(resource => HasCalendarFit(resource, earliestStart, durationMinutes)))
+        {
+            return ScheduleConflictReasonCodeContract.OutsideHorizon;
+        }
+
+        if (candidates.Any(resource => HasSlotIgnoringCapacity(resource, item, earliestStart, durationMinutes)))
+        {
+            return ScheduleConflictReasonCodeContract.Capacity;
+        }
+
+        return ScheduleConflictReasonCodeContract.OutsideHorizon;
+    }
+
+    private bool HasCalendarFit(
+        SchedulingResourceContract resource,
+        DateTimeOffset earliestStart,
+        int durationMinutes)
+    {
+        if (!calendars.TryGetValue(resource.CalendarId, out var calendar))
+        {
+            return false;
+        }
+
+        var duration = TimeSpan.FromMinutes(durationMinutes);
+        return calendar.ShiftWindows
+            .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc)
+            .Any(shift =>
+            {
+                var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
+                var latestEnd = Min(shift.EndUtc, problem.HorizonEndUtc);
+                return candidate + duration <= latestEnd;
+            });
+    }
+
+    private bool HasCalendarFitIgnoringHorizonEnd(
+        SchedulingResourceContract resource,
+        DateTimeOffset earliestStart,
+        int durationMinutes)
+    {
+        if (!calendars.TryGetValue(resource.CalendarId, out var calendar))
+        {
+            return false;
+        }
+
+        var duration = TimeSpan.FromMinutes(durationMinutes);
+        return calendar.ShiftWindows
+            .Where(x => x.EndUtc > earliestStart)
+            .Any(shift =>
+            {
+                var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
+                return candidate + duration <= shift.EndUtc;
+            });
+    }
+
+    private bool HasSlotIgnoringCapacity(
+        SchedulingResourceContract resource,
+        OperationWorkItem item,
+        DateTimeOffset earliestStart,
+        int durationMinutes)
+    {
+        if (!calendars.TryGetValue(resource.CalendarId, out var calendar))
+        {
+            return false;
+        }
+
+        var resourceQualityBlocks = ApplicableResourceQualityBlocks(item, resource).ToList();
+        if (resourceQualityBlocks.Any(x => x.BlockedUntilUtc is null))
+        {
+            return false;
+        }
+
+        var duration = TimeSpan.FromMinutes(durationMinutes);
+        foreach (var shift in calendar.ShiftWindows
+                     .OrderBy(x => x.StartUtc)
+                     .ThenBy(x => x.EndUtc)
+                     .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
+        {
+            var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
+            var latestEnd = Min(shift.EndUtc, problem.HorizonEndUtc);
+
+            while (candidate + duration <= latestEnd)
+            {
+                var end = candidate + duration;
+                var blockingEnd = BlockingEndIgnoringCapacity(resource, resourceQualityBlocks, candidate, end);
+                if (blockingEnd is null)
+                {
+                    return true;
+                }
+
+                candidate = blockingEnd.Value;
+            }
+        }
+
+        return false;
+    }
+
+    private DateTimeOffset? BlockingEndIgnoringCapacity(
+        SchedulingResourceContract resource,
+        IReadOnlyCollection<SchedulingQualityBlockContract> resourceQualityBlocks,
+        DateTimeOffset startUtc,
+        DateTimeOffset endUtc)
+    {
+        var qualityBlockEnd = resourceQualityBlocks
+            .Where(x => x.BlockedUntilUtc.HasValue)
+            .Where(x => Overlaps(startUtc, endUtc, startUtc, x.BlockedUntilUtc!.Value))
+            .Select(x => x.BlockedUntilUtc)
+            .Min();
+        if (qualityBlockEnd.HasValue)
+        {
+            return qualityBlockEnd;
+        }
+
+        return problem.UnavailabilityWindows
+            .Where(x => AppliesTo(x, resource))
+            .Where(x => Overlaps(startUtc, endUtc, x.StartUtc, x.EndUtc))
+            .Select(x => (DateTimeOffset?)x.EndUtc)
+            .Min();
+    }
+
+    private static string NoFeasibleSlotMessage(ScheduleConflictReasonCodeContract reasonCode)
+    {
+        return reasonCode switch
+        {
+            ScheduleConflictReasonCodeContract.Capacity => "No feasible slot exists because finite capacity is saturated inside the scheduling horizon.",
+            ScheduleConflictReasonCodeContract.Calendar => "No feasible slot exists because no shift calendar window can fit the operation duration.",
+            _ => "No feasible capacity slot exists inside the scheduling horizon."
+        };
+    }
+
     private bool IsUnavailable(SchedulingResourceContract resource, DateTimeOffset startUtc, DateTimeOffset endUtc)
     {
         return problem.UnavailabilityWindows
@@ -544,9 +949,7 @@ file sealed class SchedulerState
                     var assignedMinutes = orderedAssignments
                         .Where(x => x.ResourceId == resource.ResourceId)
                         .Sum(x => OverlapMinutes(x.StartUtc, x.EndUtc, shift.StartUtc, shift.EndUtc));
-                    var unavailableMinutes = problem.UnavailabilityWindows
-                        .Where(x => AppliesTo(x, resource))
-                        .Sum(x => OverlapMinutes(x.StartUtc, x.EndUtc, shift.StartUtc, shift.EndUtc));
+                    var unavailableMinutes = MergedUnavailableMinutes(resource, shift.StartUtc, shift.EndUtc);
                     var capacity = Math.Max(1, resource.CapacityUnits);
                     var shiftMinutes = (int)(shift.EndUtc - shift.StartUtc).TotalMinutes;
                     var availableMinutes = Math.Max(0, (shiftMinutes - unavailableMinutes) * capacity);
@@ -562,6 +965,43 @@ file sealed class SchedulerState
             })
             .Where(x => x.AssignedMinutes > 0 || x.AvailableMinutes > 0)
             .ToList();
+    }
+
+    private int MergedUnavailableMinutes(
+        SchedulingResourceContract resource,
+        DateTimeOffset shiftStartUtc,
+        DateTimeOffset shiftEndUtc)
+    {
+        var windows = problem.UnavailabilityWindows
+            .Where(x => AppliesTo(x, resource))
+            .Select(x => (StartUtc: Max(x.StartUtc, shiftStartUtc), EndUtc: Min(x.EndUtc, shiftEndUtc)))
+            .Where(x => x.StartUtc < x.EndUtc)
+            .OrderBy(x => x.StartUtc)
+            .ThenBy(x => x.EndUtc)
+            .ToList();
+        if (windows.Count == 0)
+        {
+            return 0;
+        }
+
+        var totalMinutes = 0;
+        var currentStart = windows[0].StartUtc;
+        var currentEnd = windows[0].EndUtc;
+        foreach (var window in windows.Skip(1))
+        {
+            if (window.StartUtc <= currentEnd)
+            {
+                currentEnd = Max(currentEnd, window.EndUtc);
+                continue;
+            }
+
+            totalMinutes += (int)(currentEnd - currentStart).TotalMinutes;
+            currentStart = window.StartUtc;
+            currentEnd = window.EndUtc;
+        }
+
+        totalMinutes += (int)(currentEnd - currentStart).TotalMinutes;
+        return totalMinutes;
     }
 
     private void AddUnscheduled(

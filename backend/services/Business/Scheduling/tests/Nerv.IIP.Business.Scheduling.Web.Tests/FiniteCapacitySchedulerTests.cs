@@ -123,6 +123,51 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_reports_invalid_locked_assignment_when_locked_capacity_is_overbooked()
+    {
+        var problem = CreateSingleOperationProblem() with
+        {
+            LockedAssignments =
+            [
+                new SchedulingLockedAssignmentContract(
+                    AssignmentId: "lock-overbooked-001",
+                    OrderId: "WO-LOCKED-A",
+                    OperationId: "LOCK-A",
+                    OperationSequence: 10,
+                    ResourceId: "DEV-SNAPSHOT-01",
+                    WorkCenterId: "WC-SNAPSHOT",
+                    StartUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                    EndUtc: new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+                    LockReasonCode: "existing-load"),
+                new SchedulingLockedAssignmentContract(
+                    AssignmentId: "lock-overbooked-002",
+                    OrderId: "WO-LOCKED-B",
+                    OperationId: "LOCK-B",
+                    OperationSequence: 10,
+                    ResourceId: "DEV-SNAPSHOT-01",
+                    WorkCenterId: "WC-SNAPSHOT",
+                    StartUtc: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                    EndUtc: new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero),
+                    LockReasonCode: "existing-load")
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-overbooked-locks-001", GeneratedAtUtc);
+
+        Assert.Contains(plan.Conflicts, x =>
+            x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment
+            && x.OperationId == "LOCK-A"
+            && x.ResourceId == "DEV-SNAPSHOT-01"
+            && x.Severity == ScheduleConflictSeverityContract.Error);
+        Assert.Contains(plan.Conflicts, x =>
+            x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment
+            && x.OperationId == "LOCK-B"
+            && x.ResourceId == "DEV-SNAPSHOT-01"
+            && x.Severity == ScheduleConflictSeverityContract.Error);
+    }
+
+    [Fact]
     public void Schedule_returns_unscheduled_reason_when_no_resource_can_run_operation()
     {
         var baseProblem = ShockAbsorberSchedulingFixture.CreateProblem();
@@ -165,6 +210,175 @@ public class FiniteCapacitySchedulerTests
             x.OrderId == "WO-NO-CAP-001"
             && x.OperationId == "WO-NO-CAP-001-PAINT"
             && x.ReasonCode == ScheduleConflictReasonCodeContract.NoEligibleResource);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Schedule_rejects_non_positive_operation_duration(int durationMinutes)
+    {
+        var problem = ReplaceSingleOperation(CreateSingleOperationProblem(), operation => operation with
+        {
+            DurationMinutes = durationMinutes
+        });
+        var scheduler = new FiniteCapacityScheduler();
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            scheduler.Schedule(problem, "plan-invalid-duration-001", GeneratedAtUtc));
+
+        Assert.Contains("DurationMinutes", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Schedule_rejects_duplicate_resource_or_calendar_ids()
+    {
+        var problem = CreateSingleOperationProblem();
+        var duplicateResourceProblem = problem with
+        {
+            Resources = [..problem.Resources, problem.Resources.Single()]
+        };
+        var duplicateCalendarProblem = problem with
+        {
+            Calendars = [..problem.Calendars, problem.Calendars.Single()]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var resourceException = Assert.Throws<ArgumentException>(() =>
+            scheduler.Schedule(duplicateResourceProblem, "plan-duplicate-resource-001", GeneratedAtUtc));
+        var calendarException = Assert.Throws<ArgumentException>(() =>
+            scheduler.Schedule(duplicateCalendarProblem, "plan-duplicate-calendar-001", GeneratedAtUtc));
+
+        Assert.Contains("Duplicate resourceId", resourceException.Message, StringComparison.Ordinal);
+        Assert.Contains("Duplicate calendarId", calendarException.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Schedule_uses_canonical_fingerprint_for_reordered_equivalent_problem()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var reordered = problem with
+        {
+            Orders = problem.Orders.Reverse().ToArray(),
+            Resources = problem.Resources.Reverse().ToArray(),
+            Calendars = problem.Calendars.Reverse().ToArray(),
+            UnavailabilityWindows = problem.UnavailabilityWindows.Reverse().ToArray(),
+            MaterialReadiness = problem.MaterialReadiness.Reverse().ToArray(),
+            QualityBlocks = problem.QualityBlocks.Reverse().ToArray(),
+            LockedAssignments = problem.LockedAssignments.Reverse().ToArray()
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var first = scheduler.Schedule(problem, "plan-fingerprint-001", GeneratedAtUtc);
+        var second = scheduler.Schedule(reordered, "plan-fingerprint-002", GeneratedAtUtc);
+
+        Assert.Equal(first.ProblemFingerprint, second.ProblemFingerprint);
+    }
+
+    [Fact]
+    public void Schedule_reports_capacity_reason_when_resource_is_saturated()
+    {
+        var problem = CreateSingleOperationProblem() with
+        {
+            HorizonEndUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+            Calendars =
+            [
+                new SchedulingCalendarContract(
+                    CalendarId: "CAL-SNAPSHOT",
+                    ShiftWindows:
+                    [
+                        new SchedulingTimeWindowContract(
+                            new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                            new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+                            "day-shift")
+                    ])
+            ],
+            LockedAssignments =
+            [
+                new SchedulingLockedAssignmentContract(
+                    AssignmentId: "lock-saturated-001",
+                    OrderId: "WO-LOCKED-001",
+                    OperationId: "LOCKED-OP10",
+                    OperationSequence: 10,
+                    ResourceId: "DEV-SNAPSHOT-01",
+                    WorkCenterId: "WC-SNAPSHOT",
+                    StartUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                    EndUtc: new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+                    LockReasonCode: "existing-load")
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-capacity-saturated-001", GeneratedAtUtc);
+
+        Assert.Contains(plan.UnscheduledOperations, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Capacity);
+    }
+
+    [Fact]
+    public void Schedule_reports_calendar_reason_when_no_shift_can_fit_operation()
+    {
+        var shiftStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var problem = CreateSingleOperationProblem() with
+        {
+            Calendars =
+            [
+                new SchedulingCalendarContract(
+                    CalendarId: "CAL-SNAPSHOT",
+                    ShiftWindows:
+                    [
+                        new SchedulingTimeWindowContract(shiftStart, shiftStart.AddMinutes(30), "short-shift")
+                    ])
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-calendar-no-fit-001", GeneratedAtUtc);
+
+        Assert.Contains(plan.UnscheduledOperations, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Calendar);
+    }
+
+    [Fact]
+    public void Schedule_reports_outside_horizon_when_shift_can_fit_but_horizon_cannot()
+    {
+        var shiftStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var problem = CreateSingleOperationProblem() with
+        {
+            HorizonEndUtc = shiftStart.AddHours(2),
+            Orders =
+            [
+                CreateSingleOperationProblem().Orders.Single() with
+                {
+                    DueUtc = shiftStart.AddHours(2),
+                    Operations =
+                    [
+                        CreateSingleOperationProblem().Orders.Single().Operations.Single() with
+                        {
+                            DurationMinutes = 180,
+                            DueUtc = shiftStart.AddHours(2)
+                        }
+                    ]
+                }
+            ],
+            Calendars =
+            [
+                new SchedulingCalendarContract(
+                    CalendarId: "CAL-SNAPSHOT",
+                    ShiftWindows:
+                    [
+                        new SchedulingTimeWindowContract(shiftStart, shiftStart.AddHours(8), "day-shift")
+                    ])
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-outside-horizon-no-fit-001", GeneratedAtUtc);
+
+        Assert.Contains(plan.UnscheduledOperations, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.OutsideHorizon);
     }
 
     [Fact]
@@ -262,6 +476,35 @@ public class FiniteCapacitySchedulerTests
 
         var load = Assert.Single(plan.ResourceLoads, x => x.ResourceId == "DEV-PARALLEL-01");
         Assert.Equal(360, load.AvailableMinutes);
+    }
+
+    [Fact]
+    public void Schedule_merges_overlapping_unavailability_when_computing_load()
+    {
+        var problem = CreateParallelCapacityProblem() with
+        {
+            UnavailabilityWindows =
+            [
+                new SchedulingUnavailabilityWindowContract(
+                    ResourceId: "DEV-PARALLEL-01",
+                    WorkCenterId: "WC-PARALLEL",
+                    StartUtc: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                    EndUtc: new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+                    ReasonCode: "maintenance"),
+                new SchedulingUnavailabilityWindowContract(
+                    ResourceId: "DEV-PARALLEL-01",
+                    WorkCenterId: "WC-PARALLEL",
+                    StartUtc: new DateTimeOffset(2026, 6, 1, 9, 30, 0, TimeSpan.Zero),
+                    EndUtc: new DateTimeOffset(2026, 6, 1, 10, 30, 0, TimeSpan.Zero),
+                    ReasonCode: "alarm")
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-overlapping-unavailability-load-001", GeneratedAtUtc);
+
+        var load = Assert.Single(plan.ResourceLoads, x => x.ResourceId == "DEV-PARALLEL-01");
+        Assert.Equal(300, load.AvailableMinutes);
     }
 
     [Fact]
@@ -769,6 +1012,23 @@ public class FiniteCapacitySchedulerTests
             MaterialReadiness: [],
             QualityBlocks: [],
             LockedAssignments: []);
+    }
+
+    private static SchedulingProblemContract ReplaceSingleOperation(
+        SchedulingProblemContract problem,
+        Func<SchedulingOperationContract, SchedulingOperationContract> replace)
+    {
+        var order = problem.Orders.Single();
+        return problem with
+        {
+            Orders =
+            [
+                order with
+                {
+                    Operations = [replace(order.Operations.Single())]
+                }
+            ]
+        };
     }
 
     private static SchedulingOperationContract CreateLocalOperation(

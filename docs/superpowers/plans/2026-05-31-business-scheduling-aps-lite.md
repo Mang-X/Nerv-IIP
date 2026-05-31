@@ -211,6 +211,13 @@ Create `FiniteCapacitySchedulerTests.cs` covering:
 5. `Schedule_reports_due_date_conflict_when_assignment_finishes_late`
 6. `Schedule_preserves_locked_assignment_and_reserves_capacity`
 7. `Schedule_returns_unscheduled_reason_when_no_resource_can_run_operation`
+8. `Schedule_reports_invalid_locked_assignment_when_locked_capacity_is_overbooked`
+9. `Schedule_rejects_non_positive_operation_duration`
+10. `Schedule_rejects_duplicate_resource_or_calendar_ids`
+11. `Schedule_uses_canonical_fingerprint_for_reordered_equivalent_problem`
+12. `Schedule_reports_capacity_reason_when_resource_is_saturated`
+13. `Schedule_reports_calendar_reason_when_no_shift_can_fit_operation`
+14. `Schedule_merges_overlapping_unavailability_when_computing_load`
 
 Use the fixture from the spec and assert exact UTC timestamps for at least the oil/seal bottleneck operations.
 
@@ -249,6 +256,11 @@ Implementation constraints:
 3. Use the deterministic sort from ADR 0014.
 4. Treat capacity as one operation per resource in P0 unless `CapacityUnits` is greater than 1.
 5. Keep unscheduled operations in output with explicit reason code.
+6. Normalize before fingerprinting. Semantically equivalent problem snapshots with different collection order must share the same fingerprint.
+7. Preserve locked assignments but detect invalid locks, including overlapping locks that exceed resource capacity.
+8. Return specific `capacity`, `calendar`, and `outsideHorizon` reason codes where the failure mode is distinguishable.
+9. Reject structural input errors before scheduling: duplicate resource/calendar IDs, duplicate operation IDs within an order, invalid time windows, non-positive durations, and empty/missing stable identifiers.
+10. P0 change summary does not compute previous-plan `moved`; the enum value is reserved until a previous-plan snapshot is part of the input contract.
 
 - [ ] **Step 4: Run scheduler tests and verify GREEN**
 
