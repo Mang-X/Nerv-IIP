@@ -42,7 +42,10 @@ public sealed class SchedulingPersistenceTests
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var repository = new SchedulePlanRepository(dbContext);
-            var plan = await repository.GetByPlanIdWithDetailsAsync("plan-001", cancellationToken);
+            Assert.Null(await repository.GetByPlanIdWithDetailsAsync("plan-001", "org-other", "env-dev", cancellationToken));
+            Assert.Null(await repository.GetByPlanIdWithDetailsAsync("plan-001", "org-001", "env-other", cancellationToken));
+
+            var plan = await repository.GetByPlanIdWithDetailsAsync("plan-001", "org-001", "env-dev", cancellationToken);
             Assert.NotNull(plan);
 
             plan.ReplaceGeneratedPlan(CreateReplacementContract());

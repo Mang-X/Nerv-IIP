@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Runs .NET restore and focused BusinessScheduling APS lite test/build commands only
+#     - Runs .NET restore and focused BusinessScheduling APS lite / BusinessGateway facade test/build commands only
 #   Writes:
 #     - bin/ and obj/ build outputs under tested .NET projects
 #     - artifacts/script-logs/**
@@ -51,6 +51,14 @@ Invoke-DotNet -Name "business-scheduling-web-tests" -WorkingDirectory $root -Arg
     "test",
     "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj",
     "--no-restore"
+) | Out-Null
+
+Invoke-DotNet -Name "business-scheduling-gateway-facade-tests" -WorkingDirectory $root -Arguments @(
+    "test",
+    "backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj",
+    "--no-restore",
+    "--filter",
+    "FullyQualifiedName~Scheduling"
 ) | Out-Null
 
 Invoke-DotNet -Name "business-scheduling-apphost-build" -WorkingDirectory $root -Arguments @(

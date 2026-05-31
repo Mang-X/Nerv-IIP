@@ -237,19 +237,41 @@ public sealed class SchedulingEndpointContractTests
 
         var createResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans", new CreateSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()));
         createResponse.EnsureSuccessStatusCode();
-        var createdEnvelope = await createResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>();
+        var createdEnvelope = await createResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options);
         var created = Assert.IsType<SchedulePlanContract>(createdEnvelope?.Data);
 
         var contextQuery = "organizationId=org-001&environmentId=prod";
-        var detail = await client.GetFromJsonAsync<ResponseData<SchedulePlanContract>>($"/api/business/v1/scheduling/plans/{created.PlanId}?{contextQuery}");
-        var gantt = await client.GetFromJsonAsync<ResponseData<IReadOnlyCollection<GanttScheduleItemContract>>>($"/api/business/v1/scheduling/plans/{created.PlanId}/gantt?{contextQuery}");
+        var detail = await client.GetFromJsonAsync<ResponseData<SchedulePlanContract>>($"/api/business/v1/scheduling/plans/{created.PlanId}?{contextQuery}", SchedulingJson.Options);
+        var gantt = await client.GetFromJsonAsync<ResponseData<IReadOnlyCollection<GanttScheduleItemContract>>>($"/api/business/v1/scheduling/plans/{created.PlanId}/gantt?{contextQuery}", SchedulingJson.Options);
         var releaseResponse = await client.PostAsync($"/api/business/v1/scheduling/plans/{created.PlanId}/release?{contextQuery}", null);
         releaseResponse.EnsureSuccessStatusCode();
-        var releasedEnvelope = await releaseResponse.Content.ReadFromJsonAsync<ResponseData<ReleaseSchedulePlanResponse>>();
+        var releasedEnvelope = await releaseResponse.Content.ReadFromJsonAsync<ResponseData<ReleaseSchedulePlanResponse>>(SchedulingJson.Options);
 
         Assert.Equal(created.PlanId, detail?.Data?.PlanId);
         Assert.NotEmpty(gantt?.Data ?? []);
         Assert.Equal(SchedulePlanStatusContract.Released, releasedEnvelope?.Data?.Status);
+    }
+
+    [Fact]
+    public async Task Scheduling_authorized_http_endpoints_accept_string_enum_payloads()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var requestJson = JsonSerializer.Serialize(
+            new PreviewSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()),
+            SchedulingJson.Options);
+        using var content = new StringContent(
+            requestJson,
+            System.Text.Encoding.UTF8,
+            System.Net.Http.Headers.MediaTypeHeaderValue.Parse("application/json"));
+
+        var response = await client.PostAsync("/api/business/v1/scheduling/plans/preview", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("\"splitPolicy\":\"nonSplittable\"", requestJson, StringComparison.Ordinal);
+        Assert.Contains("\"status\":\"preview\"", responseBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -261,7 +283,7 @@ public sealed class SchedulingEndpointContractTests
 
         var createResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans", new CreateSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()));
         createResponse.EnsureSuccessStatusCode();
-        var createdEnvelope = await createResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>();
+        var createdEnvelope = await createResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options);
         var created = Assert.IsType<SchedulePlanContract>(createdEnvelope?.Data);
 
         var detail = await client.GetAsync($"/api/business/v1/scheduling/plans/{created.PlanId}?organizationId=org-other&environmentId=prod");

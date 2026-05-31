@@ -1,7 +1,10 @@
 using System.Net;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using FastEndpoints;
 using FastEndpoints.Swagger;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Http.Resilience;
 using Nerv.IIP.BusinessGateway.Web;
@@ -28,6 +31,8 @@ builder.Services
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
         };
     });
+builder.Services.Configure<JsonOptions>(o =>
+    o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 builder.Services.AddNervIipCaching(builder.Configuration, "business-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "business-gateway");
 builder.Services.AddNervIipLocalization();
@@ -128,6 +133,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints(c =>
 {
+    c.Serializer.Options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
     c.Endpoints.NameGenerator = BusinessGatewayOperationIdConvention.Generate;
 }).UseSwaggerGen();
 app.Run();

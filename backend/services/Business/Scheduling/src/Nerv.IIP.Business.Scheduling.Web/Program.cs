@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
@@ -50,7 +51,10 @@ try
             };
         });
     builder.Services.Configure<JsonOptions>(o =>
-        o.SerializerOptions.AddNetCorePalJsonConverters());
+    {
+        o.SerializerOptions.AddNetCorePalJsonConverters();
+        o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+    });
     builder.Services.AddFluentValidationAutoValidation();
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
@@ -125,6 +129,7 @@ try
     app.MapControllers();
     app.UseFastEndpoints(c =>
     {
+        c.Serializer.Options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
         c.Endpoints.NameGenerator = ctx =>
             SchedulingEndpointContracts.TryGet(ctx.EndpointType, out var contract)
                 ? contract.OperationId

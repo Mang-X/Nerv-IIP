@@ -393,7 +393,7 @@ Source:
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
-| `schedule_problems` | business | APS lite 排程问题快照，保留输入 problem id、组织/环境、计划窗口和 deterministic fingerprint。 | `id` 为 Guid v7 强类型 ID；`problem_id` 是公开问题 ID；`problem_fingerprint` 记录输入快照指纹；`horizon_start_utc` / `horizon_end_utc` 记录排程窗口。 | `problem_id` 唯一索引用于重放、幂等诊断和从 plan 追溯输入。 | 生成排程方案时捕获并保留；不由下游服务直接修改。 |
+| `schedule_problems` | business | APS lite 排程问题快照，保留输入 problem id、组织/环境、计划窗口和 deterministic fingerprint。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + problem_id` 是排程问题幂等范围；`problem_fingerprint` 记录输入快照指纹；`horizon_start_utc` / `horizon_end_utc` 记录排程窗口。 | `organization_id + environment_id + problem_id` 唯一索引用于同一业务上下文内重放、幂等诊断和从 plan 追溯输入。 | 生成排程方案时捕获并保留；不由下游服务直接修改。 |
 | `schedule_plans` | business | APS lite 排程方案头，记录生成/发布状态、算法版本、合同版本和问题指纹。 | `id` 为 Guid v7 强类型 ID；`plan_id` 是公开方案 ID；`problem_id` 和 `problem_fingerprint` 指向输入快照；`status` 表示 generated/released 等生命周期。 | `plan_id` 唯一索引用于 detail、Gantt 和 release 查询。 | 生成后可发布；发布后作为 MES 和 Gantt 消费的稳定事实保留。 |
 | `schedule_plan_assignments` | business | 排程方案内的工序到资源分配结果。 | `schedule_plan_id` 归属方案；`assignment_id` 是方案内公开分配 ID；`work_order_id`、`operation_id`、`resource_id`、`work_center_id` 和 `start_utc` / `end_utc` 描述分配事实。 | `schedule_plan_id + assignment_id` 唯一；`schedule_plan_id` 外键索引用于按方案加载。 | 生命周期随方案保留；不直接表达 MES 工序执行状态。 |
 | `schedule_plan_resource_loads` | business | 排程方案的资源负载窗口和利用率。 | `schedule_plan_id` 归属方案；`resource_id`、`window_start_utc`、`window_end_utc`、`assigned_minutes`、`available_minutes` 和 `utilization` 描述负载。 | `schedule_plan_id` 外键索引用于读取方案负载。 | 由排程算法生成并随方案保留，可供产能/Gantt 查询。 |
@@ -593,7 +593,7 @@ Known gaps:
 | ERP | `erp` | Implemented | Yes | Yes | No | 已有 Procurement、Sales、Finance MVP 和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify scripts；客户 release bundle、完整总账月结和银行/税务对账仍待后续。 |
 | BusinessIndustrialTelemetry | `industrial_telemetry` | Implemented | Yes | Yes | No | 已有 tag、设备状态快照、报警事件和采集汇总 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessMaintenance | `maintenance` | Implemented | Yes | Yes | No | 已有维修工单、保养计划、点检、停机原因和备件行 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
-| BusinessScheduling | `scheduling` | Implemented | Yes | Yes | No | 已有排程问题快照、排程方案、分配、资源负载、冲突、不可排工序和 CAP system tables schema、migration、schema convention tests 和 verify script；客户 release bundle、高级优化器和 BusinessGateway facade 仍待后续。 |
+| BusinessScheduling | `scheduling` | Implemented | Yes | Yes | No | 已有排程问题快照、排程方案、分配、资源负载、冲突、不可排工序和 CAP system tables schema、migration、schema convention tests、BusinessGateway facade 和 verify script；客户 release bundle、高级优化器仍待后续。 |
 | Notification | `notification` | Implemented baseline | Yes | Yes | No | 已有通知意图、站内消息、任务、投递尝试、业务 inbox、CAP storage 和 persistent DLQ schema、migration、schema convention tests；偏好/订阅、外部渠道 provider、限流和模板映射仍待后续。 |
 | Knowledge | `knowledge` | Planned only | No | No | No | 知识源、文档、分片、索引状态、向量/全文索引边界和重建策略；关系库保存索引元数据，外部向量库保存可重建索引。 |
 | AI Integration | `ai` or `ai_integration` | Planned only | No | No | No | 模型/provider 配置、工具授权、调用审计、配额周期、prompt/version 归档、审批挂点和敏感信息边界。 |

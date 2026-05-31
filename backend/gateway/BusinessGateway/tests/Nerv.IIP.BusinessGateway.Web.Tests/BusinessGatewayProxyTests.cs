@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
 
@@ -369,6 +370,38 @@ public sealed class BusinessGatewayProxyTests
         using var releaseDocument = JsonDocument.Parse(await release.Content.ReadAsStringAsync());
         Assert.Equal("plan-001", releaseDocument.RootElement.GetProperty("data").GetProperty("planId").GetString());
         Assert.Equal("released", releaseDocument.RootElement.GetProperty("data").GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Scheduling_facade_accepts_generated_client_string_enum_payloads()
+    {
+        var scheduling = new RecordingSchedulingClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var requestJson = JsonSerializer.Serialize(
+            new BusinessConsoleSchedulingProblemRequest(CreateSchedulingProblemWithOperation()),
+            SchedulingJson.Options);
+        using var content = new StringContent(
+            requestJson,
+            System.Text.Encoding.UTF8,
+            System.Net.Http.Headers.MediaTypeHeaderValue.Parse("application/json"));
+
+        var response = await client.PostAsync(
+            "/api/business-console/v1/scheduling/plans/preview?organizationId=org-001&environmentId=env-dev",
+            content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("\"splitPolicy\":\"nonSplittable\"", requestJson, StringComparison.Ordinal);
+        Assert.Equal(ScheduleSplitPolicyContract.NonSplittable, scheduling.LastProblem!.Orders.Single().Operations.Single().SplitPolicy);
+        Assert.Contains("\"status\":\"preview\"", responseBody, StringComparison.Ordinal);
     }
 
     [Fact]
