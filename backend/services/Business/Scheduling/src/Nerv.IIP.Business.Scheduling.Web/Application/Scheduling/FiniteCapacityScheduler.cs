@@ -127,6 +127,14 @@ internal static class SchedulingProblemNormalizer
 
     private static void Validate(SchedulingProblemContract problem)
     {
+        RequireCollection(problem.Orders, "Orders", nameof(problem));
+        RequireCollection(problem.Resources, "Resources", nameof(problem));
+        RequireCollection(problem.Calendars, "Calendars", nameof(problem));
+        RequireCollection(problem.UnavailabilityWindows, "UnavailabilityWindows", nameof(problem));
+        RequireCollection(problem.MaterialReadiness, "MaterialReadiness", nameof(problem));
+        RequireCollection(problem.QualityBlocks, "QualityBlocks", nameof(problem));
+        RequireCollection(problem.LockedAssignments, "LockedAssignments", nameof(problem));
+
         if (string.IsNullOrWhiteSpace(problem.ProblemId))
         {
             throw new ArgumentException("ProblemId is required.", nameof(problem));
@@ -143,6 +151,7 @@ internal static class SchedulingProblemNormalizer
         foreach (var calendar in problem.Calendars)
         {
             RequireNonEmpty(calendar.CalendarId, "calendarId", nameof(problem));
+            RequireCollection(calendar.ShiftWindows, "ShiftWindows", nameof(problem));
             foreach (var shift in calendar.ShiftWindows)
             {
                 RequireValidWindow(shift.StartUtc, shift.EndUtc, "calendar shift", nameof(problem));
@@ -153,15 +162,19 @@ internal static class SchedulingProblemNormalizer
         {
             RequireNonEmpty(resource.ResourceId, "resourceId", nameof(problem));
             RequireNonEmpty(resource.CalendarId, "resource calendarId", nameof(problem));
+            RequireCollection(resource.CapabilityCodes, "CapabilityCodes", nameof(problem));
         }
 
         foreach (var order in problem.Orders)
         {
             RequireNonEmpty(order.OrderId, "orderId", nameof(problem));
+            RequireCollection(order.Operations, "Operations", nameof(problem));
             ThrowIfDuplicate(order.Operations, x => x.OperationId, $"operationId in order {order.OrderId}", nameof(problem));
             foreach (var operation in order.Operations)
             {
                 RequireNonEmpty(operation.OperationId, "operationId", nameof(problem));
+                RequireCollection(operation.PredecessorOperationIds, "PredecessorOperationIds", nameof(problem));
+                RequireCollection(operation.EligibleResourceIds, "EligibleResourceIds", nameof(problem));
                 if (operation.DurationMinutes <= 0)
                 {
                     throw new ArgumentException(
@@ -169,6 +182,11 @@ internal static class SchedulingProblemNormalizer
                         nameof(problem));
                 }
             }
+        }
+
+        foreach (var materialReadiness in problem.MaterialReadiness)
+        {
+            RequireCollection(materialReadiness.ReasonCodes, "ReasonCodes", nameof(problem));
         }
 
         foreach (var window in problem.UnavailabilityWindows)
@@ -181,6 +199,14 @@ internal static class SchedulingProblemNormalizer
             RequireNonEmpty(locked.AssignmentId, "locked assignmentId", nameof(problem));
             RequireNonEmpty(locked.ResourceId, "locked resourceId", nameof(problem));
             RequireValidWindow(locked.StartUtc, locked.EndUtc, "locked assignment", nameof(problem));
+        }
+    }
+
+    private static void RequireCollection<T>(IReadOnlyCollection<T>? values, string label, string paramName)
+    {
+        if (values is null)
+        {
+            throw new ArgumentException($"{label} is required.", paramName);
         }
     }
 
@@ -806,6 +832,11 @@ file sealed class SchedulerState
             return ScheduleConflictReasonCodeContract.Capacity;
         }
 
+        if (candidates.Any(resource => HasSlotIgnoringEquipmentAndCapacity(resource, item, earliestStart, durationMinutes)))
+        {
+            return ScheduleConflictReasonCodeContract.Equipment;
+        }
+
         return ScheduleConflictReasonCodeContract.OutsideHorizon;
     }
 
@@ -892,6 +923,48 @@ file sealed class SchedulerState
         return false;
     }
 
+    private bool HasSlotIgnoringEquipmentAndCapacity(
+        SchedulingResourceContract resource,
+        OperationWorkItem item,
+        DateTimeOffset earliestStart,
+        int durationMinutes)
+    {
+        if (!calendars.TryGetValue(resource.CalendarId, out var calendar))
+        {
+            return false;
+        }
+
+        var resourceQualityBlocks = ApplicableResourceQualityBlocks(item, resource).ToList();
+        if (resourceQualityBlocks.Any(x => x.BlockedUntilUtc is null))
+        {
+            return false;
+        }
+
+        var duration = TimeSpan.FromMinutes(durationMinutes);
+        foreach (var shift in calendar.ShiftWindows
+                     .OrderBy(x => x.StartUtc)
+                     .ThenBy(x => x.EndUtc)
+                     .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
+        {
+            var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
+            var latestEnd = Min(shift.EndUtc, problem.HorizonEndUtc);
+
+            while (candidate + duration <= latestEnd)
+            {
+                var end = candidate + duration;
+                var blockingEnd = BlockingEndIgnoringEquipmentAndCapacity(resourceQualityBlocks, candidate, end);
+                if (blockingEnd is null)
+                {
+                    return true;
+                }
+
+                candidate = blockingEnd.Value;
+            }
+        }
+
+        return false;
+    }
+
     private DateTimeOffset? BlockingEndIgnoringCapacity(
         SchedulingResourceContract resource,
         IReadOnlyCollection<SchedulingQualityBlockContract> resourceQualityBlocks,
@@ -915,12 +988,26 @@ file sealed class SchedulerState
             .Min();
     }
 
+    private DateTimeOffset? BlockingEndIgnoringEquipmentAndCapacity(
+        IReadOnlyCollection<SchedulingQualityBlockContract> resourceQualityBlocks,
+        DateTimeOffset startUtc,
+        DateTimeOffset endUtc)
+    {
+        var qualityBlockEnd = resourceQualityBlocks
+            .Where(x => x.BlockedUntilUtc.HasValue)
+            .Where(x => Overlaps(startUtc, endUtc, startUtc, x.BlockedUntilUtc!.Value))
+            .Select(x => x.BlockedUntilUtc)
+            .Min();
+        return qualityBlockEnd;
+    }
+
     private static string NoFeasibleSlotMessage(ScheduleConflictReasonCodeContract reasonCode)
     {
         return reasonCode switch
         {
             ScheduleConflictReasonCodeContract.Capacity => "No feasible slot exists because finite capacity is saturated inside the scheduling horizon.",
             ScheduleConflictReasonCodeContract.Calendar => "No feasible slot exists because no shift calendar window can fit the operation duration.",
+            ScheduleConflictReasonCodeContract.Equipment => "No feasible slot exists because eligible resources are unavailable inside the scheduling horizon.",
             _ => "No feasible capacity slot exists inside the scheduling horizon."
         };
     }

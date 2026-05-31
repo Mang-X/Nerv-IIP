@@ -220,6 +220,38 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public void Preview_and_create_validators_reject_null_nested_collections_before_handler_execution()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var firstOrder = problem.Orders.First();
+        var invalidProblem = problem with
+        {
+            Orders =
+            [
+                firstOrder with
+                {
+                    Operations =
+                    [
+                        firstOrder.Operations.First() with
+                        {
+                            PredecessorOperationIds = null!
+                        }
+                    ]
+                },
+                ..problem.Orders.Skip(1)
+            ]
+        };
+
+        var previewResult = new PreviewSchedulePlanCommandValidator()
+            .Validate(new PreviewSchedulePlanCommand(invalidProblem));
+        var createResult = new CreateSchedulePlanCommandValidator()
+            .Validate(new CreateSchedulePlanCommand(invalidProblem));
+
+        Assert.Contains(previewResult.Errors, x => x.ErrorMessage.Contains("PredecessorOperationIds", StringComparison.Ordinal));
+        Assert.Contains(createResult.Errors, x => x.ErrorMessage.Contains("PredecessorOperationIds", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Release_changes_status_to_released_and_is_idempotent_for_same_plan()
     {
         await using var provider = CreateInMemoryProvider();

@@ -341,6 +341,43 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_reports_equipment_reason_when_all_eligible_resources_are_unavailable()
+    {
+        var problem = CreateSingleOperationProblem() with
+        {
+            HorizonEndUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+            Calendars =
+            [
+                new SchedulingCalendarContract(
+                    CalendarId: "CAL-SNAPSHOT",
+                    ShiftWindows:
+                    [
+                        new SchedulingTimeWindowContract(
+                            new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                            new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+                            "day-shift")
+                    ])
+            ],
+            UnavailabilityWindows =
+            [
+                new SchedulingUnavailabilityWindowContract(
+                    ResourceId: "DEV-SNAPSHOT-01",
+                    WorkCenterId: "WC-SNAPSHOT",
+                    StartUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                    EndUtc: new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+                    ReasonCode: "maintenance")
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-equipment-unavailable-001", GeneratedAtUtc);
+
+        Assert.Contains(plan.UnscheduledOperations, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Equipment);
+    }
+
+    [Fact]
     public void Schedule_reports_outside_horizon_when_shift_can_fit_but_horizon_cannot()
     {
         var shiftStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
@@ -379,6 +416,21 @@ public class FiniteCapacitySchedulerTests
         Assert.Contains(plan.UnscheduledOperations, x =>
             x.OperationId == "WO-SNAPSHOT-001-OP10"
             && x.ReasonCode == ScheduleConflictReasonCodeContract.OutsideHorizon);
+    }
+
+    [Fact]
+    public void Schedule_rejects_null_required_collections()
+    {
+        var problem = CreateSingleOperationProblem() with
+        {
+            Orders = null!
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            scheduler.Schedule(problem, "plan-null-collections-001", GeneratedAtUtc));
+
+        Assert.Contains("Orders", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

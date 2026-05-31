@@ -218,6 +218,8 @@ Create `FiniteCapacitySchedulerTests.cs` covering:
 12. `Schedule_reports_capacity_reason_when_resource_is_saturated`
 13. `Schedule_reports_calendar_reason_when_no_shift_can_fit_operation`
 14. `Schedule_merges_overlapping_unavailability_when_computing_load`
+15. `Schedule_reports_equipment_reason_when_all_eligible_resources_are_unavailable`
+16. `Schedule_rejects_null_required_collections`
 
 Use the fixture from the spec and assert exact UTC timestamps for at least the oil/seal bottleneck operations.
 
@@ -261,6 +263,8 @@ Implementation constraints:
 8. Return specific `capacity`, `calendar`, and `outsideHorizon` reason codes where the failure mode is distinguishable.
 9. Reject structural input errors before scheduling: duplicate resource/calendar IDs, duplicate operation IDs within an order, invalid time windows, non-positive durations, and empty/missing stable identifiers.
 10. P0 change summary does not compute previous-plan `moved`; the enum value is reserved until a previous-plan snapshot is part of the input contract.
+11. Reject null top-level and nested collections before normalization so malformed JSON payloads cannot become uncategorized runtime failures.
+12. Return `equipment` when every otherwise eligible resource is blocked by unavailability windows inside the scheduling horizon.
 
 - [ ] **Step 4: Run scheduler tests and verify GREEN**
 
