@@ -30,7 +30,11 @@ public sealed class CreateSchedulePlanCommandHandler(
         var preview = scheduler.Schedule(request.Problem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
         var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
         var existingSnapshot = await dbContext.ScheduleProblems.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.ProblemId == request.Problem.ProblemId, cancellationToken);
+            .SingleOrDefaultAsync(
+                x => x.OrganizationId == request.Problem.OrganizationId &&
+                    x.EnvironmentId == request.Problem.EnvironmentId &&
+                    x.ProblemId == request.Problem.ProblemId,
+                cancellationToken);
         if (existingSnapshot is not null)
         {
             if (!string.Equals(existingSnapshot.ProblemFingerprint, generated.ProblemFingerprint, StringComparison.Ordinal))
@@ -43,7 +47,11 @@ public sealed class CreateSchedulePlanCommandHandler(
                 .Include(x => x.ResourceLoads)
                 .Include(x => x.Conflicts)
                 .Include(x => x.UnscheduledOperations)
-                .SingleOrDefaultAsync(x => x.ProblemId == request.Problem.ProblemId, cancellationToken)
+                .SingleOrDefaultAsync(
+                    x => x.OrganizationId == request.Problem.OrganizationId &&
+                        x.EnvironmentId == request.Problem.EnvironmentId &&
+                        x.ProblemId == request.Problem.ProblemId,
+                    cancellationToken)
                 ?? throw new KnownException($"Schedule problem snapshot exists but generated plan was not found, ProblemId = {request.Problem.ProblemId}");
             return SchedulePlanContractMapper.ToContract(existingPlan);
         }

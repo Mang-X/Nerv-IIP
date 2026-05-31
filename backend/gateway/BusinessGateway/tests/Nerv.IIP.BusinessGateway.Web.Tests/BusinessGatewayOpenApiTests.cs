@@ -116,6 +116,29 @@ public sealed class BusinessGatewayOpenApiTests
             "post",
             "organizationId",
             "environmentId");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/scheduling/plans/{planId}",
+            "get",
+            "organizationId",
+            "environmentId");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/scheduling/plans/{planId}/gantt",
+            "get",
+            "organizationId",
+            "environmentId");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/scheduling/plans/{planId}/release",
+            "post",
+            "organizationId",
+            "environmentId");
+        AssertStringEnumSchema(document, "NervIIPContractsSchedulingSchedulePlanStatusContract", "preview", "generated", "released");
+        AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleConflictReasonCodeContract", "dueDate", "capacity", "calendar", "material", "quality", "equipment", "noEligibleResource", "outsideHorizon", "invalidLockedAssignment", "predecessorUnscheduled");
+        AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleConflictSeverityContract", "info", "warning", "error");
+        AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleChangeTypeContract", "added", "moved", "delayed", "preserved", "blocked");
+        AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleSplitPolicyContract", "nonSplittable");
     }
 
     private static void AssertOperationId(JsonElement paths, string path, string method, string operationId)
@@ -137,6 +160,21 @@ public sealed class BusinessGatewayOpenApiTests
         {
             Assert.Contains(name, parameters);
         }
+    }
+
+    private static void AssertStringEnumSchema(JsonDocument document, string schemaName, params string[] values)
+    {
+        var schema = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty(schemaName);
+        var actualValues = schema.GetProperty("enum")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToArray();
+
+        Assert.Equal("string", schema.GetProperty("type").GetString());
+        Assert.Equal(values, actualValues);
     }
 
     private static void AssertOperationIdsAreUnique(JsonDocument document)

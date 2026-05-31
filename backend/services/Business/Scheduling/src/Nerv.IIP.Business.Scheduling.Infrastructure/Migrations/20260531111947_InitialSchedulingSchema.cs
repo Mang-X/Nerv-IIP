@@ -282,10 +282,10 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_schedule_problems_problem_id",
+                name: "IX_schedule_problems_organization_id_environment_id_problem_id",
                 schema: "scheduling",
                 table: "schedule_problems",
-                column: "problem_id",
+                columns: new[] { "organization_id", "environment_id", "problem_id" },
                 unique: true);
         }
 

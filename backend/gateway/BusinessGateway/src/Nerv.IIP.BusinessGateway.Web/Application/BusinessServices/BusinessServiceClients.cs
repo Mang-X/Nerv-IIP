@@ -156,17 +156,17 @@ public interface IBusinessSchedulingClient
 
     Task<SchedulePlanContract> GetPlanAsync(
         string internalBearerToken,
-        string planId,
+        BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
         string internalBearerToken,
-        string planId,
+        BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleReleaseSchedulePlanResponse> ReleasePlanAsync(
         string internalBearerToken,
-        string planId,
+        BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -1208,41 +1208,44 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
 
     public Task<SchedulePlanContract> GetPlanAsync(
         string internalBearerToken,
-        string planId,
+        BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<SchedulePlanContract>(
             internalBearerToken,
             HttpMethod.Get,
-            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(planId)}",
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken,
             SchedulingJson.Options);
 
     public Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
         string internalBearerToken,
-        string planId,
+        BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<IReadOnlyCollection<GanttScheduleItemContract>>(
             internalBearerToken,
             HttpMethod.Get,
-            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(planId)}/gantt",
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/gantt?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken,
             SchedulingJson.Options);
 
     public Task<BusinessConsoleReleaseSchedulePlanResponse> ReleasePlanAsync(
         string internalBearerToken,
-        string planId,
+        BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleReleaseSchedulePlanResponse>(
             internalBearerToken,
             HttpMethod.Post,
-            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(planId)}/release",
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/release?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken,
             SchedulingJson.Options);
 
     private sealed record SchedulingProblemRequest(SchedulingProblemContract Problem);
+
+    private static string ContextQuery(string organizationId, string environmentId) =>
+        Query(("organizationId", organizationId), ("environmentId", environmentId));
 }
 
 public sealed class HttpBusinessErpClient(HttpClient httpClient)

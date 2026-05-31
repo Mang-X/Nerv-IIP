@@ -10,6 +10,22 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 public sealed class SchedulingPersistenceTests
 {
     [Fact]
+    public void Schedule_problem_snapshot_uniqueness_is_scoped_to_business_context()
+    {
+        using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var entityType = dbContext.Model.FindEntityType(typeof(ScheduleProblemSnapshot))
+            ?? throw new InvalidOperationException("ScheduleProblemSnapshot entity metadata was not found.");
+        var scopedIndex = entityType.GetIndexes().SingleOrDefault(index =>
+            index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                ["OrganizationId", "EnvironmentId", "ProblemId"]));
+
+        Assert.NotNull(scopedIndex);
+    }
+
+    [Fact]
     public async Task Repository_detail_loading_path_replaces_persisted_child_facts()
     {
         var cancellationToken = CancellationToken.None;

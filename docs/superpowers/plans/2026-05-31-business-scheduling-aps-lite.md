@@ -314,10 +314,12 @@ Create `SchedulingEndpointContractTests.cs` covering:
 4. Preview returns a deterministic plan for the shock absorber fixture without persisting release state.
 5. Create persists a generated plan and detail returns assignments/conflicts.
 6. Release changes status to released and repeated release is idempotent for the same plan.
+7. Same `problemId` in a different `organizationId`/`environmentId` creates an independent snapshot and plan.
+8. Detail, Gantt and release reject a leaked `planId` when the requested organization/environment does not match the persisted plan.
 
 - [ ] **Step 2: Implement endpoints, commands and queries**
 
-Place FastEndpoints in `Endpoints/Scheduling/SchedulingEndpoints.cs`. Do not map Minimal API routes in `Program.cs`. Keep request/response DTOs aligned with `Nerv.IIP.Contracts.Scheduling` and expose stable operation IDs.
+Place FastEndpoints in `Endpoints/Scheduling/SchedulingEndpoints.cs`. Do not map Minimal API routes in `Program.cs`. Keep request/response DTOs aligned with `Nerv.IIP.Contracts.Scheduling` and expose stable operation IDs. Plan detail, Gantt and release endpoints must pass `organizationId` and `environmentId` query parameters into the application query/command, not look up by `planId` alone.
 
 - [ ] **Step 3: Run Web tests**
 
@@ -363,7 +365,7 @@ Modify `BusinessServiceClients.cs` to register a Scheduling HTTP client. Use the
 
 - [ ] **Step 2: Add facade endpoint tests**
 
-Test that `/api/business-console/v1/scheduling/plans/preview`, `/plans`, `/plans/{planId}`, `/plans/{planId}/gantt` and `/plans/{planId}/release` enforce IAM permission checks and proxy the stable DTO without adding scheduling rules in Gateway.
+Test that `/api/business-console/v1/scheduling/plans/preview`, `/plans`, `/plans/{planId}`, `/plans/{planId}/gantt` and `/plans/{planId}/release` enforce IAM permission checks and proxy the stable DTO without adding scheduling rules in Gateway. The three plan-id routes must forward `organizationId` and `environmentId` to BusinessScheduling, and BusinessGateway OpenAPI must expose scheduling enums as camel-case strings matching `SchedulingJson.Options`.
 
 - [ ] **Step 3: Implement facade endpoints**
 

@@ -17,6 +17,6 @@ public sealed class ScheduleProblemSnapshotEntityTypeConfiguration : IEntityType
         builder.Property(x => x.HorizonStartUtc).HasColumnName("horizon_start_utc").HasComment("Scheduling horizon start timestamp in UTC.");
         builder.Property(x => x.HorizonEndUtc).HasColumnName("horizon_end_utc").HasComment("Scheduling horizon end timestamp in UTC.");
         builder.Property(x => x.CapturedAtUtc).HasColumnName("captured_at_utc").HasComment("UTC timestamp when the problem snapshot was captured.");
-        builder.HasIndex(x => x.ProblemId).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ProblemId }).IsUnique();
     }
 }

@@ -350,6 +350,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("problem-001", scheduling.LastProblem!.ProblemId);
         Assert.Equal(new BusinessConsoleSchedulingContextRequest("org-001", "env-dev"), scheduling.LastListRequest);
         Assert.Equal("plan-001", scheduling.LastPlanId);
+        Assert.Equal(new BusinessConsoleSchedulingPlanRequest("plan-001", "org-001", "env-dev"), scheduling.LastPlanRequest);
 
         using var listDocument = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
         var summary = listDocument.RootElement.GetProperty("data")[0];
@@ -398,9 +399,10 @@ public sealed class BusinessGatewayProxyTests
         await client.PreviewPlanAsync("internal-token-001", CreateSchedulingProblem(), CancellationToken.None);
         await client.CreatePlanAsync("internal-token-001", CreateSchedulingProblem(), CancellationToken.None);
         await client.ListPlansAsync("internal-token-001", new BusinessConsoleSchedulingContextRequest("org-001", "env-dev"), CancellationToken.None);
-        await client.GetPlanAsync("internal-token-001", "plan-001", CancellationToken.None);
-        await client.GetPlanGanttAsync("internal-token-001", "plan-001", CancellationToken.None);
-        await client.ReleasePlanAsync("internal-token-001", "plan-001", CancellationToken.None);
+        var planRequest = new BusinessConsoleSchedulingPlanRequest("plan-001", "org-001", "env-dev");
+        await client.GetPlanAsync("internal-token-001", planRequest, CancellationToken.None);
+        await client.GetPlanGanttAsync("internal-token-001", planRequest, CancellationToken.None);
+        await client.ReleasePlanAsync("internal-token-001", planRequest, CancellationToken.None);
 
         Assert.All(handler.Requests, request => Assert.Equal("Bearer", request.Headers.Authorization?.Scheme));
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization?.Parameter));
@@ -412,9 +414,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("/api/business/v1/scheduling/plans", handler.Requests[2].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[2].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/scheduling/plans/plan-001", handler.Requests[3].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[3].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/scheduling/plans/plan-001/gantt", handler.Requests[4].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[4].RequestUri!.Query.TrimStart('?'));
         Assert.Equal(HttpMethod.Post, handler.Requests[5].Method);
         Assert.Equal("/api/business/v1/scheduling/plans/plan-001/release", handler.Requests[5].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[5].RequestUri!.Query.TrimStart('?'));
     }
 
     [Fact]
@@ -1769,6 +1774,8 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
 
     public string? LastPlanId { get; private set; }
 
+    public BusinessConsoleSchedulingPlanRequest? LastPlanRequest { get; private set; }
+
     public Task<SchedulePlanContract> PreviewPlanAsync(
         string internalBearerToken,
         SchedulingProblemContract problem,
@@ -1813,34 +1820,37 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
 
     public Task<SchedulePlanContract> GetPlanAsync(
         string internalBearerToken,
-        string planId,
+        BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        LastPlanId = planId;
+        LastPlanId = request.PlanId;
+        LastPlanRequest = request;
         return Task.FromResult(BusinessGatewayProxyTests.CreateSchedulePlan());
     }
 
     public Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
         string internalBearerToken,
-        string planId,
+        BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        LastPlanId = planId;
+        LastPlanId = request.PlanId;
+        LastPlanRequest = request;
         return Task.FromResult<IReadOnlyCollection<GanttScheduleItemContract>>(
             BusinessGatewayProxyTests.CreateSchedulePlan().GanttItems);
     }
 
     public Task<BusinessConsoleReleaseSchedulePlanResponse> ReleasePlanAsync(
         string internalBearerToken,
-        string planId,
+        BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        LastPlanId = planId;
+        LastPlanId = request.PlanId;
+        LastPlanRequest = request;
         return Task.FromResult(new BusinessConsoleReleaseSchedulePlanResponse(
-            planId,
+            request.PlanId,
             SchedulePlanStatusContract.Released,
             DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)));
     }

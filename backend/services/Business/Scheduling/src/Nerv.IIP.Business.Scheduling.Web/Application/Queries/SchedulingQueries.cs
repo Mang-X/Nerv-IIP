@@ -39,13 +39,15 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
     }
 }
 
-public sealed record GetSchedulePlanDetailQuery(string PlanId) : IQuery<SchedulePlanContract>;
+public sealed record GetSchedulePlanDetailQuery(string PlanId, string OrganizationId, string EnvironmentId) : IQuery<SchedulePlanContract>;
 
 public sealed class GetSchedulePlanDetailQueryValidator : AbstractValidator<GetSchedulePlanDetailQuery>
 {
     public GetSchedulePlanDetailQueryValidator()
     {
         RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
     }
 }
 
@@ -59,20 +61,26 @@ public sealed class GetSchedulePlanDetailQueryHandler(ApplicationDbContext dbCon
             .Include(x => x.ResourceLoads)
             .Include(x => x.Conflicts)
             .Include(x => x.UnscheduledOperations)
-            .SingleOrDefaultAsync(x => x.PlanId == request.PlanId, cancellationToken)
+            .SingleOrDefaultAsync(
+                x => x.PlanId == request.PlanId &&
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId,
+                cancellationToken)
             ?? throw new KnownException($"Schedule plan was not found, PlanId = {request.PlanId}");
 
         return SchedulePlanContractMapper.ToContract(plan);
     }
 }
 
-public sealed record GetSchedulePlanGanttQuery(string PlanId) : IQuery<IReadOnlyCollection<GanttScheduleItemContract>>;
+public sealed record GetSchedulePlanGanttQuery(string PlanId, string OrganizationId, string EnvironmentId) : IQuery<IReadOnlyCollection<GanttScheduleItemContract>>;
 
 public sealed class GetSchedulePlanGanttQueryValidator : AbstractValidator<GetSchedulePlanGanttQuery>
 {
     public GetSchedulePlanGanttQueryValidator()
     {
         RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
     }
 }
 
@@ -86,7 +94,11 @@ public sealed class GetSchedulePlanGanttQueryHandler(ApplicationDbContext dbCont
             .Include(x => x.ResourceLoads)
             .Include(x => x.Conflicts)
             .Include(x => x.UnscheduledOperations)
-            .SingleOrDefaultAsync(x => x.PlanId == request.PlanId, cancellationToken)
+            .SingleOrDefaultAsync(
+                x => x.PlanId == request.PlanId &&
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId,
+                cancellationToken)
             ?? throw new KnownException($"Schedule plan was not found, PlanId = {request.PlanId}");
 
         return SchedulePlanContractMapper.ToContract(plan).GanttItems;

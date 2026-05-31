@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -89,9 +90,12 @@ public sealed class SchedulingEndpointContractTests
         var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
         var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext);
 
-        var created = await createHandler.Handle(new CreateSchedulePlanCommand(CreateProblemWithUnscheduledOperation()), CancellationToken.None);
+        var problem = CreateProblemWithUnscheduledOperation();
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var detail = await detailHandler.Handle(new GetSchedulePlanDetailQuery(created.PlanId), CancellationToken.None);
+        var detail = await detailHandler.Handle(
+            new GetSchedulePlanDetailQuery(created.PlanId, problem.OrganizationId, problem.EnvironmentId),
+            CancellationToken.None);
 
         Assert.Equal(SchedulePlanStatusContract.Generated, created.Status);
         Assert.Equal(created.PlanId, detail.PlanId);
@@ -122,6 +126,31 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal(first.ProblemFingerprint, second.ProblemFingerprint);
         Assert.Equal(1, await dbContext.ScheduleProblems.CountAsync(x => x.ProblemId == command.Problem.ProblemId, CancellationToken.None));
         Assert.Equal(1, await dbContext.SchedulePlans.CountAsync(x => x.ProblemId == command.Problem.ProblemId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Create_scopes_problem_id_idempotency_to_organization_and_environment()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var firstProblem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var secondTenantProblem = firstProblem with
+        {
+            OrganizationId = "org-002",
+            EnvironmentId = "env-prod"
+        };
+
+        var first = await createHandler.Handle(new CreateSchedulePlanCommand(firstProblem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var second = await createHandler.Handle(new CreateSchedulePlanCommand(secondTenantProblem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.NotEqual(first.PlanId, second.PlanId);
+        Assert.Equal(firstProblem.ProblemId, second.ProblemId);
+        Assert.Equal(2, await dbContext.ScheduleProblems.CountAsync(x => x.ProblemId == firstProblem.ProblemId, CancellationToken.None));
+        Assert.Equal(2, await dbContext.SchedulePlans.CountAsync(x => x.ProblemId == firstProblem.ProblemId, CancellationToken.None));
     }
 
     [Fact]
@@ -163,16 +192,40 @@ public sealed class SchedulingEndpointContractTests
         var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
         var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
 
-        var created = await createHandler.Handle(new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem()), CancellationToken.None);
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var first = await releaseHandler.Handle(new ReleaseSchedulePlanCommand(created.PlanId), CancellationToken.None);
+        var first = await releaseHandler.Handle(new ReleaseSchedulePlanCommand(created.PlanId, problem.OrganizationId, problem.EnvironmentId), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var second = await releaseHandler.Handle(new ReleaseSchedulePlanCommand(created.PlanId), CancellationToken.None);
+        var second = await releaseHandler.Handle(new ReleaseSchedulePlanCommand(created.PlanId, problem.OrganizationId, problem.EnvironmentId), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal(SchedulePlanStatusContract.Released, first.Status);
         Assert.Equal(SchedulePlanStatusContract.Released, second.Status);
         Assert.Equal(first.ReleasedAtUtc, second.ReleasedAtUtc);
+    }
+
+    [Fact]
+    public async Task Detail_gantt_and_release_reject_plan_id_outside_requested_tenant_context()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext);
+        var ganttHandler = new GetSchedulePlanGanttQueryHandler(dbContext);
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
+
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            detailHandler.Handle(new GetSchedulePlanDetailQuery(created.PlanId, "org-other", problem.EnvironmentId), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() =>
+            ganttHandler.Handle(new GetSchedulePlanGanttQuery(created.PlanId, problem.OrganizationId, "env-other"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() =>
+            releaseHandler.Handle(new ReleaseSchedulePlanCommand(created.PlanId, "org-other", "env-other"), CancellationToken.None));
     }
 
     [Fact]
@@ -187,15 +240,37 @@ public sealed class SchedulingEndpointContractTests
         var createdEnvelope = await createResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>();
         var created = Assert.IsType<SchedulePlanContract>(createdEnvelope?.Data);
 
-        var detail = await client.GetFromJsonAsync<ResponseData<SchedulePlanContract>>($"/api/business/v1/scheduling/plans/{created.PlanId}");
-        var gantt = await client.GetFromJsonAsync<ResponseData<IReadOnlyCollection<GanttScheduleItemContract>>>($"/api/business/v1/scheduling/plans/{created.PlanId}/gantt");
-        var releaseResponse = await client.PostAsync($"/api/business/v1/scheduling/plans/{created.PlanId}/release", null);
+        var contextQuery = "organizationId=org-001&environmentId=prod";
+        var detail = await client.GetFromJsonAsync<ResponseData<SchedulePlanContract>>($"/api/business/v1/scheduling/plans/{created.PlanId}?{contextQuery}");
+        var gantt = await client.GetFromJsonAsync<ResponseData<IReadOnlyCollection<GanttScheduleItemContract>>>($"/api/business/v1/scheduling/plans/{created.PlanId}/gantt?{contextQuery}");
+        var releaseResponse = await client.PostAsync($"/api/business/v1/scheduling/plans/{created.PlanId}/release?{contextQuery}", null);
         releaseResponse.EnsureSuccessStatusCode();
         var releasedEnvelope = await releaseResponse.Content.ReadFromJsonAsync<ResponseData<ReleaseSchedulePlanResponse>>();
 
         Assert.Equal(created.PlanId, detail?.Data?.PlanId);
         Assert.NotEmpty(gantt?.Data ?? []);
         Assert.Equal(SchedulePlanStatusContract.Released, releasedEnvelope?.Data?.Status);
+    }
+
+    [Fact]
+    public async Task Scheduling_authorized_http_endpoints_scope_plan_routes_by_requested_context()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var createResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans", new CreateSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()));
+        createResponse.EnsureSuccessStatusCode();
+        var createdEnvelope = await createResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>();
+        var created = Assert.IsType<SchedulePlanContract>(createdEnvelope?.Data);
+
+        var detail = await client.GetAsync($"/api/business/v1/scheduling/plans/{created.PlanId}?organizationId=org-other&environmentId=prod");
+        var gantt = await client.GetAsync($"/api/business/v1/scheduling/plans/{created.PlanId}/gantt?organizationId=org-001&environmentId=env-other");
+        var release = await client.PostAsync($"/api/business/v1/scheduling/plans/{created.PlanId}/release?organizationId=org-other&environmentId=env-other", null);
+
+        await AssertRejectedKnownExceptionEnvelopeAsync(detail);
+        await AssertRejectedKnownExceptionEnvelopeAsync(gantt);
+        await AssertRejectedKnownExceptionEnvelopeAsync(release);
     }
 
     [Theory]
@@ -273,6 +348,13 @@ public sealed class SchedulingEndpointContractTests
         var request = new HttpRequestMessage(method, requestUri);
         request.Content = JsonContent.Create(body);
         return request;
+    }
+
+    private static async Task AssertRejectedKnownExceptionEnvelopeAsync(HttpResponseMessage response)
+    {
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Contains("Schedule plan was not found", document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
     }
 
     private sealed class SchedulingLiveHttpTestFactory : WebApplicationFactory<Program>

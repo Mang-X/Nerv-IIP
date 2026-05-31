@@ -4,7 +4,7 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 
-public sealed record ReleaseSchedulePlanCommand(string PlanId) : ICommand<ReleaseSchedulePlanResponse>;
+public sealed record ReleaseSchedulePlanCommand(string PlanId, string OrganizationId, string EnvironmentId) : ICommand<ReleaseSchedulePlanResponse>;
 
 public sealed record ReleaseSchedulePlanResponse(
     string PlanId,
@@ -16,6 +16,8 @@ public sealed class ReleaseSchedulePlanCommandValidator : AbstractValidator<Rele
     public ReleaseSchedulePlanCommandValidator()
     {
         RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
     }
 }
 
@@ -29,7 +31,11 @@ public sealed class ReleaseSchedulePlanCommandHandler(ApplicationDbContext dbCon
             .Include(x => x.ResourceLoads)
             .Include(x => x.Conflicts)
             .Include(x => x.UnscheduledOperations)
-            .SingleOrDefaultAsync(x => x.PlanId == request.PlanId, cancellationToken)
+            .SingleOrDefaultAsync(
+                x => x.PlanId == request.PlanId &&
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId,
+                cancellationToken)
             ?? throw new KnownException($"Schedule plan was not found, PlanId = {request.PlanId}");
 
         plan.Release(timeProvider.GetUtcNow());

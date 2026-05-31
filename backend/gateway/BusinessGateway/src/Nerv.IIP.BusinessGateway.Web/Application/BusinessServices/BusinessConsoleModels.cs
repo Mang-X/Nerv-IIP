@@ -375,6 +375,11 @@ public sealed record BusinessConsoleSchedulingContextRequest(
     string OrganizationId,
     string EnvironmentId);
 
+public sealed record BusinessConsoleSchedulingPlanRequest(
+    [property: RouteParam] string PlanId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
 public sealed record BusinessConsoleSchedulePlanSummaryResponse(
     string PlanId,
     string ProblemId,

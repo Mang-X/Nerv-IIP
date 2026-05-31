@@ -5096,7 +5096,7 @@
         }
       },
       "NervIIPContractsSchedulingSchedulePlanStatusContract": {
-        "type": "integer",
+        "type": "string",
         "description": "",
         "x-enumNames": [
           "Preview",
@@ -5104,9 +5104,9 @@
           "Released"
         ],
         "enum": [
-          0,
-          1,
-          2
+          "preview",
+          "generated",
+          "released"
         ]
       },
       "NervIIPContractsSchedulingScheduleAssignmentContract": {
@@ -5208,7 +5208,7 @@
         }
       },
       "NervIIPContractsSchedulingScheduleConflictReasonCodeContract": {
-        "type": "integer",
+        "type": "string",
         "description": "",
         "x-enumNames": [
           "DueDate",
@@ -5223,20 +5223,20 @@
           "PredecessorUnscheduled"
         ],
         "enum": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6,
-          7,
-          8,
-          9
+          "dueDate",
+          "capacity",
+          "calendar",
+          "material",
+          "quality",
+          "equipment",
+          "noEligibleResource",
+          "outsideHorizon",
+          "invalidLockedAssignment",
+          "predecessorUnscheduled"
         ]
       },
       "NervIIPContractsSchedulingScheduleConflictSeverityContract": {
-        "type": "integer",
+        "type": "string",
         "description": "",
         "x-enumNames": [
           "Info",
@@ -5244,9 +5244,9 @@
           "Error"
         ],
         "enum": [
-          0,
-          1,
-          2
+          "info",
+          "warning",
+          "error"
         ]
       },
       "NervIIPContractsSchedulingUnscheduledOperationContract": {
@@ -5286,7 +5286,7 @@
         }
       },
       "NervIIPContractsSchedulingScheduleChangeTypeContract": {
-        "type": "integer",
+        "type": "string",
         "description": "",
         "x-enumNames": [
           "Added",
@@ -5296,11 +5296,11 @@
           "Blocked"
         ],
         "enum": [
-          0,
-          1,
-          2,
-          3,
-          4
+          "added",
+          "moved",
+          "delayed",
+          "preserved",
+          "blocked"
         ]
       },
       "NervIIPContractsSchedulingGanttScheduleItemContract": {
@@ -5563,13 +5563,13 @@
         }
       },
       "NervIIPContractsSchedulingScheduleSplitPolicyContract": {
-        "type": "integer",
+        "type": "string",
         "description": "",
         "x-enumNames": [
           "NonSplittable"
         ],
         "enum": [
-          0
+          "nonSplittable"
         ]
       },
       "NervIIPContractsSchedulingSchedulingResourceContract": {
@@ -5823,7 +5823,7 @@
         "type": "object",
         "additionalProperties": false
       },
-      "NervIIPBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingPlanRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingPlanRequest": {
         "type": "object",
         "additionalProperties": false
       },

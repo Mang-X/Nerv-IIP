@@ -77,6 +77,8 @@ Each operation carries:
 | `changeSummary` | Added, moved, delayed, preserved and blocked operation references compared with a previous plan or locked assignments. |
 | `ganttItems` | Stable read DTO for #78, derived from assignments/conflicts without browser-side scheduling. |
 
+Scheduling enum fields are serialized as camel-case strings, for example `generated`, `released`, `dueDate` and `nonSplittable`. Gateway OpenAPI snapshots and generated clients must preserve those string values rather than integer enum ordinals.
+
 ## Algorithm V1
 
 The P0 algorithm is a deterministic finite-capacity heuristic:
@@ -125,9 +127,9 @@ Expected evidence:
 | `POST /api/business/v1/scheduling/plans/preview` | Run the algorithm without persisting a released plan. | `business.scheduling.plans.manage` |
 | `POST /api/business/v1/scheduling/plans` | Persist a generated plan from a problem snapshot. | `business.scheduling.plans.manage` |
 | `GET /api/business/v1/scheduling/plans` | List generated/released plans. | `business.scheduling.plans.read` |
-| `GET /api/business/v1/scheduling/plans/{planId}` | Read a full plan. | `business.scheduling.plans.read` |
-| `GET /api/business/v1/scheduling/plans/{planId}/gantt` | Read the stable Gantt DTO. | `business.scheduling.plans.read` |
-| `POST /api/business/v1/scheduling/plans/{planId}/release` | Mark a plan released and emit release intent/event for MES consumption. | `business.scheduling.plans.release` |
+| `GET /api/business/v1/scheduling/plans/{planId}` | Read a full plan, scoped by `organizationId` and `environmentId` query parameters. | `business.scheduling.plans.read` |
+| `GET /api/business/v1/scheduling/plans/{planId}/gantt` | Read the stable Gantt DTO, scoped by `organizationId` and `environmentId` query parameters. | `business.scheduling.plans.read` |
+| `POST /api/business/v1/scheduling/plans/{planId}/release` | Mark a scoped plan released and emit release intent/event for MES consumption. | `business.scheduling.plans.release` |
 
 BusinessGateway may expose equivalent `/api/business-console/v1/scheduling/**` page facades after the service API exists. Gateway must not persist scheduling facts or implement scheduling logic.
 
@@ -156,6 +158,8 @@ Required P0 tables:
 
 Each table and business column requires schema comments. PostgreSQL migrations history must use `scheduling.__EFMigrationsHistory`.
 
+`schedule_problems` idempotency is unique by `organizationId + environmentId + problemId`. A natural `problemId` can repeat across tenants or environments without reusing another context's snapshot or generated plan.
+
 ## Tests
 
 Acceptance requires:
@@ -167,6 +171,7 @@ Acceptance requires:
 5. Schema convention tests using `Nerv.IIP.Testing`.
 6. Event converter tests for the three scheduling event names.
 7. BusinessGateway facade tests after the service API is registered.
+8. Regression tests for string enum OpenAPI/codegen shape and tenant-scoped plan detail, Gantt and release access.
 
 ## Out of Scope
 

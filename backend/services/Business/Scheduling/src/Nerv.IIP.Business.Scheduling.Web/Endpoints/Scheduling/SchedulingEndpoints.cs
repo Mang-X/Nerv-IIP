@@ -36,11 +36,20 @@ public sealed record CreateSchedulePlanRequest(SchedulingProblemContract Problem
 
 public sealed record ListSchedulePlansRequest(string OrganizationId, string EnvironmentId);
 
-public sealed record GetSchedulePlanRequest(string PlanId);
+public sealed record GetSchedulePlanRequest(
+    [property: RouteParam] string PlanId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
-public sealed record GetSchedulePlanGanttRequest(string PlanId);
+public sealed record GetSchedulePlanGanttRequest(
+    [property: RouteParam] string PlanId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
-public sealed record ReleaseSchedulePlanRequest(string PlanId);
+public sealed record ReleaseSchedulePlanRequest(
+    [property: RouteParam] string PlanId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
 public sealed class PreviewSchedulePlanEndpoint(ISender sender)
     : SchedulingEndpoint<PreviewSchedulePlanRequest, ResponseData<SchedulePlanContract>>
@@ -97,7 +106,11 @@ public sealed class GetSchedulePlanEndpoint(ISender sender)
 
     public override async Task HandleAsync(GetSchedulePlanRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new GetSchedulePlanDetailQuery(req.PlanId), ct);
+        var planId = Route<string>("planId") ?? req.PlanId;
+        var response = await sender.Send(new GetSchedulePlanDetailQuery(
+            planId,
+            Query<string>("organizationId")!,
+            Query<string>("environmentId")!), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -112,26 +125,30 @@ public sealed class GetSchedulePlanGanttEndpoint(ISender sender)
 
     public override async Task HandleAsync(GetSchedulePlanGanttRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new GetSchedulePlanGanttQuery(req.PlanId), ct);
+        var planId = Route<string>("planId") ?? req.PlanId;
+        var response = await sender.Send(new GetSchedulePlanGanttQuery(
+            planId,
+            Query<string>("organizationId")!,
+            Query<string>("environmentId")!), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
 public sealed class ReleaseSchedulePlanEndpoint(ISender sender)
-    : EndpointWithoutRequest<ResponseData<ReleaseSchedulePlanResponse>>
+    : SchedulingEndpoint<ReleaseSchedulePlanRequest, ResponseData<ReleaseSchedulePlanResponse>>
 {
     public override void Configure()
     {
-        var contract = SchedulingEndpointContracts.Get<ReleaseSchedulePlanEndpoint>();
-        Post(contract.Route);
-        Tags("Business Scheduling");
-        Policies(contract.AuthorizationPolicy);
+        ConfigureSchedulingContract(SchedulingEndpointContracts.Get<ReleaseSchedulePlanEndpoint>());
     }
 
-    public override async Task HandleAsync(CancellationToken ct)
+    public override async Task HandleAsync(ReleaseSchedulePlanRequest req, CancellationToken ct)
     {
-        var planId = Route<string>("planId") ?? throw new InvalidOperationException("Route value 'planId' is required.");
-        var response = await sender.Send(new ReleaseSchedulePlanCommand(planId), ct);
+        var planId = Route<string>("planId") ?? req.PlanId;
+        var response = await sender.Send(new ReleaseSchedulePlanCommand(
+            planId,
+            Query<string>("organizationId")!,
+            Query<string>("environmentId")!), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

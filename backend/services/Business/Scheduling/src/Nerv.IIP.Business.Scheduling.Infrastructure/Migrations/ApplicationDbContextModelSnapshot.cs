@@ -423,7 +423,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProblemId")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ProblemId")
                         .IsUnique();
 
                     b.ToTable("schedule_problems", "scheduling", t =>

@@ -25,6 +25,7 @@ builder.Services
         {
             s.Title = "Nerv IIP Business Gateway";
             s.Version = "v1";
+            s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
         };
     });
 builder.Services.AddNervIipCaching(builder.Configuration, "business-gateway");

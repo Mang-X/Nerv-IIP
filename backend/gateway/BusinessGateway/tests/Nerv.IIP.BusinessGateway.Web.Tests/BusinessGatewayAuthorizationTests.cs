@@ -136,7 +136,10 @@ public sealed class BusinessGatewayAuthorizationTests
 
         var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.True(
+            response.StatusCode == HttpStatusCode.Forbidden,
+            $"Expected Forbidden for {method} {path}, got {(int)response.StatusCode}: {responseBody}");
         Assert.Equal(1, auth.CallCount);
         Assert.Equal(expectedPermission, auth.LastRequirement!.PermissionCode);
         Assert.Equal("org-001", auth.LastRequirement.OrganizationId);

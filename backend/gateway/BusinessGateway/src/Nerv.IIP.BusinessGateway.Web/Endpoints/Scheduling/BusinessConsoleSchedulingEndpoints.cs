@@ -11,11 +11,6 @@ namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 
 public sealed record BusinessConsoleSchedulingProblemRequest(SchedulingProblemContract Problem);
 
-public sealed record BusinessConsoleSchedulingPlanRequest(
-    [property: RouteParam] string PlanId,
-    [property: QueryParam] string OrganizationId,
-    [property: QueryParam] string EnvironmentId);
-
 public abstract class AuthorizedBusinessSchedulingProxyEndpoint<TRequest, TResponse>(
     IBusinessGatewayAuthorizationClient auth,
     string permissionCode)
@@ -102,9 +97,9 @@ public sealed class GetBusinessConsoleSchedulingPlanEndpoint(
         auth,
         BusinessGatewayPermissions.SchedulingPlansRead)
 {
-    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("organizationId")!;
 
-    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("environmentId")!;
 
     protected override string ResourceType(BusinessConsoleSchedulingPlanRequest request) => "scheduling-plan";
 
@@ -114,7 +109,15 @@ public sealed class GetBusinessConsoleSchedulingPlanEndpoint(
         BusinessConsoleSchedulingPlanRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        scheduling.GetPlanAsync(tokenProvider.BearerToken, Route<string>("planId") ?? request.PlanId, cancellationToken);
+        scheduling.GetPlanAsync(tokenProvider.BearerToken, WithRoutePlanId(request), cancellationToken);
+
+    private BusinessConsoleSchedulingPlanRequest WithRoutePlanId(BusinessConsoleSchedulingPlanRequest request) =>
+        request with
+        {
+            PlanId = Route<string>("planId") ?? request.PlanId,
+            OrganizationId = Query<string>("organizationId")!,
+            EnvironmentId = Query<string>("environmentId")!
+        };
 }
 
 [Tags("Business Console Scheduling")]
@@ -128,9 +131,9 @@ public sealed class GetBusinessConsoleSchedulingPlanGanttEndpoint(
         auth,
         BusinessGatewayPermissions.SchedulingPlansRead)
 {
-    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("organizationId")!;
 
-    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("environmentId")!;
 
     protected override string ResourceType(BusinessConsoleSchedulingPlanRequest request) => "scheduling-plan";
 
@@ -140,7 +143,15 @@ public sealed class GetBusinessConsoleSchedulingPlanGanttEndpoint(
         BusinessConsoleSchedulingPlanRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        scheduling.GetPlanGanttAsync(tokenProvider.BearerToken, Route<string>("planId") ?? request.PlanId, cancellationToken);
+        scheduling.GetPlanGanttAsync(tokenProvider.BearerToken, WithRoutePlanId(request), cancellationToken);
+
+    private BusinessConsoleSchedulingPlanRequest WithRoutePlanId(BusinessConsoleSchedulingPlanRequest request) =>
+        request with
+        {
+            PlanId = Route<string>("planId") ?? request.PlanId,
+            OrganizationId = Query<string>("organizationId")!,
+            EnvironmentId = Query<string>("environmentId")!
+        };
 }
 
 [Tags("Business Console Scheduling")]
@@ -154,9 +165,9 @@ public sealed class ReleaseBusinessConsoleSchedulingPlanEndpoint(
         auth,
         BusinessGatewayPermissions.SchedulingPlansRelease)
 {
-    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("organizationId")!;
 
-    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("environmentId")!;
 
     protected override string ResourceType(BusinessConsoleSchedulingPlanRequest request) => "scheduling-plan";
 
@@ -166,7 +177,15 @@ public sealed class ReleaseBusinessConsoleSchedulingPlanEndpoint(
         BusinessConsoleSchedulingPlanRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        scheduling.ReleasePlanAsync(tokenProvider.BearerToken, Route<string>("planId") ?? request.PlanId, cancellationToken);
+        scheduling.ReleasePlanAsync(tokenProvider.BearerToken, WithRoutePlanId(request), cancellationToken);
+
+    private BusinessConsoleSchedulingPlanRequest WithRoutePlanId(BusinessConsoleSchedulingPlanRequest request) =>
+        request with
+        {
+            PlanId = Route<string>("planId") ?? request.PlanId,
+            OrganizationId = Query<string>("organizationId")!,
+            EnvironmentId = Query<string>("environmentId")!
+        };
 }
 
 public sealed class BusinessConsoleSchedulingProblemRequestValidator : Validator<BusinessConsoleSchedulingProblemRequest>
@@ -196,8 +215,5 @@ public sealed class BusinessConsoleSchedulingPlanRequestValidator : Validator<Bu
 {
     public BusinessConsoleSchedulingPlanRequestValidator()
     {
-        RuleFor(x => x.PlanId).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
     }
 }

@@ -24,7 +24,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     ganttItems?: Array<NervIipContractsSchedulingGanttScheduleItemContract>;
 };
 
-export type NervIipContractsSchedulingSchedulePlanStatusContract = 0 | 1 | 2;
+export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released';
 
 export type NervIipContractsSchedulingScheduleAssignmentContract = {
     assignmentId?: string;
@@ -58,9 +58,9 @@ export type NervIipContractsSchedulingScheduleConflictContract = {
     message?: string;
 };
 
-export type NervIipContractsSchedulingScheduleConflictReasonCodeContract = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type NervIipContractsSchedulingScheduleConflictReasonCodeContract = 'dueDate' | 'capacity' | 'calendar' | 'material' | 'quality' | 'equipment' | 'noEligibleResource' | 'outsideHorizon' | 'invalidLockedAssignment' | 'predecessorUnscheduled';
 
-export type NervIipContractsSchedulingScheduleConflictSeverityContract = 0 | 1 | 2;
+export type NervIipContractsSchedulingScheduleConflictSeverityContract = 'info' | 'warning' | 'error';
 
 export type NervIipContractsSchedulingUnscheduledOperationContract = {
     orderId?: string;
@@ -76,7 +76,7 @@ export type NervIipContractsSchedulingScheduleChangeContract = {
     message?: string;
 };
 
-export type NervIipContractsSchedulingScheduleChangeTypeContract = 0 | 1 | 2 | 3 | 4;
+export type NervIipContractsSchedulingScheduleChangeTypeContract = 'added' | 'moved' | 'delayed' | 'preserved' | 'blocked';
 
 export type NervIipContractsSchedulingGanttScheduleItemContract = {
     itemId?: string;
@@ -147,7 +147,7 @@ export type NervIipContractsSchedulingSchedulingOperationContract = {
     sourceReference?: string | null;
 };
 
-export type NervIipContractsSchedulingScheduleSplitPolicyContract = 0;
+export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable';
 
 export type NervIipContractsSchedulingSchedulingResourceContract = {
     resourceId?: string;
@@ -231,7 +231,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     [key: string]: never;
 };
 
-export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingPlanRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingPlanRequest = {
     [key: string]: never;
 };
 
