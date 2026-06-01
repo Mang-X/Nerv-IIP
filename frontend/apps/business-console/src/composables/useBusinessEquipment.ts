@@ -16,7 +16,7 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 
-const DEFAULT_DEVICE_ASSET_IDS = 'DEV-OIL-01,DEV-PACK-01'
+const DEFAULT_DEVICE_ASSET_IDS = ''
 
 export type EquipmentTone = 'success' | 'danger' | 'muted'
 

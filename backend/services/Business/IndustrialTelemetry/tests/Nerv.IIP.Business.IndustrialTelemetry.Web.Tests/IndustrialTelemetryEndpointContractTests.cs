@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
@@ -265,7 +266,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public async Task Latest_state_uses_source_sequence_before_occurred_at()
+    public async Task Latest_state_uses_occurred_at_before_source_sequence()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
         using var client = factory.CreateClient();
@@ -284,9 +285,36 @@ public sealed class IndustrialTelemetryEndpointContractTests
             EquipmentRuntimeJson.Options);
 
         Assert.NotNull(current?.Data);
-        Assert.Equal("stopped", current.Data.CurrentState);
+        Assert.Equal("running", current.Data.CurrentState);
         Assert.NotNull(availability?.Data);
-        Assert.Contains(availability.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable);
+        Assert.DoesNotContain(availability.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable);
+    }
+
+    [Fact]
+    public async Task Runtime_availability_uses_alarm_time_window_when_status_is_inconsistent()
+    {
+        await using var dbContext = CreateDbContext(nameof(Runtime_availability_uses_alarm_time_window_when_status_is_inconsistent));
+        var raisedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-09", "OIL_TEMP_STUCK", "warning", raisedAtUtc, "alarm-oil-009");
+        dbContext.AlarmEvents.Add(alarm);
+        await dbContext.SaveChangesAsync();
+        dbContext.Entry(alarm).Property(nameof(AlarmEvent.Status)).CurrentValue = "cleared";
+        await dbContext.SaveChangesAsync();
+
+        var response = await new QueryRuntimeAvailabilityQueryHandler(dbContext).Handle(
+            new QueryRuntimeAvailabilityQuery(
+                "org-001",
+                "env-dev",
+                new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero),
+                ["DEV-OIL-09"],
+                null),
+            CancellationToken.None);
+
+        Assert.Contains(response.Items, x =>
+            x.DeviceAssetId == "DEV-OIL-09"
+            && x.ReasonCode == EquipmentRuntimeReasonCodes.ActiveAlarm
+            && x.SourceReferenceId == alarm.Id.ToString());
     }
 
     [Fact]
@@ -311,6 +339,14 @@ public sealed class IndustrialTelemetryEndpointContractTests
     private static bool SameProperty(string actual, string expected)
     {
         return string.Equals(actual.Replace(" ", string.Empty, StringComparison.Ordinal), expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ApplicationDbContext CreateDbContext(string databaseName)
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName)
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
     }
 
     private sealed record SamplePostResult(string? TelemetrySummaryId, string? DeviceStateSnapshotId);
@@ -442,6 +478,50 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot send requests.");
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot send requests.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot send requests.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot stream requests.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot stream requests.");
         }
     }
 }

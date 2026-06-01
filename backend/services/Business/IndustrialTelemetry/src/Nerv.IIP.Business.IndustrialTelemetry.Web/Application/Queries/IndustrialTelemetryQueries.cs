@@ -114,9 +114,9 @@ public sealed class GetRuntimeCurrentStateQueryHandler(ApplicationDbContext dbCo
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => x.OccurredAtUtc <= request.AsOfUtc)
-            .OrderByDescending(x => x.SourceSequence)
-            .ThenByDescending(x => x.OccurredAtUtc)
+            .OrderByDescending(x => x.OccurredAtUtc)
             .ThenByDescending(x => x.RecordedAtUtc)
+            .ThenByDescending(x => x.SourceSequence)
             .Select(x => new RuntimeStateProjection(x.Id, x.DeviceAssetId, x.State, x.OccurredAtUtc, x.SourceSequence, x.RecordedAtUtc))
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -202,28 +202,26 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
             throw new KnownException("deviceAssetIds is required in P0 runtime availability.");
         }
 
-        var states = await dbContext.DeviceStateSnapshots
+        var latestStates = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.OccurredAtUtc <= request.WindowEndUtc)
-            .Where(x => requestedDeviceAssetIds == null || requestedDeviceAssetIds.Contains(x.DeviceAssetId))
-            .OrderByDescending(x => x.SourceSequence)
-            .ThenByDescending(x => x.OccurredAtUtc)
-            .ThenByDescending(x => x.RecordedAtUtc)
-            .Select(x => new RuntimeStateProjection(x.Id, x.DeviceAssetId, x.State, x.OccurredAtUtc, x.SourceSequence, x.RecordedAtUtc))
+            .Where(x => requestedDeviceAssetIds.Contains(x.DeviceAssetId))
+            .GroupBy(x => x.DeviceAssetId)
+            .Select(group => group
+                .OrderByDescending(x => x.OccurredAtUtc)
+                .ThenByDescending(x => x.RecordedAtUtc)
+                .ThenByDescending(x => x.SourceSequence)
+                .Select(x => new RuntimeStateProjection(x.Id, x.DeviceAssetId, x.State, x.OccurredAtUtc, x.SourceSequence, x.RecordedAtUtc))
+                .First())
             .ToArrayAsync(cancellationToken);
-
-        var latestStates = states
-            .GroupBy(x => x.DeviceAssetId, StringComparer.OrdinalIgnoreCase)
-            .Select(x => x.OrderByDescending(state => state.SourceSequence, StringComparer.Ordinal).ThenByDescending(state => state.OccurredAtUtc).ThenByDescending(state => state.RecordedAtUtc).First())
-            .ToArray();
 
         var activeAlarms = await dbContext.AlarmEvents
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.Status == "raised")
             .Where(x => x.RaisedAtUtc <= request.WindowEndUtc)
-            .Where(x => requestedDeviceAssetIds == null || requestedDeviceAssetIds.Contains(x.DeviceAssetId))
+            .Where(x => x.ClearedAtUtc == null || x.ClearedAtUtc > request.WindowStartUtc)
+            .Where(x => requestedDeviceAssetIds.Contains(x.DeviceAssetId))
             .OrderBy(x => x.RaisedAtUtc)
             .Select(x => new RuntimeAlarmProjection(x.Id, x.DeviceAssetId, x.AlarmCode, x.Severity, x.RaisedAtUtc, x.ExternalAlarmId))
             .ToArrayAsync(cancellationToken);

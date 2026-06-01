@@ -116,7 +116,7 @@ describe('business equipment composables', () => {
     expect(equipmentStatusTone('calibrating')).toBe('muted')
   })
 
-  it('loads equipment overview with default context and safe arrays', () => {
+  it('loads equipment overview without hard-coded seed device defaults', () => {
     coladaState.queryDataById.set('getBusinessConsoleEquipmentOverview', {
       success: true,
       data: {
@@ -131,7 +131,7 @@ describe('business equipment composables', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        deviceAssetIds: 'DEV-OIL-01,DEV-PACK-01',
+        deviceAssetIds: '',
       },
     })
     expect(devices.value).toEqual([{ deviceAssetId: 'DEV-OIL-01', currentState: 'running' }])
@@ -193,7 +193,7 @@ describe('business equipment composables', () => {
       query: expect.objectContaining({
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        deviceAssetIds: 'DEV-OIL-01,DEV-PACK-01',
+        deviceAssetIds: '',
       }),
     })
     expect(availabilityWindows.value).toEqual([

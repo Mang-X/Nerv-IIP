@@ -21,21 +21,16 @@ public static class MesReadinessReasonCodes
     {
         var normalizedReason = string.IsNullOrWhiteSpace(reason) ? Downtime : reason.Trim();
 
-        if (normalizedReason.Equals(NoEligibleSubstitute, StringComparison.OrdinalIgnoreCase))
+        var exactClassification = ClassifyKnownEquipmentRuntimeReason(normalizedReason);
+        if (exactClassification is not null)
         {
-            return new EquipmentReadinessClassification(
-                NoEligibleSubstitute,
-                "BusinessScheduling",
-                "排程未找到可替代设备，当前工序不能派工或开工。",
-                "调整设备候选范围、释放替代设备或重新运行排程");
+            return exactClassification;
         }
 
         if (IsMaintenanceReason(normalizedReason))
         {
             return new EquipmentReadinessClassification(
-                normalizedReason.Equals(InspectionRequired, StringComparison.OrdinalIgnoreCase)
-                    ? InspectionRequired
-                    : MaintenanceWindow,
+                MaintenanceWindow,
                 "Maintenance",
                 "设备存在维修或保养占用，当前工序不能派工或开工。",
                 "调整维修窗口、选择替代设备或等待维修释放");
@@ -50,6 +45,52 @@ public static class MesReadinessReasonCodes
                 "处理并解除设备报警后重新检查");
         }
 
+        return ClassifyDowntime();
+    }
+
+    private static EquipmentReadinessClassification? ClassifyKnownEquipmentRuntimeReason(string reason)
+    {
+        if (reason.Equals(NoEligibleSubstitute, StringComparison.OrdinalIgnoreCase))
+        {
+            return new EquipmentReadinessClassification(
+                NoEligibleSubstitute,
+                "BusinessScheduling",
+                "排程未找到可替代设备，当前工序不能派工或开工。",
+                "调整设备候选范围、释放替代设备或重新运行排程");
+        }
+
+        if (reason.Equals(MaintenanceWindow, StringComparison.OrdinalIgnoreCase) ||
+            reason.Equals(InspectionRequired, StringComparison.OrdinalIgnoreCase))
+        {
+            return new EquipmentReadinessClassification(
+                reason.Equals(InspectionRequired, StringComparison.OrdinalIgnoreCase)
+                    ? InspectionRequired
+                    : MaintenanceWindow,
+                "Maintenance",
+                "设备存在维修或保养占用，当前工序不能派工或开工。",
+                "调整维修窗口、选择替代设备或等待维修释放");
+        }
+
+        if (reason.Equals(ActiveAlarm, StringComparison.OrdinalIgnoreCase) ||
+            reason.Equals(StateUnavailable, StringComparison.OrdinalIgnoreCase) ||
+            reason.Equals(SourceStale, StringComparison.OrdinalIgnoreCase) ||
+            reason.Equals(TagMappingMissing, StringComparison.OrdinalIgnoreCase) ||
+            reason.Equals(SourceUnavailable, StringComparison.OrdinalIgnoreCase))
+        {
+            return new EquipmentReadinessClassification(
+                NormalizeIndustrialTelemetryReasonCode(reason),
+                "IndustrialTelemetry",
+                "工业遥测存在未解除报警，设备不可用于当前工序。",
+                "处理并解除设备报警后重新检查");
+        }
+
+        return reason.Equals(Downtime, StringComparison.OrdinalIgnoreCase)
+            ? ClassifyDowntime()
+            : null;
+    }
+
+    private static EquipmentReadinessClassification ClassifyDowntime()
+    {
         return new EquipmentReadinessClassification(
             Downtime,
             "BusinessMes",
