@@ -93,6 +93,29 @@ public sealed class SchedulingIntegrationEventTests
     }
 
     [Fact]
+    public void Scheduling_events_populate_required_envelope_fields_for_all_event_types()
+    {
+        var plan = CreatePlan();
+        var contextAccessor = new StubSchedulingIntegrationEventContextAccessor(new SchedulingIntegrationEventContext(
+            "corr-envelope-001",
+            "cause-envelope-001",
+            "user:planner-001"));
+        var timeProvider = new FixedTimeProvider(FixedNow);
+
+        var generatedEvent = new SchedulePlanGeneratedIntegrationEventConverter(timeProvider, contextAccessor)
+            .Convert(new SchedulePlanGeneratedDomainEvent(plan));
+        var conflictEvent = new ScheduleConflictDetectedIntegrationEventConverter(timeProvider, contextAccessor)
+            .Convert(new ScheduleConflictDetectedDomainEvent(plan, plan.Conflicts.Single()));
+        plan.Release(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
+        var releasedEvent = new SchedulePlanReleasedIntegrationEventConverter(timeProvider, contextAccessor)
+            .Convert(new SchedulePlanReleasedDomainEvent(plan));
+
+        AssertSchedulingEnvelope(generatedEvent, "scheduling.SchedulePlanGenerated");
+        AssertSchedulingEnvelope(conflictEvent, "scheduling.ScheduleConflictDetected");
+        AssertSchedulingEnvelope(releasedEvent, "scheduling.SchedulePlanReleased");
+    }
+
+    [Fact]
     public void Http_context_accessor_reads_correlation_causation_and_actor_headers()
     {
         var httpContext = new DefaultHttpContext();
@@ -182,6 +205,19 @@ public sealed class SchedulingIntegrationEventTests
                 UnscheduledOperations: [],
                 ChangeSummary: [],
                 GanttItems: []));
+    }
+
+    private static void AssertSchedulingEnvelope<TPayload>(
+        SchedulingIntegrationEvent<TPayload> integrationEvent,
+        string expectedEventType)
+    {
+        Assert.Equal(expectedEventType, integrationEvent.EventType);
+        Assert.Equal(1, integrationEvent.EventVersion);
+        Assert.Equal(FixedNow, integrationEvent.OccurredAtUtc);
+        Assert.Equal("business-scheduling", integrationEvent.SourceService);
+        Assert.Equal("corr-envelope-001", integrationEvent.CorrelationId);
+        Assert.Equal("cause-envelope-001", integrationEvent.CausationId);
+        Assert.Equal("user:planner-001", integrationEvent.Actor);
     }
 
     private sealed class StubSchedulingIntegrationEventContextAccessor(
