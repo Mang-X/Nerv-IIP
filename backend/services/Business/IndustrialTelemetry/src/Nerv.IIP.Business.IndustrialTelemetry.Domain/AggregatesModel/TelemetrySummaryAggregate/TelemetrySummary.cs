@@ -21,7 +21,9 @@ public sealed class TelemetrySummary : Entity<TelemetrySummaryId>, IAggregateRoo
         decimal minValue,
         decimal maxValue,
         decimal averageValue,
-        string? sourceSequence)
+        string? sourceSequence,
+        string? sourceSystem,
+        string? sourceConnector)
     {
         if (bucketEndUtc <= bucketStartUtc)
         {
@@ -45,6 +47,8 @@ public sealed class TelemetrySummary : Entity<TelemetrySummaryId>, IAggregateRoo
         MaxValue = maxValue;
         AverageValue = averageValue;
         SourceSequence = IndustrialTelemetryText.Optional(sourceSequence);
+        SourceSystem = IndustrialTelemetryText.Optional(sourceSystem);
+        SourceConnector = IndustrialTelemetryText.Optional(sourceConnector);
         RecordedAtUtc = DateTimeOffset.UtcNow;
         this.AddDomainEvent(new TelemetrySampleRecordedDomainEvent(this));
     }
@@ -60,6 +64,8 @@ public sealed class TelemetrySummary : Entity<TelemetrySummaryId>, IAggregateRoo
     public decimal MaxValue { get; private set; }
     public decimal AverageValue { get; private set; }
     public string? SourceSequence { get; private set; }
+    public string? SourceSystem { get; private set; }
+    public string? SourceConnector { get; private set; }
     public DateTimeOffset RecordedAtUtc { get; private set; }
 
     public static TelemetrySummary Record(
@@ -73,9 +79,11 @@ public sealed class TelemetrySummary : Entity<TelemetrySummaryId>, IAggregateRoo
         decimal minValue,
         decimal maxValue,
         decimal averageValue,
-        string? sourceSequence = null)
+        string? sourceSequence = null,
+        string? sourceSystem = null,
+        string? sourceConnector = null)
     {
-        return new TelemetrySummary(organizationId, environmentId, deviceAssetId, tagKey, bucketStartUtc, bucketEndUtc, sampleCount, minValue, maxValue, averageValue, sourceSequence);
+        return new TelemetrySummary(organizationId, environmentId, deviceAssetId, tagKey, bucketStartUtc, bucketEndUtc, sampleCount, minValue, maxValue, averageValue, sourceSequence, sourceSystem, sourceConnector);
     }
 
     public bool IsSameSourceSequence(TelemetrySummary other)
@@ -85,6 +93,8 @@ public sealed class TelemetrySummary : Entity<TelemetrySummaryId>, IAggregateRoo
             && EnvironmentId == other.EnvironmentId
             && DeviceAssetId == other.DeviceAssetId
             && TagKey == other.TagKey
+            && SourceSystem == other.SourceSystem
+            && SourceConnector == other.SourceConnector
             && SourceSequence is not null
             && SourceSequence == other.SourceSequence;
     }

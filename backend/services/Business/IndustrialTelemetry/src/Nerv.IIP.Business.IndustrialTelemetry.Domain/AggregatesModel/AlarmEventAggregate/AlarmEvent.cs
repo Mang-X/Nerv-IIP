@@ -88,6 +88,8 @@ public sealed class AlarmEvent : Entity<AlarmEventId>, IAggregateRoot
         ArgumentNullException.ThrowIfNull(other);
         return OrganizationId == other.OrganizationId
             && EnvironmentId == other.EnvironmentId
+            && DeviceAssetId == other.DeviceAssetId
+            && AlarmCode == other.AlarmCode
             && ExternalAlarmId == other.ExternalAlarmId;
     }
 

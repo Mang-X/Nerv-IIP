@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
@@ -44,7 +45,11 @@ try
                 s.Version = "v1";
             };
         });
-    builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.AddNetCorePalJsonConverters());
+    builder.Services.Configure<JsonOptions>(o =>
+    {
+        o.SerializerOptions.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
+        o.SerializerOptions.AddNetCorePalJsonConverters();
+    });
     builder.Services.AddFluentValidationAutoValidation();
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
@@ -114,6 +119,7 @@ try
     app.MapControllers();
     app.UseFastEndpoints(c =>
     {
+        c.Serializer.Options.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
         c.Endpoints.NameGenerator = ctx =>
             IndustrialTelemetryEndpointContracts.TryGet(ctx.EndpointType, out var contract)
                 ? contract.OperationId

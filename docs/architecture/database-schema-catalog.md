@@ -340,17 +340,20 @@ Source:
 1. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/ApplicationDbContext.cs`
 2. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/EntityConfigurations/*.cs`
 3. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Migrations/20260523112234_InitialIndustrialTelemetrySchema.cs`
+4. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Migrations/20260601024046_AddRuntimeSourceMetadata.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `telemetry_tags` | business | IndustrialTelemetry 拥有的设备采集 tag 映射和采样策略元数据。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + tag_key` 是业务唯一键；`value_type`、`unit_code` 和 `sampling_policy` 描述采集口径。 | tag 唯一索引防重复映射；设备/tag 维度支持采集配置查询。 | 创建后保留为采集元数据；PLC/DCS/SCADA 凭据不进入本 schema。 |
-| `device_state_snapshots` | business | 设备状态快照事实，记录设备状态、发生时间和来源序列。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + source_sequence` 是幂等唯一键。 | 来源序列唯一索引防重复写入；设备+时间索引用于时间线查询。 | 只追加受控状态事实，不表达控制命令。 |
+| `device_state_snapshots` | business | 设备状态快照事实，记录设备状态、发生时间、来源系统/连接器和来源序列。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_system + source_connector + device_asset_id + source_sequence` 是幂等唯一键，且 source 元数据为空时按 not-distinct 参与唯一性。 | 来源 scope+序列唯一索引防重复写入；设备+时间索引用于时间线、current-state 和 runtime availability 查询。 | 只追加受控状态事实，不表达控制命令。 |
 | `alarm_events` | business | 工业报警生命周期事实，记录 raise/clear、严重级别和外部报警 ID。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + external_alarm_id` 是幂等唯一键；`status` 表示 raised/cleared。 | 外部报警唯一索引防重复；设备+时间索引用于报警时间线。 | 报警创建后可清除；清除只补充 cleared facts，不删除历史。 |
-| `telemetry_summaries` | business | 粗粒度采集汇总 bucket，保存 tag 数值摘要。 | `id` 为 Guid v7 强类型 ID；`source_sequence` 用于同设备/tag/bucket 来源幂等；`sample_count`、`min_value`、`max_value`、`average_value` 保存摘要。 | 来源序列唯一索引防重复；设备+tag+bucket 起点索引用于趋势查询。 | 作为可重算摘要事实保留；原始高速时序不进入平台业务库。 |
+| `telemetry_summaries` | business | 粗粒度采集汇总 bucket，保存 tag 数值摘要和可选来源系统/连接器元数据。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_system + source_connector + device_asset_id + tag_key + source_sequence` 是幂等唯一键，且 source 元数据为空时按 not-distinct 参与唯一性；`sample_count`、`min_value`、`max_value`、`average_value` 保存摘要。 | 来源 scope+序列唯一索引防重复；设备+tag+bucket 起点索引用于趋势查询。 | 作为可重算摘要事实保留；原始高速时序不进入平台业务库。 |
 | `CAPLock` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPPublishedMessage` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPReceivedMessage` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 BusinessIndustrialTelemetry 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `industrial_telemetry` schema；业务代码不直接读写。 |
+
+`device_state_snapshots` 和 `telemetry_summaries` 的 `source_system`、`source_connector` 是 #207 运行事实幂等 scope 的可选来源元数据列；唯一索引把 `organization_id`、`environment_id`、来源元数据、设备和 `source_sequence` 组合为幂等边界，telemetry summary 额外包含 `tag_key`。
 
 ## BusinessMaintenance Schema
 
@@ -364,12 +367,13 @@ Source:
 2. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/MaintenanceEntityTypeConfigurations.cs`
 3. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260523112317_InitialMaintenanceSchema.cs`
 4. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260525050928_AddMaintenanceIntegrationEventDeadLetters.cs`
+5. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260601032417_AddMaintenancePlanRuntimeWindow.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `maintenance_work_orders` | business | 维修工单、报警引用、设备不可用和完工事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_alarm_id` 防止同一报警重复开单；`device_asset_id` 引用 MasterData 设备。 | source alarm 唯一索引用于报警幂等；状态/设备字段支撑维修看板查询。 | 手工或报警创建；完成后保留停机和备件引用事实。 |
 | `maintenance_work_order_spare_part_lines` | business | 维修工单备件需求行，只记录需求和用量事实，不维护库存余额。 | `id` 为 Guid v7 强类型 ID；`maintenance_work_order_id` 归属工单；`sku_code`、`quantity`、`uom_code` 描述备件。 | 工单外键索引用于加载备件行。 | 生命周期随维修工单推进并保留历史。 |
-| `maintenance_plans` | business | 预防性维护计划和保养周期事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + plan_code` 是业务唯一键；`interval`、`starts_on` 和 `owner` 描述计划。 | 计划编码唯一索引防重复；设备维度用于保养计划查询。 | 创建后作为计划事实保留；后续版本化/暂停策略由后续切片补齐。 |
+| `maintenance_plans` | business | 预防性维护计划、保养周期和可选 runtime availability 维护窗口事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + plan_code` 是业务唯一键；`interval`、`starts_on`、`owner`、`window_start_utc` 和 `window_end_utc` 描述计划与维护窗口。 | 计划编码唯一索引用于防重复；设备与窗口字段支撑 availability 查询。 | 创建后作为计划事实保留；窗口边界必须成对提供并按 UTC 保存；后续版本化/暂停策略由后续切片补齐。 |
 | `maintenance_inspections` | business | 点检记录，可关联维护计划或维修工单。 | `id` 为 Guid v7 强类型 ID；`maintenance_plan_id`、`maintenance_work_order_id` 是业务引用；`inspector`、`result` 和 `inspected_at_utc` 保存执行事实。 | 计划/工单引用支持追溯点检记录。 | 点检写入后不可覆盖历史，只通过新记录表达新检查。 |
 | `downtime_reasons` | business | 维护域拥有的停机原因代码表。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + reason_code` 是业务唯一键。 | 原因码唯一索引防重复。 | 作为归因基础数据保留；删除/失效策略后续补齐。 |
 | `integration_event_dead_letters` | system | Maintenance 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid v7；`consumer_name`、`event_id`、`event_type`、`event_version`、`status` 和 `event_json` 保留拒绝事实。 | `consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 | 由 Maintenance 消费 guard 写入；operator replay 后标记 `Replayed`，不删除原始拒绝事实。 |
@@ -377,6 +381,8 @@ Source:
 | `CAPPublishedMessage` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPReceivedMessage` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 BusinessMaintenance 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `maintenance` schema；业务代码不直接读写。 |
+
+`maintenance_plans.window_start_utc` 与 `maintenance_plans.window_end_utc` 是 #207 设备 runtime availability 的可选维护窗口列；窗口边界必须成对提供，且按 UTC 存储。
 
 ## BusinessScheduling Schema
 

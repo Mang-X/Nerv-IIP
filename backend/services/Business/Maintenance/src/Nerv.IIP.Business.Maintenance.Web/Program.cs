@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
@@ -45,7 +46,11 @@ try
                 s.Version = "v1";
             };
         });
-    builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.AddNetCorePalJsonConverters());
+    builder.Services.Configure<JsonOptions>(o =>
+    {
+        o.SerializerOptions.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
+        o.SerializerOptions.AddNetCorePalJsonConverters();
+    });
     builder.Services.AddFluentValidationAutoValidation();
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
@@ -117,6 +122,7 @@ try
     app.MapControllers();
     app.UseFastEndpoints(c =>
     {
+        c.Serializer.Options.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
         c.Endpoints.NameGenerator = ctx =>
             MaintenanceEndpointContracts.TryGet(ctx.EndpointType, out var contract)
                 ? contract.OperationId

@@ -16,7 +16,9 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Messaging.CAP;
 
@@ -432,7 +434,7 @@ public sealed class MesPersistenceContractTests
             "WC-FILL",
             now.AddMinutes(-30),
             null,
-            "maintenance",
+            EquipmentRuntimeReasonCodes.MaintenanceWindow,
             "ASSET-FILL-01"));
         await dbContext.SaveChangesAsync();
 
@@ -468,9 +470,48 @@ public sealed class MesPersistenceContractTests
         Assert.Contains(quality.Issues, x => x.Code == "QUALITY_PLAN_MISSING" && x.Severity == "Blocked");
         Assert.Equal("Blocked", equipment.Status);
         Assert.Contains(equipment.Issues, x =>
-            x.Code == "EQUIPMENT_MAINTENANCE_CONFLICT" &&
+            x.Code == EquipmentRuntimeReasonCodes.MaintenanceWindow &&
             x.SourceSystem == "Maintenance" &&
             x.ReferenceId == "DOWNTIME-MAINT-001");
+    }
+
+    [Fact]
+    public async Task Equipment_readiness_returns_shared_active_alarm_reason_code()
+    {
+        var services = CreateServices(nameof(Equipment_readiness_returns_shared_active_alarm_reason_code));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
+            "org-001",
+            "env-dev",
+            "DOWNTIME-ALARM-001",
+            "WC-OIL",
+            now.AddMinutes(-10),
+            null,
+            EquipmentRuntimeReasonCodes.ActiveAlarm,
+            "DEV-OIL-01"));
+        await dbContext.SaveChangesAsync();
+
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(new MesFoundationReadinessService(dbContext)).Handle(
+            new GetMesFoundationReadinessAreaQuery(
+                "org-001",
+                "env-dev",
+                "equipment",
+                "SITE-01",
+                "LINE-OIL",
+                "WC-OIL",
+                "FG-OIL",
+                "PV-OIL-1",
+                now,
+                now.AddHours(1)),
+            CancellationToken.None);
+
+        var issue = Assert.Single(readiness.Issues);
+        Assert.Equal(EquipmentRuntimeReasonCodes.ActiveAlarm, issue.Code);
+        Assert.Equal("IndustrialTelemetry", issue.SourceSystem);
+        Assert.Equal("DEV-OIL-01", issue.ReferenceDisplayName);
     }
 
     [Fact]
@@ -503,7 +544,7 @@ public sealed class MesPersistenceContractTests
             "WC-FILL",
             now.AddMinutes(-10),
             null,
-            "maintenance",
+            EquipmentRuntimeReasonCodes.MaintenanceWindow,
             "ASSET-FILL-01"));
         await dbContext.SaveChangesAsync();
 
@@ -517,13 +558,125 @@ public sealed class MesPersistenceContractTests
             new ReleaseWorkOrderCommandHandler(dbContext).Handle(
                 new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-EQUIP-001", now.AddMinutes(30)),
                 CancellationToken.None));
-        Assert.Contains("EQUIPMENT_MAINTENANCE_CONFLICT", releaseEquipmentException.Message);
+        Assert.Contains(EquipmentRuntimeReasonCodes.MaintenanceWindow, releaseEquipmentException.Message);
 
         var startException = await Assert.ThrowsAsync<KnownException>(() =>
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-EQUIP-10", "start", now.AddMinutes(35)),
                 CancellationToken.None));
-        Assert.Contains("EQUIPMENT_MAINTENANCE_CONFLICT", startException.Message);
+        Assert.Contains(EquipmentRuntimeReasonCodes.MaintenanceWindow, startException.Message);
+    }
+
+    [Fact]
+    public async Task Operation_start_rejects_same_equipment_reason_code_used_by_readiness()
+    {
+        var services = CreateServices(nameof(Operation_start_rejects_same_equipment_reason_code_used_by_readiness));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-EQUIP-RUNTIME-001", "FG-OIL", "PV-OIL-1", 10m, 20, now.AddHours(8));
+        workOrder.MarkReleased();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-EQUIP-RUNTIME-001",
+            "OP-EQUIP-RUNTIME-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-OIL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
+            "org-001",
+            "env-dev",
+            "DOWNTIME-MAINT-WINDOW-001",
+            "WC-OIL",
+            now.AddMinutes(-10),
+            null,
+            EquipmentRuntimeReasonCodes.MaintenanceWindow,
+            "DEV-OIL-01"));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
+                new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-EQUIP-RUNTIME-10", "start", now.AddMinutes(15)),
+                CancellationToken.None));
+
+        Assert.Contains(EquipmentRuntimeReasonCodes.MaintenanceWindow, exception.Message);
+    }
+
+    [Fact]
+    public async Task Dispatch_rejects_same_equipment_reason_code_used_by_readiness()
+    {
+        var services = CreateServices(nameof(Dispatch_rejects_same_equipment_reason_code_used_by_readiness));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-DISPATCH-RUNTIME-001", "FG-OIL", "PV-OIL-1", 10m, 20, now.AddHours(8));
+        workOrder.MarkReleased();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-DISPATCH-RUNTIME-001",
+            "OP-DISPATCH-RUNTIME-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-OIL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
+            "org-001",
+            "env-dev",
+            "DOWNTIME-DISPATCH-ALARM-001",
+            "WC-OIL",
+            now.AddMinutes(-10),
+            null,
+            EquipmentRuntimeReasonCodes.ActiveAlarm,
+            "DEV-OIL-01"));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new AssignDispatchTaskCommandHandler(dbContext).Handle(
+                new AssignDispatchTaskCommand(
+                    "org-001",
+                    "env-dev",
+                    "OP-DISPATCH-RUNTIME-10",
+                    "operator-001",
+                    "DEV-OIL-01",
+                    "SHIFT-A",
+                    now.AddMinutes(15)),
+                CancellationToken.None));
+
+        Assert.Contains(EquipmentRuntimeReasonCodes.ActiveAlarm, exception.Message);
+    }
+
+    [Fact]
+    public void Equipment_inspection_required_reason_classifies_as_maintenance()
+    {
+        var classification = MesReadinessReasonCodes.ClassifyEquipmentReason(EquipmentRuntimeReasonCodes.InspectionRequired);
+
+        Assert.Equal(EquipmentRuntimeReasonCodes.InspectionRequired, classification.Code);
+        Assert.Equal("Maintenance", classification.SourceSystem);
+    }
+
+    [Fact]
+    public void Equipment_no_eligible_substitute_reason_keeps_shared_code()
+    {
+        var classification = MesReadinessReasonCodes.ClassifyEquipmentReason(EquipmentRuntimeReasonCodes.NoEligibleSubstitute);
+
+        Assert.Equal(EquipmentRuntimeReasonCodes.NoEligibleSubstitute, classification.Code);
+        Assert.NotEqual(EquipmentRuntimeReasonCodes.Downtime, classification.Code);
+        Assert.Equal("BusinessScheduling", classification.SourceSystem);
     }
 
     [Fact]

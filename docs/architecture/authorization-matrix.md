@@ -146,7 +146,7 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 
 ### Business Platform
 
-业务平台权限码用于 ADR 0012 与 ADR 0014 定义的关键链路领域扩展。BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry、BusinessMaintenance 和 BusinessScheduling / APS lite 权限已随对应 MVP 或 #206 进入 IAM seed 或服务授权基线。BusinessScheduling 当前已完成服务端 Endpoint permission metadata、IAM seed 和 BusinessGateway facade 最终用户权限 enforcement。其他业务域权限在实现对应服务时，也必须按本表进入 IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。
+业务平台权限码用于 ADR 0012 与 ADR 0014 定义的关键链路领域扩展。BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BarcodeLabel、BusinessApproval、WMS、BusinessIndustrialTelemetry、BusinessMaintenance 和 BusinessScheduling / APS lite 权限已随对应 MVP、#206 或 #207 进入 IAM seed 或服务授权基线。BusinessScheduling 当前已完成服务端 Endpoint permission metadata、IAM seed 和 BusinessGateway facade 最终用户权限 enforcement。#207 BusinessGateway 设备运行事实 facade 当前对 overview、device 和 availability 强制 `business.iiot.telemetry.read`，对 alarms 强制 `business.iiot.alarms.read`；`business.maintenance.work-orders.read` 与 `business.maintenance.plans.read` 属于 Maintenance 下游/domain catalog 和相关只读权限，当前设备 facade 合并维护窗口时通过 internal service token 调用 Maintenance，并未在 Gateway endpoint 上额外强制这两个 maintenance 权限。其他业务域权限在实现对应服务时，也必须按本表进入 IAM seed、Endpoint 鉴权、OpenAPI 测试和权限测试。
 
 | 权限码 | 建议 principalType | 建议 scope | 说明 |
 | --- | --- | --- | --- |
@@ -227,13 +227,13 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `business.mes.schedules.manage` | `user` / `external-client` / `internal-service` | environment + resource | 触发规则派工、发布或撤销排产版本。 |
 | `business.mes.capacity.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看产能影响、设备不可用和执行阻塞摘要。 |
 | `business.iiot.tags.manage` | `user` / `external-client` | environment + resource | 管理设备 tag 映射、采集点和单位。 |
-| `business.iiot.telemetry.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看设备状态快照、时序摘要和 OEE 输入数据。 |
+| `business.iiot.telemetry.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看设备状态快照、时序摘要和 OEE 输入数据；#207 BusinessGateway equipment overview/device/availability facade 已强制该权限。 |
 | `business.iiot.telemetry.write` | `connector-host` / `external-client` | environment + resource + capability | 写入受控采集样本或状态摘要；不得表达 PLC/DCS 控制授权。 |
-| `business.iiot.alarms.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工业报警、状态和处理进度。 |
+| `business.iiot.alarms.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工业报警、状态和处理进度；#207 BusinessGateway equipment alarms facade 已强制该权限。 |
 | `business.iiot.alarms.write` | `connector-host` / `external-client` | environment + resource + capability | 写入报警产生、清除和状态变化事实。 |
-| `business.maintenance.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看维修工单、故障、停机和维修结果。 |
+| `business.maintenance.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看维修工单、故障、停机和维修结果；#207 设备运行事实相关但当前 Gateway equipment facade 未额外强制该权限。 |
 | `business.maintenance.work-orders.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建、分派、完成维修工单。 |
-| `business.maintenance.plans.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看保养计划、点检计划和执行记录。 |
+| `business.maintenance.plans.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看保养计划、点检计划和执行记录；#207 availability 合并维护窗口时由下游 Maintenance/domain catalog 使用，当前 Gateway equipment facade 未额外强制该权限。 |
 | `business.maintenance.plans.manage` | `user` / `external-client` | environment + resource | 创建、调整和关闭保养计划、点检计划。 |
 
 ## 落地要求

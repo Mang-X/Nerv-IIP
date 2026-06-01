@@ -104,7 +104,7 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
             return
             [
                 NewIssue(
-                    MesReadinessReasonCodes.EquipmentUnavailable,
+                    MesReadinessReasonCodes.Downtime,
                     "未指定工作中心，无法确认设备静态可用性、维修占用、报警和停机状态。",
                     "MasterData",
                     "WorkCenter",

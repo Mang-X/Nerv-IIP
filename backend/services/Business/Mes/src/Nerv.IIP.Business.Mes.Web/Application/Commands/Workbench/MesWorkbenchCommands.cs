@@ -253,6 +253,19 @@ public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbCont
             throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
         }
 
+        var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            task.WorkCenterId,
+            task.WorkOrderId,
+            request.AssignedAtUtc,
+            cancellationToken);
+        if (equipmentIssues.Count > 0)
+        {
+            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+        }
+
         task.Assign(request.AssignedUserId, request.DeviceAssetId, request.ShiftId, request.AssignedAtUtc);
         dbContext.Entry(task).Property(x => x.AssignedUserId).IsModified = true;
         dbContext.Entry(task).Property(x => x.DeviceAssetId).IsModified = true;

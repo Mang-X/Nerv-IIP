@@ -395,6 +395,41 @@ public sealed record BusinessConsoleReleaseSchedulePlanResponse(
     Nerv.IIP.Contracts.Scheduling.SchedulePlanStatusContract Status,
     DateTimeOffset? ReleasedAtUtc);
 
+public sealed record BusinessConsoleEquipmentContextRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleEquipmentOverviewRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetIds);
+
+public sealed record BusinessConsoleEquipmentAvailabilityRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    string? DeviceAssetIds,
+    string? WorkCenterIds);
+
+public sealed record BusinessConsoleEquipmentOverviewResponse(
+    IReadOnlyCollection<BusinessConsoleEquipmentDeviceSummary> Devices,
+    IReadOnlyCollection<Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAvailabilityWindowContract> ActiveBlocks);
+
+public sealed record BusinessConsoleEquipmentDeviceSummary(
+    string DeviceAssetId,
+    string? CurrentState,
+    bool IsSourceFresh,
+    int ActiveAlarmCount,
+    int ActiveBlockCount);
+
+public sealed record BusinessConsoleEquipmentDeviceDetailResponse(
+    Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeCurrentStateResponse CurrentState,
+    Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAvailabilityResponse Availability);
+
+public sealed record BusinessConsoleEquipmentAlarmListResponse(
+    IReadOnlyCollection<Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAlarmSummary> Items);
+
 public sealed record BusinessConsoleErpContextRequest(
     string OrganizationId,
     string EnvironmentId);

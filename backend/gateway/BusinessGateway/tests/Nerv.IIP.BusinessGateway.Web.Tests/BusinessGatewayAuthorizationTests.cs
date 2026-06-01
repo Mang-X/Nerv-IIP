@@ -239,6 +239,10 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001", BusinessGatewayPermissions.SchedulingPlansRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001/gantt", BusinessGatewayPermissions.SchedulingPlansRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/plan-001/release", BusinessGatewayPermissions.SchedulingPlansRelease);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/overview?deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/devices/DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/alarms", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders", BusinessGatewayPermissions.MesWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/work-orders/rush", BusinessGatewayPermissions.MesWorkOrdersManage);

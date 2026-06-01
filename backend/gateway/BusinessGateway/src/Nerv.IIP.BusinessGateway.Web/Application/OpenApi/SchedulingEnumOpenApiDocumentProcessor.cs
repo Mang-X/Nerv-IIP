@@ -1,5 +1,6 @@
 using System.Text.Json;
 using NJsonSchema;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Scheduling;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
@@ -15,6 +16,16 @@ public sealed class SchedulingEnumOpenApiDocumentProcessor : IDocumentProcessor
         [SchemaName<ScheduleConflictSeverityContract>()] = EnumValues<ScheduleConflictSeverityContract>(),
         [SchemaName<ScheduleChangeTypeContract>()] = EnumValues<ScheduleChangeTypeContract>(),
         [SchemaName<ScheduleSplitPolicyContract>()] = EnumValues<ScheduleSplitPolicyContract>(),
+        [SchemaName<EquipmentRuntimeSourceType>()] =
+        [
+            "device-state",
+            "alarm",
+            "downtime",
+            "maintenance-window",
+            "inspection",
+            "stale-source",
+            "manual-block",
+        ],
     };
 
     public void Process(DocumentProcessorContext context)

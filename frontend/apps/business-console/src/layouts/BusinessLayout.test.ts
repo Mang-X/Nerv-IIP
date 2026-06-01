@@ -116,6 +116,8 @@ describe('BusinessLayout', () => {
       {
         title: '设备异常',
         items: [
+          { title: '设备运行看板', to: { path: '/equipment' } },
+          { title: '设备报警', to: { path: '/equipment/alarms' } },
           { title: '设备与停机', to: { path: '/mes/downtime' } },
           { title: '异常与产能', to: { path: '/mes/capacity' } },
           { title: '规则排程', to: { path: '/mes/schedules' } },

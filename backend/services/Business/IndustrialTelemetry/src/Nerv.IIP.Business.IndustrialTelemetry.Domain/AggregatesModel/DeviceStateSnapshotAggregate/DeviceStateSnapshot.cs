@@ -16,7 +16,9 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
         string deviceAssetId,
         string state,
         DateTimeOffset occurredAtUtc,
-        string sourceSequence)
+        string sourceSequence,
+        string? sourceSystem,
+        string? sourceConnector)
     {
         Id = new DeviceStateSnapshotId(Guid.CreateVersion7());
         OrganizationId = IndustrialTelemetryText.Required(organizationId, nameof(organizationId));
@@ -25,6 +27,8 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
         State = IndustrialTelemetryText.RequiredLower(state, nameof(state));
         OccurredAtUtc = occurredAtUtc;
         SourceSequence = IndustrialTelemetryText.Required(sourceSequence, nameof(sourceSequence));
+        SourceSystem = IndustrialTelemetryText.Optional(sourceSystem);
+        SourceConnector = IndustrialTelemetryText.Optional(sourceConnector);
         RecordedAtUtc = DateTimeOffset.UtcNow;
         this.AddDomainEvent(new DeviceStateChangedDomainEvent(this));
     }
@@ -35,6 +39,8 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
     public string State { get; private set; } = string.Empty;
     public DateTimeOffset OccurredAtUtc { get; private set; }
     public string SourceSequence { get; private set; } = string.Empty;
+    public string? SourceSystem { get; private set; }
+    public string? SourceConnector { get; private set; }
     public DateTimeOffset RecordedAtUtc { get; private set; }
 
     public static DeviceStateSnapshot Record(
@@ -43,9 +49,11 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
         string deviceAssetId,
         string state,
         DateTimeOffset occurredAtUtc,
-        string sourceSequence)
+        string sourceSequence,
+        string? sourceSystem = null,
+        string? sourceConnector = null)
     {
-        return new DeviceStateSnapshot(organizationId, environmentId, deviceAssetId, state, occurredAtUtc, sourceSequence);
+        return new DeviceStateSnapshot(organizationId, environmentId, deviceAssetId, state, occurredAtUtc, sourceSequence, sourceSystem, sourceConnector);
     }
 
     public bool IsSameSourceSequence(DeviceStateSnapshot other)
@@ -54,6 +62,8 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
         return OrganizationId == other.OrganizationId
             && EnvironmentId == other.EnvironmentId
             && DeviceAssetId == other.DeviceAssetId
+            && SourceSystem == other.SourceSystem
+            && SourceConnector == other.SourceConnector
             && SourceSequence == other.SourceSequence;
     }
 

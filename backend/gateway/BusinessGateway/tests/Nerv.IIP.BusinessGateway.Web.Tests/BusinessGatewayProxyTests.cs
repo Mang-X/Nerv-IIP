@@ -11,6 +11,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
 
@@ -423,6 +424,242 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Equipment_availability_facade_aggregates_iiot_and_maintenance_runtime_windows()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        var maintenance = new RecordingMaintenanceClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/equipment/availability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
+        Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+        var expectedRequest = new BusinessConsoleEquipmentAvailabilityRequest(
+            "org-001",
+            "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-01T16:00:00Z", CultureInfo.InvariantCulture),
+            "DEV-OIL-01",
+            null);
+        Assert.Equal(expectedRequest, industrialTelemetry.LastAvailabilityRequest);
+        Assert.Equal(expectedRequest, maintenance.LastAvailabilityRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var items = document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray().ToArray();
+        Assert.Contains(items, item => item.GetProperty("sourceReferenceId").GetString() == "alarm-001");
+        Assert.Contains(items, item => item.GetProperty("sourceReferenceId").GetString() == "maintenance-001");
+    }
+
+    [Fact]
+    public async Task Equipment_overview_facade_merges_current_state_for_scoped_devices_without_active_blocks()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient
+        {
+            RuntimeAvailabilityResponse = CreateEmptyAvailabilityResponse(),
+        };
+        var maintenance = new RecordingMaintenanceClient
+        {
+            AvailabilityResponse = CreateEmptyAvailabilityResponse(),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/equipment/overview?organizationId=org-001&environmentId=env-dev&deviceAssetIds=DEV-IDLE-01");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, industrialTelemetry.CurrentStateCallCount);
+        Assert.Equal("DEV-IDLE-01", industrialTelemetry.LastCurrentStateDeviceAssetId);
+        Assert.Equal(new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), industrialTelemetry.LastCurrentStateRequest);
+        Assert.Equal("DEV-IDLE-01", industrialTelemetry.LastAvailabilityRequest!.DeviceAssetIds);
+        Assert.Equal("DEV-IDLE-01", maintenance.LastAvailabilityRequest!.DeviceAssetIds);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Empty(data.GetProperty("activeBlocks").EnumerateArray());
+        var device = Assert.Single(data.GetProperty("devices").EnumerateArray());
+        Assert.Equal("DEV-IDLE-01", device.GetProperty("deviceAssetId").GetString());
+        Assert.Equal("RUNNING", device.GetProperty("currentState").GetString());
+        Assert.True(device.GetProperty("isSourceFresh").GetBoolean());
+        Assert.Equal(1, device.GetProperty("activeAlarmCount").GetInt32());
+        Assert.Equal(0, device.GetProperty("activeBlockCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task Equipment_overview_normalizes_device_scope_and_rejects_empty_or_excessive_scope()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient
+        {
+            RuntimeAvailabilityResponse = CreateEmptyAvailabilityResponse(),
+        };
+        var maintenance = new RecordingMaintenanceClient
+        {
+            AvailabilityResponse = CreateEmptyAvailabilityResponse(),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var duplicateResponse = await client.GetAsync("/api/business-console/v1/equipment/overview?organizationId=org-001&environmentId=env-dev&deviceAssetIds=DEV-IDLE-01,%20DEV-IDLE-01,,DEV-RUN-02");
+        var emptyResponse = await client.GetAsync("/api/business-console/v1/equipment/overview?organizationId=org-001&environmentId=env-dev&deviceAssetIds=,,,");
+        var tooManyIds = string.Join(',', Enumerable.Range(1, 51).Select(index => $"DEV-{index:00}"));
+        var tooManyResponse = await client.GetAsync($"/api/business-console/v1/equipment/overview?organizationId=org-001&environmentId=env-dev&deviceAssetIds={tooManyIds}");
+
+        Assert.Equal(HttpStatusCode.OK, duplicateResponse.StatusCode);
+        Assert.Equal(2, industrialTelemetry.CurrentStateCallCount);
+        Assert.Equal(new[] { "DEV-IDLE-01", "DEV-RUN-02" }, industrialTelemetry.CurrentStateDeviceAssetIds);
+        Assert.Equal("DEV-IDLE-01,DEV-RUN-02", industrialTelemetry.LastAvailabilityRequest!.DeviceAssetIds);
+        Assert.Equal("DEV-IDLE-01,DEV-RUN-02", maintenance.LastAvailabilityRequest!.DeviceAssetIds);
+        using var document = JsonDocument.Parse(await duplicateResponse.Content.ReadAsStringAsync());
+        Assert.Equal(
+            new[] { "DEV-IDLE-01", "DEV-RUN-02" },
+            document.RootElement.GetProperty("data").GetProperty("devices")
+                .EnumerateArray()
+                .Select(device => device.GetProperty("deviceAssetId").GetString()!)
+                .ToArray());
+
+        var callCountAfterDuplicateRequest = industrialTelemetry.CurrentStateCallCount;
+        Assert.Equal(HttpStatusCode.BadRequest, emptyResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, tooManyResponse.StatusCode);
+        Assert.Equal(callCountAfterDuplicateRequest, industrialTelemetry.CurrentStateCallCount);
+    }
+
+    [Fact]
+    public async Task Equipment_facade_deduplicates_and_sorts_merged_runtime_windows()
+    {
+        var duplicate = CreateWindow(
+            "DEV-OIL-01",
+            "dup-001",
+            EquipmentRuntimeSourceType.Alarm,
+            EquipmentRuntimeReasonCodes.ActiveAlarm,
+            EquipmentRuntimeSeverity.Critical,
+            "2026-06-01T10:00:00Z",
+            "2026-06-01T11:00:00Z");
+        var early = CreateWindow(
+            "DEV-OIL-01",
+            "maint-001",
+            EquipmentRuntimeSourceType.MaintenanceWindow,
+            EquipmentRuntimeReasonCodes.MaintenanceWindow,
+            EquipmentRuntimeSeverity.Warning,
+            "2026-06-01T09:00:00Z",
+            "2026-06-01T10:00:00Z");
+        var otherDevice = CreateWindow(
+            "DEV-PACK-02",
+            "down-001",
+            EquipmentRuntimeSourceType.Downtime,
+            EquipmentRuntimeReasonCodes.Downtime,
+            EquipmentRuntimeSeverity.Blocked,
+            "2026-06-01T08:00:00Z",
+            "2026-06-01T09:00:00Z");
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient
+        {
+            RuntimeAvailabilityResponse = CreateAvailabilityResponse(duplicate, otherDevice),
+            DeviceRuntimeAvailabilityResponse = CreateAvailabilityResponse(duplicate),
+        };
+        var maintenance = new RecordingMaintenanceClient
+        {
+            AvailabilityResponse = CreateAvailabilityResponse(duplicate, early),
+            AssetAvailabilityResponse = CreateAvailabilityResponse(duplicate, early),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var overview = await client.GetAsync("/api/business-console/v1/equipment/overview?organizationId=org-001&environmentId=env-dev&deviceAssetIds=DEV-OIL-01");
+        var availability = await client.GetAsync("/api/business-console/v1/equipment/availability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01");
+        var detail = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-OIL-01?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, overview.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, availability.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        using var overviewDocument = JsonDocument.Parse(await overview.Content.ReadAsStringAsync());
+        Assert.Equal(2, overviewDocument.RootElement.GetProperty("data").GetProperty("devices")[0].GetProperty("activeBlockCount").GetInt32());
+        Assert.Equal(
+            new[] { "maint-001", "dup-001", "down-001" },
+            overviewDocument.RootElement.GetProperty("data").GetProperty("activeBlocks")
+                .EnumerateArray()
+                .Select(item => item.GetProperty("sourceReferenceId").GetString()!)
+                .ToArray());
+        using var availabilityDocument = JsonDocument.Parse(await availability.Content.ReadAsStringAsync());
+        Assert.Equal(
+            new[] { "maint-001", "dup-001", "down-001" },
+            availabilityDocument.RootElement.GetProperty("data").GetProperty("items")
+                .EnumerateArray()
+                .Select(item => item.GetProperty("sourceReferenceId").GetString()!)
+                .ToArray());
+        using var detailDocument = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+        Assert.Equal(
+            new[] { "maint-001", "dup-001" },
+            detailDocument.RootElement.GetProperty("data").GetProperty("availability").GetProperty("items")
+                .EnumerateArray()
+                .Select(item => item.GetProperty("sourceReferenceId").GetString()!)
+                .ToArray());
+    }
+
+    [Fact]
+    public async Task Equipment_device_detail_facade_calls_current_state_and_device_runtime_availability()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        var maintenance = new RecordingMaintenanceClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-OIL-01?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("DEV-OIL-01", industrialTelemetry.LastCurrentStateDeviceAssetId);
+        Assert.Equal(new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), industrialTelemetry.LastCurrentStateRequest);
+        Assert.Equal("DEV-OIL-01", industrialTelemetry.LastDeviceAvailabilityDeviceAssetId);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("RUNNING", data.GetProperty("currentState").GetProperty("currentState").GetString());
+        Assert.Contains(data.GetProperty("availability").GetProperty("items").EnumerateArray(), item =>
+            item.GetProperty("sourceReferenceId").GetString() == "alarm-001");
+    }
+
+    [Fact]
     public async Task Scheduling_http_client_sends_internal_token_and_downstream_routes()
     {
         var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, SchedulingResponseFor(request)));
@@ -453,6 +690,69 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Post, handler.Requests[5].Method);
         Assert.Equal("/api/business/v1/scheduling/plans/plan-001/release", handler.Requests[5].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[5].RequestUri!.Query.TrimStart('?'));
+    }
+
+    [Fact]
+    public async Task Equipment_http_clients_send_internal_token_and_downstream_routes()
+    {
+        var telemetryHandler = new RecordingHandler(request => request.RequestUri!.AbsolutePath == "/api/business/v1/iiot/alarms"
+            ? JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new[]
+                {
+                    new
+                    {
+                        alarmEventId = "alarm-001",
+                        organizationId = "org-001",
+                        environmentId = "env-dev",
+                        deviceAssetId = "DEV-OIL-01",
+                        alarmCode = "TEMP_HIGH",
+                        severity = "critical",
+                        status = "raised",
+                        raisedAtUtc = "2026-06-01T08:20:00Z",
+                        externalAlarmId = "EXT-ALARM-001",
+                    },
+                },
+            })
+            : JsonResponse(HttpStatusCode.OK, new
+        {
+            data = CreateAvailabilityResponse("alarm-001", EquipmentRuntimeSourceType.Alarm),
+        }));
+        var maintenanceHandler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = CreateAvailabilityResponse("maintenance-001", EquipmentRuntimeSourceType.MaintenanceWindow),
+        }));
+        using var telemetryHttpClient = new HttpClient(telemetryHandler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        using var maintenanceHttpClient = new HttpClient(maintenanceHandler) { BaseAddress = new Uri("http://maintenance.local") };
+        var telemetry = new HttpBusinessIndustrialTelemetryClient(telemetryHttpClient);
+        var maintenance = new HttpBusinessMaintenanceClient(maintenanceHttpClient);
+        var request = new BusinessConsoleEquipmentAvailabilityRequest(
+            "org-001",
+            "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-01T16:00:00Z", CultureInfo.InvariantCulture),
+            "DEV-OIL-01",
+            null);
+
+        await telemetry.GetRuntimeAvailabilityAsync("internal-token-001", request, CancellationToken.None);
+        await telemetry.GetDeviceRuntimeAvailabilityAsync("internal-token-001", "DEV-OIL-01", request, CancellationToken.None);
+        await telemetry.GetDeviceCurrentStateAsync("internal-token-001", "DEV-OIL-01", new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), CancellationToken.None);
+        await telemetry.ListActiveAlarmsAsync("internal-token-001", new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), CancellationToken.None);
+        await maintenance.GetAvailabilityWindowsAsync("internal-token-001", request, CancellationToken.None);
+        await maintenance.GetAssetAvailabilityWindowsAsync("internal-token-001", "DEV-OIL-01", request, CancellationToken.None);
+
+        Assert.All(telemetryHandler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter));
+        Assert.Equal("/api/business/v1/iiot/runtime-availability", telemetryHandler.Requests[0].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-01T16%3A00%3A00.0000000%2B00%3A00&deviceAssetIds=DEV-OIL-01", telemetryHandler.Requests[0].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("/api/business/v1/iiot/devices/DEV-OIL-01/runtime-availability", telemetryHandler.Requests[1].RequestUri!.AbsolutePath);
+        Assert.Equal("/api/business/v1/iiot/devices/DEV-OIL-01/current-state", telemetryHandler.Requests[2].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", telemetryHandler.Requests[2].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("/api/business/v1/iiot/alarms", telemetryHandler.Requests[3].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev&status=raised", telemetryHandler.Requests[3].RequestUri!.Query.TrimStart('?'));
+        Assert.All(maintenanceHandler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter));
+        Assert.Equal("/api/business/v1/maintenance/availability-windows", maintenanceHandler.Requests[0].RequestUri!.AbsolutePath);
+        Assert.Equal(telemetryHandler.Requests[0].RequestUri!.Query, maintenanceHandler.Requests[0].RequestUri!.Query);
+        Assert.Equal("/api/business/v1/maintenance/assets/DEV-OIL-01/availability-windows", maintenanceHandler.Requests[1].RequestUri!.AbsolutePath);
     }
 
     [Fact]
@@ -1146,6 +1446,62 @@ public sealed class BusinessGatewayProxyTests
     {
         Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
     };
+
+    internal static EquipmentRuntimeAvailabilityResponse CreateAvailabilityResponse(
+        string sourceReferenceId,
+        EquipmentRuntimeSourceType sourceType) =>
+        CreateAvailabilityResponse(CreateWindow(
+            "DEV-OIL-01",
+            sourceReferenceId,
+            sourceType,
+            sourceType == EquipmentRuntimeSourceType.Alarm
+                ? EquipmentRuntimeReasonCodes.ActiveAlarm
+                : EquipmentRuntimeReasonCodes.MaintenanceWindow,
+            sourceType == EquipmentRuntimeSourceType.Alarm
+                ? EquipmentRuntimeSeverity.Critical
+                : EquipmentRuntimeSeverity.Warning,
+            "2026-06-01T09:00:00Z",
+            "2026-06-01T10:00:00Z"));
+
+    internal static EquipmentRuntimeAvailabilityResponse CreateAvailabilityResponse(
+        params EquipmentRuntimeAvailabilityWindowContract[] windows) =>
+        new(
+            1,
+            "org-001",
+            "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-01T16:00:00Z", CultureInfo.InvariantCulture),
+            windows);
+
+    internal static EquipmentRuntimeAvailabilityWindowContract CreateWindow(
+        string deviceAssetId,
+        string sourceReferenceId,
+        EquipmentRuntimeSourceType sourceType,
+        string reasonCode,
+        EquipmentRuntimeSeverity severity,
+        string startUtc,
+        string endUtc) =>
+        new(
+            deviceAssetId,
+            "WC-OIL",
+            EquipmentRuntimeAvailabilityStatus.Unavailable,
+            reasonCode,
+            severity,
+            DateTimeOffset.Parse(startUtc, CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(endUtc, CultureInfo.InvariantCulture),
+            sourceType,
+            sourceReferenceId,
+            sourceReferenceId,
+            []);
+
+    internal static EquipmentRuntimeAvailabilityResponse CreateEmptyAvailabilityResponse() =>
+        new(
+            1,
+            "org-001",
+            "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-01T16:00:00Z", CultureInfo.InvariantCulture),
+            []);
 
     private static SchedulingProblemContract CreateSchedulingProblem() => new(
         ContractVersion: 1,
@@ -1886,6 +2242,142 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
             request.PlanId,
             SchedulePlanStatusContract.Released,
             DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)));
+    }
+}
+
+internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTelemetryClient
+{
+    public int AvailabilityCallCount { get; private set; }
+
+    public int CurrentStateCallCount { get; private set; }
+
+    public List<string> CurrentStateDeviceAssetIds { get; } = [];
+
+    public string? LastInternalToken { get; private set; }
+
+    public BusinessConsoleEquipmentAvailabilityRequest? LastAvailabilityRequest { get; private set; }
+
+    public string? LastDeviceAvailabilityDeviceAssetId { get; private set; }
+
+    public string? LastCurrentStateDeviceAssetId { get; private set; }
+
+    public BusinessConsoleEquipmentContextRequest? LastCurrentStateRequest { get; private set; }
+
+    public EquipmentRuntimeAvailabilityResponse? RuntimeAvailabilityResponse { get; init; }
+
+    public EquipmentRuntimeAvailabilityResponse? DeviceRuntimeAvailabilityResponse { get; init; }
+
+    public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
+        string internalBearerToken,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        AvailabilityCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastAvailabilityRequest = request;
+        return Task.FromResult(RuntimeAvailabilityResponse
+            ?? BusinessGatewayProxyTests.CreateAvailabilityResponse("alarm-001", EquipmentRuntimeSourceType.Alarm));
+    }
+
+    public Task<EquipmentRuntimeAvailabilityResponse> GetDeviceRuntimeAvailabilityAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeviceAvailabilityDeviceAssetId = deviceAssetId;
+        LastAvailabilityRequest = request;
+        return Task.FromResult(DeviceRuntimeAvailabilityResponse
+            ?? BusinessGatewayProxyTests.CreateAvailabilityResponse("alarm-001", EquipmentRuntimeSourceType.Alarm));
+    }
+
+    public Task<EquipmentRuntimeCurrentStateResponse> GetDeviceCurrentStateAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        CurrentStateCallCount++;
+        CurrentStateDeviceAssetIds.Add(deviceAssetId);
+        LastInternalToken = internalBearerToken;
+        LastCurrentStateDeviceAssetId = deviceAssetId;
+        LastCurrentStateRequest = request;
+        return Task.FromResult(new EquipmentRuntimeCurrentStateResponse(
+            1,
+            request.OrganizationId,
+            request.EnvironmentId,
+            deviceAssetId,
+            "RUNNING",
+            DateTimeOffset.Parse("2026-06-01T08:10:00Z", CultureInfo.InvariantCulture),
+            true,
+            [
+                new EquipmentRuntimeAlarmSummary(
+                    "alarm-001",
+                    deviceAssetId,
+                    "TEMP_HIGH",
+                    "critical",
+                    DateTimeOffset.Parse("2026-06-01T08:20:00Z", CultureInfo.InvariantCulture),
+                "EXT-ALARM-001"),
+            ]));
+    }
+
+    public Task<BusinessConsoleEquipmentAlarmListResponse> ListActiveAlarmsAsync(
+        string internalBearerToken,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEquipmentAlarmListResponse(
+        [
+            new EquipmentRuntimeAlarmSummary(
+                "alarm-001",
+                "DEV-OIL-01",
+                "TEMP_HIGH",
+                "critical",
+                DateTimeOffset.Parse("2026-06-01T08:20:00Z", CultureInfo.InvariantCulture),
+                "EXT-ALARM-001"),
+        ]));
+    }
+}
+
+internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
+{
+    public int AvailabilityCallCount { get; private set; }
+
+    public string? LastInternalToken { get; private set; }
+
+    public BusinessConsoleEquipmentAvailabilityRequest? LastAvailabilityRequest { get; private set; }
+
+    public string? LastDeviceAssetId { get; private set; }
+
+    public EquipmentRuntimeAvailabilityResponse? AvailabilityResponse { get; init; }
+
+    public EquipmentRuntimeAvailabilityResponse? AssetAvailabilityResponse { get; init; }
+
+    public Task<EquipmentRuntimeAvailabilityResponse> GetAvailabilityWindowsAsync(
+        string internalBearerToken,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        AvailabilityCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastAvailabilityRequest = request;
+        return Task.FromResult(AvailabilityResponse
+            ?? BusinessGatewayProxyTests.CreateAvailabilityResponse("maintenance-001", EquipmentRuntimeSourceType.MaintenanceWindow));
+    }
+
+    public Task<EquipmentRuntimeAvailabilityResponse> GetAssetAvailabilityWindowsAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeviceAssetId = deviceAssetId;
+        LastAvailabilityRequest = request;
+        return Task.FromResult(AssetAvailabilityResponse
+            ?? BusinessGatewayProxyTests.CreateAvailabilityResponse("maintenance-001", EquipmentRuntimeSourceType.MaintenanceWindow));
     }
 }
 
