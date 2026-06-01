@@ -204,6 +204,8 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         {
             unscheduledOperations.Add(SchedulePlanUnscheduledOperation.FromContract(unscheduled));
         }
+
+        this.AddDomainEvent(new SchedulePlanGeneratedDomainEvent(this));
     }
 
     public void AddAssignment(ScheduleAssignmentContract assignment)

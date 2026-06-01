@@ -7,9 +7,7 @@ internal static class SchedulePlanContractMapper
 {
     public static SchedulePlanContract ToContract(SchedulePlan plan)
     {
-        var status = plan.Status == SchedulePlanLifecycleStatus.Released
-            ? SchedulePlanStatusContract.Released
-            : SchedulePlanStatusContract.Generated;
+        var status = ToContractStatus(plan.Status);
         var assignments = plan.Assignments
             .OrderBy(x => x.StartUtc)
             .ThenBy(x => x.ResourceId, StringComparer.Ordinal)
@@ -132,6 +130,16 @@ internal static class SchedulePlanContractMapper
             assignment.OperationId,
             ScheduleChangeTypeContract.Added,
             "Scheduled by APS lite.");
+    }
+
+    public static SchedulePlanStatusContract ToContractStatus(SchedulePlanLifecycleStatus status)
+    {
+        return status switch
+        {
+            SchedulePlanLifecycleStatus.Generated => SchedulePlanStatusContract.Generated,
+            SchedulePlanLifecycleStatus.Released => SchedulePlanStatusContract.Released,
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported schedule plan lifecycle status.")
+        };
     }
 
     public static SchedulePlanContract WithStatus(SchedulePlanContract plan, SchedulePlanStatusContract status)

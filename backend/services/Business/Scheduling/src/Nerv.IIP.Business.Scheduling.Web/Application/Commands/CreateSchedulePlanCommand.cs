@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
@@ -33,9 +36,7 @@ public sealed class CreateSchedulePlanCommandHandler(
 {
     public async Task<SchedulePlanContract> Handle(CreateSchedulePlanCommand request, CancellationToken cancellationToken)
     {
-        var generatedAtUtc = timeProvider.GetUtcNow();
-        var preview = scheduler.Schedule(request.Problem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
-        var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
+        var problemFingerprint = CalculateProblemFingerprint(request.Problem);
         var existingSnapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleOrDefaultAsync(
                 x => x.OrganizationId == request.Problem.OrganizationId &&
@@ -44,7 +45,7 @@ public sealed class CreateSchedulePlanCommandHandler(
                 cancellationToken);
         if (existingSnapshot is not null)
         {
-            if (!string.Equals(existingSnapshot.ProblemFingerprint, generated.ProblemFingerprint, StringComparison.Ordinal))
+            if (!string.Equals(existingSnapshot.ProblemFingerprint, problemFingerprint, StringComparison.Ordinal))
             {
                 throw new KnownException($"Schedule problem already exists with a different fingerprint, ProblemId = {request.Problem.ProblemId}");
             }
@@ -63,12 +64,15 @@ public sealed class CreateSchedulePlanCommandHandler(
             return SchedulePlanContractMapper.ToContract(existingPlan);
         }
 
+        var generatedAtUtc = timeProvider.GetUtcNow();
+        var preview = scheduler.Schedule(request.Problem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
+        var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
         dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             request.Problem.ProblemId,
             request.Problem.ContractVersion,
             request.Problem.OrganizationId,
             request.Problem.EnvironmentId,
-            generated.ProblemFingerprint,
+            problemFingerprint,
             request.Problem.HorizonStartUtc,
             request.Problem.HorizonEndUtc,
             generatedAtUtc));
@@ -77,5 +81,13 @@ public sealed class CreateSchedulePlanCommandHandler(
             request.Problem.EnvironmentId,
             generated));
         return generated;
+    }
+
+    private static string CalculateProblemFingerprint(SchedulingProblemContract problem)
+    {
+        var normalizedProblem = SchedulingProblemNormalizer.Normalize(problem);
+        var json = JsonSerializer.Serialize(normalizedProblem, SchedulingJson.Options);
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 }

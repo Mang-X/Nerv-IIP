@@ -373,7 +373,9 @@ public sealed record BusinessConsoleAcceptPlanningSuggestionRequest(
 
 public sealed record BusinessConsoleSchedulingContextRequest(
     string OrganizationId,
-    string EnvironmentId);
+    string EnvironmentId,
+    int? PageIndex = null,
+    int? PageSize = null);
 
 public sealed record BusinessConsoleSchedulingPlanRequest(
     [property: RouteParam] string PlanId,

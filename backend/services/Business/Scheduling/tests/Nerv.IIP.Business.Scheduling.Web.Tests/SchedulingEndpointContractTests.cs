@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Auth;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -64,6 +65,27 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public async Task Testing_startup_requires_explicit_postgresql_connection_string_when_persistence_is_not_replaced()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("ConnectionStrings:PostgreSQL", string.Empty);
+            });
+
+        var exception = await Record.ExceptionAsync(async () =>
+        {
+            using var client = factory.CreateClient();
+            await client.GetAsync("/health");
+        });
+
+        Assert.NotNull(exception);
+        Assert.Contains("ConnectionStrings:PostgreSQL", exception.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Preview_returns_deterministic_shock_absorber_plan_without_persisting_release_state()
     {
         await using var provider = CreateInMemoryProvider();
@@ -113,6 +135,58 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public async Task List_caps_default_page_size_and_keeps_stable_descending_order()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        for (var index = 0; index < 105; index++)
+        {
+            dbContext.SchedulePlans.Add(CreatePersistedPlan(
+                planId: $"plan-{index:000}",
+                problemId: $"problem-{index:000}",
+                generatedAtUtc: FixedNow.AddMinutes(index)));
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListSchedulePlansQueryHandler(dbContext);
+
+        var results = await handler.Handle(
+            new ListSchedulePlansQuery("org-001", "prod"),
+            CancellationToken.None);
+
+        Assert.Equal(100, results.Count);
+        Assert.Equal("plan-104", results.First().PlanId);
+        Assert.Equal("plan-005", results.Last().PlanId);
+    }
+
+    [Fact]
+    public async Task List_applies_requested_page_after_clamping_page_size()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        for (var index = 0; index < 105; index++)
+        {
+            dbContext.SchedulePlans.Add(CreatePersistedPlan(
+                planId: $"plan-{index:000}",
+                problemId: $"problem-{index:000}",
+                generatedAtUtc: FixedNow.AddMinutes(index)));
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListSchedulePlansQueryHandler(dbContext);
+
+        var results = await handler.Handle(
+            new ListSchedulePlansQuery("org-001", "prod", PageIndex: 1, PageSize: 250),
+            CancellationToken.None);
+
+        Assert.Equal(5, results.Count);
+        Assert.Equal("plan-004", results.First().PlanId);
+        Assert.Equal("plan-000", results.Last().PlanId);
+    }
+
+    [Fact]
     public async Task Create_is_idempotent_for_same_problem_id_and_same_fingerprint()
     {
         await using var provider = CreateInMemoryProvider();
@@ -128,6 +202,26 @@ public sealed class SchedulingEndpointContractTests
 
         Assert.Equal(first.PlanId, second.PlanId);
         Assert.Equal(first.ProblemFingerprint, second.ProblemFingerprint);
+        Assert.Equal(1, await dbContext.ScheduleProblems.CountAsync(x => x.ProblemId == command.Problem.ProblemId, CancellationToken.None));
+        Assert.Equal(1, await dbContext.SchedulePlans.CountAsync(x => x.ProblemId == command.Problem.ProblemId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Create_idempotent_retry_returns_existing_plan_without_entering_generation_path()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var initialHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var command = new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem());
+        var existing = await initialHandler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var retryHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new ThrowingTimeProvider());
+
+        var retried = await retryHandler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(existing.PlanId, retried.PlanId);
+        Assert.Equal(existing.ProblemFingerprint, retried.ProblemFingerprint);
         Assert.Equal(1, await dbContext.ScheduleProblems.CountAsync(x => x.ProblemId == command.Problem.ProblemId, CancellationToken.None));
         Assert.Equal(1, await dbContext.SchedulePlans.CountAsync(x => x.ProblemId == command.Problem.ProblemId, CancellationToken.None));
     }
@@ -271,6 +365,31 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal(SchedulePlanStatusContract.Released, first.Status);
         Assert.Equal(SchedulePlanStatusContract.Released, second.Status);
         Assert.Equal(first.ReleasedAtUtc, second.ReleasedAtUtc);
+    }
+
+    [Fact]
+    public async Task Release_updates_header_without_tracking_plan_child_collections()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var seedScope = provider.CreateScope();
+        var seedContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var plan = CreatePersistedPlan("plan-release-001", "problem-release-001", FixedNow);
+        seedContext.SchedulePlans.Add(plan);
+        await seedContext.SaveChangesAsync(CancellationToken.None);
+
+        using var releaseScope = provider.CreateScope();
+        var releaseContext = releaseScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(
+            releaseContext,
+            new FixedTimeProvider(FixedNow.AddHours(2)));
+
+        var response = await releaseHandler.Handle(
+            new ReleaseSchedulePlanCommand("plan-release-001", "org-001", "prod"),
+            CancellationToken.None);
+
+        Assert.Equal(SchedulePlanStatusContract.Released, response.Status);
+        Assert.DoesNotContain(releaseContext.ChangeTracker.Entries(), x =>
+            x.Entity is SchedulePlanAssignment or SchedulePlanResourceLoad or SchedulePlanConflict or SchedulePlanUnscheduledOperation);
     }
 
     [Fact]
@@ -433,6 +552,66 @@ public sealed class SchedulingEndpointContractTests
         };
     }
 
+    private static SchedulePlan CreatePersistedPlan(
+        string planId,
+        string problemId,
+        DateTimeOffset generatedAtUtc)
+    {
+        return SchedulePlan.FromGeneratedContract("org-001", "prod", new SchedulePlanContract(
+            ContractVersion: 1,
+            PlanId: planId,
+            ProblemId: problemId,
+            ProblemFingerprint: $"fingerprint-{planId}",
+            AlgorithmVersion: "aps-lite-v1",
+            Status: SchedulePlanStatusContract.Generated,
+            GeneratedAtUtc: generatedAtUtc,
+            Assignments:
+            [
+                new ScheduleAssignmentContract(
+                    AssignmentId: $"assign-{planId}",
+                    OrderId: $"wo-{planId}",
+                    OperationId: $"op-{planId}",
+                    OperationSequence: 10,
+                    ResourceId: "DEV-OIL-01",
+                    WorkCenterId: "WC-OIL",
+                    StartUtc: generatedAtUtc,
+                    EndUtc: generatedAtUtc.AddMinutes(30),
+                    IsLocked: false,
+                    ExplanationCode: "scheduled")
+            ],
+            ResourceLoads:
+            [
+                new ScheduleResourceLoadContract(
+                    ResourceId: "DEV-OIL-01",
+                    WindowStartUtc: generatedAtUtc,
+                    WindowEndUtc: generatedAtUtc.AddHours(8),
+                    AssignedMinutes: 30,
+                    AvailableMinutes: 480,
+                    Utilization: 0.0625m)
+            ],
+            Conflicts:
+            [
+                new ScheduleConflictContract(
+                    ConflictId: $"conflict-{planId}",
+                    ReasonCode: ScheduleConflictReasonCodeContract.DueDate,
+                    Severity: ScheduleConflictSeverityContract.Warning,
+                    OrderId: $"wo-{planId}",
+                    OperationId: $"op-{planId}",
+                    ResourceId: "DEV-OIL-01",
+                    Message: "Assignment finishes after due date.")
+            ],
+            UnscheduledOperations:
+            [
+                new UnscheduledOperationContract(
+                    OrderId: $"wo-unscheduled-{planId}",
+                    OperationId: $"op-unscheduled-{planId}",
+                    ReasonCode: ScheduleConflictReasonCodeContract.NoEligibleResource,
+                    Message: "No eligible resource.")
+            ],
+            ChangeSummary: [],
+            GanttItems: []));
+    }
+
     private static HttpRequestMessage JsonRequest<T>(HttpMethod method, string requestUri, T body)
     {
         var request = new HttpRequestMessage(method, requestUri);
@@ -458,6 +637,7 @@ public sealed class SchedulingEndpointContractTests
         {
             builder.UseSetting("environment", "Testing");
             builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            builder.UseSetting("ConnectionStrings:PostgreSQL", "Host=unused;Database=nerv_iip_scheduling_live_http;Username=nerv;Password=nerv");
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ApplicationDbContext>();
@@ -490,6 +670,14 @@ public sealed class SchedulingEndpointContractTests
         public override DateTimeOffset GetUtcNow()
         {
             return utcNow;
+        }
+    }
+
+    private sealed class ThrowingTimeProvider : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow()
+        {
+            throw new InvalidOperationException("The generation path should not be entered for idempotent retries.");
         }
     }
 

@@ -1,6 +1,12 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using NJsonSchema;
+using NJsonSchema.Generation;
+using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using NSwag;
+using NSwag.Generation;
+using NSwag.Generation.Processors.Contexts;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -118,6 +124,14 @@ public sealed class BusinessGatewayOpenApiTests
             "environmentId");
         AssertQueryParameters(
             paths,
+            "/api/business-console/v1/scheduling/plans",
+            "get",
+            "organizationId",
+            "environmentId",
+            "pageIndex",
+            "pageSize");
+        AssertQueryParameters(
+            paths,
             "/api/business-console/v1/scheduling/plans/{planId}",
             "get",
             "organizationId",
@@ -139,6 +153,36 @@ public sealed class BusinessGatewayOpenApiTests
         AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleConflictSeverityContract", "info", "warning", "error");
         AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleChangeTypeContract", "added", "moved", "delayed", "preserved", "blocked");
         AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleSplitPolicyContract", "nonSplittable");
+    }
+
+    [Fact]
+    public void Scheduling_enum_processor_fails_with_diagnostic_when_expected_schema_is_missing()
+    {
+        var document = new OpenApiDocument();
+        var processor = new SchedulingEnumOpenApiDocumentProcessor();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => processor.Process(CreateDocumentProcessorContext(document)));
+
+        Assert.Contains("Missing Scheduling enum OpenAPI schema", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("NervIIPContractsSchedulingSchedulePlanStatusContract", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Scheduling_enum_processor_replaces_stale_enum_values_and_names()
+    {
+        var document = new OpenApiDocument();
+        var schema = new JsonSchema { Type = JsonObjectType.Integer };
+        schema.Enumeration.Add(0);
+        schema.EnumerationNames.Add("Generated");
+        document.Components.Schemas["NervIIPContractsSchedulingSchedulePlanStatusContract"] = schema;
+        AddSchedulingEnumSchemasExcept(document, "NervIIPContractsSchedulingSchedulePlanStatusContract");
+        var processor = new SchedulingEnumOpenApiDocumentProcessor();
+
+        processor.Process(CreateDocumentProcessorContext(document));
+
+        Assert.Equal(JsonObjectType.String, schema.Type);
+        Assert.Equal(["preview", "generated", "released"], schema.Enumeration.Select(value => Assert.IsType<string>(value)).ToArray());
+        Assert.Empty(schema.EnumerationNames);
     }
 
     private static void AssertOperationId(JsonElement paths, string path, string method, string operationId)
@@ -205,4 +249,30 @@ public sealed class BusinessGatewayOpenApiTests
 
     private static bool IsHttpMethod(string method) =>
         method is "get" or "post" or "put" or "patch" or "delete" or "head" or "options" or "trace";
+
+    private static DocumentProcessorContext CreateDocumentProcessorContext(OpenApiDocument document)
+    {
+        var settings = new OpenApiDocumentGeneratorSettings();
+        var resolver = new JsonSchemaResolver(document, settings.SchemaSettings);
+        var generator = new JsonSchemaGenerator(settings.SchemaSettings);
+        return new DocumentProcessorContext(document, [], [], resolver, generator, settings);
+    }
+
+    private static void AddSchedulingEnumSchemasExcept(OpenApiDocument document, string excludedSchemaName)
+    {
+        foreach (var schemaName in new[]
+        {
+            "NervIIPContractsSchedulingSchedulePlanStatusContract",
+            "NervIIPContractsSchedulingScheduleConflictReasonCodeContract",
+            "NervIIPContractsSchedulingScheduleConflictSeverityContract",
+            "NervIIPContractsSchedulingScheduleChangeTypeContract",
+            "NervIIPContractsSchedulingScheduleSplitPolicyContract",
+        })
+        {
+            if (!string.Equals(schemaName, excludedSchemaName, StringComparison.Ordinal))
+            {
+                document.Components.Schemas[schemaName] = new JsonSchema();
+            }
+        }
+    }
 }

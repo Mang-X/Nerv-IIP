@@ -218,7 +218,7 @@ internal static class SchedulingProblemNormalizer
     {
         var duplicates = items
             .GroupBy(keySelector, StringComparer.Ordinal)
-            .Where(x => string.IsNullOrWhiteSpace(x.Key) || x.Count() > 1)
+            .Where(x => x.Count() > 1)
             .Select(x => x.Key)
             .ToList();
         if (duplicates.Count != 0)
@@ -672,7 +672,7 @@ file sealed class SchedulerState
     {
         var qualityBlockEnd = resourceQualityBlocks
             .Where(x => x.BlockedUntilUtc.HasValue)
-            .Where(x => Overlaps(startUtc, endUtc, startUtc, x.BlockedUntilUtc!.Value))
+            .Where(x => Overlaps(startUtc, endUtc, QualityBlockStartUtc(x), x.BlockedUntilUtc!.Value))
             .Select(x => x.BlockedUntilUtc)
             .Min();
         if (qualityBlockEnd.HasValue)
@@ -973,7 +973,7 @@ file sealed class SchedulerState
     {
         var qualityBlockEnd = resourceQualityBlocks
             .Where(x => x.BlockedUntilUtc.HasValue)
-            .Where(x => Overlaps(startUtc, endUtc, startUtc, x.BlockedUntilUtc!.Value))
+            .Where(x => Overlaps(startUtc, endUtc, QualityBlockStartUtc(x), x.BlockedUntilUtc!.Value))
             .Select(x => x.BlockedUntilUtc)
             .Min();
         if (qualityBlockEnd.HasValue)
@@ -995,10 +995,16 @@ file sealed class SchedulerState
     {
         var qualityBlockEnd = resourceQualityBlocks
             .Where(x => x.BlockedUntilUtc.HasValue)
-            .Where(x => Overlaps(startUtc, endUtc, startUtc, x.BlockedUntilUtc!.Value))
+            .Where(x => Overlaps(startUtc, endUtc, QualityBlockStartUtc(x), x.BlockedUntilUtc!.Value))
             .Select(x => x.BlockedUntilUtc)
             .Min();
         return qualityBlockEnd;
+    }
+
+    private DateTimeOffset QualityBlockStartUtc(SchedulingQualityBlockContract qualityBlock)
+    {
+        _ = qualityBlock;
+        return problem.HorizonStartUtc;
     }
 
     private static string NoFeasibleSlotMessage(ScheduleConflictReasonCodeContract reasonCode)
