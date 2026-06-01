@@ -5,12 +5,13 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayTestIsolationTests
 {
     [Fact]
-    public void Test_assembly_disables_xunit_parallelization()
+    public void Assembly_ShouldDisableXunitParallelization()
     {
-        var behavior = Assembly.GetExecutingAssembly()
+        var attributes = Assembly.GetExecutingAssembly()
             .GetCustomAttributes<CollectionBehaviorAttribute>()
-            .SingleOrDefault();
+            .ToArray();
 
+        var behavior = Assert.Single(attributes);
         Assert.NotNull(behavior);
         Assert.True(behavior.DisableTestParallelization);
     }
