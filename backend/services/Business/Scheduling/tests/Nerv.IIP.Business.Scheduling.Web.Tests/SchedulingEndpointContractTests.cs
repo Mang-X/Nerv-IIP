@@ -428,14 +428,18 @@ public sealed class SchedulingEndpointContractTests
         var created = Assert.IsType<SchedulePlanContract>(createdEnvelope?.Data);
 
         var contextQuery = "organizationId=org-001&environmentId=prod";
+        var list = await client.GetFromJsonAsync<ResponseData<IReadOnlyCollection<SchedulePlanSummaryResponse>>>(
+            $"/api/business/v1/scheduling/plans?{contextQuery}&pageIndex=0&pageSize=10",
+            SchedulingJson.Options);
         var detail = await client.GetFromJsonAsync<ResponseData<SchedulePlanContract>>($"/api/business/v1/scheduling/plans/{created.PlanId}?{contextQuery}", SchedulingJson.Options);
         var gantt = await client.GetFromJsonAsync<ResponseData<IReadOnlyCollection<GanttScheduleItemContract>>>($"/api/business/v1/scheduling/plans/{created.PlanId}/gantt?{contextQuery}", SchedulingJson.Options);
         var releaseResponse = await client.PostAsync($"/api/business/v1/scheduling/plans/{created.PlanId}/release?{contextQuery}", null);
         releaseResponse.EnsureSuccessStatusCode();
         var releasedEnvelope = await releaseResponse.Content.ReadFromJsonAsync<ResponseData<ReleaseSchedulePlanResponse>>(SchedulingJson.Options);
 
+        Assert.Contains(list?.Data ?? [], x => x.PlanId == created.PlanId && x.Status == SchedulePlanStatusContract.Generated);
         Assert.Equal(created.PlanId, detail?.Data?.PlanId);
-        Assert.NotEmpty(gantt?.Data ?? []);
+        Assert.Contains(gantt?.Data ?? [], x => x.Status == SchedulePlanStatusContract.Generated);
         Assert.Equal(SchedulePlanStatusContract.Released, releasedEnvelope?.Data?.Status);
     }
 

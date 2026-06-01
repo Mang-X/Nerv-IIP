@@ -55,6 +55,7 @@ public sealed class CreateSchedulePlanCommandHandler(
                 .Include(x => x.ResourceLoads)
                 .Include(x => x.Conflicts)
                 .Include(x => x.UnscheduledOperations)
+                .AsSplitQuery()
                 .SingleOrDefaultAsync(
                     x => x.OrganizationId == request.Problem.OrganizationId &&
                         x.EnvironmentId == request.Problem.EnvironmentId &&

@@ -1004,6 +1004,7 @@ file sealed class SchedulerState
     private DateTimeOffset QualityBlockStartUtc(SchedulingQualityBlockContract qualityBlock)
     {
         _ = qualityBlock;
+        // Quality blocks currently expose only BlockedUntilUtc, so they are active from the scheduling horizon start.
         return problem.HorizonStartUtc;
     }
 
