@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Scheduling.Domain;
+using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
 using Nerv.IIP.Localization;
@@ -61,11 +62,13 @@ try
     builder.Services.AddNervIipLocalization();
     builder.Services.AddSingleton<FiniteCapacityScheduler>();
     builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<ISchedulingIntegrationEventContextAccessor, HttpSchedulingIntegrationEventContextAccessor>();
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
-    if (isTesting && string.IsNullOrWhiteSpace(connectionString))
+    if (string.IsNullOrWhiteSpace(connectionString))
     {
-        connectionString = "Host=localhost;Database=nerv_iip_scheduling_testing;Username=nerv;Password=nerv";
+        throw new InvalidOperationException("BusinessScheduling PostgreSQL persistence requires ConnectionStrings:PostgreSQL. Tests that replace persistence must still provide an explicit placeholder connection string.");
     }
 
     builder.Services.AddSchedulingPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());

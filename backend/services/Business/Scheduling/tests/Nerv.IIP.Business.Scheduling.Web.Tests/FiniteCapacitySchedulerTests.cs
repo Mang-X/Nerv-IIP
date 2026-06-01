@@ -253,6 +253,29 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_reports_required_message_for_single_blank_resource_id()
+    {
+        var problem = CreateSingleOperationProblem();
+        var blankResourceProblem = problem with
+        {
+            Resources =
+            [
+                problem.Resources.Single() with
+                {
+                    ResourceId = " "
+                }
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            scheduler.Schedule(blankResourceProblem, "plan-blank-resource-001", GeneratedAtUtc));
+
+        Assert.Contains("resourceId is required.", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Duplicate resourceId", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Schedule_uses_canonical_fingerprint_for_reordered_equivalent_problem()
     {
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
@@ -682,6 +705,42 @@ public class FiniteCapacitySchedulerTests
         AssertAssignment(plan, "WO-SNAPSHOT-001-OP10", "DEV-SNAPSHOT-02",
             new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
             new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void Schedule_delays_resource_when_quality_block_extends_into_candidate_slot()
+    {
+        var problem = CreateSingleOperationProblem() with
+        {
+            LockedAssignments =
+            [
+                new SchedulingLockedAssignmentContract(
+                    AssignmentId: "lock-before-quality-001",
+                    OrderId: "WO-LOCKED-001",
+                    OperationId: "LOCKED-OP10",
+                    OperationSequence: 10,
+                    ResourceId: "DEV-SNAPSHOT-01",
+                    WorkCenterId: "WC-SNAPSHOT",
+                    StartUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                    EndUtc: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                    LockReasonCode: "existing-load")
+            ],
+            QualityBlocks =
+            [
+                new SchedulingQualityBlockContract(
+                    ScopeType: "resource",
+                    ScopeId: "DEV-SNAPSHOT-01",
+                    ReasonCode: "quality-hold",
+                    BlockedUntilUtc: new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero))
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-resource-quality-overlap-001", GeneratedAtUtc);
+
+        AssertAssignment(plan, "WO-SNAPSHOT-001-OP10", "DEV-SNAPSHOT-01",
+            new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero));
     }
 
     [Fact]

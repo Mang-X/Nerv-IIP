@@ -1201,7 +1201,9 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             HttpMethod.Get,
             "/api/business/v1/scheduling/plans?" + Query(
                 ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId)),
+                ("environmentId", request.EnvironmentId),
+                ("pageIndex", request.PageIndex?.ToString(CultureInfo.InvariantCulture)),
+                ("pageSize", request.PageSize?.ToString(CultureInfo.InvariantCulture))),
             null,
             cancellationToken,
             SchedulingJson.Options);

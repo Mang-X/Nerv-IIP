@@ -1369,6 +1369,8 @@ export type ListBusinessConsoleSchedulingPlansData = {
     query: {
         organizationId: string;
         environmentId: string;
+        pageIndex?: number | null;
+        pageSize?: number | null;
     };
     url: '/api/business-console/v1/scheduling/plans';
 };

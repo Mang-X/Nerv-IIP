@@ -26,6 +26,7 @@ public sealed class SchedulePlanRepository(ApplicationDbContext context)
             .Include(x => x.ResourceLoads)
             .Include(x => x.Conflicts)
             .Include(x => x.UnscheduledOperations)
+            .AsSplitQuery()
             .SingleOrDefaultAsync(
                 x => x.PlanId == planId &&
                     x.OrganizationId == organizationId &&

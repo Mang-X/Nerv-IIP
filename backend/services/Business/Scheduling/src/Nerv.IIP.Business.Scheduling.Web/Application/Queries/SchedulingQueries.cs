@@ -3,7 +3,11 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 
-public sealed record ListSchedulePlansQuery(string OrganizationId, string EnvironmentId)
+public sealed record ListSchedulePlansQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    int? PageIndex = null,
+    int? PageSize = null)
     : IQuery<IReadOnlyCollection<SchedulePlanSummaryResponse>>;
 
 public sealed record SchedulePlanSummaryResponse(
@@ -19,17 +23,23 @@ public sealed record SchedulePlanSummaryResponse(
 public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListSchedulePlansQuery, IReadOnlyCollection<SchedulePlanSummaryResponse>>
 {
+    public const int DefaultPageSize = 100;
+    public const int MaxPageSize = 100;
+
     public async Task<IReadOnlyCollection<SchedulePlanSummaryResponse>> Handle(ListSchedulePlansQuery request, CancellationToken cancellationToken)
     {
+        var pageIndex = Math.Max(request.PageIndex ?? 0, 0);
+        var pageSize = Math.Clamp(request.PageSize ?? DefaultPageSize, 1, MaxPageSize);
+
         return await dbContext.SchedulePlans.AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
             .OrderByDescending(x => x.GeneratedAtUtc)
+            .Skip(pageIndex * pageSize)
+            .Take(pageSize)
             .Select(x => new SchedulePlanSummaryResponse(
                 x.PlanId,
                 x.ProblemId,
-                x.Status == Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanLifecycleStatus.Released
-                    ? SchedulePlanStatusContract.Released
-                    : SchedulePlanStatusContract.Generated,
+                SchedulePlanContractMapper.ToContractStatus(x.Status),
                 x.GeneratedAtUtc,
                 x.ReleasedAtUtc,
                 x.Assignments.Count,
@@ -61,6 +71,7 @@ public sealed class GetSchedulePlanDetailQueryHandler(ApplicationDbContext dbCon
             .Include(x => x.ResourceLoads)
             .Include(x => x.Conflicts)
             .Include(x => x.UnscheduledOperations)
+            .AsSplitQuery()
             .SingleOrDefaultAsync(
                 x => x.PlanId == request.PlanId &&
                     x.OrganizationId == request.OrganizationId &&
@@ -94,6 +105,7 @@ public sealed class GetSchedulePlanGanttQueryHandler(ApplicationDbContext dbCont
             .Include(x => x.ResourceLoads)
             .Include(x => x.Conflicts)
             .Include(x => x.UnscheduledOperations)
+            .AsSplitQuery()
             .SingleOrDefaultAsync(
                 x => x.PlanId == request.PlanId &&
                     x.OrganizationId == request.OrganizationId &&

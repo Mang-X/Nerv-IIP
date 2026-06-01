@@ -336,7 +336,7 @@ public sealed class BusinessGatewayProxyTests
         {
             problem = CreateSchedulingProblem(),
         });
-        var list = await client.GetAsync("/api/business-console/v1/scheduling/plans?organizationId=org-001&environmentId=env-dev");
+        var list = await client.GetAsync("/api/business-console/v1/scheduling/plans?organizationId=org-001&environmentId=env-dev&pageIndex=1&pageSize=20");
         var detail = await client.GetAsync("/api/business-console/v1/scheduling/plans/plan-001?organizationId=org-001&environmentId=env-dev");
         var gantt = await client.GetAsync("/api/business-console/v1/scheduling/plans/plan-001/gantt?organizationId=org-001&environmentId=env-dev");
         var release = await client.PostAsync("/api/business-console/v1/scheduling/plans/plan-001/release?organizationId=org-001&environmentId=env-dev", null);
@@ -349,7 +349,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, release.StatusCode);
         Assert.Equal("internal-test-token", scheduling.LastInternalToken);
         Assert.Equal("problem-001", scheduling.LastProblem!.ProblemId);
-        Assert.Equal(new BusinessConsoleSchedulingContextRequest("org-001", "env-dev"), scheduling.LastListRequest);
+        Assert.Equal(new BusinessConsoleSchedulingContextRequest("org-001", "env-dev", 1, 20), scheduling.LastListRequest);
         Assert.Equal("plan-001", scheduling.LastPlanId);
         Assert.Equal(new BusinessConsoleSchedulingPlanRequest("plan-001", "org-001", "env-dev"), scheduling.LastPlanRequest);
 
@@ -422,6 +422,34 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(0, scheduling.ListCallCount);
     }
 
+    [Theory]
+    [InlineData("GET", "/api/business-console/v1/scheduling/plans/plan-001?environmentId=env-dev")]
+    [InlineData("GET", "/api/business-console/v1/scheduling/plans/plan-001?organizationId=org-001")]
+    [InlineData("GET", "/api/business-console/v1/scheduling/plans/%20?organizationId=org-001&environmentId=env-dev")]
+    [InlineData("GET", "/api/business-console/v1/scheduling/plans/plan-001/gantt?environmentId=env-dev")]
+    [InlineData("POST", "/api/business-console/v1/scheduling/plans/plan-001/release?organizationId=org-001")]
+    public async Task Scheduling_plan_endpoints_reject_missing_context_or_plan_id_before_downstream_forwarding(
+        string method,
+        string path)
+    {
+        var scheduling = new RecordingSchedulingClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, scheduling.GetPlanCallCount);
+        Assert.Equal(0, scheduling.GetPlanGanttCallCount);
+        Assert.Equal(0, scheduling.ReleasePlanCallCount);
+    }
+
     [Fact]
     public async Task Scheduling_http_client_sends_internal_token_and_downstream_routes()
     {
@@ -431,7 +459,7 @@ public sealed class BusinessGatewayProxyTests
 
         await client.PreviewPlanAsync("internal-token-001", CreateSchedulingProblem(), CancellationToken.None);
         await client.CreatePlanAsync("internal-token-001", CreateSchedulingProblem(), CancellationToken.None);
-        await client.ListPlansAsync("internal-token-001", new BusinessConsoleSchedulingContextRequest("org-001", "env-dev"), CancellationToken.None);
+        await client.ListPlansAsync("internal-token-001", new BusinessConsoleSchedulingContextRequest("org-001", "env-dev", 2, 50), CancellationToken.None);
         var planRequest = new BusinessConsoleSchedulingPlanRequest("plan-001", "org-001", "env-dev");
         await client.GetPlanAsync("internal-token-001", planRequest, CancellationToken.None);
         await client.GetPlanGanttAsync("internal-token-001", planRequest, CancellationToken.None);
@@ -445,7 +473,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("/api/business/v1/scheduling/plans", handler.Requests[1].RequestUri!.AbsolutePath);
         Assert.Equal(HttpMethod.Get, handler.Requests[2].Method);
         Assert.Equal("/api/business/v1/scheduling/plans", handler.Requests[2].RequestUri!.AbsolutePath);
-        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[2].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("organizationId=org-001&environmentId=env-dev&pageIndex=2&pageSize=50", handler.Requests[2].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/scheduling/plans/plan-001", handler.Requests[3].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[3].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/scheduling/plans/plan-001/gantt", handler.Requests[4].RequestUri!.AbsolutePath);
@@ -1799,6 +1827,12 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
 {
     public int ListCallCount { get; private set; }
 
+    public int GetPlanCallCount { get; private set; }
+
+    public int GetPlanGanttCallCount { get; private set; }
+
+    public int ReleasePlanCallCount { get; private set; }
+
     public string? LastInternalToken { get; private set; }
 
     public SchedulingProblemContract? LastProblem { get; private set; }
@@ -1856,6 +1890,7 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken)
     {
+        GetPlanCallCount++;
         LastInternalToken = internalBearerToken;
         LastPlanId = request.PlanId;
         LastPlanRequest = request;
@@ -1867,6 +1902,7 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken)
     {
+        GetPlanGanttCallCount++;
         LastInternalToken = internalBearerToken;
         LastPlanId = request.PlanId;
         LastPlanRequest = request;
@@ -1879,6 +1915,7 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken)
     {
+        ReleasePlanCallCount++;
         LastInternalToken = internalBearerToken;
         LastPlanId = request.PlanId;
         LastPlanRequest = request;
