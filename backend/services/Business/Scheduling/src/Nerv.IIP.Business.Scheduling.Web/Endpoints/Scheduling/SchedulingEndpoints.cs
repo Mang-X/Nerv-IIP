@@ -34,7 +34,11 @@ public sealed record PreviewSchedulePlanRequest(SchedulingProblemContract Proble
 
 public sealed record CreateSchedulePlanRequest(SchedulingProblemContract Problem);
 
-public sealed record ListSchedulePlansRequest(string OrganizationId, string EnvironmentId);
+public sealed record ListSchedulePlansRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int? PageIndex = null,
+    int? PageSize = null);
 
 public sealed record GetSchedulePlanRequest(
     [property: RouteParam] string PlanId,
@@ -91,7 +95,7 @@ public sealed class ListSchedulePlansEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListSchedulePlansRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListSchedulePlansQuery(req.OrganizationId, req.EnvironmentId), ct);
+        var response = await sender.Send(new ListSchedulePlansQuery(req.OrganizationId, req.EnvironmentId, req.PageIndex, req.PageSize), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -106,11 +110,10 @@ public sealed class GetSchedulePlanEndpoint(ISender sender)
 
     public override async Task HandleAsync(GetSchedulePlanRequest req, CancellationToken ct)
     {
-        var planId = Route<string>("planId") ?? req.PlanId;
         var response = await sender.Send(new GetSchedulePlanDetailQuery(
-            planId,
-            Query<string>("organizationId")!,
-            Query<string>("environmentId")!), ct);
+            req.PlanId,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -125,11 +128,10 @@ public sealed class GetSchedulePlanGanttEndpoint(ISender sender)
 
     public override async Task HandleAsync(GetSchedulePlanGanttRequest req, CancellationToken ct)
     {
-        var planId = Route<string>("planId") ?? req.PlanId;
         var response = await sender.Send(new GetSchedulePlanGanttQuery(
-            planId,
-            Query<string>("organizationId")!,
-            Query<string>("environmentId")!), ct);
+            req.PlanId,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -144,12 +146,54 @@ public sealed class ReleaseSchedulePlanEndpoint(ISender sender)
 
     public override async Task HandleAsync(ReleaseSchedulePlanRequest req, CancellationToken ct)
     {
-        var planId = Route<string>("planId") ?? req.PlanId;
         var response = await sender.Send(new ReleaseSchedulePlanCommand(
-            planId,
-            Query<string>("organizationId")!,
-            Query<string>("environmentId")!), ct);
+            req.PlanId,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListSchedulePlansRequestValidator : Validator<ListSchedulePlansRequest>
+{
+    public ListSchedulePlansRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PageIndex).GreaterThanOrEqualTo(0).When(x => x.PageIndex.HasValue);
+        RuleFor(x => x.PageSize)
+            .InclusiveBetween(1, ListSchedulePlansQueryHandler.MaxPageSize)
+            .When(x => x.PageSize.HasValue);
+    }
+}
+
+public sealed class GetSchedulePlanRequestValidator : Validator<GetSchedulePlanRequest>
+{
+    public GetSchedulePlanRequestValidator()
+    {
+        RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class GetSchedulePlanGanttRequestValidator : Validator<GetSchedulePlanGanttRequest>
+{
+    public GetSchedulePlanGanttRequestValidator()
+    {
+        RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class ReleaseSchedulePlanRequestValidator : Validator<ReleaseSchedulePlanRequest>
+{
+    public ReleaseSchedulePlanRequestValidator()
+    {
+        RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
     }
 }
 

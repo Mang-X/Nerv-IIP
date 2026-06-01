@@ -15,5 +15,7 @@ EXPOSE 8080
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /app/publish .
+RUN adduser --system --group --home /app appuser
+COPY --from=build --chown=appuser:appuser /app/publish .
+USER appuser
 ENTRYPOINT ["sh", "-c", "dotnet \"$NERV_IIP_ENTRYPOINT\""]

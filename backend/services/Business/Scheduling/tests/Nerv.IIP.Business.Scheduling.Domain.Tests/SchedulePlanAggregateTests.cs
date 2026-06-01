@@ -108,6 +108,7 @@ public sealed class SchedulePlanAggregateTests
         Assert.Contains(plan.Conflicts, x => x.ConflictPublicId == "conflict-002" && x.ReasonCode == ScheduleConflictReasonCodeContract.Material);
         Assert.DoesNotContain(plan.UnscheduledOperations, x => x.WorkOrderId == "wo-002");
         Assert.Contains(plan.UnscheduledOperations, x => x.WorkOrderId == "wo-003" && x.OperationId == "op-030");
+        Assert.Contains(plan.GetDomainEvents(), x => x is SchedulePlanGeneratedDomainEvent);
         Assert.Contains(plan.GetDomainEvents(), x => x is ScheduleConflictDetectedDomainEvent);
     }
 

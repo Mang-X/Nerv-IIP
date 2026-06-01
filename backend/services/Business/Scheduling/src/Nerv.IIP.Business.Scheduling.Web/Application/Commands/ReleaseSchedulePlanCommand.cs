@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -27,10 +26,6 @@ public sealed class ReleaseSchedulePlanCommandHandler(ApplicationDbContext dbCon
     public async Task<ReleaseSchedulePlanResponse> Handle(ReleaseSchedulePlanCommand request, CancellationToken cancellationToken)
     {
         var plan = await dbContext.SchedulePlans
-            .Include(x => x.Assignments)
-            .Include(x => x.ResourceLoads)
-            .Include(x => x.Conflicts)
-            .Include(x => x.UnscheduledOperations)
             .SingleOrDefaultAsync(
                 x => x.PlanId == request.PlanId &&
                     x.OrganizationId == request.OrganizationId &&
@@ -41,7 +36,7 @@ public sealed class ReleaseSchedulePlanCommandHandler(ApplicationDbContext dbCon
         plan.Release(timeProvider.GetUtcNow());
         return new ReleaseSchedulePlanResponse(
             plan.PlanId,
-            SchedulePlanContractMapper.ToContract(plan).Status,
+            SchedulePlanStatusContract.Released,
             plan.ReleasedAtUtc);
     }
 }

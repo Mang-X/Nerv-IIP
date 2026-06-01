@@ -97,27 +97,19 @@ public sealed class GetBusinessConsoleSchedulingPlanEndpoint(
         auth,
         BusinessGatewayPermissions.SchedulingPlansRead)
 {
-    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("organizationId")!;
+    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("environmentId")!;
+    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => request.EnvironmentId;
 
     protected override string ResourceType(BusinessConsoleSchedulingPlanRequest request) => "scheduling-plan";
 
-    protected override string? ResourceId(BusinessConsoleSchedulingPlanRequest request) => Route<string>("planId") ?? request.PlanId;
+    protected override string? ResourceId(BusinessConsoleSchedulingPlanRequest request) => request.PlanId;
 
     protected override Task<SchedulePlanContract> ForwardAsync(
         BusinessConsoleSchedulingPlanRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        scheduling.GetPlanAsync(tokenProvider.BearerToken, WithRoutePlanId(request), cancellationToken);
-
-    private BusinessConsoleSchedulingPlanRequest WithRoutePlanId(BusinessConsoleSchedulingPlanRequest request) =>
-        request with
-        {
-            PlanId = Route<string>("planId") ?? request.PlanId,
-            OrganizationId = Query<string>("organizationId")!,
-            EnvironmentId = Query<string>("environmentId")!
-        };
+        scheduling.GetPlanAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console Scheduling")]
@@ -131,27 +123,19 @@ public sealed class GetBusinessConsoleSchedulingPlanGanttEndpoint(
         auth,
         BusinessGatewayPermissions.SchedulingPlansRead)
 {
-    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("organizationId")!;
+    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("environmentId")!;
+    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => request.EnvironmentId;
 
     protected override string ResourceType(BusinessConsoleSchedulingPlanRequest request) => "scheduling-plan";
 
-    protected override string? ResourceId(BusinessConsoleSchedulingPlanRequest request) => Route<string>("planId") ?? request.PlanId;
+    protected override string? ResourceId(BusinessConsoleSchedulingPlanRequest request) => request.PlanId;
 
     protected override Task<IReadOnlyCollection<GanttScheduleItemContract>> ForwardAsync(
         BusinessConsoleSchedulingPlanRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        scheduling.GetPlanGanttAsync(tokenProvider.BearerToken, WithRoutePlanId(request), cancellationToken);
-
-    private BusinessConsoleSchedulingPlanRequest WithRoutePlanId(BusinessConsoleSchedulingPlanRequest request) =>
-        request with
-        {
-            PlanId = Route<string>("planId") ?? request.PlanId,
-            OrganizationId = Query<string>("organizationId")!,
-            EnvironmentId = Query<string>("environmentId")!
-        };
+        scheduling.GetPlanGanttAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console Scheduling")]
@@ -165,27 +149,19 @@ public sealed class ReleaseBusinessConsoleSchedulingPlanEndpoint(
         auth,
         BusinessGatewayPermissions.SchedulingPlansRelease)
 {
-    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("organizationId")!;
+    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => Query<string>("environmentId")!;
+    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => request.EnvironmentId;
 
     protected override string ResourceType(BusinessConsoleSchedulingPlanRequest request) => "scheduling-plan";
 
-    protected override string? ResourceId(BusinessConsoleSchedulingPlanRequest request) => Route<string>("planId") ?? request.PlanId;
+    protected override string? ResourceId(BusinessConsoleSchedulingPlanRequest request) => request.PlanId;
 
     protected override Task<BusinessConsoleReleaseSchedulePlanResponse> ForwardAsync(
         BusinessConsoleSchedulingPlanRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        scheduling.ReleasePlanAsync(tokenProvider.BearerToken, WithRoutePlanId(request), cancellationToken);
-
-    private BusinessConsoleSchedulingPlanRequest WithRoutePlanId(BusinessConsoleSchedulingPlanRequest request) =>
-        request with
-        {
-            PlanId = Route<string>("planId") ?? request.PlanId,
-            OrganizationId = Query<string>("organizationId")!,
-            EnvironmentId = Query<string>("environmentId")!
-        };
+        scheduling.ReleasePlanAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 public sealed class BusinessConsoleSchedulingProblemRequestValidator : Validator<BusinessConsoleSchedulingProblemRequest>
@@ -208,6 +184,8 @@ public sealed class BusinessConsoleSchedulingContextRequestValidator : Validator
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PageIndex).GreaterThanOrEqualTo(0).When(x => x.PageIndex.HasValue);
+        RuleFor(x => x.PageSize).InclusiveBetween(1, 100).When(x => x.PageSize.HasValue);
     }
 }
 
@@ -215,5 +193,10 @@ public sealed class BusinessConsoleSchedulingPlanRequestValidator : Validator<Bu
 {
     public BusinessConsoleSchedulingPlanRequestValidator()
     {
+        RuleFor(x => x.PlanId).NotEmpty().MaximumLength(100).Must(NotBeWhiteSpace);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100).Must(NotBeWhiteSpace);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100).Must(NotBeWhiteSpace);
     }
+
+    private static bool NotBeWhiteSpace(string value) => !string.IsNullOrWhiteSpace(value);
 }

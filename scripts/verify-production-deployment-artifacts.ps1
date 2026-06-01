@@ -39,6 +39,37 @@ foreach ($file in $requiredFiles) {
     }
 }
 
+$nonRootDockerfiles = @(
+    "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Dockerfile",
+    "backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Dockerfile",
+    "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Dockerfile",
+    "backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Dockerfile",
+    "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Dockerfile",
+    "infra/docker/dotnet-service.Dockerfile",
+    "infra/docker/vite-spa.Dockerfile"
+)
+
+foreach ($dockerfile in $nonRootDockerfiles) {
+    $dockerfileContent = Get-Content -Raw $dockerfile
+    if ($dockerfileContent -notmatch "(?m)^\s*USER\s+appuser\s*(?:#.*)?$") {
+        throw "Dockerfile must run as the dedicated non-root appuser: $dockerfile"
+    }
+}
+
+$viteSpaDockerfile = Get-Content -Raw "infra/docker/vite-spa.Dockerfile"
+if ($viteSpaDockerfile -notmatch "pid\s+/tmp/nginx\.pid") {
+    throw "Vite SPA Dockerfile must move the nginx PID file to /tmp for non-root runtime."
+}
+
+if ($viteSpaDockerfile -match "/var/run") {
+    throw "Vite SPA Dockerfile must not chown /var/run for non-root nginx runtime."
+}
+
+$ciWorkflow = Get-Content -Raw ".github/workflows/ci.yml"
+if ($ciWorkflow -match "(?m)^\s*uses:\s+pnpm/action-setup@(?![0-9a-f]{40}(?:\s+#.*)?\s*$).+") {
+    throw "GitHub Actions workflow must pin pnpm/action-setup to a full commit SHA."
+}
+
 if (-not $SkipDockerComposeConfig) {
     $environment = @{
         NERV_IIP_POSTGRES_PASSWORD = "postgres-password-32chars-test"

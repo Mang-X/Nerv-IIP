@@ -11,12 +11,12 @@ public sealed class SchedulingEnumOpenApiDocumentProcessor : IDocumentProcessor
 {
     private static readonly IReadOnlyDictionary<string, string[]> SchedulingEnums = new Dictionary<string, string[]>(StringComparer.Ordinal)
     {
-        [SchemaName<SchedulePlanStatusContract>()] = EnumValues<SchedulePlanStatusContract>(),
-        [SchemaName<ScheduleConflictReasonCodeContract>()] = EnumValues<ScheduleConflictReasonCodeContract>(),
-        [SchemaName<ScheduleConflictSeverityContract>()] = EnumValues<ScheduleConflictSeverityContract>(),
-        [SchemaName<ScheduleChangeTypeContract>()] = EnumValues<ScheduleChangeTypeContract>(),
-        [SchemaName<ScheduleSplitPolicyContract>()] = EnumValues<ScheduleSplitPolicyContract>(),
-        [SchemaName<EquipmentRuntimeSourceType>()] =
+        ["NervIIPContractsSchedulingSchedulePlanStatusContract"] = EnumValues<SchedulePlanStatusContract>(),
+        ["NervIIPContractsSchedulingScheduleConflictReasonCodeContract"] = EnumValues<ScheduleConflictReasonCodeContract>(),
+        ["NervIIPContractsSchedulingScheduleConflictSeverityContract"] = EnumValues<ScheduleConflictSeverityContract>(),
+        ["NervIIPContractsSchedulingScheduleChangeTypeContract"] = EnumValues<ScheduleChangeTypeContract>(),
+        ["NervIIPContractsSchedulingScheduleSplitPolicyContract"] = EnumValues<ScheduleSplitPolicyContract>(),
+        ["NervIIPContractsEquipmentRuntimeEquipmentRuntimeSourceType"] =
         [
             "device-state",
             "alarm",
@@ -30,25 +30,31 @@ public sealed class SchedulingEnumOpenApiDocumentProcessor : IDocumentProcessor
 
     public void Process(DocumentProcessorContext context)
     {
+        var missingSchemas = new List<string>();
         foreach (var (schemaName, values) in SchedulingEnums)
         {
             if (!context.Document.Components.Schemas.TryGetValue(schemaName, out var schema))
             {
+                missingSchemas.Add(schemaName);
                 continue;
             }
 
             schema.Type = JsonObjectType.String;
             schema.Format = null;
             schema.Enumeration.Clear();
+            schema.EnumerationNames.Clear();
             foreach (var value in values)
             {
                 schema.Enumeration.Add(value);
             }
         }
-    }
 
-    private static string SchemaName<TEnum>() where TEnum : struct, Enum =>
-        typeof(TEnum).FullName!.Replace(".", string.Empty, StringComparison.Ordinal);
+        if (missingSchemas.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Missing Scheduling enum OpenAPI schema(s): " + string.Join(", ", missingSchemas));
+        }
+    }
 
     private static string[] EnumValues<TEnum>() where TEnum : struct, Enum =>
         Enum.GetNames<TEnum>()

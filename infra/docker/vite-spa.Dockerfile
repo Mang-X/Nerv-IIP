@@ -11,5 +11,9 @@ RUN pnpm -C frontend --filter "$APP_FILTER" build
 
 FROM nginx:1.27-alpine AS final
 ARG APP_DIR
+RUN addgroup -S appgroup && adduser -S -D -H -G appgroup appuser
+RUN sed -i 's|pid.*nginx.pid;|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf
 COPY infra/docker/nginx-spa.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/$APP_DIR/dist /usr/share/nginx/html
+RUN chown -R appuser:appgroup /etc/nginx/conf.d /usr/share/nginx/html /var/cache/nginx /var/log/nginx
+USER appuser

@@ -142,6 +142,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "pageIndex",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -5388,11 +5406,6 @@
       "NervIIPContractsSchedulingSchedulePlanStatusContract": {
         "type": "string",
         "description": "",
-        "x-enumNames": [
-          "Preview",
-          "Generated",
-          "Released"
-        ],
         "enum": [
           "preview",
           "generated",
@@ -5500,18 +5513,6 @@
       "NervIIPContractsSchedulingScheduleConflictReasonCodeContract": {
         "type": "string",
         "description": "",
-        "x-enumNames": [
-          "DueDate",
-          "Capacity",
-          "Calendar",
-          "Material",
-          "Quality",
-          "Equipment",
-          "NoEligibleResource",
-          "OutsideHorizon",
-          "InvalidLockedAssignment",
-          "PredecessorUnscheduled"
-        ],
         "enum": [
           "dueDate",
           "capacity",
@@ -5528,11 +5529,6 @@
       "NervIIPContractsSchedulingScheduleConflictSeverityContract": {
         "type": "string",
         "description": "",
-        "x-enumNames": [
-          "Info",
-          "Warning",
-          "Error"
-        ],
         "enum": [
           "info",
           "warning",
@@ -5578,13 +5574,6 @@
       "NervIIPContractsSchedulingScheduleChangeTypeContract": {
         "type": "string",
         "description": "",
-        "x-enumNames": [
-          "Added",
-          "Moved",
-          "Delayed",
-          "Preserved",
-          "Blocked"
-        ],
         "enum": [
           "added",
           "moved",
@@ -5855,9 +5844,6 @@
       "NervIIPContractsSchedulingScheduleSplitPolicyContract": {
         "type": "string",
         "description": "",
-        "x-enumNames": [
-          "NonSplittable"
-        ],
         "enum": [
           "nonSplittable"
         ]
