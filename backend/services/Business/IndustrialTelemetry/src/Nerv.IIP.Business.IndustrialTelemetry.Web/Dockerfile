@@ -1,5 +1,6 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
+RUN adduser --system --group --home /app appuser
 EXPOSE 8080
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
@@ -9,5 +10,6 @@ RUN dotnet publish backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Bu
 
 FROM base AS final
 WORKDIR /app
-COPY --from=build /app/publish .
+COPY --from=build --chown=appuser:appuser /app/publish .
+USER appuser
 ENTRYPOINT ["dotnet", "Nerv.IIP.Business.IndustrialTelemetry.Web.dll"]
