@@ -7,6 +7,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagA
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
@@ -48,6 +49,8 @@ public sealed record RecordTelemetrySampleRequest(
     decimal MaxValue,
     decimal AverageValue,
     string SourceSequence,
+    string? SourceSystem,
+    string? SourceConnector,
     string? DeviceState,
     DateTimeOffset? StateOccurredAtUtc);
 public sealed record RecordTelemetrySampleResponse(TelemetrySummaryId? TelemetrySummaryId, DeviceStateSnapshotId? DeviceStateSnapshotId);
@@ -65,6 +68,9 @@ public sealed record PostAlarmEventRequest(
 public sealed record PostAlarmEventResponse(AlarmEventId AlarmEventId);
 public sealed record ListAlarmEventsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
+public sealed record GetDeviceRuntimeAvailabilityRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int FreshnessMaxAgeMinutes = 60);
+public sealed record QueryRuntimeAvailabilityRequest(string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, string? DeviceAssetIds, string? WorkCenterIds, int FreshnessMaxAgeMinutes = 60);
+public sealed record GetDeviceCurrentStateRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset? AsOfUtc, int FreshnessMaxAgeMinutes = 60);
 
 public sealed class CreateTelemetryTagEndpoint(ISender sender) : IndustrialTelemetryEndpoint<CreateTelemetryTagRequest, ResponseData<CreateTelemetryTagResponse>>
 {
@@ -94,7 +100,7 @@ public sealed class RecordTelemetrySampleEndpoint(ISender sender) : IndustrialTe
 
     public override async Task HandleAsync(RecordTelemetrySampleRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RecordTelemetrySampleCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.BucketStartUtc, req.BucketEndUtc, req.SampleCount, req.MinValue, req.MaxValue, req.AverageValue, req.SourceSequence, req.DeviceState, req.StateOccurredAtUtc), ct);
+        var result = await sender.Send(new RecordTelemetrySampleCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.BucketStartUtc, req.BucketEndUtc, req.SampleCount, req.MinValue, req.MaxValue, req.AverageValue, req.SourceSequence, req.SourceSystem, req.SourceConnector, req.DeviceState, req.StateOccurredAtUtc), ct);
         await Send.OkAsync(new RecordTelemetrySampleResponse(result.TelemetrySummaryId, result.DeviceStateSnapshotId).AsResponseData(), cancellation: ct);
     }
 }
@@ -107,8 +113,47 @@ public sealed class PostAlarmEventEndpoint(ISender sender) : IndustrialTelemetry
     {
         var id = req.ClearedAtUtc is null
             ? await sender.Send(new RaiseAlarmCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AlarmCode, req.Severity, req.RaisedAtUtc, req.ExternalAlarmId), ct)
-            : await sender.Send(new ClearAlarmCommand(req.OrganizationId, req.EnvironmentId, req.ExternalAlarmId, req.ClearedAtUtc.Value, req.ClearedBy ?? string.Empty, req.ClearReason), ct);
+            : await sender.Send(new ClearAlarmCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AlarmCode, req.ExternalAlarmId, req.ClearedAtUtc.Value, req.ClearedBy ?? string.Empty, req.ClearReason), ct);
         await Send.OkAsync(new PostAlarmEventResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetDeviceRuntimeAvailabilityEndpoint(ISender sender) : IndustrialTelemetryEndpoint<GetDeviceRuntimeAvailabilityRequest, ResponseData<EquipmentRuntimeAvailabilityResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<GetDeviceRuntimeAvailabilityEndpoint>());
+
+    public override async Task HandleAsync(GetDeviceRuntimeAvailabilityRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new QueryRuntimeAvailabilityQuery(req.OrganizationId, req.EnvironmentId, req.WindowStartUtc, req.WindowEndUtc, [req.DeviceAssetId], null, req.FreshnessMaxAgeMinutes), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class QueryRuntimeAvailabilityEndpoint(ISender sender) : IndustrialTelemetryEndpoint<QueryRuntimeAvailabilityRequest, ResponseData<EquipmentRuntimeAvailabilityResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<QueryRuntimeAvailabilityEndpoint>());
+
+    public override async Task HandleAsync(QueryRuntimeAvailabilityRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new QueryRuntimeAvailabilityQuery(req.OrganizationId, req.EnvironmentId, req.WindowStartUtc, req.WindowEndUtc, SplitCsv(req.DeviceAssetIds), SplitCsv(req.WorkCenterIds), req.FreshnessMaxAgeMinutes), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+
+    private static IReadOnlyCollection<string>? SplitCsv(string? value)
+    {
+        var values = value?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return values is { Length: > 0 } ? values : null;
+    }
+}
+
+public sealed class GetDeviceCurrentStateEndpoint(ISender sender) : IndustrialTelemetryEndpoint<GetDeviceCurrentStateRequest, ResponseData<EquipmentRuntimeCurrentStateResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<GetDeviceCurrentStateEndpoint>());
+
+    public override async Task HandleAsync(GetDeviceCurrentStateRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetRuntimeCurrentStateQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AsOfUtc ?? DateTimeOffset.UtcNow, req.FreshnessMaxAgeMinutes), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -146,6 +191,9 @@ public static class IndustrialTelemetryEndpointContracts
         new(typeof(PostAlarmEventEndpoint), "POST", "/api/business/v1/iiot/alarms", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "raiseBusinessIiotAlarm"),
         new(typeof(ListAlarmEventsEndpoint), "GET", "/api/business/v1/iiot/alarms", IndustrialTelemetryPermissionCodes.AlarmsRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotAlarms"),
         new(typeof(QueryDeviceTimelineEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/timeline", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotDeviceTimeline"),
+        new(typeof(GetDeviceRuntimeAvailabilityEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/runtime-availability", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotDeviceRuntimeAvailability"),
+        new(typeof(QueryRuntimeAvailabilityEndpoint), "GET", "/api/business/v1/iiot/runtime-availability", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotRuntimeAvailability"),
+        new(typeof(GetDeviceCurrentStateEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/current-state", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotDeviceCurrentState"),
     ];
 
     public static IndustrialTelemetryEndpointContract Get<TEndpoint>() => All.Single(x => x.EndpointType == typeof(TEndpoint));

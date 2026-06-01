@@ -65,6 +65,8 @@ public sealed record RecordTelemetrySampleCommand(
     decimal MaxValue,
     decimal AverageValue,
     string SourceSequence,
+    string? SourceSystem = null,
+    string? SourceConnector = null,
     string? DeviceState = null,
     DateTimeOffset? StateOccurredAtUtc = null) : ICommand<RecordTelemetrySampleResult>;
 
@@ -81,6 +83,8 @@ public sealed class RecordTelemetrySampleCommandValidator : AbstractValidator<Re
         RuleFor(x => x.BucketEndUtc).GreaterThan(x => x.BucketStartUtc);
         RuleFor(x => x.SampleCount).GreaterThan(0);
         RuleFor(x => x.SourceSequence).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.SourceSystem).MaximumLength(100);
+        RuleFor(x => x.SourceConnector).MaximumLength(150);
     }
 }
 
@@ -96,12 +100,17 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         }
 
         var normalizedTagKey = request.TagKey.Trim().ToLowerInvariant();
+        var normalizedSourceSequence = IndustrialTelemetryText.Required(request.SourceSequence, nameof(request.SourceSequence));
+        var normalizedSourceSystem = IndustrialTelemetryText.Optional(request.SourceSystem);
+        var normalizedSourceConnector = IndustrialTelemetryText.Optional(request.SourceConnector);
         var existingSummary = await dbContext.TelemetrySummaries.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
+                && x.SourceSystem == normalizedSourceSystem
+                && x.SourceConnector == normalizedSourceConnector
                 && x.DeviceAssetId == request.DeviceAssetId
                 && x.TagKey == normalizedTagKey
-                && x.SourceSequence == request.SourceSequence,
+                && x.SourceSequence == normalizedSourceSequence,
             cancellationToken);
         var incoming = TelemetrySummary.Record(
             request.OrganizationId,
@@ -114,7 +123,9 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             request.MinValue,
             request.MaxValue,
             request.AverageValue,
-            request.SourceSequence);
+            normalizedSourceSequence,
+            normalizedSourceSystem,
+            normalizedSourceConnector);
         if (existingSummary is not null)
         {
             if (!existingSummary.HasSamePayload(incoming))
@@ -131,11 +142,16 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
 
     private async Task<DeviceStateSnapshotId> RecordDeviceStateAsync(RecordTelemetrySampleCommand request, CancellationToken cancellationToken)
     {
+        var normalizedSourceSequence = IndustrialTelemetryText.Required(request.SourceSequence, nameof(request.SourceSequence));
+        var normalizedSourceSystem = IndustrialTelemetryText.Optional(request.SourceSystem);
+        var normalizedSourceConnector = IndustrialTelemetryText.Optional(request.SourceConnector);
         var existingState = await dbContext.DeviceStateSnapshots.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
+                && x.SourceSystem == normalizedSourceSystem
+                && x.SourceConnector == normalizedSourceConnector
                 && x.DeviceAssetId == request.DeviceAssetId
-                && x.SourceSequence == request.SourceSequence,
+                && x.SourceSequence == normalizedSourceSequence,
             cancellationToken);
         var incoming = DeviceStateSnapshot.Record(
             request.OrganizationId,
@@ -143,7 +159,9 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             request.DeviceAssetId,
             request.DeviceState!,
             request.StateOccurredAtUtc ?? request.BucketEndUtc,
-            request.SourceSequence);
+            normalizedSourceSequence,
+            normalizedSourceSystem,
+            normalizedSourceConnector);
         if (existingState is not null)
         {
             if (!existingState.HasSamePayload(incoming))
@@ -190,6 +208,8 @@ public sealed class RaiseAlarmCommandHandler(ApplicationDbContext dbContext)
         var existing = await dbContext.AlarmEvents.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.AlarmCode == request.AlarmCode
                 && x.ExternalAlarmId == request.ExternalAlarmId,
             cancellationToken);
         if (existing is not null)
@@ -214,6 +234,8 @@ public sealed class RaiseAlarmCommandHandler(ApplicationDbContext dbContext)
 public sealed record ClearAlarmCommand(
     string OrganizationId,
     string EnvironmentId,
+    string DeviceAssetId,
+    string AlarmCode,
     string ExternalAlarmId,
     DateTimeOffset ClearedAtUtc,
     string ClearedBy,
@@ -225,6 +247,8 @@ public sealed class ClearAlarmCommandValidator : AbstractValidator<ClearAlarmCom
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.AlarmCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ExternalAlarmId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ClearedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ClearReason).MaximumLength(300);
@@ -239,6 +263,8 @@ public sealed class ClearAlarmCommandHandler(ApplicationDbContext dbContext)
         var alarm = await dbContext.AlarmEvents.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.AlarmCode == request.AlarmCode
                 && x.ExternalAlarmId == request.ExternalAlarmId,
             cancellationToken)
             ?? throw new KnownException($"Alarm event was not found: {request.ExternalAlarmId}");

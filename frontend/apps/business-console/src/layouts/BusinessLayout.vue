@@ -40,6 +40,8 @@ const qualityInventoryNavItems: NavSubItem[] = [
 ]
 
 const exceptionScheduleNavItems: NavSubItem[] = [
+  { title: '设备运行看板', to: { path: '/equipment' } },
+  { title: '设备报警', to: { path: '/equipment/alarms' } },
   { title: '设备与停机', to: { path: '/mes/downtime' } },
   { title: '异常与产能', to: { path: '/mes/capacity' } },
   { title: '规则排程', to: { path: '/mes/schedules' } },
@@ -134,6 +136,7 @@ const router = useRouter()
 
 const breadcrumbSegmentLabels: Record<string, string> = {
   erp: '采购与供应',
+  equipment: '设备异常',
   inventory: '质量与库存',
   engineering: '工程资料',
   planning: '计划与采购',

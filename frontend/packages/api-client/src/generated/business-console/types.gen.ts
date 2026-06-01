@@ -1330,6 +1330,105 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentOverviewResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentOverviewResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentOverviewResponse = {
+    devices?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentDeviceSummary>;
+    activeBlocks?: Array<NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowContract>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentDeviceSummary = {
+    deviceAssetId?: string;
+    currentState?: string | null;
+    isSourceFresh?: boolean;
+    activeAlarmCount?: number;
+    activeBlockCount?: number;
+};
+
+export type NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowContract = {
+    deviceAssetId?: string;
+    workCenterId?: string | null;
+    availabilityStatus?: NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityStatus;
+    reasonCode?: string;
+    severity?: NervIipContractsEquipmentRuntimeEquipmentRuntimeSeverity;
+    startUtc?: string;
+    endUtc?: string;
+    sourceType?: NervIipContractsEquipmentRuntimeEquipmentRuntimeSourceType;
+    sourceReferenceId?: string;
+    messageKey?: string;
+    substituteDeviceAssetIds?: Array<string>;
+};
+
+export type NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityStatus = 'available' | 'unavailable' | 'unknown';
+
+export type NervIipContractsEquipmentRuntimeEquipmentRuntimeSeverity = 'info' | 'warning' | 'blocked' | 'critical';
+
+export type NervIipContractsEquipmentRuntimeEquipmentRuntimeSourceType = 'device-state' | 'alarm' | 'downtime' | 'maintenance-window' | 'inspection' | 'stale-source' | 'manual-block';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentOverviewRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentDeviceDetailResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentDeviceDetailResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentDeviceDetailResponse = {
+    currentState?: NervIipContractsEquipmentRuntimeEquipmentRuntimeCurrentStateResponse;
+    availability?: NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityResponse;
+};
+
+export type NervIipContractsEquipmentRuntimeEquipmentRuntimeCurrentStateResponse = {
+    contractVersion?: number;
+    organizationId?: string;
+    environmentId?: string;
+    deviceAssetId?: string;
+    currentState?: string | null;
+    stateOccurredAtUtc?: string | null;
+    isSourceFresh?: boolean;
+    activeAlarms?: Array<NervIipContractsEquipmentRuntimeEquipmentRuntimeAlarmSummary>;
+};
+
+export type NervIipContractsEquipmentRuntimeEquipmentRuntimeAlarmSummary = {
+    alarmEventId?: string;
+    deviceAssetId?: string;
+    alarmCode?: string;
+    severity?: string;
+    raisedAtUtc?: string;
+    externalAlarmId?: string;
+};
+
+export type NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityResponse = {
+    contractVersion?: number;
+    organizationId?: string;
+    environmentId?: string;
+    queryWindowStartUtc?: string;
+    queryWindowEndUtc?: string;
+    items?: Array<NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowContract>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentContextRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfEquipmentRuntimeAvailabilityResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentAvailabilityRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentAlarmListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentAlarmListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentAlarmListResponse = {
+    items?: Array<NervIipContractsEquipmentRuntimeEquipmentRuntimeAlarmSummary>;
+};
+
 export type PreviewBusinessConsoleSchedulingPlanData = {
     body: NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest;
     path?: never;
@@ -3745,3 +3844,154 @@ export type ListBusinessConsoleErpPurchaseOrdersResponses = {
 };
 
 export type ListBusinessConsoleErpPurchaseOrdersResponse = ListBusinessConsoleErpPurchaseOrdersResponses[keyof ListBusinessConsoleErpPurchaseOrdersResponses];
+
+export type GetBusinessConsoleEquipmentOverviewData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        deviceAssetIds: string;
+    };
+    url: '/api/business-console/v1/equipment/overview';
+};
+
+export type GetBusinessConsoleEquipmentOverviewErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleEquipmentOverviewError = GetBusinessConsoleEquipmentOverviewErrors[keyof GetBusinessConsoleEquipmentOverviewErrors];
+
+export type GetBusinessConsoleEquipmentOverviewResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentOverviewResponse;
+};
+
+export type GetBusinessConsoleEquipmentOverviewResponse = GetBusinessConsoleEquipmentOverviewResponses[keyof GetBusinessConsoleEquipmentOverviewResponses];
+
+export type GetBusinessConsoleEquipmentDeviceData = {
+    body?: never;
+    path: {
+        deviceAssetId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/equipment/devices/{deviceAssetId}';
+};
+
+export type GetBusinessConsoleEquipmentDeviceErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleEquipmentDeviceError = GetBusinessConsoleEquipmentDeviceErrors[keyof GetBusinessConsoleEquipmentDeviceErrors];
+
+export type GetBusinessConsoleEquipmentDeviceResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentDeviceDetailResponse;
+};
+
+export type GetBusinessConsoleEquipmentDeviceResponse = GetBusinessConsoleEquipmentDeviceResponses[keyof GetBusinessConsoleEquipmentDeviceResponses];
+
+export type GetBusinessConsoleEquipmentAvailabilityData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        windowStartUtc: string;
+        windowEndUtc: string;
+        deviceAssetIds?: string | null;
+        workCenterIds?: string | null;
+    };
+    url: '/api/business-console/v1/equipment/availability';
+};
+
+export type GetBusinessConsoleEquipmentAvailabilityErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleEquipmentAvailabilityError = GetBusinessConsoleEquipmentAvailabilityErrors[keyof GetBusinessConsoleEquipmentAvailabilityErrors];
+
+export type GetBusinessConsoleEquipmentAvailabilityResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfEquipmentRuntimeAvailabilityResponse;
+};
+
+export type GetBusinessConsoleEquipmentAvailabilityResponse = GetBusinessConsoleEquipmentAvailabilityResponses[keyof GetBusinessConsoleEquipmentAvailabilityResponses];
+
+export type ListBusinessConsoleEquipmentAlarmsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/equipment/alarms';
+};
+
+export type ListBusinessConsoleEquipmentAlarmsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleEquipmentAlarmsError = ListBusinessConsoleEquipmentAlarmsErrors[keyof ListBusinessConsoleEquipmentAlarmsErrors];
+
+export type ListBusinessConsoleEquipmentAlarmsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentAlarmListResponse;
+};
+
+export type ListBusinessConsoleEquipmentAlarmsResponse = ListBusinessConsoleEquipmentAlarmsResponses[keyof ListBusinessConsoleEquipmentAlarmsResponses];

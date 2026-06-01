@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Globalization;
 using System.Text.Json;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Sdk.Core;
 
@@ -175,6 +176,45 @@ public interface IBusinessErpClient
     Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
         string internalBearerToken,
         BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken);
+}
+
+public interface IBusinessIndustrialTelemetryClient
+{
+    Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
+        string internalBearerToken,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken);
+
+    Task<EquipmentRuntimeAvailabilityResponse> GetDeviceRuntimeAvailabilityAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken);
+
+    Task<EquipmentRuntimeCurrentStateResponse> GetDeviceCurrentStateAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEquipmentAlarmListResponse> ListActiveAlarmsAsync(
+        string internalBearerToken,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken);
+}
+
+public interface IBusinessMaintenanceClient
+{
+    Task<EquipmentRuntimeAvailabilityResponse> GetAvailabilityWindowsAsync(
+        string internalBearerToken,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken);
+
+    Task<EquipmentRuntimeAvailabilityResponse> GetAssetAvailabilityWindowsAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentAvailabilityRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -1248,6 +1288,151 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
 
     private static string ContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));
+}
+
+public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
+    : BusinessServiceHttpClient(httpClient), IBusinessIndustrialTelemetryClient
+{
+    public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
+        string internalBearerToken,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<EquipmentRuntimeAvailabilityResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/iiot/runtime-availability?" + AvailabilityQuery(request),
+            null,
+            cancellationToken,
+            EquipmentRuntimeJson.Options);
+
+    public Task<EquipmentRuntimeAvailabilityResponse> GetDeviceRuntimeAvailabilityAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<EquipmentRuntimeAvailabilityResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/iiot/devices/{Uri.EscapeDataString(deviceAssetId)}/runtime-availability?" + DeviceAvailabilityQuery(request),
+            null,
+            cancellationToken,
+            EquipmentRuntimeJson.Options);
+
+    public Task<EquipmentRuntimeCurrentStateResponse> GetDeviceCurrentStateAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<EquipmentRuntimeCurrentStateResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/iiot/devices/{Uri.EscapeDataString(deviceAssetId)}/current-state?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken,
+            EquipmentRuntimeJson.Options);
+
+    public async Task<BusinessConsoleEquipmentAlarmListResponse> ListActiveAlarmsAsync(
+        string internalBearerToken,
+        BusinessConsoleEquipmentContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        var alarms = await SendAsync<IReadOnlyCollection<DownstreamAlarmEventListItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/iiot/alarms?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", "raised")),
+            null,
+            cancellationToken);
+        return new BusinessConsoleEquipmentAlarmListResponse(
+            alarms.Select(alarm => new EquipmentRuntimeAlarmSummary(
+                FormatJsonScalar(alarm.AlarmEventId),
+                alarm.DeviceAssetId,
+                alarm.AlarmCode,
+                alarm.Severity,
+                alarm.RaisedAtUtc,
+                alarm.ExternalAlarmId)).ToArray());
+    }
+
+    private static string AvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc),
+            ("deviceAssetIds", request.DeviceAssetIds),
+            ("workCenterIds", request.WorkCenterIds));
+
+    private static string DeviceAvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc));
+
+    private static string ContextQuery(string organizationId, string environmentId) =>
+        Query(("organizationId", organizationId), ("environmentId", environmentId));
+
+    private static string FormatJsonScalar(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString() ?? string.Empty,
+        JsonValueKind.Number => value.GetRawText(),
+        _ => value.ToString(),
+    };
+
+    private sealed record DownstreamAlarmEventListItem(
+        JsonElement AlarmEventId,
+        string DeviceAssetId,
+        string AlarmCode,
+        string Severity,
+        DateTimeOffset RaisedAtUtc,
+        string ExternalAlarmId);
+}
+
+public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
+    : BusinessServiceHttpClient(httpClient), IBusinessMaintenanceClient
+{
+    public Task<EquipmentRuntimeAvailabilityResponse> GetAvailabilityWindowsAsync(
+        string internalBearerToken,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<EquipmentRuntimeAvailabilityResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/maintenance/availability-windows?" + AvailabilityQuery(request),
+            null,
+            cancellationToken,
+            EquipmentRuntimeJson.Options);
+
+    public Task<EquipmentRuntimeAvailabilityResponse> GetAssetAvailabilityWindowsAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<EquipmentRuntimeAvailabilityResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/maintenance/assets/{Uri.EscapeDataString(deviceAssetId)}/availability-windows?" + DeviceAvailabilityQuery(request),
+            null,
+            cancellationToken,
+            EquipmentRuntimeJson.Options);
+
+    private static string AvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc),
+            ("deviceAssetIds", request.DeviceAssetIds),
+            ("workCenterIds", request.WorkCenterIds));
+
+    private static string DeviceAvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc));
 }
 
 public sealed class HttpBusinessErpClient(HttpClient httpClient)

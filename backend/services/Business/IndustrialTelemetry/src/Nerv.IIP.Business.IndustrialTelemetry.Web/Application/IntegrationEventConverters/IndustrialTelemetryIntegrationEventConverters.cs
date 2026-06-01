@@ -47,7 +47,7 @@ public sealed class AlarmRaisedIntegrationEventConverter
             alarm.OrganizationId,
             alarm.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:alarm-raised:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.ExternalAlarmId}",
+            $"industrialTelemetry:alarm-raised:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}",
             new AlarmRaisedPayload(
                 alarm.Id.Id.ToString("D"),
                 alarm.DeviceAssetId,
@@ -75,7 +75,7 @@ public sealed class AlarmClearedIntegrationEventConverter
             alarm.OrganizationId,
             alarm.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:alarm-cleared:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.ExternalAlarmId}",
+            $"industrialTelemetry:alarm-cleared:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}",
             new AlarmClearedPayload(
                 alarm.Id.Id.ToString("D"),
                 alarm.DeviceAssetId,

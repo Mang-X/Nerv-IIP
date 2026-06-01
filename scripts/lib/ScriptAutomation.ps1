@@ -506,6 +506,10 @@ function Invoke-Pnpm {
         [string] $Name = 'pnpm'
     )
 
+    if ($IsWindows) {
+        return Invoke-NativeCommandWithTimeout -Command 'cmd' -Arguments (@('/d', '/s', '/c', 'pnpm') + $Arguments) -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+    }
+
     Invoke-NativeCommandWithTimeout -Command 'pnpm' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
 }
 

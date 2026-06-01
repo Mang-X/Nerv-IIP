@@ -13,6 +13,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.Caching;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
@@ -32,7 +33,10 @@ builder.Services
         };
     });
 builder.Services.Configure<JsonOptions>(o =>
-    o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
+{
+    o.SerializerOptions.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
+    o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+});
 builder.Services.AddNervIipCaching(builder.Configuration, "business-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "business-gateway");
 builder.Services.AddNervIipLocalization();
@@ -49,6 +53,8 @@ var demandPlanningBaseAddress = ResolveServiceBaseAddress(builder.Configuration,
 var erpBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
 var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
 var schedulingBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Scheduling:BaseUrl", "http://localhost:5120");
+var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
+var maintenanceBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Maintenance:BaseUrl", "http://localhost:5117");
 builder.Services.AddHttpClient<IBusinessGatewayAuthorizationClient, HttpBusinessGatewayAuthorizationClient>(client =>
 {
     client.BaseAddress = iamBaseAddress;
@@ -84,6 +90,14 @@ builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client
 builder.Services.AddHttpClient<IBusinessSchedulingClient, HttpBusinessSchedulingClient>(client =>
 {
     client.BaseAddress = schedulingBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessIndustrialTelemetryClient, HttpBusinessIndustrialTelemetryClient>(client =>
+{
+    client.BaseAddress = industrialTelemetryBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessMaintenanceClient, HttpBusinessMaintenanceClient>(client =>
+{
+    client.BaseAddress = maintenanceBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddBusinessGatewayAuthentication(builder.Configuration, builder.Environment);
 var allowedCorsOrigins = ResolveGatewayCorsOrigins(builder.Configuration, builder.Environment);
@@ -133,6 +147,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints(c =>
 {
+    c.Serializer.Options.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
     c.Serializer.Options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
     c.Endpoints.NameGenerator = BusinessGatewayOperationIdConvention.Generate;
 }).UseSwaggerGen();

@@ -31,7 +31,7 @@ public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAg
         EnvironmentId = MaintenanceText.Required(environmentId, nameof(environmentId));
         Inspector = MaintenanceText.Required(inspector, nameof(inspector));
         Result = MaintenanceText.Required(result, nameof(result));
-        InspectedAtUtc = inspectedAtUtc;
+        InspectedAtUtc = inspectedAtUtc.ToUniversalTime();
         PlanId = planId;
         WorkOrderId = workOrderId;
         this.AddDomainEvent(new MaintenanceInspectionRecordedDomainEvent(this));

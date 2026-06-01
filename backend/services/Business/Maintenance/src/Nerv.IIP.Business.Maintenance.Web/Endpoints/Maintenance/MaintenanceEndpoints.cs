@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderA
 using Nerv.IIP.Business.Maintenance.Web.Application.Auth;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
@@ -59,11 +60,30 @@ public sealed record CreateMaintenancePlanRequest(
     string PlanCode,
     string Interval,
     DateOnly StartsOn,
-    string Owner);
+    string Owner,
+    DateTimeOffset? WindowStartUtc,
+    DateTimeOffset? WindowEndUtc);
 
 public sealed record CreateMaintenancePlanResponse(MaintenancePlanId PlanId);
 
 public sealed record ListMaintenancePlansRequest(string? OrganizationId, string? EnvironmentId);
+
+public sealed record GetMaintenanceAssetAvailabilityWindowsRequest(
+    string DeviceAssetId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    int FreshnessMaxAgeMinutes = 60);
+
+public sealed record QueryMaintenanceAvailabilityWindowsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    string? DeviceAssetIds,
+    string? WorkCenterIds,
+    int FreshnessMaxAgeMinutes = 60);
 
 public sealed record RecordMaintenanceInspectionRequest(
     string OrganizationId,
@@ -119,7 +139,7 @@ public sealed class CreateMaintenancePlanEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateMaintenancePlanRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateMaintenancePlanCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.PlanCode, req.Interval, req.StartsOn, req.Owner), ct);
+        var id = await sender.Send(new CreateMaintenancePlanCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.PlanCode, req.Interval, req.StartsOn, req.Owner, req.WindowStartUtc, req.WindowEndUtc), ct);
         await Send.OkAsync(new CreateMaintenancePlanResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -133,6 +153,45 @@ public sealed class ListMaintenancePlansEndpoint(ISender sender)
     {
         var result = await sender.Send(new ListMaintenancePlansQuery(req.OrganizationId, req.EnvironmentId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetMaintenanceAssetAvailabilityWindowsEndpoint(ISender sender)
+    : MaintenanceEndpoint<GetMaintenanceAssetAvailabilityWindowsRequest, ResponseData<EquipmentRuntimeAvailabilityResponse>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<GetMaintenanceAssetAvailabilityWindowsEndpoint>());
+
+    public override async Task HandleAsync(GetMaintenanceAssetAvailabilityWindowsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetMaintenanceAssetAvailabilityWindowsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.WindowStartUtc, req.WindowEndUtc, req.FreshnessMaxAgeMinutes), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class QueryMaintenanceAvailabilityWindowsEndpoint(ISender sender)
+    : MaintenanceEndpoint<QueryMaintenanceAvailabilityWindowsRequest, ResponseData<EquipmentRuntimeAvailabilityResponse>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<QueryMaintenanceAvailabilityWindowsEndpoint>());
+
+    public override async Task HandleAsync(QueryMaintenanceAvailabilityWindowsRequest req, CancellationToken ct)
+    {
+        var request = new EquipmentRuntimeAvailabilityRequest(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WindowStartUtc,
+            req.WindowEndUtc,
+            SplitCsv(req.DeviceAssetIds),
+            SplitCsv(req.WorkCenterIds),
+            req.FreshnessMaxAgeMinutes);
+        var result = await sender.Send(new QueryMaintenanceAvailabilityWindowsQuery(request), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+
+    private static string[]? SplitCsv(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 }
 
@@ -160,6 +219,8 @@ public static class MaintenanceEndpointContracts
         new(typeof(CreateMaintenancePlanEndpoint), "POST", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createMaintenancePlan"),
         new(typeof(ListMaintenancePlansEndpoint), "GET", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenancePlans"),
         new(typeof(RecordMaintenanceInspectionEndpoint), "POST", "/api/business/v1/maintenance/inspections", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "recordMaintenanceInspection"),
+        new(typeof(GetMaintenanceAssetAvailabilityWindowsEndpoint), "GET", "/api/business/v1/maintenance/assets/{deviceAssetId}/availability-windows", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "getMaintenanceAssetAvailabilityWindows"),
+        new(typeof(QueryMaintenanceAvailabilityWindowsEndpoint), "GET", "/api/business/v1/maintenance/availability-windows", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryMaintenanceAvailabilityWindows"),
     ];
 
     public static MaintenanceEndpointContract Get<TEndpoint>() => All.Single(x => x.EndpointType == typeof(TEndpoint));

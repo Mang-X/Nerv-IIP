@@ -66,8 +66,11 @@ public sealed class MaintenancePlanEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.Interval).HasColumnName("interval").IsRequired().HasMaxLength(50).HasComment("Explicit maintenance interval expression, for example ISO-8601 P7D.");
         builder.Property(x => x.StartsOn).HasColumnName("starts_on").IsRequired().HasComment("Plan start date.");
         builder.Property(x => x.Owner).HasColumnName("owner").IsRequired().HasMaxLength(150).HasComment("Plan owner or team.");
+        builder.Property(x => x.WindowStartUtc).HasColumnName("window_start_utc").HasComment("UTC start of the optional runtime availability maintenance window.");
+        builder.Property(x => x.WindowEndUtc).HasColumnName("window_end_utc").HasComment("UTC end of the optional runtime availability maintenance window.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.PlanCode }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.WindowStartUtc, x.WindowEndUtc });
     }
 }
 

@@ -15,5 +15,7 @@ internal static class BusinessGatewayTestServiceBaseUrls
         builder.UseSetting("Erp:BaseUrl", "http://erp.local");
         builder.UseSetting("Mes:BaseUrl", "http://mes.local");
         builder.UseSetting("Scheduling:BaseUrl", "http://scheduling.local");
+        builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
+        builder.UseSetting("Maintenance:BaseUrl", "http://maintenance.local");
     }
 }

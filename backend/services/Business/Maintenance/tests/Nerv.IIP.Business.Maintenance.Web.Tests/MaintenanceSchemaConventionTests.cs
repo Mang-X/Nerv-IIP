@@ -48,6 +48,35 @@ public sealed class MaintenanceSchemaConventionTests
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
+    [Fact]
+    public void Maintenance_plan_runtime_window_columns_are_nullable_and_documented()
+    {
+        using var fixture = new SchemaFixture(CreateServices().BuildServiceProvider());
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MaintenancePlan))
+            ?? throw new InvalidOperationException("MaintenancePlan metadata was not found.");
+
+        var windowStart = entity.FindProperty(nameof(MaintenancePlan.WindowStartUtc))
+            ?? throw new InvalidOperationException("MaintenancePlan.WindowStartUtc metadata was not found.");
+        var windowEnd = entity.FindProperty(nameof(MaintenancePlan.WindowEndUtc))
+            ?? throw new InvalidOperationException("MaintenancePlan.WindowEndUtc metadata was not found.");
+
+        Assert.True(windowStart.IsNullable);
+        Assert.Equal("window_start_utc", windowStart.GetColumnName());
+        Assert.Equal("UTC start of the optional runtime availability maintenance window.", windowStart.GetComment());
+        Assert.True(windowEnd.IsNullable);
+        Assert.Equal("window_end_utc", windowEnd.GetColumnName());
+        Assert.Equal("UTC end of the optional runtime availability maintenance window.", windowEnd.GetComment());
+
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.Properties.Select(property => property.Name).SequenceEqual([
+                nameof(MaintenancePlan.OrganizationId),
+                nameof(MaintenancePlan.EnvironmentId),
+                nameof(MaintenancePlan.DeviceAssetId),
+                nameof(MaintenancePlan.WindowStartUtc),
+                nameof(MaintenancePlan.WindowEndUtc),
+            ]));
+    }
+
     private static IEnumerable<string> NoExternalOwnershipColumns(ApplicationDbContext dbContext)
     {
         var forbiddenFragments = new[]

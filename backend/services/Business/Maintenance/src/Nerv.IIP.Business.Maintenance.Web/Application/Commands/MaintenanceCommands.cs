@@ -108,7 +108,9 @@ public sealed record CreateMaintenancePlanCommand(
     string PlanCode,
     string Interval,
     DateOnly StartsOn,
-    string Owner) : ICommand<MaintenancePlanId>;
+    string Owner,
+    DateTimeOffset? WindowStartUtc,
+    DateTimeOffset? WindowEndUtc) : ICommand<MaintenancePlanId>;
 
 public sealed class CreateMaintenancePlanCommandValidator : AbstractValidator<CreateMaintenancePlanCommand>
 {
@@ -120,6 +122,12 @@ public sealed class CreateMaintenancePlanCommandValidator : AbstractValidator<Cr
         RuleFor(x => x.PlanCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Interval).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Owner).NotEmpty().MaximumLength(150);
+        RuleFor(x => x)
+            .Must(x => (x.WindowStartUtc is null) == (x.WindowEndUtc is null))
+            .WithMessage("Maintenance availability window start and end must be provided together.");
+        RuleFor(x => x)
+            .Must(x => x.WindowStartUtc is null || x.WindowEndUtc is null || x.WindowEndUtc > x.WindowStartUtc)
+            .WithMessage("Maintenance availability window end must be after start.");
     }
 }
 
@@ -128,7 +136,14 @@ public sealed class CreateMaintenancePlanCommandHandler(ApplicationDbContext dbC
 {
     public async Task<MaintenancePlanId> Handle(CreateMaintenancePlanCommand request, CancellationToken cancellationToken)
     {
-        var plan = MaintenancePlan.Create(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.PlanCode, request.Interval, request.StartsOn, request.Owner);
+        if ((request.WindowStartUtc is null) != (request.WindowEndUtc is null))
+        {
+            throw new KnownException("Maintenance availability window start and end must be provided together.");
+        }
+
+        var windowStartUtc = request.WindowStartUtc?.ToUniversalTime();
+        var windowEndUtc = request.WindowEndUtc?.ToUniversalTime();
+        var plan = MaintenancePlan.Create(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.PlanCode, request.Interval, request.StartsOn, request.Owner, windowStartUtc, windowEndUtc);
         dbContext.MaintenancePlans.Add(plan);
         await Task.CompletedTask;
         return plan.Id;
@@ -161,7 +176,7 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
 {
     public async Task<MaintenanceInspectionId> Handle(RecordMaintenanceInspectionCommand request, CancellationToken cancellationToken)
     {
-        var inspection = MaintenanceInspection.Record(request.OrganizationId, request.EnvironmentId, request.PlanId, request.WorkOrderId, request.Inspector, request.Result, request.InspectedAtUtc);
+        var inspection = MaintenanceInspection.Record(request.OrganizationId, request.EnvironmentId, request.PlanId, request.WorkOrderId, request.Inspector, request.Result, request.InspectedAtUtc.ToUniversalTime());
         dbContext.MaintenanceInspections.Add(inspection);
         await Task.CompletedTask;
         return inspection.Id;

@@ -63,6 +63,10 @@ public static class BusinessGatewayPermissions
     public const string SchedulingPlansRead = "business.scheduling.plans.read";
     public const string SchedulingPlansManage = "business.scheduling.plans.manage";
     public const string SchedulingPlansRelease = "business.scheduling.plans.release";
+    public const string IiotTelemetryRead = "business.iiot.telemetry.read";
+    public const string IiotAlarmsRead = "business.iiot.alarms.read";
+    public const string MaintenanceWorkOrdersRead = "business.maintenance.work-orders.read";
+    public const string MaintenancePlansRead = "business.maintenance.plans.read";
     public const string ErpProcurementRead = "business.erp.procurement.read";
     public const string MesFoundationRead = "business.mes.foundation.read";
     public const string MesOverviewRead = "business.mes.overview.read";
