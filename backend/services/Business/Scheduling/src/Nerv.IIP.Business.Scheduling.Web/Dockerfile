@@ -2,6 +2,7 @@
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
+RUN adduser --system --group --home /app appuser
 EXPOSE 80
 EXPOSE 443
 
@@ -17,5 +18,6 @@ RUN dotnet publish "Nerv.IIP.Business.Scheduling.Web.csproj" -c Release -o /app/
 
 FROM base AS final
 WORKDIR /app
-COPY --from=publish /app/publish .
+COPY --from=publish --chown=appuser:appuser /app/publish .
+USER appuser
 ENTRYPOINT ["dotnet", "Nerv.IIP.Business.Scheduling.Web.dll"]
