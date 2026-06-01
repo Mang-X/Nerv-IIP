@@ -51,13 +51,22 @@ $nonRootDockerfiles = @(
 
 foreach ($dockerfile in $nonRootDockerfiles) {
     $dockerfileContent = Get-Content -Raw $dockerfile
-    if ($dockerfileContent -notmatch "(?m)^\s*USER\s+(?!root(?:\s|$)).+") {
-        throw "Dockerfile must run as a non-root user: $dockerfile"
+    if ($dockerfileContent -notmatch "(?m)^\s*USER\s+appuser\s*(?:#.*)?$") {
+        throw "Dockerfile must run as the dedicated non-root appuser: $dockerfile"
     }
 }
 
+$viteSpaDockerfile = Get-Content -Raw "infra/docker/vite-spa.Dockerfile"
+if ($viteSpaDockerfile -notmatch "pid\s+/tmp/nginx\.pid") {
+    throw "Vite SPA Dockerfile must move the nginx PID file to /tmp for non-root runtime."
+}
+
+if ($viteSpaDockerfile -match "/var/run") {
+    throw "Vite SPA Dockerfile must not chown /var/run for non-root nginx runtime."
+}
+
 $ciWorkflow = Get-Content -Raw ".github/workflows/ci.yml"
-if ($ciWorkflow -match "(?m)^\s*uses:\s+pnpm/action-setup@(?![0-9a-f]{40}\s*$).+") {
+if ($ciWorkflow -match "(?m)^\s*uses:\s+pnpm/action-setup@(?![0-9a-f]{40}(?:\s+#.*)?\s*$).+") {
     throw "GitHub Actions workflow must pin pnpm/action-setup to a full commit SHA."
 }
 
