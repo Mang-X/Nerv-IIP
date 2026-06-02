@@ -71,6 +71,7 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
     {
         if (string.IsNullOrWhiteSpace(request.SkuId) && string.IsNullOrWhiteSpace(request.ProductionVersionId))
         {
+            // No execution context supplied; context-specific checks are handled by the execution workbench.
             return [];
         }
 
@@ -92,6 +93,7 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
     {
         if (string.IsNullOrWhiteSpace(request.WorkCenterCode))
         {
+            // No execution context supplied; context-specific checks are handled by the execution workbench.
             return [];
         }
 

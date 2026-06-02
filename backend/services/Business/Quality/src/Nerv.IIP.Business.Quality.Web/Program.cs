@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
+using Nerv.IIP.Caching;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
@@ -49,7 +50,7 @@ try
     }
     else
     {
-        var redis = await ConnectRedisAsync(builder.Configuration.GetConnectionString("Redis")!);
+        var redis = await NervIipRedisConnection.ConnectAsync(builder.Configuration.GetConnectionString("Redis")!);
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ => redis);
         builder.Services.AddDataProtection().PersistKeysToStackExchangeRedis(redis, "DataProtection-Keys");
     }
@@ -197,13 +198,6 @@ catch (Exception ex)
 finally
 {
     await Log.CloseAndFlushAsync();
-}
-
-static async Task<IConnectionMultiplexer> ConnectRedisAsync(string connectionString)
-{
-    var options = ConfigurationOptions.Parse(connectionString);
-    options.AbortOnConnectFail = false;
-    return await ConnectionMultiplexer.ConnectAsync(options);
 }
 
 static string ToLowerCamelEndpointName(string endpointTypeName)

@@ -199,8 +199,8 @@ These are errors that have occurred repeatedly. Read before writing any code.
 13. **Treating Aspire `Finished` as a dashboard problem.** A project resource shown
     as `Finished` usually means the process exited during startup. Inspect the latest
     DCP stderr log under `%TEMP%\aspire-dcp*` before changing code or restarting
-    blindly. In the recent AppHub/Ops case, the real error was unresolved
-    `IIntegrationEventPublisher`, not Aspire itself.
+    blindly. The real error is usually in the resource process log, not Aspire
+    itself.
 
 14. **Forgetting local Development environment in AppHost project resources.**
     Platform AppHost is the canonical dev launcher. New project resources must run
@@ -214,7 +214,7 @@ These are errors that have occurred repeatedly. Read before writing any code.
     AppHost must pass `Persistence__AutoMigrate=true` for that resource. Missing
     migration enablement can surface as broad Console request failures, downstream
     500s, or gateway circuit breakers; the root cause may be a missing table such as
-    `relation "...table..." does not exist`. Recent examples include AppHub
+    `relation "...table..." does not exist`. Observed local failures include AppHub
     `apphub.registration_idempotency`, MES execution tables, Maintenance readiness
     tables, and Notification `notification_messages` / `notification_tasks`.
 
@@ -236,7 +236,8 @@ These are errors that have occurred repeatedly. Read before writing any code.
     endpoints such as MES `foundation-readiness` may be called without SKU,
     production version, work center, or device scope. Global readiness should not
     report context-specific quality/equipment execution blockers unless the required
-    execution context was actually supplied.
+    execution context was actually supplied. In that case, the frontend/workbench
+    that owns the missing scope should present the selection prompt or empty state.
 
 19. **Frontend facade calls with empty business scope.** Business Console composables
     must normalize IDs and suppress queries that require a device, work center, SKU,

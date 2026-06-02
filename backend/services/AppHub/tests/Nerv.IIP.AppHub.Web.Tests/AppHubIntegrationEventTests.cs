@@ -229,11 +229,19 @@ public sealed class AppHubIntegrationEventTests
         var subscriptions = typeof(AppHubPublishedEventSink)
             .GetMethods()
             .SelectMany(method => method.GetCustomAttributes(typeof(CapSubscribeAttribute), inherit: false).Cast<CapSubscribeAttribute>())
-            .Select(attribute => attribute.Name)
+            .Select(attribute => new { attribute.Name, attribute.Group })
             .ToArray();
 
-        Assert.Contains(nameof(ApplicationRegisteredIntegrationEvent), subscriptions);
-        Assert.Contains(nameof(ApplicationInstanceStatusChangedIntegrationEvent), subscriptions);
+        Assert.Contains(
+            subscriptions,
+            subscription =>
+                subscription.Name == nameof(ApplicationRegisteredIntegrationEvent) &&
+                subscription.Group == AppHubPublishedEventSink.ConsumerName);
+        Assert.Contains(
+            subscriptions,
+            subscription =>
+                subscription.Name == nameof(ApplicationInstanceStatusChangedIntegrationEvent) &&
+                subscription.Group == AppHubPublishedEventSink.ConsumerName);
     }
 
     private static OperationTaskCompletedIntegrationEvent CreateCompletedEvent(int eventVersion)

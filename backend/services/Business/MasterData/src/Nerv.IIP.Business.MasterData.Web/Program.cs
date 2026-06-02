@@ -19,6 +19,7 @@ using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
+using Nerv.IIP.Caching;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
@@ -60,7 +61,7 @@ try
     }
     else
     {
-        var redis = await ConnectRedisAsync(builder.Configuration.GetConnectionString("Redis")!);
+        var redis = await NervIipRedisConnection.ConnectAsync(builder.Configuration.GetConnectionString("Redis")!);
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ => redis);
 
         // DataProtection - use custom extension that resolves IConnectionMultiplexer from DI
@@ -238,13 +239,6 @@ catch (Exception ex)
 finally
 {
     await Log.CloseAndFlushAsync();
-}
-
-static async Task<IConnectionMultiplexer> ConnectRedisAsync(string connectionString)
-{
-    var options = ConfigurationOptions.Parse(connectionString);
-    options.AbortOnConnectFail = false;
-    return await ConnectionMultiplexer.ConnectAsync(options);
 }
 
 static string ToLowerCamelEndpointName(string endpointTypeName)

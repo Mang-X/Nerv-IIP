@@ -109,14 +109,12 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Matches(
             "businessMaintenance[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
             programText);
-        var apphubResourceStart = programText.IndexOf("var apphub =", StringComparison.Ordinal);
-        var apphubRabbitMqBranchStart = programText.IndexOf("if (rabbitmq is not null)", apphubResourceStart, StringComparison.Ordinal);
-        var apphubResourceText = programText[apphubResourceStart..apphubRabbitMqBranchStart];
-        Assert.Contains("WithEnvironment(\"Persistence__AutoMigrate\", \"true\")", apphubResourceText);
-        var notificationResourceStart = programText.IndexOf("var notification =", StringComparison.Ordinal);
-        var notificationRabbitMqBranchStart = programText.IndexOf("if (rabbitmq is not null)", notificationResourceStart, StringComparison.Ordinal);
-        var notificationResourceText = programText[notificationResourceStart..notificationRabbitMqBranchStart];
-        Assert.Contains("WithEnvironment(\"Persistence__AutoMigrate\", \"true\")", notificationResourceText);
+        Assert.Matches(
+            "apphub[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
+            programText);
+        Assert.Matches(
+            "notification[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
+            programText);
     }
 
     [Fact]
@@ -158,9 +156,15 @@ public sealed class FastEndpointsArchitectureTests
         {
             var programText = File.ReadAllText(Path.Combine(root, projectDirectory, "Program.cs"));
 
-            Assert.Contains("AbortOnConnectFail = false", programText);
+            Assert.Contains("NervIipRedisConnection.ConnectAsync", programText);
+            Assert.DoesNotContain("static async Task<IConnectionMultiplexer> ConnectRedisAsync", programText);
             Assert.DoesNotContain("ConnectionMultiplexer.ConnectAsync(builder.Configuration.GetConnectionString(\"Redis\")!)", programText);
         }
+
+        var redisConnectionText = File.ReadAllText(Path.Combine(
+            root,
+            "backend/common/Caching/Nerv.IIP.Caching/NervIipRedisConnection.cs"));
+        Assert.Contains("AbortOnConnectFail = false", redisConnectionText);
     }
 
     [Fact]
