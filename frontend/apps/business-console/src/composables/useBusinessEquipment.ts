@@ -134,6 +134,14 @@ function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | u
   return value === undefined || value === '' ? {} : { [key]: value }
 }
 
+function normalizeDeviceAssetIds(deviceAssetIds: string) {
+  return deviceAssetIds
+    .split(',')
+    .map((deviceAssetId) => deviceAssetId.trim())
+    .filter((deviceAssetId) => deviceAssetId.length > 0)
+    .join(',')
+}
+
 function toContextQuery(businessContext: ReturnType<typeof useBusinessContextStore>) {
   return {
     organizationId: businessContext.organizationId,
@@ -147,7 +155,7 @@ function toOverviewQuery(
 ) {
   return {
     ...toContextQuery(businessContext),
-    deviceAssetIds: filters.deviceAssetIds,
+    deviceAssetIds: normalizeDeviceAssetIds(filters.deviceAssetIds),
   }
 }
 
@@ -186,11 +194,13 @@ function listItems<TItem, TEnvelope extends { success?: boolean; data?: { items?
 export function useBusinessEquipmentOverview() {
   const businessContext = useBusinessContextStore()
   const filters = defaultOverviewFilters()
-  const overviewQuery = useQuery(() =>
-    getBusinessConsoleEquipmentOverviewQueryOptions({
+  const overviewEnabled = computed(() => normalizeDeviceAssetIds(filters.deviceAssetIds).length > 0)
+  const overviewQuery = useQuery(() => ({
+    ...getBusinessConsoleEquipmentOverviewQueryOptions({
       query: toOverviewQuery(businessContext, filters),
     }),
-  )
+    enabled: overviewEnabled.value,
+  }))
 
   const overview = computed(() =>
     unwrapData<BusinessConsoleEquipmentOverviewResponse, BusinessConsoleEquipmentOverviewEnvelope>(
@@ -205,18 +215,20 @@ export function useBusinessEquipmentOverview() {
     overview,
     overviewError: overviewQuery.error,
     overviewPending: overviewQuery.isLoading,
-    refreshOverview: overviewQuery.refetch,
+    refreshOverview: () => overviewEnabled.value ? overviewQuery.refetch() : Promise.resolve(),
   }
 }
 
 export function useBusinessEquipmentAvailability() {
   const businessContext = useBusinessContextStore()
   const filters = defaultAvailabilityFilters()
-  const availabilityQuery = useQuery(() =>
-    getBusinessConsoleEquipmentAvailabilityQueryOptions({
+  const availabilityEnabled = computed(() => normalizeDeviceAssetIds(filters.deviceAssetIds).length > 0)
+  const availabilityQuery = useQuery(() => ({
+    ...getBusinessConsoleEquipmentAvailabilityQueryOptions({
       query: toAvailabilityQuery(businessContext, filters),
     }),
-  )
+    enabled: availabilityEnabled.value,
+  }))
 
   return {
     availability: computed(() =>
@@ -233,7 +245,7 @@ export function useBusinessEquipmentAvailability() {
       ),
     ),
     filters,
-    refreshAvailability: availabilityQuery.refetch,
+    refreshAvailability: () => availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
   }
 }
 

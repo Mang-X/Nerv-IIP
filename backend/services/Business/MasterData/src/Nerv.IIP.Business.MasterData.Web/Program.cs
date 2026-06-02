@@ -60,7 +60,7 @@ try
     }
     else
     {
-        var redis = await ConnectionMultiplexer.ConnectAsync(builder.Configuration.GetConnectionString("Redis")!);
+        var redis = await ConnectRedisAsync(builder.Configuration.GetConnectionString("Redis")!);
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ => redis);
 
         // DataProtection - use custom extension that resolves IConnectionMultiplexer from DI
@@ -238,6 +238,13 @@ catch (Exception ex)
 finally
 {
     await Log.CloseAndFlushAsync();
+}
+
+static async Task<IConnectionMultiplexer> ConnectRedisAsync(string connectionString)
+{
+    var options = ConfigurationOptions.Parse(connectionString);
+    options.AbortOnConnectFail = false;
+    return await ConnectionMultiplexer.ConnectAsync(options);
 }
 
 static string ToLowerCamelEndpointName(string endpointTypeName)

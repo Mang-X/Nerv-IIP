@@ -1,4 +1,5 @@
 using MediatR;
+using DotNetCore.CAP;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
@@ -220,6 +221,19 @@ public sealed class AppHubIntegrationEventTests
         var descriptor = Assert.Single(services, service => service.ServiceType == typeof(IIntegrationEventDeadLetterStore));
         Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
         Assert.Equal(typeof(PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>), descriptor.ImplementationType);
+    }
+
+    [Fact]
+    public void Apphub_published_events_have_local_cap_sink_subscriptions_for_inmemory_transport()
+    {
+        var subscriptions = typeof(AppHubPublishedEventSink)
+            .GetMethods()
+            .SelectMany(method => method.GetCustomAttributes(typeof(CapSubscribeAttribute), inherit: false).Cast<CapSubscribeAttribute>())
+            .Select(attribute => attribute.Name)
+            .ToArray();
+
+        Assert.Contains(nameof(ApplicationRegisteredIntegrationEvent), subscriptions);
+        Assert.Contains(nameof(ApplicationInstanceStatusChangedIntegrationEvent), subscriptions);
     }
 
     private static OperationTaskCompletedIntegrationEvent CreateCompletedEvent(int eventVersion)

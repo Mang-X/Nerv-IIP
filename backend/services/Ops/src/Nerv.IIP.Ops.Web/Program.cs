@@ -48,7 +48,12 @@ if (usePostgreSql)
     builder.Services.AddContext();
     builder.Services.AddEnvContext("X-Environment-Id");
     builder.Services.AddCapContextProcessor();
-    builder.Services.AddIntegrationEvents(typeof(Program)).UseCap<ApplicationDbContext>(_ => { });
+    builder.Services.AddIntegrationEvents(typeof(Program))
+        .UseCap<ApplicationDbContext>(b =>
+        {
+            b.RegisterServicesFromAssemblies(typeof(Program));
+            b.AddContextIntegrationFilters();
+        });
     builder.Services.AddCap(options =>
     {
         options.Version = builder.Configuration["Cap:Version"] ?? "v1";

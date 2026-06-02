@@ -71,16 +71,7 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
     {
         if (string.IsNullOrWhiteSpace(request.SkuId) && string.IsNullOrWhiteSpace(request.ProductionVersionId))
         {
-            return
-            [
-                NewIssue(
-                    MesReadinessReasonCodes.QualityPlanMissing,
-                    "未解析到 SKU 或生产版本，无法确认首检、巡检和终检检验方案。",
-                    "Quality",
-                    "InspectionPlan",
-                    null,
-                    "选择已发布生产版本并同步检验方案"),
-            ];
+            return [];
         }
 
         return
@@ -101,16 +92,7 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
     {
         if (string.IsNullOrWhiteSpace(request.WorkCenterCode))
         {
-            return
-            [
-                NewIssue(
-                    MesReadinessReasonCodes.Downtime,
-                    "未指定工作中心，无法确认设备静态可用性、维修占用、报警和停机状态。",
-                    "MasterData",
-                    "WorkCenter",
-                    null,
-                    "选择工作中心或补齐工序资源快照"),
-            ];
+            return [];
         }
 
         var windowStart = request.PlannedStartUtc ?? DateTimeOffset.UtcNow;
@@ -833,6 +815,20 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
 {
     public async Task<MesTraceabilityResponse> Handle(GetWorkOrderTraceabilityQuery request, CancellationToken cancellationToken)
     {
+        var workOrder = await dbContext.WorkOrders
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderIdValue == request.WorkOrderId,
+                cancellationToken);
+        if (workOrder is null)
+        {
+            return new MesTraceabilityResponse(
+                [new MesTraceabilityNode(request.WorkOrderId, "WorkOrder", request.WorkOrderId, "Unknown")],
+                []);
+        }
+
         var detail = await new GetMesWorkOrderDetailQueryHandler(dbContext).Handle(
             new GetMesWorkOrderDetailQuery(request.OrganizationId, request.EnvironmentId, request.WorkOrderId),
             cancellationToken);

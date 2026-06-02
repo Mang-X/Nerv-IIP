@@ -476,6 +476,48 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Foundation_readiness_without_execution_context_does_not_block_contextual_quality_or_equipment_checks()
+    {
+        var services = CreateServices(nameof(Foundation_readiness_without_execution_context_does_not_block_contextual_quality_or_equipment_checks));
+
+        using var scope = services.CreateScope();
+        var handler = new GetMesFoundationReadinessAreaQueryHandler(
+            new MesFoundationReadinessService(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()));
+
+        var quality = await handler.Handle(
+            new GetMesFoundationReadinessAreaQuery(
+                "org-001",
+                "env-dev",
+                "quality",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null),
+            CancellationToken.None);
+        var equipment = await handler.Handle(
+            new GetMesFoundationReadinessAreaQuery(
+                "org-001",
+                "env-dev",
+                "equipment",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null),
+            CancellationToken.None);
+
+        Assert.Equal("Ready", quality.Status);
+        Assert.Empty(quality.Issues);
+        Assert.Equal("Ready", equipment.Status);
+        Assert.Empty(equipment.Issues);
+    }
+
+    [Fact]
     public async Task Equipment_readiness_returns_shared_active_alarm_reason_code()
     {
         var services = CreateServices(nameof(Equipment_readiness_returns_shared_active_alarm_reason_code));
@@ -987,6 +1029,23 @@ public sealed class MesPersistenceContractTests
         Assert.Contains(traceability.Nodes, x => x.NodeId == "LOT-BATCH-A" && x.NodeType == "MaterialLot");
         Assert.Contains(traceability.Nodes, x => x.NodeId == "WO-BATCH-001" && x.NodeType == "WorkOrder");
         Assert.Contains(traceability.Edges, x => x.RelationType == "consumed-by-report");
+    }
+
+    [Fact]
+    public async Task Work_order_traceability_returns_unknown_node_when_work_order_is_missing()
+    {
+        var services = CreateServices(nameof(Work_order_traceability_returns_unknown_node_when_work_order_is_missing));
+
+        using var scope = services.CreateScope();
+        var traceability = await new GetWorkOrderTraceabilityQueryHandler(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
+            .Handle(new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-MISSING"), CancellationToken.None);
+
+        var node = Assert.Single(traceability.Nodes);
+        Assert.Equal("WO-MISSING", node.NodeId);
+        Assert.Equal("WorkOrder", node.NodeType);
+        Assert.Equal("Unknown", node.Status);
+        Assert.Empty(traceability.Edges);
     }
 
     [Fact]

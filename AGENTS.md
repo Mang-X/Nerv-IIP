@@ -196,6 +196,59 @@ These are errors that have occurred repeatedly. Read before writing any code.
     files for assertions. Use DI, `DbContext` reflection, or
     `Nerv.IIP.Testing` schema convention helpers instead.
 
+13. **Treating Aspire `Finished` as a dashboard problem.** A project resource shown
+    as `Finished` usually means the process exited during startup. Inspect the latest
+    DCP stderr log under `%TEMP%\aspire-dcp*` before changing code or restarting
+    blindly. In the recent AppHub/Ops case, the real error was unresolved
+    `IIntegrationEventPublisher`, not Aspire itself.
+
+14. **Forgetting local Development environment in AppHost project resources.**
+    Platform AppHost is the canonical dev launcher. New project resources must run
+    with `ASPNETCORE_ENVIRONMENT=Development` and `DOTNET_ENVIRONMENT=Development`
+    unless there is an explicit test/deployment reason not to. Otherwise services may
+    select production-like persistence or messaging branches and fail differently
+    from local expectations.
+
+15. **PostgreSQL services added to AppHost without local migration enablement.**
+    If a local Development service relies on PostgreSQL migrations, verify whether
+    AppHost must pass `Persistence__AutoMigrate=true` for that resource. Missing
+    migration enablement can surface as broad Console request failures, downstream
+    500s, or gateway circuit breakers; the root cause may be a missing table such as
+    `relation "...table..." does not exist`. Recent examples include AppHub
+    `apphub.registration_idempotency`, MES execution tables, Maintenance readiness
+    tables, and Notification `notification_messages` / `notification_tasks`.
+
+16. **CAP PostgreSQL profile without integration event publisher registration.**
+    Services with domain-event-to-integration-event converters must register the
+    NetCorePal integration event publisher in the active CAP profile, including
+    PostgreSQL. If startup fails with unresolved
+    `NetCorePal.Extensions.DistributedTransactions.IIntegrationEventPublisher`,
+    compare the service's CAP registration with a known working service before
+    changing handlers.
+
+17. **Redis-backed services aborting startup on first connect attempt.** Local
+    Aspire startup can race Redis readiness. When a service constructs a
+    `ConnectionMultiplexer`, parse options with `AbortOnConnectFail=false` so the
+    service can start and reconnect instead of turning one transient Redis race into
+    a failed resource.
+
+18. **Context-free readiness checks reported as execution blockers.** Diagnostic
+    endpoints such as MES `foundation-readiness` may be called without SKU,
+    production version, work center, or device scope. Global readiness should not
+    report context-specific quality/equipment execution blockers unless the required
+    execution context was actually supplied.
+
+19. **Frontend facade calls with empty business scope.** Business Console composables
+    must normalize IDs and suppress queries that require a device, work center, SKU,
+    production version, or work order when that scope is empty. Empty scope should be
+    represented as no request or a clear empty state, not as repeated failing backend
+    calls.
+
+20. **Demo/default identifiers causing backend 500s.** Console defaults such as
+    `WO-001` are UI conveniences, not durable seed guarantees. Query handlers and
+    facades must tolerate missing demo/default records with a domain-appropriate
+    empty or `Unknown` result instead of throwing 500s.
+
 ## "Done" Definition
 
 Before claiming a task is complete, verify against the Change Decision Table above.

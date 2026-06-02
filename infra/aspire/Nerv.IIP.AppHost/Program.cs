@@ -1,9 +1,11 @@
 var builder = DistributedApplication.CreateBuilder(args);
+const string LocalDevelopmentEnvironment = "Development";
 
 var iamJwtSigningKey = builder.AddParameter("iam-jwt-signing-key", secret: true);
 var internalServiceBearerToken = builder.AddParameter("internal-service-bearer-token", secret: true);
 var minioRootUser = builder.AddParameter("minio-root-user", secret: true);
 var minioRootPassword = builder.AddParameter("minio-root-password", secret: true);
+var redisPassword = builder.AddParameter("redis-password", secret: true);
 var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secret: true);
 var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
@@ -33,7 +35,7 @@ var businessIndustrialTelemetryDatabase = postgres.AddDatabase("business-industr
 var businessMaintenanceDatabase = postgres.AddDatabase("business-maintenance-db", "nerv_iip_maintenance");
 var businessErpDatabase = postgres.AddDatabase("business-erp-db", "nerv_iip_erp");
 var businessSchedulingDatabase = postgres.AddDatabase("business-scheduling-db", "nerv_iip_scheduling");
-var redis = builder.AddRedis("redis")
+var redis = builder.AddRedis("redis", password: redisPassword)
     .WithDataVolume("nerv-iip-redis");
 var rabbitmq = useRabbitMq
     ? builder.AddRabbitMQ("rabbitmq").WithManagementPlugin()
@@ -51,9 +53,10 @@ var otelCollector = builder.AddContainer("otel-collector", "otel/opentelemetry-c
     .WithEndpoint(port: 4317, targetPort: 4317, name: "otlp-grpc")
     .WithHttpEndpoint(port: 4318, targetPort: 4318, name: "otlp-http");
 
-var apphub = builder.AddProject<Projects.Nerv_IIP_AppHub_Web>("apphub")
+var apphub = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_AppHub_Web>("apphub"))
     .WithHttpEndpoint(port: 5101, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("ConnectorHostCredential__Secret", iamSeedConnectorHostSecret)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
@@ -71,7 +74,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var iam = builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam")
+var iam = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam"))
     .WithHttpEndpoint(port: 5102, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
@@ -88,7 +91,7 @@ var iam = builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam")
     .WaitFor(redis)
     .WaitFor(otelCollector);
 
-var ops = builder.AddProject<Projects.Nerv_IIP_Ops_Web>("ops")
+var ops = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Ops_Web>("ops"))
     .WithHttpEndpoint(port: 5103, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -107,7 +110,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var fileStorage = builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage")
+var fileStorage = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage"))
     .WithHttpEndpoint(port: 5104, name: "http")
     .WithEnvironment("Storage__Provider", "MinIO")
     .WithEnvironment("Storage__MinIO__Endpoint", minio.GetEndpoint("api"))
@@ -121,9 +124,10 @@ var fileStorage = builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-st
     .WaitFor(minio)
     .WaitFor(otelCollector);
 
-var notification = builder.AddProject<Projects.Nerv_IIP_Notification_Web>("notification")
+var notification = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Notification_Web>("notification"))
     .WithHttpEndpoint(port: 5106, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
@@ -138,7 +142,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessMasterData = builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>("business-master-data")
+var businessMasterData = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>("business-master-data"))
     .WithHttpEndpoint(port: 5107, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -157,7 +161,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessProductEngineering = builder.AddProject<Projects.Nerv_IIP_Business_ProductEngineering_Web>("business-product-engineering")
+var businessProductEngineering = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_ProductEngineering_Web>("business-product-engineering"))
     .WithHttpEndpoint(port: 5108, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
@@ -175,7 +179,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessInventory = builder.AddProject<Projects.Nerv_IIP_Business_Inventory_Web>("business-inventory")
+var businessInventory = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Inventory_Web>("business-inventory"))
     .WithHttpEndpoint(port: 5109, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -192,7 +196,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessQuality = builder.AddProject<Projects.Nerv_IIP_Business_Quality_Web>("business-quality")
+var businessQuality = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Quality_Web>("business-quality"))
     .WithHttpEndpoint(port: 5110, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -211,9 +215,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessMes = builder.AddProject<Projects.Nerv_IIP_Business_Mes_Web>("business-mes")
+var businessMes = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Mes_Web>("business-mes"))
     .WithHttpEndpoint(port: 5111, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
@@ -228,7 +233,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessDemandPlanning = builder.AddProject<Projects.Nerv_IIP_Business_DemandPlanning_Web>("business-demand-planning")
+var businessDemandPlanning = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_DemandPlanning_Web>("business-demand-planning"))
     .WithHttpEndpoint(port: 5112, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -251,7 +256,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessBarcodeLabel = builder.AddProject<Projects.Nerv_IIP_Business_BarcodeLabel_Web>("business-barcode-label")
+var businessBarcodeLabel = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_BarcodeLabel_Web>("business-barcode-label"))
     .WithHttpEndpoint(port: 5113, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -268,7 +273,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessApproval = builder.AddProject<Projects.Nerv_IIP_Business_Approval_Web>("business-approval")
+var businessApproval = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Approval_Web>("business-approval"))
     .WithHttpEndpoint(port: 5114, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -285,7 +290,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessWms = builder.AddProject<Projects.Nerv_IIP_Business_Wms_Web>("business-wms")
+var businessWms = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Wms_Web>("business-wms"))
     .WithHttpEndpoint(port: 5115, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -305,7 +310,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessIndustrialTelemetry = builder.AddProject<Projects.Nerv_IIP_Business_IndustrialTelemetry_Web>("business-industrial-telemetry")
+var businessIndustrialTelemetry = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_IndustrialTelemetry_Web>("business-industrial-telemetry"))
     .WithHttpEndpoint(port: 5116, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -322,9 +327,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessMaintenance = builder.AddProject<Projects.Nerv_IIP_Business_Maintenance_Web>("business-maintenance")
+var businessMaintenance = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Maintenance_Web>("business-maintenance"))
     .WithHttpEndpoint(port: 5117, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
+    .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otelCollector.GetEndpoint("otlp-http"))
     .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
@@ -339,7 +345,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessErp = builder.AddProject<Projects.Nerv_IIP_Business_Erp_Web>("business-erp")
+var businessErp = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Erp_Web>("business-erp"))
     .WithHttpEndpoint(port: 5118, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -358,7 +364,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessScheduling = builder.AddProject<Projects.Nerv_IIP_Business_Scheduling_Web>("business-scheduling")
+var businessScheduling = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Scheduling_Web>("business-scheduling"))
     .WithHttpEndpoint(port: 5120, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -375,7 +381,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")
+var gateway = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway"))
     .WithHttpEndpoint(port: 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
@@ -426,7 +432,7 @@ var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway
     .WaitFor(businessScheduling)
     .WaitFor(redis);
 
-var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")
+var businessGateway = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway"))
     .WithHttpEndpoint(port: 5119, name: "http")
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
@@ -463,7 +469,7 @@ var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>(
     .WaitFor(redis)
     .WaitFor(otelCollector);
 
-var connectorHost = builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")
+var connectorHost = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host"))
     .WithEnvironment("ConnectorHost__CycleSeconds", "1")
     .WithEnvironment("ConnectorHost__ConnectorSecret", iamSeedConnectorHostSecret)
     .WithEnvironment("Platform__AppHubBaseUrl", apphub.GetEndpoint("http"))
@@ -494,3 +500,11 @@ builder.AddViteApp("business-console", "../../../frontend/apps/business-console"
     .WaitFor(businessGateway);
 
 builder.Build().Run();
+
+Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithLocalDevelopmentEnvironment(
+    Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> project)
+{
+    return project
+        .WithEnvironment("ASPNETCORE_ENVIRONMENT", LocalDevelopmentEnvironment)
+        .WithEnvironment("DOTNET_ENVIRONMENT", LocalDevelopmentEnvironment);
+}
