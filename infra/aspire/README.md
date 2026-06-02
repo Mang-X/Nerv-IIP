@@ -15,7 +15,9 @@ through `winget` when requested, initializes missing local Development user secr
 restores backend/frontend dependencies, and builds the AppHost. Docker Desktop may
 still need to be started manually after first installation. The manual commands
 below are for cases where you intentionally want to set repeatable local values
-yourself.
+yourself. Bootstrap does not contain a fixed IAM admin password; pass
+`-LocalAdminPassword` before the first database seed if you need a known local login
+password, or inspect/reset the local user-secret value yourself.
 
 ```powershell
 dotnet user-secrets set "Parameters:iam-jwt-signing-key" "<at-least-32-byte-local-signing-key>" --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj

@@ -19,7 +19,7 @@ param(
 
     [switch] $Help,
 
-    [string] $LocalAdminPassword = 'NervIIP.Local.Admin!2026',
+    [string] $LocalAdminPassword,
 
     [ValidateSet('healthy', 'up', 'down')]
     [string] $Status = 'healthy',

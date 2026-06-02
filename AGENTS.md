@@ -293,6 +293,12 @@ These are errors that have occurred repeatedly. Read before writing any code.
     Future offline scripts should consume Aspire-generated artifacts instead of
     inventing a parallel topology.
 
+26. **Hardcoding bootstrap seed passwords.** Connected-machine bootstrap may create
+    local Development user-secrets, but it must not keep a fixed IAM admin password
+    in source. Generate a random local value by default, or require the operator to
+    pass a value explicitly through a non-logged path. Secret-setting commands must
+    mark sensitive arguments for script log redaction.
+
 ## "Done" Definition
 
 Before claiming a task is complete, verify against the Change Decision Table above.

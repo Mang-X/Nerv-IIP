@@ -125,6 +125,10 @@ user-secrets，执行 `dotnet restore`、`pnpm install` 和 AppHost build。Dock
 Desktop 安装后如果 daemon 尚未运行，需要先启动 Docker Desktop 再重跑
 bootstrap。完成后日常启动使用：
 
+如需固定本地 IAM seed 管理员密码，可在首次数据库 seed 前显式传入
+`-LocalAdminPassword`；不传时 bootstrap 会生成随机 Development-only 值并写入
+本机 user-secrets，不会把固定密码写入仓库文件。
+
 ```powershell
 .\nerv.ps1 dev
 ```

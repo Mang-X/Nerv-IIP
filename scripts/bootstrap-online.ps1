@@ -25,7 +25,7 @@ param(
     [switch] $Start,
     [switch] $NoBuild,
     [switch] $Help,
-    [string] $LocalAdminPassword = 'NervIIP.Local.Admin!2026'
+    [string] $LocalAdminPassword
 )
 
 Set-StrictMode -Version Latest
@@ -47,6 +47,9 @@ Options:
   -SkipLocalSecrets  Do not initialize missing local AppHost user secrets.
   -Start             Start the platform through Aspire after bootstrap.
   -NoBuild           Forward -NoBuild when -Start is used.
+  -LocalAdminPassword
+                    Optional known local IAM seed admin password. If omitted, a random
+                    Development-only value is written to user-secrets.
   -Help              Print this help.
 
 Default behavior:
@@ -273,7 +276,12 @@ function Set-AppHostUserSecretIfMissing {
         return $false
     }
 
-    Invoke-DotNet -Arguments @('user-secrets', 'set', $Name, $Value, '--project', $AppHostProject) -WorkingDirectory $root -TimeoutSeconds 120 -Name "bootstrap-secret-$($Name.Replace(':', '-'))" | Out-Null
+    Invoke-DotNet `
+        -Arguments @('user-secrets', 'set', $Name, $Value, '--project', $AppHostProject) `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 120 `
+        -Name "bootstrap-secret-$($Name.Replace(':', '-'))" `
+        -SensitiveArgumentIndexes @(3) | Out-Null
     $ExistingSecrets[$Name] = '<set>'
     return $true
 }
@@ -287,6 +295,14 @@ function Initialize-LocalAppHostSecrets {
     $existing = Get-AppHostUserSecrets -AppHostProject $AppHostProject
     $created = New-Object System.Collections.Generic.List[string]
 
+    $adminPasswordWasGenerated = [string]::IsNullOrWhiteSpace($LocalAdminPassword)
+    $adminPassword = if ($adminPasswordWasGenerated) {
+        New-SecretValue -Bytes 24
+    }
+    else {
+        $LocalAdminPassword
+    }
+
     $secretMap = [ordered]@{
         'Parameters:iam-jwt-signing-key' = New-SecretValue -Bytes 48
         'Parameters:internal-service-bearer-token' = New-SecretValue -Bytes 48
@@ -294,7 +310,7 @@ function Initialize-LocalAppHostSecrets {
         'Parameters:redis-password' = New-SecretValue -Bytes 24
         'Parameters:minio-root-user' = 'nerv-local-minio'
         'Parameters:minio-root-password' = New-SecretValue -Bytes 24
-        'Parameters:iam-seed-admin-password' = $LocalAdminPassword
+        'Parameters:iam-seed-admin-password' = $adminPassword
         'Parameters:iam-seed-connector-host-secret' = New-SecretValue -Bytes 32
     }
 
@@ -306,7 +322,9 @@ function Initialize-LocalAppHostSecrets {
 
     if ($created.Count -gt 0) {
         Write-Diagnostic "Initialized missing local AppHost user secrets: $($created -join ', ')"
-        Write-Diagnostic "Local IAM seed admin password uses the bootstrap default unless -LocalAdminPassword was supplied."
+        if ($adminPasswordWasGenerated -and $created.Contains('Parameters:iam-seed-admin-password')) {
+            Write-Diagnostic 'Generated a random local IAM seed admin password in user-secrets. Retrieve or override it with dotnet user-secrets before the first database seed if you need a known local login password.'
+        }
     }
     else {
         Write-Diagnostic 'All required local AppHost user secrets were already present.'
