@@ -12,18 +12,20 @@ processors:
 exporters:
   debug:
     verbosity: basic
+  otlphttp/aspire-dashboard:
+    endpoint: ${env:NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT}
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [debug, otlphttp/aspire-dashboard]
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [debug, otlphttp/aspire-dashboard]
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [debug, otlphttp/aspire-dashboard]

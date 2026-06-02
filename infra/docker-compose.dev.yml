@@ -38,6 +38,8 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector:0.116.1
     command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT: ${NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT:-http://host.docker.internal:18890}
     ports:
       - "4317:4317"
       - "4318:4318"

@@ -32,6 +32,14 @@ Observability 不拥有：
 4. `observability` schema 只保存 chunk 和可选 entry 索引，不保存完整原始日志正文。
 5. PlatformGateway 查询日志时先查索引，再通过 File Storage 读取 chunk，并对返回结果做鉴权、分页、脱敏和限流。
 
+## 运行时 telemetry 路由
+
+1. 本地 `.\nerv.ps1 dev` 默认由 Aspire AppHost 注入 Dashboard OTLP endpoint，服务不应手工覆盖 `OTEL_EXPORTER_OTLP_ENDPOINT` 到自建 Collector。这样 Aspire Dashboard 的 Structured logs、Traces 和 Metrics 页面能直接看到 AppHost 内资源的 telemetry。
+2. AppHost 内的 OpenTelemetry Collector 是显式测试路径，只在 `Observability:UseCollector=true` 时启用。该路径用于验证 Collector/Compose-like 转发，不是普通本地开发默认值。
+3. Compose、PoC 和生产路径以 OpenTelemetry Collector 作为采集入口。Collector 可以通过 `NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT` 把数据转发到 standalone Aspire Dashboard 的 OTLP/HTTP endpoint，用于短期诊断。
+4. standalone Aspire Dashboard 只保存内存态 telemetry，适合开发、联调、PoC 和现场短期排障。生产长期日志、trace 检索、审计保留和导出必须走滚动 JSONL、Log Archive Worker、File Storage chunk、`observability` 索引或客户已有观测平台。
+5. CLI 校验优先使用 `aspire otel logs` 和 `aspire otel traces`，不要只看资源状态判断 telemetry 是否进入 Dashboard。
+
 ## 计划表族
 
 后续真正建表前，必须把本节扩展为和 AppHub/Ops 同粒度的 schema catalog。

@@ -48,6 +48,38 @@ AppHost, or DCP processes:
 .\nerv.ps1 stop
 ```
 
+## Local observability
+
+For normal local development, `.\nerv.ps1 dev` lets the Aspire AppHost inject the
+OTLP endpoint for its own Dashboard. Do not override every project resource with a
+custom `OTEL_EXPORTER_OTLP_ENDPOINT` in this path; doing so can leave the
+Dashboard resource page healthy while the Structured logs, Traces, and Metrics
+pages stay empty because telemetry was sent somewhere else.
+
+The optional AppHost OpenTelemetry Collector path is only for Collector/Compose-like
+testing:
+
+```powershell
+dotnet user-secrets set "Observability:UseCollector" "true" --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj
+dotnet user-secrets set "Observability:AspireDashboardOtlpHttpEndpoint" "http://host.docker.internal:18890" --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj
+```
+
+When `Observability:UseCollector=true`, service telemetry is sent to the local
+Collector resource by HTTP/protobuf. The Collector can then forward to a standalone
+Aspire Dashboard OTLP/HTTP endpoint such as `http://host.docker.internal:18890`.
+Leave this switch unset for the regular AppHost workflow.
+
+After startup, telemetry can be checked without guessing from the UI:
+
+```powershell
+aspire otel logs
+aspire otel traces
+```
+
+The standalone Aspire Dashboard is useful for development, PoC, and short-term
+diagnostics. It stores telemetry in memory and must not be treated as the
+production log retention or audit backend.
+
 The same MinIO root user and password are passed to FileStorage as the local MinIO access key and secret key. If a future local profile provisions a separate MinIO service account, update both the AppHost parameter wiring and this document together.
 
 These values are for local development only. Do not commit real credentials to `appsettings*.json`, source files or documentation examples.

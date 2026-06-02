@@ -332,7 +332,7 @@ catch {
     throw
 }
 
-foreach ($resource in @('postgres', 'redis', 'minio', 'otel-collector')) {
+foreach ($resource in @('postgres', 'redis', 'minio')) {
     Wait-AspireResource -Name $resource -Status 'up' -TimeoutSeconds 240
 }
 
