@@ -1,5 +1,7 @@
 .agents/skills/
 .claude/skills/
+.github/skills/
+.opencode/skill/
 /.agents/worktrees/
 /.claude/worktrees/
 /.codex/worktrees/

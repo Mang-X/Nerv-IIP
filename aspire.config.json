@@ -1,0 +1,5 @@
+{
+  "appHost": {
+    "path": "infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj"
+  }
+}
