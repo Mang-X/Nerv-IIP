@@ -1,3 +1,5 @@
+# NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT must be injected by the container
+# environment when this config is used directly outside the tracked Compose/AppHost paths.
 receivers:
   otlp:
     protocols:

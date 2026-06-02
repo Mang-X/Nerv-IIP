@@ -435,6 +435,8 @@ var connectorHost = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder
     .WaitFor(ops)
     .WaitFor(iam);
 
+// PublishAsStaticWebsite is an experimental Aspire API (ASPIREJAVASCRIPT001).
+// Business Console omits it until its two-backend production route model is finalized.
 #pragma warning disable ASPIREJAVASCRIPT001
 builder.AddViteApp("console", "../../../frontend/apps/console")
     .WithHttpEndpoint(port: 5105, name: "http")

@@ -91,7 +91,7 @@ provider defaults or `latest`:
 
 | Resource | Current tag | Reason |
 | --- | --- | --- |
-| PostgreSQL | `18` | Uses the current PostgreSQL 18 major line while avoiding the unbounded `latest` tag. PostgreSQL Docker images 18+ use a major-version-specific data directory under `/var/lib/postgresql`, so the AppHost uses a new local dev volume, `nerv-iip-postgres-18`, instead of reusing the old 17-era `nerv-iip-postgres` volume. |
+| PostgreSQL | `18` | Uses the current PostgreSQL 18 major line while avoiding the unbounded `latest` tag. PostgreSQL Docker images 18+ use a major-version-specific data directory under `/var/lib/postgresql`, so the AppHost uses a new local dev volume, `nerv-iip-postgres-18`, instead of reusing the old 17-era `nerv-iip-postgres` volume. AppHost and Compose intentionally mount the full `/var/lib/postgresql` parent directory for PostgreSQL 18; this was verified with an empty local development volume on Windows Docker Desktop after the image upgrade, and avoids the PostgreSQL 18 initialization failure caused by mounting the old `/var/lib/postgresql/data` path. |
 | Redis | `8` | Uses the current Redis 8 major line while avoiding unbounded `latest` drift. Redis 8 can read older local cache data, and if the cache volume is ever incompatible it can be recreated because Redis is not a local source-of-truth business store. |
 
 Do not change these tags to `latest`. Moving to the next PostgreSQL or Redis major
