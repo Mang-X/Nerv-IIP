@@ -325,22 +325,6 @@ These are errors that have occurred repeatedly. Read before writing any code.
     certificate name mismatch, reset with `aspire certs clean`, `aspire certs trust`,
     and `dotnet dev-certs https --trust`.
 
-30. **Overriding local AppHost telemetry away from the Aspire Dashboard.** In the
-    normal `.\nerv.ps1 dev` path, let Aspire inject the Dashboard OTLP endpoint.
-    Do not set every project resource's `OTEL_EXPORTER_OTLP_ENDPOINT` to a custom
-    `otel-collector` resource by default; the resource page may still look healthy
-    while Structured logs, Traces, and Metrics stay empty. Use
-    `Observability:UseCollector=true` only when explicitly testing the
-    Collector/Compose path, and verify with `aspire otel logs` or
-    `aspire otel traces`.
-
-31. **Treating Aspire Dashboard as production log storage.** Aspire Dashboard is
-    acceptable for development, PoC, and short-term diagnostics, including
-    standalone container mode. It stores telemetry in memory and must not replace
-    rolling JSONL, Log Archive Worker, File Storage chunks, `observability` indexes,
-    or a customer production observability platform for long-term retention,
-    auditability, or historical search.
-
 ## "Done" Definition
 
 Before claiming a task is complete, verify against the Change Decision Table above.
