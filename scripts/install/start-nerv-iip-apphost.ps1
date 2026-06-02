@@ -1,10 +1,10 @@
 # Script-Governance:
 #   Category: release-install
 #   SideEffects:
-#     - Starts the platform Aspire AppHost in the current terminal
+#     - Starts the platform Aspire AppHost through Aspire CLI
 #     - Sets scoped process environment variables for the AppHost run
 #   Writes:
-#     - bin/ and obj/ build outputs under projects built by dotnet run
+#     - bin/ and obj/ build outputs under projects built by Aspire
 #     - artifacts/script-logs/**
 #   Cleanup:
 #     - Restores scoped environment variables after AppHost exits
@@ -138,9 +138,11 @@ $appHostProject = "infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj"
 Write-Diagnostic "Starting Nerv-IIP AppHost environment=$EnvironmentName messaging=$MessagingProvider postgres=$UsePostgreSql."
 
 Invoke-WithScopedEnvironment -Variables $environment -ScriptBlock {
-    Invoke-DotNetInteractive -Name "nerv-iip-apphost" -WorkingDirectory $root -Arguments @(
-        "run",
-        "--project",
-        $appHostProject
+    Invoke-AspireInteractive -Name "nerv-iip-apphost" -WorkingDirectory $root -Arguments @(
+        "start",
+        "--apphost",
+        $appHostProject,
+        "--non-interactive",
+        "--nologo"
     ) | Out-Null
 }

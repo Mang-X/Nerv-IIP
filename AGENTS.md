@@ -45,8 +45,15 @@ Nerv-IIP/
 
 ### Local dev launch
 ```powershell
-.\nerv.ps1 dev              # Full platform via Aspire AppHost
+.\nerv.ps1 bootstrap        # Connected blank-machine preflight, restore, local secrets
+.\nerv.ps1 bootstrap -InstallMissing -Start
+.\nerv.ps1 dev              # Full platform via Aspire CLI/AppHost
+.\nerv.ps1 stop             # Stop current AppHost via Aspire CLI
+.\nerv.ps1 status           # Show running Aspire AppHosts/resources
+.\nerv.ps1 logs apphub      # Tail Aspire resource logs
+.\nerv.ps1 wait gateway -Status up -TimeoutSeconds 600
 .\nerv.ps1 dev -InfraOnly   # Infra only (PostgreSQL, Redis, RabbitMQ, MinIO, OTel)
+.\nerv.ps1 publish-compose  # Generate Aspire Docker Compose artifacts
 .\nerv.ps1 ports            # Canonical port matrix
 ```
 
@@ -249,6 +256,42 @@ These are errors that have occurred repeatedly. Read before writing any code.
     `WO-001` are UI conveniences, not durable seed guarantees. Query handlers and
     facades must tolerate missing demo/default records with a domain-appropriate
     empty or `Unknown` result instead of throwing 500s.
+
+21. **Starting AppHost with `dotnet run`.** The platform AppHost must be managed by
+    Aspire CLI: use `.\nerv.ps1 dev` / `aspire start`, `.\nerv.ps1 stop` /
+    `aspire stop`, `.\nerv.ps1 wait <resource>` / `aspire wait`, and
+    `.\nerv.ps1 logs <resource>` / `aspire logs`. In linked worktrees, startup must
+    use Aspire isolated mode; `scripts/dev.ps1` handles this. Direct `dotnet run`
+    leaves stale DCP/backchannel state and makes later `aspire add`, deploy, and
+    diagnostics unreliable.
+
+22. **Maintaining a second full-platform Compose topology.** Aspire AppHost is the
+    topology source. For container deployment, add/maintain Aspire deployment
+    targets and generate Docker Compose artifacts with `.\nerv.ps1 publish-compose`
+    or deploy with `.\nerv.ps1 deploy-compose`. Existing hand-written Compose files
+    may remain for dependencies, smoke tests, or legacy overlay validation, but
+    must not become a competing service graph.
+
+23. **Assuming Vite dev proxy becomes production routing.** `AddViteApp` works for
+    local dev, but publish/deploy needs an explicit JavaScript production serving
+    model. Console can use `PublishAsStaticWebsite("/api", gateway)`. Business
+    Console needs two production API routes (`/api/console` to PlatformGateway and
+    `/api/business-console` to BusinessGateway) or an equivalent BusinessGateway
+    auth facade before Compose output can be called a complete Business Console
+    deployment.
+
+24. **Skipping connected-machine bootstrap on a blank machine.** For a fresh online
+    Windows machine, use `.\nerv.ps1 bootstrap -InstallMissing` first, then
+    `.\nerv.ps1 dev`. The bootstrap entry owns prerequisite checks, optional tool
+    installation, local AppHost user-secrets initialization, package restore and
+    AppHost build. Do not debug broad request failures until this path has passed
+    and Docker Desktop is actually running.
+
+25. **Treating offline deployment as the current startup path.** Offline packaging is
+    a deployment architecture track, not the first local-development fix. Keep the
+    immediate startup path focused on connected machines and Aspire CLI/AppHost.
+    Future offline scripts should consume Aspire-generated artifacts instead of
+    inventing a parallel topology.
 
 ## "Done" Definition
 

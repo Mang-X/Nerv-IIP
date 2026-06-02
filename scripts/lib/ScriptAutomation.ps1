@@ -494,6 +494,71 @@ function Invoke-DotNetInteractive {
     Invoke-NativeCommandInteractive -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
 }
 
+function Get-AspireCliCommand {
+    $command = Get-Command 'aspire' -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    if ($IsWindows) {
+        $localAspire = Join-Path $env:USERPROFILE '.aspire/bin/aspire.exe'
+        if (Test-Path -LiteralPath $localAspire -PathType Leaf) {
+            return $localAspire
+        }
+    }
+    else {
+        $localAspire = Join-Path $HOME '.aspire/bin/aspire'
+        if (Test-Path -LiteralPath $localAspire -PathType Leaf) {
+            return $localAspire
+        }
+    }
+
+    throw 'Aspire CLI is required. Install it from https://aspire.dev or add it to PATH.'
+}
+
+function Invoke-Aspire {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [int] $TimeoutSeconds = 600,
+
+        [string] $Name = 'aspire'
+    )
+
+    Invoke-NativeCommandWithTimeout -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+}
+
+function Invoke-AspireOutput {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [int] $TimeoutSeconds = 60,
+
+        [string] $Name = 'aspire'
+    )
+
+    Invoke-NativeCommandOutput -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+}
+
+function Invoke-AspireInteractive {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [string] $Name = 'aspire'
+    )
+
+    Invoke-NativeCommandInteractive -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
+}
+
 function Invoke-Pnpm {
     param(
         [Parameter(Mandatory)]

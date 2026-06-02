@@ -1,6 +1,8 @@
 var builder = DistributedApplication.CreateBuilder(args);
 const string LocalDevelopmentEnvironment = "Development";
 
+builder.AddDockerComposeEnvironment("compose");
+
 var iamJwtSigningKey = builder.AddParameter("iam-jwt-signing-key", secret: true);
 var internalServiceBearerToken = builder.AddParameter("internal-service-bearer-token", secret: true);
 var minioRootUser = builder.AddParameter("minio-root-user", secret: true);
@@ -481,13 +483,16 @@ var connectorHost = WithLocalDevelopmentEnvironment(builder.AddProject<Projects.
     .WaitFor(ops)
     .WaitFor(iam);
 
+#pragma warning disable ASPIREJAVASCRIPT001
 builder.AddViteApp("console", "../../../frontend/apps/console")
     .WithHttpEndpoint(port: 5105, name: "http")
     .WithPnpm()
     .WithEnvironment("NERV_IIP_GATEWAY_URL", gateway.GetEndpoint("http"))
     .WithReference(gateway)
     .WaitFor(gateway)
-    .WaitFor(connectorHost);
+    .WaitFor(connectorHost)
+    .PublishAsStaticWebsite(apiPath: "/api", apiTarget: gateway);
+#pragma warning restore ASPIREJAVASCRIPT001
 
 builder.AddViteApp("business-console", "../../../frontend/apps/business-console")
     .WithHttpEndpoint(port: 5125, name: "http")

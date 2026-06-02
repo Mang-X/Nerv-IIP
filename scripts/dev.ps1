@@ -1,11 +1,12 @@
 # Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Starts the local Nerv-IIP platform through Aspire AppHost or dependency services through Docker Compose
+#     - Starts the local Nerv-IIP platform through Aspire CLI or dependency services through Docker Compose
 #   Writes:
 #     - artifacts/script-logs/** when -InfraOnly uses the Docker Compose helper
 #   Cleanup:
-#     - Stops the managed command if it times out through ScriptAutomation.ps1
+#     - Aspire-managed resources remain running until `.\nerv.ps1 stop`
+#     - Stops the managed command if a helper command times out through ScriptAutomation.ps1
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10
@@ -57,6 +58,16 @@ function Assert-CommandAvailable {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "$Name is required for $Purpose."
     }
+}
+
+function Test-IsLinkedWorktree {
+    $gitPath = Join-Path $root '.git'
+    if (Test-Path -LiteralPath $gitPath -PathType Leaf) {
+        return $true
+    }
+
+    $normalizedRoot = $root.Path -replace '\\', '/'
+    return $normalizedRoot.Contains('/worktrees/')
 }
 
 function Get-AppHostUserSecrets {
@@ -141,21 +152,25 @@ if ($InfraOnly) {
     exit 0
 }
 
-Assert-CommandAvailable -Name 'dotnet' -Purpose 'Aspire AppHost startup'
+Assert-CommandAvailable -Name 'dotnet' -Purpose 'AppHost user-secrets preflight'
 Assert-CommandAvailable -Name 'docker' -Purpose 'Aspire container resources'
 Assert-CommandAvailable -Name 'node' -Purpose 'Console Vite startup'
 Assert-CommandAvailable -Name 'pnpm' -Purpose 'Console Vite startup'
+Get-AspireCliCommand | Out-Null
 
 if ($OpenDashboard) {
-    Write-Host 'Aspire dashboard URL discovery is manual in this version. Use the URL printed by dotnet run.'
+    Write-Host 'Aspire dashboard URL is printed by `aspire start`; use `.\nerv.ps1 status` to rediscover running resources.'
 }
 
 $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
 Assert-AppHostUserSecrets -AppHostProject $appHostProject
 
-$arguments = @('run', '--project', $appHostProject)
+$arguments = @('start', '--apphost', $appHostProject, '--non-interactive', '--nologo')
 if ($NoBuild) {
     $arguments += '--no-build'
+}
+if (Test-IsLinkedWorktree) {
+    $arguments += '--isolated'
 }
 
 $appHostEnvironment = @{
@@ -164,6 +179,15 @@ $appHostEnvironment = @{
 }
 
 $result = Invoke-WithScopedEnvironment -Variables $appHostEnvironment -ScriptBlock {
-    Invoke-DotNetInteractive -Arguments $arguments -WorkingDirectory $root -Name 'dev-apphost'
+    Invoke-AspireInteractive -Arguments $arguments -WorkingDirectory $root -Name 'dev-apphost'
 }
-exit $result.ExitCode
+if ($result.ExitCode -ne 0) {
+    exit $result.ExitCode
+}
+
+foreach ($resource in @('gateway', 'business-gateway', 'console', 'business-console')) {
+    Invoke-Aspire -Arguments @('wait', $resource, '--status', 'up', '--timeout', '600', '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds 620 -Name "dev-wait-$resource" | Out-Null
+}
+
+Invoke-AspireInteractive -Arguments @('ps', '--non-interactive', '--nologo') -WorkingDirectory $root -Name 'dev-status' | Out-Null
+exit 0
