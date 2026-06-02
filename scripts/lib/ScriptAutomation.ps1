@@ -34,6 +34,7 @@ function Protect-ScriptAutomationText {
         '(?i)(token\s*[:=]\s*)[^\s''";]+',
         '(?i)(secret\s*[:=]\s*)[^\s''";]+',
         '(?i)(client_secret\s*[:=]\s*)[^\s''";]+',
+        '(?i)(user-secrets\s+set\s+["'']?[^"''\s]+["'']?\s+)[^\s]+',
         '(?i)(Host=[^;]+;Port=[^;]+;Database=[^;]+;Username=[^;]+;Password=)[^;]+'
     )
 
@@ -44,12 +45,39 @@ function Protect-ScriptAutomationText {
     return $redacted
 }
 
+function Protect-ScriptAutomationArguments {
+    param(
+        [string[]] $Arguments = @(),
+
+        [int[]] $SensitiveArgumentIndexes = @()
+    )
+
+    $sensitiveIndexes = @{}
+    foreach ($index in $SensitiveArgumentIndexes) {
+        $sensitiveIndexes[[int] $index] = $true
+    }
+
+    $displayArguments = New-Object System.Collections.Generic.List[string]
+    for ($index = 0; $index -lt $Arguments.Count; $index++) {
+        if ($sensitiveIndexes.ContainsKey($index)) {
+            $displayArguments.Add('<redacted>')
+            continue
+        }
+
+        $displayArguments.Add($Arguments[$index])
+    }
+
+    return Protect-ScriptAutomationText ($displayArguments -join ' ')
+}
+
 function New-ScriptAutomationLogDirectory {
     param(
         [Parameter(Mandatory)]
         [string] $Name,
 
-        [string] $LogDirectory
+        [string] $LogDirectory,
+
+        [int[]] $SensitiveArgumentIndexes = @()
     )
 
     if ([string]::IsNullOrWhiteSpace($LogDirectory)) {
@@ -212,7 +240,9 @@ function Invoke-NativeCommandWithTimeout {
 
         [string] $Name,
 
-        [string] $LogDirectory
+        [string] $LogDirectory,
+
+        [int[]] $SensitiveArgumentIndexes = @()
     )
 
     if ([string]::IsNullOrWhiteSpace($Name)) {
@@ -245,7 +275,7 @@ function Invoke-NativeCommandWithTimeout {
     $rootProcessId = $null
 
     try {
-        $displayArguments = Protect-ScriptAutomationText ($Arguments -join ' ')
+        $displayArguments = Protect-ScriptAutomationArguments -Arguments $Arguments -SensitiveArgumentIndexes $SensitiveArgumentIndexes
         Write-Diagnostic "Starting $Command $displayArguments (cwd=$WorkingDirectory, timeout=${TimeoutSeconds}s, logs=$resolvedLogDirectory)"
 
         if (-not $process.Start()) {
@@ -314,10 +344,12 @@ function Invoke-DotNet {
 
         [int] $TimeoutSeconds = 600,
 
-        [string] $Name = 'dotnet'
+        [string] $Name = 'dotnet',
+
+        [int[]] $SensitiveArgumentIndexes = @()
     )
 
-    Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+    Invoke-NativeCommandWithTimeout -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name -SensitiveArgumentIndexes $SensitiveArgumentIndexes
 }
 
 function Invoke-NativeCommandOutput {
@@ -492,6 +524,71 @@ function Invoke-DotNetInteractive {
     )
 
     Invoke-NativeCommandInteractive -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
+}
+
+function Get-AspireCliCommand {
+    $command = Get-Command 'aspire' -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    if ($IsWindows) {
+        $localAspire = Join-Path $env:USERPROFILE '.aspire/bin/aspire.exe'
+        if (Test-Path -LiteralPath $localAspire -PathType Leaf) {
+            return $localAspire
+        }
+    }
+    else {
+        $localAspire = Join-Path $HOME '.aspire/bin/aspire'
+        if (Test-Path -LiteralPath $localAspire -PathType Leaf) {
+            return $localAspire
+        }
+    }
+
+    throw 'Aspire CLI is required. Install it from https://aspire.dev or add it to PATH.'
+}
+
+function Invoke-Aspire {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [int] $TimeoutSeconds = 600,
+
+        [string] $Name = 'aspire'
+    )
+
+    Invoke-NativeCommandWithTimeout -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+}
+
+function Invoke-AspireOutput {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [int] $TimeoutSeconds = 60,
+
+        [string] $Name = 'aspire'
+    )
+
+    Invoke-NativeCommandOutput -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+}
+
+function Invoke-AspireInteractive {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory = (Get-Location).Path,
+
+        [string] $Name = 'aspire'
+    )
+
+    Invoke-NativeCommandInteractive -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
 }
 
 function Invoke-Pnpm {

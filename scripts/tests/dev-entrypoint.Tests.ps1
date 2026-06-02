@@ -32,7 +32,18 @@ if ($help.ExitCode -ne 0) {
     throw "Expected help to exit 0, got $($help.ExitCode). Output: $($help.Output)"
 }
 
-foreach ($expected in @('.\nerv.ps1 dev', '.\nerv.ps1 ports', '.\nerv.ps1 help')) {
+foreach ($expected in @(
+    '.\nerv.ps1 bootstrap',
+    '.\nerv.ps1 dev',
+    '.\nerv.ps1 stop',
+    '.\nerv.ps1 status',
+    '.\nerv.ps1 wait',
+    '.\nerv.ps1 logs',
+    '.\nerv.ps1 describe',
+    '.\nerv.ps1 publish-compose',
+    '.\nerv.ps1 ports',
+    '.\nerv.ps1 help'
+)) {
     if (-not $help.Output.Contains($expected)) {
         throw "Help output did not contain '$expected'. Output: $($help.Output)"
     }
@@ -76,6 +87,17 @@ if ($devHelp.ExitCode -ne 0) {
 foreach ($expected in @('-NoBuild', '-InfraOnly', '-OpenDashboard', 'Aspire AppHost')) {
     if (-not $devHelp.Output.Contains($expected)) {
         throw "dev -Help output did not contain '$expected'. Output: $($devHelp.Output)"
+    }
+}
+
+$bootstrapHelp = Invoke-Nerv -Arguments @('bootstrap', '-Help')
+if ($bootstrapHelp.ExitCode -ne 0) {
+    throw "Expected bootstrap -Help to exit 0, got $($bootstrapHelp.ExitCode). Output: $($bootstrapHelp.Output)"
+}
+
+foreach ($expected in @('-InstallMissing', '-SkipRestore', '-SkipLocalSecrets', '-Start')) {
+    if (-not $bootstrapHelp.Output.Contains($expected)) {
+        throw "bootstrap -Help output did not contain '$expected'. Output: $($bootstrapHelp.Output)"
     }
 }
 

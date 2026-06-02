@@ -45,8 +45,15 @@ Nerv-IIP/
 
 ### Local dev launch
 ```powershell
-.\nerv.ps1 dev              # Full platform via Aspire AppHost
+.\nerv.ps1 bootstrap        # Connected blank-machine preflight, restore, local secrets
+.\nerv.ps1 bootstrap -InstallMissing -Start
+.\nerv.ps1 dev              # Full platform via Aspire CLI/AppHost
+.\nerv.ps1 stop             # Stop current AppHost via Aspire CLI
+.\nerv.ps1 status           # Show running Aspire AppHosts/resources
+.\nerv.ps1 logs apphub      # Tail Aspire resource logs
+.\nerv.ps1 wait gateway -Status up -TimeoutSeconds 600
 .\nerv.ps1 dev -InfraOnly   # Infra only (PostgreSQL, Redis, RabbitMQ, MinIO, OTel)
+.\nerv.ps1 publish-compose  # Generate Aspire Docker Compose artifacts
 .\nerv.ps1 ports            # Canonical port matrix
 ```
 
@@ -195,6 +202,128 @@ These are errors that have occurred repeatedly. Read before writing any code.
     `Path.Combine(AppContext.BaseDirectory, "..", ...)` to locate and read source
     files for assertions. Use DI, `DbContext` reflection, or
     `Nerv.IIP.Testing` schema convention helpers instead.
+
+13. **Treating Aspire `Finished` as a dashboard problem.** A project resource shown
+    as `Finished` usually means the process exited during startup. Inspect the latest
+    DCP stderr log under `%TEMP%\aspire-dcp*` before changing code or restarting
+    blindly. The real error is usually in the resource process log, not Aspire
+    itself.
+
+14. **Forgetting local Development environment in AppHost project resources.**
+    Platform AppHost is the canonical dev launcher. New project resources must run
+    with `ASPNETCORE_ENVIRONMENT=Development` and `DOTNET_ENVIRONMENT=Development`
+    unless there is an explicit test/deployment reason not to. Otherwise services may
+    select production-like persistence or messaging branches and fail differently
+    from local expectations.
+
+15. **PostgreSQL services added to AppHost without local migration enablement.**
+    If a local Development service relies on PostgreSQL migrations, verify whether
+    AppHost must pass `Persistence__AutoMigrate=true` for that resource. Missing
+    migration enablement can surface as broad Console request failures, downstream
+    500s, or gateway circuit breakers; the root cause may be a missing table such as
+    `relation "...table..." does not exist`. Observed local failures include AppHub
+    `apphub.registration_idempotency`, MES execution tables, Maintenance readiness
+    tables, and Notification `notification_messages` / `notification_tasks`.
+
+16. **CAP PostgreSQL profile without integration event publisher registration.**
+    Services with domain-event-to-integration-event converters must register the
+    NetCorePal integration event publisher in the active CAP profile, including
+    PostgreSQL. If startup fails with unresolved
+    `NetCorePal.Extensions.DistributedTransactions.IIntegrationEventPublisher`,
+    compare the service's CAP registration with a known working service before
+    changing handlers.
+
+17. **Redis-backed services aborting startup on first connect attempt.** Local
+    Aspire startup can race Redis readiness. When a service constructs a
+    `ConnectionMultiplexer`, parse options with `AbortOnConnectFail=false` so the
+    service can start and reconnect instead of turning one transient Redis race into
+    a failed resource.
+
+18. **Context-free readiness checks reported as execution blockers.** Diagnostic
+    endpoints such as MES `foundation-readiness` may be called without SKU,
+    production version, work center, or device scope. Global readiness should not
+    report context-specific quality/equipment execution blockers unless the required
+    execution context was actually supplied. In that case, the frontend/workbench
+    that owns the missing scope should present the selection prompt or empty state.
+
+19. **Frontend facade calls with empty business scope.** Business Console composables
+    must normalize IDs and suppress queries that require a device, work center, SKU,
+    production version, or work order when that scope is empty. Empty scope should be
+    represented as no request or a clear empty state, not as repeated failing backend
+    calls.
+
+20. **Demo/default identifiers causing backend 500s.** Console defaults such as
+    `WO-001` are UI conveniences, not durable seed guarantees. Query handlers and
+    facades must tolerate missing demo/default records with a domain-appropriate
+    empty or `Unknown` result instead of throwing 500s.
+
+21. **Starting AppHost with `dotnet run`.** The platform AppHost must be managed by
+    Aspire CLI: use `.\nerv.ps1 dev` / `aspire start`, `.\nerv.ps1 stop` /
+    `aspire stop`, `.\nerv.ps1 wait <resource>` / `aspire wait`, and
+    `.\nerv.ps1 logs <resource>` / `aspire logs`. In linked worktrees, startup must
+    use Aspire isolated mode; `scripts/dev.ps1` handles this. Direct `dotnet run`
+    leaves stale DCP/backchannel state and makes later `aspire add`, deploy, and
+    diagnostics unreliable.
+
+22. **Maintaining a second full-platform Compose topology.** Aspire AppHost is the
+    topology source. For container deployment, add/maintain Aspire deployment
+    targets and generate Docker Compose artifacts with `.\nerv.ps1 publish-compose`
+    or deploy with `.\nerv.ps1 deploy-compose`. Existing hand-written Compose files
+    may remain for dependencies, smoke tests, or legacy overlay validation, but
+    must not become a competing service graph.
+
+23. **Assuming Vite dev proxy becomes production routing.** `AddViteApp` works for
+    local dev, but publish/deploy needs an explicit JavaScript production serving
+    model. Console can use `PublishAsStaticWebsite("/api", gateway)`. Business
+    Console needs two production API routes (`/api/console` to PlatformGateway and
+    `/api/business-console` to BusinessGateway) or an equivalent BusinessGateway
+    auth facade before Compose output can be called a complete Business Console
+    deployment.
+
+24. **Skipping connected-machine bootstrap on a blank machine.** For a fresh online
+    Windows machine, use `.\nerv.ps1 bootstrap -InstallMissing` first, then
+    `.\nerv.ps1 dev`. The bootstrap entry owns prerequisite checks, optional tool
+    installation, local AppHost user-secrets initialization, package restore and
+    AppHost build. Do not debug broad request failures until this path has passed
+    and Docker Desktop is actually running.
+
+25. **Treating offline deployment as the current startup path.** Offline packaging is
+    a deployment architecture track, not the first local-development fix. Keep the
+    immediate startup path focused on connected machines and Aspire CLI/AppHost.
+    Future offline scripts should consume Aspire-generated artifacts instead of
+    inventing a parallel topology.
+
+26. **Hardcoding bootstrap seed passwords.** Connected-machine bootstrap may create
+    local Development user-secrets, but it must not keep a fixed IAM admin password
+    in source. Generate a random local value by default, or require the operator to
+    pass a value explicitly through a non-logged path. Secret-setting commands must
+    mark sensitive arguments for script log redaction.
+
+27. **Letting Aspire infrastructure image tags drift.** Persistent local resources
+    must be explicitly pinned in AppHost. PostgreSQL is currently `18` and Redis
+    is currently `8`; do not use `latest` or unpinned Aspire provider defaults.
+    PostgreSQL 18+ uses a different major-version data directory than the old
+    pre-18 `/var/lib/postgresql/data` layout, so local dev uses
+    `nerv-iip-postgres-18` and must not point PostgreSQL 18 back at the old
+    `nerv-iip-postgres` volume without an explicit `pg_upgrade` or dump/restore.
+    Do not switch major versions without a tracked upgrade plan, clean-volume test,
+    preserved-volume migration test where applicable, AppHost build, Compose
+    publish verification, and smoke startup. If Redis reports an RDB/AOF format
+    error, stop Aspire and remove only the local `nerv-iip-redis` cache volume.
+
+28. **Startup/stop scripts with no bounded feedback.** `.\nerv.ps1 dev` and
+    `.\nerv.ps1 stop` must show phase diagnostics and use bounded helper calls.
+    A failed certificate check, exited container, Aspire/DCP hang, or successful
+    startup must not all look like "still waiting". Stop must run fallback cleanup
+    for current-repo AppHost processes and Aspire usvc-dev containers when Aspire
+    CLI stop times out.
+
+29. **Skipping local HTTPS certificate validation.** Aspire Dashboard/DCP and local
+    HTTPS endpoints require a trusted developer certificate. On blank machines or
+    after Aspire certificate cache changes, run `.\nerv.ps1 bootstrap -InstallMissing`
+    or verify with `dotnet dev-certs https --check --trust`. If AppHost logs show
+    certificate name mismatch, reset with `aspire certs clean`, `aspire certs trust`,
+    and `dotnet dev-certs https --trust`.
 
 ## "Done" Definition
 

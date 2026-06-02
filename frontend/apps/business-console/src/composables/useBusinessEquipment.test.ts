@@ -20,6 +20,7 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
+  queryOptionsById: new Map<string, { enabled?: boolean }>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -46,6 +47,7 @@ vi.mock('@pinia/colada', () => ({
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    coladaState.queryOptionsById.set(id, options)
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
@@ -61,6 +63,7 @@ describe('business equipment composables', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.queryDataById.clear()
+    coladaState.queryOptionsById.clear()
   })
 
   it('maps shared equipment reason codes to Chinese labels and next steps', () => {
@@ -116,15 +119,7 @@ describe('business equipment composables', () => {
     expect(equipmentStatusTone('calibrating')).toBe('muted')
   })
 
-  it('loads equipment overview without hard-coded seed device defaults', () => {
-    coladaState.queryDataById.set('getBusinessConsoleEquipmentOverview', {
-      success: true,
-      data: {
-        devices: [{ deviceAssetId: 'DEV-OIL-01', currentState: 'running' }],
-        activeBlocks: [{ deviceAssetId: 'DEV-OIL-01', reasonCode: 'equipment.activeAlarm' }],
-      },
-    })
-
+  it('keeps equipment overview empty and disabled without hard-coded seed device defaults', () => {
     const { activeBlocks, devices } = useBusinessEquipmentOverview()
 
     expect(getBusinessConsoleEquipmentOverviewQueryOptions).toHaveBeenCalledWith({
@@ -134,10 +129,9 @@ describe('business equipment composables', () => {
         deviceAssetIds: '',
       },
     })
-    expect(devices.value).toEqual([{ deviceAssetId: 'DEV-OIL-01', currentState: 'running' }])
-    expect(activeBlocks.value).toEqual([
-      { deviceAssetId: 'DEV-OIL-01', reasonCode: 'equipment.activeAlarm' },
-    ])
+    expect(coladaState.queryOptionsById.get('getBusinessConsoleEquipmentOverview')?.enabled).toBe(false)
+    expect(devices.value).toEqual([])
+    expect(activeBlocks.value).toEqual([])
   })
 
   it('uses the patched business context for equipment query options', () => {
@@ -179,14 +173,7 @@ describe('business equipment composables', () => {
     })
   })
 
-  it('loads availability windows for a default work window', () => {
-    coladaState.queryDataById.set('getBusinessConsoleEquipmentAvailability', {
-      success: true,
-      data: {
-        items: [{ deviceAssetId: 'DEV-OIL-01', reasonCode: 'equipment.noEligibleSubstitute' }],
-      },
-    })
-
+  it('keeps availability query disabled until a device scope is entered', () => {
     const { availabilityWindows } = useBusinessEquipmentAvailability()
 
     expect(getBusinessConsoleEquipmentAvailabilityQueryOptions).toHaveBeenCalledWith({
@@ -196,9 +183,8 @@ describe('business equipment composables', () => {
         deviceAssetIds: '',
       }),
     })
-    expect(availabilityWindows.value).toEqual([
-      { deviceAssetId: 'DEV-OIL-01', reasonCode: 'equipment.noEligibleSubstitute' },
-    ])
+    expect(coladaState.queryOptionsById.get('getBusinessConsoleEquipmentAvailability')?.enabled).toBe(false)
+    expect(availabilityWindows.value).toEqual([])
   })
 
   it('loads a device detail and exposes active alarms and availability windows', () => {

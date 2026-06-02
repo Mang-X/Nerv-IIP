@@ -88,6 +88,36 @@ public sealed class FastEndpointsArchitectureTests
     }
 
     [Fact]
+    public void Aspire_apphost_runs_project_resources_as_development()
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+
+        Assert.Contains("ASPNETCORE_ENVIRONMENT", programText);
+        Assert.Contains("DOTNET_ENVIRONMENT", programText);
+        Assert.Contains("AddParameter(\"redis-password\", secret: true)", programText);
+        Assert.Contains("AddRedis(\"redis\", password: redisPassword)", programText);
+        Assert.Contains("WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>", programText);
+        Assert.Contains("WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Quality_Web>", programText);
+        Assert.Contains("WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Mes_Web>", programText);
+        Assert.Contains("WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Maintenance_Web>", programText);
+        Assert.Contains("WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>", programText);
+        Assert.Matches(
+            "businessMes[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
+            programText);
+        Assert.Matches(
+            "businessMaintenance[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
+            programText);
+        Assert.Matches(
+            "apphub[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
+            programText);
+        Assert.Matches(
+            "notification[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
+            programText);
+    }
+
+    [Fact]
     public void Runtime_code_does_not_use_implicit_localhost_service_endpoint_fallbacks()
     {
         var root = FindRepositoryRoot();
@@ -110,6 +140,51 @@ public sealed class FastEndpointsArchitectureTests
             offenders.Length == 0,
             "Service-to-service endpoint fallbacks must fail fast outside Development. Offenders: "
             + string.Join(", ", offenders));
+    }
+
+    [Fact]
+    public void Redis_backed_business_services_do_not_abort_startup_on_initial_redis_connect_failure()
+    {
+        var root = FindRepositoryRoot();
+        var projectDirectories = new[]
+        {
+            "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web",
+            "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web"
+        };
+
+        foreach (var projectDirectory in projectDirectories)
+        {
+            var programText = File.ReadAllText(Path.Combine(root, projectDirectory, "Program.cs"));
+
+            Assert.Contains("NervIipRedisConnection.ConnectAsync", programText);
+            Assert.DoesNotContain("static async Task<IConnectionMultiplexer> ConnectRedisAsync", programText);
+            Assert.DoesNotContain("ConnectionMultiplexer.ConnectAsync(builder.Configuration.GetConnectionString(\"Redis\")!)", programText);
+        }
+
+        var redisConnectionText = File.ReadAllText(Path.Combine(
+            root,
+            "backend/common/Caching/Nerv.IIP.Caching/NervIipRedisConnection.cs"));
+        Assert.Contains("AbortOnConnectFail = false", redisConnectionText);
+    }
+
+    [Fact]
+    public void Platform_cap_services_register_integration_event_publishers_for_postgresql_profile()
+    {
+        var root = FindRepositoryRoot();
+        var projectDirectories = new[]
+        {
+            "backend/services/AppHub/src/Nerv.IIP.AppHub.Web",
+            "backend/services/Ops/src/Nerv.IIP.Ops.Web"
+        };
+
+        foreach (var projectDirectory in projectDirectories)
+        {
+            var programText = File.ReadAllText(Path.Combine(root, projectDirectory, "Program.cs"));
+
+            Assert.Contains("UseCap<ApplicationDbContext>(b =>", programText);
+            Assert.Contains("b.RegisterServicesFromAssemblies(typeof(Program))", programText);
+            Assert.Contains("b.AddContextIntegrationFilters()", programText);
+        }
     }
 
     private static string FindRepositoryRoot()
