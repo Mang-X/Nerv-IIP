@@ -2,10 +2,12 @@
 #   Category: verify
 #   SideEffects:
 #     - Inspects, waits for, streams logs from, or stops the Aspire AppHost
+#     - Stops orphaned Aspire usvc-dev containers for this platform when Action=stop
 #   Writes:
 #     - artifacts/script-logs/** for bounded Aspire helper commands
 #   Cleanup:
-#     - Uses Aspire CLI lifecycle commands; does not kill process trees directly
+#     - Uses Aspire CLI lifecycle commands
+#     - Stops matching orphaned Aspire usvc-dev containers after stop
 #   Requires:
 #     - PowerShell 7
 #     - Aspire CLI 13.4
@@ -44,6 +46,60 @@ Set-Location $root
 $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
 Get-AspireCliCommand | Out-Null
 
+function Stop-OrphanedAspireDevContainers {
+    $resourceNamePattern = '^(postgres|redis|otel-collector|minio|rabbitmq)-'
+
+    try {
+        $containers = Invoke-NativeCommandOutput `
+            -Command 'docker' `
+            -Arguments @(
+                'ps',
+                '--filter',
+                'label=com.microsoft.developer.usvc-dev.group-version=usvc-dev.developer.microsoft.com/v1',
+                '--format',
+                '{{.ID}}|{{.Names}}'
+            ) `
+            -WorkingDirectory $root `
+            -TimeoutSeconds 30 `
+            -Name 'aspire-orphan-container-list'
+    }
+    catch {
+        Write-Diagnostic -Level 'WARN' -Message "Could not inspect Docker for orphaned Aspire containers: $($_.Exception.Message)"
+        return
+    }
+
+    $containerIds = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($containers.Stdout -split '\r?\n')) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $parts = "$line" -split '\|', 2
+        if ($parts.Count -ne 2) {
+            continue
+        }
+
+        $id = $parts[0]
+        $name = $parts[1]
+        if ($name -match $resourceNamePattern) {
+            $containerIds.Add($id)
+        }
+    }
+
+    if ($containerIds.Count -eq 0) {
+        return
+    }
+
+    Invoke-NativeCommandWithTimeout `
+        -Command 'docker' `
+        -Arguments (@('stop') + @($containerIds)) `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 120 `
+        -Name 'aspire-orphan-container-stop' | Out-Null
+
+    Write-Diagnostic "Stopped orphaned Aspire usvc-dev containers: $($containerIds -join ', ')"
+}
+
 switch ($Action) {
     'stop' {
         $arguments = @('stop', '--non-interactive', '--nologo')
@@ -55,6 +111,7 @@ switch ($Action) {
         }
 
         $result = Invoke-AspireInteractive -Arguments $arguments -WorkingDirectory $root -Name 'aspire-stop'
+        Stop-OrphanedAspireDevContainers
         exit $result.ExitCode
     }
     'status' {
