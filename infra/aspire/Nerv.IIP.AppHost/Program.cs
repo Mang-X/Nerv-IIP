@@ -19,7 +19,8 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 }
 
 var postgres = builder.AddPostgres("postgres")
-    .WithDataVolume("nerv-iip-postgres");
+    .WithImageTag("18")
+    .WithDataVolume("nerv-iip-postgres-18");
 var appHubDatabase = postgres.AddDatabase("apphub-db", "nerv_iip_apphub");
 var iamDatabase = postgres.AddDatabase("iam-db", "nerv_iip_iam");
 var opsDatabase = postgres.AddDatabase("ops-db", "nerv_iip_ops");
@@ -38,6 +39,7 @@ var businessMaintenanceDatabase = postgres.AddDatabase("business-maintenance-db"
 var businessErpDatabase = postgres.AddDatabase("business-erp-db", "nerv_iip_erp");
 var businessSchedulingDatabase = postgres.AddDatabase("business-scheduling-db", "nerv_iip_scheduling");
 var redis = builder.AddRedis("redis", password: redisPassword)
+    .WithImageTag("8")
     .WithDataVolume("nerv-iip-redis");
 var rabbitmq = useRabbitMq
     ? builder.AddRabbitMQ("rabbitmq").WithManagementPlugin()

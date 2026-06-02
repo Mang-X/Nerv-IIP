@@ -3,6 +3,7 @@
 #   SideEffects:
 #     - Checks connected-machine prerequisites for local Aspire startup
 #     - Optionally installs missing Windows developer prerequisites through winget
+#     - Checks/trusts local HTTPS developer certificates when -InstallMissing is used
 #     - Initializes missing local AppHost user secrets for Development startup
 #     - Optionally starts the local platform through scripts/dev.ps1
 #   Writes:
@@ -43,6 +44,7 @@ Usage:
 
 Options:
   -InstallMissing    On Windows, install missing .NET SDK, Node.js, Docker Desktop, and Aspire CLI.
+                    Also trust local HTTPS developer certificates when they are missing.
   -SkipRestore       Skip dotnet tool restore, dotnet restore, and pnpm install.
   -SkipLocalSecrets  Do not initialize missing local AppHost user secrets.
   -Start             Start the platform through Aspire after bootstrap.
@@ -375,6 +377,42 @@ function Ensure-ConnectedPrerequisites {
     Write-Diagnostic 'Connected-machine prerequisite preflight passed.'
 }
 
+function Ensure-DevelopmentHttpsCertificate {
+    Write-Diagnostic 'Checking local HTTPS developer certificate trust.'
+
+    try {
+        Invoke-DotNetOutput -Arguments @('dev-certs', 'https', '--check', '--trust') -WorkingDirectory $root -TimeoutSeconds 60 -Name 'bootstrap-dev-cert-check' | Out-Null
+        Write-Diagnostic 'Local HTTPS developer certificate is already trusted.'
+        return
+    }
+    catch {
+        if (-not $InstallMissing) {
+            throw @"
+Local HTTPS developer certificate is missing or not trusted.
+
+Run .\nerv.ps1 bootstrap -InstallMissing, or run these commands manually:
+  aspire certs trust
+  dotnet dev-certs https --trust
+
+If Aspire/DCP still reports certificate name mismatch:
+  aspire certs clean
+  aspire certs trust
+  dotnet dev-certs https --trust
+
+Details:
+$($_.Exception.Message)
+"@
+        }
+
+        Write-Diagnostic -Level 'WARN' -Message "Local HTTPS developer certificate check failed; attempting to trust certificates because -InstallMissing was supplied."
+    }
+
+    Invoke-Aspire -Arguments @('certs', 'trust', '--non-interactive') -WorkingDirectory $root -TimeoutSeconds 120 -Name 'bootstrap-aspire-certs-trust' | Out-Null
+    Invoke-DotNet -Arguments @('dev-certs', 'https', '--trust') -WorkingDirectory $root -TimeoutSeconds 120 -Name 'bootstrap-dotnet-dev-certs-trust' | Out-Null
+    Invoke-DotNetOutput -Arguments @('dev-certs', 'https', '--check', '--trust') -WorkingDirectory $root -TimeoutSeconds 60 -Name 'bootstrap-dev-cert-verify' | Out-Null
+    Write-Diagnostic 'Local HTTPS developer certificate trust was verified.'
+}
+
 function Restore-WorkspaceDependencies {
     Invoke-DotNet -Arguments @('tool', 'restore') -WorkingDirectory $root -TimeoutSeconds 300 -Name 'bootstrap-dotnet-tool-restore' | Out-Null
     Invoke-DotNet -Arguments @('restore', 'backend/Nerv.IIP.sln') -WorkingDirectory $root -TimeoutSeconds 900 -Name 'bootstrap-backend-restore' | Out-Null
@@ -393,6 +431,7 @@ Set-Location $root
 Update-ProcessPath
 
 Ensure-ConnectedPrerequisites
+Ensure-DevelopmentHttpsCertificate
 
 $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
 if (-not $SkipLocalSecrets) {

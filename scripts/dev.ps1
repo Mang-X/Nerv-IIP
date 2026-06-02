@@ -137,6 +137,141 @@ $($commands -join "`n")
     }
 }
 
+function Assert-DevelopmentHttpsCertificateTrusted {
+    Write-Diagnostic 'Checking local HTTPS developer certificate trust.'
+
+    try {
+        Invoke-DotNetOutput -Arguments @('dev-certs', 'https', '--check', '--trust') -WorkingDirectory $root -TimeoutSeconds 60 -Name 'dev-cert-check' | Out-Null
+        Write-Diagnostic 'Local HTTPS developer certificate is trusted.'
+    }
+    catch {
+        throw @"
+Local HTTPS developer certificate is missing or not trusted.
+
+Run these commands once, then retry .\nerv.ps1 dev:
+  aspire certs trust
+  dotnet dev-certs https --trust
+
+If Aspire/DCP still reports certificate name mismatch, reset the local Aspire certificate cache first:
+  aspire certs clean
+  aspire certs trust
+  dotnet dev-certs https --trust
+
+Details:
+$($_.Exception.Message)
+"@
+    }
+}
+
+function Write-AspireDockerContainerSummary {
+    try {
+        $containers = Invoke-NativeCommandOutput `
+            -Command 'docker' `
+            -Arguments @(
+                'ps',
+                '-a',
+                '--filter',
+                'label=com.microsoft.developer.usvc-dev.group-version=usvc-dev.developer.microsoft.com/v1',
+                '--format',
+                '{{.Names}} | {{.Image}} | {{.Status}}'
+            ) `
+            -WorkingDirectory $root `
+            -TimeoutSeconds 30 `
+            -Name 'dev-docker-container-summary'
+
+        $lines = @($containers.Stdout -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($lines.Count -eq 0) {
+            Write-Diagnostic -Level 'WARN' -Message 'No Aspire usvc-dev containers were found.'
+            return
+        }
+
+        Write-Diagnostic -Level 'WARN' -Message 'Current Aspire usvc-dev containers:'
+        foreach ($line in $lines) {
+            Write-Diagnostic -Level 'WARN' -Message "  $line"
+        }
+    }
+    catch {
+        Write-Diagnostic -Level 'WARN' -Message "Could not collect Docker container summary: $($_.Exception.Message)"
+    }
+}
+
+function Write-AspireDockerResourceLogs {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ResourceName,
+
+        [int] $Tail = 80
+    )
+
+    try {
+        $containers = Invoke-NativeCommandOutput `
+            -Command 'docker' `
+            -Arguments @(
+                'ps',
+                '-a',
+                '--filter',
+                'label=com.microsoft.developer.usvc-dev.group-version=usvc-dev.developer.microsoft.com/v1',
+                '--format',
+                '{{.Names}}'
+            ) `
+            -WorkingDirectory $root `
+            -TimeoutSeconds 30 `
+            -Name "dev-$ResourceName-container-list"
+
+        $containerName = @($containers.Stdout -split '\r?\n' | Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_) -and $_.StartsWith("$ResourceName-", [System.StringComparison]::OrdinalIgnoreCase)
+        } | Select-Object -First 1)
+
+        if ($containerName.Count -eq 0) {
+            return
+        }
+
+        $logs = Invoke-NativeCommandOutput `
+            -Command 'docker' `
+            -Arguments @('logs', $containerName[0], '--tail', "$Tail") `
+            -WorkingDirectory $root `
+            -TimeoutSeconds 30 `
+            -Name "dev-$ResourceName-container-logs"
+
+        $lines = @((($logs.Stdout, $logs.Stderr) -join [Environment]::NewLine) -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($lines.Count -eq 0) {
+            return
+        }
+
+        Write-Diagnostic -Level 'WARN' -Message "Recent Docker logs for '$ResourceName':"
+        foreach ($line in $lines) {
+            Write-Diagnostic -Level 'WARN' -Message "  $line"
+        }
+    }
+    catch {
+        Write-Diagnostic -Level 'WARN' -Message "Could not collect Docker logs for '$ResourceName': $($_.Exception.Message)"
+    }
+}
+
+function Wait-AspireResource {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [ValidateSet('healthy', 'up', 'down')]
+        [string] $Status = 'up',
+
+        [int] $TimeoutSeconds = 600
+    )
+
+    Write-Diagnostic "Waiting for Aspire resource '$Name' to become '$Status' (timeout=${TimeoutSeconds}s)."
+    try {
+        Invoke-Aspire -Arguments @('wait', $Name, '--status', $Status, '--timeout', "$TimeoutSeconds", '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds ($TimeoutSeconds + 30) -Name "dev-wait-$Name" | Out-Null
+        Write-Diagnostic "Aspire resource '$Name' reached '$Status'."
+    }
+    catch {
+        Write-Diagnostic -Level 'ERROR' -Message "Aspire resource '$Name' did not reach '$Status': $($_.Exception.Message)"
+        Write-AspireDockerContainerSummary
+        Write-AspireDockerResourceLogs -ResourceName $Name
+        throw
+    }
+}
+
 if ($Help) {
     Write-DevHelp
     exit 0
@@ -145,6 +280,7 @@ if ($Help) {
 Set-Location $root
 
 if ($InfraOnly) {
+    Write-Diagnostic 'Starting dependency-only Docker Compose profile.'
     Assert-CommandAvailable -Name 'docker' -Purpose 'dependency-only startup'
     $composeFile = Join-Path $root 'infra/docker-compose.dev.yml'
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', 'postgres', 'redis', 'rabbitmq', 'minio', 'otel-collector') -WorkingDirectory $root -TimeoutSeconds 240 -Name 'dev-infra-only' | Out-Null
@@ -152,18 +288,23 @@ if ($InfraOnly) {
     exit 0
 }
 
+Write-Diagnostic 'Checking local development prerequisites.'
 Assert-CommandAvailable -Name 'dotnet' -Purpose 'AppHost user-secrets preflight'
 Assert-CommandAvailable -Name 'docker' -Purpose 'Aspire container resources'
 Assert-CommandAvailable -Name 'node' -Purpose 'Console Vite startup'
 Assert-CommandAvailable -Name 'pnpm' -Purpose 'Console Vite startup'
 Get-AspireCliCommand | Out-Null
+Write-Diagnostic 'Local development prerequisites are available.'
 
 if ($OpenDashboard) {
     Write-Host 'Aspire dashboard URL is printed by `aspire start`; use `.\nerv.ps1 status` to rediscover running resources.'
 }
 
 $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
+Write-Diagnostic 'Checking required AppHost user secrets.'
 Assert-AppHostUserSecrets -AppHostProject $appHostProject
+Write-Diagnostic 'Required AppHost user secrets are present.'
+Assert-DevelopmentHttpsCertificateTrusted
 
 $arguments = @('start', '--apphost', $appHostProject, '--non-interactive', '--nologo')
 if ($NoBuild) {
@@ -178,16 +319,34 @@ $appHostEnvironment = @{
     DOTNET_ENVIRONMENT = 'Development'
 }
 
-$result = Invoke-WithScopedEnvironment -Variables $appHostEnvironment -ScriptBlock {
-    Invoke-AspireInteractive -Arguments $arguments -WorkingDirectory $root -Name 'dev-apphost'
+Write-Diagnostic 'Starting Aspire AppHost. This step is bounded and writes logs under artifacts/script-logs/dev-apphost/.'
+try {
+    Invoke-WithScopedEnvironment -Variables $appHostEnvironment -ScriptBlock {
+        Invoke-Aspire -Arguments $arguments -WorkingDirectory $root -TimeoutSeconds 900 -Name 'dev-apphost'
+    } | Out-Null
+    Write-Diagnostic 'Aspire AppHost start command completed.'
 }
-if ($result.ExitCode -ne 0) {
-    exit $result.ExitCode
+catch {
+    Write-Diagnostic -Level 'ERROR' -Message "Aspire AppHost start failed: $($_.Exception.Message)"
+    Write-AspireDockerContainerSummary
+    throw
+}
+
+foreach ($resource in @('postgres', 'redis', 'minio', 'otel-collector')) {
+    Wait-AspireResource -Name $resource -Status 'up' -TimeoutSeconds 240
 }
 
 foreach ($resource in @('gateway', 'business-gateway', 'console', 'business-console')) {
-    Invoke-Aspire -Arguments @('wait', $resource, '--status', 'up', '--timeout', '600', '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds 620 -Name "dev-wait-$resource" | Out-Null
+    Wait-AspireResource -Name $resource -Status 'up' -TimeoutSeconds 600
 }
 
-Invoke-AspireInteractive -Arguments @('ps', '--non-interactive', '--nologo') -WorkingDirectory $root -Name 'dev-status' | Out-Null
+$status = Invoke-AspireOutput -Arguments @('ps', '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds 60 -Name 'dev-status'
+Write-Host $status.Stdout
+
+foreach ($resource in @('gateway', 'business-gateway', 'console', 'business-console')) {
+    $description = Invoke-AspireOutput -Arguments @('describe', $resource, '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds 60 -Name "dev-describe-$resource"
+    Write-Host $description.Stdout
+}
+
+Write-Diagnostic 'Nerv-IIP local platform startup completed.'
 exit 0

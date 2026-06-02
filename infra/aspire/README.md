@@ -12,12 +12,13 @@ On a connected blank development machine, prefer the repository bootstrap entry 
 
 That command checks the required toolchain, installs missing Windows prerequisites
 through `winget` when requested, initializes missing local Development user secrets,
-restores backend/frontend dependencies, and builds the AppHost. Docker Desktop may
-still need to be started manually after first installation. The manual commands
-below are for cases where you intentionally want to set repeatable local values
-yourself. Bootstrap does not contain a fixed IAM admin password; pass
-`-LocalAdminPassword` before the first database seed if you need a known local login
-password, or inspect/reset the local user-secret value yourself.
+trusts local HTTPS developer certificates, restores backend/frontend dependencies,
+and builds the AppHost. Docker Desktop may still need to be started manually after
+first installation. The manual commands below are for cases where you intentionally
+want to set repeatable local values yourself. Bootstrap does not contain a fixed IAM
+admin password; pass `-LocalAdminPassword` before the first database seed if you
+need a known local login password, or inspect/reset the local user-secret value
+yourself.
 
 ```powershell
 dotnet user-secrets set "Parameters:iam-jwt-signing-key" "<at-least-32-byte-local-signing-key>" --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj
@@ -37,8 +38,11 @@ Then start the platform from the repository root:
 ```
 
 `.\nerv.ps1 dev` uses `aspire start --non-interactive` and automatically adds
-`--isolated` when the repository is opened from a linked worktree. Stop the platform
-with Aspire rather than killing `dotnet`, AppHost, or DCP processes:
+`--isolated` when the repository is opened from a linked worktree. In isolated
+mode, Aspire may assign dynamic host ports instead of the canonical local ports;
+use `.\nerv.ps1 describe business-console` or the Aspire Dashboard resource page
+to get the actual URL. Stop the platform with Aspire rather than killing `dotnet`,
+AppHost, or DCP processes:
 
 ```powershell
 .\nerv.ps1 stop
@@ -48,6 +52,46 @@ The same MinIO root user and password are passed to FileStorage as the local Min
 
 These values are for local development only. Do not commit real credentials to `appsettings*.json`, source files or documentation examples.
 
+## Runtime image versions
+
+The AppHost pins the persistent local infrastructure image tags instead of using
+provider defaults or `latest`:
+
+| Resource | Current tag | Reason |
+| --- | --- | --- |
+| PostgreSQL | `18` | Uses the current PostgreSQL 18 major line while avoiding the unbounded `latest` tag. PostgreSQL Docker images 18+ use a major-version-specific data directory under `/var/lib/postgresql`, so the AppHost uses a new local dev volume, `nerv-iip-postgres-18`, instead of reusing the old 17-era `nerv-iip-postgres` volume. |
+| Redis | `8` | Uses the current Redis 8 major line while avoiding unbounded `latest` drift. Redis 8 can read older local cache data, and if the cache volume is ever incompatible it can be recreated because Redis is not a local source-of-truth business store. |
+
+Do not change these tags to `latest`. Moving to the next PostgreSQL or Redis major
+version should be a deliberate upgrade issue with a clean-volume test,
+preserved-volume migration test where applicable, AppHost build, Compose publish
+verification, and startup smoke test. For PostgreSQL, either run an explicit
+`pg_upgrade`/dump-restore plan or introduce a new dev volume name; do not let the
+default container image decide that migration.
+
+## Certificate preflight
+
+Aspire AppHost, Dashboard/DCP, and local HTTPS development endpoints require the
+local developer certificate to be trusted. `.\nerv.ps1 bootstrap -InstallMissing`
+and `.\nerv.ps1 dev` now check this before starting the platform. If the check
+fails, run:
+
+```powershell
+aspire certs trust
+dotnet dev-certs https --trust
+```
+
+If the Aspire AppHost log reports a certificate name mismatch after an Aspire
+upgrade or certificate cache change, reset the local Aspire certificate cache:
+
+```powershell
+aspire certs clean
+aspire certs trust
+dotnet dev-certs https --trust
+```
+
+Reference: [Aspire certificate configuration](https://aspire.dev/app-host/certificate-configuration/).
+
 ## Startup troubleshooting
 
 When the Business Console appears to be slow or stuck, check the Aspire Dashboard before restarting repeatedly:
@@ -55,6 +99,8 @@ When the Business Console appears to be slow or stuck, check the Aspire Dashboar
 ```powershell
 dotnet user-secrets list --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj
 .\nerv.ps1 status
+.\nerv.ps1 describe business-console
+.\nerv.ps1 describe business-gateway
 .\nerv.ps1 describe gateway
 .\nerv.ps1 logs gateway -Tail 120
 .\nerv.ps1 logs business-gateway -Tail 120
@@ -66,8 +112,12 @@ Common symptoms and fixes:
 | Symptom | Likely cause | Action |
 | --- | --- | --- |
 | Dashboard shows `Unresolved parameters` and services stay `Waiting`. | Required AppHost parameters are missing. | Set all `Parameters:*` user secrets above, then restart `.\nerv.ps1 dev`. |
+| `127.0.0.1:5119` or `127.0.0.1:5125` refuses connections while Aspire says the resources are up. | The repo is running from a linked worktree and `.\nerv.ps1 dev` added Aspire `--isolated`, so host ports are dynamic. | Run `.\nerv.ps1 describe business-gateway` and `.\nerv.ps1 describe business-console` and use the URLs shown there. |
 | Frontend port `5125` responds, but login or API calls hang. | A stale AppHost/DCP proxy or failed backend resource is present. | Run `.\nerv.ps1 status`, `.\nerv.ps1 describe -IncludeHidden`, then `.\nerv.ps1 stop` before starting again. Do not kill AppHost/DCP manually unless Aspire CLI cannot see a legacy process. |
-| `postgres` is `Running (Unhealthy)` and dependent services remain `Waiting`. | The persistent `nerv-iip-postgres` Docker volume was initialized with a different `postgres` password than the current Aspire `Parameters:postgres-password`. | Prefer reusing the existing user secret. If the secret changed and the volume must be preserved, align the container's `postgres` user password to the current secret. |
+| `postgres` exits immediately after an Aspire/provider upgrade. | The AppHost pulled a PostgreSQL image whose data-directory layout is incompatible with the existing PostgreSQL volume. | PostgreSQL 18 uses `nerv-iip-postgres-18`. Do not point it back at the old `nerv-iip-postgres` volume unless you are running an explicit migration. Inspect `.\nerv.ps1 logs postgres -Tail 120` before deleting any database volume. |
+| `postgres` is `Running (Unhealthy)` and dependent services remain `Waiting`. | The persistent `nerv-iip-postgres-18` Docker volume was initialized with a different `postgres` password than the current Aspire `Parameters:postgres-password`. | Prefer reusing the existing user secret. If the secret changed and the volume must be preserved, align the container's `postgres` user password to the current secret. |
+| `redis` exits with an RDB/AOF format error. | The local `nerv-iip-redis` cache volume was written by an incompatible Redis major version. | Redis is a local cache/session dependency, not a source-of-truth business store. Stop the platform and remove only `nerv-iip-redis`, then restart: `.\nerv.ps1 stop`; `docker volume rm nerv-iip-redis`; `.\nerv.ps1 dev`. |
+| `.\nerv.ps1 dev` or `.\nerv.ps1 stop` appears stuck. | Aspire CLI or DCP did not return promptly. | Scripts now use bounded commands and print phase diagnostics. Check the latest `artifacts/script-logs/dev-apphost/` or `artifacts/script-logs/aspire-stop/` directory and rerun `.\nerv.ps1 status`. |
 | `http://127.0.0.1:5102/api/iam/v1/me` returns `401`. | IAM is running and the request is unauthenticated. | This is expected before login. Use it as a quick liveness check. |
 | `http://127.0.0.1:5119/swagger/v1/swagger.json` returns `200`. | BusinessGateway is up. | Business Console API proxying can be tested from `5125` after login. |
 
@@ -101,22 +151,30 @@ BusinessGateway), or BusinessGateway owns the required auth facade. Do not treat
 Compose publish as a complete Business Console deployment until that production
 serving model is added and verified.
 
-For the PostgreSQL password-mismatch case, avoid deleting `nerv-iip-postgres` unless losing local data is acceptable. To preserve data, temporarily relax `pg_hba.conf` inside the dev container, reset the `postgres` password, then restore the file immediately. If the password reset command fails, manually run the restore command before doing anything else; otherwise the container can keep accepting local connections without a password.
+For the PostgreSQL password-mismatch case, avoid deleting `nerv-iip-postgres-18`
+unless losing local data is acceptable. To preserve data, temporarily relax
+`pg_hba.conf` inside the dev container, reset the `postgres` password, then restore
+the file immediately. If the password reset command fails, manually run the restore
+command before doing anything else; otherwise the container can keep accepting local
+connections without a password.
 
 ```powershell
 $container = "<postgres-container-name>"
 $password = "<current-Parameters:postgres-password>"
 $escaped = $password.Replace("'", "''")
+$pgData = "/var/lib/postgresql/18/docker"
 
-docker exec -u root $container sh -lc "cp /var/lib/postgresql/data/pg_hba.conf /tmp/pg_hba.conf.codex-bak && sed -i 's/scram-sha-256/trust/g' /var/lib/postgresql/data/pg_hba.conf && chown postgres:postgres /var/lib/postgresql/data/pg_hba.conf && chmod 600 /var/lib/postgresql/data/pg_hba.conf && kill -HUP 1"
+docker exec -u root $container sh -lc "cp $pgData/pg_hba.conf /tmp/pg_hba.conf.codex-bak && sed -i 's/scram-sha-256/trust/g' $pgData/pg_hba.conf && chown postgres:postgres $pgData/pg_hba.conf && chmod 600 $pgData/pg_hba.conf && kill -HUP 1"
 docker exec $container psql -U postgres -h 127.0.0.1 -d postgres -c "ALTER USER postgres WITH PASSWORD '$escaped';"
-docker exec -u root $container sh -lc "cp /tmp/pg_hba.conf.codex-bak /var/lib/postgresql/data/pg_hba.conf && chown postgres:postgres /var/lib/postgresql/data/pg_hba.conf && chmod 600 /var/lib/postgresql/data/pg_hba.conf && kill -HUP 1"
+docker exec -u root $container sh -lc "cp /tmp/pg_hba.conf.codex-bak $pgData/pg_hba.conf && chown postgres:postgres $pgData/pg_hba.conf && chmod 600 $pgData/pg_hba.conf && kill -HUP 1"
 docker exec -e PGPASSWORD=$password $container psql -U postgres -h 127.0.0.1 -d postgres -c "select current_user;"
 ```
 
 After the database is healthy, the expected Business Console chain is:
 
 1. `http://127.0.0.1:5125/login?redirect=/mes` returns the login page.
-2. `http://127.0.0.1:5119/swagger/v1/swagger.json` returns `200`.
+2. The BusinessGateway URL from `.\nerv.ps1 describe business-gateway` returns
+   `200` at `/swagger/v1/swagger.json`.
 3. `http://127.0.0.1:5102/api/iam/v1/me` returns `401` before login.
-4. Login redirects to `http://127.0.0.1:5125/mes`.
+4. Login redirects to the Business Console URL from
+   `.\nerv.ps1 describe business-console`, typically `/mes` after authentication.

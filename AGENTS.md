@@ -299,6 +299,32 @@ These are errors that have occurred repeatedly. Read before writing any code.
     pass a value explicitly through a non-logged path. Secret-setting commands must
     mark sensitive arguments for script log redaction.
 
+27. **Letting Aspire infrastructure image tags drift.** Persistent local resources
+    must be explicitly pinned in AppHost. PostgreSQL is currently `18` and Redis
+    is currently `8`; do not use `latest` or unpinned Aspire provider defaults.
+    PostgreSQL 18+ uses a different major-version data directory than the old
+    pre-18 `/var/lib/postgresql/data` layout, so local dev uses
+    `nerv-iip-postgres-18` and must not point PostgreSQL 18 back at the old
+    `nerv-iip-postgres` volume without an explicit `pg_upgrade` or dump/restore.
+    Do not switch major versions without a tracked upgrade plan, clean-volume test,
+    preserved-volume migration test where applicable, AppHost build, Compose
+    publish verification, and smoke startup. If Redis reports an RDB/AOF format
+    error, stop Aspire and remove only the local `nerv-iip-redis` cache volume.
+
+28. **Startup/stop scripts with no bounded feedback.** `.\nerv.ps1 dev` and
+    `.\nerv.ps1 stop` must show phase diagnostics and use bounded helper calls.
+    A failed certificate check, exited container, Aspire/DCP hang, or successful
+    startup must not all look like "still waiting". Stop must run fallback cleanup
+    for current-repo AppHost processes and Aspire usvc-dev containers when Aspire
+    CLI stop times out.
+
+29. **Skipping local HTTPS certificate validation.** Aspire Dashboard/DCP and local
+    HTTPS endpoints require a trusted developer certificate. On blank machines or
+    after Aspire certificate cache changes, run `.\nerv.ps1 bootstrap -InstallMissing`
+    or verify with `dotnet dev-certs https --check --trust`. If AppHost logs show
+    certificate name mismatch, reset with `aspire certs clean`, `aspire certs trust`,
+    and `dotnet dev-certs https --trust`.
+
 ## "Done" Definition
 
 Before claiming a task is complete, verify against the Change Decision Table above.

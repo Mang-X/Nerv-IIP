@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17
+    image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${NERV_IIP_POSTGRES_USER:-nerv}
@@ -9,7 +9,7 @@ services:
     ports:
       - "${NERV_IIP_POSTGRES_PORT:-15432}:5432"
     volumes:
-      - nerv-iip-postgres:/var/lib/postgresql/data
+      - nerv-iip-postgres-18:/var/lib/postgresql
       - ../postgres/init-nerv-iip-databases.sql:/docker-entrypoint-initdb.d/20-nerv-iip-databases.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${NERV_IIP_POSTGRES_USER:-nerv} -d ${NERV_IIP_POSTGRES_DB:-nerv_iip}"]
@@ -18,7 +18,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7
+    image: redis:8
     restart: unless-stopped
     ports:
       - "${NERV_IIP_REDIS_PORT:-6379}:6379"
@@ -83,7 +83,7 @@ services:
       - "${NERV_IIP_ASPIRE_DASHBOARD_OTLP_PORT:-18889}:18889"
 
 volumes:
-  nerv-iip-postgres:
+  nerv-iip-postgres-18:
   nerv-iip-redis:
   nerv-iip-minio:
   nerv-iip-otel-queue:

@@ -240,7 +240,9 @@ function Invoke-NativeCommandWithTimeout {
 
         [string] $Name,
 
-        [string] $LogDirectory
+        [string] $LogDirectory,
+
+        [int[]] $SensitiveArgumentIndexes = @()
     )
 
     if ([string]::IsNullOrWhiteSpace($Name)) {
