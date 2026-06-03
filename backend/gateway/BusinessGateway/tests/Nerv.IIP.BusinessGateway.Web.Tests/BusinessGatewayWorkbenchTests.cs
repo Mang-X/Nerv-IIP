@@ -113,6 +113,77 @@ public sealed class BusinessGatewayWorkbenchTests
         Assert.Equal(new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user-admin", "open", 20), notification.LastTasksRequest);
     }
 
+    [Fact]
+    public async Task Workbench_summary_uses_valid_take_values_without_runtime_truncation()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesWorkOrdersRead);
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev&take=75");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(75, mes.LastWorkOrderListRequest!.Take);
+    }
+
+    [Fact]
+    public async Task Workbench_summary_does_not_query_notifications_when_authorized_principal_cannot_be_resolved()
+    {
+        var auth = new NullPrincipalNotificationAuthorizationClient();
+        var notification = new RecordingNotificationClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessNotificationClient>();
+            services.AddSingleton<IBusinessNotificationClient>(notification);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, notification.MessageCallCount);
+        Assert.Equal(0, notification.TaskCallCount);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertSourceStatus(document.RootElement.GetProperty("data"), "Notification", "unavailable");
+    }
+
+    [Fact]
+    public async Task Workbench_summary_reports_tasks_permission_when_only_notification_tasks_source_fails()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.NotificationTasksRead);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessNotificationClient>();
+            services.AddSingleton<IBusinessNotificationClient>(new ThrowingNotificationClient());
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var notificationStatus = document.RootElement.GetProperty("data")
+            .GetProperty("sourceStatuses")
+            .EnumerateArray()
+            .Single(sourceStatus => sourceStatus.GetProperty("source").GetString() == "Notification");
+        Assert.Equal("unavailable", notificationStatus.GetProperty("status").GetString());
+        Assert.Equal(BusinessGatewayPermissions.NotificationTasksRead, notificationStatus.GetProperty("permissionCode").GetString());
+    }
+
     private static void AssertSourceStatus(JsonElement data, string source, string status)
     {
         var item = data.GetProperty("sourceStatuses")
@@ -122,7 +193,7 @@ public sealed class BusinessGatewayWorkbenchTests
     }
 
     private static WebApplicationFactory<Program> CreateFactory(
-        FakeBusinessGatewayAuthorizationClient auth,
+        IBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -139,6 +210,18 @@ public sealed class BusinessGatewayWorkbenchTests
         });
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
+
+    private sealed class NullPrincipalNotificationAuthorizationClient : IBusinessGatewayAuthorizationClient
+    {
+        public Task<BusinessGatewayAuthorizationResult> CheckAsync(
+            string bearerToken,
+            BusinessGatewayPermissionRequirement requirement,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(
+                requirement.PermissionCode is BusinessGatewayPermissions.NotificationMessagesRead or BusinessGatewayPermissions.NotificationTasksRead
+                    ? new BusinessGatewayAuthorizationResult(true, null, "user", null, null)
+                    : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
+    }
 }
 
 internal sealed class RecordingApprovalClient : IBusinessApprovalClient
@@ -228,4 +311,19 @@ internal sealed class RecordingNotificationClient : IBusinessNotificationClient
                 DateTimeOffset.Parse("2026-06-03T02:00:00Z")),
         ]));
     }
+}
+
+internal sealed class ThrowingNotificationClient : IBusinessNotificationClient
+{
+    public Task<NotificationMessageListResponse> ListMessagesAsync(
+        string internalBearerToken,
+        BusinessConsoleNotificationListRequest request,
+        CancellationToken cancellationToken) =>
+        throw new HttpRequestException("notification messages unavailable");
+
+    public Task<NotificationTaskListResponse> ListTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleNotificationListRequest request,
+        CancellationToken cancellationToken) =>
+        throw new HttpRequestException("notification tasks unavailable");
 }

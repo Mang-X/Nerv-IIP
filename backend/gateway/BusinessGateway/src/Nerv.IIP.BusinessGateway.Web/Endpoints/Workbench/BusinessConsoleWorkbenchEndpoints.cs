@@ -27,7 +27,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
     : Endpoint<BusinessConsoleWorkbenchSummaryRequest, ResponseData<BusinessConsoleWorkbenchSummaryResponse>>
 {
     private const int DefaultTake = 20;
-    private const int MaxTake = 50;
+    private const int MaxTake = 100;
 
     public override async Task HandleAsync(BusinessConsoleWorkbenchSummaryRequest req, CancellationToken ct)
     {
@@ -143,14 +143,23 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
             return;
         }
 
+        var notificationPermissionCode = messageAuthorization.IsAllowed
+            ? BusinessGatewayPermissions.NotificationMessagesRead
+            : BusinessGatewayPermissions.NotificationTasksRead;
+        var principalRef = PrincipalReference(messageAuthorization) ?? PrincipalReference(taskAuthorization);
+        if (principalRef is null)
+        {
+            sourceStatuses["Notification"] = SourceStatus.Unavailable("Notification", notificationPermissionCode, "principal-unresolved");
+            return;
+        }
+
         try
         {
             if (messageAuthorization.IsAllowed)
             {
-                var principalId = messageAuthorization.PrincipalId ?? messageAuthorization.LoginName;
                 var response = await notification.ListMessagesAsync(
                     tokenProvider.BearerToken,
-                    new BusinessConsoleNotificationListRequest(request.OrganizationId, request.EnvironmentId, principalId, "unread", take),
+                    new BusinessConsoleNotificationListRequest(request.OrganizationId, request.EnvironmentId, principalRef, "unread", take),
                     cancellationToken);
                 messages.AddRange(response.Items.Select(item => new BusinessConsoleWorkbenchMessageItem(
                     item.MessageId,
@@ -163,10 +172,9 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
 
             if (taskAuthorization.IsAllowed)
             {
-                var principalId = taskAuthorization.PrincipalId ?? taskAuthorization.LoginName;
                 var response = await notification.ListTasksAsync(
                     tokenProvider.BearerToken,
-                    new BusinessConsoleNotificationListRequest(request.OrganizationId, request.EnvironmentId, principalId, "open", take),
+                    new BusinessConsoleNotificationListRequest(request.OrganizationId, request.EnvironmentId, principalRef, "open", take),
                     cancellationToken);
                 todos.AddRange(response.Items.Select(item => new BusinessConsoleWorkbenchTodoItem(
                     "Notification",
@@ -179,15 +187,15 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
 
             sourceStatuses["Notification"] = SourceStatus.Available(
                 "Notification",
-                messageAuthorization.IsAllowed ? BusinessGatewayPermissions.NotificationMessagesRead : BusinessGatewayPermissions.NotificationTasksRead);
+                notificationPermissionCode);
         }
         catch (BusinessServiceProxyException)
         {
-            sourceStatuses["Notification"] = SourceStatus.Unavailable("Notification", BusinessGatewayPermissions.NotificationMessagesRead);
+            sourceStatuses["Notification"] = SourceStatus.Unavailable("Notification", notificationPermissionCode);
         }
         catch (HttpRequestException)
         {
-            sourceStatuses["Notification"] = SourceStatus.Unavailable("Notification", BusinessGatewayPermissions.NotificationMessagesRead);
+            sourceStatuses["Notification"] = SourceStatus.Unavailable("Notification", notificationPermissionCode);
         }
     }
 
@@ -349,6 +357,16 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         _ => take,
     };
 
+    private static string? PrincipalReference(BusinessGatewayAuthorizationResult authorization)
+    {
+        if (!string.IsNullOrWhiteSpace(authorization.PrincipalId))
+        {
+            return authorization.PrincipalId;
+        }
+
+        return string.IsNullOrWhiteSpace(authorization.LoginName) ? null : authorization.LoginName;
+    }
+
     private static string SummaryStatus(
         int count,
         IReadOnlyDictionary<string, BusinessConsoleWorkbenchSourceStatus> sourceStatuses,
@@ -372,8 +390,8 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         public static BusinessConsoleWorkbenchSourceStatus Forbidden(string source, string permissionCode) =>
             new(source, "forbidden", permissionCode, "permission-denied");
 
-        public static BusinessConsoleWorkbenchSourceStatus Unavailable(string source, string permissionCode) =>
-            new(source, "unavailable", permissionCode, "source-unavailable");
+        public static BusinessConsoleWorkbenchSourceStatus Unavailable(string source, string permissionCode, string reason = "source-unavailable") =>
+            new(source, "unavailable", permissionCode, reason);
     }
 }
 
