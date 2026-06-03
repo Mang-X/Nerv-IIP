@@ -12,6 +12,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
 
@@ -1093,6 +1094,93 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
 
         Assert.Contains("includeDisabled=true", handler.Requests.Single().RequestUri!.PathAndQuery, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Notification_http_client_sends_scope_headers_and_only_supported_message_query_parameters()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        messageId = "message-http-001",
+                        intentId = "intent-http-001",
+                        recipientRef = "user-admin",
+                        status = "unread",
+                        severity = "warning",
+                        title = "Message",
+                        body = "Message body",
+                        resource = (object?)null,
+                        createdAtUtc = "2026-06-03T01:00:00Z",
+                        readAtUtc = (string?)null,
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://notification.local") };
+        var client = new HttpBusinessNotificationClient(httpClient);
+
+        var response = await client.ListMessagesAsync(
+            "internal-token-001",
+            new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user-admin", "unread", 25),
+            CancellationToken.None);
+
+        Assert.Equal("message-http-001", response.Items.Single().MessageId);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/notifications/v1/messages?recipientRef=user-admin&status=unread", request.RequestUri!.PathAndQuery);
+        Assert.Equal("org-001", request.Headers.GetValues("X-Organization-Id").Single());
+        Assert.Equal("env-dev", request.Headers.GetValues("X-Environment-Id").Single());
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Notification_http_client_sends_scope_headers_and_only_supported_task_query_parameters()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        taskId = "task-http-001",
+                        messageId = "message-http-001",
+                        recipientRef = "user-admin",
+                        taskType = "approve",
+                        status = "open",
+                        actionRef = "APP-001",
+                        createdAtUtc = "2026-06-03T02:00:00Z",
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://notification.local") };
+        var client = new HttpBusinessNotificationClient(httpClient);
+
+        var response = await client.ListTasksAsync(
+            "internal-token-001",
+            new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user-admin", "open", 25),
+            CancellationToken.None);
+
+        Assert.Equal("task-http-001", response.Items.Single().TaskId);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/notifications/v1/tasks?recipientRef=user-admin&status=open", request.RequestUri!.PathAndQuery);
+        Assert.Equal("org-001", request.Headers.GetValues("X-Organization-Id").Single());
+        Assert.Equal("env-dev", request.Headers.GetValues("X-Environment-Id").Single());
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
     [Fact]

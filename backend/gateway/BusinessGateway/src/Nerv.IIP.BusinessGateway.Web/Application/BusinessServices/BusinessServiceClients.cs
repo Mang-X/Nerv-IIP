@@ -521,10 +521,12 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         string requestUri,
         object? body,
         CancellationToken cancellationToken,
-        JsonSerializerOptions? jsonOptions = null)
+        JsonSerializerOptions? jsonOptions = null,
+        Action<HttpRequestMessage>? configureRequest = null)
     {
         using var request = new HttpRequestMessage(method, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+        configureRequest?.Invoke(request);
         if (body is not null)
         {
             request.Content = JsonContent.Create(body, options: jsonOptions ?? JsonOptions);
@@ -663,7 +665,8 @@ public sealed class HttpBusinessNotificationClient(HttpClient httpClient) : Busi
             HttpMethod.Get,
             "/api/notifications/v1/messages?" + NotificationQuery(request),
             null,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: notificationRequest => AddNotificationScopeHeaders(notificationRequest, request));
 
     public Task<NotificationTaskListResponse> ListTasksAsync(
         string internalBearerToken,
@@ -674,15 +677,19 @@ public sealed class HttpBusinessNotificationClient(HttpClient httpClient) : Busi
             HttpMethod.Get,
             "/api/notifications/v1/tasks?" + NotificationQuery(request),
             null,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: notificationRequest => AddNotificationScopeHeaders(notificationRequest, request));
 
     private static string NotificationQuery(BusinessConsoleNotificationListRequest request) =>
         Query(
-            ("organizationId", request.OrganizationId),
-            ("environmentId", request.EnvironmentId),
             ("recipientRef", request.RecipientRef),
-            ("status", request.Status),
-            ("take", request.Take));
+            ("status", request.Status));
+
+    private static void AddNotificationScopeHeaders(HttpRequestMessage httpRequest, BusinessConsoleNotificationListRequest request)
+    {
+        httpRequest.Headers.TryAddWithoutValidation("X-Organization-Id", request.OrganizationId);
+        httpRequest.Headers.TryAddWithoutValidation("X-Environment-Id", request.EnvironmentId);
+    }
 }
 
 public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
