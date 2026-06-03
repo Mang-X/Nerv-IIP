@@ -86,6 +86,14 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("markConsoleNotificationMessageRead", paths.GetProperty("/api/console/v1/notifications/messages/{messageId}/read").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("markConsoleNotificationMessagesRead", paths.GetProperty("/api/console/v1/notifications/messages/read-batch").GetProperty("post").GetProperty("operationId").GetString());
 
+        Assert.Equal("createConsoleFileUploadSession", paths.GetProperty("/api/console/v1/files/upload-sessions").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("completeConsoleFileUploadSession", paths.GetProperty("/api/console/v1/files/upload-sessions/{uploadSessionId}/complete").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("getConsoleFileMetadata", paths.GetProperty("/api/console/v1/files/{fileId}").GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("createConsoleFileDownloadGrant", paths.GetProperty("/api/console/v1/files/{fileId}/download-grants").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("getConsoleTusUploadOffset", paths.GetProperty("/api/console/v1/files/tus/{uploadSessionId}").GetProperty("head").GetProperty("operationId").GetString());
+        Assert.Equal("patchConsoleTusUpload", paths.GetProperty("/api/console/v1/files/tus/{uploadSessionId}").GetProperty("patch").GetProperty("operationId").GetString());
+        Assert.Equal("downloadConsoleFileGrantContent", paths.GetProperty("/api/console/v1/files/download-grants/{downloadGrantId}/content").GetProperty("get").GetProperty("operationId").GetString());
+
         Assert.Equal("HealthEndpoint", paths.GetProperty("/health").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("GetBuildInfoEndpoint", paths.GetProperty("/internal/gateway/v1/build-info").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("InvalidateGatewayCacheEndpoint", paths.GetProperty("/internal/gateway/cache/invalidate").GetProperty("post").GetProperty("operationId").GetString());

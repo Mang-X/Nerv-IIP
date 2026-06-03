@@ -70,6 +70,7 @@ public sealed class GatewayProductionSecurityTests
     private static void ConfigureServiceBaseUrls(IWebHostBuilder builder)
     {
         builder.UseSetting("AppHub:BaseUrl", "http://apphub.local");
+        builder.UseSetting("FileStorage:BaseUrl", "http://filestorage.local");
         builder.UseSetting("Iam:BaseUrl", "http://iam.local");
         builder.UseSetting("Ops:BaseUrl", "http://ops.local");
         builder.UseSetting("Notification:BaseUrl", "http://notification.local");

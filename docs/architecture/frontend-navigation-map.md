@@ -58,8 +58,8 @@
 
 | Gateway | 已有 facade | 尚未有正式 facade/页面的重点能力与导航优先级 |
 | --- | --- | --- |
-| PlatformGateway | Console auth、AppHub 实例列表/详情、Ops restart 与任务详情、IAM 用户/角色/权限 catalog/会话、Notification 消息/任务。 | P1：Ops 任务列表/审批页、服务健康聚合；P2：FileStorage 管理页、审计日志、DLQ 管理、ExternalClient；P3：SSO/OIDC/MFA、性能基线和渠道配置。 |
-| BusinessGateway | MasterData SKU/资源、Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、ERP Procurement 采购订单供应明细、Scheduling/APS lite、设备运行事实、MES PC 工作台。 | P1：当前 route-ready 页面硬化和工作台最低可用性；P2：ERP 销售/财务、WMS、BarcodeLabel、BusinessApproval、IndustrialTelemetry tag/rule/history、Maintenance 工单/计划正式页面；P3：预测、CRM-lite、CAPA 和高级分析。 |
+| PlatformGateway | Console auth、AppHub 实例列表/详情、Ops restart 与任务详情、IAM 用户/角色/权限 catalog/会话、Notification 消息/任务、FileStorage 上传会话/元数据/download grant 管理 facade。 | P1：Ops 任务列表/审批页、服务健康聚合；P2：FileStorage 管理页、审计日志、DLQ 管理、ExternalClient；P3：SSO/OIDC/MFA、性能基线和渠道配置。 |
+| BusinessGateway | MasterData SKU/资源、Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、ERP Procurement 采购订单供应明细、Scheduling/APS lite、设备运行事实、MES PC 工作台、WMS 收货/出库/WCS 读面 facade、全局对象搜索后端 facade（MES 工单、SKU、当前报警；Inventory batch/lot 与设备列表搜索当前返回 unsupported）、IndustrialTelemetry tags/alarms/history/runtime-availability facade、Maintenance 工单/计划/availability-windows facade。 | P1：当前 route-ready 页面硬化和工作台最低可用性；P2：前端 Cmd/K 面板、ERP 销售/财务、WMS 页面、BarcodeLabel、BusinessApproval、IndustrialTelemetry rule/OEE 服务读面与正式页面、Maintenance 正式页面；P3：预测、CRM-lite、CAPA 和高级分析。 |
 
 当前 `frontend/apps/business-console/src/pages/erp/index.vue` 已窄化为采购与供应页，通过 BusinessGateway ERP Procurement facade 消费采购订单、供应商编码、预计到货和部分收货状态；不能据此把 ERP 销售、财务或完整 ERP 前端标为已交付。
 
@@ -219,7 +219,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 运维中心 | 审批待办 | 后端已落地/前端待建 | Ops high-risk approval gate 存在，但 Console 审批页面未交付；不得用 BusinessApproval 替代。 |
 | 运维中心 | 审计日志 | 规划 | 后续独立查询页。 |
 | 通知管理 | 通知记录/待办 | 已落地/窄化 | `/notifications`，覆盖站内消息和任务列表；模板、偏好、外部渠道后置。 |
-| 文件存储 | 文件浏览、存储配置 | 后端已落地/前端待建 | FileStorage MVP 有 API/SDK/tus，但暂无 PlatformGateway facade 和 Console 页面。 |
+| 文件存储 | 文件浏览、存储配置 | 后端已落地/前端待建 | FileStorage MVP 有 API/SDK/tus，PlatformGateway 已有上传会话、complete、元数据和 download grant 管理 facade；Console 页面仍待建。 |
 | AI 与知识治理 | 模型提供方、MCP/Skill、工具授权、知识源 | 规划 | Context map 已冻结 AI Integration 与 Knowledge 边界，但当前无服务骨架、Gateway facade 或 Console 页面；不得放入 Business Console。 |
 | 系统监控 | 服务健康、DLQ、性能基线 | 规划 | 当前只有后端 health、验证脚本和部分持久 DLQ 基础；Console 聚合页后置。 |
 | 业务平台状态 | 业务服务状态页 | 过渡 | `/business` 只作为平台管理员查看业务服务 MVP 状态，不承载业务 CRUD。 |
@@ -275,11 +275,11 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 高级排程（APS） | 排程设置、排程执行、排程甘特图、资源负载、冲突管理、排程版本、排程发布 | BusinessScheduling / APS lite 后端契约、内核和 BusinessGateway facade 已落地；#78 只做消费 APS 输出的甘特展示。不得把 APS 算法写入 MES 页面或前端甘特。 |
 | 制造执行（MES） | 生产驾驶舱、生产计划、工单与派工、工序执行、在制跟踪、齐套与物料、报工与完工、质量与不良、设备与停机、班次交接、追溯、产能影响、规则排程过渡页 | 当前 PC 工作台已覆盖主线；PDA/mobile 后置。工单详情等对象页通过列表进入。 |
 | 质量管理 | 检验计划、检验记录、NCR、质量分析、CAPA | 检验/NCR 已有；质量分析 P2，CAPA P3。 |
-| 仓储作业（WMS） | 仓库结构、收货、入库、出库、拣货、复核与发货、退货入库、盘点执行、库内调拨、WCS 任务监控、仓储分析 | WMS 后端已落地，BusinessGateway/WMS 前端未落地；仓储作业页必须内嵌 Inventory 可用量、批次、冻结和预留视图。 |
+| 仓储作业（WMS） | 仓库结构、收货、入库、出库、拣货、复核与发货、退货入库、盘点执行、库内调拨、WCS 任务监控、仓储分析 | WMS 后端已落地，BusinessGateway 已提供收货入库列表、出库列表和 WCS 任务读面 facade；收货列表 facade 可返回 Inventory availability context/sourceStatus。前端页面、OpenAPI 快照和 api-client 生成仍由后续/父线程接入；仓储作业页必须内嵌 Inventory 可用量、批次、冻结和预留视图。 |
 | 库存台账/库存管理 | 库存可用量、库存台账、库存移动记录、批次、序列号、库存预留、库存冻结、库存调拨、盘点调整、库存分析 | 可用量、移动、盘点已落地；批次/序列号/预留/冻结/分析后置。库存事实仍归 Inventory，但用户作业入口可在 WMS/MES/ERP 页面内嵌使用。 |
 | 条码标签 | 条码规则、标签模板、打印管理、扫码记录 | BarcodeLabel 后端已落地，BusinessGateway 和页面待建；业务扫码动作嵌入 MES/WMS/盘点流程。 |
-| 设备监控（IoT） | 标签管理、报警规则、报警列表、报警处理、设备状态、实时监控、历史数据、OEE 分析 | IndustrialTelemetry 后端已有 tag、报警、设备时间线；#207 已提供设备运行看板、设备详情和报警 route-ready 页面。tag/rule/history/OEE 维护页待建；设备接入配置、凭据和控制命令仍在外部/Connector 边界。 |
-| 设备运维（CMMS） | 设备台账、备件管理、故障报修、维修工单、保养计划、保养任务、点检管理、停机管理、维修费用 | Maintenance 后端已有维修工单、保养计划、点检和事件消费；#207 availability 只消费维护窗口事实，不代表维修工单/保养计划正式页面已完成。设备资产主数据仍归 MasterData。 |
+| 设备监控（IoT） | 标签管理、报警规则、报警列表、报警处理、设备状态、实时监控、历史数据、OEE 分析 | IndustrialTelemetry 后端已有 tag、报警、设备时间线；#207 已提供设备运行看板、设备详情和报警 route-ready 页面。BusinessGateway 已提供 tags、alarms、device history 和 runtime availability facade；rule/OEE 仍缺服务读面与正式页面，设备接入配置、凭据和控制命令仍在外部/Connector 边界。 |
+| 设备运维（CMMS） | 设备台账、备件管理、故障报修、维修工单、保养计划、保养任务、点检管理、停机管理、维修费用 | Maintenance 后端已有维修工单、保养计划、点检和事件消费；BusinessGateway 已提供工单列表/详情、保养计划和 availability-windows facade。正式页面、api-client 消费和设备资产主数据维护仍待建；设备资产主数据仍归 MasterData。 |
 | 审批中心 | 审批模板、审批流配置、审批记录、委托设置 | BusinessApproval 后端已落地，页面待建；业务待办入口放数字化工作台，不在审批中心重复。Ops 运维审批仍归平台 Ops。 |
 | 外协加工（P2 候选） | 外协订单、外协发料、外协收货、外协结算 | 不作为当前默认一级域。首选挂在 ERP Procurement + MES/WMS 流程下；只有出现独立事实源、BusinessGateway facade 和高频角色工作台需求时，才升级为独立能力区或服务。 |
 

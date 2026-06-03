@@ -204,6 +204,17 @@ public sealed class BusinessGatewayAuthorizationTests
             downstreamDocumentType = "work-order",
             downstreamDocumentId = "WO-001",
         },
+        "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            suggestionId = "suggestion-001",
+            skuCode = "SKU-001",
+            uomCode = "EA",
+            siteCode = "SITE-01",
+            quantity = 10,
+            requiredDate = "2026-06-10",
+        },
         _ => new { organizationId = "org-001", environmentId = "env-dev" },
     };
 
@@ -243,7 +254,50 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/devices/DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/alarms", BusinessGatewayPermissions.IiotAlarmsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/tags?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarms?deviceAssetId=DEV-OIL-01&status=raised", BusinessGatewayPermissions.IiotAlarmsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/devices/DEV-OIL-01/history?fromUtc=2026-06-01T08:00:00Z&toUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/runtime-availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/work-orders/wo-maint-001", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/availability-windows?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion", BusinessGatewayPermissions.ErpProcurementManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/rfqs", BusinessGatewayPermissions.ErpProcurementManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/supplier-quotations", BusinessGatewayPermissions.ErpProcurementManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-receipts", BusinessGatewayPermissions.ErpProcurementManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/sales/sales-orders", BusinessGatewayPermissions.ErpSalesRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/sales/opportunities", BusinessGatewayPermissions.ErpSalesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/sales/quotations", BusinessGatewayPermissions.ErpSalesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/sales/quotations/QUO-001/approve", BusinessGatewayPermissions.ErpSalesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/sales/sales-orders", BusinessGatewayPermissions.ErpSalesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/sales/delivery-orders", BusinessGatewayPermissions.ErpSalesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/payables", BusinessGatewayPermissions.ErpFinanceManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/receivables", BusinessGatewayPermissions.ErpFinanceManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/cost-candidates", BusinessGatewayPermissions.ErpFinanceManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/vouchers", BusinessGatewayPermissions.ErpFinanceManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/summary", BusinessGatewayPermissions.ErpFinanceRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/payables/by-source?sourceDocumentNo=PR-001", BusinessGatewayPermissions.ErpFinanceRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/receivables/by-source?sourceDocumentNo=DO-001", BusinessGatewayPermissions.ErpFinanceRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/cost-candidates/by-source?sourceType=production&sourceDocumentNo=WO-001", BusinessGatewayPermissions.ErpFinanceRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/approval/templates", BusinessGatewayPermissions.ApprovalsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/approval/templates", BusinessGatewayPermissions.ApprovalsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/approval/chains", BusinessGatewayPermissions.ApprovalsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/approval/chains/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", BusinessGatewayPermissions.ApprovalsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/approval/tasks?actorType=user&actorRef=user-admin", BusinessGatewayPermissions.ApprovalsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/approval/chains/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9/steps/1/resolve", BusinessGatewayPermissions.ApprovalsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/rules", BusinessGatewayPermissions.BarcodeTemplatesManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/templates", BusinessGatewayPermissions.BarcodeTemplatesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/templates", BusinessGatewayPermissions.BarcodeTemplatesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/print-batches", BusinessGatewayPermissions.BarcodePrint);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/print-batches/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", BusinessGatewayPermissions.BarcodePrint);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/wcs-tasks", BusinessGatewayPermissions.WmsAutomationManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders", BusinessGatewayPermissions.MesWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/work-orders/rush", BusinessGatewayPermissions.MesWorkOrdersManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);

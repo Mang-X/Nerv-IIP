@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AcceptBusinessConsoleMesShiftHandoverData, AcceptBusinessConsoleMesShiftHandoverErrors, AcceptBusinessConsoleMesShiftHandoverResponses, AcceptBusinessConsolePlanningSuggestionData, AcceptBusinessConsolePlanningSuggestionErrors, AcceptBusinessConsolePlanningSuggestionResponses, AssignBusinessConsoleMesDispatchTaskData, AssignBusinessConsoleMesDispatchTaskErrors, AssignBusinessConsoleMesDispatchTaskResponses, CloseBusinessConsoleQualityNcrData, CloseBusinessConsoleQualityNcrErrors, CloseBusinessConsoleQualityNcrResponses, CompleteBusinessConsoleMesOperationTaskData, CompleteBusinessConsoleMesOperationTaskErrors, CompleteBusinessConsoleMesOperationTaskResponses, ConfirmBusinessConsoleInventoryCountAdjustmentData, ConfirmBusinessConsoleInventoryCountAdjustmentErrors, ConfirmBusinessConsoleInventoryCountAdjustmentResponses, ConfirmBusinessConsoleMesDowntimeRecoveryData, ConfirmBusinessConsoleMesDowntimeRecoveryErrors, ConfirmBusinessConsoleMesDowntimeRecoveryResponses, ConfirmBusinessConsoleMesLineSideMaterialReceiptData, ConfirmBusinessConsoleMesLineSideMaterialReceiptErrors, ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses, ConvertBusinessConsoleMesPlanToWorkOrderData, ConvertBusinessConsoleMesPlanToWorkOrderErrors, ConvertBusinessConsoleMesPlanToWorkOrderResponses, CreateBusinessConsoleInventoryCountTaskData, CreateBusinessConsoleInventoryCountTaskErrors, CreateBusinessConsoleInventoryCountTaskResponses, CreateBusinessConsoleMesFinishedGoodsReceiptRequestData, CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors, CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses, CreateBusinessConsoleMesMaterialIssueRequestData, CreateBusinessConsoleMesMaterialIssueRequestErrors, CreateBusinessConsoleMesMaterialIssueRequestResponses, CreateBusinessConsoleMesRushWorkOrderData, CreateBusinessConsoleMesRushWorkOrderErrors, CreateBusinessConsoleMesRushWorkOrderResponses, CreateBusinessConsoleMesShiftHandoverData, CreateBusinessConsoleMesShiftHandoverErrors, CreateBusinessConsoleMesShiftHandoverResponses, CreateBusinessConsoleQualityInspectionRecordData, CreateBusinessConsoleQualityInspectionRecordErrors, CreateBusinessConsoleQualityInspectionRecordResponses, CreateBusinessConsoleSchedulingPlanData, CreateBusinessConsoleSchedulingPlanErrors, CreateBusinessConsoleSchedulingPlanResponses, CreateBusinessConsoleSkuData, CreateBusinessConsoleSkuErrors, CreateBusinessConsoleSkuResponses, CreateOrUpdateBusinessConsolePlanningDemandData, CreateOrUpdateBusinessConsolePlanningDemandErrors, CreateOrUpdateBusinessConsolePlanningDemandResponses, GetBusinessConsoleEquipmentAvailabilityData, GetBusinessConsoleEquipmentAvailabilityErrors, GetBusinessConsoleEquipmentAvailabilityResponses, GetBusinessConsoleEquipmentDeviceData, GetBusinessConsoleEquipmentDeviceErrors, GetBusinessConsoleEquipmentDeviceResponses, GetBusinessConsoleEquipmentOverviewData, GetBusinessConsoleEquipmentOverviewErrors, GetBusinessConsoleEquipmentOverviewResponses, GetBusinessConsoleInventoryAvailabilityData, GetBusinessConsoleInventoryAvailabilityErrors, GetBusinessConsoleInventoryAvailabilityResponses, GetBusinessConsoleMesBarcodeNumberingReadinessData, GetBusinessConsoleMesBarcodeNumberingReadinessErrors, GetBusinessConsoleMesBarcodeNumberingReadinessResponses, GetBusinessConsoleMesBatchTraceabilityData, GetBusinessConsoleMesBatchTraceabilityErrors, GetBusinessConsoleMesBatchTraceabilityResponses, GetBusinessConsoleMesEquipmentReadinessData, GetBusinessConsoleMesEquipmentReadinessErrors, GetBusinessConsoleMesEquipmentReadinessResponses, GetBusinessConsoleMesFoundationReadinessData, GetBusinessConsoleMesFoundationReadinessErrors, GetBusinessConsoleMesFoundationReadinessResponses, GetBusinessConsoleMesMasterDataReadinessData, GetBusinessConsoleMesMasterDataReadinessErrors, GetBusinessConsoleMesMasterDataReadinessResponses, GetBusinessConsoleMesMaterialLotTraceabilityData, GetBusinessConsoleMesMaterialLotTraceabilityErrors, GetBusinessConsoleMesMaterialLotTraceabilityResponses, GetBusinessConsoleMesMaterialReadinessData, GetBusinessConsoleMesMaterialReadinessErrors, GetBusinessConsoleMesMaterialReadinessResponses, GetBusinessConsoleMesOverviewData, GetBusinessConsoleMesOverviewErrors, GetBusinessConsoleMesOverviewResponses, GetBusinessConsoleMesProductEngineeringReadinessData, GetBusinessConsoleMesProductEngineeringReadinessErrors, GetBusinessConsoleMesProductEngineeringReadinessResponses, GetBusinessConsoleMesProductionPlanReadinessData, GetBusinessConsoleMesProductionPlanReadinessErrors, GetBusinessConsoleMesProductionPlanReadinessResponses, GetBusinessConsoleMesQualityReadinessData, GetBusinessConsoleMesQualityReadinessErrors, GetBusinessConsoleMesQualityReadinessResponses, GetBusinessConsoleMesSupplyReadinessData, GetBusinessConsoleMesSupplyReadinessErrors, GetBusinessConsoleMesSupplyReadinessResponses, GetBusinessConsoleMesWipSummaryData, GetBusinessConsoleMesWipSummaryErrors, GetBusinessConsoleMesWipSummaryResponses, GetBusinessConsoleMesWorkOrderDetailData, GetBusinessConsoleMesWorkOrderDetailErrors, GetBusinessConsoleMesWorkOrderDetailResponses, GetBusinessConsoleMesWorkOrderTraceabilityData, GetBusinessConsoleMesWorkOrderTraceabilityErrors, GetBusinessConsoleMesWorkOrderTraceabilityResponses, GetBusinessConsolePlanningMrpPeggingData, GetBusinessConsolePlanningMrpPeggingErrors, GetBusinessConsolePlanningMrpPeggingResponses, GetBusinessConsoleSchedulingPlanData, GetBusinessConsoleSchedulingPlanErrors, GetBusinessConsoleSchedulingPlanGanttData, GetBusinessConsoleSchedulingPlanGanttErrors, GetBusinessConsoleSchedulingPlanGanttResponses, GetBusinessConsoleSchedulingPlanResponses, GetBusinessConsoleWorkbenchSummaryData, GetBusinessConsoleWorkbenchSummaryErrors, GetBusinessConsoleWorkbenchSummaryResponses, HealthEndpointData, HealthEndpointResponses, ListBusinessConsoleEngineeringBomsData, ListBusinessConsoleEngineeringBomsErrors, ListBusinessConsoleEngineeringBomsResponses, ListBusinessConsoleEngineeringProductionVersionsData, ListBusinessConsoleEngineeringProductionVersionsErrors, ListBusinessConsoleEngineeringProductionVersionsResponses, ListBusinessConsoleEngineeringRoutingsData, ListBusinessConsoleEngineeringRoutingsErrors, ListBusinessConsoleEngineeringRoutingsResponses, ListBusinessConsoleEquipmentAlarmsData, ListBusinessConsoleEquipmentAlarmsErrors, ListBusinessConsoleEquipmentAlarmsResponses, ListBusinessConsoleErpPurchaseOrdersData, ListBusinessConsoleErpPurchaseOrdersErrors, ListBusinessConsoleErpPurchaseOrdersResponses, ListBusinessConsoleMasterDataResourcesData, ListBusinessConsoleMasterDataResourcesErrors, ListBusinessConsoleMasterDataResourcesResponses, ListBusinessConsoleMesCapacityImpactsData, ListBusinessConsoleMesCapacityImpactsErrors, ListBusinessConsoleMesCapacityImpactsResponses, ListBusinessConsoleMesDispatchTasksData, ListBusinessConsoleMesDispatchTasksErrors, ListBusinessConsoleMesDispatchTasksResponses, ListBusinessConsoleMesDowntimeEventsData, ListBusinessConsoleMesDowntimeEventsErrors, ListBusinessConsoleMesDowntimeEventsResponses, ListBusinessConsoleMesFinishedGoodsReceiptRequestsData, ListBusinessConsoleMesFinishedGoodsReceiptRequestsErrors, ListBusinessConsoleMesFinishedGoodsReceiptRequestsResponses, ListBusinessConsoleMesMaterialIssueRequestsData, ListBusinessConsoleMesMaterialIssueRequestsErrors, ListBusinessConsoleMesMaterialIssueRequestsResponses, ListBusinessConsoleMesOperationTasksData, ListBusinessConsoleMesOperationTasksErrors, ListBusinessConsoleMesOperationTasksResponses, ListBusinessConsoleMesProductionPlansData, ListBusinessConsoleMesProductionPlansErrors, ListBusinessConsoleMesProductionPlansResponses, ListBusinessConsoleMesProductionReportsData, ListBusinessConsoleMesProductionReportsErrors, ListBusinessConsoleMesProductionReportsResponses, ListBusinessConsoleMesRelatedQualityItemsData, ListBusinessConsoleMesRelatedQualityItemsErrors, ListBusinessConsoleMesRelatedQualityItemsResponses, ListBusinessConsoleMesShiftHandoversData, ListBusinessConsoleMesShiftHandoversErrors, ListBusinessConsoleMesShiftHandoversResponses, ListBusinessConsoleMesWorkOrdersData, ListBusinessConsoleMesWorkOrdersErrors, ListBusinessConsoleMesWorkOrdersResponses, ListBusinessConsolePlanningDemandsData, ListBusinessConsolePlanningDemandsErrors, ListBusinessConsolePlanningDemandsResponses, ListBusinessConsolePlanningMrpRunsData, ListBusinessConsolePlanningMrpRunsErrors, ListBusinessConsolePlanningMrpRunsResponses, ListBusinessConsolePlanningSuggestionsData, ListBusinessConsolePlanningSuggestionsErrors, ListBusinessConsolePlanningSuggestionsResponses, ListBusinessConsoleQualityInspectionPlansData, ListBusinessConsoleQualityInspectionPlansErrors, ListBusinessConsoleQualityInspectionPlansResponses, ListBusinessConsoleQualityNcrsData, ListBusinessConsoleQualityNcrsErrors, ListBusinessConsoleQualityNcrsResponses, ListBusinessConsoleSchedulingPlansData, ListBusinessConsoleSchedulingPlansErrors, ListBusinessConsoleSchedulingPlansResponses, ListBusinessConsoleSkusData, ListBusinessConsoleSkusErrors, ListBusinessConsoleSkusResponses, PauseBusinessConsoleMesOperationTaskData, PauseBusinessConsoleMesOperationTaskErrors, PauseBusinessConsoleMesOperationTaskResponses, PostBusinessConsoleInventoryMovementData, PostBusinessConsoleInventoryMovementErrors, PostBusinessConsoleInventoryMovementResponses, PreviewBusinessConsoleSchedulingPlanData, PreviewBusinessConsoleSchedulingPlanErrors, PreviewBusinessConsoleSchedulingPlanResponses, RecordBusinessConsoleMesDefectData, RecordBusinessConsoleMesDefectErrors, RecordBusinessConsoleMesDefectResponses, RecordBusinessConsoleMesDowntimeEventData, RecordBusinessConsoleMesDowntimeEventErrors, RecordBusinessConsoleMesDowntimeEventResponses, RecordBusinessConsoleMesProductionReportData, RecordBusinessConsoleMesProductionReportErrors, RecordBusinessConsoleMesProductionReportResponses, ReleaseBusinessConsoleMesWorkOrderData, ReleaseBusinessConsoleMesWorkOrderErrors, ReleaseBusinessConsoleMesWorkOrderResponses, ReleaseBusinessConsoleSchedulingPlanData, ReleaseBusinessConsoleSchedulingPlanErrors, ReleaseBusinessConsoleSchedulingPlanResponses, ResolveBusinessConsoleEngineeringProductionVersionData, ResolveBusinessConsoleEngineeringProductionVersionErrors, ResolveBusinessConsoleEngineeringProductionVersionResponses, ResumeBusinessConsoleMesOperationTaskData, ResumeBusinessConsoleMesOperationTaskErrors, ResumeBusinessConsoleMesOperationTaskResponses, RunBusinessConsoleMesScheduleData, RunBusinessConsoleMesScheduleErrors, RunBusinessConsoleMesScheduleResponses, RunBusinessConsolePlanningMrpData, RunBusinessConsolePlanningMrpErrors, RunBusinessConsolePlanningMrpResponses, StartBusinessConsoleMesOperationTaskData, StartBusinessConsoleMesOperationTaskErrors, StartBusinessConsoleMesOperationTaskResponses, SubmitBusinessConsoleQualityNcrDispositionData, SubmitBusinessConsoleQualityNcrDispositionErrors, SubmitBusinessConsoleQualityNcrDispositionResponses } from './types.gen';
+import type { AcceptBusinessConsoleMesShiftHandoverData, AcceptBusinessConsoleMesShiftHandoverErrors, AcceptBusinessConsoleMesShiftHandoverResponses, AcceptBusinessConsolePlanningSuggestionData, AcceptBusinessConsolePlanningSuggestionErrors, AcceptBusinessConsolePlanningSuggestionResponses, ApproveBusinessConsoleErpQuotationData, ApproveBusinessConsoleErpQuotationErrors, ApproveBusinessConsoleErpQuotationResponses, AssignBusinessConsoleMesDispatchTaskData, AssignBusinessConsoleMesDispatchTaskErrors, AssignBusinessConsoleMesDispatchTaskResponses, CloseBusinessConsoleQualityNcrData, CloseBusinessConsoleQualityNcrErrors, CloseBusinessConsoleQualityNcrResponses, CompleteBusinessConsoleMesOperationTaskData, CompleteBusinessConsoleMesOperationTaskErrors, CompleteBusinessConsoleMesOperationTaskResponses, ConfirmBusinessConsoleInventoryCountAdjustmentData, ConfirmBusinessConsoleInventoryCountAdjustmentErrors, ConfirmBusinessConsoleInventoryCountAdjustmentResponses, ConfirmBusinessConsoleMesDowntimeRecoveryData, ConfirmBusinessConsoleMesDowntimeRecoveryErrors, ConfirmBusinessConsoleMesDowntimeRecoveryResponses, ConfirmBusinessConsoleMesLineSideMaterialReceiptData, ConfirmBusinessConsoleMesLineSideMaterialReceiptErrors, ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses, ConvertBusinessConsoleMesPlanToWorkOrderData, ConvertBusinessConsoleMesPlanToWorkOrderErrors, ConvertBusinessConsoleMesPlanToWorkOrderResponses, CreateBusinessConsoleBarcodePrintBatchData, CreateBusinessConsoleBarcodePrintBatchErrors, CreateBusinessConsoleBarcodePrintBatchResponses, CreateBusinessConsoleErpAccountPayableData, CreateBusinessConsoleErpAccountPayableErrors, CreateBusinessConsoleErpAccountPayableResponses, CreateBusinessConsoleErpAccountReceivableData, CreateBusinessConsoleErpAccountReceivableErrors, CreateBusinessConsoleErpAccountReceivableResponses, CreateBusinessConsoleErpCostCandidateData, CreateBusinessConsoleErpCostCandidateErrors, CreateBusinessConsoleErpCostCandidateResponses, CreateBusinessConsoleErpPurchaseOrderData, CreateBusinessConsoleErpPurchaseOrderErrors, CreateBusinessConsoleErpPurchaseOrderResponses, CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData, CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionErrors, CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionResponses, CreateBusinessConsoleErpQuotationData, CreateBusinessConsoleErpQuotationErrors, CreateBusinessConsoleErpQuotationResponses, CreateBusinessConsoleErpRequestForQuotationData, CreateBusinessConsoleErpRequestForQuotationErrors, CreateBusinessConsoleErpRequestForQuotationResponses, CreateBusinessConsoleErpSalesOrderData, CreateBusinessConsoleErpSalesOrderErrors, CreateBusinessConsoleErpSalesOrderResponses, CreateBusinessConsoleInventoryCountTaskData, CreateBusinessConsoleInventoryCountTaskErrors, CreateBusinessConsoleInventoryCountTaskResponses, CreateBusinessConsoleMesFinishedGoodsReceiptRequestData, CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors, CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses, CreateBusinessConsoleMesMaterialIssueRequestData, CreateBusinessConsoleMesMaterialIssueRequestErrors, CreateBusinessConsoleMesMaterialIssueRequestResponses, CreateBusinessConsoleMesRushWorkOrderData, CreateBusinessConsoleMesRushWorkOrderErrors, CreateBusinessConsoleMesRushWorkOrderResponses, CreateBusinessConsoleMesShiftHandoverData, CreateBusinessConsoleMesShiftHandoverErrors, CreateBusinessConsoleMesShiftHandoverResponses, CreateBusinessConsoleQualityInspectionRecordData, CreateBusinessConsoleQualityInspectionRecordErrors, CreateBusinessConsoleQualityInspectionRecordResponses, CreateBusinessConsoleSchedulingPlanData, CreateBusinessConsoleSchedulingPlanErrors, CreateBusinessConsoleSchedulingPlanResponses, CreateBusinessConsoleSkuData, CreateBusinessConsoleSkuErrors, CreateBusinessConsoleSkuResponses, CreateOrUpdateBusinessConsoleApprovalTemplateData, CreateOrUpdateBusinessConsoleApprovalTemplateErrors, CreateOrUpdateBusinessConsoleApprovalTemplateResponses, CreateOrUpdateBusinessConsoleBarcodeRuleData, CreateOrUpdateBusinessConsoleBarcodeRuleErrors, CreateOrUpdateBusinessConsoleBarcodeRuleResponses, CreateOrUpdateBusinessConsoleBarcodeTemplateData, CreateOrUpdateBusinessConsoleBarcodeTemplateErrors, CreateOrUpdateBusinessConsoleBarcodeTemplateResponses, CreateOrUpdateBusinessConsolePlanningDemandData, CreateOrUpdateBusinessConsolePlanningDemandErrors, CreateOrUpdateBusinessConsolePlanningDemandResponses, GetBusinessConsoleApprovalChainData, GetBusinessConsoleApprovalChainErrors, GetBusinessConsoleApprovalChainResponses, GetBusinessConsoleBarcodePrintBatchData, GetBusinessConsoleBarcodePrintBatchErrors, GetBusinessConsoleBarcodePrintBatchResponses, GetBusinessConsoleEquipmentAvailabilityData, GetBusinessConsoleEquipmentAvailabilityErrors, GetBusinessConsoleEquipmentAvailabilityResponses, GetBusinessConsoleEquipmentDeviceData, GetBusinessConsoleEquipmentDeviceErrors, GetBusinessConsoleEquipmentDeviceResponses, GetBusinessConsoleEquipmentOverviewData, GetBusinessConsoleEquipmentOverviewErrors, GetBusinessConsoleEquipmentOverviewResponses, GetBusinessConsoleErpCostCandidateBySourceDocumentData, GetBusinessConsoleErpCostCandidateBySourceDocumentErrors, GetBusinessConsoleErpCostCandidateBySourceDocumentResponses, GetBusinessConsoleErpFinanceSummaryData, GetBusinessConsoleErpFinanceSummaryErrors, GetBusinessConsoleErpFinanceSummaryResponses, GetBusinessConsoleErpPayableBySourceDocumentData, GetBusinessConsoleErpPayableBySourceDocumentErrors, GetBusinessConsoleErpPayableBySourceDocumentResponses, GetBusinessConsoleErpReceivableBySourceDocumentData, GetBusinessConsoleErpReceivableBySourceDocumentErrors, GetBusinessConsoleErpReceivableBySourceDocumentResponses, GetBusinessConsoleInventoryAvailabilityData, GetBusinessConsoleInventoryAvailabilityErrors, GetBusinessConsoleInventoryAvailabilityResponses, GetBusinessConsoleMaintenanceWorkOrderData, GetBusinessConsoleMaintenanceWorkOrderErrors, GetBusinessConsoleMaintenanceWorkOrderResponses, GetBusinessConsoleMesBarcodeNumberingReadinessData, GetBusinessConsoleMesBarcodeNumberingReadinessErrors, GetBusinessConsoleMesBarcodeNumberingReadinessResponses, GetBusinessConsoleMesBatchTraceabilityData, GetBusinessConsoleMesBatchTraceabilityErrors, GetBusinessConsoleMesBatchTraceabilityResponses, GetBusinessConsoleMesEquipmentReadinessData, GetBusinessConsoleMesEquipmentReadinessErrors, GetBusinessConsoleMesEquipmentReadinessResponses, GetBusinessConsoleMesFoundationReadinessData, GetBusinessConsoleMesFoundationReadinessErrors, GetBusinessConsoleMesFoundationReadinessResponses, GetBusinessConsoleMesMasterDataReadinessData, GetBusinessConsoleMesMasterDataReadinessErrors, GetBusinessConsoleMesMasterDataReadinessResponses, GetBusinessConsoleMesMaterialLotTraceabilityData, GetBusinessConsoleMesMaterialLotTraceabilityErrors, GetBusinessConsoleMesMaterialLotTraceabilityResponses, GetBusinessConsoleMesMaterialReadinessData, GetBusinessConsoleMesMaterialReadinessErrors, GetBusinessConsoleMesMaterialReadinessResponses, GetBusinessConsoleMesOverviewData, GetBusinessConsoleMesOverviewErrors, GetBusinessConsoleMesOverviewResponses, GetBusinessConsoleMesProductEngineeringReadinessData, GetBusinessConsoleMesProductEngineeringReadinessErrors, GetBusinessConsoleMesProductEngineeringReadinessResponses, GetBusinessConsoleMesProductionPlanReadinessData, GetBusinessConsoleMesProductionPlanReadinessErrors, GetBusinessConsoleMesProductionPlanReadinessResponses, GetBusinessConsoleMesQualityReadinessData, GetBusinessConsoleMesQualityReadinessErrors, GetBusinessConsoleMesQualityReadinessResponses, GetBusinessConsoleMesSupplyReadinessData, GetBusinessConsoleMesSupplyReadinessErrors, GetBusinessConsoleMesSupplyReadinessResponses, GetBusinessConsoleMesWipSummaryData, GetBusinessConsoleMesWipSummaryErrors, GetBusinessConsoleMesWipSummaryResponses, GetBusinessConsoleMesWorkOrderDetailData, GetBusinessConsoleMesWorkOrderDetailErrors, GetBusinessConsoleMesWorkOrderDetailResponses, GetBusinessConsoleMesWorkOrderTraceabilityData, GetBusinessConsoleMesWorkOrderTraceabilityErrors, GetBusinessConsoleMesWorkOrderTraceabilityResponses, GetBusinessConsolePlanningMrpPeggingData, GetBusinessConsolePlanningMrpPeggingErrors, GetBusinessConsolePlanningMrpPeggingResponses, GetBusinessConsoleSchedulingPlanData, GetBusinessConsoleSchedulingPlanErrors, GetBusinessConsoleSchedulingPlanGanttData, GetBusinessConsoleSchedulingPlanGanttErrors, GetBusinessConsoleSchedulingPlanGanttResponses, GetBusinessConsoleSchedulingPlanResponses, GetBusinessConsoleWorkbenchSummaryData, GetBusinessConsoleWorkbenchSummaryErrors, GetBusinessConsoleWorkbenchSummaryResponses, HealthEndpointData, HealthEndpointResponses, ListBusinessConsoleApprovalTasksData, ListBusinessConsoleApprovalTasksErrors, ListBusinessConsoleApprovalTasksResponses, ListBusinessConsoleApprovalTemplatesData, ListBusinessConsoleApprovalTemplatesErrors, ListBusinessConsoleApprovalTemplatesResponses, ListBusinessConsoleBarcodeScansData, ListBusinessConsoleBarcodeScansErrors, ListBusinessConsoleBarcodeScansResponses, ListBusinessConsoleBarcodeTemplatesData, ListBusinessConsoleBarcodeTemplatesErrors, ListBusinessConsoleBarcodeTemplatesResponses, ListBusinessConsoleEngineeringBomsData, ListBusinessConsoleEngineeringBomsErrors, ListBusinessConsoleEngineeringBomsResponses, ListBusinessConsoleEngineeringProductionVersionsData, ListBusinessConsoleEngineeringProductionVersionsErrors, ListBusinessConsoleEngineeringProductionVersionsResponses, ListBusinessConsoleEngineeringRoutingsData, ListBusinessConsoleEngineeringRoutingsErrors, ListBusinessConsoleEngineeringRoutingsResponses, ListBusinessConsoleEquipmentAlarmsData, ListBusinessConsoleEquipmentAlarmsErrors, ListBusinessConsoleEquipmentAlarmsResponses, ListBusinessConsoleErpPurchaseOrdersData, ListBusinessConsoleErpPurchaseOrdersErrors, ListBusinessConsoleErpPurchaseOrdersResponses, ListBusinessConsoleErpSalesOrdersData, ListBusinessConsoleErpSalesOrdersErrors, ListBusinessConsoleErpSalesOrdersResponses, ListBusinessConsoleMaintenancePlansData, ListBusinessConsoleMaintenancePlansErrors, ListBusinessConsoleMaintenancePlansResponses, ListBusinessConsoleMaintenanceWorkOrdersData, ListBusinessConsoleMaintenanceWorkOrdersErrors, ListBusinessConsoleMaintenanceWorkOrdersResponses, ListBusinessConsoleMasterDataResourcesData, ListBusinessConsoleMasterDataResourcesErrors, ListBusinessConsoleMasterDataResourcesResponses, ListBusinessConsoleMesCapacityImpactsData, ListBusinessConsoleMesCapacityImpactsErrors, ListBusinessConsoleMesCapacityImpactsResponses, ListBusinessConsoleMesDispatchTasksData, ListBusinessConsoleMesDispatchTasksErrors, ListBusinessConsoleMesDispatchTasksResponses, ListBusinessConsoleMesDowntimeEventsData, ListBusinessConsoleMesDowntimeEventsErrors, ListBusinessConsoleMesDowntimeEventsResponses, ListBusinessConsoleMesFinishedGoodsReceiptRequestsData, ListBusinessConsoleMesFinishedGoodsReceiptRequestsErrors, ListBusinessConsoleMesFinishedGoodsReceiptRequestsResponses, ListBusinessConsoleMesMaterialIssueRequestsData, ListBusinessConsoleMesMaterialIssueRequestsErrors, ListBusinessConsoleMesMaterialIssueRequestsResponses, ListBusinessConsoleMesOperationTasksData, ListBusinessConsoleMesOperationTasksErrors, ListBusinessConsoleMesOperationTasksResponses, ListBusinessConsoleMesProductionPlansData, ListBusinessConsoleMesProductionPlansErrors, ListBusinessConsoleMesProductionPlansResponses, ListBusinessConsoleMesProductionReportsData, ListBusinessConsoleMesProductionReportsErrors, ListBusinessConsoleMesProductionReportsResponses, ListBusinessConsoleMesRelatedQualityItemsData, ListBusinessConsoleMesRelatedQualityItemsErrors, ListBusinessConsoleMesRelatedQualityItemsResponses, ListBusinessConsoleMesShiftHandoversData, ListBusinessConsoleMesShiftHandoversErrors, ListBusinessConsoleMesShiftHandoversResponses, ListBusinessConsoleMesWorkOrdersData, ListBusinessConsoleMesWorkOrdersErrors, ListBusinessConsoleMesWorkOrdersResponses, ListBusinessConsolePlanningDemandsData, ListBusinessConsolePlanningDemandsErrors, ListBusinessConsolePlanningDemandsResponses, ListBusinessConsolePlanningMrpRunsData, ListBusinessConsolePlanningMrpRunsErrors, ListBusinessConsolePlanningMrpRunsResponses, ListBusinessConsolePlanningSuggestionsData, ListBusinessConsolePlanningSuggestionsErrors, ListBusinessConsolePlanningSuggestionsResponses, ListBusinessConsoleQualityInspectionPlansData, ListBusinessConsoleQualityInspectionPlansErrors, ListBusinessConsoleQualityInspectionPlansResponses, ListBusinessConsoleQualityNcrsData, ListBusinessConsoleQualityNcrsErrors, ListBusinessConsoleQualityNcrsResponses, ListBusinessConsoleSchedulingPlansData, ListBusinessConsoleSchedulingPlansErrors, ListBusinessConsoleSchedulingPlansResponses, ListBusinessConsoleSkusData, ListBusinessConsoleSkusErrors, ListBusinessConsoleSkusResponses, ListBusinessConsoleTelemetryAlarmsData, ListBusinessConsoleTelemetryAlarmsErrors, ListBusinessConsoleTelemetryAlarmsResponses, ListBusinessConsoleTelemetryTagsData, ListBusinessConsoleTelemetryTagsErrors, ListBusinessConsoleTelemetryTagsResponses, ListBusinessConsoleWmsInboundOrdersData, ListBusinessConsoleWmsInboundOrdersErrors, ListBusinessConsoleWmsInboundOrdersResponses, ListBusinessConsoleWmsOutboundOrdersData, ListBusinessConsoleWmsOutboundOrdersErrors, ListBusinessConsoleWmsOutboundOrdersResponses, ListBusinessConsoleWmsWcsTasksData, ListBusinessConsoleWmsWcsTasksErrors, ListBusinessConsoleWmsWcsTasksResponses, OpenBusinessConsoleErpOpportunityData, OpenBusinessConsoleErpOpportunityErrors, OpenBusinessConsoleErpOpportunityResponses, PauseBusinessConsoleMesOperationTaskData, PauseBusinessConsoleMesOperationTaskErrors, PauseBusinessConsoleMesOperationTaskResponses, PostBusinessConsoleErpJournalVoucherData, PostBusinessConsoleErpJournalVoucherErrors, PostBusinessConsoleErpJournalVoucherResponses, PostBusinessConsoleInventoryMovementData, PostBusinessConsoleInventoryMovementErrors, PostBusinessConsoleInventoryMovementResponses, PreviewBusinessConsoleSchedulingPlanData, PreviewBusinessConsoleSchedulingPlanErrors, PreviewBusinessConsoleSchedulingPlanResponses, QueryBusinessConsoleMaintenanceAvailabilityWindowsData, QueryBusinessConsoleMaintenanceAvailabilityWindowsErrors, QueryBusinessConsoleMaintenanceAvailabilityWindowsResponses, QueryBusinessConsoleTelemetryDeviceHistoryData, QueryBusinessConsoleTelemetryDeviceHistoryErrors, QueryBusinessConsoleTelemetryDeviceHistoryResponses, QueryBusinessConsoleTelemetryRuntimeAvailabilityData, QueryBusinessConsoleTelemetryRuntimeAvailabilityErrors, QueryBusinessConsoleTelemetryRuntimeAvailabilityResponses, ReceiveBusinessConsoleErpSupplierQuotationData, ReceiveBusinessConsoleErpSupplierQuotationErrors, ReceiveBusinessConsoleErpSupplierQuotationResponses, RecordBusinessConsoleBarcodeScanData, RecordBusinessConsoleBarcodeScanErrors, RecordBusinessConsoleBarcodeScanResponses, RecordBusinessConsoleErpPurchaseReceiptData, RecordBusinessConsoleErpPurchaseReceiptErrors, RecordBusinessConsoleErpPurchaseReceiptResponses, RecordBusinessConsoleMesDefectData, RecordBusinessConsoleMesDefectErrors, RecordBusinessConsoleMesDefectResponses, RecordBusinessConsoleMesDowntimeEventData, RecordBusinessConsoleMesDowntimeEventErrors, RecordBusinessConsoleMesDowntimeEventResponses, RecordBusinessConsoleMesProductionReportData, RecordBusinessConsoleMesProductionReportErrors, RecordBusinessConsoleMesProductionReportResponses, ReleaseBusinessConsoleErpDeliveryOrderData, ReleaseBusinessConsoleErpDeliveryOrderErrors, ReleaseBusinessConsoleErpDeliveryOrderResponses, ReleaseBusinessConsoleMesWorkOrderData, ReleaseBusinessConsoleMesWorkOrderErrors, ReleaseBusinessConsoleMesWorkOrderResponses, ReleaseBusinessConsoleSchedulingPlanData, ReleaseBusinessConsoleSchedulingPlanErrors, ReleaseBusinessConsoleSchedulingPlanResponses, ResolveBusinessConsoleApprovalStepData, ResolveBusinessConsoleApprovalStepErrors, ResolveBusinessConsoleApprovalStepResponses, ResolveBusinessConsoleEngineeringProductionVersionData, ResolveBusinessConsoleEngineeringProductionVersionErrors, ResolveBusinessConsoleEngineeringProductionVersionResponses, ResumeBusinessConsoleMesOperationTaskData, ResumeBusinessConsoleMesOperationTaskErrors, ResumeBusinessConsoleMesOperationTaskResponses, RunBusinessConsoleMesScheduleData, RunBusinessConsoleMesScheduleErrors, RunBusinessConsoleMesScheduleResponses, RunBusinessConsolePlanningMrpData, RunBusinessConsolePlanningMrpErrors, RunBusinessConsolePlanningMrpResponses, SearchBusinessConsoleObjectsData, SearchBusinessConsoleObjectsErrors, SearchBusinessConsoleObjectsResponses, StartBusinessConsoleApprovalChainData, StartBusinessConsoleApprovalChainErrors, StartBusinessConsoleApprovalChainResponses, StartBusinessConsoleMesOperationTaskData, StartBusinessConsoleMesOperationTaskErrors, StartBusinessConsoleMesOperationTaskResponses, SubmitBusinessConsoleQualityNcrDispositionData, SubmitBusinessConsoleQualityNcrDispositionErrors, SubmitBusinessConsoleQualityNcrDispositionResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -21,6 +21,54 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 export const getBusinessConsoleWorkbenchSummary = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleWorkbenchSummaryData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleWorkbenchSummaryResponses, GetBusinessConsoleWorkbenchSummaryErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/workbench/summary',
+    ...options
+});
+
+export const listBusinessConsoleWmsInboundOrders = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleWmsInboundOrdersData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleWmsInboundOrdersResponses, ListBusinessConsoleWmsInboundOrdersErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/wms/inbound-orders',
+    ...options
+});
+
+export const listBusinessConsoleWmsOutboundOrders = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleWmsOutboundOrdersData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleWmsOutboundOrdersResponses, ListBusinessConsoleWmsOutboundOrdersErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/wms/outbound-orders',
+    ...options
+});
+
+export const listBusinessConsoleWmsWcsTasks = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleWmsWcsTasksData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleWmsWcsTasksResponses, ListBusinessConsoleWmsWcsTasksErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/wms/wcs-tasks',
+    ...options
+});
+
+export const listBusinessConsoleTelemetryTags = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleTelemetryTagsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleTelemetryTagsResponses, ListBusinessConsoleTelemetryTagsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/telemetry/tags',
+    ...options
+});
+
+export const listBusinessConsoleTelemetryAlarms = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleTelemetryAlarmsData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleTelemetryAlarmsResponses, ListBusinessConsoleTelemetryAlarmsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/telemetry/alarms',
+    ...options
+});
+
+export const queryBusinessConsoleTelemetryDeviceHistory = <ThrowOnError extends boolean = false>(options: Options<QueryBusinessConsoleTelemetryDeviceHistoryData, ThrowOnError>) => (options.client ?? client).get<QueryBusinessConsoleTelemetryDeviceHistoryResponses, QueryBusinessConsoleTelemetryDeviceHistoryErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/telemetry/devices/{deviceAssetId}/history',
+    ...options
+});
+
+export const queryBusinessConsoleTelemetryRuntimeAvailability = <ThrowOnError extends boolean = false>(options: Options<QueryBusinessConsoleTelemetryRuntimeAvailabilityData, ThrowOnError>) => (options.client ?? client).get<QueryBusinessConsoleTelemetryRuntimeAvailabilityResponses, QueryBusinessConsoleTelemetryRuntimeAvailabilityErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/telemetry/runtime-availability',
+    ...options
+});
+
+export const searchBusinessConsoleObjects = <ThrowOnError extends boolean = false>(options: Options<SearchBusinessConsoleObjectsData, ThrowOnError>) => (options.client ?? client).get<SearchBusinessConsoleObjectsResponses, SearchBusinessConsoleObjectsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/search',
     ...options
 });
 
@@ -546,6 +594,30 @@ export const createBusinessConsoleSku = <ThrowOnError extends boolean = false>(o
     }
 });
 
+export const listBusinessConsoleMaintenanceWorkOrders = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMaintenanceWorkOrdersData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMaintenanceWorkOrdersResponses, ListBusinessConsoleMaintenanceWorkOrdersErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/maintenance/work-orders',
+    ...options
+});
+
+export const getBusinessConsoleMaintenanceWorkOrder = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleMaintenanceWorkOrderData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleMaintenanceWorkOrderResponses, GetBusinessConsoleMaintenanceWorkOrderErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/maintenance/work-orders/{workOrderId}',
+    ...options
+});
+
+export const listBusinessConsoleMaintenancePlans = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleMaintenancePlansData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleMaintenancePlansResponses, ListBusinessConsoleMaintenancePlansErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/maintenance/plans',
+    ...options
+});
+
+export const queryBusinessConsoleMaintenanceAvailabilityWindows = <ThrowOnError extends boolean = false>(options: Options<QueryBusinessConsoleMaintenanceAvailabilityWindowsData, ThrowOnError>) => (options.client ?? client).get<QueryBusinessConsoleMaintenanceAvailabilityWindowsResponses, QueryBusinessConsoleMaintenanceAvailabilityWindowsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/maintenance/availability-windows',
+    ...options
+});
+
 export const getBusinessConsoleInventoryAvailability = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleInventoryAvailabilityData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleInventoryAvailabilityResponses, GetBusinessConsoleInventoryAvailabilityErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/inventory/availability',
@@ -590,6 +662,176 @@ export const listBusinessConsoleErpPurchaseOrders = <ThrowOnError extends boolea
     ...options
 });
 
+export const createBusinessConsoleErpPurchaseOrder = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleErpPurchaseOrderData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleErpPurchaseOrderResponses, CreateBusinessConsoleErpPurchaseOrderErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/procurement/purchase-orders',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const createBusinessConsoleErpPurchaseRequisitionFromSuggestion = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionResponses, CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const createBusinessConsoleErpRequestForQuotation = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleErpRequestForQuotationData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleErpRequestForQuotationResponses, CreateBusinessConsoleErpRequestForQuotationErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/procurement/rfqs',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const receiveBusinessConsoleErpSupplierQuotation = <ThrowOnError extends boolean = false>(options: Options<ReceiveBusinessConsoleErpSupplierQuotationData, ThrowOnError>) => (options.client ?? client).post<ReceiveBusinessConsoleErpSupplierQuotationResponses, ReceiveBusinessConsoleErpSupplierQuotationErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/procurement/supplier-quotations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const recordBusinessConsoleErpPurchaseReceipt = <ThrowOnError extends boolean = false>(options: Options<RecordBusinessConsoleErpPurchaseReceiptData, ThrowOnError>) => (options.client ?? client).post<RecordBusinessConsoleErpPurchaseReceiptResponses, RecordBusinessConsoleErpPurchaseReceiptErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/procurement/purchase-receipts',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listBusinessConsoleErpSalesOrders = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleErpSalesOrdersData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleErpSalesOrdersResponses, ListBusinessConsoleErpSalesOrdersErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/sales/sales-orders',
+    ...options
+});
+
+export const createBusinessConsoleErpSalesOrder = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleErpSalesOrderData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleErpSalesOrderResponses, CreateBusinessConsoleErpSalesOrderErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/sales/sales-orders',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const openBusinessConsoleErpOpportunity = <ThrowOnError extends boolean = false>(options: Options<OpenBusinessConsoleErpOpportunityData, ThrowOnError>) => (options.client ?? client).post<OpenBusinessConsoleErpOpportunityResponses, OpenBusinessConsoleErpOpportunityErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/sales/opportunities',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const createBusinessConsoleErpQuotation = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleErpQuotationData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleErpQuotationResponses, CreateBusinessConsoleErpQuotationErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/sales/quotations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const approveBusinessConsoleErpQuotation = <ThrowOnError extends boolean = false>(options: Options<ApproveBusinessConsoleErpQuotationData, ThrowOnError>) => (options.client ?? client).post<ApproveBusinessConsoleErpQuotationResponses, ApproveBusinessConsoleErpQuotationErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/sales/quotations/{quotationNo}/approve',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const releaseBusinessConsoleErpDeliveryOrder = <ThrowOnError extends boolean = false>(options: Options<ReleaseBusinessConsoleErpDeliveryOrderData, ThrowOnError>) => (options.client ?? client).post<ReleaseBusinessConsoleErpDeliveryOrderResponses, ReleaseBusinessConsoleErpDeliveryOrderErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/sales/delivery-orders',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const createBusinessConsoleErpAccountPayable = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleErpAccountPayableData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleErpAccountPayableResponses, CreateBusinessConsoleErpAccountPayableErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/finance/payables',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const createBusinessConsoleErpAccountReceivable = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleErpAccountReceivableData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleErpAccountReceivableResponses, CreateBusinessConsoleErpAccountReceivableErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/finance/receivables',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const createBusinessConsoleErpCostCandidate = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleErpCostCandidateData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleErpCostCandidateResponses, CreateBusinessConsoleErpCostCandidateErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/finance/cost-candidates',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const postBusinessConsoleErpJournalVoucher = <ThrowOnError extends boolean = false>(options: Options<PostBusinessConsoleErpJournalVoucherData, ThrowOnError>) => (options.client ?? client).post<PostBusinessConsoleErpJournalVoucherResponses, PostBusinessConsoleErpJournalVoucherErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/finance/vouchers',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getBusinessConsoleErpFinanceSummary = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleErpFinanceSummaryData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleErpFinanceSummaryResponses, GetBusinessConsoleErpFinanceSummaryErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/finance/summary',
+    ...options
+});
+
+export const getBusinessConsoleErpPayableBySourceDocument = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleErpPayableBySourceDocumentData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleErpPayableBySourceDocumentResponses, GetBusinessConsoleErpPayableBySourceDocumentErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/finance/payables/by-source',
+    ...options
+});
+
+export const getBusinessConsoleErpReceivableBySourceDocument = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleErpReceivableBySourceDocumentData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleErpReceivableBySourceDocumentResponses, GetBusinessConsoleErpReceivableBySourceDocumentErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/finance/receivables/by-source',
+    ...options
+});
+
+export const getBusinessConsoleErpCostCandidateBySourceDocument = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleErpCostCandidateBySourceDocumentData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleErpCostCandidateBySourceDocumentResponses, GetBusinessConsoleErpCostCandidateBySourceDocumentErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/erp/finance/cost-candidates/by-source',
+    ...options
+});
+
 export const getBusinessConsoleEquipmentOverview = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleEquipmentOverviewData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleEquipmentOverviewResponses, GetBusinessConsoleEquipmentOverviewErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/equipment/overview',
@@ -612,4 +854,110 @@ export const listBusinessConsoleEquipmentAlarms = <ThrowOnError extends boolean 
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/equipment/alarms',
     ...options
+});
+
+export const createOrUpdateBusinessConsoleBarcodeRule = <ThrowOnError extends boolean = false>(options: Options<CreateOrUpdateBusinessConsoleBarcodeRuleData, ThrowOnError>) => (options.client ?? client).post<CreateOrUpdateBusinessConsoleBarcodeRuleResponses, CreateOrUpdateBusinessConsoleBarcodeRuleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/barcode/rules',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listBusinessConsoleBarcodeTemplates = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleBarcodeTemplatesData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleBarcodeTemplatesResponses, ListBusinessConsoleBarcodeTemplatesErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/barcode/templates',
+    ...options
+});
+
+export const createOrUpdateBusinessConsoleBarcodeTemplate = <ThrowOnError extends boolean = false>(options: Options<CreateOrUpdateBusinessConsoleBarcodeTemplateData, ThrowOnError>) => (options.client ?? client).post<CreateOrUpdateBusinessConsoleBarcodeTemplateResponses, CreateOrUpdateBusinessConsoleBarcodeTemplateErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/barcode/templates',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const createBusinessConsoleBarcodePrintBatch = <ThrowOnError extends boolean = false>(options: Options<CreateBusinessConsoleBarcodePrintBatchData, ThrowOnError>) => (options.client ?? client).post<CreateBusinessConsoleBarcodePrintBatchResponses, CreateBusinessConsoleBarcodePrintBatchErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/barcode/print-batches',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getBusinessConsoleBarcodePrintBatch = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleBarcodePrintBatchData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleBarcodePrintBatchResponses, GetBusinessConsoleBarcodePrintBatchErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/barcode/print-batches/{printBatchId}',
+    ...options
+});
+
+export const listBusinessConsoleBarcodeScans = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleBarcodeScansData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleBarcodeScansResponses, ListBusinessConsoleBarcodeScansErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/barcode/scans',
+    ...options
+});
+
+export const recordBusinessConsoleBarcodeScan = <ThrowOnError extends boolean = false>(options: Options<RecordBusinessConsoleBarcodeScanData, ThrowOnError>) => (options.client ?? client).post<RecordBusinessConsoleBarcodeScanResponses, RecordBusinessConsoleBarcodeScanErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/barcode/scans',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listBusinessConsoleApprovalTemplates = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleApprovalTemplatesData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleApprovalTemplatesResponses, ListBusinessConsoleApprovalTemplatesErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/approval/templates',
+    ...options
+});
+
+export const createOrUpdateBusinessConsoleApprovalTemplate = <ThrowOnError extends boolean = false>(options: Options<CreateOrUpdateBusinessConsoleApprovalTemplateData, ThrowOnError>) => (options.client ?? client).post<CreateOrUpdateBusinessConsoleApprovalTemplateResponses, CreateOrUpdateBusinessConsoleApprovalTemplateErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/approval/templates',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const startBusinessConsoleApprovalChain = <ThrowOnError extends boolean = false>(options: Options<StartBusinessConsoleApprovalChainData, ThrowOnError>) => (options.client ?? client).post<StartBusinessConsoleApprovalChainResponses, StartBusinessConsoleApprovalChainErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/approval/chains',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getBusinessConsoleApprovalChain = <ThrowOnError extends boolean = false>(options: Options<GetBusinessConsoleApprovalChainData, ThrowOnError>) => (options.client ?? client).get<GetBusinessConsoleApprovalChainResponses, GetBusinessConsoleApprovalChainErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/approval/chains/{chainId}',
+    ...options
+});
+
+export const listBusinessConsoleApprovalTasks = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleApprovalTasksData, ThrowOnError>) => (options.client ?? client).get<ListBusinessConsoleApprovalTasksResponses, ListBusinessConsoleApprovalTasksErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/approval/tasks',
+    ...options
+});
+
+export const resolveBusinessConsoleApprovalStep = <ThrowOnError extends boolean = false>(options: Options<ResolveBusinessConsoleApprovalStepData, ThrowOnError>) => (options.client ?? client).post<ResolveBusinessConsoleApprovalStepResponses, ResolveBusinessConsoleApprovalStepErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/business-console/v1/approval/chains/{chainId}/steps/{stepNo}/resolve',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });

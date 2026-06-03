@@ -5,6 +5,7 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
 using Nerv.IIP.PlatformGateway.Web;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using Nerv.IIP.PlatformGateway.Web.Application.FileStorage;
 using Nerv.IIP.PlatformGateway.Web.Application.Http;
 using Nerv.IIP.PlatformGateway.Web.Application.IamAdmin;
 using Nerv.IIP.PlatformGateway.Web.Application.NotificationClient;
@@ -38,6 +39,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 var appHubBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "AppHub:BaseUrl", "http://localhost:5101");
 var opsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
+var fileStorageBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "FileStorage:BaseUrl", "http://localhost:5104");
 var notificationBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Notification:BaseUrl", "http://localhost:5106");
 var iamBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 builder.Services.AddHttpClient<IAppHubClient, HttpAppHubClient>(client =>
@@ -51,6 +53,10 @@ builder.Services.AddHttpClient<IGatewayOpsClient, GatewayOpsClient>(client =>
 builder.Services.AddHttpClient<IGatewayNotificationClient, HttpGatewayNotificationClient>(client =>
 {
     client.BaseAddress = notificationBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IGatewayFileStorageClient, HttpGatewayFileStorageClient>(client =>
+{
+    client.BaseAddress = fileStorageBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IGatewayAuthorizationClient, HttpGatewayAuthorizationClient>(client =>
 {

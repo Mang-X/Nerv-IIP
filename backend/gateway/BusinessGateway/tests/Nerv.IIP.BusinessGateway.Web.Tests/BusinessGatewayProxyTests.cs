@@ -365,6 +365,97 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_sales_and_finance_facades_use_domain_specific_downstream_clients()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var sales = await client.GetAsync("/api/business-console/v1/erp/sales/sales-orders?organizationId=org-001&environmentId=env-dev");
+        var payable = await client.GetAsync("/api/business-console/v1/erp/finance/payables/by-source?organizationId=org-001&environmentId=env-dev&sourceDocumentNo=PR-001");
+
+        Assert.Equal(HttpStatusCode.OK, sales.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, payable.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal(new BusinessConsoleErpContextRequest("org-001", "env-dev"), erp.LastSalesOrderListRequest);
+        Assert.Equal(new BusinessConsoleErpSourceDocumentRequest("org-001", "env-dev", "PR-001"), erp.LastFinanceSourceDocumentRequest);
+    }
+
+    [Fact]
+    public async Task Approval_center_facade_uses_internal_service_token_for_downstream_business_service()
+    {
+        var approval = new RecordingApprovalClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessApprovalClient>();
+            services.AddSingleton<IBusinessApprovalClient>(approval);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/approval/templates?organizationId=org-001&environmentId=env-dev&documentType=purchase-order");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", approval.LastInternalToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("purchase-order-default", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("templateCode").GetString());
+    }
+
+    [Fact]
+    public async Task Barcode_facade_uses_internal_service_token_for_print_and_scan_actions()
+    {
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var print = await client.PostAsJsonAsync("/api/business-console/v1/barcode/print-batches?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            barcodeRuleId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df8",
+            labelTemplateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9",
+            sourceDocumentType = "work-order",
+            sourceDocumentId = "WO-001",
+            idempotencyKey = "print-001",
+            labelValuesJson = "{}",
+            requestedQuantity = 1,
+        });
+        var scan = await client.PostAsJsonAsync("/api/business-console/v1/barcode/scans?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceCode = "PDA-01",
+            scannedValue = "BC-001",
+            sourceWorkflow = "wms-receipt",
+            sourceDocumentId = "WO-001",
+            idempotencyKey = "scan-001",
+            result = "accepted",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, print.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, scan.StatusCode);
+        Assert.Equal("internal-test-token", barcode.LastInternalToken);
+        Assert.Equal("WO-001", barcode.LastPrintBatchRequest?.SourceDocumentId);
+        Assert.Equal("BC-001", barcode.LastScanRequest?.ScannedValue);
+    }
+
+    [Fact]
     public async Task Scheduling_facade_uses_internal_service_token_and_forwards_stable_dtos()
     {
         var scheduling = new RecordingSchedulingClient();
@@ -2290,6 +2381,37 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleErpContextRequest? LastPurchaseOrderListRequest { get; private set; }
 
+    public BusinessConsoleErpContextRequest? LastSalesOrderListRequest { get; private set; }
+
+    public BusinessConsoleErpSourceDocumentRequest? LastFinanceSourceDocumentRequest { get; private set; }
+
+    public Task<BusinessConsoleCreateErpPurchaseRequisitionResponse> CreatePurchaseRequisitionFromSuggestionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateErpPurchaseRequisitionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateErpPurchaseRequisitionResponse("pr-001"));
+    }
+
+    public Task<BusinessConsoleCreateErpRequestForQuotationResponse> CreateRequestForQuotationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateErpRequestForQuotationRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateErpRequestForQuotationResponse("rfq-001"));
+    }
+
+    public Task<BusinessConsoleReceiveErpSupplierQuotationResponse> ReceiveSupplierQuotationAsync(
+        string internalBearerToken,
+        BusinessConsoleReceiveErpSupplierQuotationRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleReceiveErpSupplierQuotationResponse("sq-001"));
+    }
+
     public Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
         string internalBearerToken,
         BusinessConsoleErpContextRequest request,
@@ -2318,6 +2440,254 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                             DateOnly.Parse("2026-06-06")),
                     ]),
             ]));
+    }
+
+    public Task<BusinessConsoleCreateErpPurchaseOrderResponse> CreatePurchaseOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateErpPurchaseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateErpPurchaseOrderResponse("po-id-001"));
+    }
+
+    public Task<BusinessConsoleRecordErpPurchaseReceiptResponse> RecordPurchaseReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordErpPurchaseReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleRecordErpPurchaseReceiptResponse("receipt-001"));
+    }
+
+    public Task<BusinessConsoleErpSalesOrderListResponse> ListSalesOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastSalesOrderListRequest = request;
+        return Task.FromResult(new BusinessConsoleErpSalesOrderListResponse(
+        [
+            new BusinessConsoleErpSalesOrderItem("SO-001", "CUST-001", "Released", 1200m),
+        ]));
+    }
+
+    public Task<BusinessConsoleOpenErpOpportunityResponse> OpenOpportunityAsync(
+        string internalBearerToken,
+        BusinessConsoleOpenErpOpportunityRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleOpenErpOpportunityResponse("opp-001"));
+    }
+
+    public Task<BusinessConsoleCreateErpQuotationResponse> CreateQuotationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateErpQuotationRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateErpQuotationResponse("quo-001"));
+    }
+
+    public Task<string> ApproveQuotationAsync(
+        string internalBearerToken,
+        BusinessConsoleApproveErpQuotationRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult("approved");
+    }
+
+    public Task<BusinessConsoleCreateErpSalesOrderResponse> CreateSalesOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateErpSalesOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateErpSalesOrderResponse("so-id-001"));
+    }
+
+    public Task<BusinessConsoleReleaseErpDeliveryOrderResponse> ReleaseDeliveryOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseErpDeliveryOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleReleaseErpDeliveryOrderResponse("do-id-001"));
+    }
+
+    public Task<BusinessConsoleCreateErpAccountPayableResponse> CreateAccountPayableAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateErpAccountPayableRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateErpAccountPayableResponse("ap-001"));
+    }
+
+    public Task<BusinessConsoleCreateErpAccountReceivableResponse> CreateAccountReceivableAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateErpAccountReceivableRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateErpAccountReceivableResponse("ar-001"));
+    }
+
+    public Task<BusinessConsoleCreateErpCostCandidateResponse> CreateCostCandidateAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateErpCostCandidateRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateErpCostCandidateResponse("cost-001"));
+    }
+
+    public Task<BusinessConsolePostErpJournalVoucherResponse> PostJournalVoucherAsync(
+        string internalBearerToken,
+        BusinessConsolePostErpJournalVoucherRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsolePostErpJournalVoucherResponse("jv-001"));
+    }
+
+    public Task<BusinessConsoleErpFinanceSummaryResponse> GetFinanceSummaryAsync(
+        string internalBearerToken,
+        BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleErpFinanceSummaryResponse(100m, 200m, 50m, 3));
+    }
+
+    public Task<BusinessConsoleErpPayableSourceDocumentResponse> GetPayableBySourceDocumentAsync(
+        string internalBearerToken,
+        BusinessConsoleErpSourceDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastFinanceSourceDocumentRequest = request;
+        return Task.FromResult(new BusinessConsoleErpPayableSourceDocumentResponse("AP-001", request.SourceDocumentNo, "SUP-001", 100m, 80m, "CNY", DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture)));
+    }
+
+    public Task<BusinessConsoleErpReceivableSourceDocumentResponse> GetReceivableBySourceDocumentAsync(
+        string internalBearerToken,
+        BusinessConsoleErpSourceDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastFinanceSourceDocumentRequest = request;
+        return Task.FromResult(new BusinessConsoleErpReceivableSourceDocumentResponse("AR-001", request.SourceDocumentNo, "CUST-001", 100m, 80m, "CNY", DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture)));
+    }
+
+    public Task<BusinessConsoleErpCostCandidateSourceDocumentResponse> GetCostCandidateBySourceDocumentAsync(
+        string internalBearerToken,
+        BusinessConsoleErpSourceDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastFinanceSourceDocumentRequest = request;
+        return Task.FromResult(new BusinessConsoleErpCostCandidateSourceDocumentResponse("COST-001", request.SourceType ?? "production", request.SourceDocumentNo, 100m, "CNY", DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture)));
+    }
+}
+
+internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient
+{
+    public string? LastInternalToken { get; private set; }
+
+    public BusinessConsoleCreateBarcodePrintBatchRequest? LastPrintBatchRequest { get; private set; }
+
+    public BusinessConsoleRecordBarcodeScanRequest? LastScanRequest { get; private set; }
+
+    public Task<BusinessConsoleCreateOrUpdateBarcodeRuleResponse> CreateOrUpdateRuleAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateBarcodeRuleRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateBarcodeRuleResponse("rule-001"));
+    }
+
+    public Task<BusinessConsoleBarcodeTemplateListResponse> ListTemplatesAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodeTemplateListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleBarcodeTemplateListResponse(
+        [
+            new BusinessConsoleBarcodeTemplateItem("template-001", "box-label", "Box Label", "file-001", "{}", "active"),
+        ]));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateBarcodeTemplateResponse> CreateOrUpdateTemplateAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateBarcodeTemplateRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateBarcodeTemplateResponse("template-001"));
+    }
+
+    public Task<BusinessConsoleCreateBarcodePrintBatchResponse> CreatePrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPrintBatchRequest = request;
+        return Task.FromResult(new BusinessConsoleCreateBarcodePrintBatchResponse("print-batch-001"));
+    }
+
+    public Task<BusinessConsoleBarcodePrintBatchResponse> GetPrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleBarcodePrintBatchResponse(
+            new BusinessConsoleBarcodePrintBatchDetail(
+                request.PrintBatchId,
+                "template-001",
+                "work-order",
+                "WO-001",
+                "print-001",
+                1,
+                "created",
+                [])));
+    }
+
+    public Task<BusinessConsoleRecordBarcodeScanResponse> RecordScanAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordBarcodeScanRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastScanRequest = request;
+        return Task.FromResult(new BusinessConsoleRecordBarcodeScanResponse("scan-001"));
+    }
+
+    public Task<BusinessConsoleBarcodeScanListResponse> ListScansAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodeScanListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleBarcodeScanListResponse(
+        [
+            new BusinessConsoleBarcodeScanRecordItem(
+                "scan-001",
+                request.DeviceCode ?? "PDA-01",
+                request.ScannedValue ?? "BC-001",
+                request.SourceWorkflow ?? "wms-receipt",
+                request.SourceDocumentId ?? "WO-001",
+                "accepted",
+                null,
+                DateTimeOffset.Parse("2026-06-03T01:00:00Z", CultureInfo.InvariantCulture)),
+        ]));
     }
 }
 
@@ -2446,6 +2816,34 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
 
     public EquipmentRuntimeAvailabilityResponse? DeviceRuntimeAvailabilityResponse { get; init; }
 
+    public Task<BusinessConsoleTelemetryTagListResponse> ListTagsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryTagListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryTagListResponse([]));
+    }
+
+    public Task<BusinessConsoleTelemetryAlarmEventListResponse> ListAlarmsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryAlarmListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryAlarmEventListResponse([]));
+    }
+
+    public Task<BusinessConsoleTelemetryHistoryResponse> QueryHistoryAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleTelemetryHistoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryHistoryResponse([]));
+    }
+
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
         string internalBearerToken,
         BusinessConsoleEquipmentAvailabilityRequest request,
@@ -2533,6 +2931,41 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
     public EquipmentRuntimeAvailabilityResponse? AvailabilityResponse { get; init; }
 
     public EquipmentRuntimeAvailabilityResponse? AssetAvailabilityResponse { get; init; }
+
+    public Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleMaintenanceContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMaintenanceWorkOrderListResponse([]));
+    }
+
+    public Task<BusinessConsoleMaintenanceWorkOrderItem> GetWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMaintenanceContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMaintenanceWorkOrderItem(
+            workOrderId,
+            "DEV-OIL-01",
+            "normal",
+            "Open",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)));
+    }
+
+    public Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
+        string internalBearerToken,
+        BusinessConsoleMaintenanceContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMaintenancePlanListResponse([]));
+    }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetAvailabilityWindowsAsync(
         string internalBearerToken,
