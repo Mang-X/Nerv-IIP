@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
@@ -271,6 +272,68 @@ public sealed class MesEndpointContractTests
         Assert.Equal(1m, wipRow.ScrapQuantity);
         Assert.Equal("Ready", material.ReadinessStatus);
         Assert.Empty(material.Items);
+    }
+
+    [Fact]
+    public async Task Convert_plan_to_work_order_persists_demand_planning_source_reference_for_queries_and_traceability()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var requestedAtUtc = DateTimeOffset.Parse("2026-06-01T08:00:00Z");
+
+        var response = await new ConvertPlanToWorkOrderCommandHandler(dbContext).Handle(
+            new ConvertPlanToWorkOrderCommand(
+                "org-001",
+                "env-dev",
+                "SUG-001",
+                "WO-DP-001",
+                requestedAtUtc,
+                "SKU-FG-1000",
+                "PV-001",
+                12m,
+                "PCS",
+                requestedAtUtc.AddDays(2),
+                "WC-MIX-01",
+                "DemandPlanning",
+                "PlanningSuggestion",
+                "SUG-001",
+                "DEMAND-001",
+                "convert-dp-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var workOrder = await dbContext.WorkOrders.AsNoTracking().SingleAsync(CancellationToken.None);
+        Assert.Equal("WO-DP-001", response.ReferenceId);
+        Assert.NotNull(workOrder.SourcePlanReference);
+        Assert.Equal("DemandPlanning", workOrder.SourcePlanReference.SourceSystem);
+        Assert.Equal("PlanningSuggestion", workOrder.SourcePlanReference.SourceDocumentType);
+        Assert.Equal("SUG-001", workOrder.SourcePlanReference.SourceDocumentId);
+        Assert.Equal("DEMAND-001", workOrder.SourcePlanReference.SourceDemandReference);
+
+        var plans = await new ListProductionPlansQueryHandler(dbContext).Handle(
+            new ListProductionPlansQuery("org-001", "env-dev", null, 100),
+            CancellationToken.None);
+        var plan = Assert.Single(plans.Items);
+        Assert.Equal("SUG-001", plan.ProductionPlanId);
+        Assert.Equal("DemandPlanning", plan.SourceSystem);
+        Assert.Equal("PlanningSuggestion", plan.SourceDocumentType);
+        Assert.Equal("SUG-001", plan.SourceDocumentId);
+        Assert.Equal("DEMAND-001", plan.SourceDemandReference);
+        Assert.Equal("Converted", plan.Status);
+
+        var detail = await new GetMesWorkOrderDetailQueryHandler(dbContext).Handle(
+            new GetMesWorkOrderDetailQuery("org-001", "env-dev", "WO-DP-001"),
+            CancellationToken.None);
+        Assert.Equal("DemandPlanning", detail.SourcePlanReference?.SourceSystem);
+        Assert.Equal("SUG-001", detail.SourcePlanReference?.SourceDocumentId);
+        Assert.Equal("DEMAND-001", detail.SourcePlanReference?.SourceDemandReference);
+
+        var traceability = await new GetWorkOrderTraceabilityQueryHandler(dbContext).Handle(
+            new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-DP-001"),
+            CancellationToken.None);
+        Assert.Contains(traceability.Nodes, x => x.NodeId == "SUG-001" && x.NodeType == "PlanningSuggestion");
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "SUG-001" && x.ToNodeId == "WO-DP-001" && x.RelationType == "converted-to-work-order");
     }
 
     [Theory]

@@ -67,9 +67,10 @@ BusinessGateway Console OpenAPI 的生成链路固定为：
 8. BusinessGateway facade 转发下游查询时，布尔开关参数采用“默认 false 省略、true 显式发送”的约定；例如 MasterData `includeDisabled=false` 不进入下游 query string，`includeDisabled=true` 才会发送，避免 Gateway 把下游默认值重复编码进 facade。
 9. `runBusinessConsoleMesSchedule` 是 MES 规则排程的过渡入口，用于 #206 前的确定性规则排程触发和结果状态查看；它不是长期 APS 权威接口。#206 落地 BusinessScheduling/APS lite 后，Business Console 的正式排程视图和甘特/RFC 应消费 BusinessScheduling 输出 DTO，MES 只按已发布方案落地执行域变化。
 10. `/api/business-console/v1/mes/foundation-readiness/**` 是系统管理和数据就绪诊断入口，用于检查主数据、工程资料、供应齐套、质量、设备和条码编码准备状态；它不应作为一线 MES 日常执行菜单的优先入口。日常执行仍从驾驶舱、生产计划、工单、派工、工序执行、报工、质量、入库和追溯等业务任务进入。
-11. `/api/business-console/v1/mes/production-plans` 的目标来源是 DemandPlanning 的 demand source/source plan 或等价来源计划；当前 MES surface 仍缺 durable link，列表和转工单链路不能被描述为已消费 DemandPlanning。若上游计划来源缺失导致新转单受阻，BusinessGateway 应把阻塞原因暴露为计划就绪问题（#233/#206 后续补齐）；既有 MES 工单、工序任务、报工、停机、完工入库和追溯接口不因此失效。
-12. BusinessERP 后端已实现 Sales Opportunity，但后端契约存在不等于 BusinessGateway/Business Console 可以提前开放商机页面。ERP 商机 facade、OpenAPI 快照、api-client 生成和前端页面仍必须跟随 Business Console 菜单分期和对应 issue，不因服务端已有聚合根而扩大当前菜单范围。
-13. #207 BusinessGateway 设备运行事实 facade 已进入 BusinessGateway Console OpenAPI 快照，`frontend/packages/api-client/openapi/business-gateway-console.v1.json` 与 `frontend/packages/api-client/src/generated/business-console/` 已通过 `pnpm -C frontend generate:api` 刷新，Business Console 只从 `@nerv-iip/api-client` 稳定入口消费。
+11. `/api/business-console/v1/workbench/summary` 是 Business Console 数字化工作台聚合入口，聚合 KPI、BusinessApproval 待办、Notification 消息/任务、IndustrialTelemetry 预警以及 MES/Quality 摘要。该 facade 必须按当前 principal 对每个来源分别执行 permission check；无权限来源只返回 source status，不返回对象名称、金额、消息标题或其它敏感字段。
+12. `/api/business-console/v1/mes/production-plans` 的目标来源是 DemandPlanning 的 demand source/source plan 或等价来源计划；MES 计划转工单命令已持久化 source system、source document type/id、source demand reference 和 UOM 快照到 `work_orders`，并通过 production plans、work order detail 和 traceability surface 回显。MES 不读取 DemandPlanning schema，不建立跨 schema FK；既有 MES 工单、工序任务、报工、停机、完工入库和追溯接口不因此失效。
+13. BusinessERP 后端已实现 Sales Opportunity，但后端契约存在不等于 BusinessGateway/Business Console 可以提前开放商机页面。ERP 商机 facade、OpenAPI 快照、api-client 生成和前端页面仍必须跟随 Business Console 菜单分期和对应 issue，不因服务端已有聚合根而扩大当前菜单范围。
+14. #207 BusinessGateway 设备运行事实 facade 已进入 BusinessGateway Console OpenAPI 快照，`frontend/packages/api-client/openapi/business-gateway-console.v1.json` 与 `frontend/packages/api-client/src/generated/business-console/` 已通过 `pnpm -C frontend generate:api` 刷新，Business Console 只从 `@nerv-iip/api-client` 稳定入口消费。
 
 Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` 语义前缀：
 

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
@@ -89,22 +90,116 @@ public sealed record ConvertPlanToWorkOrderCommand(
     string ProductionPlanId,
     string? WorkOrderId,
     DateTimeOffset RequestedAtUtc,
+    string SkuId,
+    string? ProductionVersionId,
+    decimal PlannedQuantity,
+    string UomCode,
+    DateTimeOffset DueUtc,
+    string? WorkCenterId,
+    string? SourceSystem = null,
+    string? SourceDocumentType = null,
+    string? SourceDocumentId = null,
+    string? SourceDemandReference = null,
     string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
 
-public sealed class ConvertPlanToWorkOrderCommandHandler(MesNumberingService? numberingService = null)
+public sealed class ConvertPlanToWorkOrderCommandValidator : AbstractValidator<ConvertPlanToWorkOrderCommand>
+{
+    public ConvertPlanToWorkOrderCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ProductionPlanId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ProductionVersionId).MaximumLength(100);
+        RuleFor(x => x.PlannedQuantity).GreaterThan(0);
+        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.WorkCenterId).MaximumLength(100);
+        RuleFor(x => x.SourceSystem).MaximumLength(100);
+        RuleFor(x => x.SourceDocumentType).MaximumLength(100);
+        RuleFor(x => x.SourceDocumentId).MaximumLength(100);
+        RuleFor(x => x.SourceDemandReference).MaximumLength(100);
+    }
+}
+
+public sealed class ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext, MesNumberingService? numberingService = null)
     : ICommandHandler<ConvertPlanToWorkOrderCommand, MesAcceptedResponse>
 {
+    private const int ConvertedPlanPriority = 100;
     private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
 
     public async Task<MesAcceptedResponse> Handle(ConvertPlanToWorkOrderCommand request, CancellationToken cancellationToken)
     {
+        var sourceSystem = string.IsNullOrWhiteSpace(request.SourceSystem) ? "DemandPlanning" : request.SourceSystem.Trim();
+        var sourceDocumentType = string.IsNullOrWhiteSpace(request.SourceDocumentType) ? "PlanningSuggestion" : request.SourceDocumentType.Trim();
+        var sourceDocumentId = string.IsNullOrWhiteSpace(request.SourceDocumentId) ? request.ProductionPlanId.Trim() : request.SourceDocumentId.Trim();
         var allocation = await _numberingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
             request.IdempotencyKey,
-            $"{request.ProductionPlanId}|{request.WorkOrderId}",
+            MesNumberingService.Fingerprint(
+                request.ProductionPlanId,
+                request.WorkOrderId,
+                request.SkuId,
+                request.ProductionVersionId,
+                request.PlannedQuantity,
+                request.UomCode,
+                request.DueUtc,
+                request.WorkCenterId,
+                sourceSystem,
+                sourceDocumentType,
+                sourceDocumentId,
+                request.SourceDemandReference),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc);
+        }
+
+        var alreadyExists = await dbContext.WorkOrders.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderIdValue == allocation.Number,
+            cancellationToken);
+        if (alreadyExists)
+        {
+            throw new KnownException($"生产工单已存在，WorkOrderId = {allocation.Number}");
+        }
+
+        var sourceReference = new SourcePlanReference(
+            sourceSystem,
+            sourceDocumentType,
+            sourceDocumentId,
+            request.SourceDemandReference);
+        var workOrder = WorkOrder.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Number,
+            request.SkuId,
+            request.ProductionVersionId,
+            request.PlannedQuantity,
+            ConvertedPlanPriority,
+            request.DueUtc,
+            request.UomCode,
+            sourceReference);
+        dbContext.WorkOrders.Add(workOrder);
+
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId))
+        {
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Number,
+                $"{allocation.Number}-OP-10",
+                OperationTaskLifecycleStatus.Queued,
+                10,
+                request.WorkCenterId.Trim(),
+                [],
+                request.RequestedAtUtc,
+                TimeSpan.FromMinutes(30),
+                null,
+                null));
+        }
 
         return new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc);
     }

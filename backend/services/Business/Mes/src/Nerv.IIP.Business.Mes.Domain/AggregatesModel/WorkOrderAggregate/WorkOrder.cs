@@ -12,6 +12,30 @@ public sealed record RoutingStepSnapshot(
     IReadOnlyCollection<string> AlternativeWorkCenterIds,
     TimeSpan Duration);
 
+public sealed class SourcePlanReference
+{
+    private SourcePlanReference()
+    {
+    }
+
+    public SourcePlanReference(
+        string sourceSystem,
+        string sourceDocumentType,
+        string sourceDocumentId,
+        string? sourceDemandReference)
+    {
+        SourceSystem = DomainGuard.Required(sourceSystem, nameof(sourceSystem));
+        SourceDocumentType = DomainGuard.Required(sourceDocumentType, nameof(sourceDocumentType));
+        SourceDocumentId = DomainGuard.Required(sourceDocumentId, nameof(sourceDocumentId));
+        SourceDemandReference = string.IsNullOrWhiteSpace(sourceDemandReference) ? null : sourceDemandReference.Trim();
+    }
+
+    public string SourceSystem { get; private set; } = string.Empty;
+    public string SourceDocumentType { get; private set; } = string.Empty;
+    public string SourceDocumentId { get; private set; } = string.Empty;
+    public string? SourceDemandReference { get; private set; }
+}
+
 public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 {
     public const string CreatedStatus = "created";
@@ -29,18 +53,22 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         string workOrderId,
         string skuId,
         string? productionVersionId,
+        string? uomCode,
         decimal quantity,
         int priority,
-        DateTimeOffset dueUtc)
+        DateTimeOffset dueUtc,
+        SourcePlanReference? sourcePlanReference)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
         WorkOrderIdValue = DomainGuard.Required(workOrderId, nameof(workOrderId));
         SkuId = DomainGuard.Required(skuId, nameof(skuId));
         ProductionVersionId = string.IsNullOrWhiteSpace(productionVersionId) ? null : productionVersionId.Trim();
+        UomCode = string.IsNullOrWhiteSpace(uomCode) ? null : uomCode.Trim();
         Quantity = DomainGuard.Positive(quantity, nameof(quantity));
         Priority = priority;
         DueUtc = dueUtc;
+        SourcePlanReference = sourcePlanReference;
         Status = CreatedStatus;
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
@@ -50,9 +78,11 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public string WorkOrderIdValue { get; private set; } = string.Empty;
     public string SkuId { get; private set; } = string.Empty;
     public string? ProductionVersionId { get; private set; }
+    public string? UomCode { get; private set; }
     public decimal Quantity { get; private set; }
     public int Priority { get; private set; }
     public DateTimeOffset DueUtc { get; private set; }
+    public SourcePlanReference? SourcePlanReference { get; private set; }
     public string Status { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
@@ -66,7 +96,9 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         string? productionVersionId,
         decimal quantity,
         int priority,
-        DateTimeOffset dueUtc)
+        DateTimeOffset dueUtc,
+        string? uomCode = null,
+        SourcePlanReference? sourcePlanReference = null)
     {
         var workOrder = new WorkOrder(
             organizationId,
@@ -74,9 +106,11 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             workOrderId,
             skuId,
             productionVersionId,
+            uomCode,
             quantity,
             priority,
-            dueUtc);
+            dueUtc,
+            sourcePlanReference);
         workOrder.AddDomainEvent(new WorkOrderCreatedDomainEvent(workOrder));
         return workOrder;
     }

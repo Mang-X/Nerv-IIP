@@ -143,15 +143,25 @@ public sealed class RushWorkOrderCommandTests
     [Fact]
     public async Task ConvertPlanToWorkOrderCommand_GeneratesWorkOrderAndReplaysIdempotentResult()
     {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var numbering = new MesNumberingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        var handler = new ConvertPlanToWorkOrderCommandHandler(numbering);
+        var handler = new ConvertPlanToWorkOrderCommandHandler(dbContext, numbering);
         var command = new ConvertPlanToWorkOrderCommand(
             "org-001",
             "env-dev",
             "PLAN-001",
             null,
             now,
+            "SKU-FG-1000",
+            "PV-001",
+            10m,
+            "PCS",
+            now.AddDays(2),
+            "WC-A",
+            IdempotencyKey:
             "convert-plan-001");
 
         var first = await handler.Handle(command, CancellationToken.None);

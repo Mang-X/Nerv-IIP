@@ -118,7 +118,17 @@ public sealed record ConvertPlanToWorkOrderRequest(
     string EnvironmentId,
     [property: RouteParam] string ProductionPlanId,
     string? WorkOrderId,
+    string SkuId,
+    string? ProductionVersionId,
+    decimal PlannedQuantity,
+    string UomCode,
+    DateTimeOffset? DueUtc,
+    string? WorkCenterId,
     DateTimeOffset? RequestedAtUtc,
+    string? SourceSystem = null,
+    string? SourceDocumentType = null,
+    string? SourceDocumentId = null,
+    string? SourceDemandReference = null,
     string? IdempotencyKey = null);
 
 public sealed record ReleaseWorkOrderRequest(
@@ -357,6 +367,16 @@ public sealed class ConvertPlanToWorkOrderEndpoint(ISender sender, TimeProvider 
             req.ProductionPlanId,
             req.WorkOrderId,
             req.RequestedAtUtc ?? timeProvider.GetUtcNow(),
+            req.SkuId,
+            req.ProductionVersionId,
+            req.PlannedQuantity,
+            req.UomCode,
+            req.DueUtc ?? req.RequestedAtUtc ?? timeProvider.GetUtcNow(),
+            req.WorkCenterId,
+            req.SourceSystem,
+            req.SourceDocumentType,
+            req.SourceDocumentId,
+            req.SourceDemandReference,
             req.IdempotencyKey), ct);
         await Send.OkAsync(response, ct);
     }

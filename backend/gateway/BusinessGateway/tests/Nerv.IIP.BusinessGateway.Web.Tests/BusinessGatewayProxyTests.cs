@@ -125,6 +125,54 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_production_plan_facade_passes_through_demand_planning_source_reference_fields()
+    {
+        var mes = new RecordingMesClient
+        {
+            ProductionPlans =
+            [
+                new BusinessConsoleMesProductionPlanRow(
+                    "SUG-001",
+                    "DemandPlanning",
+                    "PlanningSuggestion",
+                    "SUG-001",
+                    "DEMAND-001",
+                    "SKU-FG-1000",
+                    12m,
+                    "PCS",
+                    "Converted",
+                    "Ready",
+                    [],
+                    DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
+                    DateTimeOffset.Parse("2026-06-03T08:00:00Z")),
+            ],
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/production-plans?organizationId=org-001&environmentId=env-dev&status=Converted&take=15");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "Converted", 15), mes.LastProductionPlanListRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var plan = document.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("DemandPlanning", plan.GetProperty("sourceSystem").GetString());
+        Assert.Equal("PlanningSuggestion", plan.GetProperty("sourceDocumentType").GetString());
+        Assert.Equal("SUG-001", plan.GetProperty("sourceDocumentId").GetString());
+        Assert.Equal("DEMAND-001", plan.GetProperty("sourceDemandReference").GetString());
+        Assert.Equal("PCS", plan.GetProperty("uomCode").GetString());
+        Assert.Equal("Converted", plan.GetProperty("status").GetString());
+    }
+
+    [Fact]
     public async Task Mes_production_plan_readiness_returns_blocking_item_when_downstream_is_unavailable()
     {
         var mes = new RecordingMesClient
@@ -1832,6 +1880,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsoleListResourcesRequest? LastListResourcesRequest { get; private set; }
 
+    public IReadOnlyCollection<BusinessConsoleResourceItem>? Resources { get; init; }
+
     public BusinessServiceProxyException? Failure { get; init; }
 
     public Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
@@ -1847,11 +1897,15 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             throw Failure;
         }
 
-        return Task.FromResult(new BusinessConsoleResourceListResponse(
+        var resources = Resources ??
             [
                 new BusinessConsoleResourceItem("sku", "SKU-001", "Demo SKU", true, "v1"),
-            ],
-            1));
+            ];
+        resources = resources
+            .Where(resource => string.Equals(resource.ResourceType, request.ResourceType, StringComparison.Ordinal))
+            .Take(request.Take)
+            .ToArray();
+        return Task.FromResult(new BusinessConsoleResourceListResponse(resources, resources.Count));
     }
 
     public Task<BusinessConsoleResourceItem> CreateSkuAsync(
@@ -2434,6 +2488,14 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Exception? StartOperationFailure { get; init; }
 
+    public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; init; }
+
+    public IReadOnlyCollection<BusinessConsoleMesProductionPlanRow>? ProductionPlans { get; init; }
+
+    public BusinessConsoleMesListRequest? LastProductionPlanListRequest { get; private set; }
+
+    public BusinessConsoleMesConvertPlanToWorkOrderRequest? LastConvertPlanToWorkOrderRequest { get; private set; }
+
     public Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
         string internalBearerToken,
         string areaCode,
@@ -2461,8 +2523,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public Task<BusinessConsoleMesProductionPlanListResponse> ListProductionPlansAsync(
         string internalBearerToken,
         BusinessConsoleMesListRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProductionPlanListRequest = request;
+        return Task.FromResult(new BusinessConsoleMesProductionPlanListResponse(ProductionPlans ?? []));
+    }
 
     public Task<BusinessConsoleMesFoundationReadinessResponse> GetProductionPlanReadinessAsync(
         string internalBearerToken,
@@ -2483,8 +2549,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string productionPlanId,
         BusinessConsoleMesConvertPlanToWorkOrderRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastConvertPlanToWorkOrderRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
 
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
@@ -2495,6 +2565,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastInternalToken = internalBearerToken;
         LastWorkOrderListRequest = request;
         return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(
+            WorkOrders ??
             [
                 new BusinessConsoleMesWorkOrderItem(
                     "wo-001",

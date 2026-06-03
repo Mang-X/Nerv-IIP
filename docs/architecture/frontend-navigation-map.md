@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-06-01；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-06-03；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 
@@ -154,10 +154,10 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 ### 工作台最低可用性
 
-`/` 当前可以作为 Business Console 入口保留，但不得长期停留在“空壳首页”。在跨域 KPI、BusinessApproval 待办、Notification 消息和 Telemetry 预警全部接入前，最低可用版本必须满足：
+`/` 当前可以作为 Business Console 入口保留，但不得长期停留在“空壳首页”。BusinessGateway 已提供跨域 KPI、BusinessApproval 待办、Notification 消息和 Telemetry 预警聚合 facade；前端消费该 facade 前后，最低可用版本必须满足：
 
 1. 按角色和权限显示 route-ready 页面快捷入口，不能展示用户无权限或 feature flag 未开启的能力区。
-2. 使用真实 facade 可得的数据展示待关注事项；缺少正式聚合 facade 时可以窄化为“工单、库存、检验、NCR、计划建议”等已有页面的入口和摘要，但不得使用 demo/seed 文案伪装成真实业务事实。
+2. 使用真实 facade 可得的数据展示待关注事项；来源返回 `forbidden`、`unavailable` 或 `unsupported` 时展示清晰空态/降级状态，不得使用 demo/seed 文案伪装成真实业务事实。
 3. 近期/星标和全局搜索结果必须经过当前登录主体的权限过滤。
 4. 工作台入口应服务跨域跳转，不替代各域页面内的上下文 Drawer、Sheet 和对象详情链接。
 
@@ -228,7 +228,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 | 域 | 路由 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| 数字化工作台 | `/` | 已落地/入口 | 当前是 PC 业务入口和待处理入口；真实 KPI、跨域待办、消息和预警聚合仍待接入。 |
+| 数字化工作台 | `/` | 后端 facade 已落地/前端待消费 | 当前是 PC 业务入口和待处理入口；BusinessGateway 已提供 `/api/business-console/v1/workbench/summary` 聚合 KPI、BusinessApproval 待办、Notification 消息/任务和 IndustrialTelemetry 预警，并按当前 principal 权限在读时过滤来源。前端仍需消费 generated `@nerv-iip/api-client` 后替换入口页本地拼接。 |
 | 基础数据 | `/master-data/skus` | 已落地/窄化 | SKU 列表与创建已通过 BusinessGateway 消费 MasterData。 |
 | 基础数据 | `/master-data/partners` | 过渡 | 读取 MasterData resource facade，并混入本地场景数据；完整供应商/客户档案页待建。 |
 | 基础数据 | `/master-data/resources` | 过渡 | 读取站点、产线、工作中心、设备、班次等资源视图；完整维护流程待建。 |
@@ -242,7 +242,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 质量管理 | `/quality/inspections` | 已落地 | 检验计划、检验记录创建入口。 |
 | 质量管理 | `/quality/ncrs` | 已落地 | NCR 列表、处置、关闭。 |
 | 制造执行 | `/mes` | 已落地 | 生产驾驶舱。 |
-| 制造执行 | `/mes/plans` | 已落地/受限 | 生产计划页存在；当前与 DemandPlanning 的 durable link 仍需补强。 |
+| 制造执行 | `/mes/plans` | 已落地/受限 | 生产计划页存在；后端已在计划转工单路径持久化 DemandPlanning/source plan reference，并通过 MES production plans、work order detail 和 traceability 查询回显；BusinessGateway OpenAPI snapshot 与 `@nerv-iip/api-client` 已刷新。前端仍需消费新增 source 字段。 |
 | 制造执行 | `/mes/work-orders`、`/mes/work-orders/:workOrderId` | 已落地 | 工单列表、急单、释放、详情。详情不是常驻菜单项。 |
 | 制造执行 | `/mes/materials` | 已落地/受限 | 齐套与物料视图存在；Inventory/WMS 真实联动仍按 operational foundation reset 深化。 |
 | 制造执行 | `/mes/dispatch` | 已落地/受限 | 派工看板路由存在；长期应消费 APS/设备 readiness 结果。 |
@@ -267,7 +267,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 | 能力区（不是默认一级菜单） | 目标页面 | 当前处理口径 |
 | --- | --- | --- |
-| 数字化工作台 | 工作台首页、待办中心、消息中心、预警看板 | `/` 已有入口；待办、消息、预警需要 BusinessApproval/Notification/Telemetry/Quality/Inventory 等 facade 后再拆页。 |
+| 数字化工作台 | 工作台首页、待办中心、消息中心、预警看板 | `/` 已有入口；BusinessGateway workbench summary facade 已接入 BusinessApproval、Notification、IndustrialTelemetry、Quality 和 MES，Inventory 汇总仍明确标记为 unsupported，待前端消费生成客户端后再拆待办/消息/预警子页。 |
 | 基础数据 | 物料列表、物料分类、UOM、单位换算、供应商、客户、承运商、工厂/产线、工作中心、设备资产、班次与日历、部门与团队、参考数据 | MasterData 后端和部分 facade 已有；前端先补齐真实维护页，再扩展二级菜单。物料详情不作为菜单项。 |
 | 产品工程（PLM） | 工程文档、工程物料、EBOM、MBOM、BOM 对比/有效性、工艺路线、工程变更、生产版本 | ProductEngineering 后端和 `/engineering` 读视图已有；细分维护页和详情页待建。仅面向工艺路线/MBOM 的页面可使用“工艺工程”标签。 |
 | 经营管理（ERP） | 采购申请、询价、采购订单、采购收货、采购退货、报价、销售订单、发货、RMA、应付、应收、财务凭证、成本核算、财务报表 | ERP 后端已落地；采购订单供应明细已通过 BusinessGateway ERP Procurement facade 和 `/erp` 窄化页面落地。采购申请/RFQ/报价操作页、销售、财务和商机仍按后续分期暴露。 |

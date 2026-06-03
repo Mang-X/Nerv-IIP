@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Globalization;
 using System.Text.Json;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Sdk.Core;
 
@@ -215,6 +216,27 @@ public interface IBusinessMaintenanceClient
         string internalBearerToken,
         string deviceAssetId,
         BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken);
+}
+
+public interface IBusinessApprovalClient
+{
+    Task<BusinessConsoleApprovalTaskListResponse> ListPendingTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalTaskListRequest request,
+        CancellationToken cancellationToken);
+}
+
+public interface IBusinessNotificationClient
+{
+    Task<NotificationMessageListResponse> ListMessagesAsync(
+        string internalBearerToken,
+        BusinessConsoleNotificationListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<NotificationTaskListResponse> ListTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleNotificationListRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -607,6 +629,60 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         DateTimeOffset dateTime => dateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
         _ => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
     };
+}
+
+public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : BusinessServiceHttpClient(httpClient), IBusinessApprovalClient
+{
+    public async Task<BusinessConsoleApprovalTaskListResponse> ListPendingTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalTaskListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var items = await SendAsync<IReadOnlyCollection<BusinessConsoleApprovalTaskItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/approvals/tasks?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("actorType", request.ActorType),
+                ("actorRef", request.ActorRef)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleApprovalTaskListResponse(items);
+    }
+}
+
+public sealed class HttpBusinessNotificationClient(HttpClient httpClient) : BusinessServiceHttpClient(httpClient), IBusinessNotificationClient
+{
+    public Task<NotificationMessageListResponse> ListMessagesAsync(
+        string internalBearerToken,
+        BusinessConsoleNotificationListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<NotificationMessageListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/notifications/v1/messages?" + NotificationQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<NotificationTaskListResponse> ListTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleNotificationListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<NotificationTaskListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/notifications/v1/tasks?" + NotificationQuery(request),
+            null,
+            cancellationToken);
+
+    private static string NotificationQuery(BusinessConsoleNotificationListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("recipientRef", request.RecipientRef),
+            ("status", request.Status),
+            ("take", request.Take));
 }
 
 public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
