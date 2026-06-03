@@ -61,6 +61,17 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/equipment/devices/{deviceAssetId}", "get", "getBusinessConsoleEquipmentDevice");
         AssertOperationId(paths, "/api/business-console/v1/equipment/availability", "get", "getBusinessConsoleEquipmentAvailability");
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms", "get", "listBusinessConsoleEquipmentAlarms");
+        AssertOperationId(paths, "/api/business-console/v1/workbench/summary", "get", "getBusinessConsoleWorkbenchSummary");
+        AssertJsonResponseRef(
+            paths,
+            "/api/business-console/v1/workbench/summary",
+            "get",
+            "200",
+            "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWorkbenchSummaryResponse");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/workbench/summary", "get", "organizationId");
+        AssertRequiredStringQueryParameter(paths, "/api/business-console/v1/workbench/summary", "get", "environmentId");
+        AssertOptionalIntegerQueryParameter(paths, "/api/business-console/v1/workbench/summary", "get", "take");
+        AssertJwtBearerSecurity(paths, "/api/business-console/v1/workbench/summary", "get");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-orders", "get", "listBusinessConsoleErpPurchaseOrders");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders", "get", "listBusinessConsoleMesWorkOrders");
         AssertOperationId(paths, "/api/business-console/v1/mes/foundation-readiness", "get", "getBusinessConsoleMesFoundationReadiness");
@@ -209,6 +220,62 @@ public sealed class BusinessGatewayOpenApiTests
         {
             Assert.Contains(name, parameters);
         }
+    }
+
+    private static void AssertRequiredStringQueryParameter(JsonElement paths, string path, string method, string name)
+    {
+        var parameter = FindQueryParameter(paths, path, method, name);
+
+        Assert.True(parameter.GetProperty("required").GetBoolean());
+        Assert.Equal("string", parameter.GetProperty("schema").GetProperty("type").GetString());
+    }
+
+    private static void AssertOptionalIntegerQueryParameter(JsonElement paths, string path, string method, string name)
+    {
+        var parameter = FindQueryParameter(paths, path, method, name);
+
+        Assert.False(parameter.TryGetProperty("required", out var required) && required.GetBoolean());
+        Assert.Equal("integer", parameter.GetProperty("schema").GetProperty("type").GetString());
+        Assert.Equal("int32", parameter.GetProperty("schema").GetProperty("format").GetString());
+    }
+
+    private static void AssertJwtBearerSecurity(JsonElement paths, string path, string method)
+    {
+        var security = paths.GetProperty(path)
+            .GetProperty(method)
+            .GetProperty("security")
+            .EnumerateArray();
+
+        Assert.Contains(security, requirement => requirement.TryGetProperty("JWTBearerAuth", out _));
+    }
+
+    private static JsonElement FindQueryParameter(JsonElement paths, string path, string method, string name) =>
+        paths.GetProperty(path)
+            .GetProperty(method)
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Single(parameter =>
+                parameter.GetProperty("in").GetString() == "query"
+                && parameter.GetProperty("name").GetString() == name);
+
+    private static void AssertJsonResponseRef(
+        JsonElement paths,
+        string path,
+        string method,
+        string statusCode,
+        string schemaName)
+    {
+        var schemaRef = paths.GetProperty(path)
+            .GetProperty(method)
+            .GetProperty("responses")
+            .GetProperty(statusCode)
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString();
+
+        Assert.Equal($"#/components/schemas/{schemaName}", schemaRef);
     }
 
     private static void AssertStringEnumSchema(JsonDocument document, string schemaName, params string[] values)

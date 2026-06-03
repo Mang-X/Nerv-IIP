@@ -288,15 +288,24 @@ public sealed class BusinessGatewayAuthorizationTests
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }
 
-internal sealed class FakeBusinessGatewayAuthorizationClient(bool allowed) : IBusinessGatewayAuthorizationClient
+internal sealed class FakeBusinessGatewayAuthorizationClient(Func<BusinessGatewayPermissionRequirement, bool> isAllowed)
+    : IBusinessGatewayAuthorizationClient
 {
     public int CallCount { get; private set; }
 
     public BusinessGatewayPermissionRequirement? LastRequirement { get; private set; }
 
-    public static FakeBusinessGatewayAuthorizationClient Allowed() => new(true);
+    public List<BusinessGatewayPermissionRequirement> Requirements { get; } = [];
 
-    public static FakeBusinessGatewayAuthorizationClient Forbidden() => new(false);
+    public static FakeBusinessGatewayAuthorizationClient Allowed() => new(_ => true);
+
+    public static FakeBusinessGatewayAuthorizationClient Forbidden() => new(_ => false);
+
+    public static FakeBusinessGatewayAuthorizationClient AllowOnly(params string[] permissionCodes)
+    {
+        var allowedPermissions = permissionCodes.ToHashSet(StringComparer.Ordinal);
+        return new(requirement => allowedPermissions.Contains(requirement.PermissionCode));
+    }
 
     public Task<BusinessGatewayAuthorizationResult> CheckAsync(
         string bearerToken,
@@ -305,7 +314,8 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(bool allowed) : IBu
     {
         CallCount++;
         LastRequirement = requirement;
-        return Task.FromResult(allowed
+        Requirements.Add(requirement);
+        return Task.FromResult(isAllowed(requirement)
             ? BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "admin")
             : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
     }

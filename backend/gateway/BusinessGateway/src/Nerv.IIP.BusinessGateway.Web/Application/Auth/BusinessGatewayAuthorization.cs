@@ -68,6 +68,9 @@ public static class BusinessGatewayPermissions
     public const string MaintenanceWorkOrdersRead = "business.maintenance.work-orders.read";
     public const string MaintenancePlansRead = "business.maintenance.plans.read";
     public const string ErpProcurementRead = "business.erp.procurement.read";
+    public const string ApprovalsRead = "business.approvals.read";
+    public const string NotificationMessagesRead = "notifications.messages.read";
+    public const string NotificationTasksRead = "notifications.tasks.read";
     public const string MesFoundationRead = "business.mes.foundation.read";
     public const string MesOverviewRead = "business.mes.overview.read";
     public const string MesPlansRead = "business.mes.plans.read";

@@ -187,7 +187,9 @@ public sealed record MesProductionPlanListResponse(IReadOnlyCollection<MesProduc
 public sealed record MesProductionPlanRow(
     string ProductionPlanId,
     string SourceSystem,
+    string SourceDocumentType,
     string SourceDocumentId,
+    string? SourceDemandReference,
     string SkuId,
     decimal PlannedQuantity,
     string UomCode,
@@ -197,12 +199,60 @@ public sealed record MesProductionPlanRow(
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons);
 
-public sealed class ListProductionPlansQueryHandler
+public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductionPlansQuery, MesProductionPlanListResponse>
 {
-    public Task<MesProductionPlanListResponse> Handle(ListProductionPlansQuery request, CancellationToken cancellationToken)
+    public async Task<MesProductionPlanListResponse> Handle(ListProductionPlansQuery request, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new MesProductionPlanListResponse([]));
+        var query = dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.SourcePlanReference != null);
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToLowerInvariant();
+            query = query.Where(x => x.Status == status);
+        }
+
+        var rows = await query
+            .OrderBy(x => x.DueUtc)
+            .ThenBy(x => x.WorkOrderIdValue)
+            .Take(Math.Clamp(request.Take, 1, 500))
+            .Select(x => new
+            {
+                x.WorkOrderIdValue,
+                x.SkuId,
+                x.Quantity,
+                x.UomCode,
+                x.DueUtc,
+                x.Status,
+                SourceSystem = x.SourcePlanReference!.SourceSystem,
+                SourceDocumentType = x.SourcePlanReference.SourceDocumentType,
+                SourceDocumentId = x.SourcePlanReference.SourceDocumentId,
+                x.SourcePlanReference.SourceDemandReference,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var items = rows
+            .Select(x => new MesProductionPlanRow(
+                x.SourceDocumentId,
+                x.SourceSystem,
+                x.SourceDocumentType,
+                x.SourceDocumentId,
+                x.SourceDemandReference,
+                x.SkuId,
+                x.Quantity,
+                x.UomCode ?? string.Empty,
+                null,
+                x.DueUtc,
+                x.Status,
+                "Ready",
+                []))
+            .ToArray();
+        return new MesProductionPlanListResponse(items);
     }
 }
 
@@ -291,6 +341,12 @@ public sealed record GetMesWorkOrderDetailQuery(
     string EnvironmentId,
     string WorkOrderId) : IQuery<MesWorkOrderDetailResponse>;
 
+public sealed record MesSourcePlanReferenceResponse(
+    string SourceSystem,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string? SourceDemandReference);
+
 public sealed record MesWorkOrderDetailResponse(
     string WorkOrderId,
     string SkuId,
@@ -299,7 +355,8 @@ public sealed record MesWorkOrderDetailResponse(
     string Status,
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
-    IReadOnlyCollection<MesOperationTaskRow> OperationTasks);
+    IReadOnlyCollection<MesOperationTaskRow> OperationTasks,
+    MesSourcePlanReferenceResponse? SourcePlanReference = null);
 
 public sealed record MesOperationTaskRow(
     string OperationTaskId,
@@ -332,6 +389,13 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
                 x.ProductionVersionId,
                 x.Quantity,
                 x.Status,
+                SourcePlanReference = x.SourcePlanReference == null
+                    ? null
+                    : new MesSourcePlanReferenceResponse(
+                        x.SourcePlanReference.SourceSystem,
+                        x.SourcePlanReference.SourceDocumentType,
+                        x.SourcePlanReference.SourceDocumentId,
+                        x.SourcePlanReference.SourceDemandReference),
             })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
@@ -347,7 +411,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
             workOrder.Status,
             "Ready",
             [],
-            tasks);
+            tasks,
+            workOrder.SourcePlanReference);
     }
 
     internal static IQueryable<MesOperationTaskRow> QueryOperationTasks(
@@ -848,6 +913,32 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
             new(detail.WorkOrderId, "WorkOrder", detail.WorkOrderId, detail.Status),
         };
         var edges = new List<MesTraceabilityEdge>();
+
+        if (detail.SourcePlanReference is not null)
+        {
+            nodes.Add(new MesTraceabilityNode(
+                detail.SourcePlanReference.SourceDocumentId,
+                detail.SourcePlanReference.SourceDocumentType,
+                detail.SourcePlanReference.SourceDocumentId,
+                "Source"));
+            edges.Add(new MesTraceabilityEdge(
+                detail.SourcePlanReference.SourceDocumentId,
+                detail.WorkOrderId,
+                "converted-to-work-order"));
+
+            if (!string.IsNullOrWhiteSpace(detail.SourcePlanReference.SourceDemandReference))
+            {
+                nodes.Add(new MesTraceabilityNode(
+                    detail.SourcePlanReference.SourceDemandReference,
+                    "DemandSource",
+                    detail.SourcePlanReference.SourceDemandReference,
+                    "Source"));
+                edges.Add(new MesTraceabilityEdge(
+                    detail.SourcePlanReference.SourceDemandReference,
+                    detail.SourcePlanReference.SourceDocumentId,
+                    "pegged-to-plan"));
+            }
+        }
 
         foreach (var task in detail.OperationTasks)
         {

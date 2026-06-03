@@ -2,9 +2,15 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
-using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
+using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
+using DomainScheduleResult = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleResult;
+using DomainScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
+using DomainScheduledOperationSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduledOperationSnapshot;
+using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -89,24 +95,273 @@ public sealed record ConvertPlanToWorkOrderCommand(
     string ProductionPlanId,
     string? WorkOrderId,
     DateTimeOffset RequestedAtUtc,
+    string SkuId,
+    string? ProductionVersionId,
+    decimal PlannedQuantity,
+    string UomCode,
+    DateTimeOffset DueUtc,
+    string? WorkCenterId,
+    string? SourceSystem = null,
+    string? SourceDocumentType = null,
+    string? SourceDocumentId = null,
+    string? SourceDemandReference = null,
     string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
 
-public sealed class ConvertPlanToWorkOrderCommandHandler(MesNumberingService? numberingService = null)
-    : ICommandHandler<ConvertPlanToWorkOrderCommand, MesAcceptedResponse>
+public sealed class ConvertPlanToWorkOrderCommandValidator : AbstractValidator<ConvertPlanToWorkOrderCommand>
 {
-    private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
+    public ConvertPlanToWorkOrderCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ProductionPlanId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ProductionVersionId).MaximumLength(100);
+        RuleFor(x => x.PlannedQuantity).GreaterThan(0);
+        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.WorkCenterId).MaximumLength(100);
+        RuleFor(x => x.SourceSystem).MaximumLength(100);
+        RuleFor(x => x.SourceDocumentType).MaximumLength(100);
+        RuleFor(x => x.SourceDocumentId).MaximumLength(100);
+        RuleFor(x => x.SourceDemandReference).MaximumLength(100);
+    }
+}
+
+public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<ConvertPlanToWorkOrderCommand, MesAcceptedResponse>
+{
+    private const int ConvertedPlanPriority = 100;
+    private readonly ApplicationDbContext dbContext;
+    private readonly RuleScheduler scheduler;
+    private readonly MesNumberingService _numberingService;
+
+    public ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext, RuleScheduler scheduler, MesNumberingService? numberingService = null)
+    {
+        this.dbContext = dbContext;
+        this.scheduler = scheduler;
+        _numberingService = numberingService ?? new MesNumberingService();
+    }
+
+    public ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext)
+        : this(dbContext, new RuleScheduler())
+    {
+    }
+
+    public ConvertPlanToWorkOrderCommandHandler(ApplicationDbContext dbContext, MesNumberingService? numberingService)
+        : this(dbContext, new RuleScheduler(), numberingService)
+    {
+    }
 
     public async Task<MesAcceptedResponse> Handle(ConvertPlanToWorkOrderCommand request, CancellationToken cancellationToken)
     {
+        var sourceSystem = string.IsNullOrWhiteSpace(request.SourceSystem) ? "DemandPlanning" : request.SourceSystem.Trim();
+        var sourceDocumentType = string.IsNullOrWhiteSpace(request.SourceDocumentType) ? "PlanningSuggestion" : request.SourceDocumentType.Trim();
+        var sourceDocumentId = string.IsNullOrWhiteSpace(request.SourceDocumentId) ? request.ProductionPlanId.Trim() : request.SourceDocumentId.Trim();
         var allocation = await _numberingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
             request.IdempotencyKey,
-            $"{request.ProductionPlanId}|{request.WorkOrderId}",
+            MesNumberingService.Fingerprint(
+                request.ProductionPlanId,
+                request.WorkOrderId,
+                request.SkuId,
+                request.ProductionVersionId,
+                request.PlannedQuantity,
+                request.UomCode,
+                request.DueUtc,
+                request.WorkCenterId,
+                sourceSystem,
+                sourceDocumentType,
+                sourceDocumentId,
+                request.SourceDemandReference),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc);
+        }
+
+        var alreadyExists = await dbContext.WorkOrders.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderIdValue == allocation.Number,
+            cancellationToken);
+        if (alreadyExists)
+        {
+            throw new KnownException($"生产工单已存在，WorkOrderId = {allocation.Number}");
+        }
+
+        var sourceReference = new SourcePlanReference(
+            sourceSystem,
+            sourceDocumentType,
+            sourceDocumentId,
+            request.SourceDemandReference);
+        var workOrder = WorkOrder.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Number,
+            request.SkuId,
+            request.ProductionVersionId,
+            request.PlannedQuantity,
+            ConvertedPlanPriority,
+            request.DueUtc,
+            request.UomCode,
+            sourceReference);
+        dbContext.WorkOrders.Add(workOrder);
+
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId))
+        {
+            var baselinePlan = scheduler.Schedule(
+                await GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
+                await GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Number,
+                $"{allocation.Number}-OP-10",
+                OperationTaskLifecycleStatus.Queued,
+                10,
+                request.WorkCenterId.Trim(),
+                [],
+                request.RequestedAtUtc,
+                TimeSpan.FromMinutes(30),
+                null,
+                null));
+            var plan = scheduler.Schedule(
+                await GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
+                await GetUnavailabilitiesAsync(request.OrganizationId, request.EnvironmentId, cancellationToken));
+            await AddScheduleResultAsync(RescheduleTrigger.Manual, request.RequestedAtUtc, plan, baselinePlan.Assignments, cancellationToken);
+        }
 
         return new MesAcceptedResponse("Accepted", allocation.Number, request.RequestedAtUtc);
+    }
+
+    private async Task<IReadOnlyCollection<ScheduleOperation>> GetScheduleOperationsAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var persistedWorkOrders = await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .ToListAsync(cancellationToken);
+        var persistedWorkOrderIds = persistedWorkOrders.Select(x => x.Id).ToHashSet();
+        var workOrders = persistedWorkOrders
+            .Concat(dbContext.WorkOrders.Local.Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                !persistedWorkOrderIds.Contains(x.Id)))
+            .GroupBy(x => x.WorkOrderIdValue, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.Last(), StringComparer.OrdinalIgnoreCase);
+
+        var workOrderIds = workOrders.Keys.ToArray();
+        var persistedOperationTasks = await dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                workOrderIds.Contains(x.WorkOrderId))
+            .ToListAsync(cancellationToken);
+        var persistedOperationTaskIds = persistedOperationTasks.Select(x => x.Id).ToHashSet();
+        var operationTasks = persistedOperationTasks
+            .Concat(dbContext.OperationTasks.Local.Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                workOrders.ContainsKey(x.WorkOrderId) &&
+                !persistedOperationTaskIds.Contains(x.Id)))
+            .ToList();
+
+        return operationTasks.Select(x =>
+        {
+            var workOrder = workOrders[x.WorkOrderId];
+            return new ScheduleOperation(
+                x.WorkOrderId,
+                x.OperationTaskIdValue,
+                ToWebStatus(x.Status),
+                x.OperationSequence,
+                workOrder.Priority,
+                workOrder.DueUtc,
+                x.EarliestStartUtc,
+                x.Duration,
+                x.WorkCenterId,
+                x.AlternativeWorkCenterIdList,
+                x.ExistingStartUtc,
+                x.ExistingEndUtc);
+        }).ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var persisted = await dbContext.WorkCenterUnavailabilities
+            .AsNoTracking()
+            .Where(x =>
+                (x.OrganizationId == null || x.OrganizationId == organizationId) &&
+                (x.EnvironmentId == null || x.EnvironmentId == environmentId))
+            .OrderBy(x => x.FromUtc)
+            .ToListAsync(cancellationToken);
+        var persistedIds = persisted.Select(x => x.Id).ToHashSet();
+        return persisted
+            .Concat(dbContext.WorkCenterUnavailabilities.Local.Where(x =>
+                IsInScope(x, organizationId, environmentId) &&
+                !persistedIds.Contains(x.Id)))
+            .Select(x => new WorkCenterUnavailability(
+                x.WorkCenterId,
+                x.FromUtc,
+                x.ToUtc,
+                x.Reason,
+                x.DeviceAssetId,
+                x.OrganizationId,
+                x.EnvironmentId))
+            .ToArray();
+    }
+
+    private async Task AddScheduleResultAsync(
+        RescheduleTrigger trigger,
+        DateTimeOffset scheduledAtUtc,
+        RuleSchedulePlan plan,
+        IReadOnlyCollection<ScheduledOperation> compareAssignments,
+        CancellationToken cancellationToken)
+    {
+        var version = await dbContext.ScheduleResults.CountAsync(cancellationToken) + 1;
+        var affectedWorkOrderIds = FindAffectedWorkOrders(plan, compareAssignments);
+        dbContext.ScheduleResults.Add(DomainScheduleResult.Create(
+            version,
+            Enum.Parse<DomainScheduleTrigger>(trigger.ToString()),
+            scheduledAtUtc,
+            plan.Assignments.Select(x => new DomainScheduledOperationSnapshot(
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.WorkCenterId,
+                x.StartUtc,
+                x.EndUtc,
+                x.Reason)).ToArray(),
+            affectedWorkOrderIds));
+    }
+
+    private static IReadOnlyCollection<string> FindAffectedWorkOrders(
+        RuleSchedulePlan plan,
+        IReadOnlyCollection<ScheduledOperation> compareAssignments)
+    {
+        var previousByTask = compareAssignments.ToDictionary(x => x.OperationTaskId, StringComparer.OrdinalIgnoreCase);
+        return plan.Assignments
+            .Where(x => previousByTask.TryGetValue(x.OperationTaskId, out var prior) && x.StartUtc > prior.StartUtc)
+            .Select(x => x.WorkOrderId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static OperationTaskStatus ToWebStatus(OperationTaskLifecycleStatus status) =>
+        Enum.Parse<OperationTaskStatus>(status.ToString());
+
+    private static bool IsInScope(DomainWorkCenterUnavailability unavailability, string organizationId, string environmentId)
+    {
+        var organizationMatches = unavailability.OrganizationId is null
+            || string.Equals(unavailability.OrganizationId, organizationId, StringComparison.Ordinal);
+        var environmentMatches = unavailability.EnvironmentId is null
+            || string.Equals(unavailability.EnvironmentId, environmentId, StringComparison.Ordinal);
+        return organizationMatches && environmentMatches;
     }
 }
 
@@ -617,7 +872,7 @@ public sealed class RecordDowntimeEventCommandHandler(ApplicationDbContext dbCon
             return new MesAcceptedResponse("Accepted", allocation.Number, request.FromUtc);
         }
 
-        var downtime = WorkCenterUnavailability.Open(
+        var downtime = DomainWorkCenterUnavailability.Open(
             request.OrganizationId,
             request.EnvironmentId,
             allocation.Number,

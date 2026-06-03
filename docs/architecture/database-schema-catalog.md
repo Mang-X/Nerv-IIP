@@ -167,10 +167,11 @@ Source:
 6. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260527073156_AddNumberingCounters.cs`
 7. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260530095053_AddMesMaterialSupplyFacts.cs`
 8. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260530115744_AddMesDispatchAssignmentFacts.cs`
+9. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260603090745_AddMesDemandPlanningSourcePlanReference.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
-| `work_orders` | business | MES 持久化工单事实，记录 SKU、生产版本引用、计划数量、优先级、交期和执行状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + work_order_id` 是业务唯一键；`production_version_id` 是 ProductEngineering 业务引用。 | 唯一约束保护同一组织/环境内工单号；SKU/交期索引用于排产扫描。 | 工单创建后进入 MES 执行生命周期，历史保留用于报工、入库请求和成本追踪。 |
+| `work_orders` | business | MES 持久化工单事实，记录 SKU、生产版本引用、计划数量、单位、优先级、交期、执行状态，以及从 DemandPlanning 或等价来源计划转单时复制的 durable source plan reference。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + work_order_id` 是业务唯一键；`production_version_id` 是 ProductEngineering 业务引用；`uom_code` 为来源计划单位快照；`source_system + source_document_type + source_document_id + source_demand_reference` 是跨服务来源计划/需求回溯引用，不建立跨 schema FK。 | 唯一约束保护同一组织/环境内工单号；SKU/交期索引用于排产扫描；`source_system + source_document_id` 索引用于从来源计划回查已转 MES 工单。 | 工单创建后进入 MES 执行生命周期，历史保留用于报工、入库请求、成本追踪和需求/MRP/MES 计划来源追溯。 |
 | `operation_tasks` | business | MES 工序任务事实，保存工序顺序、工作中心、可选工作中心、持续时间、执行窗口和派工班次/人员/设备事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + operation_task_id` 是业务唯一键；`assigned_user_id`、`device_asset_id`、`shift_id` 和 `assigned_at_utc` 记录当前派工事实。 | 工单/工序顺序索引用于按工单加载工序；外键索引用于报工与工单追踪。 | 随工单创建或执行调整保留；状态表达排产、派工和执行进度。 |
 | `production_reports` | business | MES 报工事实，记录工单/工序的良品数、报废数、完工标记和报工时间。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + report_no` 是报工业务号唯一键；`work_order_id` 与 `operation_task_id` 为 MES 业务引用。 | 报工号唯一索引用于重试和追踪；工单/工序/时间索引用于执行时间线查询。 | 报工创建后作为执行历史保留，不直接修改 Inventory、Quality 或 ERP 事实。 |
 | `production_report_material_consumptions` | business | MES 报工引用的实际物料批次消耗事实，用于工单、报工和物料批次追溯。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + report_no` 指向报工号；记录 `material_id`、`material_lot_id`、消耗数量和线边领料申请号。 | 物料批次索引用于按批次追溯；工单索引用于工单谱系；报工/物料/批次唯一索引用于报工明细加载和重复写入兜底。 | 随报工写入，作为执行追溯历史保留；不拥有 Inventory 批次余额。 |
@@ -191,6 +192,7 @@ Source:
 Known gaps:
 
 1. MES 当前已有物料需求快照、领料/线边接收和报工消耗批次追溯事实；仍需后续把 released MBOM、Inventory/WMS 作业状态、Quality hold 和 ERP/采购到货通过正式 adapter/event 持续刷新这些执行快照。
+2. MES durable source plan reference 只保存来源计划/需求的稳定业务标识和快照字段；DemandPlanning 仍拥有需求来源、MRP run、pegging 和计划建议事实，MES 不读取 `demand_planning` schema，也不对来源表建外键。
 
 ## BusinessDemandPlanning Schema
 

@@ -4,8 +4,10 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
@@ -271,6 +273,138 @@ public sealed class MesEndpointContractTests
         Assert.Equal(1m, wipRow.ScrapQuantity);
         Assert.Equal("Ready", material.ReadinessStatus);
         Assert.Empty(material.Items);
+    }
+
+    [Fact]
+    public async Task Convert_plan_to_work_order_persists_demand_planning_source_reference_for_queries_and_traceability()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var requestedAtUtc = DateTimeOffset.Parse("2026-06-01T08:00:00Z");
+
+        var response = await new ConvertPlanToWorkOrderCommandHandler(dbContext).Handle(
+            new ConvertPlanToWorkOrderCommand(
+                "org-001",
+                "env-dev",
+                "SUG-001",
+                "WO-DP-001",
+                requestedAtUtc,
+                "SKU-FG-1000",
+                "PV-001",
+                12m,
+                "PCS",
+                requestedAtUtc.AddDays(2),
+                "WC-MIX-01",
+                "DemandPlanning",
+                "PlanningSuggestion",
+                "SUG-001",
+                "DEMAND-001",
+                "convert-dp-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var workOrder = await dbContext.WorkOrders.AsNoTracking().SingleAsync(CancellationToken.None);
+        Assert.Equal("WO-DP-001", response.ReferenceId);
+        Assert.NotNull(workOrder.SourcePlanReference);
+        Assert.Equal("DemandPlanning", workOrder.SourcePlanReference.SourceSystem);
+        Assert.Equal("PlanningSuggestion", workOrder.SourcePlanReference.SourceDocumentType);
+        Assert.Equal("SUG-001", workOrder.SourcePlanReference.SourceDocumentId);
+        Assert.Equal("DEMAND-001", workOrder.SourcePlanReference.SourceDemandReference);
+
+        var plans = await new ListProductionPlansQueryHandler(dbContext).Handle(
+            new ListProductionPlansQuery("org-001", "env-dev", null, 100),
+            CancellationToken.None);
+        var plan = Assert.Single(plans.Items);
+        Assert.Equal("SUG-001", plan.ProductionPlanId);
+        Assert.Equal("DemandPlanning", plan.SourceSystem);
+        Assert.Equal("PlanningSuggestion", plan.SourceDocumentType);
+        Assert.Equal("SUG-001", plan.SourceDocumentId);
+        Assert.Equal("DEMAND-001", plan.SourceDemandReference);
+        Assert.Equal("created", plan.Status);
+
+        var detail = await new GetMesWorkOrderDetailQueryHandler(dbContext).Handle(
+            new GetMesWorkOrderDetailQuery("org-001", "env-dev", "WO-DP-001"),
+            CancellationToken.None);
+        Assert.Equal("DemandPlanning", detail.SourcePlanReference?.SourceSystem);
+        Assert.Equal("SUG-001", detail.SourcePlanReference?.SourceDocumentId);
+        Assert.Equal("DEMAND-001", detail.SourcePlanReference?.SourceDemandReference);
+
+        var traceability = await new GetWorkOrderTraceabilityQueryHandler(dbContext).Handle(
+            new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-DP-001"),
+            CancellationToken.None);
+        Assert.Contains(traceability.Nodes, x => x.NodeId == "SUG-001" && x.NodeType == "PlanningSuggestion");
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "SUG-001" && x.ToNodeId == "WO-DP-001" && x.RelationType == "converted-to-work-order");
+    }
+
+    [Fact]
+    public async Task Production_plan_query_filters_status_before_take_and_uses_work_order_status()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var dueUtc = DateTimeOffset.Parse("2026-06-01T08:00:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-CREATED-001",
+            "SKU-001",
+            "PV-001",
+            1m,
+            10,
+            dueUtc,
+            "PCS",
+            new SourcePlanReference("DemandPlanning", "PlanningSuggestion", "SUG-CREATED-001", null)));
+        var released = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-RELEASED-001",
+            "SKU-002",
+            "PV-002",
+            1m,
+            10,
+            dueUtc.AddMinutes(1),
+            "PCS",
+            new SourcePlanReference("DemandPlanning", "PlanningSuggestion", "SUG-RELEASED-001", null));
+        released.Release(
+            dueUtc,
+            [
+                new RoutingStepSnapshot("OP-10", 10, "WC-01", [], TimeSpan.FromMinutes(30)),
+            ]);
+        dbContext.WorkOrders.Add(released);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var plans = await new ListProductionPlansQueryHandler(dbContext).Handle(
+            new ListProductionPlansQuery("org-001", "env-dev", "released", 1),
+            CancellationToken.None);
+
+        var plan = Assert.Single(plans.Items);
+        Assert.Equal("SUG-RELEASED-001", plan.ProductionPlanId);
+        Assert.Equal("released", plan.Status);
+    }
+
+    [Fact]
+    public async Task Convert_plan_endpoint_rejects_missing_due_utc_instead_of_defaulting_to_now()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/mes/production-plans/SUG-001/work-orders", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skuId = "SKU-FG-1000",
+            productionVersionId = "PV-001",
+            plannedQuantity = 12m,
+            uomCode = "PCS",
+            workCenterId = "WC-MIX-01",
+            requestedAtUtc = "2026-06-01T08:00:00Z",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Theory]

@@ -12,6 +12,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
 
@@ -122,6 +123,54 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
         Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "released", 15), mes.LastWorkOrderListRequest);
+    }
+
+    [Fact]
+    public async Task Mes_production_plan_facade_passes_through_demand_planning_source_reference_fields()
+    {
+        var mes = new RecordingMesClient
+        {
+            ProductionPlans =
+            [
+                new BusinessConsoleMesProductionPlanRow(
+                    "SUG-001",
+                    "DemandPlanning",
+                    "PlanningSuggestion",
+                    "SUG-001",
+                    "DEMAND-001",
+                    "SKU-FG-1000",
+                    12m,
+                    "PCS",
+                    "Converted",
+                    "Ready",
+                    [],
+                    DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
+                    DateTimeOffset.Parse("2026-06-03T08:00:00Z")),
+            ],
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/production-plans?organizationId=org-001&environmentId=env-dev&status=Converted&take=15");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "Converted", 15), mes.LastProductionPlanListRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var plan = document.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("DemandPlanning", plan.GetProperty("sourceSystem").GetString());
+        Assert.Equal("PlanningSuggestion", plan.GetProperty("sourceDocumentType").GetString());
+        Assert.Equal("SUG-001", plan.GetProperty("sourceDocumentId").GetString());
+        Assert.Equal("DEMAND-001", plan.GetProperty("sourceDemandReference").GetString());
+        Assert.Equal("PCS", plan.GetProperty("uomCode").GetString());
+        Assert.Equal("Converted", plan.GetProperty("status").GetString());
     }
 
     [Fact]
@@ -1048,6 +1097,93 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Notification_http_client_sends_scope_headers_and_only_supported_message_query_parameters()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        messageId = "message-http-001",
+                        intentId = "intent-http-001",
+                        recipientRef = "user-admin",
+                        status = "unread",
+                        severity = "warning",
+                        title = "Message",
+                        body = "Message body",
+                        resource = (object?)null,
+                        createdAtUtc = "2026-06-03T01:00:00Z",
+                        readAtUtc = (string?)null,
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://notification.local") };
+        var client = new HttpBusinessNotificationClient(httpClient);
+
+        var response = await client.ListMessagesAsync(
+            "internal-token-001",
+            new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user-admin", "unread", 25),
+            CancellationToken.None);
+
+        Assert.Equal("message-http-001", response.Items.Single().MessageId);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/notifications/v1/messages?recipientRef=user-admin&status=unread", request.RequestUri!.PathAndQuery);
+        Assert.Equal("org-001", request.Headers.GetValues("X-Organization-Id").Single());
+        Assert.Equal("env-dev", request.Headers.GetValues("X-Environment-Id").Single());
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Notification_http_client_sends_scope_headers_and_only_supported_task_query_parameters()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        taskId = "task-http-001",
+                        messageId = "message-http-001",
+                        recipientRef = "user-admin",
+                        taskType = "approve",
+                        status = "open",
+                        actionRef = "APP-001",
+                        createdAtUtc = "2026-06-03T02:00:00Z",
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://notification.local") };
+        var client = new HttpBusinessNotificationClient(httpClient);
+
+        var response = await client.ListTasksAsync(
+            "internal-token-001",
+            new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user-admin", "open", 25),
+            CancellationToken.None);
+
+        Assert.Equal("task-http-001", response.Items.Single().TaskId);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/notifications/v1/tasks?recipientRef=user-admin&status=open", request.RequestUri!.PathAndQuery);
+        Assert.Equal("org-001", request.Headers.GetValues("X-Organization-Id").Single());
+        Assert.Equal("env-dev", request.Headers.GetValues("X-Environment-Id").Single());
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
     public async Task Inventory_http_client_sends_internal_bearer_token_and_builds_downstream_query()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
@@ -1832,6 +1968,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsoleListResourcesRequest? LastListResourcesRequest { get; private set; }
 
+    public IReadOnlyCollection<BusinessConsoleResourceItem>? Resources { get; init; }
+
     public BusinessServiceProxyException? Failure { get; init; }
 
     public Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
@@ -1847,11 +1985,15 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             throw Failure;
         }
 
-        return Task.FromResult(new BusinessConsoleResourceListResponse(
+        var resources = Resources ??
             [
                 new BusinessConsoleResourceItem("sku", "SKU-001", "Demo SKU", true, "v1"),
-            ],
-            1));
+            ];
+        resources = resources
+            .Where(resource => string.Equals(resource.ResourceType, request.ResourceType, StringComparison.Ordinal))
+            .Take(request.Take)
+            .ToArray();
+        return Task.FromResult(new BusinessConsoleResourceListResponse(resources, resources.Count));
     }
 
     public Task<BusinessConsoleResourceItem> CreateSkuAsync(
@@ -2434,6 +2576,14 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Exception? StartOperationFailure { get; init; }
 
+    public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; init; }
+
+    public IReadOnlyCollection<BusinessConsoleMesProductionPlanRow>? ProductionPlans { get; init; }
+
+    public BusinessConsoleMesListRequest? LastProductionPlanListRequest { get; private set; }
+
+    public BusinessConsoleMesConvertPlanToWorkOrderRequest? LastConvertPlanToWorkOrderRequest { get; private set; }
+
     public Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
         string internalBearerToken,
         string areaCode,
@@ -2461,8 +2611,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public Task<BusinessConsoleMesProductionPlanListResponse> ListProductionPlansAsync(
         string internalBearerToken,
         BusinessConsoleMesListRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProductionPlanListRequest = request;
+        return Task.FromResult(new BusinessConsoleMesProductionPlanListResponse(ProductionPlans ?? []));
+    }
 
     public Task<BusinessConsoleMesFoundationReadinessResponse> GetProductionPlanReadinessAsync(
         string internalBearerToken,
@@ -2483,8 +2637,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string productionPlanId,
         BusinessConsoleMesConvertPlanToWorkOrderRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastConvertPlanToWorkOrderRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
 
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
@@ -2495,6 +2653,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastInternalToken = internalBearerToken;
         LastWorkOrderListRequest = request;
         return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(
+            WorkOrders ??
             [
                 new BusinessConsoleMesWorkOrderItem(
                     "wo-001",

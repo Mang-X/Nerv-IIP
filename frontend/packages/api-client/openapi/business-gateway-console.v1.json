@@ -11,6 +11,76 @@
     }
   ],
   "paths": {
+    "/api/business-console/v1/workbench/summary": {
+      "get": {
+        "tags": [
+          "Business Console Workbench",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleWorkbenchSummary",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWorkbenchSummaryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/scheduling/plans/preview": {
       "post": {
         "tags": [
@@ -5317,6 +5387,291 @@
   },
   "components": {
     "schemas": {
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWorkbenchSummaryResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchSummaryResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchSummaryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "kpis": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchKpiItem"
+            }
+          },
+          "todos": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchTodoSummary"
+          },
+          "messages": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchMessageSummary"
+          },
+          "alerts": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchAlertSummary"
+          },
+          "sourceStatuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchSourceStatus"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchKpiItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchTodoSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchTodoItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchTodoItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "itemType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "referenceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "dueAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchMessageSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unread": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchMessageItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchMessageItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "resourceType": {
+            "type": "string",
+            "nullable": true
+          },
+          "resourceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchAlertSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "critical": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchAlertItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchAlertItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "alarmEventId": {
+            "type": "string"
+          },
+          "deviceAssetId": {
+            "type": "string"
+          },
+          "alarmCode": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "raisedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchSourceStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "permissionCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseData": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errorData": {
+            "type": "array",
+            "items": {}
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchSummaryRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "FastEndpointsErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "format": "int32",
+            "default": 400
+          },
+          "message": {
+            "type": "string",
+            "default": "One or more errors occurred!"
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
       "NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract": {
         "allOf": [
           {
@@ -5626,26 +5981,6 @@
                 "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleConflictReasonCodeContract"
               }
             ]
-          }
-        }
-      },
-      "NetCorePalExtensionsDtoResponseData": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "message": {
-            "type": "string"
-          },
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "errorData": {
-            "type": "array",
-            "items": {}
           }
         }
       },
@@ -6012,30 +6347,6 @@
           },
           "lockReasonCode": {
             "type": "string"
-          }
-        }
-      },
-      "FastEndpointsErrorResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "statusCode": {
-            "type": "integer",
-            "format": "int32",
-            "default": 400
-          },
-          "message": {
-            "type": "string",
-            "default": "One or more errors occurred!"
-          },
-          "errors": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
           }
         }
       },
@@ -7486,8 +7797,15 @@
           "sourceSystem": {
             "type": "string"
           },
+          "sourceDocumentType": {
+            "type": "string"
+          },
           "sourceDocumentId": {
             "type": "string"
+          },
+          "sourceDemandReference": {
+            "type": "string",
+            "nullable": true
           },
           "skuId": {
             "type": "string"
@@ -7495,6 +7813,12 @@
           "plannedQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           },
           "readinessStatus": {
             "type": "string"
@@ -7533,6 +7857,20 @@
             "type": "string",
             "nullable": true
           },
+          "skuId": {
+            "type": "string"
+          },
+          "productionVersionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "plannedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "uomCode": {
+            "type": "string"
+          },
           "workCenterId": {
             "type": "string",
             "nullable": true
@@ -7540,6 +7878,22 @@
           "dueUtc": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "sourceSystem": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceDocumentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceDocumentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceDemandReference": {
+            "type": "string",
             "nullable": true
           },
           "idempotencyKey": {
@@ -7717,6 +8071,14 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow"
             }
+          },
+          "sourcePlanReference": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference"
+              }
+            ]
           }
         }
       },
@@ -7764,6 +8126,25 @@
           },
           "qualityStatus": {
             "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceSystem": {
+            "type": "string"
+          },
+          "sourceDocumentType": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string"
+          },
+          "sourceDemandReference": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -9965,15 +10346,6 @@
       "NervIIPContractsEquipmentRuntimeEquipmentRuntimeSourceType": {
         "type": "string",
         "description": "",
-        "x-enumNames": [
-          "DeviceState",
-          "Alarm",
-          "Downtime",
-          "MaintenanceWindow",
-          "Inspection",
-          "StaleSource",
-          "ManualBlock"
-        ],
         "enum": [
           "device-state",
           "alarm",

@@ -43,6 +43,99 @@ public sealed record BusinessConsoleCreateSkuRequest(
     IReadOnlyCollection<string>? ComplianceTags,
     string? IdempotencyKey = null);
 
+public sealed record BusinessConsoleWorkbenchSummaryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Take = 20);
+
+public sealed record BusinessConsoleWorkbenchSummaryResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<BusinessConsoleWorkbenchKpiItem> Kpis,
+    BusinessConsoleWorkbenchTodoSummary Todos,
+    BusinessConsoleWorkbenchMessageSummary Messages,
+    BusinessConsoleWorkbenchAlertSummary Alerts,
+    IReadOnlyCollection<BusinessConsoleWorkbenchSourceStatus> SourceStatuses);
+
+public sealed record BusinessConsoleWorkbenchKpiItem(
+    string Key,
+    string Label,
+    int Value,
+    string Source,
+    string Status);
+
+public sealed record BusinessConsoleWorkbenchTodoSummary(
+    string Status,
+    int Total,
+    IReadOnlyCollection<BusinessConsoleWorkbenchTodoItem> Items);
+
+public sealed record BusinessConsoleWorkbenchTodoItem(
+    string Source,
+    string ItemId,
+    string ItemType,
+    string Status,
+    string? ReferenceId,
+    DateTimeOffset? DueAtUtc);
+
+public sealed record BusinessConsoleWorkbenchMessageSummary(
+    string Status,
+    int Total,
+    int Unread,
+    IReadOnlyCollection<BusinessConsoleWorkbenchMessageItem> Items);
+
+public sealed record BusinessConsoleWorkbenchMessageItem(
+    string MessageId,
+    string Status,
+    string Severity,
+    string? ResourceType,
+    string? ResourceId,
+    DateTimeOffset CreatedAtUtc);
+
+public sealed record BusinessConsoleWorkbenchAlertSummary(
+    string Status,
+    int Total,
+    int Critical,
+    IReadOnlyCollection<BusinessConsoleWorkbenchAlertItem> Items);
+
+public sealed record BusinessConsoleWorkbenchAlertItem(
+    string AlarmEventId,
+    string DeviceAssetId,
+    string AlarmCode,
+    string Severity,
+    DateTimeOffset RaisedAtUtc);
+
+public sealed record BusinessConsoleWorkbenchSourceStatus(
+    string Source,
+    string Status,
+    string? PermissionCode,
+    string? Reason);
+
+public sealed record BusinessConsoleApprovalTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorType,
+    string ActorRef);
+
+public sealed record BusinessConsoleApprovalTaskListResponse(
+    IReadOnlyCollection<BusinessConsoleApprovalTaskItem> Items);
+
+public sealed record BusinessConsoleApprovalTaskItem(
+    string ChainId,
+    int StepNo,
+    string StepName,
+    string SourceService,
+    string DocumentType,
+    string DocumentId,
+    string? DocumentLineId,
+    DateTimeOffset? DueAtUtc);
+
+public sealed record BusinessConsoleNotificationListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? RecipientRef,
+    string? Status,
+    int Take = 20);
+
 public sealed record BusinessConsoleInventoryAvailabilityRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -601,9 +694,13 @@ public sealed record BusinessConsoleMesProductionPlanListResponse(IReadOnlyColle
 public sealed record BusinessConsoleMesProductionPlanRow(
     string ProductionPlanId,
     string SourceSystem,
+    string SourceDocumentType,
     string SourceDocumentId,
+    string? SourceDemandReference,
     string SkuId,
     decimal PlannedQuantity,
+    string UomCode,
+    string Status,
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
     DateTimeOffset? PlannedStartUtc,
@@ -619,8 +716,16 @@ public sealed record BusinessConsoleMesConvertPlanToWorkOrderRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string? WorkOrderId,
+    string SkuId,
+    string? ProductionVersionId,
+    decimal PlannedQuantity,
+    string UomCode,
     string? WorkCenterId,
     DateTimeOffset? DueUtc,
+    string? SourceSystem = null,
+    string? SourceDocumentType = null,
+    string? SourceDocumentId = null,
+    string? SourceDemandReference = null,
     string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleMesWorkOrderDetailRequest(
@@ -636,7 +741,14 @@ public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     string Status,
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
-    IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> OperationTasks);
+    IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> OperationTasks,
+    BusinessConsoleMesSourcePlanReference? SourcePlanReference = null);
+
+public sealed record BusinessConsoleMesSourcePlanReference(
+    string SourceSystem,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string? SourceDemandReference);
 
 public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -143,15 +144,25 @@ public sealed class RushWorkOrderCommandTests
     [Fact]
     public async Task ConvertPlanToWorkOrderCommand_GeneratesWorkOrderAndReplaysIdempotentResult()
     {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var numbering = new MesNumberingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        var handler = new ConvertPlanToWorkOrderCommandHandler(numbering);
+        var handler = new ConvertPlanToWorkOrderCommandHandler(dbContext, numbering);
         var command = new ConvertPlanToWorkOrderCommand(
             "org-001",
             "env-dev",
             "PLAN-001",
             null,
             now,
+            "SKU-FG-1000",
+            "PV-001",
+            10m,
+            "PCS",
+            now.AddDays(2),
+            "WC-A",
+            IdempotencyKey:
             "convert-plan-001");
 
         var first = await handler.Handle(command, CancellationToken.None);
@@ -159,6 +170,52 @@ public sealed class RushWorkOrderCommandTests
 
         Assert.Equal(first.ReferenceId, second.ReferenceId);
         Assert.Matches("^WO-[0-9]{8}-[0-9]{6}$", first.ReferenceId);
+    }
+
+    [Fact]
+    public async Task ConvertPlanToWorkOrderCommand_SchedulesCreatedOperationAroundWorkCenterUnavailability()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var numbering = new MesNumberingService();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
+            "org-001",
+            "env-dev",
+            "UNAV-WC-A",
+            "WC-A",
+            now,
+            now.AddHours(2),
+            "maintenance",
+            "DEV-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ConvertPlanToWorkOrderCommandHandler(dbContext, numbering);
+
+        var response = await handler.Handle(
+            new ConvertPlanToWorkOrderCommand(
+                "org-001",
+                "env-dev",
+                "PLAN-001",
+                "WO-PLAN-001",
+                now,
+                "SKU-FG-1000",
+                "PV-001",
+                10m,
+                "PCS",
+                now.AddDays(2),
+                "WC-A",
+                IdempotencyKey: "convert-plan-schedule-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal("WO-PLAN-001", response.ReferenceId);
+        var schedule = await dbContext.ScheduleResults.AsNoTracking().SingleAsync(CancellationToken.None);
+        var assignment = Assert.Single(schedule.Assignments);
+        Assert.Equal("WO-PLAN-001", assignment.WorkOrderId);
+        Assert.Equal("WO-PLAN-001-OP-10", assignment.OperationTaskId);
+        Assert.Equal(now.AddHours(2), assignment.StartUtc);
     }
 
     [Fact]
