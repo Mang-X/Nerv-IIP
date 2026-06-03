@@ -74,9 +74,7 @@ public static class BusinessGatewayPermissions
     public const string ErpFinanceRead = "business.erp.finance.read";
     public const string ErpFinanceManage = "business.erp.finance.manage";
     public const string WmsReceiptsRead = "business.wms.receipts.read";
-    public const string WmsReceiptsManage = "business.wms.receipts.manage";
     public const string WmsShipmentsRead = "business.wms.shipments.read";
-    public const string WmsShipmentsManage = "business.wms.shipments.manage";
     public const string WmsAutomationManage = "business.wms.automation.manage";
     public const string ApprovalsRead = "business.approvals.read";
     public const string ApprovalsManage = "business.approvals.manage";

@@ -12,11 +12,13 @@ internal static class BusinessGatewayTestTokens
 
     public static string ValidAccessToken(
         string organizationId = "org-001",
-        string environmentId = "env-dev")
+        string environmentId = "env-dev",
+        bool includeOrganizationId = true,
+        bool includeEnvironmentId = true)
     {
         var now = DateTimeOffset.UtcNow;
         var header = Base64UrlEncode("""{"alg":"HS256","typ":"JWT"}"""u8.ToArray());
-        var payload = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
+        var claims = new Dictionary<string, object>
         {
             ["iss"] = Issuer,
             ["aud"] = Audience,
@@ -25,14 +27,23 @@ internal static class BusinessGatewayTestTokens
             ["principalType"] = "user",
             ["loginName"] = "admin",
             ["email"] = "admin@nerv.local",
-            ["organizationId"] = organizationId,
-            ["environmentId"] = environmentId,
             ["securityStamp"] = "security-stamp-001",
             ["permissionVersion"] = 7,
             ["iat"] = now.ToUnixTimeSeconds(),
             ["nbf"] = now.AddMinutes(-1).ToUnixTimeSeconds(),
             ["exp"] = now.AddMinutes(15).ToUnixTimeSeconds()
-        }));
+        };
+        if (includeOrganizationId)
+        {
+            claims["organizationId"] = organizationId;
+        }
+
+        if (includeEnvironmentId)
+        {
+            claims["environmentId"] = environmentId;
+        }
+
+        var payload = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(claims));
         var tokenWithoutSignature = $"{header}.{payload}";
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(SigningKey));
         var signature = Base64UrlEncode(hmac.ComputeHash(Encoding.ASCII.GetBytes(tokenWithoutSignature)));

@@ -49,6 +49,21 @@ public sealed class HttpGatewayFileStorageClient(
     HttpClient httpClient,
     IInternalServiceTokenProvider internalServiceToken) : IGatewayFileStorageClient
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static readonly HashSet<string> HopByHopResponseHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Connection",
+        "Content-Length",
+        "Keep-Alive",
+        "Proxy-Authenticate",
+        "Proxy-Authorization",
+        "TE",
+        "Trailer",
+        "Transfer-Encoding",
+        "Upgrade",
+    };
+
     public async Task<CreateUploadSessionResponse> CreateUploadSessionAsync(
         CreateUploadSessionRequest request,
         CancellationToken cancellationToken)
@@ -187,7 +202,13 @@ public sealed class HttpGatewayFileStorageClient(
         using var response = await SendAsync(contentFactory, method, requestUri, cancellationToken);
         try
         {
-            return await response.Content.ReadFromJsonAsync<T>(cancellationToken)
+            var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                throw GatewayAuthException.BadGateway("filestorage-empty-response");
+            }
+
+            return JsonSerializer.Deserialize<T>(payload, JsonOptions)
                 ?? throw GatewayAuthException.BadGateway("filestorage-empty-response");
         }
         catch (JsonException)
@@ -330,17 +351,35 @@ public sealed class HttpGatewayFileStorageClient(
 
     private static void CopyResponseHeaders(HttpResponseMessage sourceResponse, HttpResponse targetResponse)
     {
+        var connectionHeaderValues = sourceResponse.Headers.Connection
+            .SelectMany(value => value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         foreach (var header in sourceResponse.Headers)
         {
+            if (ShouldSkipResponseHeader(header.Key, connectionHeaderValues))
+            {
+                continue;
+            }
+
             targetResponse.Headers[header.Key] = header.Value.ToArray();
         }
 
         foreach (var header in sourceResponse.Content.Headers)
         {
+            if (ShouldSkipResponseHeader(header.Key, connectionHeaderValues))
+            {
+                continue;
+            }
+
             targetResponse.Headers[header.Key] = header.Value.ToArray();
         }
+    }
 
-        targetResponse.Headers.Remove("Content-Length");
+    private static bool ShouldSkipResponseHeader(string headerName, HashSet<string> connectionHeaderValues)
+    {
+        return HopByHopResponseHeaders.Contains(headerName)
+            || connectionHeaderValues.Contains(headerName);
     }
 
     private sealed record FileStorageErrorEnvelope(string? Message);

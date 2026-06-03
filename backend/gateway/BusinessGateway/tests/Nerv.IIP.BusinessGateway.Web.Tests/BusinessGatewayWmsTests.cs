@@ -47,6 +47,98 @@ public sealed class BusinessGatewayWmsTests
     }
 
     [Fact]
+    public async Task Inbound_orders_return_scope_required_inventory_context_when_inventory_scope_is_missing()
+    {
+        var wms = new RecordingWmsClient();
+        var inventory = new RecordingInventoryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, inventory.AvailabilityCallCount);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("scope-required", data.GetProperty("sourceStatus").GetString());
+        var context = data.GetProperty("inventoryContext");
+        Assert.Equal("scope-required", context.GetProperty("status").GetString());
+        Assert.Equal("sku-uom-site-required", context.GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public async Task Inbound_orders_return_forbidden_inventory_context_when_inventory_permission_is_denied()
+    {
+        var wms = new RecordingWmsClient();
+        var inventory = new RecordingInventoryClient();
+        await using var factory = CreateFactory(
+            FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.WmsReceiptsRead),
+            services =>
+            {
+                services.RemoveAll<IBusinessWmsClient>();
+                services.AddSingleton<IBusinessWmsClient>(wms);
+                services.RemoveAll<IBusinessInventoryClient>();
+                services.AddSingleton<IBusinessInventoryClient>(inventory);
+                services.RemoveAll<IInternalServiceTokenProvider>();
+                services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, inventory.AvailabilityCallCount);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var context = document.RootElement.GetProperty("data").GetProperty("inventoryContext");
+        Assert.Equal("forbidden", context.GetProperty("status").GetString());
+        Assert.Equal("forbidden", context.GetProperty("reason").GetString());
+    }
+
+    [Theory]
+    [InlineData("proxy")]
+    [InlineData("http")]
+    public async Task Inbound_orders_return_unavailable_inventory_context_when_inventory_source_fails(string failureKind)
+    {
+        var wms = new RecordingWmsClient();
+        var inventory = new RecordingInventoryClient
+        {
+            AvailabilityFailure = failureKind == "proxy"
+                ? BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadGateway, "inventory-unavailable")
+                : new HttpRequestException("connection refused"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, inventory.AvailabilityCallCount);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var context = document.RootElement.GetProperty("data").GetProperty("inventoryContext");
+        Assert.Equal("unavailable", context.GetProperty("status").GetString());
+        Assert.Equal(failureKind == "proxy" ? "downstream-request-failed" : "downstream-unavailable", context.GetProperty("reason").GetString());
+    }
+
+    [Fact]
     public async Task Outbound_orders_use_shipments_permission_and_internal_service_token()
     {
         var wms = new RecordingWmsClient();

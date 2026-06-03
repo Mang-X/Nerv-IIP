@@ -310,6 +310,8 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSearchResponse =
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchResponse = {
     query?: string;
     take?: number;
+    matchScope?: string;
+    matchScopeDescription?: string;
     results?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchResult>;
     sourceStatuses?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchSourceStatus>;
     typeStatuses?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchTypeStatus>;

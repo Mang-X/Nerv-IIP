@@ -13,6 +13,9 @@ public sealed class BusinessConsoleSearchService(
 {
     public const int DefaultTake = 20;
     public const int MaxTake = 50;
+    public const string SourceWindowMatchScope = "source-window";
+    public const string SourceWindowMatchScopeDescription =
+        "Matches are filtered within each connected source's first requested result window; unsupported sources are reported in typeStatuses.";
 
     private static readonly TimeSpan SourceTimeout = TimeSpan.FromMilliseconds(1500);
 
@@ -85,6 +88,8 @@ public sealed class BusinessConsoleSearchService(
         return new BusinessConsoleSearchResponse(
             query,
             take,
+            SourceWindowMatchScope,
+            SourceWindowMatchScopeDescription,
             orderedResults,
             sourceStatuses.Values.OrderBy(status => status.Source, StringComparer.Ordinal).ToArray(),
             typeStatuses.Values.OrderBy(status => status.ObjectType, StringComparer.Ordinal).ToArray());

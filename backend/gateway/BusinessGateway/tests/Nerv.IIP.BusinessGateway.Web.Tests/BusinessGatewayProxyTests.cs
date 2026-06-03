@@ -924,6 +924,37 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Maintenance_http_client_does_not_duplicate_source_alarm_as_related_alarm()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new[]
+            {
+                new
+                {
+                    workOrderId = "wo-maint-001",
+                    deviceAssetId = "DEV-PRESS-01",
+                    priority = "high",
+                    status = "Open",
+                    sourceAlarmId = "alarm-001",
+                    openedAtUtc = "2026-06-01T08:10:00Z",
+                },
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        var response = await client.ListWorkOrdersAsync(
+            "internal-token-001",
+            new BusinessConsoleMaintenanceContextRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal("alarm-001", item.SourceAlarmId);
+        Assert.Null(item.RelatedAlarmId);
+    }
+
+    [Fact]
     public async Task Scheduling_http_client_uses_scheduling_contract_enum_json()
     {
         var handler = new RecordingHandler(request =>
@@ -2105,6 +2136,8 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
 
     public BusinessConsoleInventoryAvailabilityRequest? LastAvailabilityRequest { get; private set; }
 
+    public Exception? AvailabilityFailure { get; init; }
+
     public Task<BusinessConsoleInventoryAvailabilityResponse> GetAvailabilityAsync(
         string internalBearerToken,
         BusinessConsoleInventoryAvailabilityRequest request,
@@ -2113,6 +2146,11 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
         AvailabilityCallCount++;
         LastInternalToken = internalBearerToken;
         LastAvailabilityRequest = request;
+        if (AvailabilityFailure is not null)
+        {
+            throw AvailabilityFailure;
+        }
+
         return Task.FromResult(new BusinessConsoleInventoryAvailabilityResponse(
             request.OrganizationId,
             request.EnvironmentId,

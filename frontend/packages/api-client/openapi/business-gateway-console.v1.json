@@ -9023,6 +9023,12 @@
             "type": "integer",
             "format": "int32"
           },
+          "matchScope": {
+            "type": "string"
+          },
+          "matchScopeDescription": {
+            "type": "string"
+          },
           "results": {
             "type": "array",
             "items": {

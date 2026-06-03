@@ -10,6 +10,8 @@ public sealed record BusinessConsoleSearchRequest(
 public sealed record BusinessConsoleSearchResponse(
     string Query,
     int Take,
+    string MatchScope,
+    string MatchScopeDescription,
     IReadOnlyCollection<BusinessConsoleSearchResult> Results,
     IReadOnlyCollection<BusinessConsoleSearchSourceStatus> SourceStatuses,
     IReadOnlyCollection<BusinessConsoleSearchTypeStatus> TypeStatuses);

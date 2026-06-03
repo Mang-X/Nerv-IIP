@@ -1829,7 +1829,7 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 workOrder.Priority,
                 workOrder.Status,
                 workOrder.SourceAlarmId,
-                workOrder.SourceAlarmId,
+                null,
                 workOrder.OpenedAtUtc)).ToArray());
     }
 

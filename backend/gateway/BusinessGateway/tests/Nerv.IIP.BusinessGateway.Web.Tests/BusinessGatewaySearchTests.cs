@@ -82,6 +82,8 @@ public sealed class BusinessGatewaySearchTests
 
         using var document = JsonDocument.Parse(body);
         var data = document.RootElement.GetProperty("data");
+        Assert.Equal("source-window", data.GetProperty("matchScope").GetString());
+        Assert.Contains("first requested result window", data.GetProperty("matchScopeDescription").GetString(), StringComparison.Ordinal);
         var result = Assert.Single(data.GetProperty("results").EnumerateArray());
         Assert.Equal("mesWorkOrder", result.GetProperty("objectType").GetString());
         Assert.Equal("WO-271-001", result.GetProperty("objectNumber").GetString());
@@ -137,6 +139,57 @@ public sealed class BusinessGatewaySearchTests
         Assert.Equal(3, data.GetProperty("results").EnumerateArray().Count());
         Assert.True(masterData.LastListResourcesRequest!.Take <= 50);
         Assert.True(mes.LastWorkOrderListRequest!.Take <= 50);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public async Task Business_console_search_returns_forbidden_when_authenticated_user_is_missing_scope_claims(
+        bool includeOrganizationId,
+        bool includeEnvironmentId)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new(
+            "Bearer",
+            BusinessGatewayTestTokens.ValidAccessToken(
+                includeOrganizationId: includeOrganizationId,
+                includeEnvironmentId: includeEnvironmentId));
+
+        var response = await client.GetAsync("/api/business-console/v1/search?q=SKU-001");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(403, document.RootElement.GetProperty("code").GetInt32());
+        Assert.Equal("Forbidden.", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Theory]
+    [InlineData("", 10, "q")]
+    [InlineData("   ", 10, "q")]
+    [InlineData("SKU-001", -1, "take")]
+    [InlineData("SKU-001", 51, "take")]
+    public async Task Business_console_search_returns_bad_request_on_invalid_request(
+        string query,
+        int take,
+        string expectedInvalidField)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/search?q={WebUtility.UrlEncode(query)}&take={take}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains(expectedInvalidField, body, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, auth.CallCount);
     }
 
     private static void AssertTypeStatus(JsonElement data, string objectType, string status)

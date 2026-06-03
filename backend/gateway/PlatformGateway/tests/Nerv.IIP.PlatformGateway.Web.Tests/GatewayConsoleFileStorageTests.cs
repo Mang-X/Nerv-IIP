@@ -176,6 +176,107 @@ public sealed class GatewayConsoleFileStorageTests
         Assert.Equal("internal-test-token", request.Authorization.Parameter);
     }
 
+    [Fact]
+    public async Task File_storage_http_client_rejects_absolute_transfer_urls()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new CreateUploadSessionResponse(
+                "upload-session-001",
+                "file-001",
+                "tus",
+                "tus",
+                DateTimeOffset.UtcNow.AddMinutes(15),
+                new TransferInstructions("https://files.example.test/direct/upload-session-001", new Dictionary<string, string>())))
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(
+            () => files.CreateUploadSessionAsync(CreateUploadSessionRequest(), CancellationToken.None));
+
+        Assert.Equal("filestorage-transfer-url-not-proxyable", exception.Reason);
+    }
+
+    [Theory]
+    [InlineData("", "filestorage-empty-response")]
+    [InlineData("{ not-valid-json", "filestorage-invalid-response")]
+    public async Task File_storage_http_client_maps_invalid_json_responses(string payload, string expectedReason)
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(payload)
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(
+            () => files.CreateUploadSessionAsync(CreateUploadSessionRequest(), CancellationToken.None));
+
+        Assert.Equal(expectedReason, exception.Reason);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, "filestorage-unexpected-status-400")]
+    [InlineData(HttpStatusCode.Unauthorized, "filestorage-unauthorized")]
+    [InlineData(HttpStatusCode.Forbidden, "filestorage-forbidden")]
+    [InlineData(HttpStatusCode.NotFound, "filestorage-unexpected-status-404")]
+    [InlineData(HttpStatusCode.Conflict, "filestorage-unexpected-status-409")]
+    [InlineData(HttpStatusCode.InternalServerError, "filestorage-unavailable")]
+    [InlineData(HttpStatusCode.BadGateway, "filestorage-unavailable")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "filestorage-unavailable")]
+    public async Task File_storage_http_client_maps_downstream_status_codes(
+        HttpStatusCode statusCode,
+        string expectedReason)
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(statusCode)
+        {
+            Content = new StringContent("downstream error")
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(
+            () => files.CreateUploadSessionAsync(CreateUploadSessionRequest(), CancellationToken.None));
+
+        Assert.Equal(expectedReason, exception.Reason);
+    }
+
+    [Fact]
+    public async Task File_storage_raw_proxy_filters_hop_by_hop_response_headers()
+    {
+        var handler = new RecordingHttpMessageHandler(_ =>
+        {
+            var downstream = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("hello")
+            };
+            downstream.Headers.TransferEncodingChunked = true;
+            downstream.Headers.Connection.Add("X-Private-Hop");
+            downstream.Headers.Add("Keep-Alive", "timeout=5");
+            downstream.Headers.Add("X-Private-Hop", "secret");
+            downstream.Headers.Add("X-Trace-Id", "trace-001");
+            return downstream;
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var context = new DefaultHttpContext();
+        await using var body = new MemoryStream();
+        context.Response.Body = body;
+
+        await files.ProxyDownloadGrantContentAsync("download-grant-001", context.Response, CancellationToken.None);
+
+        Assert.False(context.Response.Headers.ContainsKey("Transfer-Encoding"));
+        Assert.False(context.Response.Headers.ContainsKey("Connection"));
+        Assert.False(context.Response.Headers.ContainsKey("Keep-Alive"));
+        Assert.False(context.Response.Headers.ContainsKey("X-Private-Hop"));
+        Assert.False(context.Response.Headers.ContainsKey("Content-Length"));
+        Assert.Equal("trace-001", context.Response.Headers["X-Trace-Id"].Single());
+        body.Position = 0;
+        using var reader = new StreamReader(body);
+        Assert.Equal("hello", await reader.ReadToEndAsync());
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         FakeGatewayFileStorageClient files,
         FakeGatewayAuthorizationClient? auth = null)
