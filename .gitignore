@@ -1,4 +1,6 @@
-.agents/skills/
+.agents/skills/*
+!.agents/skills/impeccable
+!.agents/skills/impeccable/**
 .claude/skills/
 .github/skills/
 .opencode/skill/
