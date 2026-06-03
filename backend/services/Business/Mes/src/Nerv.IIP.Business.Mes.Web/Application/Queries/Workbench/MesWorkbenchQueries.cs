@@ -204,14 +204,23 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
 {
     public async Task<MesProductionPlanListResponse> Handle(ListProductionPlansQuery request, CancellationToken cancellationToken)
     {
-        var rows = await dbContext.WorkOrders
+        var query = dbContext.WorkOrders
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.SourcePlanReference != null)
+                x.SourcePlanReference != null);
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToLowerInvariant();
+            query = query.Where(x => x.Status == status);
+        }
+
+        var rows = await query
             .OrderBy(x => x.DueUtc)
             .ThenBy(x => x.WorkOrderIdValue)
+            .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new
             {
                 x.WorkOrderIdValue,
@@ -219,12 +228,12 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
                 x.Quantity,
                 x.UomCode,
                 x.DueUtc,
+                x.Status,
                 SourceSystem = x.SourcePlanReference!.SourceSystem,
                 SourceDocumentType = x.SourcePlanReference.SourceDocumentType,
                 SourceDocumentId = x.SourcePlanReference.SourceDocumentId,
                 x.SourcePlanReference.SourceDemandReference,
             })
-            .Take(Math.Clamp(request.Take, 1, 500))
             .ToArrayAsync(cancellationToken);
 
         var items = rows
@@ -236,13 +245,12 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
                 x.SourceDemandReference,
                 x.SkuId,
                 x.Quantity,
-                x.UomCode ?? "unknown",
+                x.UomCode ?? string.Empty,
                 null,
                 x.DueUtc,
-                "Converted",
+                x.Status,
                 "Ready",
                 []))
-            .Where(x => string.IsNullOrWhiteSpace(request.Status) || string.Equals(x.Status, request.Status, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         return new MesProductionPlanListResponse(items);
     }

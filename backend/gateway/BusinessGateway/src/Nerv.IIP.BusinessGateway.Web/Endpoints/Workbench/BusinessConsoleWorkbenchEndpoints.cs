@@ -52,9 +52,9 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
 
         await AddApprovalAsync(req, bearerToken, take, sourceStatuses, todos, ct);
         await AddNotificationAsync(req, bearerToken, take, sourceStatuses, messages, todos, ct);
-        await AddQualityAsync(req, bearerToken, take, sourceStatuses, kpis, ct);
+        await AddQualityAsync(req, bearerToken, MaxTake, sourceStatuses, kpis, ct);
         await AddIndustrialTelemetryAsync(req, bearerToken, sourceStatuses, alerts, ct);
-        await AddMesAsync(req, bearerToken, take, sourceStatuses, kpis, ct);
+        await AddMesAsync(req, bearerToken, MaxTake, sourceStatuses, kpis, ct);
 
         var response = new BusinessConsoleWorkbenchSummaryResponse(
             req.OrganizationId,

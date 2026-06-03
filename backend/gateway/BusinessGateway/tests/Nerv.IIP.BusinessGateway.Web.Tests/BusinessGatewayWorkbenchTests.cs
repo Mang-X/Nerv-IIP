@@ -114,12 +114,17 @@ public sealed class BusinessGatewayWorkbenchTests
     }
 
     [Fact]
-    public async Task Workbench_summary_uses_valid_take_values_without_runtime_truncation()
+    public async Task Workbench_summary_uses_maximum_source_take_for_kpi_counts()
     {
-        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesWorkOrdersRead);
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(
+            BusinessGatewayPermissions.QualityNcrRead,
+            BusinessGatewayPermissions.MesWorkOrdersRead);
+        var quality = new RecordingQualityClient();
         var mes = new RecordingMesClient();
         await using var factory = CreateFactory(auth, services =>
         {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
             services.RemoveAll<IInternalServiceTokenProvider>();
@@ -131,7 +136,8 @@ public sealed class BusinessGatewayWorkbenchTests
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev&take=75");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(75, mes.LastWorkOrderListRequest!.Take);
+        Assert.Equal(100, quality.LastNcrListRequest!.Take);
+        Assert.Equal(100, mes.LastWorkOrderListRequest!.Take);
     }
 
     [Fact]

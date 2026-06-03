@@ -1,4 +1,5 @@
 using FastEndpoints;
+using FluentValidation;
 using MediatR;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -130,6 +131,26 @@ public sealed record ConvertPlanToWorkOrderRequest(
     string? SourceDocumentId = null,
     string? SourceDemandReference = null,
     string? IdempotencyKey = null);
+
+public sealed class ConvertPlanToWorkOrderRequestValidator : Validator<ConvertPlanToWorkOrderRequest>
+{
+    public ConvertPlanToWorkOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ProductionPlanId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ProductionVersionId).MaximumLength(100);
+        RuleFor(x => x.PlannedQuantity).GreaterThan(0);
+        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.DueUtc).NotNull();
+        RuleFor(x => x.WorkCenterId).MaximumLength(100);
+        RuleFor(x => x.SourceSystem).MaximumLength(100);
+        RuleFor(x => x.SourceDocumentType).MaximumLength(100);
+        RuleFor(x => x.SourceDocumentId).MaximumLength(100);
+        RuleFor(x => x.SourceDemandReference).MaximumLength(100);
+    }
+}
 
 public sealed record ReleaseWorkOrderRequest(
     string OrganizationId,
@@ -371,7 +392,7 @@ public sealed class ConvertPlanToWorkOrderEndpoint(ISender sender, TimeProvider 
             req.ProductionVersionId,
             req.PlannedQuantity,
             req.UomCode,
-            req.DueUtc ?? req.RequestedAtUtc ?? timeProvider.GetUtcNow(),
+            req.DueUtc.GetValueOrDefault(),
             req.WorkCenterId,
             req.SourceSystem,
             req.SourceDocumentType,
