@@ -7,6 +7,10 @@ import { describe, expect, it } from 'vitest'
 // Add each page here as it is migrated in stage B — the rules below then prevent drift.
 const GOLD_STANDARD_PAGES = [
   'mes/operation-tasks.vue',
+  'mes/work-orders/index.vue',
+  'mes/dispatch.vue',
+  'mes/receipts.vue',
+  'mes/schedules.vue',
   'mes/wip.vue',
   'mes/capacity.vue',
   'mes/production-reports.vue',

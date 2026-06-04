@@ -248,19 +248,19 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 质量管理 | `/quality/ncrs` | 已落地 | NCR 列表、处置、关闭。 |
 | 制造执行 | `/mes` | 已落地（FE-8 金标准） | 生产驾驶舱：按 FE-4 原型重做（PageHeader + 指挥导航卡 + SectionCards + 现场阻塞 DataTable + 角色工作台/下一步建议）；token 色替换 raw palette。 |
 | 制造执行 | `/mes/plans` | 已落地（FE-7 金标准） | 按 FE-4 原型重做（PageHeader + SectionCards + Toolbar[来源/就绪筛选] + DataTable + 转工单 Dialog）；展示来源计划（sourceSystem/sourceDocumentId，#272 durable link 已随 #290 落地）并打通计划→工单转换（含阻塞原因提示）。前端已消费 source 字段，不再受限。 |
-| 制造执行 | `/mes/work-orders`、`/mes/work-orders/:workOrderId` | 已落地 | 工单列表、急单、释放、详情。详情不是常驻菜单项。 |
+| 制造执行 | `/mes/work-orders`、`/mes/work-orders/:workOrderId` | 已落地（FE-8 金标准） | 列表按 FE-4 原型重做（PageHeader + 来源条 + 派工分组卡 + SectionCards + Toolbar[状态/工作中心] + DataTable + 分页）；急单与生产报工改 Dialog（报工对象只读、上下文带入）；详情页改 PageHeader + SectionCards + 工序/用料 DataTable。详情不是常驻菜单项。 |
 | 制造执行 | `/mes/materials` | 已落地（FE-8 金标准） | 齐套与物料按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 分页）；领料从工单详情发起。Inventory/WMS 真实联动仍按 operational foundation reset 深化。 |
-| 制造执行 | `/mes/dispatch` | 已落地/受限 | 派工看板路由存在；长期应消费 APS/设备 readiness 结果。 |
+| 制造执行 | `/mes/dispatch` | 已落地（FE-8 金标准） | 派工看板按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 分页 + 阻塞原因可读化）；长期应消费 APS/设备 readiness 结果。 |
 | 制造执行 | `/mes/operation-tasks` | 已落地 | 工序执行任务列表与动作入口。 |
 | 制造执行 | `/mes/wip` | 已落地（FE-8 金标准） | 在制跟踪按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 分页）。 |
 | 制造执行 | `/mes/production-reports`、`/mes/reports` | 均已落地（FE-8 金标准） | 报工记录与完工汇总均按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable）；`/mes/production-reports` 含分页；新增报工从工单或工序上下文进入。 |
 | 制造执行 | `/mes/quality` | 已落地/受限 | MES 缺陷和关联 Quality 事项。 |
-| 制造执行 | `/mes/receipts` | 已落地 | 完工入库请求。 |
+| 制造执行 | `/mes/receipts` | 已落地（FE-8 金标准） | 完工入库按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 分页）；新增入库改 Dialog，工单/物料只读由工单详情或报工完成带出。 |
 | 制造执行 | `/mes/downtime` | 已落地（FE-8 金标准） | 设备与停机按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 分页）；IndustrialTelemetry/Maintenance 联动继续深化。 |
 | 制造执行 | `/mes/handovers` | 已落地（FE-8 金标准） | 班次交接按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 分页）。 |
 | 制造执行 | `/mes/traceability` | 已落地（FE-8 金标准） | 追溯查询：按 FE-4 原型重做（PageHeader + SectionCards + Toolbar[查询类型/工单/批次] + DataTable）。 |
 | 制造执行 | `/mes/capacity` | 已落地（FE-8 金标准） | 产能影响按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 分页）。 |
-| 制造执行 | `/mes/schedules` | 过渡 | MES 规则排程入口；不是 APS 权威，也不包含甘特。 |
+| 制造执行 | `/mes/schedules` | 已落地（FE-8 金标准，过渡定位） | 规则排程按 FE-4 原型重做（PageHeader + SectionCards + 结果 DataTable + 分页 + 运行 Dialog）；不是 APS 权威，也不包含甘特。 |
 | 设备异常 | `/equipment` | 已落地/route-ready | 设备运行看板通过 BusinessGateway equipment facade 消费 backend runtime facts；页面不显示 organization/environment/debug/source metadata。 |
 | 设备异常 | `/equipment/alarms` | 已落地/route-ready | 设备报警列表通过 BusinessGateway equipment alarms facade 消费 IndustrialTelemetry 报警事实；页面只展示业务可读状态。 |
 | 设备异常 | `/equipment/:deviceAssetId` | 已落地/非菜单 | 设备详情由运行看板进入，不作为常驻菜单项；展示 current-state 与 availability 窗口。 |

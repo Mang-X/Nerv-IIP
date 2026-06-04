@@ -188,6 +188,25 @@ const uiStubs = {
     </template></div>`,
   },
   DataTablePagination: true,
+  Dialog: {
+    props: ['open'],
+    template: '<div><slot /></div>',
+  },
+  DialogContent: {
+    template: '<div><slot /></div>',
+  },
+  DialogHeader: {
+    template: '<div><slot /></div>',
+  },
+  DialogTitle: {
+    template: '<h2><slot /></h2>',
+  },
+  DialogDescription: {
+    template: '<p><slot /></p>',
+  },
+  DialogFooter: {
+    template: '<div><slot /></div>',
+  },
   RowActions: {
     props: ['label'],
     template: '<div><slot /></div>',
