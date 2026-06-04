@@ -54,16 +54,11 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
     }
 
-    [Fact]
+    [PostgreSqlFact]
     [Trait("Category", "cap-inmemory")]
     public async Task PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer()
     {
         var adminConnectionString = ReadPostgresConnectionString();
-        if (!await CanConnectPostgresAsync(adminConnectionString))
-        {
-            return;
-        }
-
         await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "mes_cap_inmemory");
         await using var factory = CreateFactory(database.ConnectionString);
         await MigrateAsync(factory);
@@ -210,31 +205,7 @@ public sealed class MesCapSubscriptionTests
 
     private static string ReadPostgresConnectionString()
     {
-        return Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")
-            ?? Environment.GetEnvironmentVariable("ConnectionStrings__BusinessMesDb")
-            ?? "Host=localhost;Port=15432;Database=nerv_iip_mes_test;Username=postgres;Password=postgres";
-    }
-
-    private static async Task<bool> CanConnectPostgresAsync(string connectionString)
-    {
-        try
-        {
-            await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
-            return true;
-        }
-        catch (NpgsqlException)
-        {
-            return false;
-        }
-        catch (TimeoutException)
-        {
-            return false;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
+        return MesPostgreSqlTestSettings.ReadConnectionString();
     }
 
     private sealed class DisposablePostgresDatabase : IAsyncDisposable
@@ -283,6 +254,65 @@ public sealed class MesCapSubscriptionTests
             await using var dropCommand = cleanupConnection.CreateCommand();
             dropCommand.CommandText = $"""DROP DATABASE IF EXISTS "{databaseName}";""";
             await dropCommand.ExecuteNonQueryAsync();
+        }
+    }
+}
+
+public sealed class PostgreSqlFactAttribute : FactAttribute
+{
+    public PostgreSqlFactAttribute()
+    {
+        var connectionString = MesPostgreSqlTestSettings.ReadConnectionString();
+        if (!MesPostgreSqlTestSettings.CanConnect(connectionString))
+        {
+            Skip = $"PostgreSQL unavailable for MES CAP acceptance test: {MesPostgreSqlTestSettings.Describe(connectionString)}";
+        }
+    }
+}
+
+internal static class MesPostgreSqlTestSettings
+{
+    public static string ReadConnectionString()
+    {
+        return Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")
+            ?? Environment.GetEnvironmentVariable("ConnectionStrings__BusinessMesDb")
+            ?? "Host=localhost;Port=15432;Database=nerv_iip_mes_test;Username=postgres;Password=postgres";
+    }
+
+    public static bool CanConnect(string connectionString)
+    {
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(connectionString);
+            builder.Timeout = Math.Min(builder.Timeout, 2);
+            using var connection = new NpgsqlConnection(builder.ConnectionString);
+            connection.Open();
+            return true;
+        }
+        catch (NpgsqlException)
+        {
+            return false;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    public static string Describe(string connectionString)
+    {
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(connectionString);
+            return $"Host={builder.Host};Port={builder.Port};Database={builder.Database}";
+        }
+        catch (ArgumentException)
+        {
+            return "connection string could not be parsed";
         }
     }
 }
