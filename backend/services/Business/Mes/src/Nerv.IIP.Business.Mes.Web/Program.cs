@@ -7,11 +7,13 @@ using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
+using Nerv.IIP.Business.Mes.Web;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 
 var builder = WebApplication.CreateBuilder(args);
+var isTesting = builder.Environment.IsEnvironment("Testing");
 
 builder.Services
     .AddFastEndpoints()
@@ -40,6 +42,7 @@ builder.Services.AddSingleton<RuleScheduler>();
 builder.Services.AddScoped<MesNumberingService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+builder.Services.AddMesCapIntegrationEvents(builder.Configuration, builder.Environment.EnvironmentName, isTesting);
 builder.Services.AddSingleton(new MesRescheduleOptions
 {
     AutoRescheduleOnAssetUnavailable = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetUnavailable", true),

@@ -5,6 +5,7 @@
 
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="DotNetCore.CAP" Version="10.0.1" />
     <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="10.0.1" />
     <PackageVersion Include="DotNetCore.CAP.PostgreSql" Version="10.0.1" />
     <PackageVersion Include="DotNetCore.CAP.RabbitMQ" Version="10.0.1" />
@@ -41,6 +42,7 @@
     <PackageVersion Include="NetCorePal.Extensions.Primitives" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.Repository.EntityFrameworkCore" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Extensions.Repository.EntityFrameworkCore.Snowflake" Version="3.3.0" />
+    <PackageVersion Include="Npgsql" Version="10.0.2" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />

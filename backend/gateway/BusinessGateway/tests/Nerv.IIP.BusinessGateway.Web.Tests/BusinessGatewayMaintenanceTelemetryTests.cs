@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -100,6 +101,104 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Maintenance_work_order_write_facade_uses_manage_permission_and_forwards_payloads()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var createResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/work-orders", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-PRESS-01",
+            priority = "high",
+            sourceAlarmId = "alarm-001",
+            openedBy = "operator-001",
+            assetUnavailableReason = "alarm-raised",
+        });
+        var completeResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            result = "restored",
+            downtimeReasonCode = "mechanical",
+            downtimeMinutes = 35,
+            spareParts = new[]
+            {
+                new { skuCode = "SPARE-001", quantity = 2m, uomCode = "EA" },
+            },
+        });
+
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
+        Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+        Assert.Equal("DEV-PRESS-01", maintenance.LastCreateWorkOrderRequest.GetProperty("deviceAssetId").GetString());
+        Assert.Equal("wo-maint-001", maintenance.LastCompleteWorkOrderId);
+        Assert.Equal("restored", maintenance.LastCompleteWorkOrderRequest.GetProperty("result").GetString());
+        Assert.Equal("SPARE-001", maintenance.LastCompleteWorkOrderRequest.GetProperty("spareParts")[0].GetProperty("skuCode").GetString());
+    }
+
+    [Fact]
+    public async Task Maintenance_plan_and_inspection_write_facades_use_plan_manage_permission_and_forward_payloads()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var planResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/plans", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-PRESS-01",
+            planCode = "PM-PRESS",
+            interval = "P7D",
+            startsOn = "2026-06-01",
+            owner = "maintenance",
+            windowStartUtc = "2026-06-01T08:00:00Z",
+            windowEndUtc = "2026-06-01T16:00:00Z",
+        });
+        var inspectionResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/inspections", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            planId = "plan-001",
+            workOrderId = "wo-maint-001",
+            inspector = "inspector-001",
+            result = "passed",
+            inspectedAtUtc = "2026-06-01T09:00:00Z",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, planResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, inspectionResponse.StatusCode);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansManage);
+        Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+        Assert.Equal("PM-PRESS", maintenance.LastCreatePlanRequest.GetProperty("planCode").GetString());
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            maintenance.LastCreatePlanRequest.GetProperty("windowStartUtc").GetDateTimeOffset());
+        Assert.Equal("plan-001", maintenance.LastRecordInspectionRequest.GetProperty("planId").GetString());
+        Assert.Equal("wo-maint-001", maintenance.LastRecordInspectionRequest.GetProperty("workOrderId").GetString());
+    }
+
+    [Fact]
     public async Task Telemetry_history_uses_iiot_permission_and_forwards_device_time_range()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -171,6 +270,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
 internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceClient
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     public string? LastInternalToken { get; private set; }
 
     public BusinessConsoleMaintenanceContextRequest? LastWorkOrderListRequest { get; private set; }
@@ -178,6 +279,38 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
     public string? LastWorkOrderDetailId { get; private set; }
 
     public BusinessConsoleEquipmentAvailabilityRequest? LastAvailabilityRequest { get; private set; }
+
+    public JsonElement LastCreateWorkOrderRequest { get; private set; }
+
+    public string? LastCompleteWorkOrderId { get; private set; }
+
+    public JsonElement LastCompleteWorkOrderRequest { get; private set; }
+
+    public JsonElement LastCreatePlanRequest { get; private set; }
+
+    public JsonElement LastRecordInspectionRequest { get; private set; }
+
+    public Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceWorkOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateWorkOrderRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
+        return Task.FromResult(new BusinessConsoleCreateMaintenanceWorkOrderResponse("wo-maint-created"));
+    }
+
+    public Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleCompleteMaintenanceWorkOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCompleteWorkOrderId = workOrderId;
+        LastCompleteWorkOrderRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
+        return Task.FromResult(new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true));
+    }
 
     public Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
@@ -230,6 +363,26 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
                 "weekly",
                 new DateOnly(2026, 6, 1)),
         ]));
+
+    public Task<BusinessConsoleCreateMaintenancePlanResponse> CreatePlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenancePlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreatePlanRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
+        return Task.FromResult(new BusinessConsoleCreateMaintenancePlanResponse("plan-created"));
+    }
+
+    public Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordMaintenanceInspectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastRecordInspectionRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
+        return Task.FromResult(new BusinessConsoleRecordMaintenanceInspectionResponse("inspection-created"));
+    }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetAvailabilityWindowsAsync(
         string internalBearerToken,
