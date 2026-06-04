@@ -301,7 +301,7 @@ public sealed class HttpGatewayFileStorageClient(
 
     private static TransferInstructions RewriteTransferInstructions(TransferInstructions instructions)
     {
-        if (Uri.TryCreate(instructions.Url, UriKind.Absolute, out _))
+        if (IsExternallyAddressedTransferUrl(instructions.Url))
         {
             throw GatewayAuthException.BadGateway("filestorage-transfer-url-not-proxyable");
         }
@@ -327,6 +327,19 @@ public sealed class HttpGatewayFileStorageClient(
         }
 
         return url;
+    }
+
+    private static bool IsExternallyAddressedTransferUrl(string url)
+    {
+        var trimmed = url.TrimStart();
+        if (trimmed.StartsWith("//", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var firstSeparator = trimmed.IndexOfAny(['/', '?', '#']);
+        var firstColon = trimmed.IndexOf(':');
+        return firstColon > 0 && (firstSeparator < 0 || firstColon < firstSeparator);
     }
 
     private static void CopyTusRequestHeaders(HttpRequest? sourceRequest, HttpRequestMessage targetRequest)

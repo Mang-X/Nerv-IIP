@@ -198,6 +198,28 @@ public sealed class GatewayConsoleFileStorageTests
         Assert.Equal("filestorage-transfer-url-not-proxyable", exception.Reason);
     }
 
+    [Fact]
+    public async Task File_storage_http_client_rejects_network_path_transfer_urls()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new CreateUploadSessionResponse(
+                "upload-session-001",
+                "file-001",
+                "tus",
+                "tus",
+                DateTimeOffset.UtcNow.AddMinutes(15),
+                new TransferInstructions("//files.example.test/direct/upload-session-001", new Dictionary<string, string>())))
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(
+            () => files.CreateUploadSessionAsync(CreateUploadSessionRequest(), CancellationToken.None));
+
+        Assert.Equal("filestorage-transfer-url-not-proxyable", exception.Reason);
+    }
+
     [Theory]
     [InlineData("", "filestorage-empty-response")]
     [InlineData("{ not-valid-json", "filestorage-invalid-response")]
