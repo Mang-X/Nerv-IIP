@@ -89,6 +89,39 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Product_engineering_write_facade_returns_forbidden_with_manage_permission_when_iam_denies()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        var engineering = new RecordingProductEngineeringClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/engineering/manufacturing-boms/release", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            bomCode = "MBOM-001",
+            revision = "A",
+            skuCode = "SKU-001",
+            engineeringBomCode = "EBOM-001",
+            engineeringBomRevision = "A",
+            effectiveDate = "2026-06-01",
+            materialLines = new[] { new { skuCode = "RM-001", quantity = 1, unitOfMeasureCode = "EA", scrapRate = 0 } },
+            recipeLines = Array.Empty<object>(),
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.EngineeringBomsManage, auth.LastRequirement!.PermissionCode);
+        Assert.Null(engineering.LastReleaseManufacturingBomRequest);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -129,7 +162,7 @@ public sealed class BusinessGatewayAuthorizationTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
         using var request = new HttpRequestMessage(method, $"{path}{(path.Contains('?') ? '&' : '?')}organizationId=org-001&environmentId=env-dev")
         {
-            Content = method == HttpMethod.Post
+            Content = method != HttpMethod.Get
                 ? JsonContent.Create(ValidPostBody(path))
                 : null
         };
@@ -165,6 +198,137 @@ public sealed class BusinessGatewayAuthorizationTests
             qualityRequired = true,
             complianceTags = Array.Empty<string>(),
         },
+        "/api/business-console/v1/master-data/business-partners" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "SUP-001",
+            partnerType = "supplier",
+            name = "Demo Supplier",
+        },
+        "/api/business-console/v1/master-data/units-of-measure" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "EA",
+            name = "Each",
+            dimensionType = "count",
+            precision = 0,
+            roundingMode = "half-up",
+        },
+        "/api/business-console/v1/master-data/uom-conversions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            fromUomCode = "BOX",
+            toUomCode = "EA",
+            factor = 12,
+            offset = 0,
+            precision = 6,
+            roundingMode = "half-up",
+            effectiveFrom = "2026-01-01",
+        },
+        "/api/business-console/v1/master-data/sites" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "SITE-01",
+            name = "Main Site",
+            timezone = "Asia/Shanghai",
+        },
+        "/api/business-console/v1/master-data/production-lines" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "LINE-01",
+            name = "Line 1",
+            siteCode = "SITE-01",
+        },
+        "/api/business-console/v1/master-data/work-centers" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "WC-01",
+            name = "Work Center 1",
+            capacityMinutesPerDay = 480,
+            resourceType = "line",
+            plantCode = "SITE-01",
+            lineCode = "LINE-01",
+            defaultCalendarCode = "CAL-01",
+            capacityUnit = "minute",
+            finiteCapacity = true,
+        },
+        "/api/business-console/v1/master-data/device-assets" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "DEV-01",
+            model = "Robot",
+            lineCode = "LINE-01",
+            workCenterCode = "WC-01",
+            assetClassCode = "robot",
+            manufacturer = "Demo Maker",
+            serialNo = "SN-001",
+            minimumCapacity = 1,
+            maximumCapacity = 10,
+            capacityUomCode = "EA",
+            criticality = "high",
+            maintainable = true,
+            telemetryEnabled = true,
+            externalReferences = new Dictionary<string, string> { ["iiot"] = "DEV-01" },
+        },
+        "/api/business-console/v1/master-data/shifts" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "SHIFT-A",
+            name = "Shift A",
+            startsAt = "08:00:00",
+            endsAt = "16:00:00",
+            paidMinutes = 480,
+        },
+        "/api/business-console/v1/master-data/work-calendars" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "CAL-01",
+            name = "Standard Calendar",
+        },
+        "/api/business-console/v1/master-data/teams" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "TEAM-A",
+            name = "Team A",
+            departmentCode = "DEP-01",
+            shiftCode = "SHIFT-A",
+        },
+        "/api/business-console/v1/master-data/departments" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "DEP-01",
+            name = "Production Department",
+            parentDepartmentCode = (string?)null,
+        },
+        "/api/business-console/v1/master-data/personnel-skills" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            userId = "user-001",
+            skillCode = "WELD",
+            level = "L2",
+            effectiveFrom = "2026-01-01",
+            effectiveTo = "2026-12-31",
+        },
+        "/api/business-console/v1/master-data/reference-data" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            codeSet = "asset-class",
+            code = "robot",
+            name = "Robot",
+        },
         "/api/business-console/v1/inventory/count-tasks/count-001/adjustments" => new
         {
             organizationId = "org-001",
@@ -191,6 +355,110 @@ public sealed class BusinessGatewayAuthorizationTests
             horizonStart = "2026-05-25",
             horizonEnd = "2026-06-30",
         },
+        "/api/business-console/v1/engineering/documents" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            documentNumber = "DOC-001",
+            revision = "A",
+            fileId = "file-001",
+            fileName = "design.dwg",
+            contentType = "application/dwg",
+            documentType = "cad",
+            idempotencyKey = "doc-001",
+        },
+        "/api/business-console/v1/engineering/items" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            itemCode = "ITEM-001",
+            revision = "A",
+            name = "Demo item",
+            release = true,
+            idempotencyKey = "item-001",
+        },
+        "/api/business-console/v1/engineering/engineering-boms/release" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            bomCode = "EBOM-001",
+            revision = "A",
+            parentItemCode = "ITEM-001",
+            effectiveDate = "2026-06-01",
+            lines = new[] { new { componentCode = "ITEM-002", quantity = 1, unitOfMeasureCode = "EA" } },
+            idempotencyKey = "ebom-001",
+        },
+        "/api/business-console/v1/engineering/manufacturing-boms/release" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            bomCode = "MBOM-001",
+            revision = "A",
+            skuCode = "SKU-001",
+            engineeringBomCode = "EBOM-001",
+            engineeringBomRevision = "A",
+            effectiveDate = "2026-06-01",
+            materialLines = new[] { new { skuCode = "RM-001", quantity = 1, unitOfMeasureCode = "EA", scrapRate = 0 } },
+            recipeLines = Array.Empty<object>(),
+            idempotencyKey = "mbom-001",
+        },
+        "/api/business-console/v1/engineering/routings/release" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            routingCode = "RTG-001",
+            revision = "A",
+            skuCode = "SKU-001",
+            effectiveDate = "2026-06-01",
+            operations = new[] { new { sequence = 10, workCenterCode = "WC-001", operationName = "Assemble", standardMinutes = 15 } },
+            idempotencyKey = "routing-001",
+        },
+        "/api/business-console/v1/engineering/engineering-changes/release" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            changeNumber = "ECO-001",
+            reason = "Initial release",
+            approvalReferenceId = "approval-001",
+            effectiveDate = "2026-06-01",
+            affectedVersions = new[] { new { versionKind = "mbom", versionId = "MBOM-001:A" } },
+            idempotencyKey = "eco-001",
+        },
+        "/api/business-console/v1/engineering/production-versions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skuCode = "SKU-001",
+            mbomVersionId = "MBOM-001:A",
+            routingVersionId = "RTG-001:A",
+            validFrom = "2026-06-01",
+            validTo = (string?)null,
+            lotSizeMin = 1,
+            lotSizeMax = 100,
+            priority = 10,
+            isDefault = true,
+        },
+        "/api/business-console/v1/engineering/production-versions/pv-001" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            productionVersionId = "pv-001",
+            mbomVersionId = "MBOM-001:B",
+            routingVersionId = "RTG-001:B",
+            validFrom = "2026-07-01",
+            validTo = (string?)null,
+            lotSizeMin = 1,
+            lotSizeMax = 100,
+            priority = 20,
+            isDefault = true,
+        },
+        "/api/business-console/v1/engineering/production-versions/pv-001/archive" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            productionVersionId = "pv-001",
+            reason = "Superseded",
+        },
         "/api/business-console/v1/scheduling/plans/preview" or "/api/business-console/v1/scheduling/plans" => new
         {
             problem = SchedulingProblemBody(),
@@ -215,6 +483,107 @@ public sealed class BusinessGatewayAuthorizationTests
             quantity = 10,
             requiredDate = "2026-06-10",
         },
+        "/api/business-console/v1/wms/inbound-orders" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            inboundOrderNo = "IN-001",
+            sourceDocumentType = "purchase-receipt",
+            sourceDocumentId = "PR-001",
+            siteCode = "S1",
+            lines = new[]
+            {
+                new
+                {
+                    lineNo = "10",
+                    skuCode = "SKU-001",
+                    uomCode = "EA",
+                    receivedQuantity = 1,
+                    stagingLocationCode = "STAGE-01",
+                    qualityStatus = "qualified",
+                    ownerType = "company",
+                },
+            },
+        },
+        "/api/business-console/v1/wms/inbound-orders/inbound-order-001/putaway-tasks" => new
+        {
+            taskNo = "PUT-001",
+            lineNo = "10",
+            fromLocationCode = "STAGE-01",
+            toLocationCode = "BIN-01",
+            quantity = 1,
+        },
+        "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete" => new
+        {
+            idempotencyKey = "complete-in-001",
+        },
+        "/api/business-console/v1/wms/outbound-orders" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            outboundOrderNo = "OUT-001",
+            sourceDocumentType = "sales-shipment",
+            sourceDocumentId = "SO-001",
+            siteCode = "S1",
+            lines = new[]
+            {
+                new
+                {
+                    lineNo = "10",
+                    skuCode = "SKU-001",
+                    uomCode = "EA",
+                    requestedQuantity = 1,
+                    pickLocationCode = "BIN-01",
+                    qualityStatus = "qualified",
+                    ownerType = "company",
+                },
+            },
+        },
+        "/api/business-console/v1/wms/outbound-orders/outbound-order-001/picking-tasks" => new
+        {
+            taskNo = "PICK-001",
+            lineNo = "10",
+            fromLocationCode = "BIN-01",
+            toLocationCode = "SHIP-01",
+            quantity = 1,
+        },
+        "/api/business-console/v1/wms/outbound-orders/outbound-order-001/complete" => new
+        {
+            packReviewNo = "PACK-001",
+            passed = true,
+            idempotencyKey = "complete-out-001",
+        },
+        "/api/business-console/v1/wms/count-executions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            countNo = "COUNT-001",
+            skuCode = "SKU-001",
+            uomCode = "EA",
+            siteCode = "S1",
+            locationCode = "BIN-01",
+            expectedQuantity = 1,
+        },
+        "/api/business-console/v1/wms/count-executions/count-execution-001/complete" => new
+        {
+            countedQuantity = 1,
+            idempotencyKey = "complete-count-001",
+        },
+        "/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch" => new
+        {
+            adapterType = "agv",
+            externalTaskId = "EXT-001",
+            payloadJson = "{}",
+        },
+        "/api/business-console/v1/wms/wcs-tasks/EXT-001/fail" => new
+        {
+            failureCode = "PLC_TIMEOUT",
+            failureMessage = "PLC did not acknowledge.",
+        },
+        "/api/business-console/v1/wms/wcs-tasks/EXT-001/complete" => new
+        {
+            completionPayloadJson = "{}",
+        },
         _ => new { organizationId = "org-001", environmentId = "env-dev" },
     };
 
@@ -224,6 +593,19 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/resources", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/skus", BusinessGatewayPermissions.MasterDataProductsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/skus", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/business-partners", BusinessGatewayPermissions.MasterDataPartnersManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/units-of-measure", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/uom-conversions", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/sites", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/production-lines", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/work-centers", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/device-assets", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/shifts", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/work-calendars", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/teams", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/departments", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/personnel-skills", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/reference-data", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/availability", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryMovementsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
@@ -233,9 +615,19 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/ncrs/ncr-001/disposition", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/ncrs/ncr-001/close", BusinessGatewayPermissions.QualityNcrManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/documents", BusinessGatewayPermissions.EngineeringDocumentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/items", BusinessGatewayPermissions.EngineeringItemsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-boms/release", BusinessGatewayPermissions.EngineeringBomsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/manufacturing-boms/release", BusinessGatewayPermissions.EngineeringBomsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings", BusinessGatewayPermissions.EngineeringRoutingsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/routings/release", BusinessGatewayPermissions.EngineeringRoutingsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/release", BusinessGatewayPermissions.EngineeringChangesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/engineering/production-versions/pv-001", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/production-versions/pv-001/archive", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions/resolve", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
@@ -296,8 +688,19 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/putaway-tasks", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/picking-tasks", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/complete", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions/count-execution-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/wcs-tasks", BusinessGatewayPermissions.WmsAutomationManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch", BusinessGatewayPermissions.WmsAutomationManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/wcs-tasks/EXT-001/fail", BusinessGatewayPermissions.WmsAutomationManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/wcs-tasks/EXT-001/complete", BusinessGatewayPermissions.WmsAutomationManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders", BusinessGatewayPermissions.MesWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/work-orders/rush", BusinessGatewayPermissions.MesWorkOrdersManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);

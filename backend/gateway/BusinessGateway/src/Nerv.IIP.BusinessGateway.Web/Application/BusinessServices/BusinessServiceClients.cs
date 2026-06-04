@@ -21,6 +21,71 @@ public interface IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsoleCreateSkuRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateBusinessPartnerAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateBusinessPartnerRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateUnitOfMeasureAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateUnitOfMeasureRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateUomConversionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateUomConversionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateSiteAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSiteRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateProductionLineAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateProductionLineRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateWorkCenterAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkCenterRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> RegisterDeviceAssetAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterDeviceAssetRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateShiftAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateShiftRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateWorkCalendarAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkCalendarRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateTeamAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateTeamRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateDepartmentAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateDepartmentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> AssignPersonnelSkillAsync(
+        string internalBearerToken,
+        BusinessConsoleAssignPersonnelSkillRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateReferenceDataCodeAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateReferenceDataCodeRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessInventoryClient
@@ -79,14 +144,49 @@ public interface IBusinessQualityClient
 
 public interface IBusinessProductEngineeringClient
 {
+    Task<BusinessConsoleEngineeringEntityResponse> RegisterEngineeringDocumentAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterEngineeringDocumentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringEntityResponse> CreateEngineeringItemRevisionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateEngineeringItemRevisionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringBomAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseEngineeringBomRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleEngineeringBomListResponse> ListEngineeringBomsAsync(
         string internalBearerToken,
         BusinessConsoleListEngineeringBomsRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
+        string internalBearerToken,
+        BusinessConsoleListManufacturingBomsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseManufacturingBomRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleRoutingListResponse> ListRoutingsAsync(
         string internalBearerToken,
         BusinessConsoleListRoutingsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseRoutingRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseEngineeringChangeRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleProductionVersionListResponse> ListProductionVersionsAsync(
@@ -97,6 +197,23 @@ public interface IBusinessProductEngineeringClient
     Task<BusinessConsoleResolveProductionVersionResponse> ResolveProductionVersionAsync(
         string internalBearerToken,
         BusinessConsoleResolveProductionVersionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCreateProductionVersionResponse> CreateProductionVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateProductionVersionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCreateProductionVersionResponse> UpdateProductionVersionAsync(
+        string internalBearerToken,
+        string productionVersionId,
+        BusinessConsoleUpdateProductionVersionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> ArchiveProductionVersionAsync(
+        string internalBearerToken,
+        string productionVersionId,
+        BusinessConsoleArchiveProductionVersionRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -356,6 +473,17 @@ public interface IBusinessIndustrialTelemetryClient
 
 public interface IBusinessMaintenanceClient
 {
+    Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceWorkOrderRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleCompleteMaintenanceWorkOrderRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
         BusinessConsoleMaintenanceContextRequest request,
@@ -370,6 +498,16 @@ public interface IBusinessMaintenanceClient
     Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
         BusinessConsoleMaintenanceContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCreateMaintenancePlanResponse> CreatePlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenancePlanRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordMaintenanceInspectionRequest request,
         CancellationToken cancellationToken);
 
     Task<EquipmentRuntimeAvailabilityResponse> GetAvailabilityWindowsAsync(
@@ -976,6 +1114,96 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             "/api/business/v1/master-data/skus",
             request,
             cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateBusinessPartnerAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateBusinessPartnerRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/partners", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateUnitOfMeasureAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateUnitOfMeasureRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/units-of-measure", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateUomConversionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateUomConversionRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/uom-conversions", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateSiteAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSiteRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/sites", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateProductionLineAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateProductionLineRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/production-lines", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateWorkCenterAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkCenterRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/work-centers", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> RegisterDeviceAssetAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterDeviceAssetRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/device-assets", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateShiftAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateShiftRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/shifts", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateWorkCalendarAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkCalendarRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/work-calendars", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateTeamAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateTeamRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/teams", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateDepartmentAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateDepartmentRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/departments", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> AssignPersonnelSkillAsync(
+        string internalBearerToken,
+        BusinessConsoleAssignPersonnelSkillRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/personnel-skills", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateReferenceDataCodeAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateReferenceDataCodeRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/reference-data", request, cancellationToken);
+
+    private Task<BusinessConsoleResourceItem> CreateResourceAsync(
+        string internalBearerToken,
+        string path,
+        object request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleResourceItem>(
+            internalBearerToken,
+            HttpMethod.Post,
+            path,
+            request,
+            cancellationToken);
 }
 
 public sealed class HttpBusinessInventoryClient(HttpClient httpClient)
@@ -1264,6 +1492,39 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
 public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessProductEngineeringClient
 {
+    public Task<BusinessConsoleEngineeringEntityResponse> RegisterEngineeringDocumentAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterEngineeringDocumentRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/documents",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringEntityResponse> CreateEngineeringItemRevisionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateEngineeringItemRevisionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/items",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringBomAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseEngineeringBomRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/engineering-boms/release",
+            request,
+            cancellationToken);
+
     public Task<BusinessConsoleEngineeringBomListResponse> ListEngineeringBomsAsync(
         string internalBearerToken,
         BusinessConsoleListEngineeringBomsRequest request,
@@ -1279,6 +1540,32 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
+        string internalBearerToken,
+        BusinessConsoleListManufacturingBomsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleManufacturingBomListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/manufacturing-boms?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("status", request.Status)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseManufacturingBomRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/manufacturing-boms/release",
+            request,
+            cancellationToken);
+
     public Task<BusinessConsoleRoutingListResponse> ListRoutingsAsync(
         string internalBearerToken,
         BusinessConsoleListRoutingsRequest request,
@@ -1292,6 +1579,28 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
                 ("skuCode", request.SkuCode),
                 ("status", request.Status)),
             null,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseRoutingRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/routings/release",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseEngineeringChangeRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/engineering-changes/release",
+            request,
             cancellationToken);
 
     public Task<BusinessConsoleProductionVersionListResponse> ListProductionVersionsAsync(
@@ -1324,6 +1633,46 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
                 ("lotSize", request.LotSize)),
             null,
             cancellationToken);
+
+    public Task<BusinessConsoleCreateProductionVersionResponse> CreateProductionVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateProductionVersionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCreateProductionVersionResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/production-versions",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleCreateProductionVersionResponse> UpdateProductionVersionAsync(
+        string internalBearerToken,
+        string productionVersionId,
+        BusinessConsoleUpdateProductionVersionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCreateProductionVersionResponse>(
+            internalBearerToken,
+            HttpMethod.Put,
+            $"/api/business/v1/engineering/production-versions/{Uri.EscapeDataString(productionVersionId)}",
+            request with { ProductionVersionId = productionVersionId },
+            cancellationToken);
+
+    public async Task<BusinessConsoleAcceptedResponse> ArchiveProductionVersionAsync(
+        string internalBearerToken,
+        string productionVersionId,
+        BusinessConsoleArchiveProductionVersionRequest request,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync<object>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/engineering/production-versions/{Uri.EscapeDataString(productionVersionId)}/archive",
+            new DownstreamArchiveProductionVersionRequest(productionVersionId, request.Reason),
+            cancellationToken);
+        return new BusinessConsoleAcceptedResponse(true);
+    }
+
+    private sealed record DownstreamArchiveProductionVersionRequest(string ProductionVersionId, string Reason);
 }
 
 public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
@@ -1811,6 +2160,40 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
 public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMaintenanceClient
 {
+    public async Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceWorkOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateMaintenanceWorkOrderResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/maintenance/work-orders",
+            request,
+            cancellationToken);
+        return new BusinessConsoleCreateMaintenanceWorkOrderResponse(FormatJsonScalar(response.WorkOrderId));
+    }
+
+    public async Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleCompleteMaintenanceWorkOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync<JsonElement>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/maintenance/work-orders/{Uri.EscapeDataString(workOrderId)}/complete",
+            new DownstreamCompleteMaintenanceWorkOrderRequest(
+                workOrderId,
+                request.Result,
+                request.DowntimeReasonCode,
+                request.DowntimeMinutes,
+                request.SpareParts),
+            cancellationToken);
+        return new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true);
+    }
+
     public async Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
         BusinessConsoleMaintenanceContextRequest request,
@@ -1864,6 +2247,34 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 plan.PlanCode,
                 plan.Interval,
                 plan.StartsOn)).ToArray());
+    }
+
+    public async Task<BusinessConsoleCreateMaintenancePlanResponse> CreatePlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenancePlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateMaintenancePlanResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/maintenance/plans",
+            request,
+            cancellationToken);
+        return new BusinessConsoleCreateMaintenancePlanResponse(FormatJsonScalar(response.PlanId));
+    }
+
+    public async Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordMaintenanceInspectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamRecordMaintenanceInspectionResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/maintenance/inspections",
+            request,
+            cancellationToken);
+        return new BusinessConsoleRecordMaintenanceInspectionResponse(FormatJsonScalar(response.InspectionId));
     }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetAvailabilityWindowsAsync(
@@ -1931,6 +2342,19 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string PlanCode,
         string Interval,
         DateOnly StartsOn);
+
+    private sealed record DownstreamCreateMaintenanceWorkOrderResponse(JsonElement WorkOrderId);
+
+    private sealed record DownstreamCompleteMaintenanceWorkOrderRequest(
+        string WorkOrderId,
+        string Result,
+        string DowntimeReasonCode,
+        int DowntimeMinutes,
+        IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput> SpareParts);
+
+    private sealed record DownstreamCreateMaintenancePlanResponse(JsonElement PlanId);
+
+    private sealed record DownstreamRecordMaintenanceInspectionResponse(JsonElement InspectionId);
 }
 
 public sealed class HttpBusinessErpClient(HttpClient httpClient)

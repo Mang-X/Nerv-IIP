@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -13,6 +14,261 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessGatewayWmsTests
 {
+    [Fact]
+    public async Task Wms_http_client_forwards_write_operations_to_backend_wms_paths()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            object data = path switch
+            {
+                "/api/business/v1/wms/inbound-orders" => new { inboundOrderId = "inbound-order-http" },
+                "/api/business/v1/wms/inbound-orders/inbound-order-001/putaway-tasks" => new { warehouseTaskId = "warehouse-task-http" },
+                "/api/business/v1/wms/inbound-orders/inbound-order-001/complete" => new { inventoryMovementId = "movement-in-http" },
+                "/api/business/v1/wms/outbound-orders" => new { outboundOrderId = "outbound-order-http" },
+                "/api/business/v1/wms/outbound-orders/outbound-order-001/picking-tasks" => new { warehouseTaskId = "warehouse-task-http" },
+                "/api/business/v1/wms/outbound-orders/outbound-order-001/complete" => new { inventoryMovementId = "movement-out-http" },
+                "/api/business/v1/wms/count-executions" => new { countExecutionId = "count-execution-http" },
+                "/api/business/v1/wms/count-executions/count-execution-001/complete" => new { inventoryMovementId = "movement-count-http" },
+                "/api/business/v1/wms/wcs-tasks/warehouse-task-001/dispatch" => new { wcsTaskId = "wcs-task-http" },
+                "/api/business/v1/wms/wcs-tasks/EXT-001/fail" => new { },
+                "/api/business/v1/wms/wcs-tasks/EXT-001/complete" => new { },
+                _ => throw new InvalidOperationException($"Unexpected path {path}"),
+            };
+
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data,
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://wms.local") };
+        var client = new HttpBusinessWmsClient(httpClient);
+
+        await client.CreateInboundOrderAsync("internal-token-001", ValidInboundRequest(), CancellationToken.None);
+        await client.CreatePutawayTaskAsync("internal-token-001", "inbound-order-001", ValidPutawayRequest(), CancellationToken.None);
+        await client.CompleteInboundOrderAsync("internal-token-001", "inbound-order-001", ValidCompleteInboundRequest(), CancellationToken.None);
+        await client.CreateOutboundOrderAsync("internal-token-001", ValidOutboundRequest(), CancellationToken.None);
+        await client.CreatePickingTaskAsync("internal-token-001", "outbound-order-001", ValidPickingRequest(), CancellationToken.None);
+        await client.CompleteOutboundOrderAsync("internal-token-001", "outbound-order-001", ValidCompleteOutboundRequest(), CancellationToken.None);
+        await client.CreateCountExecutionAsync("internal-token-001", ValidCreateCountRequest(), CancellationToken.None);
+        await client.CompleteCountExecutionAsync("internal-token-001", "count-execution-001", ValidCompleteCountRequest(), CancellationToken.None);
+        await client.DispatchWcsTaskAsync("internal-token-001", "warehouse-task-001", ValidDispatchWcsRequest(), CancellationToken.None);
+        await client.FailWcsTaskAsync("internal-token-001", "EXT-001", ValidFailWcsRequest(), CancellationToken.None);
+        await client.CompleteWcsTaskAsync("internal-token-001", "EXT-001", ValidCompleteWcsRequest(), CancellationToken.None);
+
+        Assert.Equal(
+        [
+            "POST /api/business/v1/wms/inbound-orders",
+            "POST /api/business/v1/wms/inbound-orders/inbound-order-001/putaway-tasks",
+            "POST /api/business/v1/wms/inbound-orders/inbound-order-001/complete",
+            "POST /api/business/v1/wms/outbound-orders",
+            "POST /api/business/v1/wms/outbound-orders/outbound-order-001/picking-tasks",
+            "POST /api/business/v1/wms/outbound-orders/outbound-order-001/complete",
+            "POST /api/business/v1/wms/count-executions",
+            "POST /api/business/v1/wms/count-executions/count-execution-001/complete",
+            "POST /api/business/v1/wms/wcs-tasks/warehouse-task-001/dispatch",
+            "POST /api/business/v1/wms/wcs-tasks/EXT-001/fail",
+            "POST /api/business/v1/wms/wcs-tasks/EXT-001/complete",
+        ],
+        handler.Requests.Select(request => $"{request.Method} {request.RequestUri!.AbsolutePath}").ToArray());
+        Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter));
+    }
+
+    [Fact]
+    public async Task Receipt_write_facades_use_receipts_manage_permission_internal_token_and_route_ids()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var inbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            inboundOrderNo = "IN-NEW",
+            sourceDocumentType = "purchase-receipt",
+            sourceDocumentId = "PR-001",
+            siteCode = "S1",
+            lines = new[]
+            {
+                new
+                {
+                    lineNo = "10",
+                    skuCode = "SKU-001",
+                    uomCode = "EA",
+                    receivedQuantity = 3,
+                    stagingLocationCode = "STAGE-01",
+                    lotNo = "LOT-001",
+                    serialNo = (string?)null,
+                    qualityStatus = "qualified",
+                    ownerType = "company",
+                    ownerId = (string?)null,
+                },
+            },
+        });
+        var putaway = await client.PostAsJsonAsync("/api/business-console/v1/wms/inbound-orders/inbound-order-001/putaway-tasks?organizationId=org-001&environmentId=env-dev", new
+        {
+            taskNo = "PUT-001",
+            lineNo = "10",
+            fromLocationCode = "STAGE-01",
+            toLocationCode = "BIN-01",
+            quantity = 3,
+        });
+        var completeInbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete?organizationId=org-001&environmentId=env-dev", new
+        {
+            idempotencyKey = "complete-in-001",
+        });
+        var count = await client.PostAsJsonAsync("/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            countNo = "COUNT-001",
+            skuCode = "SKU-001",
+            uomCode = "EA",
+            siteCode = "S1",
+            locationCode = "BIN-01",
+            expectedQuantity = 9,
+        });
+        var completeCount = await client.PostAsJsonAsync("/api/business-console/v1/wms/count-executions/count-execution-001/complete?organizationId=org-001&environmentId=env-dev", new
+        {
+            countedQuantity = 8,
+            idempotencyKey = "complete-count-001",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, inbound.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, putaway.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, completeInbound.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, count.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, completeCount.StatusCode);
+        Assert.All(auth.Requirements, requirement => Assert.Equal(BusinessGatewayPermissions.WmsReceiptsManage, requirement.PermissionCode));
+        Assert.Equal(["create-inbound", "create-putaway", "complete-inbound", "create-count", "complete-count"], wms.Calls);
+        Assert.Equal("internal-test-token", wms.LastInternalToken);
+        Assert.Equal("IN-NEW", wms.LastCreateInboundRequest!.InboundOrderNo);
+        Assert.Equal("inbound-order-001", wms.LastCreatePutawayRequest!.InboundOrderId);
+        Assert.Equal("inbound-order-001", wms.LastCompleteInboundRequest!.InboundOrderId);
+        Assert.Equal("COUNT-001", wms.LastCreateCountRequest!.CountNo);
+        Assert.Equal("count-execution-001", wms.LastCompleteCountRequest!.CountExecutionId);
+    }
+
+    [Fact]
+    public async Task Shipment_write_facades_use_shipments_manage_permission_internal_token_and_route_ids()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var outbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            outboundOrderNo = "OUT-NEW",
+            sourceDocumentType = "sales-shipment",
+            sourceDocumentId = "SO-001",
+            siteCode = "S1",
+            lines = new[]
+            {
+                new
+                {
+                    lineNo = "10",
+                    skuCode = "SKU-001",
+                    uomCode = "EA",
+                    requestedQuantity = 2,
+                    pickLocationCode = "BIN-01",
+                    lotNo = "LOT-001",
+                    serialNo = (string?)null,
+                    qualityStatus = "qualified",
+                    ownerType = "company",
+                    ownerId = (string?)null,
+                },
+            },
+        });
+        var picking = await client.PostAsJsonAsync("/api/business-console/v1/wms/outbound-orders/outbound-order-001/picking-tasks?organizationId=org-001&environmentId=env-dev", new
+        {
+            taskNo = "PICK-001",
+            lineNo = "10",
+            fromLocationCode = "BIN-01",
+            toLocationCode = "SHIP-01",
+            quantity = 2,
+        });
+        var completeOutbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/outbound-orders/outbound-order-001/complete?organizationId=org-001&environmentId=env-dev", new
+        {
+            packReviewNo = "PACK-001",
+            passed = true,
+            idempotencyKey = "complete-out-001",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, outbound.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, picking.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, completeOutbound.StatusCode);
+        Assert.All(auth.Requirements, requirement => Assert.Equal(BusinessGatewayPermissions.WmsShipmentsManage, requirement.PermissionCode));
+        Assert.Equal(["create-outbound", "create-picking", "complete-outbound"], wms.Calls);
+        Assert.Equal("internal-test-token", wms.LastInternalToken);
+        Assert.Equal("OUT-NEW", wms.LastCreateOutboundRequest!.OutboundOrderNo);
+        Assert.Equal("outbound-order-001", wms.LastCreatePickingRequest!.OutboundOrderId);
+        Assert.Equal("outbound-order-001", wms.LastCompleteOutboundRequest!.OutboundOrderId);
+    }
+
+    [Fact]
+    public async Task Wcs_write_facades_use_automation_permission_internal_token_and_route_ids()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var dispatch = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch?organizationId=org-001&environmentId=env-dev", new
+        {
+            adapterType = "agv",
+            externalTaskId = "EXT-001",
+            payloadJson = "{}",
+        });
+        var fail = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/EXT-001/fail?organizationId=org-001&environmentId=env-dev", new
+        {
+            failureCode = "PLC_TIMEOUT",
+            failureMessage = "PLC did not acknowledge.",
+        });
+        var complete = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/EXT-001/complete?organizationId=org-001&environmentId=env-dev", new
+        {
+            completionPayloadJson = "{}",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, dispatch.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, fail.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, complete.StatusCode);
+        Assert.All(auth.Requirements, requirement => Assert.Equal(BusinessGatewayPermissions.WmsAutomationManage, requirement.PermissionCode));
+        Assert.Equal(["dispatch-wcs", "fail-wcs", "complete-wcs"], wms.Calls);
+        Assert.Equal("internal-test-token", wms.LastInternalToken);
+        Assert.Equal("warehouse-task-001", wms.LastDispatchWcsRequest!.WarehouseTaskId);
+        Assert.Equal("EXT-001", wms.LastFailWcsRequest!.ExternalTaskId);
+        Assert.Equal("EXT-001", wms.LastCompleteWcsRequest!.ExternalTaskId);
+    }
+
     [Fact]
     public async Task Inbound_orders_include_inventory_context_in_single_facade_response()
     {
@@ -202,10 +458,76 @@ public sealed class BusinessGatewayWmsTests
         });
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
+
+    private static BusinessConsoleCreateWmsInboundOrderRequest ValidInboundRequest() =>
+        new(
+            "org-001",
+            "env-dev",
+            "IN-001",
+            "purchase-receipt",
+            "PR-001",
+            "S1",
+            [new("10", "SKU-001", "EA", 1, "STAGE-01", "LOT-001", null, "qualified", "company", null)]);
+
+    private static BusinessConsoleCreateWmsPutawayTaskRequest ValidPutawayRequest() =>
+        new("inbound-order-001", "org-001", "env-dev", "PUT-001", "10", "STAGE-01", "BIN-01", 1);
+
+    private static BusinessConsoleCompleteWmsInboundOrderRequest ValidCompleteInboundRequest() =>
+        new("inbound-order-001", "org-001", "env-dev", "complete-in-001");
+
+    private static BusinessConsoleCreateWmsOutboundOrderRequest ValidOutboundRequest() =>
+        new(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-shipment",
+            "SO-001",
+            "S1",
+            [new("10", "SKU-001", "EA", 1, "BIN-01", "LOT-001", null, "qualified", "company", null)]);
+
+    private static BusinessConsoleCreateWmsPickingTaskRequest ValidPickingRequest() =>
+        new("outbound-order-001", "org-001", "env-dev", "PICK-001", "10", "BIN-01", "SHIP-01", 1);
+
+    private static BusinessConsoleCompleteWmsOutboundOrderRequest ValidCompleteOutboundRequest() =>
+        new("outbound-order-001", "org-001", "env-dev", "PACK-001", true, "complete-out-001");
+
+    private static BusinessConsoleCreateWmsCountExecutionRequest ValidCreateCountRequest() =>
+        new("org-001", "env-dev", "COUNT-001", "SKU-001", "EA", "S1", "BIN-01", 1);
+
+    private static BusinessConsoleCompleteWmsCountExecutionRequest ValidCompleteCountRequest() =>
+        new("count-execution-001", "org-001", "env-dev", 1, "complete-count-001");
+
+    private static BusinessConsoleDispatchWmsWcsTaskRequest ValidDispatchWcsRequest() =>
+        new("warehouse-task-001", "org-001", "env-dev", "agv", "EXT-001", "{}");
+
+    private static BusinessConsoleFailWmsWcsTaskRequest ValidFailWcsRequest() =>
+        new("EXT-001", "org-001", "env-dev", "PLC_TIMEOUT", "PLC did not acknowledge.");
+
+    private static BusinessConsoleCompleteWmsWcsTaskRequest ValidCompleteWcsRequest() =>
+        new("EXT-001", "org-001", "env-dev", "{}");
+
+    private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, object body) =>
+        new(statusCode)
+        {
+            Content = JsonContent.Create(body),
+        };
+
+    private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(responseFactory(request));
+        }
+    }
 }
 
 internal sealed class RecordingWmsClient : IBusinessWmsClient
 {
+    public List<string> Calls { get; } = [];
+
     public string? LastInternalToken { get; private set; }
 
     public BusinessConsoleWmsListRequest? LastInboundRequest { get; private set; }
@@ -213,6 +535,157 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
     public BusinessConsoleWmsListRequest? LastOutboundRequest { get; private set; }
 
     public BusinessConsoleWmsWcsTaskListRequest? LastWcsTaskRequest { get; private set; }
+
+    public BusinessConsoleCreateWmsInboundOrderRequest? LastCreateInboundRequest { get; private set; }
+
+    public BusinessConsoleCreateWmsPutawayTaskRequest? LastCreatePutawayRequest { get; private set; }
+
+    public BusinessConsoleCompleteWmsInboundOrderRequest? LastCompleteInboundRequest { get; private set; }
+
+    public BusinessConsoleCreateWmsOutboundOrderRequest? LastCreateOutboundRequest { get; private set; }
+
+    public BusinessConsoleCreateWmsPickingTaskRequest? LastCreatePickingRequest { get; private set; }
+
+    public BusinessConsoleCompleteWmsOutboundOrderRequest? LastCompleteOutboundRequest { get; private set; }
+
+    public BusinessConsoleCreateWmsCountExecutionRequest? LastCreateCountRequest { get; private set; }
+
+    public BusinessConsoleCompleteWmsCountExecutionRequest? LastCompleteCountRequest { get; private set; }
+
+    public BusinessConsoleDispatchWmsWcsTaskRequest? LastDispatchWcsRequest { get; private set; }
+
+    public BusinessConsoleFailWmsWcsTaskRequest? LastFailWcsRequest { get; private set; }
+
+    public BusinessConsoleCompleteWmsWcsTaskRequest? LastCompleteWcsRequest { get; private set; }
+
+    public Task<BusinessConsoleCreateWmsInboundOrderResponse> CreateInboundOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWmsInboundOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateInboundRequest = request;
+        Calls.Add("create-inbound");
+        return Task.FromResult(new BusinessConsoleCreateWmsInboundOrderResponse("inbound-order-001"));
+    }
+
+    public Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePutawayTaskAsync(
+        string internalBearerToken,
+        string inboundOrderId,
+        BusinessConsoleCreateWmsPutawayTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreatePutawayRequest = request;
+        Calls.Add("create-putaway");
+        return Task.FromResult(new BusinessConsoleCreateWmsWarehouseTaskResponse("warehouse-task-001"));
+    }
+
+    public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteInboundOrderAsync(
+        string internalBearerToken,
+        string inboundOrderId,
+        BusinessConsoleCompleteWmsInboundOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCompleteInboundRequest = request;
+        Calls.Add("complete-inbound");
+        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("movement-in-001"));
+    }
+
+    public Task<BusinessConsoleCreateWmsOutboundOrderResponse> CreateOutboundOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWmsOutboundOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateOutboundRequest = request;
+        Calls.Add("create-outbound");
+        return Task.FromResult(new BusinessConsoleCreateWmsOutboundOrderResponse("outbound-order-001"));
+    }
+
+    public Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePickingTaskAsync(
+        string internalBearerToken,
+        string outboundOrderId,
+        BusinessConsoleCreateWmsPickingTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreatePickingRequest = request;
+        Calls.Add("create-picking");
+        return Task.FromResult(new BusinessConsoleCreateWmsWarehouseTaskResponse("warehouse-task-002"));
+    }
+
+    public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteOutboundOrderAsync(
+        string internalBearerToken,
+        string outboundOrderId,
+        BusinessConsoleCompleteWmsOutboundOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCompleteOutboundRequest = request;
+        Calls.Add("complete-outbound");
+        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("movement-out-001"));
+    }
+
+    public Task<BusinessConsoleCreateWmsCountExecutionResponse> CreateCountExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWmsCountExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateCountRequest = request;
+        Calls.Add("create-count");
+        return Task.FromResult(new BusinessConsoleCreateWmsCountExecutionResponse("count-execution-001"));
+    }
+
+    public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteCountExecutionAsync(
+        string internalBearerToken,
+        string countExecutionId,
+        BusinessConsoleCompleteWmsCountExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCompleteCountRequest = request;
+        Calls.Add("complete-count");
+        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("movement-count-001"));
+    }
+
+    public Task<BusinessConsoleDispatchWmsWcsTaskResponse> DispatchWcsTaskAsync(
+        string internalBearerToken,
+        string warehouseTaskId,
+        BusinessConsoleDispatchWmsWcsTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDispatchWcsRequest = request;
+        Calls.Add("dispatch-wcs");
+        return Task.FromResult(new BusinessConsoleDispatchWmsWcsTaskResponse("wcs-task-001"));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> FailWcsTaskAsync(
+        string internalBearerToken,
+        string externalTaskId,
+        BusinessConsoleFailWmsWcsTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastFailWcsRequest = request;
+        Calls.Add("fail-wcs");
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> CompleteWcsTaskAsync(
+        string internalBearerToken,
+        string externalTaskId,
+        BusinessConsoleCompleteWmsWcsTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCompleteWcsRequest = request;
+        Calls.Add("complete-wcs");
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
 
     public Task<BusinessConsoleWmsInboundOrderListResponse> ListInboundOrdersAsync(
         string internalBearerToken,

@@ -311,6 +311,42 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Engineering_write_facades_use_internal_service_token_for_downstream_business_service()
+    {
+        var engineering = new RecordingProductEngineeringClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/engineering/manufacturing-boms/release", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            bomCode = "MBOM-001",
+            revision = "A",
+            skuCode = "SKU-001",
+            engineeringBomCode = "EBOM-001",
+            engineeringBomRevision = "A",
+            effectiveDate = "2026-06-01",
+            materialLines = new[] { new { skuCode = "RM-001", quantity = 2.5m, unitOfMeasureCode = "KG", scrapRate = 0.01m } },
+            recipeLines = Array.Empty<object>(),
+            idempotencyKey = "mbom-001",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", engineering.LastInternalToken);
+        Assert.Equal("MBOM-001", engineering.LastReleaseManufacturingBomRequest!.BomCode);
+        Assert.Equal("SKU-001", engineering.LastReleaseManufacturingBomRequest.SkuCode);
+        Assert.Equal("RM-001", engineering.LastReleaseManufacturingBomRequest.MaterialLines.Single().SkuCode);
+    }
+
+    [Fact]
     public async Task Planning_mrp_run_uses_internal_service_token_for_downstream_business_service()
     {
         var planning = new RecordingPlanningClient();
@@ -1112,6 +1148,45 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("/api/business-console/v1/master-data/business-partners", "/api/business/v1/master-data/partners")]
+    [InlineData("/api/business-console/v1/master-data/units-of-measure", "/api/business/v1/master-data/units-of-measure")]
+    [InlineData("/api/business-console/v1/master-data/uom-conversions", "/api/business/v1/master-data/uom-conversions")]
+    [InlineData("/api/business-console/v1/master-data/sites", "/api/business/v1/master-data/sites")]
+    [InlineData("/api/business-console/v1/master-data/production-lines", "/api/business/v1/master-data/production-lines")]
+    [InlineData("/api/business-console/v1/master-data/work-centers", "/api/business/v1/master-data/work-centers")]
+    [InlineData("/api/business-console/v1/master-data/device-assets", "/api/business/v1/master-data/device-assets")]
+    [InlineData("/api/business-console/v1/master-data/shifts", "/api/business/v1/master-data/shifts")]
+    [InlineData("/api/business-console/v1/master-data/work-calendars", "/api/business/v1/master-data/work-calendars")]
+    [InlineData("/api/business-console/v1/master-data/teams", "/api/business/v1/master-data/teams")]
+    [InlineData("/api/business-console/v1/master-data/departments", "/api/business/v1/master-data/departments")]
+    [InlineData("/api/business-console/v1/master-data/personnel-skills", "/api/business/v1/master-data/personnel-skills")]
+    [InlineData("/api/business-console/v1/master-data/reference-data", "/api/business/v1/master-data/reference-data")]
+    public async Task Master_data_create_facades_forward_internal_token_to_downstream_create_endpoint(
+        string gatewayPath,
+        string downstreamPath)
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            $"{gatewayPath}?organizationId=org-001&environmentId=env-dev",
+            ValidMasterDataCreateBody(gatewayPath));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, masterData.CreateResourceCallCount);
+        Assert.Equal("internal-test-token", masterData.LastInternalToken);
+        Assert.Equal(downstreamPath, masterData.LastCreateResourcePath);
+    }
+
     [Fact]
     public async Task Count_adjustment_rejects_zero_counted_quantity()
     {
@@ -1367,6 +1442,91 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-token-001", handler.Requests[0].Headers.Authorization!.Parameter);
         Assert.Equal("/api/business/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100", handler.Requests[1].RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", handler.Requests[1].Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Product_engineering_http_client_forwards_write_facades_to_product_engineering_routes()
+    {
+        var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, ResponseForEngineeringWriteRequest(request)));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://engineering.local") };
+        var client = new HttpBusinessProductEngineeringClient(httpClient);
+
+        await client.RegisterEngineeringDocumentAsync(
+            "internal-token-001",
+            new BusinessConsoleRegisterEngineeringDocumentRequest("org-001", "env-dev", "DOC-001", "A", "file-001", "design.dwg", "application/dwg", "cad"),
+            CancellationToken.None);
+        await client.CreateEngineeringItemRevisionAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateEngineeringItemRevisionRequest("org-001", "env-dev", "ITEM-001", "A", "Demo", true),
+            CancellationToken.None);
+        await client.ReleaseEngineeringBomAsync(
+            "internal-token-001",
+            new BusinessConsoleReleaseEngineeringBomRequest("org-001", "env-dev", "EBOM-001", "A", "ITEM-001", new DateOnly(2026, 6, 1), [new BusinessConsoleBomLineRequest("ITEM-002", 1, "EA")]),
+            CancellationToken.None);
+        await client.ListManufacturingBomsAsync(
+            "internal-token-001",
+            new BusinessConsoleListManufacturingBomsRequest("org-001", "env-dev", "SKU-001", "Published"),
+            CancellationToken.None);
+        await client.ReleaseManufacturingBomAsync(
+            "internal-token-001",
+            new BusinessConsoleReleaseManufacturingBomRequest("org-001", "env-dev", "MBOM-001", "A", "SKU-001", "EBOM-001", "A", new DateOnly(2026, 6, 1), [new BusinessConsoleManufacturingBomMaterialLineRequest("RM-001", 1, "EA", 0)], []),
+            CancellationToken.None);
+        await client.ReleaseRoutingAsync(
+            "internal-token-001",
+            new BusinessConsoleReleaseRoutingRequest("org-001", "env-dev", "RTG-001", "A", "SKU-001", new DateOnly(2026, 6, 1), [new BusinessConsoleRoutingOperationRequest(10, "WC-001", "Assemble", 15)]),
+            CancellationToken.None);
+        await client.ReleaseEngineeringChangeAsync(
+            "internal-token-001",
+            new BusinessConsoleReleaseEngineeringChangeRequest("org-001", "env-dev", "ECO-001", "Initial", "approval-001", new DateOnly(2026, 6, 1), [new BusinessConsoleAffectedVersionRequest("mbom", "MBOM-001:A")]),
+            CancellationToken.None);
+        await client.CreateProductionVersionAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateProductionVersionRequest("org-001", "env-dev", "SKU-001", "MBOM-001:A", "RTG-001:A", new DateOnly(2026, 6, 1), null, 1, 100, 10, true),
+            CancellationToken.None);
+        await client.UpdateProductionVersionAsync(
+            "internal-token-001",
+            "pv-001",
+            new BusinessConsoleUpdateProductionVersionRequest("pv-001", "org-001", "env-dev", "MBOM-001:B", "RTG-001:B", new DateOnly(2026, 7, 1), null, 1, 100, 20, true),
+            CancellationToken.None);
+        await client.ArchiveProductionVersionAsync(
+            "internal-token-001",
+            "pv-001",
+            new BusinessConsoleArchiveProductionVersionRequest("pv-001", "org-001", "env-dev", "Superseded"),
+            CancellationToken.None);
+
+        Assert.Collection(
+            handler.Requests,
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/documents"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/items"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-boms/release"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/manufacturing-boms?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&status=Published"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/manufacturing-boms/release"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/routings/release"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-changes/release"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/production-versions"),
+            request => AssertRequest(request, HttpMethod.Put, "/api/business/v1/engineering/production-versions/pv-001"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/production-versions/pv-001/archive"));
+        Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter));
+    }
+
+    [Fact]
+    public void Product_engineering_client_contract_exposes_business_console_write_facades()
+    {
+        var methodNames = typeof(IBusinessProductEngineeringClient)
+            .GetMethods()
+            .Select(method => method.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("RegisterEngineeringDocumentAsync", methodNames);
+        Assert.Contains("CreateEngineeringItemRevisionAsync", methodNames);
+        Assert.Contains("ReleaseEngineeringBomAsync", methodNames);
+        Assert.Contains("ListManufacturingBomsAsync", methodNames);
+        Assert.Contains("ReleaseManufacturingBomAsync", methodNames);
+        Assert.Contains("ReleaseRoutingAsync", methodNames);
+        Assert.Contains("ReleaseEngineeringChangeAsync", methodNames);
+        Assert.Contains("CreateProductionVersionAsync", methodNames);
+        Assert.Contains("UpdateProductionVersionAsync", methodNames);
+        Assert.Contains("ArchiveProductionVersionAsync", methodNames);
     }
 
     [Fact]
@@ -1733,6 +1893,142 @@ public sealed class BusinessGatewayProxyTests
         Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
     };
 
+    private static object ValidMasterDataCreateBody(string path) => path switch
+    {
+        "/api/business-console/v1/master-data/business-partners" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "SUP-001",
+            partnerType = "supplier",
+            name = "Demo Supplier",
+        },
+        "/api/business-console/v1/master-data/units-of-measure" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "EA",
+            name = "Each",
+            dimensionType = "count",
+            precision = 0,
+            roundingMode = "half-up",
+        },
+        "/api/business-console/v1/master-data/uom-conversions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            fromUomCode = "BOX",
+            toUomCode = "EA",
+            factor = 12,
+            offset = 0,
+            precision = 6,
+            roundingMode = "half-up",
+            effectiveFrom = "2026-01-01",
+        },
+        "/api/business-console/v1/master-data/sites" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "SITE-01",
+            name = "Main Site",
+            timezone = "Asia/Shanghai",
+        },
+        "/api/business-console/v1/master-data/production-lines" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "LINE-01",
+            name = "Line 1",
+            siteCode = "SITE-01",
+        },
+        "/api/business-console/v1/master-data/work-centers" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "WC-01",
+            name = "Work Center 1",
+            capacityMinutesPerDay = 480,
+            resourceType = "line",
+            plantCode = "SITE-01",
+            lineCode = "LINE-01",
+            defaultCalendarCode = "CAL-01",
+            capacityUnit = "minute",
+            finiteCapacity = true,
+        },
+        "/api/business-console/v1/master-data/device-assets" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "DEV-01",
+            model = "Robot",
+            lineCode = "LINE-01",
+            workCenterCode = "WC-01",
+            assetClassCode = "robot",
+            manufacturer = "Demo Maker",
+            serialNo = "SN-001",
+            minimumCapacity = 1,
+            maximumCapacity = 10,
+            capacityUomCode = "EA",
+            criticality = "high",
+            maintainable = true,
+            telemetryEnabled = true,
+            externalReferences = new Dictionary<string, string> { ["iiot"] = "DEV-01" },
+        },
+        "/api/business-console/v1/master-data/shifts" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "SHIFT-A",
+            name = "Shift A",
+            startsAt = "08:00:00",
+            endsAt = "16:00:00",
+            paidMinutes = 480,
+        },
+        "/api/business-console/v1/master-data/work-calendars" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "CAL-01",
+            name = "Standard Calendar",
+        },
+        "/api/business-console/v1/master-data/teams" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "TEAM-A",
+            name = "Team A",
+            departmentCode = "DEP-01",
+            shiftCode = "SHIFT-A",
+        },
+        "/api/business-console/v1/master-data/departments" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "DEP-01",
+            name = "Production Department",
+            parentDepartmentCode = (string?)null,
+        },
+        "/api/business-console/v1/master-data/personnel-skills" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            userId = "user-001",
+            skillCode = "WELD",
+            level = "L2",
+            effectiveFrom = "2026-01-01",
+            effectiveTo = "2026-12-31",
+        },
+        "/api/business-console/v1/master-data/reference-data" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            codeSet = "asset-class",
+            code = "robot",
+            name = "Robot",
+        },
+        _ => throw new ArgumentOutOfRangeException(nameof(path), path, "Unknown MasterData create path."),
+    };
+
     internal static EquipmentRuntimeAvailabilityResponse CreateAvailabilityResponse(
         string sourceReferenceId,
         EquipmentRuntimeSourceType sourceType) =>
@@ -2068,6 +2364,67 @@ public sealed class BusinessGatewayProxyTests
         };
     }
 
+    private static object ResponseForEngineeringWriteRequest(HttpRequestMessage request)
+    {
+        var path = request.RequestUri!.AbsolutePath;
+        if (request.Method == HttpMethod.Get)
+        {
+            return new
+            {
+                data = new
+                {
+                    items = Array.Empty<object>(),
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        if (path.Contains("/production-versions", StringComparison.Ordinal) &&
+            !path.EndsWith("/archive", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new
+                {
+                    productionVersionId = "pv-001",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        if (path.EndsWith("/archive", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new { },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        return new
+        {
+            data = new
+            {
+                id = "entity-001",
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        };
+    }
+
+    private static void AssertRequest(HttpRequestMessage request, HttpMethod method, string pathAndQuery)
+    {
+        Assert.Equal(method, request.Method);
+        Assert.Equal(pathAndQuery, request.RequestUri!.PathAndQuery);
+    }
+
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 
     private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
@@ -2089,6 +2446,10 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public string? LastInternalToken { get; private set; }
 
     public BusinessConsoleListResourcesRequest? LastListResourcesRequest { get; private set; }
+
+    public int CreateResourceCallCount { get; private set; }
+
+    public string? LastCreateResourcePath { get; private set; }
 
     public IReadOnlyCollection<BusinessConsoleResourceItem>? Resources { get; init; }
 
@@ -2125,6 +2486,97 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleResourceItem("sku", request.Code ?? "SKU-GENERATED", request.Name, true, "v1"));
+    }
+
+    public Task<BusinessConsoleResourceItem> CreateBusinessPartnerAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateBusinessPartnerRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/partners", "business-partner", request.Code, request.Name);
+
+    public Task<BusinessConsoleResourceItem> CreateUnitOfMeasureAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateUnitOfMeasureRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/units-of-measure", "unit-of-measure", request.Code, request.Name);
+
+    public Task<BusinessConsoleResourceItem> CreateUomConversionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateUomConversionRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/uom-conversions", "uom-conversion", $"{request.FromUomCode}->{request.ToUomCode}", $"{request.FromUomCode} to {request.ToUomCode}");
+
+    public Task<BusinessConsoleResourceItem> CreateSiteAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSiteRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/sites", "site", request.Code, request.Name);
+
+    public Task<BusinessConsoleResourceItem> CreateProductionLineAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateProductionLineRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/production-lines", "production-line", request.Code, request.Name);
+
+    public Task<BusinessConsoleResourceItem> CreateWorkCenterAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkCenterRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/work-centers", "work-center", request.Code, request.Name);
+
+    public Task<BusinessConsoleResourceItem> RegisterDeviceAssetAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterDeviceAssetRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/device-assets", "device-asset", request.Code, request.Model);
+
+    public Task<BusinessConsoleResourceItem> CreateShiftAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateShiftRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/shifts", "shift", request.Code, request.Name);
+
+    public Task<BusinessConsoleResourceItem> CreateWorkCalendarAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkCalendarRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/work-calendars", "work-calendar", request.Code, request.Name);
+
+    public Task<BusinessConsoleResourceItem> CreateTeamAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateTeamRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/teams", "team", request.Code, request.Name);
+
+    public Task<BusinessConsoleResourceItem> CreateDepartmentAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateDepartmentRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/departments", "department", request.Code, request.Name);
+
+    public Task<BusinessConsoleResourceItem> AssignPersonnelSkillAsync(
+        string internalBearerToken,
+        BusinessConsoleAssignPersonnelSkillRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/personnel-skills", "personnel-skill", $"{request.UserId}:{request.SkillCode}", request.Level);
+
+    public Task<BusinessConsoleResourceItem> CreateReferenceDataCodeAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateReferenceDataCodeRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/reference-data", "reference-data-code", request.Code, request.Name);
+
+    private Task<BusinessConsoleResourceItem> CreateResourceAsync(
+        string internalBearerToken,
+        string downstreamPath,
+        string resourceType,
+        string code,
+        string displayName)
+    {
+        LastInternalToken = internalBearerToken;
+        CreateResourceCallCount++;
+        LastCreateResourcePath = downstreamPath;
+        return Task.FromResult(new BusinessConsoleResourceItem(resourceType, code, displayName, true, "v1"));
     }
 }
 
@@ -2263,6 +2715,35 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
 
     public BusinessConsoleListProductionVersionsRequest? LastProductionVersionListRequest { get; private set; }
 
+    public BusinessConsoleReleaseManufacturingBomRequest? LastReleaseManufacturingBomRequest { get; private set; }
+
+    public Task<BusinessConsoleEngineeringEntityResponse> RegisterEngineeringDocumentAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterEngineeringDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.DocumentNumber ?? "DOC-001"));
+    }
+
+    public Task<BusinessConsoleEngineeringEntityResponse> CreateEngineeringItemRevisionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateEngineeringItemRevisionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ItemCode ?? "ITEM-001"));
+    }
+
+    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringBomAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseEngineeringBomRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.BomCode ?? "EBOM-001"));
+    }
+
     public Task<BusinessConsoleEngineeringBomListResponse> ListEngineeringBomsAsync(
         string internalBearerToken,
         BusinessConsoleListEngineeringBomsRequest request,
@@ -2272,6 +2753,25 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         return Task.FromResult(new BusinessConsoleEngineeringBomListResponse([]));
     }
 
+    public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
+        string internalBearerToken,
+        BusinessConsoleListManufacturingBomsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleManufacturingBomListResponse([]));
+    }
+
+    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseManufacturingBomRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReleaseManufacturingBomRequest = request;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.BomCode ?? "MBOM-001"));
+    }
+
     public Task<BusinessConsoleRoutingListResponse> ListRoutingsAsync(
         string internalBearerToken,
         BusinessConsoleListRoutingsRequest request,
@@ -2279,6 +2779,24 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleRoutingListResponse([]));
+    }
+
+    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseRoutingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.RoutingCode ?? "RTG-001"));
+    }
+
+    public Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleReleaseEngineeringChangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ChangeNumber ?? "ECO-001"));
     }
 
     public Task<BusinessConsoleProductionVersionListResponse> ListProductionVersionsAsync(
@@ -2325,6 +2843,35 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
             request.EffectiveDate,
             request.LotSize,
             "active"));
+    }
+
+    public Task<BusinessConsoleCreateProductionVersionResponse> CreateProductionVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateProductionVersionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateProductionVersionResponse("pv-front-001"));
+    }
+
+    public Task<BusinessConsoleCreateProductionVersionResponse> UpdateProductionVersionAsync(
+        string internalBearerToken,
+        string productionVersionId,
+        BusinessConsoleUpdateProductionVersionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateProductionVersionResponse(productionVersionId));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> ArchiveProductionVersionAsync(
+        string internalBearerToken,
+        string productionVersionId,
+        BusinessConsoleArchiveProductionVersionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 }
 
@@ -2970,6 +3517,25 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
 
     public EquipmentRuntimeAvailabilityResponse? AssetAvailabilityResponse { get; init; }
 
+    public Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceWorkOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateMaintenanceWorkOrderResponse("wo-maint-created"));
+    }
+
+    public Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleCompleteMaintenanceWorkOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true));
+    }
+
     public Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
         BusinessConsoleMaintenanceContextRequest request,
@@ -3003,6 +3569,24 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMaintenancePlanListResponse([]));
+    }
+
+    public Task<BusinessConsoleCreateMaintenancePlanResponse> CreatePlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenancePlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateMaintenancePlanResponse("plan-created"));
+    }
+
+    public Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordMaintenanceInspectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleRecordMaintenanceInspectionResponse("inspection-created"));
     }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetAvailabilityWindowsAsync(

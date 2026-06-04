@@ -44,7 +44,9 @@ public static class BusinessGatewayPermissions
 {
     public const string MasterDataProductsRead = "business.masterdata.products.read";
     public const string MasterDataProductsManage = "business.masterdata.products.manage";
+    public const string MasterDataPartnersManage = "business.masterdata.partners.manage";
     public const string MasterDataResourcesRead = "business.masterdata.resources.read";
+    public const string MasterDataResourcesManage = "business.masterdata.resources.manage";
     public const string InventoryLedgerRead = "business.inventory.ledger.read";
     public const string InventoryMovementsCreate = "business.inventory.movements.create";
     public const string InventoryCountsManage = "business.inventory.counts.manage";
@@ -52,9 +54,15 @@ public static class BusinessGatewayPermissions
     public const string QualityInspectionRecordsCreate = "business.quality.inspection-records.create";
     public const string QualityNcrRead = "business.quality.ncr.read";
     public const string QualityNcrManage = "business.quality.ncr.manage";
+    public const string EngineeringDocumentsManage = "business.engineering.documents.manage";
+    public const string EngineeringItemsManage = "business.engineering.items.manage";
     public const string EngineeringBomsRead = "business.engineering.boms.read";
+    public const string EngineeringBomsManage = "business.engineering.boms.manage";
     public const string EngineeringRoutingsRead = "business.engineering.routings.read";
+    public const string EngineeringRoutingsManage = "business.engineering.routings.manage";
+    public const string EngineeringChangesManage = "business.engineering.changes.manage";
     public const string EngineeringProductionVersionsRead = "business.engineering.production-versions.read";
+    public const string EngineeringProductionVersionsManage = "business.engineering.production-versions.manage";
     public const string PlanningDemandsRead = "business.planning.demands.read";
     public const string PlanningDemandsManage = "business.planning.demands.manage";
     public const string PlanningMrpRead = "business.planning.mrp.read";
@@ -66,7 +74,9 @@ public static class BusinessGatewayPermissions
     public const string IiotTelemetryRead = "business.iiot.telemetry.read";
     public const string IiotAlarmsRead = "business.iiot.alarms.read";
     public const string MaintenanceWorkOrdersRead = "business.maintenance.work-orders.read";
+    public const string MaintenanceWorkOrdersManage = "business.maintenance.work-orders.manage";
     public const string MaintenancePlansRead = "business.maintenance.plans.read";
+    public const string MaintenancePlansManage = "business.maintenance.plans.manage";
     public const string ErpProcurementRead = "business.erp.procurement.read";
     public const string ErpProcurementManage = "business.erp.procurement.manage";
     public const string ErpSalesRead = "business.erp.sales.read";
@@ -74,7 +84,9 @@ public static class BusinessGatewayPermissions
     public const string ErpFinanceRead = "business.erp.finance.read";
     public const string ErpFinanceManage = "business.erp.finance.manage";
     public const string WmsReceiptsRead = "business.wms.receipts.read";
+    public const string WmsReceiptsManage = "business.wms.receipts.manage";
     public const string WmsShipmentsRead = "business.wms.shipments.read";
+    public const string WmsShipmentsManage = "business.wms.shipments.manage";
     public const string WmsAutomationManage = "business.wms.automation.manage";
     public const string ApprovalsRead = "business.approvals.read";
     public const string ApprovalsManage = "business.approvals.manage";
