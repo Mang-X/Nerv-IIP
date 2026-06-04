@@ -334,6 +334,86 @@ export type NetCorePalExtensionsDtoResponseDataOfObject = NetCorePalExtensionsDt
     data?: unknown;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfCreateUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsFileStorageCreateUploadSessionResponse | null;
+};
+
+export type NervIipContractsFileStorageCreateUploadSessionResponse = {
+    uploadSessionId?: string;
+    fileId?: string;
+    uploadMode?: string;
+    provider?: string;
+    expiresAtUtc?: string;
+    upload?: NervIipContractsFileStorageTransferInstructions;
+};
+
+export type NervIipContractsFileStorageTransferInstructions = {
+    url?: string;
+    headers?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipContractsFileStorageCreateUploadSessionRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    owner?: NervIipContractsFileStorageOwnerReference;
+    filePurpose?: string;
+    fileName?: string;
+    contentType?: string;
+    expectedSizeBytes?: number;
+    checksum?: string | null;
+};
+
+export type NervIipContractsFileStorageOwnerReference = {
+    ownerService?: string;
+    ownerType?: string;
+    ownerId?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfFileMetadataResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsFileStorageFileMetadataResponse | null;
+};
+
+export type NervIipContractsFileStorageFileMetadataResponse = {
+    fileId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    owner?: NervIipContractsFileStorageOwnerReference;
+    filePurpose?: string;
+    fileName?: string;
+    contentType?: string;
+    sizeBytes?: number;
+    checksum?: string | null;
+    scanStatus?: string;
+    status?: string;
+    createdAtUtc?: string;
+    completedAtUtc?: string;
+};
+
+export type NervIipContractsFileStorageCompleteUploadSessionRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    filePurpose?: string;
+    checksum?: string | null;
+    sizeBytes?: number | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsFileStorageDownloadGrantResponse | null;
+};
+
+export type NervIipContractsFileStorageDownloadGrantResponse = {
+    fileId?: string;
+    expiresAtUtc?: string;
+    download?: NervIipContractsFileStorageTransferInstructions;
+};
+
+export type NervIipContractsFileStorageCreateDownloadGrantRequest = {
+    organizationId?: string;
+    environmentId?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse | null;
 };
@@ -1001,6 +1081,207 @@ export type GetBuildInfoEndpointResponses = {
 };
 
 export type GetBuildInfoEndpointResponse = GetBuildInfoEndpointResponses[keyof GetBuildInfoEndpointResponses];
+
+export type CreateConsoleFileUploadSessionData = {
+    body: NervIipContractsFileStorageCreateUploadSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/files/upload-sessions';
+};
+
+export type CreateConsoleFileUploadSessionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateConsoleFileUploadSessionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfCreateUploadSessionResponse;
+};
+
+export type CreateConsoleFileUploadSessionResponse = CreateConsoleFileUploadSessionResponses[keyof CreateConsoleFileUploadSessionResponses];
+
+export type CompleteConsoleFileUploadSessionData = {
+    body: NervIipContractsFileStorageCompleteUploadSessionRequest;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/files/upload-sessions/{uploadSessionId}/complete';
+};
+
+export type CompleteConsoleFileUploadSessionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteConsoleFileUploadSessionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfFileMetadataResponse;
+};
+
+export type CompleteConsoleFileUploadSessionResponse = CompleteConsoleFileUploadSessionResponses[keyof CompleteConsoleFileUploadSessionResponses];
+
+export type GetConsoleFileMetadataData = {
+    body?: never;
+    path: {
+        fileId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/files/{fileId}';
+};
+
+export type GetConsoleFileMetadataErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleFileMetadataResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfFileMetadataResponse;
+};
+
+export type GetConsoleFileMetadataResponse = GetConsoleFileMetadataResponses[keyof GetConsoleFileMetadataResponses];
+
+export type CreateConsoleFileDownloadGrantData = {
+    body: NervIipContractsFileStorageCreateDownloadGrantRequest;
+    path: {
+        fileId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/files/{fileId}/download-grants';
+};
+
+export type CreateConsoleFileDownloadGrantErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateConsoleFileDownloadGrantResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse;
+};
+
+export type CreateConsoleFileDownloadGrantResponse = CreateConsoleFileDownloadGrantResponses[keyof CreateConsoleFileDownloadGrantResponses];
+
+export type GetConsoleTusUploadOffsetData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/files/tus/{uploadSessionId}';
+};
+
+export type GetConsoleTusUploadOffsetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleTusUploadOffsetResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type GetConsoleTusUploadOffsetResponse = GetConsoleTusUploadOffsetResponses[keyof GetConsoleTusUploadOffsetResponses];
+
+export type PatchConsoleTusUploadData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/files/tus/{uploadSessionId}';
+};
+
+export type PatchConsoleTusUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PatchConsoleTusUploadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PatchConsoleTusUploadResponse = PatchConsoleTusUploadResponses[keyof PatchConsoleTusUploadResponses];
+
+export type DownloadConsoleFileGrantContentData = {
+    body?: never;
+    path: {
+        downloadGrantId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/files/download-grants/{downloadGrantId}/content';
+};
+
+export type DownloadConsoleFileGrantContentErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DownloadConsoleFileGrantContentResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type DownloadConsoleFileGrantContentResponse = DownloadConsoleFileGrantContentResponses[keyof DownloadConsoleFileGrantContentResponses];
 
 export type InvalidateGatewayCacheEndpointData = {
     body?: never;

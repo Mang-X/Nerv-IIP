@@ -238,6 +238,65 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
 
     public BusinessConsoleApprovalTaskListRequest? LastRequest { get; private set; }
 
+    public Task<BusinessConsoleApprovalTemplateListResponse> ListTemplatesAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalTemplateListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleApprovalTemplateListResponse(
+        [
+            new BusinessConsoleApprovalTemplateItem(
+                "template-001",
+                request.OrganizationId,
+                request.EnvironmentId,
+                "purchase-order-default",
+                request.DocumentType ?? "purchase-order",
+                1,
+                true,
+                []),
+        ]));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateApprovalTemplateResponse> CreateOrUpdateTemplateAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateApprovalTemplateRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateApprovalTemplateResponse("template-001"));
+    }
+
+    public Task<BusinessConsoleStartApprovalChainResponse> StartChainAsync(
+        string internalBearerToken,
+        BusinessConsoleStartApprovalChainRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleStartApprovalChainResponse("chain-001"));
+    }
+
+    public Task<BusinessConsoleApprovalChainResponse> GetChainAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalChainRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleApprovalChainResponse(
+            request.ChainId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "purchase-order-default",
+            1,
+            "pending",
+            "BusinessERP",
+            "purchase-order",
+            "PO-001",
+            null,
+            [],
+            []));
+    }
+
     public Task<BusinessConsoleApprovalTaskListResponse> ListPendingTasksAsync(
         string internalBearerToken,
         BusinessConsoleApprovalTaskListRequest request,
@@ -257,7 +316,16 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
                 "PO-SECRET-001",
                 null,
                 DateTimeOffset.Parse("2026-06-03T03:00:00Z")),
-        ]));
+            ]));
+    }
+
+    public Task<BusinessConsoleResolveApprovalStepResponse> ResolveStepAsync(
+        string internalBearerToken,
+        BusinessConsoleResolveApprovalStepRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleResolveApprovalStepResponse("decision-001"));
     }
 }
 

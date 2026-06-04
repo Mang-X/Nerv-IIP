@@ -36,6 +36,9 @@ public interface IGatewayAuthorizationClient
 public static class GatewayPermissions
 {
     public const string AppHubInstancesRead = "apphub.instances.read";
+    public const string FilesDownloadGrantsCreate = "files.download-grants.create";
+    public const string FilesRead = "files.read";
+    public const string FilesUpload = "files.upload";
     public const string IamRolesManage = "iam.roles.manage";
     public const string IamRolesRead = "iam.roles.read";
     public const string IamSessionsRead = "iam.sessions.read";

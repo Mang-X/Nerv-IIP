@@ -529,6 +529,95 @@ public sealed record BusinessConsoleErpContextRequest(
     string OrganizationId,
     string EnvironmentId);
 
+public sealed record BusinessConsoleErpSourceDocumentRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceDocumentNo,
+    string? SourceType = null);
+
+public sealed record BusinessConsoleCreateErpPurchaseRequisitionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? RequisitionNo,
+    string SuggestionId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    decimal Quantity,
+    DateOnly RequiredDate,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleCreateErpPurchaseRequisitionResponse(string PurchaseRequisitionId);
+
+public sealed record BusinessConsoleCreateErpRequestForQuotationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? RfqNo,
+    IReadOnlyCollection<string> SupplierCodes,
+    IReadOnlyCollection<BusinessConsoleErpRfqLine> Lines,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleErpRfqLine(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    DateOnly RequiredDate);
+
+public sealed record BusinessConsoleCreateErpRequestForQuotationResponse(string RequestForQuotationId);
+
+public sealed record BusinessConsoleReceiveErpSupplierQuotationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? QuotationNo,
+    string RfqNo,
+    string SupplierCode,
+    IReadOnlyCollection<BusinessConsoleErpSupplierQuotationLine> Lines,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleErpSupplierQuotationLine(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    decimal UnitPrice,
+    DateOnly PromisedDate);
+
+public sealed record BusinessConsoleReceiveErpSupplierQuotationResponse(string SupplierQuotationId);
+
+public sealed record BusinessConsoleCreateErpPurchaseOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? PurchaseOrderNo,
+    string SupplierCode,
+    string SiteCode,
+    IReadOnlyCollection<BusinessConsoleErpPurchaseOrderCommandLine> Lines,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleErpPurchaseOrderCommandLine(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    decimal UnitPrice,
+    DateOnly PromisedDate);
+
+public sealed record BusinessConsoleCreateErpPurchaseOrderResponse(string PurchaseOrderId);
+
+public sealed record BusinessConsoleRecordErpPurchaseReceiptRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? PurchaseReceiptNo,
+    string PurchaseOrderNo,
+    IReadOnlyCollection<BusinessConsoleErpPurchaseReceiptLine> Lines,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleErpPurchaseReceiptLine(
+    string PurchaseOrderLineNo,
+    decimal ReceivedQuantity);
+
+public sealed record BusinessConsoleRecordErpPurchaseReceiptResponse(string PurchaseReceiptId);
+
 public sealed record BusinessConsoleErpPurchaseOrderListResponse(
     IReadOnlyCollection<BusinessConsoleErpPurchaseOrderItem> Items);
 
@@ -549,6 +638,366 @@ public sealed record BusinessConsoleErpPurchaseOrderLineItem(
     decimal ReceivedQuantity,
     decimal UnitPrice,
     DateOnly PromisedDate);
+
+public sealed record BusinessConsoleErpSalesOrderListResponse(
+    IReadOnlyCollection<BusinessConsoleErpSalesOrderItem> Items);
+
+public sealed record BusinessConsoleErpSalesOrderItem(
+    string SalesOrderNo,
+    string CustomerCode,
+    string Status,
+    decimal TotalAmount);
+
+public sealed record BusinessConsoleOpenErpOpportunityRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? OpportunityNo,
+    string CustomerCode,
+    string Topic,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleOpenErpOpportunityResponse(string OpportunityId);
+
+public sealed record BusinessConsoleCreateErpQuotationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? QuotationNo,
+    string CustomerCode,
+    DateOnly ExpiresOn,
+    IReadOnlyCollection<BusinessConsoleErpQuotationLine> Lines,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleErpQuotationLine(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    decimal UnitPrice,
+    DateOnly RequiredDate);
+
+public sealed record BusinessConsoleCreateErpQuotationResponse(string QuotationId);
+
+public sealed record BusinessConsoleApproveErpQuotationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string QuotationNo);
+
+public sealed record BusinessConsoleCreateErpSalesOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SalesOrderNo,
+    string QuotationNo,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleCreateErpSalesOrderResponse(string SalesOrderId);
+
+public sealed record BusinessConsoleReleaseErpDeliveryOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DeliveryOrderNo,
+    string SalesOrderNo,
+    IReadOnlyCollection<BusinessConsoleErpDeliveryOrderLine> Lines,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleErpDeliveryOrderLine(
+    string SalesOrderLineNo,
+    decimal Quantity);
+
+public sealed record BusinessConsoleReleaseErpDeliveryOrderResponse(string DeliveryOrderId);
+
+public sealed record BusinessConsoleCreateErpAccountPayableRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? PayableNo,
+    string SourceDocumentNo,
+    string SupplierCode,
+    decimal Amount,
+    string CurrencyCode,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleCreateErpAccountPayableResponse(string AccountPayableId);
+
+public sealed record BusinessConsoleCreateErpAccountReceivableRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? ReceivableNo,
+    string SourceDocumentNo,
+    string CustomerCode,
+    decimal Amount,
+    string CurrencyCode,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleCreateErpAccountReceivableResponse(string AccountReceivableId);
+
+public sealed record BusinessConsoleCreateErpCostCandidateRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? CandidateNo,
+    string SourceType,
+    string SourceDocumentNo,
+    decimal Amount,
+    string CurrencyCode,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleCreateErpCostCandidateResponse(string CostCandidateId);
+
+public sealed record BusinessConsolePostErpJournalVoucherRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? VoucherNo,
+    DateOnly PostingDate,
+    IReadOnlyCollection<BusinessConsoleErpJournalVoucherLine> Lines,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleErpJournalVoucherLine(
+    string AccountCode,
+    decimal DebitAmount,
+    decimal CreditAmount,
+    string Memo);
+
+public sealed record BusinessConsolePostErpJournalVoucherResponse(string JournalVoucherId);
+
+public sealed record BusinessConsoleErpFinanceSummaryResponse(
+    decimal OpenPayableAmount,
+    decimal OpenReceivableAmount,
+    decimal CostCandidateAmount,
+    int PostedVoucherCount);
+
+public sealed record BusinessConsoleErpPayableSourceDocumentResponse(
+    string PayableNo,
+    string SourceDocumentNo,
+    string SupplierCode,
+    decimal Amount,
+    decimal OpenAmount,
+    string CurrencyCode,
+    DateTime CreatedAtUtc);
+
+public sealed record BusinessConsoleErpReceivableSourceDocumentResponse(
+    string ReceivableNo,
+    string SourceDocumentNo,
+    string CustomerCode,
+    decimal Amount,
+    decimal OpenAmount,
+    string CurrencyCode,
+    DateTime CreatedAtUtc);
+
+public sealed record BusinessConsoleErpCostCandidateSourceDocumentResponse(
+    string CandidateNo,
+    string SourceType,
+    string SourceDocumentNo,
+    decimal Amount,
+    string CurrencyCode,
+    DateTime CreatedAtUtc);
+
+public sealed record BusinessConsoleApprovalTemplateListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DocumentType = null,
+    bool? IsActive = null);
+
+public sealed record BusinessConsoleApprovalTemplateListResponse(
+    IReadOnlyCollection<BusinessConsoleApprovalTemplateItem> Items);
+
+public sealed record BusinessConsoleApprovalTemplateItem(
+    string TemplateId,
+    string OrganizationId,
+    string EnvironmentId,
+    string TemplateCode,
+    string DocumentType,
+    int Version,
+    bool IsActive,
+    IReadOnlyCollection<BusinessConsoleApprovalTemplateStepItem> Steps);
+
+public sealed record BusinessConsoleApprovalTemplateStepItem(
+    int StepNo,
+    string StepName,
+    string? ParallelGroupKey,
+    string ApproverType,
+    string ApproverRef,
+    int? DueInHours);
+
+public sealed record BusinessConsoleCreateOrUpdateApprovalTemplateRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string TemplateCode,
+    string DocumentType,
+    int Version,
+    bool IsActive,
+    IReadOnlyCollection<BusinessConsoleApprovalTemplateStepItem> Steps);
+
+public sealed record BusinessConsoleCreateOrUpdateApprovalTemplateResponse(string TemplateId);
+
+public sealed record BusinessConsoleStartApprovalChainRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string TemplateCode,
+    string SourceService,
+    string DocumentType,
+    string DocumentId,
+    string? DocumentLineId,
+    string StartedBy);
+
+public sealed record BusinessConsoleStartApprovalChainResponse(string ChainId);
+
+public sealed record BusinessConsoleApprovalChainRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChainId);
+
+public sealed record BusinessConsoleApprovalChainResponse(
+    string ChainId,
+    string OrganizationId,
+    string EnvironmentId,
+    string TemplateCode,
+    int TemplateVersion,
+    string Status,
+    string SourceService,
+    string DocumentType,
+    string DocumentId,
+    string? DocumentLineId,
+    IReadOnlyCollection<BusinessConsoleApprovalStepItem> Steps,
+    IReadOnlyCollection<BusinessConsoleApprovalDecisionItem> Decisions);
+
+public sealed record BusinessConsoleApprovalStepItem(
+    int StepNo,
+    string StepName,
+    string? ParallelGroupKey,
+    string ApproverType,
+    string ApproverRef,
+    string Status,
+    DateTimeOffset? DueAtUtc,
+    string? ResolvedDecision);
+
+public sealed record BusinessConsoleApprovalDecisionItem(
+    string DecisionId,
+    int StepNo,
+    string ActorType,
+    string ActorRef,
+    string Decision,
+    string? Comment,
+    DateTimeOffset DecidedAtUtc);
+
+public sealed record BusinessConsoleResolveApprovalStepRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChainId,
+    int StepNo,
+    string ActorType,
+    string ActorRef,
+    string Decision,
+    string? Comment);
+
+public sealed record BusinessConsoleResolveApprovalStepResponse(string DecisionId);
+
+public sealed record BusinessConsoleCreateOrUpdateBarcodeRuleRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string RuleCode,
+    string BarcodeType,
+    string Prefix,
+    int Length,
+    string ChecksumRule,
+    IReadOnlyCollection<string> AllowedSourceDocumentTypes,
+    string Status);
+
+public sealed record BusinessConsoleCreateOrUpdateBarcodeRuleResponse(string BarcodeRuleId);
+
+public sealed record BusinessConsoleBarcodeTemplateListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null);
+
+public sealed record BusinessConsoleBarcodeTemplateListResponse(
+    IReadOnlyCollection<BusinessConsoleBarcodeTemplateItem> Templates);
+
+public sealed record BusinessConsoleBarcodeTemplateItem(
+    string TemplateId,
+    string TemplateCode,
+    string TemplateName,
+    string TemplateFileId,
+    string VariableSchemaJson,
+    string Status);
+
+public sealed record BusinessConsoleCreateOrUpdateBarcodeTemplateRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string TemplateCode,
+    string TemplateName,
+    string TemplateFileId,
+    string VariableSchemaJson,
+    string Status);
+
+public sealed record BusinessConsoleCreateOrUpdateBarcodeTemplateResponse(string TemplateId);
+
+public sealed record BusinessConsoleCreateBarcodePrintBatchRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string BarcodeRuleId,
+    string LabelTemplateId,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string IdempotencyKey,
+    string LabelValuesJson,
+    int RequestedQuantity);
+
+public sealed record BusinessConsoleCreateBarcodePrintBatchResponse(string PrintBatchId);
+
+public sealed record BusinessConsoleBarcodePrintBatchRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PrintBatchId);
+
+public sealed record BusinessConsoleBarcodePrintBatchResponse(
+    BusinessConsoleBarcodePrintBatchDetail PrintBatch);
+
+public sealed record BusinessConsoleBarcodePrintBatchDetail(
+    string PrintBatchId,
+    string LabelTemplateId,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string IdempotencyKey,
+    int RequestedQuantity,
+    string Status,
+    IReadOnlyCollection<BusinessConsoleBarcodePrintItemDetail> Items);
+
+public sealed record BusinessConsoleBarcodePrintItemDetail(
+    int SequenceNo,
+    string LabelValue,
+    string? FileId);
+
+public sealed record BusinessConsoleRecordBarcodeScanRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceCode,
+    string ScannedValue,
+    string SourceWorkflow,
+    string SourceDocumentId,
+    string IdempotencyKey,
+    string Result,
+    string? RejectionReason);
+
+public sealed record BusinessConsoleRecordBarcodeScanResponse(string ScanRecordId);
+
+public sealed record BusinessConsoleBarcodeScanListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DeviceCode = null,
+    string? ScannedValue = null,
+    string? SourceWorkflow = null,
+    string? SourceDocumentId = null);
+
+public sealed record BusinessConsoleBarcodeScanListResponse(
+    IReadOnlyCollection<BusinessConsoleBarcodeScanRecordItem> Scans);
+
+public sealed record BusinessConsoleBarcodeScanRecordItem(
+    string ScanRecordId,
+    string DeviceCode,
+    string ScannedValue,
+    string SourceWorkflow,
+    string SourceDocumentId,
+    string Result,
+    string? RejectionReason,
+    DateTimeOffset ScannedAtUtc);
 
 public sealed record BusinessConsoleMesListRequest(
     string OrganizationId,
