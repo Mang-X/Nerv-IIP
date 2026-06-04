@@ -36,5 +36,8 @@ Add more under [`commands/`](commands/) — each `*.md` is a prompt run when inv
 
 - `settings.local.json` is per-developer local state (permissions etc.) and is **not**
   committed — do not put shared config there.
-- `setup-worktree.ps1` is harness config outside the governed `scripts/` tree, so it may
-  call `pnpm` / `dotnet` directly (the `scripts/` governance rules do not apply here).
+- The SessionStart hook runs `scripts/setup-worktree.ps1`, which lives in the **governed**
+  `scripts/` tree: it carries a `Script-Governance` header, dot-sources
+  `scripts/lib/ScriptAutomation.ps1`, and wraps `pnpm`/`dotnet` through `Invoke-Pnpm` /
+  `Invoke-DotNet` (timeout, logging, redaction, process cleanup). It is verified by
+  `scripts/check-script-governance.ps1` like every other script — no governance exemption.
