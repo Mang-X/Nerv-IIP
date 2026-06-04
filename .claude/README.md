@@ -6,7 +6,7 @@ freshly created git worktree picks it up automatically.
 ## Environment setup (codex `[setup]` parity)
 
 `SessionStart` hook in [`settings.json`](settings.json) runs
-[`scripts/setup-worktree.ps1`](scripts/setup-worktree.ps1) every time a session
+[`scripts/setup-worktree.ps1`](../scripts/setup-worktree.ps1) every time a session
 starts. The script is **idempotent** — heavy steps are guarded by their output
 artifacts, so it only does real work on a fresh worktree:
 
