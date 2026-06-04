@@ -328,8 +328,8 @@ describe('MES workflow copy', () => {
   it('keeps production plans business-facing without manual system number generation', () => {
     const wrapper = mountMesPage(PlansPage)
 
-    expect(wrapper.text()).toContain('生产计划列表')
-    expect(wrapper.text()).toContain('计划来源')
+    expect(wrapper.text()).toContain('生产计划')
+    expect(wrapper.text()).toContain('转工单')
     expect(wrapper.find('#add-plan-id').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('生成')
     expectNoForbiddenVisibleTerms(wrapper.text())

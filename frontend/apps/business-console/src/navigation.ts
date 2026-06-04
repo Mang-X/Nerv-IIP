@@ -53,8 +53,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
   'engineering': [
     {
       items: [
-        { title: '工艺与版本', to: { path: '/master-data/process' } },
-        { title: '工程版本发布', to: { path: '/engineering' } },
+        { title: '工程版本', to: { path: '/engineering' } },
       ],
     },
   ],
