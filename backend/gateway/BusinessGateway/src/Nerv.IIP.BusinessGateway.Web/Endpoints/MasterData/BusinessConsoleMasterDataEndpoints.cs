@@ -100,6 +100,180 @@ public sealed class BusinessConsoleCreateSkuRequestValidator : Validator<Busines
     }
 }
 
+public sealed class BusinessConsoleCreateBusinessPartnerRequestValidator : Validator<BusinessConsoleCreateBusinessPartnerRequest>
+{
+    public BusinessConsoleCreateBusinessPartnerRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PartnerType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+    }
+}
+
+public sealed class BusinessConsoleCreateUnitOfMeasureRequestValidator : Validator<BusinessConsoleCreateUnitOfMeasureRequest>
+{
+    public BusinessConsoleCreateUnitOfMeasureRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.DimensionType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Precision).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.RoundingMode).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleCreateUomConversionRequestValidator : Validator<BusinessConsoleCreateUomConversionRequest>
+{
+    public BusinessConsoleCreateUomConversionRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.FromUomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ToUomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Factor).GreaterThan(0);
+        RuleFor(x => x.Precision).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.RoundingMode).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleCreateSiteRequestValidator : Validator<BusinessConsoleCreateSiteRequest>
+{
+    public BusinessConsoleCreateSiteRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Timezone).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleCreateProductionLineRequestValidator : Validator<BusinessConsoleCreateProductionLineRequest>
+{
+    public BusinessConsoleCreateProductionLineRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleCreateWorkCenterRequestValidator : Validator<BusinessConsoleCreateWorkCenterRequest>
+{
+    public BusinessConsoleCreateWorkCenterRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.CapacityMinutesPerDay).GreaterThan(0);
+        RuleFor(x => x.ResourceType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PlantCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LineCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DefaultCalendarCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CapacityUnit).NotEmpty().MaximumLength(50);
+    }
+}
+
+public sealed class BusinessConsoleRegisterDeviceAssetRequestValidator : Validator<BusinessConsoleRegisterDeviceAssetRequest>
+{
+    public BusinessConsoleRegisterDeviceAssetRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Model).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.LineCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AssetClassCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Manufacturer).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.SerialNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CapacityUomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Criticality).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.MaximumCapacity).GreaterThanOrEqualTo(x => x.MinimumCapacity)
+            .When(x => x.MinimumCapacity.HasValue && x.MaximumCapacity.HasValue);
+    }
+}
+
+public sealed class BusinessConsoleCreateShiftRequestValidator : Validator<BusinessConsoleCreateShiftRequest>
+{
+    public BusinessConsoleCreateShiftRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.PaidMinutes).GreaterThan(0);
+    }
+}
+
+public sealed class BusinessConsoleCreateWorkCalendarRequestValidator : Validator<BusinessConsoleCreateWorkCalendarRequest>
+{
+    public BusinessConsoleCreateWorkCalendarRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+    }
+}
+
+public sealed class BusinessConsoleCreateTeamRequestValidator : Validator<BusinessConsoleCreateTeamRequest>
+{
+    public BusinessConsoleCreateTeamRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.DepartmentCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ShiftCode).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleCreateDepartmentRequestValidator : Validator<BusinessConsoleCreateDepartmentRequest>
+{
+    public BusinessConsoleCreateDepartmentRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ParentDepartmentCode).MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleAssignPersonnelSkillRequestValidator : Validator<BusinessConsoleAssignPersonnelSkillRequest>
+{
+    public BusinessConsoleAssignPersonnelSkillRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.UserId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkillCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Level).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EffectiveTo).GreaterThanOrEqualTo(x => x.EffectiveFrom);
+    }
+}
+
+public sealed class BusinessConsoleCreateReferenceDataCodeRequestValidator : Validator<BusinessConsoleCreateReferenceDataCodeRequest>
+{
+    public BusinessConsoleCreateReferenceDataCodeRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CodeSet).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+    }
+}
+
 [Tags("Business Console MasterData")]
 [HttpPost("/api/business-console/v1/master-data/business-partners")]
 [BusinessGatewayOperationId("createBusinessConsoleBusinessPartner")]

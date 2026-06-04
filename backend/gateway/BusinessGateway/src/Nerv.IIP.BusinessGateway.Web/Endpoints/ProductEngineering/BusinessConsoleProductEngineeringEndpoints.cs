@@ -1,4 +1,5 @@
 using FastEndpoints;
+using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
@@ -334,4 +335,157 @@ public sealed class ResolveBusinessConsoleEngineeringProductionVersionEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         engineering.ResolveProductionVersionAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleRegisterEngineeringDocumentRequestValidator : Validator<BusinessConsoleRegisterEngineeringDocumentRequest>
+{
+    public BusinessConsoleRegisterEngineeringDocumentRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DocumentNumber).MaximumLength(100);
+        RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.FileId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.FileName).NotEmpty().MaximumLength(255);
+        RuleFor(x => x.ContentType).NotEmpty().MaximumLength(120);
+        RuleFor(x => x.DocumentType).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleCreateEngineeringItemRevisionRequestValidator : Validator<BusinessConsoleCreateEngineeringItemRevisionRequest>
+{
+    public BusinessConsoleCreateEngineeringItemRevisionRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ItemCode).MaximumLength(100);
+        RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(255);
+    }
+}
+
+public sealed class BusinessConsoleReleaseEngineeringBomRequestValidator : Validator<BusinessConsoleReleaseEngineeringBomRequest>
+{
+    public BusinessConsoleReleaseEngineeringBomRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.BomCode).MaximumLength(100);
+        RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ParentItemCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Lines).NotEmpty();
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.ComponentCode).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.Quantity).GreaterThan(0);
+            line.RuleFor(x => x.UnitOfMeasureCode).NotEmpty().MaximumLength(50);
+        });
+    }
+}
+
+public sealed class BusinessConsoleReleaseManufacturingBomRequestValidator : Validator<BusinessConsoleReleaseManufacturingBomRequest>
+{
+    public BusinessConsoleReleaseManufacturingBomRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.BomCode).MaximumLength(100);
+        RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EngineeringBomCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EngineeringBomRevision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.MaterialLines).NotEmpty();
+        RuleForEach(x => x.MaterialLines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.Quantity).GreaterThan(0);
+            line.RuleFor(x => x.UnitOfMeasureCode).NotEmpty().MaximumLength(50);
+            line.RuleFor(x => x.ScrapRate).GreaterThanOrEqualTo(0);
+        });
+        RuleForEach(x => x.RecipeLines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.ParameterCode).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.TargetValue).NotEmpty().MaximumLength(200);
+            line.RuleFor(x => x.UnitOfMeasureCode).NotEmpty().MaximumLength(50);
+        });
+    }
+}
+
+public sealed class BusinessConsoleReleaseRoutingRequestValidator : Validator<BusinessConsoleReleaseRoutingRequest>
+{
+    public BusinessConsoleReleaseRoutingRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.RoutingCode).MaximumLength(100);
+        RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Operations).NotEmpty();
+        RuleForEach(x => x.Operations).ChildRules(operation =>
+        {
+            operation.RuleFor(x => x.Sequence).GreaterThan(0);
+            operation.RuleFor(x => x.WorkCenterCode).NotEmpty().MaximumLength(100);
+            operation.RuleFor(x => x.OperationName).NotEmpty().MaximumLength(200);
+            operation.RuleFor(x => x.StandardMinutes).GreaterThan(0);
+        });
+    }
+}
+
+public sealed class BusinessConsoleReleaseEngineeringChangeRequestValidator : Validator<BusinessConsoleReleaseEngineeringChangeRequest>
+{
+    public BusinessConsoleReleaseEngineeringChangeRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ChangeNumber).MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.ApprovalReferenceId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.AffectedVersions).NotEmpty();
+        RuleForEach(x => x.AffectedVersions).ChildRules(version =>
+        {
+            version.RuleFor(x => x.VersionKind).NotEmpty().MaximumLength(100);
+            version.RuleFor(x => x.VersionId).NotEmpty().MaximumLength(150);
+        });
+    }
+}
+
+public sealed class BusinessConsoleCreateProductionVersionRequestValidator : Validator<BusinessConsoleCreateProductionVersionRequest>
+{
+    public BusinessConsoleCreateProductionVersionRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.MbomVersionId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.RoutingVersionId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Priority).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.LotSizeMin).GreaterThanOrEqualTo(0).When(x => x.LotSizeMin.HasValue);
+        RuleFor(x => x.LotSizeMax).GreaterThanOrEqualTo(0).When(x => x.LotSizeMax.HasValue);
+    }
+}
+
+public sealed class BusinessConsoleUpdateProductionVersionRequestValidator : Validator<BusinessConsoleUpdateProductionVersionRequest>
+{
+    public BusinessConsoleUpdateProductionVersionRequestValidator()
+    {
+        RuleFor(x => x.ProductionVersionId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.MbomVersionId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.RoutingVersionId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Priority).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.LotSizeMin).GreaterThanOrEqualTo(0).When(x => x.LotSizeMin.HasValue);
+        RuleFor(x => x.LotSizeMax).GreaterThanOrEqualTo(0).When(x => x.LotSizeMax.HasValue);
+    }
+}
+
+public sealed class BusinessConsoleArchiveProductionVersionRequestValidator : Validator<BusinessConsoleArchiveProductionVersionRequest>
+{
+    public BusinessConsoleArchiveProductionVersionRequestValidator()
+    {
+        RuleFor(x => x.ProductionVersionId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
 }

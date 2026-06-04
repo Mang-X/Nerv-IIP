@@ -991,6 +991,67 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Maintenance_http_client_forwards_write_operations_to_backend_maintenance_paths()
+    {
+        var handler = new RecordingHandler(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/api/business/v1/maintenance/work-orders" => JsonResponse(HttpStatusCode.OK, new { data = new { workOrderId = "wo-maint-001" } }),
+            "/api/business/v1/maintenance/work-orders/wo-maint-001/complete" => JsonResponse(HttpStatusCode.OK, new { data = new { accepted = true } }),
+            "/api/business/v1/maintenance/plans" => JsonResponse(HttpStatusCode.OK, new { data = new { planId = "plan-001" } }),
+            "/api/business/v1/maintenance/inspections" => JsonResponse(HttpStatusCode.OK, new { data = new { inspectionId = "inspection-001" } }),
+            _ => JsonResponse(HttpStatusCode.NotFound, new { message = "unexpected path" }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        await client.CreateWorkOrderAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateMaintenanceWorkOrderRequest("org-001", "env-dev", "DEV-PRESS-01", "high", "alarm-001", "operator-001", null),
+            CancellationToken.None);
+        await client.CompleteWorkOrderAsync(
+            "internal-token-001",
+            "wo-maint-001",
+            new BusinessConsoleCompleteMaintenanceWorkOrderRequest(
+                "org-001",
+                "env-dev",
+                "fixed",
+                "planned-maintenance",
+                30,
+                [new BusinessConsoleMaintenanceSparePartInput("SPARE-001", 1, "EA")]),
+            CancellationToken.None);
+        await client.CreatePlanAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateMaintenancePlanRequest(
+                "org-001",
+                "env-dev",
+                "DEV-PRESS-01",
+                "PLAN-001",
+                "monthly",
+                DateOnly.Parse("2026-06-01", CultureInfo.InvariantCulture),
+                "maintenance-team",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)),
+            CancellationToken.None);
+        await client.RecordInspectionAsync(
+            "internal-token-001",
+            new BusinessConsoleRecordMaintenanceInspectionRequest(
+                "org-001",
+                "env-dev",
+                "plan-001",
+                "wo-maint-001",
+                "inspector-001",
+                "pass",
+                DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture)),
+            CancellationToken.None);
+
+        Assert.All(handler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter));
+        AssertRequest(handler.Requests[0], HttpMethod.Post, "/api/business/v1/maintenance/work-orders");
+        AssertRequest(handler.Requests[1], HttpMethod.Post, "/api/business/v1/maintenance/work-orders/wo-maint-001/complete");
+        AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/maintenance/plans");
+        AssertRequest(handler.Requests[3], HttpMethod.Post, "/api/business/v1/maintenance/inspections");
+    }
+
+    [Fact]
     public async Task Scheduling_http_client_uses_scheduling_contract_enum_json()
     {
         var handler = new RecordingHandler(request =>
@@ -1146,6 +1207,83 @@ public sealed class BusinessGatewayProxyTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/business-console/v1/master-data/business-partners", "name")]
+    [InlineData("/api/business-console/v1/master-data/units-of-measure", "name")]
+    [InlineData("/api/business-console/v1/master-data/uom-conversions", "fromUomCode")]
+    [InlineData("/api/business-console/v1/master-data/sites", "timezone")]
+    [InlineData("/api/business-console/v1/master-data/production-lines", "siteCode")]
+    [InlineData("/api/business-console/v1/master-data/work-centers", "capacityUnit")]
+    [InlineData("/api/business-console/v1/master-data/device-assets", "serialNo")]
+    [InlineData("/api/business-console/v1/master-data/shifts", "name")]
+    [InlineData("/api/business-console/v1/master-data/work-calendars", "name")]
+    [InlineData("/api/business-console/v1/master-data/teams", "departmentCode")]
+    [InlineData("/api/business-console/v1/master-data/departments", "name")]
+    [InlineData("/api/business-console/v1/master-data/personnel-skills", "skillCode")]
+    [InlineData("/api/business-console/v1/master-data/reference-data", "codeSet")]
+    public async Task Master_data_create_facades_reject_invalid_required_fields(
+        string gatewayPath,
+        string fieldName)
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var body = BusinessConsoleTestRequestBodies.ValidMasterDataCreateBody(gatewayPath);
+        body[fieldName] = string.Empty;
+
+        var response = await client.PostAsJsonAsync(
+            $"{gatewayPath}?organizationId=org-001&environmentId=env-dev",
+            body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, masterData.CreateResourceCallCount);
+    }
+
+    [Theory]
+    [InlineData("/api/business-console/v1/engineering/documents", "fileId")]
+    [InlineData("/api/business-console/v1/engineering/items", "name")]
+    [InlineData("/api/business-console/v1/engineering/engineering-boms/release", "parentItemCode")]
+    [InlineData("/api/business-console/v1/engineering/manufacturing-boms/release", "skuCode")]
+    [InlineData("/api/business-console/v1/engineering/routings/release", "skuCode")]
+    [InlineData("/api/business-console/v1/engineering/engineering-changes/release", "reason")]
+    [InlineData("/api/business-console/v1/engineering/production-versions", "skuCode")]
+    [InlineData("/api/business-console/v1/engineering/production-versions/pv-001", "mbomVersionId")]
+    [InlineData("/api/business-console/v1/engineering/production-versions/pv-001/archive", "reason")]
+    public async Task Product_engineering_write_facades_reject_invalid_required_fields(
+        string gatewayPath,
+        string fieldName)
+    {
+        var engineering = new RecordingProductEngineeringClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var body = BusinessConsoleTestRequestBodies.ValidEngineeringWriteBody(gatewayPath);
+        body[fieldName] = string.Empty;
+        var method = gatewayPath == "/api/business-console/v1/engineering/production-versions/pv-001"
+            ? HttpMethod.Put
+            : HttpMethod.Post;
+        using var request = new HttpRequestMessage(
+            method,
+            $"{gatewayPath}?organizationId=org-001&environmentId=env-dev")
+        {
+            Content = JsonContent.Create(body),
+        };
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, engineering.WriteCallCount);
     }
 
     [Theory]
@@ -1893,141 +2031,8 @@ public sealed class BusinessGatewayProxyTests
         Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
     };
 
-    private static object ValidMasterDataCreateBody(string path) => path switch
-    {
-        "/api/business-console/v1/master-data/business-partners" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "SUP-001",
-            partnerType = "supplier",
-            name = "Demo Supplier",
-        },
-        "/api/business-console/v1/master-data/units-of-measure" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "EA",
-            name = "Each",
-            dimensionType = "count",
-            precision = 0,
-            roundingMode = "half-up",
-        },
-        "/api/business-console/v1/master-data/uom-conversions" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            fromUomCode = "BOX",
-            toUomCode = "EA",
-            factor = 12,
-            offset = 0,
-            precision = 6,
-            roundingMode = "half-up",
-            effectiveFrom = "2026-01-01",
-        },
-        "/api/business-console/v1/master-data/sites" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "SITE-01",
-            name = "Main Site",
-            timezone = "Asia/Shanghai",
-        },
-        "/api/business-console/v1/master-data/production-lines" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "LINE-01",
-            name = "Line 1",
-            siteCode = "SITE-01",
-        },
-        "/api/business-console/v1/master-data/work-centers" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "WC-01",
-            name = "Work Center 1",
-            capacityMinutesPerDay = 480,
-            resourceType = "line",
-            plantCode = "SITE-01",
-            lineCode = "LINE-01",
-            defaultCalendarCode = "CAL-01",
-            capacityUnit = "minute",
-            finiteCapacity = true,
-        },
-        "/api/business-console/v1/master-data/device-assets" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "DEV-01",
-            model = "Robot",
-            lineCode = "LINE-01",
-            workCenterCode = "WC-01",
-            assetClassCode = "robot",
-            manufacturer = "Demo Maker",
-            serialNo = "SN-001",
-            minimumCapacity = 1,
-            maximumCapacity = 10,
-            capacityUomCode = "EA",
-            criticality = "high",
-            maintainable = true,
-            telemetryEnabled = true,
-            externalReferences = new Dictionary<string, string> { ["iiot"] = "DEV-01" },
-        },
-        "/api/business-console/v1/master-data/shifts" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "SHIFT-A",
-            name = "Shift A",
-            startsAt = "08:00:00",
-            endsAt = "16:00:00",
-            paidMinutes = 480,
-        },
-        "/api/business-console/v1/master-data/work-calendars" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "CAL-01",
-            name = "Standard Calendar",
-        },
-        "/api/business-console/v1/master-data/teams" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "TEAM-A",
-            name = "Team A",
-            departmentCode = "DEP-01",
-            shiftCode = "SHIFT-A",
-        },
-        "/api/business-console/v1/master-data/departments" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            code = "DEP-01",
-            name = "Production Department",
-            parentDepartmentCode = (string?)null,
-        },
-        "/api/business-console/v1/master-data/personnel-skills" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            userId = "user-001",
-            skillCode = "WELD",
-            level = "L2",
-            effectiveFrom = "2026-01-01",
-            effectiveTo = "2026-12-31",
-        },
-        "/api/business-console/v1/master-data/reference-data" => new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            codeSet = "asset-class",
-            code = "robot",
-            name = "Robot",
-        },
-        _ => throw new ArgumentOutOfRangeException(nameof(path), path, "Unknown MasterData create path."),
-    };
+    private static object ValidMasterDataCreateBody(string path) =>
+        BusinessConsoleTestRequestBodies.ValidMasterDataCreateBody(path);
 
     internal static EquipmentRuntimeAvailabilityResponse CreateAvailabilityResponse(
         string sourceReferenceId,
@@ -2709,6 +2714,8 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
 {
     public int ProductionVersionListCallCount { get; private set; }
 
+    public int WriteCallCount { get; private set; }
+
     public string? LastInternalToken { get; private set; }
 
     public BusinessConsoleResolveProductionVersionRequest? LastResolveRequest { get; private set; }
@@ -2722,6 +2729,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         BusinessConsoleRegisterEngineeringDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.DocumentNumber ?? "DOC-001"));
     }
@@ -2731,6 +2739,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         BusinessConsoleCreateEngineeringItemRevisionRequest request,
         CancellationToken cancellationToken)
     {
+        WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ItemCode ?? "ITEM-001"));
     }
@@ -2740,6 +2749,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         BusinessConsoleReleaseEngineeringBomRequest request,
         CancellationToken cancellationToken)
     {
+        WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.BomCode ?? "EBOM-001"));
     }
@@ -2767,6 +2777,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         BusinessConsoleReleaseManufacturingBomRequest request,
         CancellationToken cancellationToken)
     {
+        WriteCallCount++;
         LastInternalToken = internalBearerToken;
         LastReleaseManufacturingBomRequest = request;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.BomCode ?? "MBOM-001"));
@@ -2786,6 +2797,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         BusinessConsoleReleaseRoutingRequest request,
         CancellationToken cancellationToken)
     {
+        WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.RoutingCode ?? "RTG-001"));
     }
@@ -2795,6 +2807,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         BusinessConsoleReleaseEngineeringChangeRequest request,
         CancellationToken cancellationToken)
     {
+        WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ChangeNumber ?? "ECO-001"));
     }
@@ -2850,6 +2863,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         BusinessConsoleCreateProductionVersionRequest request,
         CancellationToken cancellationToken)
     {
+        WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleCreateProductionVersionResponse("pv-front-001"));
     }
@@ -2860,6 +2874,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         BusinessConsoleUpdateProductionVersionRequest request,
         CancellationToken cancellationToken)
     {
+        WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleCreateProductionVersionResponse(productionVersionId));
     }
@@ -2870,6 +2885,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         BusinessConsoleArchiveProductionVersionRequest request,
         CancellationToken cancellationToken)
     {
+        WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
