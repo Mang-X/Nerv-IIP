@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 // Pages migrated to the FE-2 block gold standard (see DESIGN/patterns/pages/list-workbench.md).
 // Add each page here as it is migrated in stage B — the rules below then prevent drift.
-const GOLD_STANDARD_PAGES = ['mes/operation-tasks.vue']
+const GOLD_STANDARD_PAGES = ['mes/operation-tasks.vue', 'master-data/skus.vue']
 
 const REQUIRED_BLOCKS = ['PageHeader', 'DataTable', 'DataTablePagination', 'SectionCard']
 const LEGACY_BLOCKS = [
@@ -18,8 +18,10 @@ const LEGACY_BLOCKS = [
   'BusinessEmptyState',
   'BusinessFormStatus',
 ]
-// Developer / platform-metadata terms that must never reach business UI source.
-const BANNED_COPY = ['operationId', 'sourceSystem', 'organizationId', 'environmentId', 'demo', 'seed', '样例']
+// Developer-language / fake-data terms that must never appear in a business page.
+// (organization/environment IDs are legitimate inside API request bodies, so they are
+// not token-banned here; their *visible* exposure is prevented by not using BusinessContextBar.)
+const BANNED_COPY = ['operationId', 'sourceSystem', 'demo', 'seed', 'mock', '样例']
 
 const pagesDir = dirname(fileURLToPath(import.meta.url))
 function read(page: string): string {
