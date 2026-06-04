@@ -53,7 +53,6 @@ function openSearch() {
     :top-domains="topDomains"
     :current-domain-id="currentDomainId"
     :side-nav="sideNav"
-    :max-visible-domains="7"
     :user="shellUser"
     sign-out-label="退出登录"
     @sign-out="signOut"

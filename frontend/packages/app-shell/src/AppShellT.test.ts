@@ -52,13 +52,20 @@ describe('AppShellT (T-shaped shell)', () => {
     expect(targets).toContainEqual({ path: '/mes/plans' })
   })
 
-  it('collapses domains beyond maxVisible into a 更多 overflow', () => {
+  it('collapses domains beyond the visible cap into a 更多 overflow', () => {
     const router = makeRouter()
     const wrapper = mount(AppShellT, {
       global: { plugins: [router] },
       props: { title: 'Nerv-IIP', topDomains: domains, currentDomainId: 'workbench', maxVisibleDomains: 2 },
     })
-    expect(wrapper.text()).toContain('更多')
+    // Scope to the real nav (the off-flow measurement layer is a sibling).
+    const nav = wrapper.find('nav[aria-label="一级能力区"]')
+    expect(nav.exists()).toBe(true)
+    expect(nav.text()).toContain('更多')
+    // Only the first 2 domains remain as direct tabs; the 3rd is in the overflow.
+    expect(nav.text()).toContain('数字化工作台')
+    expect(nav.text()).toContain('制造执行')
+    expect(nav.text()).not.toContain('质量管理')
   })
 
   it('emits openSearch on the search button and on ⌘/Ctrl+K', async () => {

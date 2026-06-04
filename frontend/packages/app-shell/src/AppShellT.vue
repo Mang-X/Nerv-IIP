@@ -42,7 +42,6 @@ const props = withDefaults(
     starred?: NavLink[]
   }>(),
   {
-    maxVisibleDomains: 7,
     signOutLabel: '退出登录',
     searchLabel: '搜索菜单、单号、物料…',
   },
