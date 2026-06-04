@@ -52,9 +52,9 @@ function updatePageSize(value: unknown) {
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-wrap items-center justify-between gap-3">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <p class="min-w-0 truncate text-sm text-muted-foreground" aria-live="polite">显示 {{ summary }}</p>
-    <div class="flex flex-wrap items-center gap-3">
+    <div class="flex items-center gap-3">
       <div class="flex items-center gap-2">
         <span class="shrink-0 text-sm text-muted-foreground">每页</span>
         <Select :model-value="pageSize" @update:model-value="updatePageSize">

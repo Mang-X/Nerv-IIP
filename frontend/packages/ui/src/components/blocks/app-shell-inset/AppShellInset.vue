@@ -40,7 +40,11 @@ withDefaults(
         class="flex h-14 shrink-0 items-center gap-2 border-b px-4 transition-[width,height] ease-linear"
       >
         <SidebarTrigger class="-ml-1" />
-        <Separator v-if="$slots.header" orientation="vertical" class="mr-2 data-[orientation=vertical]:h-4" />
+        <Separator
+          v-if="$slots.header"
+          orientation="vertical"
+          class="mr-2 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center"
+        />
         <slot name="header" />
       </header>
       <main class="flex flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6">
