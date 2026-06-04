@@ -11,6 +11,9 @@ export {
 } from './composables/useTheme'
 export type { ColorMode } from './composables/useTheme'
 
+// FE-2 custom block component library (distinct from原版 primitives above).
+export * from './components/blocks'
+
 export {
   Breadcrumb,
   BreadcrumbEllipsis,
