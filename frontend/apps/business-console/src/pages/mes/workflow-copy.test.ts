@@ -161,6 +161,41 @@ const businessStubs = {
 }
 
 const uiStubs = {
+  // FE-2 block components (used by the migrated operation-tasks gold-standard page).
+  PageHeader: {
+    props: ['title', 'breadcrumbs', 'count'],
+    template: '<header><h1>{{ title }}</h1><slot name="actions" /></header>',
+  },
+  SectionCards: {
+    props: ['columns'],
+    template: '<div><slot /></div>',
+  },
+  SectionCard: {
+    props: ['description', 'value', 'hint', 'footnote', 'trend'],
+    template: '<div>{{ description }} {{ value }} {{ hint }}</div>',
+  },
+  Toolbar: {
+    props: ['search', 'searchPlaceholder'],
+    template: '<div><slot name="filters" /><slot name="actions" /></div>',
+  },
+  DataTable: {
+    props: ['rows', 'columns', 'rowKey', 'sort', 'clientSort', 'loading', 'emptyMessage'],
+    template: `<div><template v-for="(row, i) in rows" :key="i">
+      <slot name="cell-workOrderId" :row="row" />
+      <slot name="cell-status" :row="row" />
+      <slot name="cell-qualityStatus" :row="row" />
+      <slot name="cell-actions" :row="row" />
+    </template></div>`,
+  },
+  DataTablePagination: true,
+  RowActions: {
+    props: ['label'],
+    template: '<div><slot /></div>',
+  },
+  StatusBadge: {
+    props: ['value'],
+    template: '<span>{{ value }}</span>',
+  },
   Button: {
     template: '<button v-bind="$attrs"><slot /></button>',
   },

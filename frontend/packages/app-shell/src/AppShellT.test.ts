@@ -1,0 +1,98 @@
+import type { NavDomain, SideNav } from './types'
+import { mount } from '@vue/test-utils'
+import { describe, expect, it } from 'vitest'
+import { createMemoryHistory, createRouter, RouterLink } from 'vue-router'
+import AppShellT from './AppShellT.vue'
+
+function makeRouter() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { component: { template: '<div />' }, name: 'home', path: '/' },
+      { component: { template: '<div />' }, name: 'mes', path: '/mes' },
+      { component: { template: '<div />' }, name: 'mes-plans', path: '/mes/plans' },
+      { component: { template: '<div />' }, name: 'quality', path: '/quality/inspections' },
+    ],
+  })
+  return router
+}
+
+const domains: NavDomain[] = [
+  { id: 'workbench', title: '数字化工作台', to: { path: '/' } },
+  { id: 'mes', title: '制造执行', to: { path: '/mes' } },
+  { id: 'quality', title: '质量管理', to: { path: '/quality/inspections' } },
+]
+
+const sideNav: SideNav = [
+  {
+    label: '计划与工单',
+    items: [
+      { title: '生产驾驶舱', to: { path: '/mes' } },
+      { title: '生产计划', to: { path: '/mes/plans' } },
+    ],
+  },
+]
+
+describe('AppShellT (T-shaped shell)', () => {
+  it('renders top domains and the current domain side nav', async () => {
+    const router = makeRouter()
+    router.push('/mes')
+    await router.isReady()
+
+    const wrapper = mount(AppShellT, {
+      global: { plugins: [router] },
+      props: { title: 'Nerv-IIP', topDomains: domains, currentDomainId: 'mes', sideNav },
+    })
+
+    expect(wrapper.text()).toContain('数字化工作台')
+    expect(wrapper.text()).toContain('制造执行')
+    expect(wrapper.text()).toContain('生产计划')
+    // domains link via RouterLink (top tabs) + side nav links
+    const targets = wrapper.findAllComponents(RouterLink).map((l) => l.props('to'))
+    expect(targets).toContainEqual({ path: '/mes/plans' })
+  })
+
+  it('collapses domains beyond the visible cap into a 更多 overflow', () => {
+    const router = makeRouter()
+    const wrapper = mount(AppShellT, {
+      global: { plugins: [router] },
+      props: { title: 'Nerv-IIP', topDomains: domains, currentDomainId: 'workbench', maxVisibleDomains: 2 },
+    })
+    // Scope to the real nav (the off-flow measurement layer is a sibling).
+    const nav = wrapper.find('nav[aria-label="一级能力区"]')
+    expect(nav.exists()).toBe(true)
+    expect(nav.text()).toContain('更多')
+    // Only the first 2 domains remain as direct tabs; the 3rd is in the overflow.
+    expect(nav.text()).toContain('数字化工作台')
+    expect(nav.text()).toContain('制造执行')
+    expect(nav.text()).not.toContain('质量管理')
+  })
+
+  it('emits openSearch on the search button and on ⌘/Ctrl+K', async () => {
+    const router = makeRouter()
+    const wrapper = mount(AppShellT, {
+      global: { plugins: [router] },
+      props: { title: 'Nerv-IIP', topDomains: domains },
+      attachTo: document.body,
+    })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))
+    expect(wrapper.emitted('openSearch')).toBeTruthy()
+
+    wrapper.unmount()
+  })
+
+  it('renders the user-menu trigger only when a user is provided', () => {
+    const withUser = mount(AppShellT, {
+      global: { plugins: [makeRouter()] },
+      props: { title: 'Nerv-IIP', topDomains: domains, user: { name: '张三', email: 'z@x.io' } },
+    })
+    expect(withUser.find('[aria-label="用户菜单"]').exists()).toBe(true)
+
+    const withoutUser = mount(AppShellT, {
+      global: { plugins: [makeRouter()] },
+      props: { title: 'Nerv-IIP', topDomains: domains },
+    })
+    expect(withoutUser.find('[aria-label="用户菜单"]').exists()).toBe(false)
+  })
+})

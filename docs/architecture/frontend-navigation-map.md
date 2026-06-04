@@ -76,12 +76,15 @@
 
 | 包/文件 | 当前能力 | 差距 |
 | --- | --- | --- |
-| `frontend/packages/app-shell/src/AppShell.vue` | 只接收 `navItems` 并渲染左侧 Sidebar；`NavItem` 支持分组 + 子项两级可见导航。 | 尚无顶部一级域、溢出菜单、应用切换器、近期/星标或命令搜索入口契约。 |
-| `frontend/apps/business-console/src/layouts/BusinessLayout.vue` | 当前把主数据、库存、工程资料、计划、质量、ERP、MES、系统管理都放在左侧静态导航。 | 这只是当前 route-ready 阶段的实现，不是长期导航形态；新增大域前应先做 T 型导航和权限裁剪。 |
+| `frontend/packages/app-shell/src/AppShell.vue` | 旧两级侧栏壳层，仍接收 `navItems`；迁移期保留以兼容尚未迁移的消费方。 | 已被 T 型 `AppShellT` 取代为长期形态；新页面不应再用旧 `AppShell`。 |
+| `frontend/packages/app-shell/src/AppShellT.vue` | FE-3 落地的 T 型壳层：顶部一级能力区（`NavTopDomains`，超出进入“更多”溢出）、左侧域内菜单（`NavSide`）、命令搜索入口（⌘/Ctrl+K + 按钮，占位待 FE-13）、顶部用户菜单、近期/星标入口；基于 FE-2 `AppShellInset`（dashboard-01 inset）。类型 `NavDomain`/`NavLink`/`NavGroup`/`SideNav`/`OverflowStrategy`/`ShellUser` 位于 `@nerv-iip/app-shell` 稳定导出。 | 命令搜索面板实装、应用切换器（九宫格）strategy、Console 迁移仍待后续。 |
+| `frontend/apps/business-console/src/layouts/BusinessLayout.vue` | 已迁移到 `AppShellT`，导航模型由 `frontend/apps/business-console/src/navigation.ts` 驱动（顶部能力域 + 域内菜单 + route→域解析 + `permittedBy` RBAC/feature-flag 裁剪钩子），顶部集成命令搜索占位、主题色/亮暗切换和用户菜单。 | RBAC 仅落地裁剪机制，具体 permission code 仍按域逐步挂接；Gateway enforcement 为权威。 |
 
 ### AppShell T 型导航解锁路径
 
 约束 #17 不是永久禁止 T 型导航，而是要求先把公共壳层能力做成稳定契约，再迁移 Console 和 Business Console。AppShell 演进由 #236 承接；新增 ERP/WMS/BarcodeLabel/Approval/Telemetry/Maintenance 等大域到可见导航前，必须先完成该 issue 的公共 API 和迁移门禁。
+
+> **状态（2026-06-04 校验，FE-3 / #278 / #236）：最小 API 契约已落地。** `@nerv-iip/app-shell` 已导出 `AppShellT` 及稳定类型，覆盖 `topDomains`、`currentDomainId`、`sideNavItems`（`SideNav`）、`overflowStrategy='more'`、用户菜单、命令搜索入口和近期/星标入口；旧 `navItems` 经 `AppShell` 保留兼容。Business Console 已迁移到 `AppShellT` 并按 `navigation.ts` 做权限/角色/feature-flag 裁剪（机制就位，permission code 逐步挂接）。Console 迁移与命令搜索面板实装仍待后续。门禁已过：`@nerv-iip/app-shell` typecheck + test、Business Console typecheck/build。**因此“新增大域到可见导航前必须先完成 #236”的解锁前置条件已满足。**
 
 | 项 | 要求 |
 | --- | --- |
@@ -229,10 +232,12 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 域 | 路由 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 数字化工作台 | `/` | 后端 facade 已落地/前端待消费 | 当前是 PC 业务入口和待处理入口；BusinessGateway 已提供 `/api/business-console/v1/workbench/summary` 聚合 KPI、BusinessApproval 待办、Notification 消息/任务和 IndustrialTelemetry 预警，并按当前 principal 权限在读时过滤来源。前端仍需消费 generated `@nerv-iip/api-client` 后替换入口页本地拼接。 |
-| 基础数据 | `/master-data/skus` | 已落地/窄化 | SKU 列表与创建已通过 BusinessGateway 消费 MasterData。 |
-| 基础数据 | `/master-data/partners` | 过渡 | 读取 MasterData resource facade，并混入本地场景数据；完整供应商/客户档案页待建。 |
-| 基础数据 | `/master-data/resources` | 过渡 | 读取站点、产线、工作中心、设备、班次等资源视图；完整维护流程待建。 |
-| 基础数据 | `/master-data/process` | 过渡 | 当前是本地演示数据；工程版本应收敛到产品工程域，不继续扩展在 MasterData 下。 |
+| 基础数据 | `/master-data/skus` | 已落地（FE-5 金标准） | SKU 列表 + 创建 Dialog，消费 BusinessGateway MasterData；已按 FE-4 原型重做并去除演示数据，纳入金标准执法。 |
+| 基础数据 | `/master-data/partners` | 已落地（FE-5 金标准） | 客户/供应商列表（business-partner resource facade + 角色推断），已去除演示数据；正式 partner role 字段就绪前角色为推断值。 |
+| 基础数据 | `/master-data/resources` | 已落地（FE-5 金标准） | 工厂/产线/工作中心/设备/班次/日历/班组/人员技能资源列表（按类型筛选），已去除演示场景层级数据。 |
+| 基础数据 | `/master-data/reference-data` | 已落地（FE-5 金标准） | 字典/参考数据列表，消费 MasterData `reference-data` resource facade（只读；可配置维护 facade 出现前不做创建/编辑）。 |
+| 基础数据 | `/master-data/process` | 过渡 | 当前是本地演示数据；工程版本应收敛到产品工程域（FE-6），不继续扩展在 MasterData 下。 |
+| 基础数据（门禁） | 编码规则 / 标签条码 | 规划/隐藏 | 编码（numbering）当前是服务内持久编号、无配置 facade；标签条码依赖后端 #269 BarcodeLabel facade。两者 facade 就绪前不入可见导航、不做空跳转。 |
 | 产品工程 | `/engineering` | 已落地/窄化 | 读取 MBOM、工艺路线、生产版本和 resolve；文档、工程物料、ECO/ECN 维护页待建。 |
 | 需求与计划 | `/planning` | 已落地/窄化 | 需求、MRP run、pegging、建议列表/接受已有 BusinessGateway facade；MPS 和计划执行分析待建。 |
 | 经营管理 | `/erp` | 已落地/窄化 | 当前是采购与供应页，消费 BusinessGateway ERP Procurement 采购订单 facade，展示供应商编码、预计到货、未到数量和部分收货状态；ERP 销售、财务和完整采购申请/RFQ/报价操作页仍按后续分期推进。 |
@@ -282,6 +287,24 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 设备运维（CMMS） | 设备台账、备件管理、故障报修、维修工单、保养计划、保养任务、点检管理、停机管理、维修费用 | Maintenance 后端已有维修工单、保养计划、点检和事件消费；BusinessGateway 已提供工单列表/详情、保养计划和 availability-windows facade。正式页面、api-client 消费和设备资产主数据维护仍待建；设备资产主数据仍归 MasterData。 |
 | 审批中心 | 审批模板、审批流配置、审批记录、委托设置 | BusinessApproval 后端已落地，页面待建；业务待办入口放数字化工作台，不在审批中心重复。Ops 运维审批仍归平台 Ops。 |
 | 外协加工（P2 候选） | 外协订单、外协发料、外协收货、外协结算 | 不作为当前默认一级域。首选挂在 ERP Procurement + MES/WMS 流程下；只有出现独立事实源、BusinessGateway facade 和高频角色工作台需求时，才升级为独立能力区或服务。 |
+
+## Business Console T 型菜单划分（FE-3 落地）
+
+代码事实来源：`frontend/apps/business-console/src/navigation.ts`（顶部域 `BUSINESS_DOMAINS`、域内菜单 `DOMAIN_SIDE_NAV`、route→域解析 `resolveDomainId`、权限裁剪 `permittedBy`）。本表是当前 route-ready 的菜单划分；只列已落地/过渡页面，新增大域须先过“菜单项升级门禁”。顶部默认 `maxVisibleDomains=7`，其余进入“更多”。
+
+| 顶部能力区 | 域内菜单（左侧）→ 页面 |
+| --- | --- |
+| 数字化工作台 | 工作台首页 `/` |
+| 基础数据 | 物料与产品 `/master-data/skus`、客户与供应商 `/master-data/partners`、工厂资源 `/master-data/resources`、字典 `/master-data/reference-data` |
+| 产品工程 | 工艺与版本 `/master-data/process`、工程版本发布 `/engineering` |
+| 需求与计划 | 需求与物料计划 `/planning` |
+| 制造执行 | 计划与工单（生产驾驶舱 `/mes`、生产计划 `/mes/plans`、工单与派工 `/mes/work-orders`、派工看板 `/mes/dispatch`）；执行与齐套（齐套与物料 `/mes/materials`、工序执行 `/mes/operation-tasks`、在制跟踪 `/mes/wip`）；报工与完工（报工记录 `/mes/production-reports`、报工与完工汇总 `/mes/reports`、完工入库 `/mes/receipts`）；异常与协同（质量与不良 `/mes/quality`、设备与停机 `/mes/downtime`、异常与产能 `/mes/capacity`、规则排程 `/mes/schedules`、班次交接 `/mes/handovers`）；追溯与诊断（追溯查询 `/mes/traceability`、生产准备检查 `/mes/foundation`） |
+| 质量管理 | 检验任务与记录 `/quality/inspections`、不合格品处理 `/quality/ncrs` |
+| 库存管理 | 库存可用量 `/inventory/availability`、库存移动 `/inventory/movements`、库存盘点 `/inventory/counts` |
+| 经营管理（“更多”内） | 采购与供应 `/erp` |
+| 设备监控（“更多”内） | 设备运行看板 `/equipment`、设备报警 `/equipment/alarms` |
+
+裁剪规则：`permittedBy` 对未声明 `requiredPermissions` 的域/项默认放行（当前为宽松默认，匹配现有 route-ready 行为）；挂接具体 permission code 后按角色裁剪。导航隐藏只是 UX，Gateway per-request enforcement 仍是权威。命令搜索（⌘/Ctrl+K）入口已在顶部占位，面板实装在 FE-13。
 
 ## 菜单项升级门禁
 

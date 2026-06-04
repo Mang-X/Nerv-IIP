@@ -1,0 +1,215 @@
+/*
+ * Self-hosted UI fonts — bundled by Vite, zero runtime CDN / googleapis request.
+ * Latin/digits → Inter (variable). Chinese → MiSans (Xiaomi, free commercial),
+ * unicode-range subsetted so only the glyphs a page uses are fetched.
+ */
+@import '@fontsource-variable/inter';
+@import './misans.css';
+
+/*
+ * Nerv-IIP Design System v2 — shared token source of truth (@nerv-iip/ui).
+ *
+ * Single source for BOTH apps (console + business-console). App `main.css`
+ * files import this file; tokens are NEVER duplicated per app.
+ *
+ * Constraints (epic #275 / FE-1 #276):
+ *   1. primary = near-black; brand blue is emphasis only.
+ *   2. runtime dynamic accent: `--brand` is overridable at runtime (see useTheme).
+ *   3. light + dark are both first-class (.dark overrides below).
+ *   4. never edit原版 shadcn-vue components — customization happens via tokens here
+ *      and via copy-rebuilt block components (FE-2), not by patching primitives.
+ *
+ * Visual baseline = shadcn dashboard-01: page background ≠ card surface (inset
+ * floating panels), `--shadow-*` elevation scale, and a usable
+ * `bg-gradient-to-t from-primary/5 to-card` section-card gradient.
+ */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces — background ≠ card gives the inset floating-panel elevation */
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+
+  /* Primary = near-black (NOT the old blue oklch(0.49 0.17 255)) */
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+
+  /* Dynamic brand accent — blue by default, overridable at runtime (emphasis only) */
+  --brand: oklch(0.55 0.18 255);
+  --brand-foreground: oklch(0.985 0 0);
+
+  /* Status semantics */
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.62 0.17 149);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.75 0.15 75);
+  --warning-foreground: oklch(0.205 0 0);
+
+  /* Lines & focus */
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+
+  /* Charts — chart-1 tracks the dynamic brand, rest are categorical */
+  --chart-1: var(--brand);
+  --chart-2: oklch(0.62 0.13 160);
+  --chart-3: oklch(0.72 0.16 80);
+  --chart-4: oklch(0.64 0.18 35);
+  --chart-5: oklch(0.55 0.12 300);
+
+  --radius: 0.5rem;
+
+  /* Sidebar */
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* Elevation scale */
+  --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.04);
+  --shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.08), 0 1px 2px -1px oklch(0 0 0 / 0.06);
+  --shadow-md: 0 4px 8px -2px oklch(0 0 0 / 0.08), 0 2px 4px -2px oklch(0 0 0 / 0.05);
+  --shadow-lg: 0 12px 24px -6px oklch(0 0 0 / 0.1), 0 4px 8px -4px oklch(0 0 0 / 0.05);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+
+  --brand: oklch(0.62 0.17 255);
+  --brand-foreground: oklch(0.985 0 0);
+
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.7 0.16 150);
+  --success-foreground: oklch(0.205 0 0);
+  --warning: oklch(0.8 0.15 80);
+  --warning-foreground: oklch(0.205 0 0);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+
+  --chart-1: var(--brand);
+  --chart-2: oklch(0.7 0.13 160);
+  --chart-3: oklch(0.77 0.16 80);
+  --chart-4: oklch(0.7 0.18 35);
+  --chart-5: oklch(0.65 0.12 300);
+
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+
+  --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.4), 0 1px 2px -1px oklch(0 0 0 / 0.4);
+  --shadow-md: 0 4px 8px -2px oklch(0 0 0 / 0.45), 0 2px 4px -2px oklch(0 0 0 / 0.4);
+  --shadow-lg: 0 12px 24px -6px oklch(0 0 0 / 0.5), 0 4px 8px -4px oklch(0 0 0 / 0.4);
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', 'MiSans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    margin: 0;
+    @apply bg-background text-foreground;
+    @apply font-sans;
+  }
+}
