@@ -1,260 +1,150 @@
 <script setup lang="ts">
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
-import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
-import { useBusinessMasterDataGroups } from '@/composables/useBusinessMasterData'
-import { demoPartners } from '@/data/shockAbsorberDemo'
-import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { inferPartnerRole, roleLabel, type PartnerRole } from './masterDataPageHelpers'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
+import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import { useBusinessMasterDataGroups } from '@/composables/useBusinessMasterData'
+import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Badge,
   Button,
-  Field,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  DataTable,
+  DataTablePagination,
+  PageHeader,
+  SectionCard,
+  SectionCards,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
+  StatusBadge,
+  Toolbar,
 } from '@nerv-iip/ui'
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, watch } from 'vue'
+import { RefreshCwIcon } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
+import { inferPartnerRole, roleLabel, type PartnerRole } from './masterDataPageHelpers'
 
 definePage({ meta: { requiresAuth: true, title: '客户与供应商' } })
 
-type SortColumn = 'code' | 'displayName' | 'role' | 'active' | 'snapshotVersion'
+type PartnerRow = BusinessConsoleResourceItem & { role: PartnerRole }
 
 const { groups, groupsError, groupsPending, refreshGroups } = useBusinessMasterDataGroups([
   { key: 'business-partner', title: '客户与供应商' },
 ])
 
-const filterDraft = reactive({ keyword: '', role: 'all' as PartnerRole })
-const appliedFilter = reactive({ keyword: '', role: 'all' as PartnerRole })
-const tableState = reactive({
-  page: 1,
-  pageSize: '10',
-  sortBy: 'code' as SortColumn,
-  sortDirection: 'asc' as 'asc' | 'desc',
-})
+const keyword = ref('')
+const roleFilter = ref<PartnerRole>('all')
+const sort = ref<DataTableSort | null>({ key: 'code', direction: 'asc' })
+const page = ref(1)
+const pageSize = ref('10')
 
-const gatewayPartners = computed(() => {
-  return groups.value.flatMap((group) =>
-    group.rows.map((row) => ({
-      ...row,
-      role: inferPartnerRole(row),
-    })),
-  )
-})
-const allRows = computed(() => mergePartners([...gatewayPartners.value, ...demoPartners]))
+const allRows = computed<PartnerRow[]>(() =>
+  groups.value.flatMap((group) => group.rows.map((row) => ({ ...row, role: inferPartnerRole(row) }))),
+)
 const listRows = computed(() => {
-  const keyword = appliedFilter.keyword.trim().toLowerCase()
-
+  const kw = keyword.value.trim().toLowerCase()
   return allRows.value.filter((row) => {
-    const roleMatched = appliedFilter.role === 'all' || row.role === appliedFilter.role
-    const keywordMatched =
-      !keyword ||
+    const roleMatched = roleFilter.value === 'all' || row.role === roleFilter.value
+    const kwMatched =
+      !kw ||
       [row.code, row.displayName, roleLabel(row.role), row.snapshotVersion]
-        .some((value) => (value ?? '').toLowerCase().includes(keyword))
-
-    return roleMatched && keywordMatched
+        .some((value) => (value ?? '').toLowerCase().includes(kw))
+    return roleMatched && kwMatched
   })
 })
 const sortedRows = computed(() => {
-  const direction = tableState.sortDirection === 'asc' ? 1 : -1
-
-  return [...listRows.value].sort((left, right) =>
-    String(left[tableState.sortBy] ?? '').localeCompare(String(right[tableState.sortBy] ?? ''), 'zh-Hans-CN') * direction,
+  if (!sort.value) return listRows.value
+  const { key, direction } = sort.value
+  const factor = direction === 'asc' ? 1 : -1
+  return [...listRows.value].sort((a, b) =>
+    String(key === 'role' ? roleLabel(a.role) : a[key as keyof PartnerRow] ?? '')
+      .localeCompare(String(key === 'role' ? roleLabel(b.role) : b[key as keyof PartnerRow] ?? ''), 'zh-Hans-CN') * factor,
   )
 })
-const pageSizeNumber = computed(() => Number(tableState.pageSize) || 10)
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => {
-  const start = (tableState.page - 1) * pageSizeNumber.value
+  const start = (page.value - 1) * pageSizeNumber.value
   return sortedRows.value.slice(start, start + pageSizeNumber.value)
 })
 
-watch(
-  () => [appliedFilter.keyword, appliedFilter.role, tableState.pageSize, allRows.value.length],
-  () => {
-    tableState.page = 1
-  },
-)
+const customerCount = computed(() => allRows.value.filter((r) => r.role === 'customer').length)
+const supplierCount = computed(() => allRows.value.filter((r) => r.role === 'supplier').length)
+const errorMessage = computed(() => formatError(groupsError.value))
 
-function applyFilters() {
-  appliedFilter.keyword = filterDraft.keyword
-  appliedFilter.role = filterDraft.role
+const columns: DataTableColumn<PartnerRow>[] = [
+  { key: 'code', header: '编码', sortable: true, cellClass: 'font-medium' },
+  { key: 'displayName', header: '名称', sortable: true },
+  { key: 'role', header: '角色', sortable: true, width: 'w-28' },
+  { key: 'active', header: '状态', sortable: true, width: 'w-24' },
+  { key: 'snapshotVersion', header: '版本', sortable: true, width: 'w-28' },
+]
+
+watch([keyword, roleFilter, pageSize, () => allRows.value.length], () => {
+  page.value = 1
+})
+
+function resetFilters() {
+  keyword.value = ''
+  roleFilter.value = 'all'
 }
-
-function clearFilters() {
-  filterDraft.keyword = ''
-  filterDraft.role = 'all'
-  applyFilters()
+function rowKey(row: PartnerRow) {
+  return `${row.resourceType}:${row.code ?? row.displayName ?? ''}`
 }
-
-function setSort(column: SortColumn) {
-  if (tableState.sortBy === column) {
-    tableState.sortDirection = tableState.sortDirection === 'asc' ? 'desc' : 'asc'
-    return
-  }
-
-  tableState.sortBy = column
-  tableState.sortDirection = 'asc'
-}
-
-function sortIcon(column: SortColumn) {
-  if (tableState.sortBy !== column) return ArrowUpDownIcon
-  return tableState.sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon
-}
-
-function rowKey(row: BusinessConsoleResourceItem & { role: PartnerRole }, index: number) {
-  return `${row.resourceType}:${row.code ?? index}`
-}
-
-function mergePartners(rows: (BusinessConsoleResourceItem & { role: PartnerRole })[]) {
-  const seen = new Set<string>()
-  const result: (BusinessConsoleResourceItem & { role: PartnerRole })[] = []
-
-  for (const row of rows) {
-    const key = `${row.resourceType}:${row.code}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    result.push(row)
-  }
-
-  return result
-}
-
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败。' : ''
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader
-        domain="主数据"
-        title="客户与供应商"
-        summary="维护客户、供应商和供需角色，支撑销售需求、采购建议、收货检验和生产齐套选择。"
-      >
-        <template #actions>
-          <Button size="sm" variant="outline" type="button" :disabled="groupsPending" @click="refreshGroups">
-            <RefreshCwIcon data-icon="inline-start" />
-            刷新
-          </Button>
-        </template>
-      </BusinessPageHeader>
+    <PageHeader title="客户与供应商" :breadcrumbs="[{ label: '基础数据' }]" :count="`${listRows.length} 个伙伴`">
+      <template #actions>
+        <Button size="sm" variant="outline" type="button" :disabled="groupsPending" @click="refreshGroups">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
 
-      <div class="rounded-lg border bg-background">
-        <div class="border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">查询条件</h2>
-        </div>
-        <div class="p-4">
-          <FieldGroup class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto]">
-            <Field>
-              <FieldLabel for="partner-keyword">关键字</FieldLabel>
-              <Input id="partner-keyword" v-model="filterDraft.keyword" placeholder="编码、名称、版本" @keydown.enter="applyFilters" />
-            </Field>
-            <Field>
-              <FieldLabel for="partner-role">角色</FieldLabel>
-              <Select v-model="filterDraft.role">
-                <SelectTrigger id="partner-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部</SelectItem>
-                  <SelectItem value="customer">客户</SelectItem>
-                  <SelectItem value="supplier">供应商</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <div class="flex items-end gap-2">
-              <Button type="button" @click="applyFilters">查询</Button>
-              <Button type="button" variant="outline" @click="clearFilters">清空</Button>
-            </div>
-          </FieldGroup>
-          <p v-if="formatError(groupsError)" class="mt-3 text-sm text-destructive">{{ formatError(groupsError) }}</p>
-        </div>
-      </div>
+    <SectionCards :columns="3">
+      <SectionCard description="伙伴总数" :value="allRows.length" hint="客户与供应商档案" />
+      <SectionCard description="客户" :value="customerCount" hint="支撑销售需求与发货" />
+      <SectionCard description="供应商" :value="supplierCount" hint="支撑采购与收货检验" />
+    </SectionCards>
 
-      <div class="overflow-hidden rounded-lg border bg-background">
-        <div class="flex items-center justify-between border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">伙伴列表</h2>
-          <span class="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner v-if="groupsPending" class="size-4" />
-            客户 / 供应商
-          </span>
-        </div>
-        <div class="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('code')">
-                    编码
-                    <component :is="sortIcon('code')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('displayName')">
-                    名称
-                    <component :is="sortIcon('displayName')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('role')">
-                    角色
-                    <component :is="sortIcon('role')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('active')">
-                    状态
-                    <component :is="sortIcon('active')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('snapshotVersion')">
-                    版本
-                    <component :is="sortIcon('snapshotVersion')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="(row, index) in pagedRows" :key="rowKey(row, index)">
-                <TableCell class="font-medium">{{ row.code }}</TableCell>
-                <TableCell>{{ row.displayName }}</TableCell>
-                <TableCell>{{ roleLabel(row.role) }}</TableCell>
-                <TableCell>
-                  <Badge :variant="row.active === false ? 'secondary' : 'success'">
-                    {{ row.active === false ? '停用' : '启用' }}
-                  </Badge>
-                </TableCell>
-                <TableCell>{{ row.snapshotVersion }}</TableCell>
-              </TableRow>
-              <TableEmpty v-if="!listRows.length && !groupsPending" :colspan="5">未找到客户或供应商。</TableEmpty>
-              <TableEmpty v-if="groupsPending" :colspan="5">正在加载客户与供应商...</TableEmpty>
-            </TableBody>
-          </Table>
-        </div>
-        <div class="border-t px-4 py-3">
-          <BusinessTablePagination
-            v-model:page="tableState.page"
-            v-model:page-size="tableState.pageSize"
-            :total-items="sortedRows.length"
-          />
-        </div>
-      </div>
-    </section>
+    <Toolbar v-model:search="keyword" search-placeholder="搜索编码、名称、版本">
+      <template #filters>
+        <Select v-model="roleFilter">
+          <SelectTrigger class="h-9 w-32" aria-label="伙伴角色"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部角色</SelectItem>
+            <SelectItem value="customer">客户</SelectItem>
+            <SelectItem value="supplier">供应商</SelectItem>
+          </SelectContent>
+        </Select>
+      </template>
+      <template #actions>
+        <Button type="button" variant="ghost" size="sm" @click="resetFilters">重置</Button>
+      </template>
+    </Toolbar>
+
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <DataTable
+      v-model:sort="sort"
+      :columns="columns"
+      :rows="pagedRows"
+      :row-key="rowKey"
+      :client-sort="false"
+      :loading="groupsPending"
+      empty-message="未找到客户或供应商。"
+    >
+      <template #cell-role="{ row }">
+        {{ roleLabel(row.role) }}
+      </template>
+      <template #cell-active="{ row }">
+        <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+      </template>
+    </DataTable>
+
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sortedRows.length" />
   </BusinessLayout>
 </template>

@@ -232,10 +232,12 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 域 | 路由 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 数字化工作台 | `/` | 后端 facade 已落地/前端待消费 | 当前是 PC 业务入口和待处理入口；BusinessGateway 已提供 `/api/business-console/v1/workbench/summary` 聚合 KPI、BusinessApproval 待办、Notification 消息/任务和 IndustrialTelemetry 预警，并按当前 principal 权限在读时过滤来源。前端仍需消费 generated `@nerv-iip/api-client` 后替换入口页本地拼接。 |
-| 基础数据 | `/master-data/skus` | 已落地/窄化 | SKU 列表与创建已通过 BusinessGateway 消费 MasterData。 |
-| 基础数据 | `/master-data/partners` | 过渡 | 读取 MasterData resource facade，并混入本地场景数据；完整供应商/客户档案页待建。 |
-| 基础数据 | `/master-data/resources` | 过渡 | 读取站点、产线、工作中心、设备、班次等资源视图；完整维护流程待建。 |
-| 基础数据 | `/master-data/process` | 过渡 | 当前是本地演示数据；工程版本应收敛到产品工程域，不继续扩展在 MasterData 下。 |
+| 基础数据 | `/master-data/skus` | 已落地（FE-5 金标准） | SKU 列表 + 创建 Dialog，消费 BusinessGateway MasterData；已按 FE-4 原型重做并去除演示数据，纳入金标准执法。 |
+| 基础数据 | `/master-data/partners` | 已落地（FE-5 金标准） | 客户/供应商列表（business-partner resource facade + 角色推断），已去除演示数据；正式 partner role 字段就绪前角色为推断值。 |
+| 基础数据 | `/master-data/resources` | 已落地（FE-5 金标准） | 工厂/产线/工作中心/设备/班次/日历/班组/人员技能资源列表（按类型筛选），已去除演示场景层级数据。 |
+| 基础数据 | `/master-data/reference-data` | 已落地（FE-5 金标准） | 字典/参考数据列表，消费 MasterData `reference-data` resource facade（只读；可配置维护 facade 出现前不做创建/编辑）。 |
+| 基础数据 | `/master-data/process` | 过渡 | 当前是本地演示数据；工程版本应收敛到产品工程域（FE-6），不继续扩展在 MasterData 下。 |
+| 基础数据（门禁） | 编码规则 / 标签条码 | 规划/隐藏 | 编码（numbering）当前是服务内持久编号、无配置 facade；标签条码依赖后端 #269 BarcodeLabel facade。两者 facade 就绪前不入可见导航、不做空跳转。 |
 | 产品工程 | `/engineering` | 已落地/窄化 | 读取 MBOM、工艺路线、生产版本和 resolve；文档、工程物料、ECO/ECN 维护页待建。 |
 | 需求与计划 | `/planning` | 已落地/窄化 | 需求、MRP run、pegging、建议列表/接受已有 BusinessGateway facade；MPS 和计划执行分析待建。 |
 | 经营管理 | `/erp` | 已落地/窄化 | 当前是采购与供应页，消费 BusinessGateway ERP Procurement 采购订单 facade，展示供应商编码、预计到货、未到数量和部分收货状态；ERP 销售、财务和完整采购申请/RFQ/报价操作页仍按后续分期推进。 |
@@ -293,7 +295,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 顶部能力区 | 域内菜单（左侧）→ 页面 |
 | --- | --- |
 | 数字化工作台 | 工作台首页 `/` |
-| 基础数据 | 物料与产品 `/master-data/skus`、客户与供应商 `/master-data/partners`、工厂资源 `/master-data/resources` |
+| 基础数据 | 物料与产品 `/master-data/skus`、客户与供应商 `/master-data/partners`、工厂资源 `/master-data/resources`、字典 `/master-data/reference-data` |
 | 产品工程 | 工艺与版本 `/master-data/process`、工程版本发布 `/engineering` |
 | 需求与计划 | 需求与物料计划 `/planning` |
 | 制造执行 | 计划与工单（生产驾驶舱 `/mes`、生产计划 `/mes/plans`、工单与派工 `/mes/work-orders`、派工看板 `/mes/dispatch`）；执行与齐套（齐套与物料 `/mes/materials`、工序执行 `/mes/operation-tasks`、在制跟踪 `/mes/wip`）；报工与完工（报工记录 `/mes/production-reports`、报工与完工汇总 `/mes/reports`、完工入库 `/mes/receipts`）；异常与协同（质量与不良 `/mes/quality`、设备与停机 `/mes/downtime`、异常与产能 `/mes/capacity`、规则排程 `/mes/schedules`、班次交接 `/mes/handovers`）；追溯与诊断（追溯查询 `/mes/traceability`、生产准备检查 `/mes/foundation`） |

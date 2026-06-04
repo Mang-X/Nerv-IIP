@@ -1,38 +1,29 @@
 <script setup lang="ts">
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
-import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
-import { useBusinessMasterDataGroups, type BusinessMasterDataGroupDefinition } from '@/composables/useBusinessMasterData'
-import { demoResourceGroups } from '@/data/shockAbsorberDemo'
-import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { matchesLinkedResourceSelectors, type ResourceScenarioRelations } from './masterDataPageHelpers'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
+import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import { useBusinessMasterDataGroups, type BusinessMasterDataGroupDefinition } from '@/composables/useBusinessMasterData'
+import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Badge,
   Button,
-  Field,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  DataTable,
+  DataTablePagination,
+  PageHeader,
+  SectionCard,
+  SectionCards,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
+  StatusBadge,
+  Toolbar,
 } from '@nerv-iip/ui'
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, watch } from 'vue'
+import { RefreshCwIcon } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '工厂资源' } })
 
-type SortColumn = 'resourceType' | 'code' | 'displayName' | 'active' | 'snapshotVersion'
+type ResourceRow = BusinessConsoleResourceItem & { groupTitle: string }
 
 const resourceDefinitions: BusinessMasterDataGroupDefinition[] = [
   { key: 'site', title: '工厂' },
@@ -44,319 +35,125 @@ const resourceDefinitions: BusinessMasterDataGroupDefinition[] = [
   { key: 'team', title: '班组' },
   { key: 'personnel-skill', title: '人员技能' },
 ]
+const resourceTitleByKey = Object.fromEntries(resourceDefinitions.map((d) => [d.key, d.title]))
 
 const { groups, groupsError, groupsPending, refreshGroups } = useBusinessMasterDataGroups(resourceDefinitions)
 
-const filterDraft = reactive({
-  keyword: '',
-  group: 'all',
-  siteCode: 'all',
-  lineCode: 'all',
-  workCenterCode: 'all',
-})
-const appliedFilter = reactive({ ...filterDraft })
-const tableState = reactive({
-  page: 1,
-  pageSize: '10',
-  sortBy: 'code' as SortColumn,
-  sortDirection: 'asc' as 'asc' | 'desc',
-})
-const resourceTitleByKey = Object.fromEntries(resourceDefinitions.map((definition) => [definition.key, definition.title]))
-const scenarioRelations: ResourceScenarioRelations = {
-  'LINE-FRT-A': { siteCode: 'PLANT-NB' },
-  'LINE-RR-B': { siteCode: 'PLANT-NB' },
-  'LINE-SPARE': { siteCode: 'PLANT-CQ' },
-  'WC-TUBE-WELD': { siteCode: 'PLANT-NB', lineCode: 'LINE-FRT-A' },
-  'WC-ROD-ASM': { siteCode: 'PLANT-NB', lineCode: 'LINE-FRT-A' },
-  'WC-OIL-FILL': { siteCode: 'PLANT-NB', lineCode: 'LINE-RR-B' },
-  'WC-DAMP-TEST': { siteCode: 'PLANT-NB', lineCode: 'LINE-RR-B' },
-  'WC-PACK': { siteCode: 'PLANT-CQ', lineCode: 'LINE-SPARE' },
-  'EQ-WELD-01': { siteCode: 'PLANT-NB', lineCode: 'LINE-FRT-A', workCenterCode: 'WC-TUBE-WELD' },
-  'EQ-ROD-ASM-01': { siteCode: 'PLANT-NB', lineCode: 'LINE-FRT-A', workCenterCode: 'WC-ROD-ASM' },
-  'EQ-FILL-02': { siteCode: 'PLANT-NB', lineCode: 'LINE-RR-B', workCenterCode: 'WC-OIL-FILL' },
-  'EQ-TEST-01': { siteCode: 'PLANT-NB', lineCode: 'LINE-RR-B', workCenterCode: 'WC-DAMP-TEST' },
-  'TEAM-FRT-DAY': { shiftCode: 'SHIFT-DAY' },
-  'TEAM-RR-NIGHT': { shiftCode: 'SHIFT-NIGHT' },
-}
-const allRows = computed(() => {
-  const gatewayRows = groups.value.flatMap((group) =>
-    group.rows.map((row) => ({
-      ...row,
-      groupTitle: resourceTitleByKey[group.key] ?? group.title,
-    })),
-  )
-  const scenarioRows = demoResourceGroups.flatMap((group) =>
-    group.rows.map((row) => ({
-      ...row,
-      groupTitle: resourceTitleByKey[group.key] ?? group.title,
-    })),
-  )
+const keyword = ref('')
+const groupFilter = ref('all')
+const sort = ref<DataTableSort | null>({ key: 'code', direction: 'asc' })
+const page = ref(1)
+const pageSize = ref('10')
 
-  return mergeResourceRows([...gatewayRows, ...scenarioRows])
-})
-const siteOptions = computed(() => optionsFor('site'))
-const lineOptions = computed(() => optionsFor('production-line'))
-const workCenterOptions = computed(() => optionsFor('work-center'))
+const allRows = computed<ResourceRow[]>(() =>
+  groups.value.flatMap((group) =>
+    group.rows.map((row) => ({ ...row, groupTitle: resourceTitleByKey[group.key] ?? group.title })),
+  ),
+)
 const listRows = computed(() => {
-  const keyword = appliedFilter.keyword.trim().toLowerCase()
-
+  const kw = keyword.value.trim().toLowerCase()
   return allRows.value.filter((row) => {
-    const groupMatched = appliedFilter.group === 'all' || row.resourceType === appliedFilter.group
-    const keywordMatched =
-      !keyword ||
+    const groupMatched = groupFilter.value === 'all' || row.resourceType === groupFilter.value
+    const kwMatched =
+      !kw ||
       [row.resourceType, row.code, row.displayName, row.snapshotVersion]
-        .some((value) => (value ?? '').toLowerCase().includes(keyword))
-
-    return groupMatched && keywordMatched && linkedSelectorMatched(row)
+        .some((value) => (value ?? '').toLowerCase().includes(kw))
+    return groupMatched && kwMatched
   })
 })
 const sortedRows = computed(() => {
-  const direction = tableState.sortDirection === 'asc' ? 1 : -1
-  return [...listRows.value].sort((left, right) =>
-    String(left[tableState.sortBy] ?? '').localeCompare(String(right[tableState.sortBy] ?? ''), 'zh-Hans-CN') * direction,
+  if (!sort.value) return listRows.value
+  const { key, direction } = sort.value
+  const factor = direction === 'asc' ? 1 : -1
+  return [...listRows.value].sort((a, b) =>
+    String(a[key as keyof ResourceRow] ?? '')
+      .localeCompare(String(b[key as keyof ResourceRow] ?? ''), 'zh-Hans-CN') * factor,
   )
 })
-const pageSizeNumber = computed(() => Number(tableState.pageSize) || 10)
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => {
-  const start = (tableState.page - 1) * pageSizeNumber.value
+  const start = (page.value - 1) * pageSizeNumber.value
   return sortedRows.value.slice(start, start + pageSizeNumber.value)
 })
 
-watch(
-  () => [
-    appliedFilter.keyword,
-    appliedFilter.group,
-    appliedFilter.siteCode,
-    appliedFilter.lineCode,
-    appliedFilter.workCenterCode,
-    tableState.pageSize,
-    allRows.value.length,
-  ],
-  () => {
-    tableState.page = 1
-  },
-)
-
-function applyFilters() {
-  Object.assign(appliedFilter, filterDraft)
+function countOf(type: string) {
+  return allRows.value.filter((r) => r.resourceType === type).length
 }
+const errorMessage = computed(() => formatError(groupsError.value))
 
-function clearFilters() {
-  filterDraft.keyword = ''
-  filterDraft.group = 'all'
-  filterDraft.siteCode = 'all'
-  filterDraft.lineCode = 'all'
-  filterDraft.workCenterCode = 'all'
-  applyFilters()
+const columns: DataTableColumn<ResourceRow>[] = [
+  { key: 'groupTitle', header: '类型', sortable: true, width: 'w-28' },
+  { key: 'code', header: '编码', sortable: true, cellClass: 'font-medium' },
+  { key: 'displayName', header: '名称', sortable: true },
+  { key: 'active', header: '状态', sortable: true, width: 'w-24' },
+  { key: 'snapshotVersion', header: '版本', sortable: true, width: 'w-28' },
+]
+
+watch([keyword, groupFilter, pageSize, () => allRows.value.length], () => {
+  page.value = 1
+})
+
+function resetFilters() {
+  keyword.value = ''
+  groupFilter.value = 'all'
 }
-
-function setSort(column: SortColumn) {
-  if (tableState.sortBy === column) {
-    tableState.sortDirection = tableState.sortDirection === 'asc' ? 'desc' : 'asc'
-    return
-  }
-  tableState.sortBy = column
-  tableState.sortDirection = 'asc'
+function rowKey(row: ResourceRow) {
+  return `${row.resourceType}:${row.code ?? row.displayName ?? ''}`
 }
-
-function sortIcon(column: SortColumn) {
-  if (tableState.sortBy !== column) return ArrowUpDownIcon
-  return tableState.sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon
-}
-
-function rowKey(row: BusinessConsoleResourceItem, index: number) {
-  return `${row.resourceType}:${row.code ?? index}`
-}
-
-function linkedSelectorMatched(row: BusinessConsoleResourceItem) {
-  return matchesLinkedResourceSelectors(row, appliedFilter, scenarioRelations)
-}
-
-function optionsFor(resourceType: string) {
-  return allRows.value
-    .filter((row) => row.resourceType === resourceType)
-    .map((row) => ({ code: row.code, label: row.displayName }))
-    .filter((row): row is { code: string; label: string } => Boolean(row.code && row.label))
-}
-
-function mergeResourceRows(rows: (BusinessConsoleResourceItem & { groupTitle: string })[]) {
-  const seen = new Set<string>()
-  const result: (BusinessConsoleResourceItem & { groupTitle: string })[] = []
-
-  for (const row of rows) {
-    const key = `${row.resourceType}:${row.code}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    result.push(row)
-  }
-
-  return result
-}
-
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败。' : ''
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader
-        domain="主数据"
-        title="工厂资源"
-        summary="维护工厂、产线、工作中心、设备和班次，支撑生产计划、派工、报工和产能判断。"
-      >
-        <template #actions>
-          <Button size="sm" variant="outline" type="button" :disabled="groupsPending" @click="refreshGroups">
-            <RefreshCwIcon data-icon="inline-start" />
-            刷新
-          </Button>
-        </template>
-      </BusinessPageHeader>
+    <PageHeader title="工厂资源" :breadcrumbs="[{ label: '基础数据' }]" :count="`${listRows.length} 项资源`">
+      <template #actions>
+        <Button size="sm" variant="outline" type="button" :disabled="groupsPending" @click="refreshGroups">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
 
-      <div class="rounded-lg border bg-background">
-        <div class="border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">查询条件</h2>
-        </div>
-        <div class="p-4">
-          <FieldGroup class="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px_180px_auto]">
-            <Field>
-              <FieldLabel for="resource-keyword">关键字</FieldLabel>
-              <Input id="resource-keyword" v-model="filterDraft.keyword" placeholder="编码、名称、版本" @keydown.enter="applyFilters" />
-            </Field>
-            <Field>
-              <FieldLabel for="resource-type">资源类型</FieldLabel>
-              <Select v-model="filterDraft.group">
-                <SelectTrigger id="resource-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部</SelectItem>
-                  <SelectItem v-for="group in demoResourceGroups" :key="group.key" :value="group.key">
-                    {{ group.title }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="resource-site">工厂</FieldLabel>
-              <Select v-model="filterDraft.siteCode">
-                <SelectTrigger id="resource-site">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部工厂</SelectItem>
-                  <SelectItem v-for="site in siteOptions" :key="site.code" :value="site.code">
-                    {{ site.label }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="resource-line">产线</FieldLabel>
-              <Select v-model="filterDraft.lineCode">
-                <SelectTrigger id="resource-line">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部产线</SelectItem>
-                  <SelectItem v-for="line in lineOptions" :key="line.code" :value="line.code">
-                    {{ line.label }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="resource-work-center">工作中心</FieldLabel>
-              <Select v-model="filterDraft.workCenterCode">
-                <SelectTrigger id="resource-work-center">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部工作中心</SelectItem>
-                  <SelectItem v-for="workCenter in workCenterOptions" :key="workCenter.code" :value="workCenter.code">
-                    {{ workCenter.label }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <div class="flex items-end gap-2">
-              <Button type="button" @click="applyFilters">查询</Button>
-              <Button type="button" variant="outline" @click="clearFilters">清空</Button>
-            </div>
-          </FieldGroup>
-          <p v-if="formatError(groupsError)" class="mt-3 text-sm text-destructive">{{ formatError(groupsError) }}</p>
-        </div>
-      </div>
+    <SectionCards :columns="4">
+      <SectionCard description="资源总数" :value="allRows.length" hint="工厂 / 产线 / 工作中心 / 设备 等" />
+      <SectionCard description="工厂" :value="countOf('site')" hint="生产站点" />
+      <SectionCard description="产线" :value="countOf('production-line')" hint="生产线" />
+      <SectionCard description="设备" :value="countOf('device-asset')" hint="设备资产" />
+    </SectionCards>
 
-      <div class="overflow-hidden rounded-lg border bg-background">
-        <div class="flex items-center justify-between border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">资源列表</h2>
-          <span class="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner v-if="groupsPending" class="size-4" />
-            工厂 / 产线 / 工作中心 / 设备 / 班组
-          </span>
-        </div>
-        <div class="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('resourceType')">
-                    类型
-                    <component :is="sortIcon('resourceType')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('code')">
-                    编码
-                    <component :is="sortIcon('code')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('displayName')">
-                    名称
-                    <component :is="sortIcon('displayName')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('active')">
-                    状态
-                    <component :is="sortIcon('active')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('snapshotVersion')">
-                    版本
-                    <component :is="sortIcon('snapshotVersion')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="(row, index) in pagedRows" :key="rowKey(row, index)">
-                <TableCell>{{ row.groupTitle }}</TableCell>
-                <TableCell class="font-medium">{{ row.code }}</TableCell>
-                <TableCell>{{ row.displayName }}</TableCell>
-                <TableCell>
-                  <Badge :variant="row.active === false ? 'secondary' : 'success'">
-                    {{ row.active === false ? '停用' : '启用' }}
-                  </Badge>
-                </TableCell>
-                <TableCell>{{ row.snapshotVersion }}</TableCell>
-              </TableRow>
-              <TableEmpty v-if="!listRows.length" :colspan="5">未找到资源。</TableEmpty>
-            </TableBody>
-          </Table>
-        </div>
-        <div class="border-t px-4 py-3">
-          <BusinessTablePagination
-            v-model:page="tableState.page"
-            v-model:page-size="tableState.pageSize"
-            :total-items="sortedRows.length"
-          />
-        </div>
-      </div>
-    </section>
+    <Toolbar v-model:search="keyword" search-placeholder="搜索类型、编码、名称">
+      <template #filters>
+        <Select v-model="groupFilter">
+          <SelectTrigger class="h-9 w-36" aria-label="资源类型"><SelectValue placeholder="全部类型" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部类型</SelectItem>
+            <SelectItem v-for="def in resourceDefinitions" :key="def.key" :value="def.key">{{ def.title }}</SelectItem>
+          </SelectContent>
+        </Select>
+      </template>
+      <template #actions>
+        <Button type="button" variant="ghost" size="sm" @click="resetFilters">重置</Button>
+      </template>
+    </Toolbar>
+
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <DataTable
+      v-model:sort="sort"
+      :columns="columns"
+      :rows="pagedRows"
+      :row-key="rowKey"
+      :client-sort="false"
+      :loading="groupsPending"
+      empty-message="未找到工厂资源。可切换类型或清空筛选。"
+    >
+      <template #cell-active="{ row }">
+        <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+      </template>
+    </DataTable>
+
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sortedRows.length" />
   </BusinessLayout>
 </template>

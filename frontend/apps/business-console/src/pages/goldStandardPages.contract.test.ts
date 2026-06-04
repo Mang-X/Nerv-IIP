@@ -5,7 +5,13 @@ import { describe, expect, it } from 'vitest'
 
 // Pages migrated to the FE-2 block gold standard (see DESIGN/patterns/pages/list-workbench.md).
 // Add each page here as it is migrated in stage B — the rules below then prevent drift.
-const GOLD_STANDARD_PAGES = ['mes/operation-tasks.vue', 'master-data/skus.vue']
+const GOLD_STANDARD_PAGES = [
+  'mes/operation-tasks.vue',
+  'master-data/skus.vue',
+  'master-data/partners.vue',
+  'master-data/resources.vue',
+  'master-data/reference-data.vue',
+]
 
 const REQUIRED_BLOCKS = ['PageHeader', 'DataTable', 'DataTablePagination', 'SectionCard']
 const LEGACY_BLOCKS = [
