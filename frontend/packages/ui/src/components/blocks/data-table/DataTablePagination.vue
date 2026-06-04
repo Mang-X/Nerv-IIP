@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import {
   Pagination,
   PaginationContent,
@@ -33,6 +33,12 @@ const emit = defineEmits<{
 const pageSizeNumber = computed(() => Number(props.pageSize) || 10)
 const totalPages = computed(() => Math.max(1, Math.ceil(props.totalItems / pageSizeNumber.value)))
 const currentPage = computed(() => Math.min(Math.max(1, props.page), totalPages.value))
+
+// When the data shrinks below the current page, correct the parent's page model so it
+// doesn't slice an empty window while the control shows a valid page number.
+watch(totalPages, (pages) => {
+  if (props.page > pages) emit('update:page', pages)
+})
 const summary = computed(() => {
   if (props.totalItems <= 0) return '0 条'
   const start = (currentPage.value - 1) * pageSizeNumber.value + 1

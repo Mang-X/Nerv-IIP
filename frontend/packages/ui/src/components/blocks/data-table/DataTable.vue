@@ -57,11 +57,16 @@ function valueOf(row: T, column: DataTableColumn<T>): unknown {
   return column.accessor ? column.accessor(row) : (row as Record<string, unknown>)[column.key]
 }
 
+// A raw CSS dimension (e.g. '120px', '12rem', '50%') → inline style; anything else
+// (e.g. 'w-40', 'min-w-32', 'sm:w-40') is treated as a Tailwind width class.
+function isCssDimension(width?: string): boolean {
+  return !!width && /^\d+(\.\d+)?(px|rem|em|%|vh|vw|ch)$/.test(width)
+}
 function widthStyle(width?: string) {
-  return width && /[0-9]/.test(width) && !width.startsWith('w-') ? { width } : undefined
+  return isCssDimension(width) ? { width } : undefined
 }
 function widthClass(width?: string) {
-  return width && width.startsWith('w-') ? width : undefined
+  return width && !isCssDimension(width) ? width : undefined
 }
 
 const displayRows = computed(() => {

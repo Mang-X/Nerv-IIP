@@ -82,14 +82,17 @@ describe('AppShellT (T-shaped shell)', () => {
     wrapper.unmount()
   })
 
-  it('emits signOut from the user menu entry', () => {
-    const router = makeRouter()
-    const wrapper = mount(AppShellT, {
-      global: { plugins: [router] },
+  it('renders the user-menu trigger only when a user is provided', () => {
+    const withUser = mount(AppShellT, {
+      global: { plugins: [makeRouter()] },
       props: { title: 'Nerv-IIP', topDomains: domains, user: { name: '张三', email: 'z@x.io' } },
     })
-    // user menu renders an avatar trigger; the entry is wired to emit signOut.
-    expect(wrapper.text()).toContain('数字化工作台')
-    expect(wrapper.props('title')).toBe('Nerv-IIP')
+    expect(withUser.find('[aria-label="用户菜单"]').exists()).toBe(true)
+
+    const withoutUser = mount(AppShellT, {
+      global: { plugins: [makeRouter()] },
+      props: { title: 'Nerv-IIP', topDomains: domains },
+    })
+    expect(withoutUser.find('[aria-label="用户菜单"]').exists()).toBe(false)
   })
 })

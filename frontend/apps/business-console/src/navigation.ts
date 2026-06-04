@@ -131,19 +131,24 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
   ],
 }
 
+/** True when `path` is exactly `base` or a descendant route of it (segment-boundary safe). */
+function isUnder(path: string, base: string): boolean {
+  return path === base || path.startsWith(`${base}/`)
+}
+
 /** Resolve the active top domain id from a route path. */
 export function resolveDomainId(path: string): string {
   if (path === '/' || path === '') return 'workbench'
   // 工艺与版本 lives under /master-data/process but belongs to 产品工程.
-  if (path.startsWith('/master-data/process')) return 'engineering'
-  if (path.startsWith('/master-data')) return 'master-data'
-  if (path.startsWith('/engineering')) return 'engineering'
-  if (path.startsWith('/planning')) return 'planning'
-  if (path.startsWith('/erp')) return 'erp'
-  if (path.startsWith('/mes')) return 'mes'
-  if (path.startsWith('/quality')) return 'quality'
-  if (path.startsWith('/inventory')) return 'inventory'
-  if (path.startsWith('/equipment')) return 'equipment'
+  if (isUnder(path, '/master-data/process')) return 'engineering'
+  if (isUnder(path, '/master-data')) return 'master-data'
+  if (isUnder(path, '/engineering')) return 'engineering'
+  if (isUnder(path, '/planning')) return 'planning'
+  if (isUnder(path, '/erp')) return 'erp'
+  if (isUnder(path, '/mes')) return 'mes'
+  if (isUnder(path, '/quality')) return 'quality'
+  if (isUnder(path, '/inventory')) return 'inventory'
+  if (isUnder(path, '/equipment')) return 'equipment'
   return 'workbench'
 }
 

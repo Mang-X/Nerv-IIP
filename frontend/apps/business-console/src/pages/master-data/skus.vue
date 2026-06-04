@@ -92,7 +92,13 @@ const trackingOptions = [
   { label: '必须记录', value: 'required' },
 ]
 
-const sourceSkus = computed(() => [...localSkus.value, ...skus.value])
+// Show an optimistic row only until the (invalidated) query refetches it from the
+// server — otherwise the created SKU would appear twice with a colliding rowKey.
+const sourceSkus = computed(() => {
+  const serverCodes = new Set(skus.value.map((s) => s.code).filter(Boolean))
+  const pendingLocal = localSkus.value.filter((s) => !s.code || !serverCodes.has(s.code))
+  return [...pendingLocal, ...skus.value]
+})
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   return sourceSkus.value.filter((sku) => {
@@ -146,7 +152,7 @@ function resetFilters() {
   includeDisabled.value = false
 }
 function rowKey(item: BusinessConsoleResourceItem) {
-  return `${item.resourceType ?? 'sku'}:${item.code ?? item.displayName ?? ''}`
+  return `${item.resourceType ?? 'sku'}:${item.code || item.displayName || ''}`
 }
 function splitTags(value: string) {
   const tags = value.split(',').map((tag) => tag.trim()).filter(Boolean)

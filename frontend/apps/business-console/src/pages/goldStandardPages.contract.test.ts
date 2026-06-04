@@ -63,8 +63,9 @@ describe('gold-standard page enforcement', () => {
       })
 
       it('has no developer-language / platform-metadata copy', () => {
+        const lower = src.toLowerCase()
         for (const term of BANNED_COPY) {
-          expect.soft(src, `"${term}" must not appear in a business page`).not.toContain(term)
+          expect.soft(lower, `"${term}" must not appear in a business page`).not.toContain(term.toLowerCase())
         }
       })
     })
