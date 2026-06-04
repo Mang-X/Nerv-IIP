@@ -43,6 +43,124 @@ public sealed record BusinessConsoleCreateSkuRequest(
     IReadOnlyCollection<string>? ComplianceTags,
     string? IdempotencyKey = null);
 
+public sealed record BusinessConsoleCreateBusinessPartnerRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string PartnerType,
+    string Name);
+
+public sealed record BusinessConsoleCreateUnitOfMeasureRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string Name,
+    string DimensionType,
+    int Precision,
+    string RoundingMode);
+
+public sealed record BusinessConsoleCreateUomConversionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string FromUomCode,
+    string ToUomCode,
+    decimal Factor,
+    decimal Offset,
+    int Precision,
+    string RoundingMode,
+    DateOnly EffectiveFrom);
+
+public sealed record BusinessConsoleCreateSiteRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string Name,
+    string Timezone);
+
+public sealed record BusinessConsoleCreateProductionLineRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string Name,
+    string SiteCode);
+
+public sealed record BusinessConsoleCreateWorkCenterRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string Name,
+    int CapacityMinutesPerDay,
+    string ResourceType,
+    string PlantCode,
+    string LineCode,
+    string DefaultCalendarCode,
+    string CapacityUnit,
+    bool FiniteCapacity);
+
+public sealed record BusinessConsoleRegisterDeviceAssetRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string Model,
+    string LineCode,
+    string WorkCenterCode,
+    string AssetClassCode,
+    string Manufacturer,
+    string SerialNo,
+    decimal? MinimumCapacity,
+    decimal? MaximumCapacity,
+    string CapacityUomCode,
+    string Criticality,
+    bool Maintainable,
+    bool TelemetryEnabled,
+    IReadOnlyDictionary<string, string>? ExternalReferences);
+
+public sealed record BusinessConsoleCreateShiftRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string Name,
+    TimeOnly StartsAt,
+    TimeOnly EndsAt,
+    int PaidMinutes);
+
+public sealed record BusinessConsoleCreateWorkCalendarRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string Name);
+
+public sealed record BusinessConsoleCreateTeamRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string Name,
+    string DepartmentCode,
+    string ShiftCode);
+
+public sealed record BusinessConsoleCreateDepartmentRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string Name,
+    string? ParentDepartmentCode);
+
+public sealed record BusinessConsoleAssignPersonnelSkillRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string UserId,
+    string SkillCode,
+    string Level,
+    DateOnly EffectiveFrom,
+    DateOnly EffectiveTo);
+
+public sealed record BusinessConsoleCreateReferenceDataCodeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string CodeSet,
+    string Code,
+    string Name);
+
 public sealed record BusinessConsoleWorkbenchSummaryRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -317,6 +435,90 @@ public sealed record BusinessConsoleEngineeringBomItem(
     string Status,
     DateOnly? EffectiveDate);
 
+public sealed record BusinessConsoleRegisterEngineeringDocumentRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DocumentNumber,
+    string Revision,
+    string FileId,
+    string FileName,
+    string ContentType,
+    string DocumentType,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleEngineeringEntityResponse(string Id);
+
+public sealed record BusinessConsoleCreateEngineeringItemRevisionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? ItemCode,
+    string Revision,
+    string Name,
+    bool Release,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleReleaseEngineeringBomRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? BomCode,
+    string Revision,
+    string ParentItemCode,
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleBomLineRequest> Lines,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleBomLineRequest(
+    string ComponentCode,
+    decimal Quantity,
+    string UnitOfMeasureCode);
+
+public sealed record BusinessConsoleListManufacturingBomsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? Status = null);
+
+public sealed record BusinessConsoleManufacturingBomListResponse(
+    IReadOnlyCollection<BusinessConsoleManufacturingBomItem> Items);
+
+public sealed record BusinessConsoleManufacturingBomItem(
+    string BomCode,
+    string Revision,
+    string SkuCode,
+    string Status,
+    DateOnly? EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleManufacturingBomMaterialLine> MaterialLines);
+
+public sealed record BusinessConsoleManufacturingBomMaterialLine(
+    string SkuCode,
+    decimal Quantity,
+    string UnitOfMeasureCode,
+    decimal ScrapRate);
+
+public sealed record BusinessConsoleReleaseManufacturingBomRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? BomCode,
+    string Revision,
+    string SkuCode,
+    string EngineeringBomCode,
+    string EngineeringBomRevision,
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleManufacturingBomMaterialLineRequest> MaterialLines,
+    IReadOnlyCollection<BusinessConsoleRecipeLineRequest> RecipeLines,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleManufacturingBomMaterialLineRequest(
+    string SkuCode,
+    decimal Quantity,
+    string UnitOfMeasureCode,
+    decimal ScrapRate);
+
+public sealed record BusinessConsoleRecipeLineRequest(
+    string ParameterCode,
+    string TargetValue,
+    string UnitOfMeasureCode);
+
 public sealed record BusinessConsoleListRoutingsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -332,6 +534,36 @@ public sealed record BusinessConsoleRoutingItem(
     string SkuCode,
     string Status,
     DateOnly? EffectiveDate);
+
+public sealed record BusinessConsoleReleaseRoutingRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? RoutingCode,
+    string Revision,
+    string SkuCode,
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleRoutingOperationRequest> Operations,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleRoutingOperationRequest(
+    int Sequence,
+    string WorkCenterCode,
+    string OperationName,
+    int StandardMinutes);
+
+public sealed record BusinessConsoleReleaseEngineeringChangeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? ChangeNumber,
+    string Reason,
+    string ApprovalReferenceId,
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleAffectedVersionRequest> AffectedVersions,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleAffectedVersionRequest(
+    string VersionKind,
+    string VersionId);
 
 public sealed record BusinessConsoleListProductionVersionsRequest(
     string OrganizationId,
@@ -374,6 +606,40 @@ public sealed record BusinessConsoleResolveProductionVersionResponse(
     DateOnly EffectiveDate,
     decimal LotSize,
     string Status);
+
+public sealed record BusinessConsoleCreateProductionVersionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string MbomVersionId,
+    string RoutingVersionId,
+    DateOnly ValidFrom,
+    DateOnly? ValidTo,
+    decimal? LotSizeMin,
+    decimal? LotSizeMax,
+    int Priority,
+    bool IsDefault);
+
+public sealed record BusinessConsoleCreateProductionVersionResponse(string ProductionVersionId);
+
+public sealed record BusinessConsoleUpdateProductionVersionRequest(
+    [property: RouteParam] string ProductionVersionId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string MbomVersionId,
+    string RoutingVersionId,
+    DateOnly ValidFrom,
+    DateOnly? ValidTo,
+    decimal? LotSizeMin,
+    decimal? LotSizeMax,
+    int Priority,
+    bool IsDefault);
+
+public sealed record BusinessConsoleArchiveProductionVersionRequest(
+    [property: RouteParam] string ProductionVersionId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason);
 
 public sealed record BusinessConsolePlanningContextRequest(
     string OrganizationId,

@@ -1,4 +1,132 @@
+using FastEndpoints;
+
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+
+public sealed record BusinessConsoleWmsInboundLineInput(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal ReceivedQuantity,
+    string StagingLocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId);
+
+public sealed record BusinessConsoleWmsOutboundLineInput(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal RequestedQuantity,
+    string PickLocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId);
+
+public sealed record BusinessConsoleCreateWmsInboundOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string InboundOrderNo,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string SiteCode,
+    IReadOnlyCollection<BusinessConsoleWmsInboundLineInput> Lines);
+
+public sealed record BusinessConsoleCreateWmsInboundOrderResponse(string InboundOrderId);
+
+public sealed record BusinessConsoleCreateWmsPutawayTaskRequest(
+    [property: RouteParam] string InboundOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string TaskNo,
+    string LineNo,
+    string FromLocationCode,
+    string ToLocationCode,
+    decimal Quantity);
+
+public sealed record BusinessConsoleCreateWmsWarehouseTaskResponse(string WarehouseTaskId);
+
+public sealed record BusinessConsoleCompleteWmsInboundOrderRequest(
+    [property: RouteParam] string InboundOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleCompleteWmsMovementResponse(string InventoryMovementId);
+
+public sealed record BusinessConsoleCreateWmsOutboundOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OutboundOrderNo,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string SiteCode,
+    IReadOnlyCollection<BusinessConsoleWmsOutboundLineInput> Lines);
+
+public sealed record BusinessConsoleCreateWmsOutboundOrderResponse(string OutboundOrderId);
+
+public sealed record BusinessConsoleCreateWmsPickingTaskRequest(
+    [property: RouteParam] string OutboundOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string TaskNo,
+    string LineNo,
+    string FromLocationCode,
+    string ToLocationCode,
+    decimal Quantity);
+
+public sealed record BusinessConsoleCompleteWmsOutboundOrderRequest(
+    [property: RouteParam] string OutboundOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string PackReviewNo,
+    bool Passed,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleCreateWmsCountExecutionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string CountNo,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    decimal ExpectedQuantity);
+
+public sealed record BusinessConsoleCreateWmsCountExecutionResponse(string CountExecutionId);
+
+public sealed record BusinessConsoleCompleteWmsCountExecutionRequest(
+    [property: RouteParam] string CountExecutionId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    decimal CountedQuantity,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleDispatchWmsWcsTaskRequest(
+    [property: RouteParam] string WarehouseTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string AdapterType,
+    string ExternalTaskId,
+    string PayloadJson);
+
+public sealed record BusinessConsoleDispatchWmsWcsTaskResponse(string WcsTaskId);
+
+public sealed record BusinessConsoleFailWmsWcsTaskRequest(
+    [property: RouteParam] string ExternalTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string FailureCode,
+    string FailureMessage);
+
+public sealed record BusinessConsoleCompleteWmsWcsTaskRequest(
+    [property: RouteParam] string ExternalTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string CompletionPayloadJson);
 
 public sealed record BusinessConsoleWmsListRequest(
     string OrganizationId,
