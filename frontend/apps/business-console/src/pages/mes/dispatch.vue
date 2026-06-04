@@ -115,5 +115,9 @@ function formatError(error: unknown) {
     </DataTable>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="filtered.length" />
+
+    <p v-if="!dispatchTasksPending && dispatchTasks.length >= filters.take" class="text-xs text-muted-foreground">
+      已加载前 {{ filters.take }} 个待派工序（后端返回上限），使用搜索或状态筛选定位更多工序。
+    </p>
   </BusinessLayout>
 </template>

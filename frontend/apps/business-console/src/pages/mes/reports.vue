@@ -88,5 +88,9 @@ function formatError(error: unknown) {
       <template #cell-reworkQuantity="{ row }"><span class="tabular-nums">{{ row.reworkQuantity ?? 0 }}</span></template>
       <template #cell-reportedAtUtc="{ row }">{{ formatDateTime(row.reportedAtUtc) }}</template>
     </DataTable>
+
+    <p v-if="!productionReportsPending && productionReports.length >= filters.take" class="text-xs text-muted-foreground">
+      已加载前 {{ filters.take }} 条报工（后端返回上限），使用搜索或状态筛选定位更多报工记录。
+    </p>
   </BusinessLayout>
 </template>

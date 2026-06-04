@@ -110,5 +110,9 @@ function formatError(error: unknown) {
       v-model:page-size="pageSize"
       :total-items="filtered.length"
     />
+
+    <p v-if="!materialIssueRequestsPending && materialIssueRequests.length >= filters.take" class="text-xs text-muted-foreground">
+      已加载前 {{ filters.take }} 条领料申请（后端返回上限），使用搜索或状态筛选定位更多申请。
+    </p>
   </BusinessLayout>
 </template>

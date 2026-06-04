@@ -253,6 +253,10 @@ function isNonEmpty(value: string) {
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="filtered.length" />
 
+    <p v-if="!receiptRequestsPending && receiptRequests.length >= filters.take" class="text-xs text-muted-foreground">
+      已加载前 {{ filters.take }} 条入库请求（后端返回上限），使用搜索或状态筛选定位更多请求。
+    </p>
+
     <Dialog v-model:open="receiptSheetOpen">
       <DialogContent>
         <DialogHeader>

@@ -116,7 +116,10 @@ const pagedPlans = computed(() => {
 })
 
 const selectedBlockingReasons = computed(() => (selectedPlan.value?.blockingReasons ?? []).map(describeMesReadinessReason))
-const canConvert = computed(() => Boolean(selectedPlan.value?.productionPlanId))
+const selectedPlanBlocked = computed(
+  () => selectedPlan.value?.readinessStatus === 'Blocked' || selectedBlockingReasons.value.length > 0,
+)
+const canConvert = computed(() => Boolean(selectedPlan.value?.productionPlanId) && !selectedPlanBlocked.value)
 const errorMessage = computed(() => formatError(productionPlansError.value))
 const convertErrorMessage = computed(() => formatError(convertPlanToWorkOrderError.value))
 

@@ -547,6 +547,10 @@ function isNonEmpty(value: string) {
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sortedWorkOrders.length" />
 
+    <p v-if="!workOrdersPending && workOrders.length >= filters.take" class="text-xs text-muted-foreground">
+      已加载前 {{ filters.take }} 个工单（后端返回上限），使用搜索或状态、工作中心筛选定位更多工单。
+    </p>
+
     <Dialog v-model:open="rushSheetOpen">
       <DialogContent class="sm:max-w-2xl">
         <DialogHeader>

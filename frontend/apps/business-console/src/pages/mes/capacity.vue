@@ -112,5 +112,9 @@ function formatError(error: unknown) {
       v-model:page-size="pageSize"
       :total-items="filtered.length"
     />
+
+    <p v-if="!capacityImpactsPending && capacityImpacts.length >= filters.take" class="text-xs text-muted-foreground">
+      已加载前 {{ filters.take }} 条产能影响（后端返回上限），使用搜索或状态筛选定位更多记录。
+    </p>
   </BusinessLayout>
 </template>

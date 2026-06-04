@@ -105,5 +105,9 @@ function formatError(error: unknown) {
       v-model:page-size="pageSize"
       :total-items="filtered.length"
     />
+
+    <p v-if="!handoversPending && handovers.length >= filters.take" class="text-xs text-muted-foreground">
+      已加载前 {{ filters.take }} 条交接（后端返回上限），使用搜索或状态筛选定位更多交接单。
+    </p>
   </BusinessLayout>
 </template>

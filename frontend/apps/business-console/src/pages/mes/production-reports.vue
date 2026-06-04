@@ -116,5 +116,9 @@ function formatError(error: unknown) {
       v-model:page-size="pageSize"
       :total-items="filtered.length"
     />
+
+    <p v-if="!productionReportsPending && productionReports.length >= filters.take" class="text-xs text-muted-foreground">
+      已加载前 {{ filters.take }} 条报工（后端返回上限），使用搜索或状态筛选定位更多报工记录。
+    </p>
   </BusinessLayout>
 </template>

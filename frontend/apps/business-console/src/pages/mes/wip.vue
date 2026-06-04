@@ -107,5 +107,9 @@ function formatError(error: unknown) {
       v-model:page-size="pageSize"
       :total-items="filtered.length"
     />
+
+    <p v-if="!wipPending && wipRows.length >= filters.take" class="text-xs text-muted-foreground">
+      已加载前 {{ filters.take }} 行在制（后端返回上限），使用搜索或状态筛选定位更多在制行。
+    </p>
   </BusinessLayout>
 </template>
