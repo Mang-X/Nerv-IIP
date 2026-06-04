@@ -25,6 +25,11 @@ public static class MesCapServiceCollectionExtensions
         if (isTesting)
         {
             services.AddIntegrationEvents(typeof(Program));
+            services.AddCap(options =>
+            {
+                options.Version = configuration["Cap:Version"] ?? "v1";
+                options.JsonSerializerOptions.AddNetCorePalJsonConverters();
+            });
             return services;
         }
 

@@ -54,6 +54,33 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
     }
 
+    [Fact]
+    public void Mes_testing_cap_registration_discovers_subscribers_without_storage_wiring()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Messaging:Provider"] = "InMemory",
+                ["Cap:Version"] = "test-mes-registration-testing",
+            })
+            .Build();
+
+        services.AddLogging();
+        services.AddMediatR(options => options.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(nameof(Mes_testing_cap_registration_discovers_subscribers_without_storage_wiring)));
+
+        services.AddMesCapIntegrationEvents(configuration, "Testing", isTesting: true);
+
+        using var provider = services.BuildServiceProvider();
+        var selector = provider.GetRequiredService<IConsumerServiceSelector>();
+        var candidates = selector.SelectCandidates().ToArray();
+
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetUnavailableTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
+        Assert.Null(provider.GetService<IStorageInitializer>());
+    }
+
     [PostgreSqlFact]
     [Trait("Category", "cap-inmemory")]
     public async Task PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer()
