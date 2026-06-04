@@ -1,33 +1,22 @@
 <script setup lang="ts">
-import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
-import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Badge,
   Button,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  DataTable,
+  DataTablePagination,
   Input,
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
+  PageHeader,
+  SectionCard,
+  SectionCards,
+  StatusBadge,
+  Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
-definePage({
-  meta: {
-    requiresAuth: true,
-    title: '产能影响',
-  },
-})
+definePage({ meta: { requiresAuth: true, title: '产能影响' } })
 
 const {
   capacityImpacts,
@@ -37,90 +26,91 @@ const {
   refreshCapacityImpacts,
 } = useMesCapacityImpacts()
 
-const errorMessage = computed(() => formatError(capacityImpactsError.value))
+const keyword = ref('')
+const filtered = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return capacityImpacts.value
+  return capacityImpacts.value.filter((r) =>
+    [r.impactId, r.workCenterId, r.deviceAssetId, r.reasonCode].some((v) => (v ?? '').toLowerCase().includes(kw)),
+  )
+})
+
 const activeCount = computed(() => capacityImpacts.value.filter((item) => item.status === 'Active').length)
+const errorMessage = computed(() => formatError(capacityImpactsError.value))
+
+const page = ref(1)
+const pageSize = ref('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+const pagedRows = computed(() => {
+  const start = (page.value - 1) * pageSizeNumber.value
+  return filtered.value.slice(start, start + pageSizeNumber.value)
+})
+watch([keyword, pageSize, () => capacityImpacts.value.length], () => {
+  page.value = 1
+})
+
+type ImpactRow = (typeof capacityImpacts)['value'][number]
+const columns: DataTableColumn<ImpactRow>[] = [
+  { key: 'impactId', header: '影响编号', cellClass: 'font-medium', accessor: (r) => r.impactId ?? '无' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
+  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'effectiveFromUtc', header: '开始', width: 'w-44' },
+  { key: 'effectiveToUtc', header: '结束', width: 'w-44' },
+  { key: 'reasonCode', header: '原因', accessor: (r) => r.reasonCode ?? '无' },
+]
 
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败。' : ''
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader
-        domain="生产执行"
-        title="产能影响"
-        summary="查看设备停机、恢复和维护事件对工作中心产能和排程的影响。"
-      >
-        <template #actions>
-          <Button size="sm" type="button" variant="outline" :disabled="capacityImpactsPending" @click="refreshCapacityImpacts">
-            <RefreshCwIcon data-icon="inline-start" />
-            刷新
-          </Button>
-        </template>
-      </BusinessPageHeader>
+    <PageHeader title="产能影响" :breadcrumbs="[{ label: '制造执行' }]" :count="`${filtered.length} 条影响`">
+      <template #actions>
+        <Button size="sm" type="button" variant="outline" :disabled="capacityImpactsPending" @click="refreshCapacityImpacts">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
 
-      <div class="grid gap-3 rounded-lg border bg-background p-4">
-        <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field>
-            <FieldLabel for="capacity-status">状态</FieldLabel>
-            <Input id="capacity-status" v-model="filters.status" placeholder="可选" />
-          </Field>
-          <Field>
-            <FieldLabel for="capacity-take">数量</FieldLabel>
-            <Input id="capacity-take" v-model.number="filters.take" inputmode="numeric" type="number" />
-          </Field>
-        </FieldGroup>
-        <BusinessFormStatus :error="errorMessage" />
-      </div>
+    <SectionCards :columns="3">
+      <SectionCard description="影响记录" :value="capacityImpacts.length" hint="设备停机 / 恢复 / 维护事件" />
+      <SectionCard description="生效中" :value="activeCount" hint="正在影响产能与排程" />
+      <SectionCard description="已结束" :value="capacityImpacts.length - activeCount" hint="影响已恢复" />
+    </SectionCards>
 
-      <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="影响记录" :value="capacityImpacts.length" detail="当前筛选结果" />
-        <BusinessMetricCell label="生效中" :value="activeCount" detail="Active 状态" />
-        <BusinessMetricCell label="已结束" :value="capacityImpacts.length - activeCount" detail="非 Active 状态" />
-      </div>
+    <Toolbar v-model:search="keyword" search-placeholder="搜索影响编号、工作中心、设备">
+      <template #filters>
+        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="影响状态" />
+      </template>
+    </Toolbar>
 
-      <div class="overflow-hidden rounded-lg border bg-background">
-        <div class="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>影响编号</TableHead>
-                <TableHead>工作中心</TableHead>
-                <TableHead>设备</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>开始</TableHead>
-                <TableHead>结束</TableHead>
-                <TableHead>原因</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="row in capacityImpacts" :key="row.impactId">
-                <TableCell class="font-medium">{{ row.impactId ?? '无' }}</TableCell>
-                <TableCell>{{ row.workCenterId ?? '无' }}</TableCell>
-                <TableCell>{{ row.deviceAssetId ?? '未指定' }}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{{ row.status ?? '未知' }}</Badge>
-                </TableCell>
-                <TableCell>{{ formatDateTime(row.effectiveFromUtc) }}</TableCell>
-                <TableCell>{{ formatDateTime(row.effectiveToUtc) }}</TableCell>
-                <TableCell>{{ row.reasonCode ?? '无' }}</TableCell>
-              </TableRow>
-              <TableEmpty v-if="!capacityImpacts.length && !capacityImpactsPending" :colspan="7">
-                暂无产能影响。
-              </TableEmpty>
-              <TableEmpty v-if="capacityImpactsPending" :colspan="7">正在加载产能影响...</TableEmpty>
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    </section>
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <DataTable
+      :columns="columns"
+      :rows="pagedRows"
+      row-key="impactId"
+      :loading="capacityImpactsPending"
+      empty-message="暂无产能影响。设备停机或维护冲突发生时会在这里汇总。"
+    >
+      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-effectiveFromUtc="{ row }">{{ formatDateTime(row.effectiveFromUtc) }}</template>
+      <template #cell-effectiveToUtc="{ row }">{{ formatDateTime(row.effectiveToUtc) }}</template>
+    </DataTable>
+
+    <DataTablePagination
+      v-model:page="page"
+      v-model:page-size="pageSize"
+      :total-items="filtered.length"
+    />
   </BusinessLayout>
 </template>

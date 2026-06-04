@@ -1,55 +1,110 @@
 <script setup lang="ts">
-import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
-import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesDowntimeEvents } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { Button, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
+import {
+  Button,
+  DataTable,
+  DataTablePagination,
+  Input,
+  PageHeader,
+  SectionCard,
+  SectionCards,
+  StatusBadge,
+  Toolbar,
+} from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '设备与停机' } })
 
 const { downtimeEvents, downtimeEventsError, downtimeEventsPending, filters, refreshDowntimeEvents } = useMesDowntimeEvents()
-const errorMessage = computed(() => downtimeEventsError.value instanceof Error ? downtimeEventsError.value.message : downtimeEventsError.value ? '请求失败。' : '')
+
+const keyword = ref('')
+const filtered = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return downtimeEvents.value
+  return downtimeEvents.value.filter((r) =>
+    [r.downtimeEventId, r.workOrderId, r.operationTaskId, r.deviceAssetId].some((v) => (v ?? '').toLowerCase().includes(kw)),
+  )
+})
+
+const openCount = computed(() => downtimeEvents.value.filter((x) => x.status === 'Open').length)
+const errorMessage = computed(() => formatError(downtimeEventsError.value))
+
+const page = ref(1)
+const pageSize = ref('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+const pagedRows = computed(() => {
+  const start = (page.value - 1) * pageSizeNumber.value
+  return filtered.value.slice(start, start + pageSizeNumber.value)
+})
+watch([keyword, pageSize, () => downtimeEvents.value.length], () => {
+  page.value = 1
+})
+
+type DowntimeRow = (typeof downtimeEvents)['value'][number]
+const columns: DataTableColumn<DowntimeRow>[] = [
+  { key: 'downtimeEventId', header: '停机事件', cellClass: 'font-medium', accessor: (r) => r.downtimeEventId ?? '无' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderId ?? '未指定' },
+  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskId ?? '未指定' },
+  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'startedAtUtc', header: '开始', width: 'w-44' },
+  { key: 'recoveredAtUtc', header: '恢复', width: 'w-44' },
+]
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '未指定'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
 </script>
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader domain="生产执行" title="设备与停机" summary="记录和查看影响生产执行的设备停机、恢复与未结异常。">
-        <template #actions><Button size="sm" variant="outline" :disabled="downtimeEventsPending" @click="refreshDowntimeEvents"><RefreshCwIcon data-icon="inline-start" />刷新</Button></template>
-      </BusinessPageHeader>
-      <div class="grid gap-3 rounded-lg border bg-background p-4">
-        <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field><FieldLabel for="downtime-status">状态</FieldLabel><Input id="downtime-status" v-model="filters.status" placeholder="可选" /></Field>
-          <Field><FieldLabel for="downtime-take">数量上限</FieldLabel><Input id="downtime-take" v-model.number="filters.take" type="number" /></Field>
-        </FieldGroup>
-        <BusinessFormStatus :error="errorMessage" />
-      </div>
-      <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="停机事件" :value="downtimeEvents.length" detail="当前筛选结果" />
-        <BusinessMetricCell label="未恢复" :value="downtimeEvents.filter((x) => x.status === 'Open').length" detail="需处理" />
-        <BusinessMetricCell label="已恢复" :value="downtimeEvents.filter((x) => x.status !== 'Open').length" detail="已关闭" />
-      </div>
-      <div class="overflow-hidden rounded-lg border bg-background">
-        <Table>
-          <TableHeader><TableRow><TableHead>停机事件</TableHead><TableHead>工单</TableHead><TableHead>工序任务</TableHead><TableHead>设备</TableHead><TableHead>状态</TableHead><TableHead>开始</TableHead><TableHead>恢复</TableHead></TableRow></TableHeader>
-          <TableBody>
-            <TableRow v-for="row in downtimeEvents" :key="row.downtimeEventId">
-              <TableCell class="font-medium">{{ row.downtimeEventId }}</TableCell>
-              <TableCell>{{ row.workOrderId ?? '未指定' }}</TableCell>
-              <TableCell>{{ row.operationTaskId ?? '未指定' }}</TableCell>
-              <TableCell>{{ row.deviceAssetId ?? '未指定' }}</TableCell>
-              <TableCell>{{ row.status ?? '未知' }}</TableCell>
-              <TableCell>{{ row.startedAtUtc ?? '未指定' }}</TableCell>
-              <TableCell>{{ row.recoveredAtUtc ?? '未恢复' }}</TableCell>
-            </TableRow>
-            <TableEmpty v-if="downtimeEventsPending" :colspan="7">正在加载停机事件...</TableEmpty>
-            <TableEmpty v-if="!downtimeEvents.length && !downtimeEventsPending" :colspan="7">暂无停机事件。</TableEmpty>
-          </TableBody>
-        </Table>
-      </div>
-    </section>
+    <PageHeader title="设备与停机" :breadcrumbs="[{ label: '制造执行' }]" :count="`${filtered.length} 条停机事件`">
+      <template #actions>
+        <Button size="sm" type="button" variant="outline" :disabled="downtimeEventsPending" @click="refreshDowntimeEvents">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
+
+    <SectionCards :columns="3">
+      <SectionCard description="停机事件" :value="downtimeEvents.length" hint="影响生产执行的设备事件" />
+      <SectionCard description="未恢复" :value="openCount" hint="需设备 / 维修处理" />
+      <SectionCard description="已恢复" :value="downtimeEvents.length - openCount" hint="已确认恢复" />
+    </SectionCards>
+
+    <Toolbar v-model:search="keyword" search-placeholder="搜索停机事件、工单、设备">
+      <template #filters>
+        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="停机状态" />
+      </template>
+    </Toolbar>
+
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <DataTable
+      :columns="columns"
+      :rows="pagedRows"
+      row-key="downtimeEventId"
+      :loading="downtimeEventsPending"
+      empty-message="暂无停机事件。从工序执行记录异常会在这里汇总。"
+    >
+      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-startedAtUtc="{ row }">{{ formatDateTime(row.startedAtUtc) }}</template>
+      <template #cell-recoveredAtUtc="{ row }">{{ formatDateTime(row.recoveredAtUtc) }}</template>
+    </DataTable>
+
+    <DataTablePagination
+      v-model:page="page"
+      v-model:page-size="pageSize"
+      :total-items="filtered.length"
+    />
   </BusinessLayout>
 </template>

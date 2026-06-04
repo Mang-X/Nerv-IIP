@@ -1,123 +1,111 @@
 <script setup lang="ts">
-import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
-import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesWipSummary } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Badge,
   Button,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  DataTable,
+  DataTablePagination,
   Input,
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
+  PageHeader,
+  SectionCard,
+  SectionCards,
+  StatusBadge,
+  Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
-definePage({
-  meta: {
-    requiresAuth: true,
-    title: '在制跟踪',
-  },
-})
+definePage({ meta: { requiresAuth: true, title: '在制跟踪' } })
 
 const { filters, refreshWip, wipError, wipPending, wipRows } = useMesWipSummary()
 
+const keyword = ref('')
+const filtered = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return wipRows.value
+  return wipRows.value.filter((r) =>
+    [r.workOrderId, r.operationTaskId, r.workCenterId, r.status].some((v) => (v ?? '').toLowerCase().includes(kw)),
+  )
+})
+
+const goodTotal = computed(() => wipRows.value.reduce((s, r) => s + (r.goodQuantity ?? 0), 0))
+const scrapTotal = computed(() => wipRows.value.reduce((s, r) => s + (r.scrapQuantity ?? 0), 0))
 const errorMessage = computed(() => formatError(wipError.value))
-const goodQuantity = computed(() =>
-  wipRows.value.reduce((total, item) => total + (item.goodQuantity ?? 0), 0),
-)
-const scrapQuantity = computed(() =>
-  wipRows.value.reduce((total, item) => total + (item.scrapQuantity ?? 0), 0),
-)
+
+const page = ref(1)
+const pageSize = ref('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+const pagedRows = computed(() => {
+  const start = (page.value - 1) * pageSizeNumber.value
+  return filtered.value.slice(start, start + pageSizeNumber.value)
+})
+watch([keyword, pageSize, () => wipRows.value.length], () => {
+  page.value = 1
+})
+
+type WipRow = (typeof wipRows)['value'][number]
+const columns: DataTableColumn<WipRow>[] = [
+  { key: 'workOrderId', header: '工单', cellClass: 'font-medium', accessor: (r) => r.workOrderId ?? '无' },
+  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskId ?? '无' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'plannedQuantity', header: '计划数', align: 'end', width: 'w-20' },
+  { key: 'goodQuantity', header: '良品', align: 'end', width: 'w-20' },
+  { key: 'scrapQuantity', header: '报废', align: 'end', width: 'w-20' },
+  { key: 'blockingReasons', header: '阻塞原因', accessor: (r) => r.blockingReasons?.join('，') || '无' },
+]
 
 function formatQuantity(value?: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
-
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败。' : ''
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader
-        domain="生产执行"
-        title="在制跟踪"
-        summary="按工单和工序查看计划数量、良品、报废和阻塞原因。"
-      >
-        <template #actions>
-          <Button size="sm" type="button" variant="outline" :disabled="wipPending" @click="refreshWip">
-            <RefreshCwIcon data-icon="inline-start" />
-            刷新
-          </Button>
-        </template>
-      </BusinessPageHeader>
+    <PageHeader title="在制跟踪" :breadcrumbs="[{ label: '制造执行' }]" :count="`${filtered.length} 行在制`">
+      <template #actions>
+        <Button size="sm" type="button" variant="outline" :disabled="wipPending" @click="refreshWip">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
 
-      <div class="grid gap-3 rounded-lg border bg-background p-4">
-        <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field>
-            <FieldLabel for="wip-status">状态</FieldLabel>
-            <Input id="wip-status" v-model="filters.status" placeholder="可选" />
-          </Field>
-          <Field>
-            <FieldLabel for="wip-take">数量</FieldLabel>
-            <Input id="wip-take" v-model.number="filters.take" inputmode="numeric" type="number" />
-          </Field>
-        </FieldGroup>
-        <BusinessFormStatus :error="errorMessage" />
-      </div>
+    <SectionCards :columns="3">
+      <SectionCard description="在制行" :value="wipRows.length" hint="工单 / 工序粒度" />
+      <SectionCard description="良品数" :value="formatQuantity(goodTotal)" hint="已报工良品" />
+      <SectionCard description="报废数" :value="formatQuantity(scrapTotal)" hint="已报工报废" />
+    </SectionCards>
 
-      <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="在制行" :value="wipRows.length" detail="工单/工序粒度" />
-        <BusinessMetricCell label="良品数" :value="formatQuantity(goodQuantity)" detail="已报工良品" />
-        <BusinessMetricCell label="报废数" :value="formatQuantity(scrapQuantity)" detail="已报工报废" />
-      </div>
+    <Toolbar v-model:search="keyword" search-placeholder="搜索工单、工序、工作中心">
+      <template #filters>
+        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="在制状态" />
+      </template>
+    </Toolbar>
 
-      <div class="overflow-hidden rounded-lg border bg-background">
-        <div class="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>工单</TableHead>
-                <TableHead>工序任务</TableHead>
-                <TableHead>工作中心</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead class="text-right">计划数</TableHead>
-                <TableHead class="text-right">良品</TableHead>
-                <TableHead class="text-right">报废</TableHead>
-                <TableHead>阻塞原因</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="row in wipRows" :key="`${row.workOrderId}-${row.operationTaskId}`">
-                <TableCell class="font-medium">{{ row.workOrderId ?? '无' }}</TableCell>
-                <TableCell>{{ row.operationTaskId ?? '无' }}</TableCell>
-                <TableCell>{{ row.workCenterId ?? '无' }}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{{ row.status ?? '未知' }}</Badge>
-                </TableCell>
-                <TableCell class="text-right tabular-nums">{{ formatQuantity(row.plannedQuantity) }}</TableCell>
-                <TableCell class="text-right tabular-nums">{{ formatQuantity(row.goodQuantity) }}</TableCell>
-                <TableCell class="text-right tabular-nums">{{ formatQuantity(row.scrapQuantity) }}</TableCell>
-                <TableCell>{{ row.blockingReasons?.join('，') || '无' }}</TableCell>
-              </TableRow>
-              <TableEmpty v-if="!wipRows.length && !wipPending" :colspan="8">暂无在制数据。</TableEmpty>
-              <TableEmpty v-if="wipPending" :colspan="8">正在加载在制状态...</TableEmpty>
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    </section>
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <DataTable
+      :columns="columns"
+      :rows="pagedRows"
+      :row-key="(r) => `${r.workOrderId}-${r.operationTaskId}`"
+      :loading="wipPending"
+      empty-message="暂无在制数据。工单释放并排程后，在制行会出现在这里。"
+    >
+      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-plannedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.plannedQuantity) }}</span></template>
+      <template #cell-goodQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.goodQuantity) }}</span></template>
+      <template #cell-scrapQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.scrapQuantity) }}</span></template>
+    </DataTable>
+
+    <DataTablePagination
+      v-model:page="page"
+      v-model:page-size="pageSize"
+      :total-items="filtered.length"
+    />
   </BusinessLayout>
 </template>
