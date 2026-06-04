@@ -1,11 +1,27 @@
 ---
-# Foundation — Nerv-IIP Console Design System
-# "Calm Control Plane": professional, information-dense, blue-primary, zero decoration.
+# Foundation — Nerv-IIP Design System v2
+# Black-primary, dashboard-01 baseline: professional, information-dense, light + dark, dynamic accent.
 ---
 
 ## Style Intent
 
-A calm, information-dense enterprise control plane: cool-blue primary, neutral chrome, readable at a glance, never decorative.
+An information-dense enterprise control plane aligned to shadcn **dashboard-01**:
+near-black primary, neutral chrome, **light + dark first-class**, and a **runtime
+dynamic accent** (brand blue used for emphasis only). Page canvas sits a notch
+below card surfaces (inset floating panels) with a `--shadow-*` elevation scale.
+
+Tokens are a single source of truth in `@nerv-iip/ui` — `packages/ui/src/styles/theme.css`
+— imported by both `apps/console` and `apps/business-console`. Never duplicate token
+values per app.
+
+### Hard rules (epic #275 / FE-1 #276)
+
+1. `--primary` is **near-black** (`oklch(0.205 0 0)`), not the retired blue.
+2. Brand blue lives in `--brand` and is **emphasis only** + **runtime-overridable**.
+3. Light and dark are both shipped (`.dark` override in `theme.css`).
+4. **Never edit原版 shadcn-vue components.** They are re-pulled verbatim from the
+   official `reka-nova` registry and may be overwritten on re-pull. Any customization
+   is a copy-rebuilt component (FE-2), never an edit to a primitive.
 
 ---
 
@@ -13,24 +29,36 @@ A calm, information-dense enterprise control plane: cool-blue primary, neutral c
 
 ### Semantic tokens (all code must use these — never raw hex or raw Tailwind palette names)
 
-| Token | Light value | Purpose |
-|---|---|---|
-| `--background` | `oklch(1 0 0)` | Page canvas |
-| `--foreground` | `oklch(0.145 0 0)` | Body text |
-| `--card` | `oklch(1 0 0)` | Card surfaces |
-| `--muted` | `oklch(0.97 0 0)` | Subdued surface (table stripe, hover) |
-| `--muted-foreground` | `oklch(0.556 0 0)` | Secondary text, placeholders |
-| `--border` | `oklch(0.922 0 0)` | All borders |
-| `--input` | `oklch(0.922 0 0)` | Input border |
-| `--primary` | `oklch(0.49 0.17 255)` | Primary actions, active nav |
-| `--primary-foreground` | `oklch(0.985 0 0)` | Text on primary |
-| `--secondary` | `oklch(0.97 0 0)` | Secondary/ghost surface |
-| `--secondary-foreground` | `oklch(0.205 0 0)` | Text on secondary |
-| `--accent` | `oklch(0.96 0.03 255)` | Subtle blue surface (selected row, chip bg) |
-| `--accent-foreground` | `oklch(0.28 0.11 255)` | Text on accent |
-| `--destructive` | `oklch(0.577 0.245 27.325)` | Danger actions, error states |
-| `--ring` | `oklch(0.62 0.15 255)` | Focus rings |
-| `--sidebar` | `oklch(0.985 0 0)` | Sidebar background |
+| Token | Light value | Dark value | Purpose |
+|---|---|---|---|
+| `--background` | `oklch(0.985 0 0)` | `oklch(0.145 0 0)` | Page canvas (below cards) |
+| `--foreground` | `oklch(0.145 0 0)` | `oklch(0.985 0 0)` | Body text |
+| `--card` | `oklch(1 0 0)` | `oklch(0.205 0 0)` | Card / inset panel surface |
+| `--muted` | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` | Subdued surface (table stripe, hover) |
+| `--muted-foreground` | `oklch(0.556 0 0)` | `oklch(0.708 0 0)` | Secondary text, placeholders |
+| `--border` | `oklch(0.922 0 0)` | `oklch(1 0 0 / 10%)` | All borders |
+| `--primary` | `oklch(0.205 0 0)` | `oklch(0.922 0 0)` | Primary actions, active nav (near-black) |
+| `--primary-foreground` | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` | Text on primary |
+| `--secondary` | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` | Secondary/ghost surface |
+| `--accent` | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` | Neutral hover surface (selected row, chip bg) |
+| `--brand` | `oklch(0.55 0.18 255)` | `oklch(0.62 0.17 255)` | **Dynamic** emphasis accent (links, charts, focus) |
+| `--destructive` | `oklch(0.577 0.245 27.325)` | `oklch(0.704 0.191 22.216)` | Danger actions, error states |
+| `--success` | `oklch(0.62 0.17 149)` | `oklch(0.7 0.16 150)` | Healthy / enabled state |
+| `--warning` | `oklch(0.75 0.15 75)` | `oklch(0.8 0.15 80)` | Degraded / at-risk state |
+| `--ring` | `oklch(0.708 0 0)` | `oklch(0.556 0 0)` | Focus rings |
+| `--sidebar` | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` | Sidebar background |
+
+Use the matching Tailwind utilities: `bg-brand`, `text-brand`, `bg-success`,
+`text-warning`, etc. (mapped via `@theme inline`). Elevation utilities `shadow-xs`,
+`shadow-sm`, `shadow-md`, `shadow-lg` are driven by `--shadow-*` tokens.
+
+### Dynamic accent + colour mode
+
+`@nerv-iip/ui` exposes the runtime mechanism (composables only — switcher UI is FE-2/FE-3):
+
+- `useColorMode()` → `{ mode, isDark, toggle, setMode }`, toggles `.dark` on `<html>`, persisted.
+- `useThemeAccent()` → `{ accent, setAccent, reset, presets }`, rewrites `--brand` at runtime, persisted.
+- `initTheme()` → call once in `main.ts` before mount to apply the persisted choice before first paint.
 
 ### Status semantic (Badge variants, NOT raw Tailwind palette classes)
 
@@ -54,7 +82,21 @@ A calm, information-dense enterprise control plane: cool-blue primary, neutral c
 
 ## Typography
 
-Single font stack: `ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`
+Mixed Latin + CJK stack, both **self-hosted** (bundled by Vite — no `fonts.googleapis.com`
+/ CDN request at runtime). Imported once in `packages/ui/src/styles/theme.css`.
+
+- **Latin / digits → Inter Variable** (`@fontsource-variable/inter`). Crisp digits keep
+  dense data tables readable.
+- **Chinese → MiSans** (`misans` npm package, Xiaomi, Apache-2.0, free commercial use).
+  Generated `styles/misans.css` remaps MiSans' optical weights to standard CSS weights
+  (400/500/600/700) so `font-normal/medium/semibold/bold` map correctly, and the woff2 is
+  `unicode-range` subsetted (≈100 chunks/weight) so a page only fetches the glyphs it shows.
+
+Full stack (`--font-sans`):
+`'Inter Variable', 'MiSans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`
+
+> Inter leads so Latin/digits render in Inter; Chinese falls through to MiSans.
+> Regenerate `styles/misans.css` after bumping `misans` — see `DESIGN/governance.md` › Fonts.
 
 | Scale | Tailwind class | Usage |
 |---|---|---|

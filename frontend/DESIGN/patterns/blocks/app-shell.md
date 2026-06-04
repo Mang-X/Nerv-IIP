@@ -1,6 +1,36 @@
-# Block: App Shell (Collapsible Sidebar + Inset Content)
+# Block: App Shell
 
-The application chrome. Provided by `@nerv-iip/app-shell` package, combining **sidebar-07** (collapsible sidebar with icon-only mode) and **sidebar-01** (header with `border-b` separator and `p-4` content spacing).
+The application chrome, from `@nerv-iip/app-shell`. **`AppShellT`** is the long-term
+T-shaped shell (FE-3); **`AppShell`** below is the legacy two-level sidebar kept for
+migration compatibility.
+
+## AppShellT — T-shaped shell (top domains + domain-local side nav)
+
+Built on FE-2's `AppShellInset` (dashboard-01 `variant="inset"`). Top bar = permission-
+filtered capability domains (overflow → "更多"); left = the current domain's side nav;
+top-right = command search (⌘/Ctrl+K, placeholder until FE-13), `#header-actions` slot
+(theme controls) and the user menu.
+
+```ts
+// Exported from @nerv-iip/app-shell
+interface NavDomain { id: string, title: string, icon?: Component, to?: RouteLocationRaw, requiredPermissions?: string[] }
+interface NavLink { title: string, to: RouteLocationRaw, icon?: Component, requiredPermissions?: string[] }
+interface NavGroup { label?: string, items: NavLink[] }
+type SideNav = NavGroup[]
+
+// AppShellT props
+{ title, topDomains: NavDomain[], currentDomainId?, sideNav?: SideNav,
+  maxVisibleDomains? = 7, user?: ShellUser, signOutLabel?, searchLabel?, recent?, starred? }
+// emits: signOut, openSearch   // slots: #header-actions, #default
+```
+
+The consuming app owns the nav model + RBAC filtering (e.g. business-console
+`src/navigation.ts`) and route→domain resolution; the shell does **no** enforcement.
+See `docs/architecture/frontend-navigation-map.md` for the Business Console menu division.
+
+## Legacy: AppShell (collapsible sidebar + inset content)
+
+The legacy chrome combining **sidebar-07** (collapsible sidebar with icon-only mode) and **sidebar-01** (header with `border-b` separator and `p-4` content spacing). Kept for compatibility; new layouts use `AppShellT`.
 
 ## Component location
 

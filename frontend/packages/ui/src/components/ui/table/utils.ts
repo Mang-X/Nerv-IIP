@@ -1,15 +1,8 @@
+import type { Updater } from '@tanstack/vue-table'
+
 import type { Ref } from 'vue'
-
-export type Updater<T> = T | ((old: T) => T)
-
-function isUpdaterFunction<T>(
-  updaterOrValue: Updater<T>,
-): updaterOrValue is (old: T) => T {
-  return typeof updaterOrValue === 'function'
-}
+import { isFunction } from '@tanstack/vue-table'
 
 export function valueUpdater<T>(updaterOrValue: Updater<T>, ref: Ref<T>) {
-  ref.value = isUpdaterFunction(updaterOrValue)
-    ? updaterOrValue(ref.value)
-    : updaterOrValue
+  ref.value = isFunction(updaterOrValue) ? updaterOrValue(ref.value) : updaterOrValue
 }

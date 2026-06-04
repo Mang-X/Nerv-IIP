@@ -15,9 +15,9 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 <template>
   <TabsRoot
     v-slot="slotProps"
-    v-bind="forwarded"
     data-slot="tabs"
     :data-orientation="forwarded.orientation || 'horizontal'"
+    v-bind="forwarded"
     :class="cn('gap-2 group/tabs flex data-horizontal:flex-col', props.class)"
   >
     <slot v-bind="slotProps" />

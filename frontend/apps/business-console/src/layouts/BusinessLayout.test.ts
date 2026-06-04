@@ -20,185 +20,83 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 
-const AppShellStub = defineComponent({
-  name: 'AppShell',
+interface Domain { id: string, title: string }
+interface SideGroup { label?: string, items: { title: string }[] }
+
+const AppShellTStub = defineComponent({
+  name: 'AppShellT',
   props: {
-    navItems: {
-      required: true,
-      type: Array,
-    },
-    navLabel: {
-      required: false,
-      type: String,
-    },
-    title: {
-      required: true,
-      type: String,
-    },
-    user: {
-      required: false,
-      type: Object,
-    },
+    title: { type: String, required: true },
+    topDomains: { type: Array, required: true },
+    currentDomainId: { type: String, required: false },
+    sideNav: { type: Array, required: false },
+    user: { type: Object, required: false },
+    signOutLabel: { type: String, required: false },
+    maxVisibleDomains: { type: Number, required: false },
   },
-  template: '<section><slot name="header" /><slot /></section>',
+  template: '<section><slot name="header-actions" /><slot /></section>',
 })
 
-describe('BusinessLayout', () => {
+function mountLayout(pinia = createPinia()) {
+  return mount(BusinessLayout, {
+    global: {
+      plugins: [pinia, createBusinessConsoleI18n({ locale: 'en-US' })],
+      stubs: { AppShellT: AppShellTStub, ThemePicker: true, ThemeToggle: true },
+    },
+    slots: { default: '<main>Business content</main>' },
+  })
+}
+
+describe('BusinessLayout (T-shaped)', () => {
   beforeEach(() => {
     routeState.path = '/inventory/availability'
   })
 
-  it('passes workflow-oriented business navigation to AppShell', () => {
-    const wrapper = mount(BusinessLayout, {
-      global: {
-        plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
-        stubs: {
-          AppShell: AppShellStub,
-        },
-      },
-      slots: {
-        default: '<main>Business content</main>',
-      },
-    })
+  it('passes the T-shaped navigation model to AppShellT', () => {
+    const wrapper = mountLayout()
+    const shell = wrapper.getComponent(AppShellTStub)
 
-    const navItems = wrapper.getComponent(AppShellStub).props('navItems') as Record<string, unknown>[]
-    expect(wrapper.getComponent(AppShellStub).props('title')).toBe('Nerv-IIP 业务控制台')
-    expect(wrapper.getComponent(AppShellStub).props('navLabel')).toBe('业务模块')
-    expect(navItems).toMatchObject([
-      {
-        title: '基础数据',
-        items: [
-          { title: '物料与产品', to: { path: '/master-data/skus' } },
-          { title: '客户与供应商', to: { path: '/master-data/partners' } },
-          { title: '工厂资源', to: { path: '/master-data/resources' } },
-        ],
-      },
-      {
-        title: '工程资料',
-        items: [
-          { title: '工艺与版本', to: { path: '/master-data/process' } },
-          { title: '发布工程版本', to: { path: '/engineering' } },
-        ],
-      },
-      {
-        title: '计划与采购',
-        items: [
-          { title: '需求与物料计划', to: { path: '/planning' } },
-          { title: '采购与供应', to: { path: '/erp' } },
-        ],
-      },
-      {
-        title: '生产执行',
-        items: [
-          { title: '生产驾驶舱', to: { path: '/mes' } },
-          { title: '生产计划', to: { path: '/mes/plans' } },
-          { title: '工单与派工', to: { path: '/mes/work-orders' } },
-          { title: '齐套与物料', to: { path: '/mes/materials' } },
-          { title: '派工看板', to: { path: '/mes/dispatch' } },
-          { title: '工序执行', to: { path: '/mes/operation-tasks' } },
-          { title: '在制跟踪', to: { path: '/mes/wip' } },
-          { title: '报工记录', to: { path: '/mes/production-reports' } },
-          { title: '完工入库', to: { path: '/mes/receipts' } },
-        ],
-      },
-      {
-        title: '质量与库存',
-        isActive: true,
-        items: [
-          { title: '检验任务与记录', to: { path: '/quality/inspections' } },
-          { title: '不合格品处理', to: { path: '/quality/ncrs' } },
-          { title: '质量与不良', to: { path: '/mes/quality' } },
-          { title: '库存可用量', to: { path: '/inventory/availability' } },
-          { title: '库存移动', to: { path: '/inventory/movements' } },
-          { title: '库存盘点', to: { path: '/inventory/counts' } },
-        ],
-      },
-      {
-        title: '设备异常',
-        items: [
-          { title: '设备运行看板', to: { path: '/equipment' } },
-          { title: '设备报警', to: { path: '/equipment/alarms' } },
-          { title: '设备与停机', to: { path: '/mes/downtime' } },
-          { title: '异常与产能', to: { path: '/mes/capacity' } },
-          { title: '规则排程', to: { path: '/mes/schedules' } },
-          { title: '班次交接', to: { path: '/mes/handovers' } },
-        ],
-      },
-      {
-        title: '追溯报表',
-        items: [
-          { title: '追溯查询', to: { path: '/mes/traceability' } },
-          { title: '生产准备检查', to: { path: '/mes/foundation' } },
-        ],
-      },
+    expect(shell.props('title')).toBe('Nerv-IIP 业务控制台')
+    const domains = shell.props('topDomains') as Domain[]
+    expect(domains.map((d) => d.id)).toEqual([
+      'workbench', 'master-data', 'engineering', 'planning', 'mes', 'quality', 'inventory', 'erp', 'equipment',
     ])
-    expect(navItems.find((item) => item.title === '追溯报表')?.icon).not.toBe(
-      navItems.find((item) => item.title === '计划与采购')?.icon,
-    )
+    // Current domain resolved from the route, with its domain-local side nav.
+    expect(shell.props('currentDomainId')).toBe('inventory')
+    const sideNav = shell.props('sideNav') as SideGroup[]
+    const sideTitles = sideNav.flatMap((g) => g.items.map((i) => i.title))
+    expect(sideTitles).toEqual(['库存可用量', '库存移动', '库存盘点'])
   })
 
-  it('keeps MES foundation diagnostics out of the primary production execution group', () => {
+  it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {
     routeState.path = '/mes/foundation'
+    const wrapper = mountLayout()
+    const shell = wrapper.getComponent(AppShellTStub)
 
-    const wrapper = mount(BusinessLayout, {
-      global: {
-        plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
-        stubs: {
-          AppShell: AppShellStub,
-        },
-      },
-    })
-
-    const navItems = wrapper.getComponent(AppShellStub).props('navItems') as Record<string, unknown>[]
-    expect(navItems.find((item) => item.title === '生产执行')).toMatchObject({ isActive: false })
-    expect(navItems.find((item) => item.title === '追溯报表')).toMatchObject({
-      isActive: true,
-      items: [
-        { title: '追溯查询', to: { path: '/mes/traceability' } },
-        { title: '生产准备检查', to: { path: '/mes/foundation' } },
-      ],
-    })
+    expect(shell.props('currentDomainId')).toBe('mes')
+    const sideNav = shell.props('sideNav') as SideGroup[]
+    const diagnostics = sideNav.find((g) => g.label === '追溯与诊断')
+    expect(diagnostics?.items.map((i) => i.title)).toEqual(['追溯查询', '生产准备检查'])
+    // Foundation must not sit in the primary plan/work-order group.
+    const planning = sideNav.find((g) => g.label === '计划与工单')
+    expect(planning?.items.some((i) => i.title === '生产准备检查')).toBe(false)
   })
 
-  it('uses a fallback for authenticated user display name', () => {
+  it('resolves the 工艺与版本 route to the 产品工程 domain', () => {
+    routeState.path = '/master-data/process'
+    const wrapper = mountLayout()
+    expect(wrapper.getComponent(AppShellTStub).props('currentDomainId')).toBe('engineering')
+  })
+
+  it('uses a fallback for the authenticated user display name', () => {
     const pinia = createPinia()
     const auth = useAuthStore(pinia)
     auth.$patch({
-      principal: {
-        principalType: 'user',
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-      },
+      principal: { principalType: 'user', organizationId: 'org-001', environmentId: 'env-dev' },
     })
 
-    const wrapper = mount(BusinessLayout, {
-      global: {
-        plugins: [pinia, createBusinessConsoleI18n({ locale: 'en-US' })],
-        stubs: {
-          AppShell: AppShellStub,
-        },
-      },
-    })
-
-    expect(wrapper.getComponent(AppShellStub).props('user')).toMatchObject({
-      name: '已登录用户',
-    })
-  })
-
-  it('uses a distinct breadcrumb label for procurement pages', () => {
-    routeState.path = '/erp/purchase-orders'
-
-    const wrapper = mount(BusinessLayout, {
-      global: {
-        plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
-        stubs: {
-          AppShell: AppShellStub,
-        },
-      },
-    })
-
-    expect(wrapper.text()).toContain('采购与供应')
-    expect(wrapper.text()).not.toContain('计划与采购')
+    const wrapper = mountLayout(pinia)
+    expect(wrapper.getComponent(AppShellTStub).props('user')).toMatchObject({ name: '已登录用户' })
   })
 
   it('renders the home page as a business workbench instead of a route directory', () => {
@@ -206,13 +104,8 @@ describe('BusinessLayout', () => {
       global: {
         plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
         stubs: {
-          BusinessLayout: {
-            template: '<main><slot /></main>',
-          },
-          RouterLink: {
-            props: ['to'],
-            template: '<a><slot /></a>',
-          },
+          BusinessLayout: { template: '<main><slot /></main>' },
+          RouterLink: { props: ['to'], template: '<a><slot /></a>' },
         },
       },
     })

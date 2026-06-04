@@ -1,16 +1,24 @@
-<script setup lang="ts">
-import { cn } from '../../../lib/utils'
+<script lang="ts" setup>
+import type { HTMLAttributes } from 'vue'
+
 import { MoreHorizontalIcon } from 'lucide-vue-next'
-const props = defineProps<{ class?: string }>()
+import { cn } from '../../../lib/utils'
+
+const props = defineProps<{
+  class?: HTMLAttributes['class']
+}>()
 </script>
+
 <template>
   <span
     data-slot="breadcrumb-ellipsis"
     role="presentation"
     aria-hidden="true"
-    :class="cn('flex size-9 items-center justify-center', props.class)"
+    :class="cn('size-5 [&>svg]:size-4 flex items-center justify-center', props.class)"
   >
-    <MoreHorizontalIcon class="size-4" />
+    <slot>
+      <MoreHorizontalIcon />
+    </slot>
     <span class="sr-only">More</span>
   </span>
 </template>
