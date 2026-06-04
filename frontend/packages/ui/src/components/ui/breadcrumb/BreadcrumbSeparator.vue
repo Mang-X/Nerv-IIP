@@ -1,8 +1,14 @@
-<script setup lang="ts">
-import { cn } from '../../../lib/utils'
+<script lang="ts" setup>
+import type { HTMLAttributes } from 'vue'
+
 import { ChevronRightIcon } from 'lucide-vue-next'
-const props = defineProps<{ class?: string }>()
+import { cn } from '../../../lib/utils'
+
+const props = defineProps<{
+  class?: HTMLAttributes['class']
+}>()
 </script>
+
 <template>
   <li
     data-slot="breadcrumb-separator"
@@ -10,6 +16,8 @@ const props = defineProps<{ class?: string }>()
     aria-hidden="true"
     :class="cn('[&>svg]:size-3.5', props.class)"
   >
-    <slot><ChevronRightIcon /></slot>
+    <slot>
+      <ChevronRightIcon class="cn-rtl-flip" />
+    </slot>
   </li>
 </template>

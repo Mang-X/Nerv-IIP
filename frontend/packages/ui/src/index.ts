@@ -1,6 +1,17 @@
 export { cn } from './lib/utils'
 
 export {
+  ACCENT_PRESETS,
+  ACCENT_STORAGE_KEY,
+  COLOR_MODE_STORAGE_KEY,
+  DEFAULT_ACCENT,
+  initTheme,
+  useColorMode,
+  useThemeAccent,
+} from './composables/useTheme'
+export type { ColorMode } from './composables/useTheme'
+
+export {
   Breadcrumb,
   BreadcrumbEllipsis,
   BreadcrumbItem,
@@ -14,13 +25,18 @@ export {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarInput,
   SidebarInset,
   SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSkeleton,
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
@@ -64,11 +80,7 @@ export {
   type ChartConfig,
 } from './components/ui/chart'
 export { Checkbox } from './components/ui/checkbox'
-export {
-  DatePicker,
-  DateRangePicker,
-  type DateRangeValue,
-} from './components/ui/date-picker'
+export { DatePicker, DateRangePicker, type DateRangeValue } from './components/ui/date-picker'
 export {
   Dialog,
   DialogClose,
@@ -163,12 +175,7 @@ export { Spinner } from './components/ui/spinner'
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 export { Toaster } from './components/ui/sonner'
 export { toast } from 'vue-sonner'
-export {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './components/ui/tooltip'
+export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 export {
   Table,
   TableBody,

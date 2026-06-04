@@ -3,18 +3,23 @@ import type { PaginationFirstProps } from 'reka-ui'
 
 import type { HTMLAttributes } from 'vue'
 import type { ButtonVariants } from '../button'
-import { reactiveOmit } from '@vueuse/core'
 import { ChevronsLeftIcon } from 'lucide-vue-next'
+import { reactiveOmit } from '@vueuse/core'
 import { PaginationFirst, useForwardProps } from 'reka-ui'
 import { cn } from '../../../lib/utils'
 import { buttonVariants } from '../button'
 
-const props = withDefaults(defineProps<PaginationFirstProps & {
-  size?: ButtonVariants['size']
-  class?: HTMLAttributes['class']
-}>(), {
-  size: 'default',
-})
+const props = withDefaults(
+  defineProps<
+    PaginationFirstProps & {
+      size?: ButtonVariants['size']
+      class?: HTMLAttributes['class']
+    }
+  >(),
+  {
+    size: 'default',
+  },
+)
 
 const delegatedProps = reactiveOmit(props, 'class', 'size')
 const forwarded = useForwardProps(delegatedProps)
