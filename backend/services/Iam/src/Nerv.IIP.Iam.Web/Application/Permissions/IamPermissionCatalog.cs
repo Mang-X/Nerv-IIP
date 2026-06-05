@@ -91,6 +91,7 @@ public static class IamPermissionCatalog
         ["business.wms.shipments.manage"] = "Create and complete WMS shipment and picking work.",
         ["business.wms.automation.manage"] = "Dispatch and complete WMS automation tasks.",
         ["business.iiot.tags.manage"] = "Manage IndustrialTelemetry tag mappings and sampling policy.",
+        ["business.iiot.alarm-rules.manage"] = "Manage IndustrialTelemetry alarm rule thresholds.",
         ["business.iiot.telemetry.read"] = "Read IndustrialTelemetry device snapshots and summaries.",
         ["business.iiot.telemetry.write"] = "Write IndustrialTelemetry samples and device state snapshots.",
         ["business.iiot.alarms.read"] = "Read IndustrialTelemetry alarm events.",

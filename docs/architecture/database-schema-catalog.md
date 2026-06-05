@@ -346,10 +346,12 @@ Source:
 2. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/EntityConfigurations/*.cs`
 3. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Migrations/20260523112234_InitialIndustrialTelemetrySchema.cs`
 4. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Migrations/20260601024046_AddRuntimeSourceMetadata.cs`
+5. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Migrations/20260605092510_AddIndustrialTelemetryAlarmRules.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `telemetry_tags` | business | IndustrialTelemetry 拥有的设备采集 tag 映射和采样策略元数据。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + tag_key` 是业务唯一键；`value_type`、`unit_code` 和 `sampling_policy` 描述采集口径。 | tag 唯一索引防重复映射；设备/tag 维度支持采集配置查询。 | 创建后保留为采集元数据；PLC/DCS/SCADA 凭据不进入本 schema。 |
+| `alarm_rules` | business | IndustrialTelemetry 拥有的报警规则阈值配置，记录设备、tag、比较符、阈值、单位、严重级别和启停状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + rule_code` 是业务唯一键。 | 规则唯一索引防重复；设备+tag 索引用于规则维护和后续受控评估查询。 | 规则配置可更新启停和阈值；不保存 PLC/DCS/SCADA 控制命令或凭据。 |
 | `device_state_snapshots` | business | 设备状态快照事实，记录设备状态、发生时间、来源系统/连接器和来源序列。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_system + source_connector + device_asset_id + source_sequence` 是幂等唯一键，且 source 元数据为空时按 not-distinct 参与唯一性。 | 来源 scope+序列唯一索引防重复写入；设备+时间索引用于时间线、current-state 和 runtime availability 查询。 | 只追加受控状态事实，不表达控制命令。 |
 | `alarm_events` | business | 工业报警生命周期事实，记录 raise/clear、严重级别和外部报警 ID。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + external_alarm_id` 是幂等唯一键；`status` 表示 raised/cleared。 | 外部报警唯一索引防重复；设备+时间索引用于报警时间线。 | 报警创建后可清除；清除只补充 cleared facts，不删除历史。 |
 | `telemetry_summaries` | business | 粗粒度采集汇总 bucket，保存 tag 数值摘要和可选来源系统/连接器元数据。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_system + source_connector + device_asset_id + tag_key + source_sequence` 是幂等唯一键，且 source 元数据为空时按 not-distinct 参与唯一性；`sample_count`、`min_value`、`max_value`、`average_value` 保存摘要。 | 来源 scope+序列唯一索引防重复；设备+tag+bucket 起点索引用于趋势查询。 | 作为可重算摘要事实保留；原始高速时序不进入平台业务库。 |

@@ -31,13 +31,16 @@ public sealed class IndustrialTelemetryEndpointContractTests
     {
         var contracts = IndustrialTelemetryEndpointContracts.All.ToArray();
 
-        Assert.Equal(9, contracts.Length);
+        Assert.Equal(12, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TagsManage && x.OperationId == "createBusinessIiotTelemetryTag");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "listBusinessIiotTelemetryTags");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarm-rules" && x.PermissionCode == "business.iiot.alarm-rules.manage" && x.OperationId == "createOrUpdateBusinessIiotAlarmRule");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/alarm-rules" && x.PermissionCode == "business.iiot.alarms.read" && x.OperationId == "listBusinessIiotAlarmRules");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/samples" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryWrite && x.OperationId == "recordBusinessIiotTelemetrySample");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "raiseBusinessIiotAlarm");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/alarms" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsRead && x.OperationId == "listBusinessIiotAlarms");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/timeline" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotDeviceTimeline");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/oee" && x.PermissionCode == "business.iiot.telemetry.read" && x.OperationId == "queryBusinessIiotOee");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/runtime-availability" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotDeviceRuntimeAvailability");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/runtime-availability" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotRuntimeAvailability");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/current-state" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotDeviceCurrentState");
@@ -59,13 +62,16 @@ public sealed class IndustrialTelemetryEndpointContractTests
     {
         var tagResult = new CreateTelemetryTagCommandValidator().Validate(new CreateTelemetryTagCommand("org-001", "env-dev", "", "", "number", "rpm", "sample-10s"));
         var sampleResult = new RecordTelemetrySampleCommandValidator().Validate(new RecordTelemetrySampleCommand("org-001", "env-dev", "DEV-CNC-01", "", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), 1, 1, 2, 1.5m, ""));
+        var alarmRuleResult = new CreateOrUpdateAlarmRuleCommandValidator().Validate(new CreateOrUpdateAlarmRuleCommand("org-001", "env-dev", "DEV-CNC-01", "TEMP_RULE", "TEMP_HIGH", "warning", "temperature", "contains", 95m, "celsius", true));
 
         Assert.False(tagResult.IsValid);
         Assert.False(sampleResult.IsValid);
+        Assert.False(alarmRuleResult.IsValid);
         Assert.Contains(tagResult.Errors, x => SameProperty(x.PropertyName, nameof(CreateTelemetryTagCommand.DeviceAssetId)));
         Assert.Contains(tagResult.Errors, x => SameProperty(x.PropertyName, nameof(CreateTelemetryTagCommand.TagKey)));
         Assert.Contains(sampleResult.Errors, x => SameProperty(x.PropertyName, nameof(RecordTelemetrySampleCommand.TagKey)));
         Assert.Contains(sampleResult.Errors, x => SameProperty(x.PropertyName, nameof(RecordTelemetrySampleCommand.SourceSequence)));
+        Assert.Contains(alarmRuleResult.Errors, x => SameProperty(x.PropertyName, nameof(CreateOrUpdateAlarmRuleCommand.ComparisonOperator)));
     }
 
     [Fact]
@@ -111,6 +117,78 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.ActiveAlarm && x.SourceType == EquipmentRuntimeSourceType.Alarm);
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable && x.SourceType == EquipmentRuntimeSourceType.DeviceState);
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.SourceStale && x.SourceType == EquipmentRuntimeSourceType.StaleSource);
+    }
+
+    [Fact]
+    public async Task Alarm_rule_endpoint_upserts_and_lists_rule_configuration()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await UpsertAlarmRuleAsync(client, "DEV-OIL-01", "OIL_TEMP_RULE", "temperature", ">=", 90m, true);
+        await UpsertAlarmRuleAsync(client, "DEV-OIL-01", "OIL_TEMP_RULE", "temperature", ">=", 95m, false);
+        await UpsertAlarmRuleAsync(client, "DEV-OIL-01", " OIL_TEMP_RULE ", "temperature", ">=", 100m, true);
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/alarm-rules?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OIL-01");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        var rule = Assert.Single(document.RootElement.GetProperty("data").EnumerateArray());
+        Assert.Equal("OIL_TEMP_RULE", rule.GetProperty("ruleCode").GetString());
+        Assert.Equal("temperature", rule.GetProperty("tagKey").GetString());
+        Assert.Equal(100m, rule.GetProperty("thresholdValue").GetDecimal());
+        Assert.True(rule.GetProperty("isEnabled").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Oee_endpoint_aggregates_state_samples_for_window()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-OEE-01", "running", new DateTimeOffset(2026, 6, 1, 7, 50, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-state-001");
+        await PostSampleAsync(client, "DEV-OEE-01", "stopped", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-state-002");
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T10:00:00Z");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("DEV-OEE-01", data.GetProperty("deviceAssetId").GetString());
+        Assert.Equal(2, data.GetProperty("stateSampleCount").GetInt32());
+        Assert.Equal(0.5m, data.GetProperty("availabilityRate").GetDecimal());
+        Assert.Equal(1m, data.GetProperty("performanceRate").GetDecimal());
+        Assert.Equal(1m, data.GetProperty("qualityRate").GetDecimal());
+        Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.True(data.GetProperty("performanceRateEstimated").GetBoolean());
+        Assert.True(data.GetProperty("qualityRateEstimated").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Oee_endpoint_marks_performance_quality_estimated_when_state_facts_are_missing()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-NO-DATA&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T10:00:00Z");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("DEV-OEE-NO-DATA", data.GetProperty("deviceAssetId").GetString());
+        Assert.Equal(0, data.GetProperty("stateSampleCount").GetInt32());
+        Assert.Equal(0m, data.GetProperty("availabilityRate").GetDecimal());
+        Assert.Equal(0m, data.GetProperty("performanceRate").GetDecimal());
+        Assert.Equal(0m, data.GetProperty("qualityRate").GetDecimal());
+        Assert.Equal(0m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.True(data.GetProperty("performanceRateEstimated").GetBoolean());
+        Assert.True(data.GetProperty("qualityRateEstimated").GetBoolean());
     }
 
     [Theory]
@@ -407,6 +485,33 @@ public sealed class IndustrialTelemetryEndpointContractTests
         });
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.IsSuccessStatusCode, $"Expected alarm post to succeed, got {(int)response.StatusCode}: {body}");
+    }
+
+    private static async Task UpsertAlarmRuleAsync(
+        HttpClient client,
+        string deviceAssetId,
+        string ruleCode,
+        string tagKey,
+        string comparisonOperator,
+        decimal thresholdValue,
+        bool isEnabled)
+    {
+        using var response = await client.PostAsJsonAsync("/api/business/v1/iiot/alarm-rules", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId,
+            ruleCode,
+            alarmCode = "OIL_TEMP_HIGH",
+            severity = "warning",
+            tagKey,
+            comparisonOperator,
+            thresholdValue,
+            unitCode = "celsius",
+            isEnabled,
+        });
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected alarm rule upsert to succeed, got {(int)response.StatusCode}: {body}");
     }
 
     private static async Task ClearAlarmAsync(

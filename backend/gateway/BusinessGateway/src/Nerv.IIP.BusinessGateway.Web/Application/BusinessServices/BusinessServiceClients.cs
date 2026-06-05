@@ -437,6 +437,16 @@ public interface IBusinessIndustrialTelemetryClient
         BusinessConsoleTelemetryTagListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryAlarmRuleListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse> CreateOrUpdateAlarmRuleAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleTelemetryAlarmEventListResponse> ListAlarmsAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryAlarmListRequest request,
@@ -446,6 +456,11 @@ public interface IBusinessIndustrialTelemetryClient
         string internalBearerToken,
         string deviceAssetId,
         BusinessConsoleTelemetryHistoryRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleTelemetryOeeResponse> QueryOeeAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryOeeRequest request,
         CancellationToken cancellationToken);
 
     Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
@@ -2018,6 +2033,52 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 tag.SamplingPolicy)).ToArray());
     }
 
+    public async Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryAlarmRuleListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var rules = await SendAsync<IReadOnlyCollection<DownstreamAlarmRuleListItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/iiot/alarm-rules?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("deviceAssetId", request.DeviceAssetId),
+                ("isEnabled", request.IsEnabled)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleTelemetryAlarmRuleListResponse(rules.Select(rule =>
+            new BusinessConsoleTelemetryAlarmRuleItem(
+                FormatJsonScalar(rule.AlarmRuleId),
+                rule.OrganizationId,
+                rule.EnvironmentId,
+                rule.DeviceAssetId,
+                rule.RuleCode,
+                rule.AlarmCode,
+                rule.Severity,
+                rule.TagKey,
+                rule.ComparisonOperator,
+                rule.ThresholdValue,
+                rule.UnitCode,
+                rule.IsEnabled,
+                rule.UpdatedAtUtc)).ToArray());
+    }
+
+    public async Task<BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse> CreateOrUpdateAlarmRuleAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateOrUpdateAlarmRuleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/iiot/alarm-rules",
+            request,
+            cancellationToken);
+        return new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse(FormatJsonScalar(response.AlarmRuleId));
+    }
+
     public async Task<BusinessConsoleTelemetryAlarmEventListResponse> ListAlarmsAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryAlarmListRequest request,
@@ -2065,6 +2126,22 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             cancellationToken);
         return new BusinessConsoleTelemetryHistoryResponse(items);
     }
+
+    public Task<BusinessConsoleTelemetryOeeResponse> QueryOeeAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryOeeRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleTelemetryOeeResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/iiot/oee?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("deviceAssetId", request.DeviceAssetId),
+                ("windowStartUtc", request.WindowStartUtc),
+                ("windowEndUtc", request.WindowEndUtc)),
+            null,
+            cancellationToken);
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
         string internalBearerToken,
@@ -2170,6 +2247,23 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         string ValueType,
         string UnitCode,
         string SamplingPolicy);
+
+    private sealed record DownstreamAlarmRuleListItem(
+        JsonElement AlarmRuleId,
+        string OrganizationId,
+        string EnvironmentId,
+        string DeviceAssetId,
+        string RuleCode,
+        string AlarmCode,
+        string Severity,
+        string TagKey,
+        string ComparisonOperator,
+        decimal ThresholdValue,
+        string UnitCode,
+        bool IsEnabled,
+        DateTimeOffset UpdatedAtUtc);
+
+    private sealed record DownstreamCreateOrUpdateAlarmRuleResponse(JsonElement AlarmRuleId);
 }
 
 public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)

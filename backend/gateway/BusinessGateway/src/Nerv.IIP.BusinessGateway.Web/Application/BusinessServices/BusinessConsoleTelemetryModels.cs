@@ -18,6 +18,46 @@ public sealed record BusinessConsoleTelemetryTagItem(
     string UnitCode,
     string SamplingPolicy);
 
+public sealed record BusinessConsoleTelemetryAlarmRuleListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DeviceAssetId,
+    bool? IsEnabled);
+
+public sealed record BusinessConsoleTelemetryAlarmRuleListResponse(
+    IReadOnlyCollection<BusinessConsoleTelemetryAlarmRuleItem> Items);
+
+public sealed record BusinessConsoleTelemetryAlarmRuleItem(
+    string AlarmRuleId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string RuleCode,
+    string AlarmCode,
+    string Severity,
+    string TagKey,
+    string ComparisonOperator,
+    decimal ThresholdValue,
+    string UnitCode,
+    bool IsEnabled,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string RuleCode,
+    string AlarmCode,
+    string Severity,
+    string TagKey,
+    string ComparisonOperator,
+    decimal ThresholdValue,
+    string UnitCode,
+    bool IsEnabled);
+
+public sealed record BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse(
+    string AlarmRuleId);
+
 public sealed record BusinessConsoleTelemetryAlarmListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -54,3 +94,24 @@ public sealed record BusinessConsoleTelemetryHistoryItem(
     string? TagKey,
     string Value,
     DateTimeOffset OccurredAtUtc);
+
+public sealed record BusinessConsoleTelemetryOeeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc);
+
+public sealed record BusinessConsoleTelemetryOeeResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    int StateSampleCount,
+    decimal AvailabilityRate,
+    decimal PerformanceRate,
+    decimal QualityRate,
+    decimal OeeRate,
+    bool PerformanceRateEstimated,
+    bool QualityRateEstimated);

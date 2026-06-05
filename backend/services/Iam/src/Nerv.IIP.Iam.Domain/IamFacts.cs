@@ -128,6 +128,7 @@ public static class NervIipSeedPermissions
         "business.wms.shipments.manage",
         "business.wms.automation.manage",
         "business.iiot.tags.manage",
+        "business.iiot.alarm-rules.manage",
         "business.iiot.telemetry.read",
         "business.iiot.telemetry.write",
         "business.iiot.alarms.read",
