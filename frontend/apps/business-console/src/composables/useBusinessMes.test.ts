@@ -14,11 +14,18 @@ import {
 } from '@nerv-iip/api-client'
 import {
   describeMesReadinessReason,
+  useMesCapacityImpacts,
+  useMesDispatchTasks,
+  useMesDowntimeEvents,
   useMesFoundationReadiness,
   useMesFinishedGoodsReceipts,
+  useMesMaterialIssueRequests,
   useMesOperationTasks,
   useMesOverview,
+  useMesProductionReports,
+  useMesQualityContext,
   useMesSchedules,
+  useMesShiftHandovers,
   useMesWipSummary,
   useMesWorkOrders,
 } from './useBusinessMes'
@@ -385,6 +392,7 @@ describe('business MES composables', () => {
     coladaState.queryDataById.set('getBusinessConsoleMesWipSummary', {
       success: true,
       data: {
+        total: 23,
         items: [{ workOrderId: 'wo-1', operationTaskId: 'op-1', goodQuantity: 5 }],
       },
     })
@@ -413,6 +421,32 @@ describe('business MES composables', () => {
     expect(tasks.operationTasks.value).toHaveLength(1)
     expect(tasks.operationTasksTotal.value).toBe(77)
     expect(wip.wipRows.value).toHaveLength(1)
+    expect(wip.wipTotal.value).toBe(23)
+  })
+
+  it('exposes secondary MES list totals from response envelopes', () => {
+    const totals = new Map([
+      ['listBusinessConsoleMesCapacityImpacts', 11],
+      ['listBusinessConsoleMesDispatchTasks', 12],
+      ['listBusinessConsoleMesDowntimeEvents', 13],
+      ['listBusinessConsoleMesFinishedGoodsReceiptRequests', 14],
+      ['listBusinessConsoleMesMaterialIssueRequests', 15],
+      ['listBusinessConsoleMesProductionReports', 16],
+      ['listBusinessConsoleMesRelatedQualityItems', 17],
+      ['listBusinessConsoleMesShiftHandovers', 18],
+    ])
+    for (const [id, total] of totals) {
+      coladaState.queryDataById.set(id, { success: true, data: { items: [], total } })
+    }
+
+    expect(useMesCapacityImpacts().capacityImpactsTotal.value).toBe(11)
+    expect(useMesDispatchTasks().dispatchTasksTotal.value).toBe(12)
+    expect(useMesDowntimeEvents().downtimeEventsTotal.value).toBe(13)
+    expect(useMesFinishedGoodsReceipts().receiptRequestsTotal.value).toBe(14)
+    expect(useMesMaterialIssueRequests().materialIssueRequestsTotal.value).toBe(15)
+    expect(useMesProductionReports().productionReportsTotal.value).toBe(16)
+    expect(useMesQualityContext().qualityItemsTotal.value).toBe(17)
+    expect(useMesShiftHandovers().handoversTotal.value).toBe(18)
   })
 
   it('creates finished goods receipt requests and invalidates dependent lists', async () => {

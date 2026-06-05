@@ -15919,6 +15919,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow"
             }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -16019,6 +16023,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskRow"
             }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -16201,6 +16209,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWipSummaryRow"
             }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -16270,6 +16282,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportRow"
             }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -16469,6 +16485,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRelatedQualityItemRow"
             }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -16528,6 +16548,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptRequestRow"
             }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -16655,6 +16679,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow"
             }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -16766,6 +16794,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverRow"
             }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -16946,6 +16978,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCapacityImpactRow"
             }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },

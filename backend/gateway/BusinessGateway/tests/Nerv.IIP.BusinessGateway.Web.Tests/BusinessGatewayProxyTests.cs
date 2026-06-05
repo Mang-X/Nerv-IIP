@@ -1940,6 +1940,41 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_secondary_http_clients_forward_skip_take_and_map_total()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            items = Array.Empty<object>(),
+            total = 37,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+        var request = new BusinessConsoleMesListRequest("org-001", "env-dev", Skip: 4, Take: 12);
+        var expectedQuery = "?organizationId=org-001&environmentId=env-dev&skip=4&take=12";
+
+        var cases = new (string Path, Func<Task<int>> Invoke)[]
+        {
+            ("/api/business/v1/mes/wip" + expectedQuery, async () => (await client.GetWipSummaryAsync("internal-token-001", request, CancellationToken.None)).Total),
+            ("/api/business/v1/mes/capacity-impacts" + expectedQuery, async () => (await client.ListCapacityImpactsAsync("internal-token-001", request, CancellationToken.None)).Total),
+            ("/api/business/v1/mes/dispatch-tasks" + expectedQuery, async () => (await client.ListDispatchTasksAsync("internal-token-001", request, CancellationToken.None)).Total),
+            ("/api/business/v1/mes/finished-goods-receipt-requests" + expectedQuery, async () => (await client.ListFinishedGoodsReceiptRequestsAsync("internal-token-001", request, CancellationToken.None)).Total),
+            ("/api/business/v1/mes/material-issue-requests" + expectedQuery, async () => (await client.ListMaterialIssueRequestsAsync("internal-token-001", request, CancellationToken.None)).Total),
+            ("/api/business/v1/mes/downtime-events" + expectedQuery, async () => (await client.ListDowntimeEventsAsync("internal-token-001", request, CancellationToken.None)).Total),
+            ("/api/business/v1/mes/shift-handovers" + expectedQuery, async () => (await client.ListShiftHandoversAsync("internal-token-001", request, CancellationToken.None)).Total),
+            ("/api/business/v1/mes/production-reports" + expectedQuery, async () => (await client.ListProductionReportsAsync("internal-token-001", request, CancellationToken.None)).Total),
+            ("/api/business/v1/mes/related-quality-items" + expectedQuery, async () => (await client.ListRelatedQualityItemsAsync("internal-token-001", request, CancellationToken.None)).Total),
+        };
+
+        foreach (var testCase in cases)
+        {
+            Assert.Equal(37, await testCase.Invoke());
+        }
+
+        Assert.Equal(cases.Select(x => x.Path), handler.Requests.Select(x => x.RequestUri!.PathAndQuery));
+        Assert.All(handler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization!.Parameter));
+    }
+
+    [Fact]
     public async Task Master_data_http_client_forwards_accept_language_through_gateway_handler()
     {
         var contextAccessor = new HttpContextAccessor
@@ -3896,7 +3931,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMesWipSummaryResponse([]));
+        return Task.FromResult(new BusinessConsoleMesWipSummaryResponse([], 0));
     }
 
     public Task<BusinessConsoleMesProductionReportListResponse> ListProductionReportsAsync(
@@ -3905,7 +3940,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMesProductionReportListResponse([]));
+        return Task.FromResult(new BusinessConsoleMesProductionReportListResponse([], 0));
     }
 
     public Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
@@ -3938,7 +3973,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMesReceiptRequestListResponse([]));
+        return Task.FromResult(new BusinessConsoleMesReceiptRequestListResponse([], 0));
     }
 
     public Task<BusinessConsoleMesCreateReceiptResponse> CreateFinishedGoodsReceiptRequestAsync(
@@ -4015,6 +4050,6 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMesCapacityImpactListResponse([]));
+        return Task.FromResult(new BusinessConsoleMesCapacityImpactListResponse([], 0));
     }
 }

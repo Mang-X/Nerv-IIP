@@ -1489,6 +1489,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssue
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow = {
@@ -1517,6 +1518,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDispatchTaskL
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskRow>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskRow = {
@@ -1568,6 +1570,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWipSummaryRes
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWipSummaryResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWipSummaryRow>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWipSummaryRow = {
@@ -1587,6 +1590,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionRep
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportRow>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportRow = {
@@ -1647,6 +1651,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesRelatedQualit
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRelatedQualityItemListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRelatedQualityItemRow>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRelatedQualityItemRow = {
@@ -1664,6 +1669,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesReceiptReques
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptRequestListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptRequestRow>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptRequestRow = {
@@ -1702,6 +1708,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDowntimeEvent
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow = {
@@ -1736,6 +1743,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandover
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverRow>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverRow = {
@@ -1800,6 +1808,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesCapacityImpac
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCapacityImpactListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCapacityImpactRow>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCapacityImpactRow = {

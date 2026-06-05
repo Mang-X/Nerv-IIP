@@ -7,9 +7,12 @@ public sealed record ListProductionReportsQuery(
     string OrganizationId,
     string EnvironmentId,
     string? WorkOrderId,
+    int Skip = 0,
     int Take = 100) : IQuery<ListProductionReportsResponse>;
 
-public sealed record ListProductionReportsResponse(IReadOnlyCollection<ProductionReportFact> Items);
+public sealed record ListProductionReportsResponse(
+    IReadOnlyCollection<ProductionReportFact> Items,
+    int Total);
 
 public sealed record ProductionReportFact(
     string ProductionReportId,
@@ -36,8 +39,10 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
             query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.ReportedAtUtc)
+            .Skip(Math.Max(0, request.Skip))
             .Take(take)
             .Select(x => new ProductionReportFact(
                 x.Id.ToString(),
@@ -49,7 +54,7 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
                 0m,
                 x.ReportedAtUtc))
             .ToArrayAsync(cancellationToken);
-        return new ListProductionReportsResponse(items);
+        return new ListProductionReportsResponse(items, total);
     }
 }
 
@@ -57,9 +62,12 @@ public sealed record ListFinishedGoodsReceiptRequestsQuery(
     string OrganizationId,
     string EnvironmentId,
     string? WorkOrderId,
+    int Skip = 0,
     int Take = 100) : IQuery<ListFinishedGoodsReceiptRequestsResponse>;
 
-public sealed record ListFinishedGoodsReceiptRequestsResponse(IReadOnlyCollection<FinishedGoodsReceiptRequestFact> Items);
+public sealed record ListFinishedGoodsReceiptRequestsResponse(
+    IReadOnlyCollection<FinishedGoodsReceiptRequestFact> Items,
+    int Total);
 
 public sealed record FinishedGoodsReceiptRequestFact(
     string ReceiptRequestId,
@@ -85,8 +93,10 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
             query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.RequestedAtUtc)
+            .Skip(Math.Max(0, request.Skip))
             .Take(take)
             .Select(x => new FinishedGoodsReceiptRequestFact(
                 x.Id.ToString(),
@@ -97,7 +107,7 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
                 "Requested",
                 x.RequestedAtUtc))
             .ToArrayAsync(cancellationToken);
-        return new ListFinishedGoodsReceiptRequestsResponse(items);
+        return new ListFinishedGoodsReceiptRequestsResponse(items, total);
     }
 }
 
@@ -105,9 +115,12 @@ public sealed record ListCapacityImpactsQuery(
     string OrganizationId,
     string EnvironmentId,
     string? DeviceAssetId,
+    int Skip = 0,
     int Take = 100) : IQuery<ListCapacityImpactsResponse>;
 
-public sealed record ListCapacityImpactsResponse(IReadOnlyCollection<CapacityImpactFact> Items);
+public sealed record ListCapacityImpactsResponse(
+    IReadOnlyCollection<CapacityImpactFact> Items,
+    int Total);
 
 public sealed record CapacityImpactFact(
     string ImpactId,
@@ -133,8 +146,10 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.DeviceAssetId == request.DeviceAssetId);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.FromUtc)
+            .Skip(Math.Max(0, request.Skip))
             .Take(take)
             .Select(x => new CapacityImpactFact(
                 x.DowntimeEventNo,
@@ -145,6 +160,6 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
                 x.ToUtc,
                 x.Reason))
             .ToArrayAsync(cancellationToken);
-        return new ListCapacityImpactsResponse(items);
+        return new ListCapacityImpactsResponse(items, total);
     }
 }
