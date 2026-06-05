@@ -1,21 +1,16 @@
 <script setup lang="ts">
-import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
-import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
-import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesOverview } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Badge,
   Button,
-  Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Card,
+  CardContent,
+  DataTable,
+  PageHeader,
+  SectionCard,
+  SectionCards,
+  cn,
 } from '@nerv-iip/ui'
 import {
   ArrowRightIcon,
@@ -27,22 +22,11 @@ import {
   WrenchIcon,
 } from 'lucide-vue-next'
 import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
 
-definePage({
-  meta: {
-    requiresAuth: true,
-    title: '生产驾驶舱',
-  },
-})
+definePage({ meta: { requiresAuth: true, title: '生产驾驶舱' } })
 
-const {
-  blockers,
-  counts,
-  overviewError,
-  overviewPending,
-  pendingWork,
-  refreshOverview,
-} = useMesOverview()
+const { blockers, counts, overviewError, overviewPending, pendingWork, refreshOverview } = useMesOverview()
 
 const errorMessage = computed(() => formatError(overviewError.value))
 const workOrderCount = computed(() => countValue('WorkOrders'))
@@ -53,12 +37,12 @@ const pendingWorkCount = computed(() => pendingWork.value.reduce((total, item) =
 const commandCards = computed(() => [
   {
     title: '先处理阻塞',
-    description: blockerCount.value > 0 ? '物料、质量、设备或产能存在阻塞，先排除再放行。' : '当前没有汇总阻塞，可以进入工单与派工继续推进。',
+    description: blockerCount.value > 0 ? '物料、质量、设备或产能存在阻塞，先排除再放行。' : '当前没有汇总阻塞，可进入工单与派工继续推进。',
     value: blockerCount.value,
     route: blockerCount.value > 0 ? '/mes/capacity' : '/mes/work-orders',
     action: blockerCount.value > 0 ? '查看异常与产能' : '进入工单与派工',
     icon: ShieldAlertIcon,
-    tone: blockerCount.value > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-emerald-500/20 bg-emerald-500/5',
+    tone: blockerCount.value > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-success/30 bg-success/5',
   },
   {
     title: '安排今日工单',
@@ -76,142 +60,96 @@ const commandCards = computed(() => [
     route: '/mes/operation-tasks',
     action: '查看工序执行',
     icon: ClipboardCheckIcon,
-    tone: 'border-blue-500/20 bg-blue-500/5',
+    tone: 'border-brand/30 bg-brand/5',
   },
+])
+const roleLanes = computed(() => [
+  { role: '调度员', focus: '工单释放、插单影响、派工顺序', route: '/mes/work-orders', count: workOrderCount.value },
+  { role: '班组长', focus: '可开工任务、报工进度、班次遗留', route: '/mes/operation-tasks', count: operationTaskCount.value },
+  { role: '物料员', focus: '齐套、领料、补料和退料线索', route: '/mes/materials', count: blockers.value.filter((i) => (i.areaCode ?? '').toLowerCase().includes('material')).length },
+  { role: '质检/设备', focus: '质量阻塞、停机、产能影响', route: '/mes/capacity', count: blockers.value.filter((i) => ['quality', 'equipment', 'capacity'].some((k) => (i.areaCode ?? '').toLowerCase().includes(k))).length },
 ])
 
-const roleLanes = computed(() => [
-  {
-    role: '调度员',
-    focus: '工单释放、插单影响、派工顺序',
-    route: '/mes/work-orders',
-    count: workOrderCount.value,
-  },
-  {
-    role: '班组长',
-    focus: '可开工任务、报工进度、班次遗留',
-    route: '/mes/operation-tasks',
-    count: operationTaskCount.value,
-  },
-  {
-    role: '物料员',
-    focus: '齐套、领料、补料和退料线索',
-    route: '/mes/materials',
-    count: blockers.value.filter((item) => (item.areaCode ?? '').toLowerCase().includes('material')).length,
-  },
-  {
-    role: '质检/设备',
-    focus: '质量阻塞、停机、产能影响',
-    route: '/mes/capacity',
-    count: blockers.value.filter((item) => ['quality', 'equipment', 'capacity'].some((key) => (item.areaCode ?? '').toLowerCase().includes(key))).length,
-  },
-])
+type BlockerRow = (typeof blockers)['value'][number]
+const blockerColumns: DataTableColumn<BlockerRow>[] = [
+  { key: 'areaCode', header: '区域', width: 'w-28', accessor: (r) => r.areaCode ?? '未知' },
+  { key: 'code', header: '代码', cellClass: 'font-medium', accessor: (r) => r.code ?? '未知' },
+  { key: 'message', header: '说明', accessor: (r) => r.message ?? '无说明' },
+  { key: 'count', header: '数量', align: 'end', width: 'w-20' },
+]
 
 function countValue(key: string) {
   return counts.value.find((item) => item.key === key)?.count ?? 0
 }
-
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败。' : ''
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader
-        domain="生产执行"
-        title="生产驾驶舱"
-        kicker="班组长 / 调度员首屏"
-        summary="先看阻塞，再进工单和工序。这里把计划、物料、质量、设备和班次待办压缩成可行动的现场指挥视图。"
+    <PageHeader title="生产驾驶舱" :breadcrumbs="[{ label: '制造执行' }]">
+      <template #actions>
+        <Button size="sm" type="button" variant="outline" :disabled="overviewPending" @click="refreshOverview">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
+
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <div class="grid gap-4 xl:grid-cols-3">
+      <RouterLink
+        v-for="card in commandCards"
+        :key="card.title"
+        :to="{ path: card.route }"
+        :class="cn('group grid gap-4 rounded-lg border p-4 transition-colors hover:border-primary/40', card.tone)"
       >
-        <template #actions>
-          <Button size="sm" type="button" variant="outline" :disabled="overviewPending" @click="refreshOverview">
-            <RefreshCwIcon data-icon="inline-start" />
-            刷新
-          </Button>
-        </template>
-      </BusinessPageHeader>
-
-      <BusinessFormStatus :error="errorMessage" />
-
-      <div class="grid gap-3 xl:grid-cols-3">
-        <RouterLink
-          v-for="card in commandCards"
-          :key="card.title"
-          class="group grid gap-4 rounded-lg border p-4 transition-colors hover:border-primary/40"
-          :class="card.tone"
-          :to="{ path: card.route }"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="grid gap-1">
-              <p class="text-sm font-semibold text-foreground">{{ card.title }}</p>
-              <p class="text-sm leading-6 text-muted-foreground">{{ card.description }}</p>
-            </div>
-            <component :is="card.icon" class="size-5 shrink-0 text-primary" aria-hidden="true" />
+        <div class="flex items-start justify-between gap-3">
+          <div class="grid gap-1">
+            <p class="text-sm font-semibold text-foreground">{{ card.title }}</p>
+            <p class="text-sm leading-6 text-muted-foreground">{{ card.description }}</p>
           </div>
-          <div class="flex items-end justify-between gap-3">
-            <span class="text-3xl font-semibold tabular-nums text-foreground">{{ card.value }}</span>
-            <span class="inline-flex items-center gap-1 text-sm font-medium text-primary">
-              {{ card.action }}
-              <ArrowRightIcon class="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-            </span>
-          </div>
-        </RouterLink>
-      </div>
-
-      <div class="grid gap-3 md:grid-cols-4">
-        <BusinessMetricCell label="工单" :value="workOrderCount" detail="当前可见工单数" />
-        <BusinessMetricCell label="工序任务" :value="operationTaskCount" detail="当前可见任务数" />
-        <BusinessMetricCell label="阻塞项" :value="blockerCount" detail="需处理的问题数量" />
-        <BusinessMetricCell label="待办" :value="pendingWorkCount" detail="按角色汇总" />
-      </div>
-
-      <div class="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <div class="overflow-hidden rounded-lg border bg-background">
-          <div class="flex items-center justify-between border-b px-4 py-3">
-            <div>
-              <h2 class="text-sm font-semibold text-foreground">现场阻塞</h2>
-              <p class="mt-1 text-xs text-muted-foreground">按来源聚合，先处理会阻断开工或完工的事项。</p>
-            </div>
-            <RouterLink class="text-sm font-medium text-primary hover:underline" :to="{ path: '/mes/capacity' }">
-              异常与产能
-            </RouterLink>
-          </div>
-          <div v-if="!blockers.length && !overviewPending">
-            <BusinessEmptyState
-              title="当前没有生产阻塞"
-              description="可以进入工单与派工继续安排今日任务；如果仍怀疑基础数据缺失，可到系统管理的数据就绪检查做诊断。"
-              action="建议从工单队列选择下一张可执行工单。"
-            />
-          </div>
-          <div v-else class="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>区域</TableHead>
-                  <TableHead>代码</TableHead>
-                  <TableHead>说明</TableHead>
-                  <TableHead class="text-right">数量</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow v-for="item in blockers" :key="`${item.areaCode}-${item.code}`">
-                  <TableCell>
-                    <Badge variant="secondary">{{ item.areaCode ?? '未知' }}</Badge>
-                  </TableCell>
-                  <TableCell class="font-medium">{{ item.code ?? '未知' }}</TableCell>
-                  <TableCell>{{ item.message ?? '无说明' }}</TableCell>
-                  <TableCell class="text-right tabular-nums">{{ item.count ?? 0 }}</TableCell>
-                </TableRow>
-                <TableEmpty v-if="overviewPending" :colspan="4">正在加载总览…</TableEmpty>
-              </TableBody>
-            </Table>
-          </div>
+          <component :is="card.icon" class="size-5 shrink-0 text-primary" aria-hidden="true" />
         </div>
+        <div class="flex items-end justify-between gap-3">
+          <span class="text-3xl font-semibold tabular-nums text-foreground">{{ card.value }}</span>
+          <span class="inline-flex items-center gap-1 text-sm font-medium text-primary">
+            {{ card.action }}
+            <ArrowRightIcon class="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+          </span>
+        </div>
+      </RouterLink>
+    </div>
 
-        <div class="grid gap-4">
-          <div class="overflow-hidden rounded-lg border bg-background">
+    <SectionCards :columns="4">
+      <SectionCard description="工单" :value="workOrderCount" hint="当前可见工单数" />
+      <SectionCard description="工序任务" :value="operationTaskCount" hint="当前可见任务数" />
+      <SectionCard description="阻塞项" :value="blockerCount" hint="需处理的问题数量" />
+      <SectionCard description="待办" :value="pendingWorkCount" hint="按角色汇总" />
+    </SectionCards>
+
+    <div class="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+      <div class="grid gap-2">
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-semibold text-foreground">现场阻塞</span>
+          <RouterLink class="text-sm font-medium text-brand hover:underline" :to="{ path: '/mes/capacity' }">异常与产能</RouterLink>
+        </div>
+        <DataTable
+          :columns="blockerColumns"
+          :rows="blockers"
+          :row-key="(r) => `${r.areaCode}-${r.code}`"
+          :loading="overviewPending"
+          empty-message="当前没有生产阻塞。可进入工单与派工继续安排今日任务。"
+        >
+          <template #cell-count="{ row }"><span class="tabular-nums">{{ row.count ?? 0 }}</span></template>
+        </DataTable>
+      </div>
+
+      <div class="grid gap-4">
+        <Card>
+          <CardContent class="p-0">
             <div class="border-b px-4 py-3">
               <h2 class="text-sm font-semibold text-foreground">角色工作台</h2>
               <p class="mt-1 text-xs text-muted-foreground">把同一批生产事实按一线角色重组入口。</p>
@@ -233,9 +171,11 @@ function formatError(error: unknown) {
                 </div>
               </RouterLink>
             </div>
-          </div>
+          </CardContent>
+        </Card>
 
-          <div class="grid gap-3 rounded-lg border bg-background p-4">
+        <Card>
+          <CardContent class="grid gap-3">
             <div class="flex items-center gap-2">
               <PackageCheckIcon class="size-4 text-primary" aria-hidden="true" />
               <h2 class="text-sm font-semibold text-foreground">下一步建议</h2>
@@ -247,27 +187,18 @@ function formatError(error: unknown) {
             </div>
             <div class="flex flex-wrap gap-2 pt-1">
               <Button size="sm" type="button" as-child>
-                <RouterLink :to="{ path: '/mes/work-orders' }">
-                  <FactoryIcon data-icon="inline-start" />
-                  工单与派工
-                </RouterLink>
+                <RouterLink :to="{ path: '/mes/work-orders' }"><FactoryIcon aria-hidden="true" />工单与派工</RouterLink>
               </Button>
               <Button size="sm" type="button" variant="outline" as-child>
-                <RouterLink :to="{ path: '/mes/operation-tasks' }">
-                  <ClipboardCheckIcon data-icon="inline-start" />
-                  工序执行
-                </RouterLink>
+                <RouterLink :to="{ path: '/mes/operation-tasks' }"><ClipboardCheckIcon aria-hidden="true" />工序执行</RouterLink>
               </Button>
               <Button size="sm" type="button" variant="outline" as-child>
-                <RouterLink :to="{ path: '/mes/capacity' }">
-                  <WrenchIcon data-icon="inline-start" />
-                  异常与产能
-                </RouterLink>
+                <RouterLink :to="{ path: '/mes/capacity' }"><WrenchIcon aria-hidden="true" />异常与产能</RouterLink>
               </Button>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
-    </section>
+    </div>
   </BusinessLayout>
 </template>

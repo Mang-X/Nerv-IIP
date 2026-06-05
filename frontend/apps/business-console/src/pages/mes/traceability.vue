@@ -1,55 +1,87 @@
 <script setup lang="ts">
-import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
-import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesTraceability } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { Button, Field, FieldGroup, FieldLabel, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
+import {
+  Button,
+  DataTable,
+  Input,
+  PageHeader,
+  SectionCard,
+  SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Toolbar,
+} from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '追溯查询' } })
 
 const { filters, refreshTraceability, traceability, traceabilityError, traceabilityPending } = useMesTraceability()
-const errorMessage = computed(() => traceabilityError.value instanceof Error ? traceabilityError.value.message : traceabilityError.value ? '请求失败。' : '')
+
+const nodes = computed(() => traceability.value?.nodes ?? [])
+const errorMessage = computed(() => formatError(traceabilityError.value))
+const batchModel = computed({
+  get: () => filters.batchOrSerial ?? '',
+  set: (value: string) => { filters.batchOrSerial = value; filters.materialLotId = value },
+})
+
+type NodeRow = (typeof nodes)['value'][number]
+const columns: DataTableColumn<NodeRow>[] = [
+  { key: 'nodeId', header: '节点', cellClass: 'font-medium' },
+  { key: 'nodeType', header: '类型', width: 'w-32' },
+  { key: 'displayName', header: '名称' },
+  { key: 'status', header: '状态', width: 'w-28' },
+]
+
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
 </script>
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader domain="生产执行" title="追溯查询" summary="从工单、批次/序列号或物料批查询执行证据链。">
-        <template #actions><Button size="sm" variant="outline" :disabled="traceabilityPending" @click="refreshTraceability"><RefreshCwIcon data-icon="inline-start" />刷新</Button></template>
-      </BusinessPageHeader>
-      <div class="grid gap-3 rounded-lg border bg-background p-4">
-        <FieldGroup class="grid gap-3 md:grid-cols-5">
-          <Field>
-            <FieldLabel for="trace-mode">查询类型</FieldLabel>
-            <Select v-model="filters.mode"><SelectTrigger id="trace-mode"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="work-order">工单</SelectItem><SelectItem value="batch">批次/序列号</SelectItem><SelectItem value="material-lot">物料批</SelectItem></SelectContent></Select>
-          </Field>
-          <Field><FieldLabel for="trace-wo">工单</FieldLabel><Input id="trace-wo" v-model="filters.workOrderId" /></Field>
-          <Field><FieldLabel for="trace-batch">批次/物料批</FieldLabel><Input id="trace-batch" v-model="filters.batchOrSerial" @update:model-value="filters.materialLotId = String($event ?? '')" /></Field>
-        </FieldGroup>
-        <BusinessFormStatus :error="errorMessage" />
-      </div>
-      <div class="grid gap-3 md:grid-cols-2">
-        <BusinessMetricCell label="节点" :value="traceability?.nodes?.length ?? 0" detail="执行证据对象" />
-        <BusinessMetricCell label="关系" :value="traceability?.edges?.length ?? 0" detail="上下游关联" />
-      </div>
-      <div class="overflow-hidden rounded-lg border bg-background">
-        <Table>
-          <TableHeader><TableRow><TableHead>节点</TableHead><TableHead>类型</TableHead><TableHead>名称</TableHead><TableHead>状态</TableHead></TableRow></TableHeader>
-          <TableBody>
-            <TableRow v-for="node in traceability?.nodes ?? []" :key="node.nodeId">
-              <TableCell class="font-medium">{{ node.nodeId }}</TableCell>
-              <TableCell>{{ node.nodeType }}</TableCell>
-              <TableCell>{{ node.displayName }}</TableCell>
-              <TableCell>{{ node.status }}</TableCell>
-            </TableRow>
-            <TableEmpty v-if="traceabilityPending" :colspan="4">正在加载追溯数据...</TableEmpty>
-            <TableEmpty v-if="!(traceability?.nodes?.length) && !traceabilityPending" :colspan="4">暂无追溯数据。</TableEmpty>
-          </TableBody>
-        </Table>
-      </div>
-    </section>
+    <PageHeader title="追溯查询" :breadcrumbs="[{ label: '制造执行' }]">
+      <template #actions>
+        <Button size="sm" type="button" variant="outline" :disabled="traceabilityPending" @click="refreshTraceability">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
+
+    <SectionCards :columns="2">
+      <SectionCard description="节点" :value="nodes.length" hint="执行证据对象" />
+      <SectionCard description="关系" :value="traceability?.edges?.length ?? 0" hint="上下游关联" />
+    </SectionCards>
+
+    <Toolbar :show-search="false">
+      <template #filters>
+        <Select v-model="filters.mode">
+          <SelectTrigger class="h-9 w-36" aria-label="查询类型"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="work-order">工单</SelectItem>
+            <SelectItem value="batch">批次/序列号</SelectItem>
+            <SelectItem value="material-lot">物料批</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input v-model="filters.workOrderId" class="h-9 w-40" placeholder="工单号" aria-label="工单号" />
+        <Input v-model="batchModel" class="h-9 w-44" placeholder="批次/序列号/物料批" aria-label="批次或物料批" />
+      </template>
+    </Toolbar>
+
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <DataTable
+      :columns="columns"
+      :rows="nodes"
+      row-key="nodeId"
+      :loading="traceabilityPending"
+      empty-message="暂无追溯数据。输入工单、批次/序列号或物料批后查询执行证据链。"
+    />
   </BusinessLayout>
 </template>

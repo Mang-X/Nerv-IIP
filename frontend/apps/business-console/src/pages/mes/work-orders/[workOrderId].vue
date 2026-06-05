@@ -1,35 +1,20 @@
 <script setup lang="ts">
-import BusinessContextBar from '@/components/business/BusinessContextBar.vue'
-import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
-import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
-import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
+import type { DataTableColumn } from '@nerv-iip/ui'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
-  Field,
-  FieldGroup,
-  FieldLabel,
-  Input,
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
+  DataTable,
+  PageHeader,
+  SectionCard,
+  SectionCards,
+  StatusBadge,
 } from '@nerv-iip/ui'
 import { ClipboardCheckIcon, PackageCheckIcon, RefreshCwIcon, ShieldCheckIcon } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-definePage({
-  meta: {
-    requiresAuth: true,
-    title: '工单详情',
-  },
-})
+definePage({ meta: { requiresAuth: true, title: '工单详情' } })
 
 const route = useRoute()
 const router = useRouter()
@@ -60,15 +45,35 @@ const blockingReasons = computed(() => [
   ...(materialReadiness.value?.blockingReasons ?? []),
 ])
 const blockingReasonDisplays = computed(() => blockingReasons.value.map(describeMesReadinessReason))
-const errorMessage = computed(
-  () => formatError(detailError.value) || formatError(materialReadinessError.value),
-)
+const errorMessage = computed(() => formatError(detailError.value) || formatError(materialReadinessError.value))
+
+type TaskRow = (typeof operationTasks)['value'][number]
+const taskColumns: DataTableColumn<TaskRow>[] = [
+  { key: 'operationTaskId', header: '任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskId ?? '无' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'operationSequence', header: '序号', align: 'end', width: 'w-16', accessor: (r) => r.operationSequence ?? 0 },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
+  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
+  { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
+  { key: 'startedAtUtc', header: '开始', width: 'w-44' },
+  { key: 'qualityStatus', header: '质量', accessor: (r) => r.qualityStatus ?? '未检' },
+]
+
+type MaterialRow = (typeof materialRows)['value'][number]
+const materialColumns: DataTableColumn<MaterialRow>[] = [
+  { key: 'materialId', header: '物料', cellClass: 'font-medium', accessor: (r) => r.materialId ?? '无' },
+  { key: 'materialLotId', header: '批次', accessor: (r) => r.materialLotId ?? '未指定' },
+  { key: 'requiredQuantity', header: '需求', align: 'end', width: 'w-20' },
+  { key: 'availableQuantity', header: '可用', align: 'end', width: 'w-20' },
+  { key: 'stagedQuantity', header: '已备', align: 'end', width: 'w-20' },
+  { key: 'shortageQuantity', header: '短缺', align: 'end', width: 'w-20' },
+  { key: 'status', header: '状态', width: 'w-24' },
+]
 
 function refreshAll() {
   void refreshDetail()
   void refreshMaterialReadiness()
 }
-
 function openRoute(path: string) {
   void router.push({
     path,
@@ -79,17 +84,14 @@ function openRoute(path: string) {
     },
   })
 }
-
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-
 function formatQuantity(value?: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
-
 function formatStatus(value?: string | null) {
   const map: Record<string, string> = {
     blocked: '阻塞',
@@ -102,155 +104,86 @@ function formatStatus(value?: string | null) {
   }
   return value ? (map[value.toLowerCase()] ?? value) : '未知'
 }
-
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败。' : ''
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader
-        domain="生产执行"
-        title="工单详情"
-        :summary="`查看工单 ${filters.workOrderId} 的工序、用料和开工阻塞。`"
+    <PageHeader
+      :title="`工单 ${filters.workOrderId}`"
+      :breadcrumbs="[{ label: '制造执行' }, { label: '工单与派工' }]"
+    >
+      <template #actions>
+        <Button size="sm" type="button" variant="outline" @click="openRoute('/mes/production-reports')">
+          <ClipboardCheckIcon aria-hidden="true" />
+          报工记录
+        </Button>
+        <Button size="sm" type="button" variant="outline" @click="openRoute('/mes/receipts')">
+          <PackageCheckIcon aria-hidden="true" />
+          完工入库
+        </Button>
+        <Button size="sm" type="button" variant="outline" @click="openRoute('/quality/inspections')">
+          <ShieldCheckIcon aria-hidden="true" />
+          质量检验
+        </Button>
+        <Button size="sm" type="button" variant="outline" :disabled="detailPending || materialReadinessPending" @click="refreshAll">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
+
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <SectionCards :columns="4">
+      <SectionCard description="工单状态" :value="formatStatus(detail?.status)" :hint="detail?.skuId ?? '无物料'" />
+      <SectionCard description="计划数量" :value="formatQuantity(detail?.quantity)" hint="工单计划量" />
+      <SectionCard description="工序数" :value="operationTasks.length" hint="执行任务" />
+      <SectionCard description="用料状态" :value="formatStatus(materialReadiness?.readinessStatus)" hint="齐套检查" />
+    </SectionCards>
+
+    <div v-if="blockingReasons.length" class="rounded-lg border bg-background p-4">
+      <h2 class="text-sm font-semibold text-foreground">开工阻塞</h2>
+      <div class="mt-3 grid gap-2">
+        <div v-for="reason in blockingReasonDisplays" :key="reason.code" class="rounded-md border border-warning/30 bg-warning/10 p-3">
+          <StatusBadge :label="reason.label" tone="warning" />
+          <p class="mt-2 text-sm text-muted-foreground">{{ reason.nextStep }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid gap-2">
+      <span class="text-sm font-semibold text-foreground">工序任务</span>
+      <DataTable
+        :columns="taskColumns"
+        :rows="operationTasks"
+        row-key="operationTaskId"
+        :loading="detailPending"
+        empty-message="暂无工序任务。"
       >
-        <template #actions>
-          <Button size="sm" type="button" variant="outline" @click="openRoute('/mes/production-reports')">
-            <ClipboardCheckIcon data-icon="inline-start" />
-            报工记录
-          </Button>
-          <Button size="sm" type="button" variant="outline" @click="openRoute('/mes/receipts')">
-            <PackageCheckIcon data-icon="inline-start" />
-            完工入库
-          </Button>
-          <Button size="sm" type="button" variant="outline" @click="openRoute('/quality/inspections')">
-            <ShieldCheckIcon data-icon="inline-start" />
-            质量检验
-          </Button>
-          <Button size="sm" type="button" variant="outline" :disabled="detailPending || materialReadinessPending" @click="refreshAll">
-            <RefreshCwIcon data-icon="inline-start" />
-            刷新
-          </Button>
-        </template>
-      </BusinessPageHeader>
+        <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+        <template #cell-operationSequence="{ row }"><span class="tabular-nums">{{ row.operationSequence ?? 0 }}</span></template>
+        <template #cell-startedAtUtc="{ row }">{{ formatDateTime(row.startedAtUtc ?? row.plannedStartUtc) }}</template>
+      </DataTable>
+    </div>
 
-      <BusinessContextBar
-        v-model:environment-id="filters.environmentId"
-        v-model:organization-id="filters.organizationId"
-        :show-line="false"
-        :show-shift="false"
-        :show-site="false"
-        :show-work-center="false"
-        title="生产范围"
+    <div class="grid gap-2">
+      <span class="text-sm font-semibold text-foreground">用料齐套</span>
+      <DataTable
+        :columns="materialColumns"
+        :rows="materialRows"
+        :row-key="(r) => `${r.materialId}-${r.materialLotId}`"
+        :loading="materialReadinessPending"
+        empty-message="暂无用料行。"
       >
-        <FieldGroup class="grid gap-3 md:grid-cols-2">
-          <Field>
-            <FieldLabel for="detail-work-order">工单号</FieldLabel>
-            <Input id="detail-work-order" v-model="filters.workOrderId" readonly />
-          </Field>
-        </FieldGroup>
-        <BusinessFormStatus :error="errorMessage" />
-      </BusinessContextBar>
-
-      <div class="grid gap-3 md:grid-cols-4">
-        <BusinessMetricCell label="工单状态" :value="formatStatus(detail?.status)" :detail="detail?.skuId ?? '无物料'" />
-        <BusinessMetricCell label="计划数量" :value="formatQuantity(detail?.quantity)" detail="工单计划量" />
-        <BusinessMetricCell label="工序数" :value="operationTasks.length" detail="执行任务" />
-        <BusinessMetricCell label="用料状态" :value="formatStatus(materialReadiness?.readinessStatus)" detail="齐套检查" />
-      </div>
-
-      <div v-if="blockingReasons.length" class="rounded-lg border bg-background p-4">
-        <h2 class="text-sm font-semibold text-foreground">阻塞原因</h2>
-        <div class="mt-3 grid gap-2">
-          <div v-for="reason in blockingReasonDisplays" :key="reason.code" class="rounded-md border p-3">
-            <div class="flex flex-wrap items-center gap-2">
-              <BusinessStatusBadge :value="reason.label" />
-              <span class="font-mono text-xs text-muted-foreground">{{ reason.code }}</span>
-            </div>
-            <p class="mt-2 text-sm text-muted-foreground">{{ reason.nextStep }}</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="overflow-hidden rounded-lg border bg-background">
-        <div class="border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">工序任务</h2>
-        </div>
-        <div class="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>任务</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>序号</TableHead>
-                <TableHead>工作中心</TableHead>
-                <TableHead>设备</TableHead>
-                <TableHead>班次</TableHead>
-                <TableHead>开始</TableHead>
-                <TableHead>质量</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="task in operationTasks" :key="task.operationTaskId">
-                <TableCell class="font-medium">{{ task.operationTaskId ?? '无' }}</TableCell>
-                <TableCell>
-                  <BusinessStatusBadge :value="task.status" />
-                </TableCell>
-                <TableCell class="tabular-nums">{{ task.operationSequence ?? 0 }}</TableCell>
-                <TableCell>{{ task.workCenterId ?? '无' }}</TableCell>
-                <TableCell>{{ task.deviceAssetId ?? '未指定' }}</TableCell>
-                <TableCell>{{ task.shiftId ?? '未指定' }}</TableCell>
-                <TableCell>{{ formatDateTime(task.startedAtUtc ?? task.plannedStartUtc) }}</TableCell>
-                <TableCell>{{ task.qualityStatus ?? '未检' }}</TableCell>
-              </TableRow>
-              <TableEmpty v-if="!operationTasks.length && !detailPending" :colspan="8">
-                暂无工序任务。
-              </TableEmpty>
-              <TableEmpty v-if="detailPending" :colspan="8">正在加载工单详情...</TableEmpty>
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-
-      <div class="overflow-hidden rounded-lg border bg-background">
-        <div class="border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">用料齐套</h2>
-        </div>
-        <div class="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>物料</TableHead>
-                <TableHead>批次</TableHead>
-                <TableHead class="text-right">需求</TableHead>
-                <TableHead class="text-right">可用</TableHead>
-                <TableHead class="text-right">已备</TableHead>
-                <TableHead class="text-right">短缺</TableHead>
-                <TableHead>状态</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="row in materialRows" :key="`${row.materialId}-${row.materialLotId}`">
-                <TableCell class="font-medium">{{ row.materialId ?? '无' }}</TableCell>
-                <TableCell>{{ row.materialLotId ?? '未指定' }}</TableCell>
-                <TableCell class="text-right tabular-nums">{{ formatQuantity(row.requiredQuantity) }}</TableCell>
-                <TableCell class="text-right tabular-nums">{{ formatQuantity(row.availableQuantity) }}</TableCell>
-                <TableCell class="text-right tabular-nums">{{ formatQuantity(row.stagedQuantity) }}</TableCell>
-                <TableCell class="text-right tabular-nums">{{ formatQuantity(row.shortageQuantity) }}</TableCell>
-                <TableCell>
-                  <BusinessStatusBadge :value="row.status" />
-                </TableCell>
-              </TableRow>
-              <TableEmpty v-if="!materialRows.length && !materialReadinessPending" :colspan="7">
-                暂无用料行。
-              </TableEmpty>
-              <TableEmpty v-if="materialReadinessPending" :colspan="7">正在加载用料齐套...</TableEmpty>
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    </section>
+        <template #cell-requiredQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.requiredQuantity) }}</span></template>
+        <template #cell-availableQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.availableQuantity) }}</span></template>
+        <template #cell-stagedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.stagedQuantity) }}</span></template>
+        <template #cell-shortageQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.shortageQuantity) }}</span></template>
+        <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      </DataTable>
+    </div>
   </BusinessLayout>
 </template>
