@@ -132,6 +132,7 @@ export interface MesListFilters {
   organizationId: string
   environmentId: string
   status?: string
+  skip: number
   take: number
 }
 
@@ -169,6 +170,7 @@ function defaultFilters(): MesListFilters {
   return reactive({
     organizationId: 'org-001',
     environmentId: 'env-dev',
+    skip: 0,
     take: DEFAULT_TAKE,
   })
 }
@@ -236,6 +238,7 @@ function toListQuery(filters: MesListFilters) {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
     ...optionalQuery('status', filters.status),
+    skip: filters.skip,
     take: filters.take,
   }
 }
@@ -258,6 +261,16 @@ function envelopeItems<TItem, TEnvelope extends { success?: boolean; data?: { it
   }
 
   return envelope.data?.items ?? []
+}
+
+function envelopeTotal<TEnvelope extends { success?: boolean; data?: { total?: number } | null }>(
+  envelope: TEnvelope | undefined,
+) {
+  if (!envelope?.success) {
+    return 0
+  }
+
+  return envelope.data?.total ?? 0
 }
 
 function listItems(envelope: BusinessConsoleMesWorkOrderListEnvelope | undefined) {
@@ -370,6 +383,7 @@ export function useMesWorkOrders() {
     ),
     workOrdersError: workOrdersQuery.error,
     workOrdersPending: workOrdersQuery.isLoading,
+    workOrdersTotal: computed(() => envelopeTotal(workOrdersQuery.data.value)),
   }
 }
 
@@ -414,6 +428,7 @@ export function useMesProductionPlans() {
     ),
     productionPlansError: plansQuery.error,
     productionPlansPending: plansQuery.isLoading,
+    productionPlansTotal: computed(() => envelopeTotal(plansQuery.data.value)),
     refreshProductionPlans: plansQuery.refetch,
   }
 }
@@ -585,6 +600,7 @@ export function useMesOperationTasks() {
     ),
     operationTasksError: operationTasksQuery.error,
     operationTasksPending: operationTasksQuery.isLoading,
+    operationTasksTotal: computed(() => envelopeTotal(operationTasksQuery.data.value)),
     pauseOperationTask: (operationTaskId: string, context: MesContextFilters, body: BusinessConsoleMesOperationTaskActionRequest) =>
       pauseMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
     refreshOperationTasks: operationTasksQuery.refetch,

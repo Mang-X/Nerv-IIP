@@ -275,6 +275,7 @@ describe('business MES composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleMesWorkOrders', {
       success: true,
       data: {
+        total: 128,
         items: [
           {
             workOrderId: 'wo-1',
@@ -284,15 +285,17 @@ describe('business MES composables', () => {
       },
     })
 
-    const { workOrders } = useMesWorkOrders()
+    const { workOrders, workOrdersTotal } = useMesWorkOrders()
 
     expect(listBusinessConsoleMesWorkOrdersQueryOptions).toHaveBeenCalledWith({
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        skip: 0,
         take: 100,
       },
     })
+    expect(workOrdersTotal.value).toBe(128)
     expect(workOrders.value).toEqual([
       {
         workOrderId: 'wo-1',
@@ -375,6 +378,7 @@ describe('business MES composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleMesOperationTasks', {
       success: true,
       data: {
+        total: 77,
         items: [{ operationTaskId: 'op-1', workOrderId: 'wo-1', status: 'Ready' }],
       },
     })
@@ -407,6 +411,7 @@ describe('business MES composables', () => {
     expect(overview.counts.value).toHaveLength(1)
     expect(readiness.readiness.value?.status).toBe('Ready')
     expect(tasks.operationTasks.value).toHaveLength(1)
+    expect(tasks.operationTasksTotal.value).toBe(77)
     expect(wip.wipRows.value).toHaveLength(1)
   })
 

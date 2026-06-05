@@ -18,6 +18,8 @@ export interface BusinessContextFilters {
 
 export interface MasterDataListFilters extends BusinessContextFilters {
   includeDisabled?: boolean
+  skip: number
+  take: number
 }
 
 export interface MasterDataResourceFilters extends MasterDataListFilters {
@@ -40,6 +42,8 @@ function defaultContext(): BusinessContextFilters {
 function defaultListFilters(): MasterDataListFilters {
   return reactive({
     ...defaultContext(),
+    skip: 0,
+    take: DEFAULT_TAKE,
   })
 }
 
@@ -47,6 +51,8 @@ function defaultResourceFilters(resourceType: string): MasterDataResourceFilters
   return reactive({
     ...defaultContext(),
     resourceType,
+    skip: 0,
+    take: DEFAULT_TAKE,
   })
 }
 
@@ -60,6 +66,14 @@ function resourceItems(envelope: BusinessConsoleResourceListEnvelope | undefined
   }
 
   return envelope.data?.resources ?? []
+}
+
+function resourceTotal(envelope: BusinessConsoleResourceListEnvelope | undefined) {
+  if (!envelope?.success) {
+    return 0
+  }
+
+  return envelope.data?.total ?? 0
 }
 
 function isBusinessQuery(id: string) {
@@ -84,7 +98,8 @@ export function useBusinessSkus() {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
         ...optionalQuery('includeDisabled', filters.includeDisabled),
-        take: DEFAULT_TAKE,
+        skip: filters.skip,
+        take: filters.take,
       },
     }),
   )
@@ -107,6 +122,7 @@ export function useBusinessSkus() {
     skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(skusQuery.data.value)),
     skusError: skusQuery.error,
     skusPending: skusQuery.isLoading,
+    skusTotal: computed(() => resourceTotal(skusQuery.data.value)),
   }
 }
 
@@ -120,7 +136,8 @@ export function useBusinessMasterDataResources(resourceType: string) {
         environmentId: filters.environmentId,
         resourceType: filters.resourceType,
         ...optionalQuery('includeDisabled', filters.includeDisabled),
-        take: DEFAULT_TAKE,
+        skip: filters.skip,
+        take: filters.take,
       },
     }),
   )
@@ -133,6 +150,7 @@ export function useBusinessMasterDataResources(resourceType: string) {
     ),
     resourcesError: resourcesQuery.error,
     resourcesPending: resourcesQuery.isLoading,
+    resourcesTotal: computed(() => resourceTotal(resourcesQuery.data.value)),
   }
 }
 
@@ -146,7 +164,8 @@ export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroup
           environmentId: filters.environmentId,
           resourceType: definition.resourceType ?? definition.key,
           ...optionalQuery('includeDisabled', filters.includeDisabled),
-          take: DEFAULT_TAKE,
+          skip: filters.skip,
+          take: filters.take,
         },
       }),
     ),
@@ -159,10 +178,14 @@ export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroup
         ...definition,
         resourceType: definition.resourceType ?? definition.key,
         rows: resourceItems(queries[index]?.data.value),
+        total: resourceTotal(queries[index]?.data.value),
       })),
     ),
     groupsError: computed(() => queries.map((query) => query.error.value).find(Boolean)),
     groupsPending: computed(() => queries.some((query) => query.isLoading.value)),
+    groupsTotal: computed(() =>
+      queries.reduce((total, query) => total + resourceTotal(query.data.value), 0),
+    ),
     refreshGroups: () => Promise.all(queries.map((query) => query.refetch())),
   }
 }

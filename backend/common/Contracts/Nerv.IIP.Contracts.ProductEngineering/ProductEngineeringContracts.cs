@@ -39,7 +39,7 @@ public sealed record ProductionVersionListItem(
     bool IsDefault,
     string Status);
 
-public sealed record ListProductionVersionsResponse(IReadOnlyCollection<ProductionVersionListItem> Items);
+public sealed record ListProductionVersionsResponse(IReadOnlyCollection<ProductionVersionListItem> Items, int Total);
 
 public static class ProductEngineeringIntegrationEventTypes
 {

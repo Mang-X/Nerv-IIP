@@ -29,7 +29,7 @@ public sealed record InspectionResultLineResponse(
     decimal? DefectQuantity,
     IReadOnlyCollection<string> AttachmentFileIds);
 
-public sealed record ListInspectionRecordsResponse(IReadOnlyCollection<InspectionRecordResponse> Items);
+public sealed record ListInspectionRecordsResponse(IReadOnlyCollection<InspectionRecordResponse> Items, int Total);
 
 public sealed record ListInspectionRecordsQuery(
     string OrganizationId,
@@ -39,6 +39,7 @@ public sealed record ListInspectionRecordsQuery(
     string? SourceType,
     string? SkuCode,
     string? Result,
+    int Skip = 0,
     int Take = 100) : IQuery<ListInspectionRecordsResponse>;
 
 public sealed class ListInspectionRecordsQueryValidator : AbstractValidator<ListInspectionRecordsQuery>
@@ -47,6 +48,7 @@ public sealed class ListInspectionRecordsQueryValidator : AbstractValidator<List
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
@@ -86,8 +88,10 @@ public sealed class ListInspectionRecordsQueryHandler(ApplicationDbContext dbCon
             query = query.Where(x => x.Result == request.Result);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
+            .Skip(request.Skip)
             .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new InspectionRecordResponse(
                 x.Id,
@@ -114,6 +118,6 @@ public sealed class ListInspectionRecordsQueryHandler(ApplicationDbContext dbCon
                 x.CreatedAtUtc))
             .ToListAsync(cancellationToken);
 
-        return new ListInspectionRecordsResponse(items);
+        return new ListInspectionRecordsResponse(items, total);
     }
 }

@@ -37,11 +37,11 @@ const resourceDefinitions: BusinessMasterDataGroupDefinition[] = [
 ]
 const resourceTitleByKey = Object.fromEntries(resourceDefinitions.map((d) => [d.key, d.title]))
 
-const { groups, groupsError, groupsPending, refreshGroups } = useBusinessMasterDataGroups(resourceDefinitions)
+const { filters, groups, groupsError, groupsPending, groupsTotal, refreshGroups } = useBusinessMasterDataGroups(resourceDefinitions)
 
 const keyword = ref('')
 const groupFilter = ref('all')
-const sort = ref<DataTableSort | null>({ key: 'code', direction: 'asc' })
+const sort = ref<DataTableSort | null>(null)
 const page = ref(1)
 const pageSize = ref('10')
 
@@ -71,9 +71,10 @@ const sortedRows = computed(() => {
   )
 })
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return sortedRows.value.slice(start, start + pageSizeNumber.value)
+const pagedRows = computed(() => sortedRows.value)
+const totalItems = computed(() => {
+  if (groupFilter.value === 'all') return groupsTotal.value
+  return groups.value.find((group) => group.resourceType === groupFilter.value)?.total ?? 0
 })
 
 function countOf(type: string) {
@@ -82,16 +83,21 @@ function countOf(type: string) {
 const errorMessage = computed(() => formatError(groupsError.value))
 
 const columns: DataTableColumn<ResourceRow>[] = [
-  { key: 'groupTitle', header: '类型', sortable: true, width: 'w-28' },
-  { key: 'code', header: '编码', sortable: true, cellClass: 'font-medium' },
-  { key: 'displayName', header: '名称', sortable: true },
-  { key: 'active', header: '状态', sortable: true, width: 'w-24' },
-  { key: 'snapshotVersion', header: '版本', sortable: true, width: 'w-28' },
+  { key: 'groupTitle', header: '类型', width: 'w-28' },
+  { key: 'code', header: '编码', cellClass: 'font-medium' },
+  { key: 'displayName', header: '名称' },
+  { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'snapshotVersion', header: '版本', width: 'w-28' },
 ]
 
-watch([keyword, groupFilter, pageSize, () => allRows.value.length], () => {
+watch([keyword, groupFilter, pageSize], () => {
   page.value = 1
 })
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function resetFilters() {
   keyword.value = ''
@@ -107,7 +113,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="工厂资源" :breadcrumbs="[{ label: '基础数据' }]" :count="`${listRows.length} 项资源`">
+    <PageHeader title="工厂资源" :breadcrumbs="[{ label: '基础数据' }]" :count="`${totalItems} 项资源`">
       <template #actions>
         <Button size="sm" variant="outline" type="button" :disabled="groupsPending" @click="refreshGroups">
           <RefreshCwIcon aria-hidden="true" />
@@ -117,13 +123,13 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="4">
-      <SectionCard description="资源总数" :value="allRows.length" hint="工厂 / 产线 / 工作中心 / 设备 等" />
-      <SectionCard description="工厂" :value="countOf('site')" hint="生产站点" />
-      <SectionCard description="产线" :value="countOf('production-line')" hint="生产线" />
-      <SectionCard description="设备" :value="countOf('device-asset')" hint="设备资产" />
+      <SectionCard description="资源总数" :value="groupsTotal" hint="工厂 / 产线 / 工作中心 / 设备 等" />
+      <SectionCard description="本页工厂" :value="countOf('site')" hint="生产站点" />
+      <SectionCard description="本页产线" :value="countOf('production-line')" hint="生产线" />
+      <SectionCard description="本页设备" :value="countOf('device-asset')" hint="设备资产" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索类型、编码、名称">
+    <Toolbar v-model:search="keyword" search-placeholder="搜索当前页类型、编码、名称">
       <template #filters>
         <Select v-model="groupFilter">
           <SelectTrigger class="h-9 w-36" aria-label="资源类型"><SelectValue placeholder="全部类型" /></SelectTrigger>
@@ -154,6 +160,6 @@ function formatError(error: unknown) {
       </template>
     </DataTable>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sortedRows.length" />
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="totalItems" />
   </BusinessLayout>
 </template>

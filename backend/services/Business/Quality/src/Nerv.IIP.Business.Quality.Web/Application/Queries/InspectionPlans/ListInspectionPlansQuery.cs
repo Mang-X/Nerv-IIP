@@ -26,7 +26,7 @@ public sealed record InspectionPlanCharacteristicResponse(
     bool Required,
     string SamplingRule);
 
-public sealed record ListInspectionPlansResponse(IReadOnlyCollection<InspectionPlanResponse> Items);
+public sealed record ListInspectionPlansResponse(IReadOnlyCollection<InspectionPlanResponse> Items, int Total);
 
 public sealed record ListInspectionPlansQuery(
     string OrganizationId,
@@ -36,6 +36,7 @@ public sealed record ListInspectionPlansQuery(
     string? PartnerId,
     string? WorkCenterId,
     string? Status,
+    int Skip = 0,
     int Take = 100) : IQuery<ListInspectionPlansResponse>;
 
 public sealed class ListInspectionPlansQueryValidator : AbstractValidator<ListInspectionPlansQuery>
@@ -44,6 +45,7 @@ public sealed class ListInspectionPlansQueryValidator : AbstractValidator<ListIn
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
@@ -83,8 +85,10 @@ public sealed class ListInspectionPlansQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.Status == request.Status);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
+            .Skip(request.Skip)
             .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new InspectionPlanResponse(
                 x.Id,
@@ -108,6 +112,6 @@ public sealed class ListInspectionPlansQueryHandler(ApplicationDbContext dbConte
                     c.SamplingRule)).ToArray()))
             .ToListAsync(cancellationToken);
 
-        return new ListInspectionPlansResponse(items);
+        return new ListInspectionPlansResponse(items, total);
     }
 }

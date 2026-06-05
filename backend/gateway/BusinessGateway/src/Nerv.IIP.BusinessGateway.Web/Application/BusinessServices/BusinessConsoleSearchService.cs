@@ -129,7 +129,7 @@ public sealed class BusinessConsoleSearchService(
             var response = await WithSourceTimeoutAsync(
                 token => masterData.ListResourcesAsync(
                     tokenProvider.BearerToken,
-                    new BusinessConsoleListResourcesRequest(organizationId, environmentId, "sku", false, take),
+                    new BusinessConsoleListResourcesRequest(organizationId, environmentId, "sku", false, Take: take),
                     token),
                 cancellationToken);
             results.AddRange(response.Resources
@@ -184,7 +184,7 @@ public sealed class BusinessConsoleSearchService(
             var response = await WithSourceTimeoutAsync(
                 token => mes.ListWorkOrdersAsync(
                     tokenProvider.BearerToken,
-                    new BusinessConsoleMesListRequest(organizationId, environmentId, null, take),
+                    new BusinessConsoleMesListRequest(organizationId, environmentId, null, Take: take),
                     token),
                 cancellationToken);
             results.AddRange(response.Items

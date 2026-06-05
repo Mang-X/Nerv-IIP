@@ -22,11 +22,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
   Button,
+  DataTablePagination,
   DropdownMenuItem,
   Field,
   FieldGroup,
   FieldLabel,
-  Input,
   Select,
   SelectContent,
   SelectItem,
@@ -48,7 +48,7 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, RefreshCwIcon, SendIcon } from 'lucide-vue-next'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -65,6 +65,7 @@ const {
   ncrs,
   ncrsError,
   ncrsPending,
+  ncrsTotal,
   refreshNcrs,
   submitDisposition,
   submitDispositionError,
@@ -75,6 +76,8 @@ const selectedNcr = shallowRef<BusinessConsoleQualityItem>()
 const detailOpen = shallowRef(false)
 const dispositionSuccess = shallowRef('')
 const closeSuccess = shallowRef('')
+const page = ref(1)
+const pageSize = ref('10')
 const statusOptions = [
   { label: '全部状态', value: 'all' },
   { label: '待处理', value: 'open' },
@@ -106,8 +109,15 @@ const statusFilter = computed({
   get: () => filters.status || 'all',
   set: (value: string) => {
     filters.status = value === 'all' ? undefined : value
+    page.value = 1
   },
 })
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function openNcr(ncr: BusinessConsoleQualityItem) {
   selectedNcr.value = ncr
@@ -226,10 +236,6 @@ function isPresent(value: string | undefined | null): value is string {
               </SelectContent>
             </Select>
           </Field>
-          <Field>
-            <FieldLabel for="ncr-take">返回条数</FieldLabel>
-            <Input id="ncr-take" v-model.number="filters.take" inputmode="numeric" type="number" />
-          </Field>
         </FieldGroup>
         <BusinessFormStatus :error="listErrorMessage" />
       </BusinessContextBar>
@@ -237,7 +243,7 @@ function isPresent(value: string | undefined | null): value is string {
       <div class="overflow-hidden rounded-lg border bg-background">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">不合格报告</h2>
-          <span class="text-sm text-muted-foreground">返回 {{ ncrs.length }} 条</span>
+          <span class="text-sm text-muted-foreground">共 {{ ncrsTotal }} 条</span>
         </div>
         <div class="overflow-x-auto">
           <Table>
@@ -273,6 +279,9 @@ function isPresent(value: string | undefined | null): value is string {
               <TableEmpty v-if="ncrsPending" :colspan="4">正在加载不合格报告...</TableEmpty>
             </TableBody>
           </Table>
+        </div>
+        <div class="border-t px-4 py-3">
+          <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="ncrsTotal" />
         </div>
       </div>
 

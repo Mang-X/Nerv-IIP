@@ -31,9 +31,10 @@ public sealed record ListInspectionPlansRequest(
     string? PartnerId,
     string? WorkCenterId,
     string? Status,
+    int Skip = 0,
     int Take = 100);
 
-public sealed record ListInspectionPlansEndpointResponse(IReadOnlyCollection<InspectionPlanResponse> Items);
+public sealed record ListInspectionPlansEndpointResponse(IReadOnlyCollection<InspectionPlanResponse> Items, int Total);
 
 public sealed class CreateInspectionPlanEndpoint(ISender sender)
     : QualityEndpoint<CreateInspectionPlanRequest, ResponseData<CreateInspectionPlanResponse>>
@@ -93,8 +94,9 @@ public sealed class ListInspectionPlansEndpoint(ISender sender)
             req.PartnerId,
             req.WorkCenterId,
             req.Status,
+            req.Skip,
             req.Take), ct);
-        await Send.OkAsync(new ListInspectionPlansEndpointResponse(response.Items).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new ListInspectionPlansEndpointResponse(response.Items, response.Total).AsResponseData(), cancellation: ct);
     }
 }
 

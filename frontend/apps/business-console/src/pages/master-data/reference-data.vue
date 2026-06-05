@@ -18,10 +18,10 @@ import { computed, ref, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '字典' } })
 
-const { resources, resourcesError, resourcesPending, refreshResources } = useBusinessMasterDataResources('reference-data')
+const { filters, resources, resourcesError, resourcesPending, refreshResources, resourcesTotal } = useBusinessMasterDataResources('reference-data')
 
 const keyword = ref('')
-const sort = ref<DataTableSort | null>({ key: 'code', direction: 'asc' })
+const sort = ref<DataTableSort | null>(null)
 const page = ref(1)
 const pageSize = ref('10')
 
@@ -42,22 +42,24 @@ const sortedRows = computed(() => {
   )
 })
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return sortedRows.value.slice(start, start + pageSizeNumber.value)
-})
+const pagedRows = computed(() => sortedRows.value)
 const errorMessage = computed(() => formatError(resourcesError.value))
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
-  { key: 'code', header: '编码', sortable: true, cellClass: 'font-medium' },
-  { key: 'displayName', header: '名称', sortable: true },
-  { key: 'active', header: '状态', sortable: true, width: 'w-24' },
-  { key: 'snapshotVersion', header: '版本', sortable: true, width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
+  { key: 'code', header: '编码', cellClass: 'font-medium' },
+  { key: 'displayName', header: '名称' },
+  { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
 ]
 
-watch([keyword, pageSize, () => resources.value.length], () => {
+watch([keyword, pageSize], () => {
   page.value = 1
 })
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function rowKey(row: BusinessConsoleResourceItem) {
   return `${row.resourceType ?? 'reference-data'}:${row.code ?? row.displayName ?? ''}`
@@ -69,7 +71,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="字典" :breadcrumbs="[{ label: '基础数据' }]" :count="`${listRows.length} 项参考数据`">
+    <PageHeader title="字典" :breadcrumbs="[{ label: '基础数据' }]" :count="`${resourcesTotal} 项参考数据`">
       <template #actions>
         <Button size="sm" variant="outline" type="button" :disabled="resourcesPending" @click="refreshResources">
           <RefreshCwIcon aria-hidden="true" />
@@ -79,11 +81,11 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="2">
-      <SectionCard description="参考数据项" :value="resources.length" hint="单位、材料形态、质量原因等编码" />
-      <SectionCard description="当前结果" :value="listRows.length" hint="筛选后的参考数据" />
+      <SectionCard description="参考数据项" :value="resourcesTotal" hint="单位、材料形态、质量原因等编码" />
+      <SectionCard description="本页结果" :value="listRows.length" hint="当前页筛选后的参考数据" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索编码、名称" />
+    <Toolbar v-model:search="keyword" search-placeholder="搜索当前页编码、名称" />
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
@@ -101,6 +103,6 @@ function formatError(error: unknown) {
       </template>
     </DataTable>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sortedRows.length" />
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="resourcesTotal" />
   </BusinessLayout>
 </template>

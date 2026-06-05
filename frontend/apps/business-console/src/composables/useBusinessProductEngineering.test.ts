@@ -63,29 +63,34 @@ describe('business product engineering composable', () => {
     coladaState.queryDataById.set('listBusinessConsoleEngineeringBoms', {
       success: true,
       data: {
+        total: 11,
         items: [{ bomCode: 'MBOM-FRONT', revision: 'R1', parentItemCode: 'FG-FRONT-SHOCK', status: 'Released' }],
       },
     })
     coladaState.queryDataById.set('listBusinessConsoleEngineeringRoutings', {
       success: true,
       data: {
+        total: 12,
         items: [{ routingCode: 'RT-FRONT', revision: 'R1', skuCode: 'FG-FRONT-SHOCK', status: 'Released' }],
       },
     })
     coladaState.queryDataById.set('listBusinessConsoleEngineeringProductionVersions', {
       success: true,
       data: {
+        total: 13,
         items: [{ productionVersionId: 'pv-front', skuCode: 'FG-FRONT-SHOCK', status: 'active' }],
       },
     })
 
-    const { boms, productionVersions, routings } = useBusinessProductEngineering()
+    const { boms, bomsTotal, productionVersions, productionVersionsTotal, routings, routingsTotal } = useBusinessProductEngineering()
 
     expect(listBusinessConsoleEngineeringBomsQueryOptions).toHaveBeenCalledWith({
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         status: 'Released',
+        skip: 0,
+        take: 100,
       },
     })
     expect(listBusinessConsoleEngineeringRoutingsQueryOptions).toHaveBeenCalledWith({
@@ -93,6 +98,8 @@ describe('business product engineering composable', () => {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         status: 'Released',
+        skip: 0,
+        take: 100,
       },
     })
     expect(listBusinessConsoleEngineeringProductionVersionsQueryOptions).toHaveBeenCalledWith({
@@ -100,11 +107,16 @@ describe('business product engineering composable', () => {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         status: 'active',
+        skip: 0,
+        take: 100,
       },
     })
     expect(boms.value).toHaveLength(1)
+    expect(bomsTotal.value).toBe(11)
     expect(routings.value).toHaveLength(1)
+    expect(routingsTotal.value).toBe(12)
     expect(productionVersions.value).toHaveLength(1)
+    expect(productionVersionsTotal.value).toBe(13)
   })
 
   it('uses the business context store for organization and environment filters', () => {
@@ -121,6 +133,8 @@ describe('business product engineering composable', () => {
         organizationId: 'org-002',
         environmentId: 'prod',
         status: 'Released',
+        skip: 0,
+        take: 100,
       },
     })
     expect(resolveBusinessConsoleEngineeringProductionVersionQueryOptions).toHaveBeenCalledWith({

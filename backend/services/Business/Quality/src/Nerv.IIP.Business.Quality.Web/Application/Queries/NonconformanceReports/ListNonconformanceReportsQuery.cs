@@ -25,7 +25,7 @@ public sealed record NonconformanceReportResponse(
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);
 
-public sealed record ListNonconformanceReportsResponse(IReadOnlyCollection<NonconformanceReportResponse> Items);
+public sealed record ListNonconformanceReportsResponse(IReadOnlyCollection<NonconformanceReportResponse> Items, int Total);
 
 public sealed record ListNonconformanceReportsQuery(
     string OrganizationId,
@@ -33,6 +33,7 @@ public sealed record ListNonconformanceReportsQuery(
     string? Status,
     string? SourceType,
     string? SkuCode,
+    int Skip = 0,
     int Take = 100) : IQuery<ListNonconformanceReportsResponse>;
 
 public sealed class ListNonconformanceReportsQueryValidator : AbstractValidator<ListNonconformanceReportsQuery>
@@ -41,6 +42,7 @@ public sealed class ListNonconformanceReportsQueryValidator : AbstractValidator<
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
@@ -70,13 +72,15 @@ public sealed class ListNonconformanceReportsQueryHandler(ApplicationDbContext d
             query = query.Where(x => x.SkuCode == request.SkuCode);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
+            .Skip(request.Skip)
             .Take(take)
             .Select(x => ToResponse(x))
             .ToListAsync(cancellationToken);
 
-        return new ListNonconformanceReportsResponse(items);
+        return new ListNonconformanceReportsResponse(items, total);
     }
 
     internal static NonconformanceReportResponse ToResponse(NonconformanceReport ncr)

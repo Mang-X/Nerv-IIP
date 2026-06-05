@@ -1098,6 +1098,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("environmentId", request.EnvironmentId),
                 ("resourceType", request.ResourceType),
                 ("includeDisabled", TrueFlag(request.IncludeDisabled)),
+                ("skip", request.Skip),
                 ("take", request.Take)),
             null,
             cancellationToken);
@@ -1289,11 +1290,13 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("status", request.Status),
+                ("skip", request.Skip),
                 ("take", request.Take)),
             null,
             cancellationToken);
         return new BusinessConsoleQualityListResponse(
-            response.Items.Select(ToQualityItem).ToArray());
+            response.Items.Select(ToQualityItem).ToArray(),
+            response.Total);
     }
 
     public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordAsync(
@@ -1319,11 +1322,13 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("status", request.Status),
+                ("skip", request.Skip),
                 ("take", request.Take)),
             null,
             cancellationToken);
         return new BusinessConsoleQualityListResponse(
-            response.Items.Select(ToQualityItem).ToArray());
+            response.Items.Select(ToQualityItem).ToArray(),
+            response.Total);
     }
 
     public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
@@ -1395,7 +1400,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             item.SerialNo);
 
     private sealed record DownstreamInspectionPlanListResponse(
-        IReadOnlyCollection<DownstreamInspectionPlanItem> Items);
+        IReadOnlyCollection<DownstreamInspectionPlanItem> Items,
+        int Total);
 
     private static DownstreamCreateInspectionRecordRequest ToDownstreamRequest(
         BusinessConsoleCreateInspectionRecordRequest request) =>
@@ -1462,7 +1468,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string Status);
 
     private sealed record DownstreamNcrListResponse(
-        IReadOnlyCollection<DownstreamNcrItem> Items);
+        IReadOnlyCollection<DownstreamNcrItem> Items,
+        int Total);
 
     private sealed record DownstreamNcrItem(
         string NcrId,
@@ -1536,7 +1543,9 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("parentItemCode", request.ParentItemCode),
-                ("status", request.Status)),
+                ("status", request.Status),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
 
@@ -1551,7 +1560,9 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("skuCode", request.SkuCode),
-                ("status", request.Status)),
+                ("status", request.Status),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
 
@@ -1577,7 +1588,9 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("skuCode", request.SkuCode),
-                ("status", request.Status)),
+                ("status", request.Status),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
 
@@ -1614,7 +1627,9 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("skuCode", request.SkuCode),
-                ("status", request.Status)),
+                ("status", request.Status),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
 
@@ -2820,6 +2835,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("status", request.Status),
+                ("skip", request.Skip),
                 ("take", request.Take)),
             null,
             cancellationToken);
@@ -3207,6 +3223,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("organizationId", request.OrganizationId),
             ("environmentId", request.EnvironmentId),
             ("status", request.Status),
+            ("skip", request.Skip),
             ("take", request.Take));
 
     private static string FoundationQuery(BusinessConsoleMesFoundationReadinessRequest request) =>

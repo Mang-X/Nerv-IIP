@@ -40,9 +40,10 @@ public sealed record ListInspectionRecordsRequest(
     string? SourceType,
     string? SkuCode,
     string? Result,
+    int Skip = 0,
     int Take = 100);
 
-public sealed record ListInspectionRecordsEndpointResponse(IReadOnlyCollection<InspectionRecordResponse> Items);
+public sealed record ListInspectionRecordsEndpointResponse(IReadOnlyCollection<InspectionRecordResponse> Items, int Total);
 
 public sealed class CreateInspectionRecordEndpoint(ISender sender)
     : QualityEndpoint<CreateInspectionRecordRequest, ResponseData<CreateInspectionRecordResponse>>
@@ -108,7 +109,8 @@ public sealed class ListInspectionRecordsEndpoint(ISender sender)
             req.SourceType,
             req.SkuCode,
             req.Result,
+            req.Skip,
             req.Take), ct);
-        await Send.OkAsync(new ListInspectionRecordsEndpointResponse(response.Items).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new ListInspectionRecordsEndpointResponse(response.Items, response.Total).AsResponseData(), cancellation: ct);
     }
 }

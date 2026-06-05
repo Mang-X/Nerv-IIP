@@ -19,6 +19,7 @@ export interface QualityListFilters {
   organizationId: string
   environmentId: string
   status?: string
+  skip: number
   take: number
 }
 
@@ -26,6 +27,7 @@ function defaultFilters(): QualityListFilters {
   return reactive({
     organizationId: 'org-001',
     environmentId: 'env-dev',
+    skip: 0,
     take: DEFAULT_TAKE,
   })
 }
@@ -39,6 +41,7 @@ function toListQuery(filters: QualityListFilters) {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
     ...optionalQuery('status', filters.status),
+    skip: filters.skip,
     take: filters.take,
   }
 }
@@ -49,6 +52,14 @@ function listItems(envelope: BusinessConsoleQualityListEnvelope | undefined) {
   }
 
   return envelope.data?.items ?? []
+}
+
+function listTotal(envelope: BusinessConsoleQualityListEnvelope | undefined) {
+  if (!envelope?.success) {
+    return 0
+  }
+
+  return envelope.data?.total ?? 0
 }
 
 function isBusinessQuery(id: string) {
@@ -85,6 +96,7 @@ export function useQualityInspectionPlans() {
     inspectionPlans: computed<BusinessConsoleQualityItem[]>(() => listItems(plansQuery.data.value)),
     inspectionPlansError: plansQuery.error,
     inspectionPlansPending: plansQuery.isLoading,
+    inspectionPlansTotal: computed(() => listTotal(plansQuery.data.value)),
     refreshInspectionPlans: plansQuery.refetch,
   }
 }
@@ -135,6 +147,7 @@ export function useQualityNcrs() {
     ncrs: computed<BusinessConsoleQualityItem[]>(() => listItems(ncrsQuery.data.value)),
     ncrsError: ncrsQuery.error,
     ncrsPending: ncrsQuery.isLoading,
+    ncrsTotal: computed(() => listTotal(ncrsQuery.data.value)),
     refreshNcrs: ncrsQuery.refetch,
     submitDisposition: (ncrId: string, body: BusinessConsoleNcrDispositionRequest) =>
       submitDispositionMutation.mutateAsync({

@@ -18,12 +18,14 @@ public sealed record BusinessConsoleListResourcesRequest(
     string EnvironmentId,
     string ResourceType,
     bool IncludeDisabled = false,
+    int Skip = 0,
     int Take = 100);
 
 public sealed record BusinessConsoleListSkusRequest(
     string OrganizationId,
     string EnvironmentId,
     bool IncludeDisabled = false,
+    int Skip = 0,
     int Take = 100);
 
 public sealed record BusinessConsoleCreateSkuRequest(
@@ -353,6 +355,7 @@ public sealed record BusinessConsoleQualityListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Status = null,
+    int Skip = 0,
     int Take = 100);
 
 public sealed record BusinessConsoleQualityItem(
@@ -373,7 +376,8 @@ public sealed record BusinessConsoleQualityItem(
     string? SerialNo);
 
 public sealed record BusinessConsoleQualityListResponse(
-    IReadOnlyCollection<BusinessConsoleQualityItem> Items);
+    IReadOnlyCollection<BusinessConsoleQualityItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleCreateInspectionRecordRequest(
     string OrganizationId,
@@ -423,10 +427,13 @@ public sealed record BusinessConsoleListEngineeringBomsRequest(
     string OrganizationId,
     string EnvironmentId,
     string? ParentItemCode = null,
-    string? Status = null);
+    string? Status = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleEngineeringBomListResponse(
-    IReadOnlyCollection<BusinessConsoleEngineeringBomItem> Items);
+    IReadOnlyCollection<BusinessConsoleEngineeringBomItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleEngineeringBomItem(
     string BomCode,
@@ -476,10 +483,13 @@ public sealed record BusinessConsoleListManufacturingBomsRequest(
     string OrganizationId,
     string EnvironmentId,
     string? SkuCode = null,
-    string? Status = null);
+    string? Status = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleManufacturingBomListResponse(
-    IReadOnlyCollection<BusinessConsoleManufacturingBomItem> Items);
+    IReadOnlyCollection<BusinessConsoleManufacturingBomItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleManufacturingBomItem(
     string BomCode,
@@ -523,10 +533,13 @@ public sealed record BusinessConsoleListRoutingsRequest(
     string OrganizationId,
     string EnvironmentId,
     string? SkuCode = null,
-    string? Status = null);
+    string? Status = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleRoutingListResponse(
-    IReadOnlyCollection<BusinessConsoleRoutingItem> Items);
+    IReadOnlyCollection<BusinessConsoleRoutingItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleRoutingItem(
     string RoutingCode,
@@ -569,10 +582,13 @@ public sealed record BusinessConsoleListProductionVersionsRequest(
     string OrganizationId,
     string EnvironmentId,
     string? SkuCode = null,
-    string? Status = null);
+    string? Status = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleProductionVersionListResponse(
-    IReadOnlyCollection<BusinessConsoleProductionVersionItem> Items);
+    IReadOnlyCollection<BusinessConsoleProductionVersionItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleProductionVersionItem(
     string ProductionVersionId,
@@ -1269,10 +1285,12 @@ public sealed record BusinessConsoleMesListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Status = null,
+    int Skip = 0,
     int Take = 100);
 
 public sealed record BusinessConsoleMesWorkOrderListResponse(
-    IReadOnlyCollection<BusinessConsoleMesWorkOrderItem> Items);
+    IReadOnlyCollection<BusinessConsoleMesWorkOrderItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesWorkOrderItem(
     string WorkOrderId,
@@ -1404,7 +1422,9 @@ public sealed record BusinessConsoleMesBlockerSummary(string AreaCode, string Co
 
 public sealed record BusinessConsoleMesPendingWorkItem(string RoleCode, string WorkType, int Count, string? RouteHint);
 
-public sealed record BusinessConsoleMesProductionPlanListResponse(IReadOnlyCollection<BusinessConsoleMesProductionPlanRow> Items);
+public sealed record BusinessConsoleMesProductionPlanListResponse(
+    IReadOnlyCollection<BusinessConsoleMesProductionPlanRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesProductionPlanRow(
     string ProductionPlanId,
@@ -1549,7 +1569,9 @@ public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     string? ShiftId,
     string IdempotencyKey);
 
-public sealed record BusinessConsoleMesOperationTaskListResponse(IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> Items);
+public sealed record BusinessConsoleMesOperationTaskListResponse(
+    IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesOperationTaskRow(
     string OperationTaskId,

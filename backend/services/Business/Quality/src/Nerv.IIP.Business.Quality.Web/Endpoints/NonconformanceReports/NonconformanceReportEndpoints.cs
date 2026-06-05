@@ -79,6 +79,7 @@ public sealed record ListNonconformanceReportsRequest(
     string? Status,
     string? SourceType,
     string? SkuCode,
+    int Skip = 0,
     int Take = 100);
 
 public sealed record GetNonconformanceReportRequest(NonconformanceReportId NcrId);
@@ -119,7 +120,7 @@ public sealed record NonconformanceReportDto(
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);
 
-public sealed record ListNonconformanceReportsEndpointResponse(IReadOnlyCollection<NonconformanceReportDto> Items);
+public sealed record ListNonconformanceReportsEndpointResponse(IReadOnlyCollection<NonconformanceReportDto> Items, int Total);
 
 public sealed class CreateNonconformanceReportEndpoint(ISender sender)
     : QualityEndpoint<CreateNonconformanceReportRequest, ResponseData<CreateNonconformanceReportResponse>>
@@ -162,8 +163,9 @@ public sealed class ListNonconformanceReportsEndpoint(ISender sender)
             req.Status,
             req.SourceType,
             req.SkuCode,
+            req.Skip,
             req.Take), ct);
-        await Send.OkAsync(new ListNonconformanceReportsEndpointResponse(response.Items.Select(ToDto).ToArray()).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new ListNonconformanceReportsEndpointResponse(response.Items.Select(ToDto).ToArray(), response.Total).AsResponseData(), cancellation: ct);
     }
 }
 

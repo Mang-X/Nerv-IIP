@@ -46,6 +46,7 @@ public sealed record ListMasterDataResourcesRequest(
     string EnvironmentId,
     string ResourceType,
     bool IncludeDisabled = false,
+    int Skip = 0,
     int Take = 100);
 
 public sealed record CreateSkuRequest(
@@ -77,7 +78,7 @@ public sealed class ListMasterDataResourcesEndpoint(ISender sender)
     public override async Task HandleAsync(ListMasterDataResourcesRequest req, CancellationToken ct)
     {
         var response = await sender.Send(
-            new ListMasterDataResourcesQuery(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.IncludeDisabled, req.Take),
+            new ListMasterDataResourcesQuery(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.IncludeDisabled, req.Skip, req.Take),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
