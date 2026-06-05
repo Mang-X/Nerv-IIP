@@ -8,7 +8,9 @@ public sealed record ListProductionVersionsQuery(
     string OrganizationId,
     string EnvironmentId,
     string? SkuCode,
-    string? Status) : IQuery<ListProductionVersionsResponse>;
+    string? Status,
+    int Skip = 0,
+    int Take = 100) : IQuery<ListProductionVersionsResponse>;
 
 public sealed class ListProductionVersionsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductionVersionsQuery, ListProductionVersionsResponse>
@@ -29,11 +31,14 @@ public sealed class ListProductionVersionsQueryHandler(ApplicationDbContext dbCo
             query = query.Where(x => x.Status == request.Status);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var versions = await query
             .OrderBy(x => x.SkuCode)
             .ThenByDescending(x => x.IsDefault)
             .ThenBy(x => x.Priority)
             .ThenBy(x => x.ValidFrom)
+            .Skip(request.Skip)
+            .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new
             {
                 Id = x.Id.Id,
@@ -69,6 +74,6 @@ public sealed class ListProductionVersionsQueryHandler(ApplicationDbContext dbCo
                 x.Status))
             .ToArray();
 
-        return new ListProductionVersionsResponse(items);
+        return new ListProductionVersionsResponse(items, total);
     }
 }

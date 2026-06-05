@@ -16,6 +16,8 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 
+const DEFAULT_TAKE = 100
+
 export interface EngineeringListFilters {
   organizationId: string
   environmentId: string
@@ -24,6 +26,8 @@ export interface EngineeringListFilters {
   bomStatus: string
   routingStatus: string
   productionVersionStatus: string
+  skip: number
+  take: number
 }
 
 export interface EngineeringResolveFilters {
@@ -41,6 +45,8 @@ function defaultListFilters(organizationId: string, environmentId: string): Engi
     bomStatus: 'Released',
     routingStatus: 'Released',
     productionVersionStatus: 'active',
+    skip: 0,
+    take: DEFAULT_TAKE,
   })
 }
 
@@ -66,6 +72,14 @@ function unwrapItems<T>(envelope: { success?: boolean; data?: { items?: T[] } | 
   return envelope.data?.items ?? []
 }
 
+function unwrapTotal(envelope: { success?: boolean; data?: { total?: number } | null } | undefined) {
+  if (!envelope?.success) {
+    return 0
+  }
+
+  return envelope.data?.total ?? 0
+}
+
 function unwrapResolved(
   envelope: BusinessConsoleResolveProductionVersionEnvelope | undefined,
 ): BusinessConsoleResolveProductionVersionResponse | undefined {
@@ -89,6 +103,8 @@ export function useBusinessProductEngineering() {
         environmentId: filters.environmentId,
         ...optionalQuery('parentItemCode', filters.parentItemCode),
         ...optionalQuery('status', filters.bomStatus),
+        skip: filters.skip,
+        take: filters.take,
       },
     }),
   )
@@ -99,6 +115,8 @@ export function useBusinessProductEngineering() {
         environmentId: filters.environmentId,
         ...optionalQuery('skuCode', filters.skuCode),
         ...optionalQuery('status', filters.routingStatus),
+        skip: filters.skip,
+        take: filters.take,
       },
     }),
   )
@@ -109,6 +127,8 @@ export function useBusinessProductEngineering() {
         environmentId: filters.environmentId,
         ...optionalQuery('skuCode', filters.skuCode),
         ...optionalQuery('status', filters.productionVersionStatus),
+        skip: filters.skip,
+        take: filters.take,
       },
     }),
   )
@@ -131,6 +151,9 @@ export function useBusinessProductEngineering() {
     ),
     bomsError: bomsQuery.error,
     bomsPending: bomsQuery.isLoading,
+    bomsTotal: computed(() =>
+      unwrapTotal(bomsQuery.data.value as BusinessConsoleEngineeringBomListEnvelope | undefined),
+    ),
     filters,
     productionVersions: computed<BusinessConsoleProductionVersionItem[]>(() =>
       unwrapItems(
@@ -139,6 +162,11 @@ export function useBusinessProductEngineering() {
     ),
     productionVersionsError: productionVersionsQuery.error,
     productionVersionsPending: productionVersionsQuery.isLoading,
+    productionVersionsTotal: computed(() =>
+      unwrapTotal(
+        productionVersionsQuery.data.value as BusinessConsoleProductionVersionListEnvelope | undefined,
+      ),
+    ),
     refreshEngineering: async () => {
       const queries: Array<Promise<unknown>> = [
         bomsQuery.refetch(),
@@ -163,5 +191,8 @@ export function useBusinessProductEngineering() {
     ),
     routingsError: routingsQuery.error,
     routingsPending: routingsQuery.isLoading,
+    routingsTotal: computed(() =>
+      unwrapTotal(routingsQuery.data.value as BusinessConsoleRoutingListEnvelope | undefined),
+    ),
   }
 }

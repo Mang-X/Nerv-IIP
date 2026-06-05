@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
-import { useBusinessMasterDataGroups } from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -26,9 +26,14 @@ definePage({ meta: { requiresAuth: true, title: '客户与供应商' } })
 
 type PartnerRow = BusinessConsoleResourceItem & { role: PartnerRole }
 
-const { groups, groupsError, groupsPending, refreshGroups } = useBusinessMasterDataGroups([
-  { key: 'business-partner', title: '客户与供应商' },
-])
+const {
+  filters,
+  resources,
+  resourcesError,
+  resourcesPending,
+  resourcesTotal,
+  refreshResources,
+} = useBusinessMasterDataResources('business-partner')
 
 const keyword = ref('')
 const roleFilter = ref<PartnerRole>('all')
@@ -37,7 +42,7 @@ const page = ref(1)
 const pageSize = ref('10')
 
 const allRows = computed<PartnerRow[]>(() =>
-  groups.value.flatMap((group) => group.rows.map((row) => ({ ...row, role: inferPartnerRole(row) }))),
+  resources.value.map((row) => ({ ...row, role: inferPartnerRole(row) })),
 )
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -60,14 +65,11 @@ const sortedRows = computed(() => {
   )
 })
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return sortedRows.value.slice(start, start + pageSizeNumber.value)
-})
+const pagedRows = computed(() => sortedRows.value)
 
 const customerCount = computed(() => allRows.value.filter((r) => r.role === 'customer').length)
 const supplierCount = computed(() => allRows.value.filter((r) => r.role === 'supplier').length)
-const errorMessage = computed(() => formatError(groupsError.value))
+const errorMessage = computed(() => formatError(resourcesError.value))
 
 const columns: DataTableColumn<PartnerRow>[] = [
   { key: 'code', header: '编码', sortable: true, cellClass: 'font-medium' },
@@ -77,9 +79,14 @@ const columns: DataTableColumn<PartnerRow>[] = [
   { key: 'snapshotVersion', header: '版本', sortable: true, width: 'w-28' },
 ]
 
-watch([keyword, roleFilter, pageSize, () => allRows.value.length], () => {
+watch([keyword, roleFilter, pageSize], () => {
   page.value = 1
 })
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function resetFilters() {
   keyword.value = ''
@@ -95,9 +102,9 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="客户与供应商" :breadcrumbs="[{ label: '基础数据' }]" :count="`${listRows.length} 个伙伴`">
+    <PageHeader title="客户与供应商" :breadcrumbs="[{ label: '基础数据' }]" :count="`${resourcesTotal} 个伙伴`">
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="groupsPending" @click="refreshGroups">
+        <Button size="sm" variant="outline" type="button" :disabled="resourcesPending" @click="refreshResources">
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </Button>
@@ -105,7 +112,7 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="伙伴总数" :value="allRows.length" hint="客户与供应商档案" />
+      <SectionCard description="伙伴总数" :value="resourcesTotal" hint="客户与供应商档案" />
       <SectionCard description="客户" :value="customerCount" hint="支撑销售需求与发货" />
       <SectionCard description="供应商" :value="supplierCount" hint="支撑采购与收货检验" />
     </SectionCards>
@@ -134,7 +141,7 @@ function formatError(error: unknown) {
       :rows="pagedRows"
       :row-key="rowKey"
       :client-sort="false"
-      :loading="groupsPending"
+      :loading="resourcesPending"
       empty-message="未找到客户或供应商。"
     >
       <template #cell-role="{ row }">
@@ -145,6 +152,6 @@ function formatError(error: unknown) {
       </template>
     </DataTable>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sortedRows.length" />
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="resourcesTotal" />
   </BusinessLayout>
 </template>

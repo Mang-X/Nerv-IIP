@@ -1531,7 +1531,7 @@ public sealed class MesPersistenceContractTests
 
         var handler = new ListMesWorkOrdersQueryHandler(dbContext);
         var response = await handler.Handle(
-            new ListMesWorkOrdersQuery("org-a", "env-dev", null, 100),
+            new ListMesWorkOrdersQuery("org-a", "env-dev", null, Take: 100),
             CancellationToken.None);
 
         var workOrder = Assert.Single(response.Items);

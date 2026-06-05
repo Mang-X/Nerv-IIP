@@ -740,6 +740,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListRespo
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityItem>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityItem = {
@@ -819,35 +820,35 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterEngineeringDocumentRequest = {
-    organizationId?: string;
-    environmentId?: string;
+    organizationId: string;
+    environmentId: string;
     documentNumber?: string | null;
-    revision?: string;
-    fileId?: string;
-    fileName?: string;
-    contentType?: string;
-    documentType?: string;
+    revision: string;
+    fileId: string;
+    fileName: string;
+    contentType: string;
+    documentType: string;
     idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateEngineeringItemRevisionRequest = {
-    organizationId?: string;
-    environmentId?: string;
+    organizationId: string;
+    environmentId: string;
     itemCode?: string | null;
-    revision?: string;
-    name?: string;
+    revision: string;
+    name: string;
     release?: boolean;
     idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseEngineeringBomRequest = {
-    organizationId?: string;
-    environmentId?: string;
+    organizationId: string;
+    environmentId: string;
     bomCode?: string | null;
-    revision?: string;
-    parentItemCode?: string;
+    revision: string;
+    parentItemCode: string;
     effectiveDate?: string;
-    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomLineRequest>;
+    lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomLineRequest>;
     idempotencyKey?: string | null;
 };
 
@@ -863,6 +864,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringBomLi
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringBomListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringBomItem>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringBomItem = {
@@ -883,6 +885,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleManufacturingBom
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleManufacturingBomListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleManufacturingBomItem>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleManufacturingBomItem = {
@@ -906,15 +909,15 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleL
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseManufacturingBomRequest = {
-    organizationId?: string;
-    environmentId?: string;
+    organizationId: string;
+    environmentId: string;
     bomCode?: string | null;
-    revision?: string;
-    skuCode?: string;
-    engineeringBomCode?: string;
-    engineeringBomRevision?: string;
+    revision: string;
+    skuCode: string;
+    engineeringBomCode: string;
+    engineeringBomRevision: string;
     effectiveDate?: string;
-    materialLines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleManufacturingBomMaterialLineRequest>;
+    materialLines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleManufacturingBomMaterialLineRequest>;
     recipeLines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecipeLineRequest>;
     idempotencyKey?: string | null;
 };
@@ -938,6 +941,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRoutingListRespo
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRoutingListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRoutingItem>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRoutingItem = {
@@ -953,13 +957,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleL
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseRoutingRequest = {
-    organizationId?: string;
-    environmentId?: string;
+    organizationId: string;
+    environmentId: string;
     routingCode?: string | null;
-    revision?: string;
-    skuCode?: string;
+    revision: string;
+    skuCode: string;
     effectiveDate?: string;
-    operations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRoutingOperationRequest>;
+    operations: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRoutingOperationRequest>;
     idempotencyKey?: string | null;
 };
 
@@ -971,13 +975,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseEngineeringChangeRequest = {
-    organizationId?: string;
-    environmentId?: string;
+    organizationId: string;
+    environmentId: string;
     changeNumber?: string | null;
-    reason?: string;
-    approvalReferenceId?: string;
+    reason: string;
+    approvalReferenceId: string;
     effectiveDate?: string;
-    affectedVersions?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAffectedVersionRequest>;
+    affectedVersions: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAffectedVersionRequest>;
     idempotencyKey?: string | null;
 };
 
@@ -992,6 +996,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleProductionVersio
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleProductionVersionListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleProductionVersionItem>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleProductionVersionItem = {
@@ -1023,11 +1028,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateProductionVersionRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    skuCode?: string;
-    mbomVersionId?: string;
-    routingVersionId?: string;
+    organizationId: string;
+    environmentId: string;
+    skuCode: string;
+    mbomVersionId: string;
+    routingVersionId: string;
     validFrom?: string;
     validTo?: string | null;
     lotSizeMin?: number | null;
@@ -1037,8 +1042,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateProductionVersionRequest = {
-    mbomVersionId?: string;
-    routingVersionId?: string;
+    mbomVersionId: string;
+    routingVersionId: string;
     validFrom?: string;
     validTo?: string | null;
     lotSizeMin?: number | null;
@@ -1048,7 +1053,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleArchiveProductionVersionRequest = {
-    reason?: string;
+    reason: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResolveProductionVersionResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1281,6 +1286,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionPla
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionPlanListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionPlanRow>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionPlanRow = {
@@ -1328,6 +1334,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderList
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderItem>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderItem = {
@@ -1537,6 +1544,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTask
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow>;
+    total?: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTaskActionResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1862,79 +1870,79 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateBusinessPartnerRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    partnerType?: string;
-    name?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    partnerType: string;
+    name: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateUnitOfMeasureRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    name?: string;
-    dimensionType?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    name: string;
+    dimensionType: string;
     precision?: number;
-    roundingMode?: string;
+    roundingMode: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateUomConversionRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    fromUomCode?: string;
-    toUomCode?: string;
+    organizationId: string;
+    environmentId: string;
+    fromUomCode: string;
+    toUomCode: string;
     factor?: number;
     offset?: number;
     precision?: number;
-    roundingMode?: string;
+    roundingMode: string;
     effectiveFrom?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSiteRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    name?: string;
-    timezone?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    name: string;
+    timezone: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateProductionLineRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    name?: string;
-    siteCode?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    name: string;
+    siteCode: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCenterRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    name?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    name: string;
     capacityMinutesPerDay?: number;
-    resourceType?: string;
-    plantCode?: string;
-    lineCode?: string;
-    defaultCalendarCode?: string;
-    capacityUnit?: string;
+    resourceType: string;
+    plantCode: string;
+    lineCode: string;
+    defaultCalendarCode: string;
+    capacityUnit: string;
     finiteCapacity?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterDeviceAssetRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    model?: string;
-    lineCode?: string;
-    workCenterCode?: string;
-    assetClassCode?: string;
-    manufacturer?: string;
-    serialNo?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    model: string;
+    lineCode: string;
+    workCenterCode: string;
+    assetClassCode: string;
+    manufacturer: string;
+    serialNo: string;
     minimumCapacity?: number | null;
     maximumCapacity?: number | null;
-    capacityUomCode?: string;
-    criticality?: string;
+    capacityUomCode: string;
+    criticality: string;
     maintainable?: boolean;
     telemetryEnabled?: boolean;
     externalReferences?: {
@@ -1943,55 +1951,55 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    name?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    name: string;
     startsAt?: string;
     endsAt?: string;
     paidMinutes?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCalendarRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    name?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    name: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateTeamRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    name?: string;
-    departmentCode?: string;
-    shiftCode?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    name: string;
+    departmentCode: string;
+    shiftCode: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateDepartmentRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    code?: string;
-    name?: string;
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    name: string;
     parentDepartmentCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignPersonnelSkillRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    userId?: string;
-    skillCode?: string;
-    level?: string;
+    organizationId: string;
+    environmentId: string;
+    userId: string;
+    skillCode: string;
+    level: string;
     effectiveFrom?: string;
     effectiveTo?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReferenceDataCodeRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    codeSet?: string;
-    code?: string;
-    name?: string;
+    organizationId: string;
+    environmentId: string;
+    codeSet: string;
+    code: string;
+    name: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3949,6 +3957,7 @@ export type ListBusinessConsoleQualityInspectionPlansData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/quality/inspection-plans';
@@ -4008,6 +4017,7 @@ export type ListBusinessConsoleQualityNcrsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/quality/ncrs';
@@ -4106,6 +4116,10 @@ export type RegisterBusinessConsoleEngineeringDocumentData = {
 
 export type RegisterBusinessConsoleEngineeringDocumentErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -4114,6 +4128,8 @@ export type RegisterBusinessConsoleEngineeringDocumentErrors = {
      */
     403: unknown;
 };
+
+export type RegisterBusinessConsoleEngineeringDocumentError = RegisterBusinessConsoleEngineeringDocumentErrors[keyof RegisterBusinessConsoleEngineeringDocumentErrors];
 
 export type RegisterBusinessConsoleEngineeringDocumentResponses = {
     /**
@@ -4133,6 +4149,10 @@ export type CreateBusinessConsoleEngineeringItemRevisionData = {
 
 export type CreateBusinessConsoleEngineeringItemRevisionErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -4141,6 +4161,8 @@ export type CreateBusinessConsoleEngineeringItemRevisionErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleEngineeringItemRevisionError = CreateBusinessConsoleEngineeringItemRevisionErrors[keyof CreateBusinessConsoleEngineeringItemRevisionErrors];
 
 export type CreateBusinessConsoleEngineeringItemRevisionResponses = {
     /**
@@ -4160,6 +4182,10 @@ export type ReleaseBusinessConsoleEngineeringBomData = {
 
 export type ReleaseBusinessConsoleEngineeringBomErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -4168,6 +4194,8 @@ export type ReleaseBusinessConsoleEngineeringBomErrors = {
      */
     403: unknown;
 };
+
+export type ReleaseBusinessConsoleEngineeringBomError = ReleaseBusinessConsoleEngineeringBomErrors[keyof ReleaseBusinessConsoleEngineeringBomErrors];
 
 export type ReleaseBusinessConsoleEngineeringBomResponses = {
     /**
@@ -4186,6 +4214,8 @@ export type ListBusinessConsoleEngineeringBomsData = {
         environmentId: string;
         parentItemCode?: string | null;
         status?: string | null;
+        skip?: number;
+        take?: number;
     };
     url: '/api/business-console/v1/engineering/engineering-boms';
 };
@@ -4218,6 +4248,8 @@ export type ListBusinessConsoleEngineeringManufacturingBomsData = {
         environmentId: string;
         skuCode?: string | null;
         status?: string | null;
+        skip?: number;
+        take?: number;
     };
     url: '/api/business-console/v1/engineering/manufacturing-boms';
 };
@@ -4251,6 +4283,10 @@ export type ReleaseBusinessConsoleEngineeringManufacturingBomData = {
 
 export type ReleaseBusinessConsoleEngineeringManufacturingBomErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -4259,6 +4295,8 @@ export type ReleaseBusinessConsoleEngineeringManufacturingBomErrors = {
      */
     403: unknown;
 };
+
+export type ReleaseBusinessConsoleEngineeringManufacturingBomError = ReleaseBusinessConsoleEngineeringManufacturingBomErrors[keyof ReleaseBusinessConsoleEngineeringManufacturingBomErrors];
 
 export type ReleaseBusinessConsoleEngineeringManufacturingBomResponses = {
     /**
@@ -4277,6 +4315,8 @@ export type ListBusinessConsoleEngineeringRoutingsData = {
         environmentId: string;
         skuCode?: string | null;
         status?: string | null;
+        skip?: number;
+        take?: number;
     };
     url: '/api/business-console/v1/engineering/routings';
 };
@@ -4310,6 +4350,10 @@ export type ReleaseBusinessConsoleEngineeringRoutingData = {
 
 export type ReleaseBusinessConsoleEngineeringRoutingErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -4318,6 +4362,8 @@ export type ReleaseBusinessConsoleEngineeringRoutingErrors = {
      */
     403: unknown;
 };
+
+export type ReleaseBusinessConsoleEngineeringRoutingError = ReleaseBusinessConsoleEngineeringRoutingErrors[keyof ReleaseBusinessConsoleEngineeringRoutingErrors];
 
 export type ReleaseBusinessConsoleEngineeringRoutingResponses = {
     /**
@@ -4337,6 +4383,10 @@ export type ReleaseBusinessConsoleEngineeringChangeData = {
 
 export type ReleaseBusinessConsoleEngineeringChangeErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -4345,6 +4395,8 @@ export type ReleaseBusinessConsoleEngineeringChangeErrors = {
      */
     403: unknown;
 };
+
+export type ReleaseBusinessConsoleEngineeringChangeError = ReleaseBusinessConsoleEngineeringChangeErrors[keyof ReleaseBusinessConsoleEngineeringChangeErrors];
 
 export type ReleaseBusinessConsoleEngineeringChangeResponses = {
     /**
@@ -4363,6 +4415,8 @@ export type ListBusinessConsoleEngineeringProductionVersionsData = {
         environmentId: string;
         skuCode?: string | null;
         status?: string | null;
+        skip?: number;
+        take?: number;
     };
     url: '/api/business-console/v1/engineering/production-versions';
 };
@@ -4396,6 +4450,10 @@ export type CreateBusinessConsoleEngineeringProductionVersionData = {
 
 export type CreateBusinessConsoleEngineeringProductionVersionErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -4404,6 +4462,8 @@ export type CreateBusinessConsoleEngineeringProductionVersionErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleEngineeringProductionVersionError = CreateBusinessConsoleEngineeringProductionVersionErrors[keyof CreateBusinessConsoleEngineeringProductionVersionErrors];
 
 export type CreateBusinessConsoleEngineeringProductionVersionResponses = {
     /**
@@ -4428,6 +4488,10 @@ export type UpdateBusinessConsoleEngineeringProductionVersionData = {
 
 export type UpdateBusinessConsoleEngineeringProductionVersionErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -4436,6 +4500,8 @@ export type UpdateBusinessConsoleEngineeringProductionVersionErrors = {
      */
     403: unknown;
 };
+
+export type UpdateBusinessConsoleEngineeringProductionVersionError = UpdateBusinessConsoleEngineeringProductionVersionErrors[keyof UpdateBusinessConsoleEngineeringProductionVersionErrors];
 
 export type UpdateBusinessConsoleEngineeringProductionVersionResponses = {
     /**
@@ -4460,6 +4526,10 @@ export type ArchiveBusinessConsoleEngineeringProductionVersionData = {
 
 export type ArchiveBusinessConsoleEngineeringProductionVersionErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -4468,6 +4538,8 @@ export type ArchiveBusinessConsoleEngineeringProductionVersionErrors = {
      */
     403: unknown;
 };
+
+export type ArchiveBusinessConsoleEngineeringProductionVersionError = ArchiveBusinessConsoleEngineeringProductionVersionErrors[keyof ArchiveBusinessConsoleEngineeringProductionVersionErrors];
 
 export type ArchiveBusinessConsoleEngineeringProductionVersionResponses = {
     /**
@@ -5034,6 +5106,7 @@ export type ListBusinessConsoleMesProductionPlansData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/production-plans';
@@ -5130,6 +5203,7 @@ export type ListBusinessConsoleMesWorkOrdersData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/work-orders';
@@ -5317,6 +5391,7 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/material-issue-requests';
@@ -5381,6 +5456,7 @@ export type ListBusinessConsoleMesDispatchTasksData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/dispatch-tasks';
@@ -5445,6 +5521,7 @@ export type ListBusinessConsoleMesOperationTasksData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/operation-tasks';
@@ -5605,6 +5682,7 @@ export type GetBusinessConsoleMesWipSummaryData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/wip';
@@ -5637,6 +5715,7 @@ export type ListBusinessConsoleMesProductionReportsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/production-reports';
@@ -5723,6 +5802,7 @@ export type ListBusinessConsoleMesRelatedQualityItemsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/related-quality-items';
@@ -5755,6 +5835,7 @@ export type ListBusinessConsoleMesFinishedGoodsReceiptRequestsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/finished-goods-receipt-requests';
@@ -5814,6 +5895,7 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/downtime-events';
@@ -5905,6 +5987,7 @@ export type ListBusinessConsoleMesShiftHandoversData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/shift-handovers';
@@ -6092,6 +6175,7 @@ export type ListBusinessConsoleMesCapacityImpactsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/mes/capacity-impacts';
@@ -6152,6 +6236,7 @@ export type ListBusinessConsoleMasterDataResourcesData = {
         environmentId: string;
         resourceType: string;
         includeDisabled?: boolean;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/master-data/resources';
@@ -6184,6 +6269,7 @@ export type ListBusinessConsoleSkusData = {
         organizationId: string;
         environmentId: string;
         includeDisabled?: boolean;
+        skip?: number;
         take?: number;
     };
     url: '/api/business-console/v1/master-data/skus';
@@ -6251,6 +6337,10 @@ export type CreateBusinessConsoleBusinessPartnerData = {
 
 export type CreateBusinessConsoleBusinessPartnerErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6259,6 +6349,8 @@ export type CreateBusinessConsoleBusinessPartnerErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleBusinessPartnerError = CreateBusinessConsoleBusinessPartnerErrors[keyof CreateBusinessConsoleBusinessPartnerErrors];
 
 export type CreateBusinessConsoleBusinessPartnerResponses = {
     /**
@@ -6278,6 +6370,10 @@ export type CreateBusinessConsoleUnitOfMeasureData = {
 
 export type CreateBusinessConsoleUnitOfMeasureErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6286,6 +6382,8 @@ export type CreateBusinessConsoleUnitOfMeasureErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleUnitOfMeasureError = CreateBusinessConsoleUnitOfMeasureErrors[keyof CreateBusinessConsoleUnitOfMeasureErrors];
 
 export type CreateBusinessConsoleUnitOfMeasureResponses = {
     /**
@@ -6305,6 +6403,10 @@ export type CreateBusinessConsoleUomConversionData = {
 
 export type CreateBusinessConsoleUomConversionErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6313,6 +6415,8 @@ export type CreateBusinessConsoleUomConversionErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleUomConversionError = CreateBusinessConsoleUomConversionErrors[keyof CreateBusinessConsoleUomConversionErrors];
 
 export type CreateBusinessConsoleUomConversionResponses = {
     /**
@@ -6332,6 +6436,10 @@ export type CreateBusinessConsoleSiteData = {
 
 export type CreateBusinessConsoleSiteErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6340,6 +6448,8 @@ export type CreateBusinessConsoleSiteErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleSiteError = CreateBusinessConsoleSiteErrors[keyof CreateBusinessConsoleSiteErrors];
 
 export type CreateBusinessConsoleSiteResponses = {
     /**
@@ -6359,6 +6469,10 @@ export type CreateBusinessConsoleProductionLineData = {
 
 export type CreateBusinessConsoleProductionLineErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6367,6 +6481,8 @@ export type CreateBusinessConsoleProductionLineErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleProductionLineError = CreateBusinessConsoleProductionLineErrors[keyof CreateBusinessConsoleProductionLineErrors];
 
 export type CreateBusinessConsoleProductionLineResponses = {
     /**
@@ -6386,6 +6502,10 @@ export type CreateBusinessConsoleWorkCenterData = {
 
 export type CreateBusinessConsoleWorkCenterErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6394,6 +6514,8 @@ export type CreateBusinessConsoleWorkCenterErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleWorkCenterError = CreateBusinessConsoleWorkCenterErrors[keyof CreateBusinessConsoleWorkCenterErrors];
 
 export type CreateBusinessConsoleWorkCenterResponses = {
     /**
@@ -6413,6 +6535,10 @@ export type RegisterBusinessConsoleDeviceAssetData = {
 
 export type RegisterBusinessConsoleDeviceAssetErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6421,6 +6547,8 @@ export type RegisterBusinessConsoleDeviceAssetErrors = {
      */
     403: unknown;
 };
+
+export type RegisterBusinessConsoleDeviceAssetError = RegisterBusinessConsoleDeviceAssetErrors[keyof RegisterBusinessConsoleDeviceAssetErrors];
 
 export type RegisterBusinessConsoleDeviceAssetResponses = {
     /**
@@ -6440,6 +6568,10 @@ export type CreateBusinessConsoleShiftData = {
 
 export type CreateBusinessConsoleShiftErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6448,6 +6580,8 @@ export type CreateBusinessConsoleShiftErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleShiftError = CreateBusinessConsoleShiftErrors[keyof CreateBusinessConsoleShiftErrors];
 
 export type CreateBusinessConsoleShiftResponses = {
     /**
@@ -6467,6 +6601,10 @@ export type CreateBusinessConsoleWorkCalendarData = {
 
 export type CreateBusinessConsoleWorkCalendarErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6475,6 +6613,8 @@ export type CreateBusinessConsoleWorkCalendarErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleWorkCalendarError = CreateBusinessConsoleWorkCalendarErrors[keyof CreateBusinessConsoleWorkCalendarErrors];
 
 export type CreateBusinessConsoleWorkCalendarResponses = {
     /**
@@ -6494,6 +6634,10 @@ export type CreateBusinessConsoleTeamData = {
 
 export type CreateBusinessConsoleTeamErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6502,6 +6646,8 @@ export type CreateBusinessConsoleTeamErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleTeamError = CreateBusinessConsoleTeamErrors[keyof CreateBusinessConsoleTeamErrors];
 
 export type CreateBusinessConsoleTeamResponses = {
     /**
@@ -6521,6 +6667,10 @@ export type CreateBusinessConsoleDepartmentData = {
 
 export type CreateBusinessConsoleDepartmentErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6529,6 +6679,8 @@ export type CreateBusinessConsoleDepartmentErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleDepartmentError = CreateBusinessConsoleDepartmentErrors[keyof CreateBusinessConsoleDepartmentErrors];
 
 export type CreateBusinessConsoleDepartmentResponses = {
     /**
@@ -6548,6 +6700,10 @@ export type AssignBusinessConsolePersonnelSkillData = {
 
 export type AssignBusinessConsolePersonnelSkillErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6556,6 +6712,8 @@ export type AssignBusinessConsolePersonnelSkillErrors = {
      */
     403: unknown;
 };
+
+export type AssignBusinessConsolePersonnelSkillError = AssignBusinessConsolePersonnelSkillErrors[keyof AssignBusinessConsolePersonnelSkillErrors];
 
 export type AssignBusinessConsolePersonnelSkillResponses = {
     /**
@@ -6575,6 +6733,10 @@ export type CreateBusinessConsoleReferenceDataCodeData = {
 
 export type CreateBusinessConsoleReferenceDataCodeErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -6583,6 +6745,8 @@ export type CreateBusinessConsoleReferenceDataCodeErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleReferenceDataCodeError = CreateBusinessConsoleReferenceDataCodeErrors[keyof CreateBusinessConsoleReferenceDataCodeErrors];
 
 export type CreateBusinessConsoleReferenceDataCodeResponses = {
     /**

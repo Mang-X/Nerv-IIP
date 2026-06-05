@@ -46,6 +46,7 @@ const {
   productionPlans,
   productionPlansError,
   productionPlansPending,
+  productionPlansTotal,
   refreshProductionPlans,
 } = useMesProductionPlans()
 const route = useRoute()
@@ -110,10 +111,7 @@ const sortedPlans = computed(() => {
   })
 })
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedPlans = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return sortedPlans.value.slice(start, start + pageSizeNumber.value)
-})
+const pagedPlans = computed(() => sortedPlans.value)
 
 const selectedBlockingReasons = computed(() => (selectedPlan.value?.blockingReasons ?? []).map(describeMesReadinessReason))
 const canConvert = computed(() => Boolean(selectedPlan.value?.productionPlanId))
@@ -130,9 +128,14 @@ const columns: DataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
-watch([keyword, sourceFilter, readinessFilter, pageSize, () => productionPlans.value.length], () => {
+watch([keyword, sourceFilter, readinessFilter, pageSize], () => {
   page.value = 1
 })
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function openConvert(plan: BusinessConsoleMesProductionPlanRow) {
   selectedPlan.value = plan
@@ -225,7 +228,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="生产计划" :breadcrumbs="[{ label: '制造执行' }]" :count="`${visiblePlans.length} 个计划`">
+    <PageHeader title="生产计划" :breadcrumbs="[{ label: '制造执行' }]" :count="`${productionPlansTotal} 个计划`">
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="productionPlansPending" @click="refreshProductionPlans">
           <RefreshCwIcon aria-hidden="true" />
@@ -237,7 +240,7 @@ function formatError(error: unknown) {
     <SectionCards :columns="3">
       <SectionCard description="可转工单" :value="readyCount" hint="人员/设备/物料就绪" />
       <SectionCard description="受阻或预警" :value="blockedCount" hint="需处理后再释放" />
-      <SectionCard description="计划总数" :value="visiblePlans.length" hint="当前筛选结果" />
+      <SectionCard description="计划总数" :value="productionPlansTotal" hint="后端分页总数" />
     </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索计划号、来源、SKU">
@@ -292,7 +295,7 @@ function formatError(error: unknown) {
       </template>
     </DataTable>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sortedPlans.length" />
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="productionPlansTotal" />
 
     <Dialog v-model:open="convertOpen">
       <DialogContent>

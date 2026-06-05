@@ -46,6 +46,7 @@ const {
   skus,
   skusError,
   skusPending,
+  skusTotal,
 } = useBusinessSkus()
 
 // Optimistic rows for items the user created in this session (real entries, never placeholders).
@@ -120,10 +121,8 @@ const sortedRows = computed(() => {
   )
 })
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return sortedRows.value.slice(start, start + pageSizeNumber.value)
-})
+const pagedRows = computed(() => sortedRows.value)
+const totalItems = computed(() => skusTotal.value + localSkus.value.length)
 
 const activeCount = computed(() => listRows.value.filter((s) => s.active !== false).length)
 const disabledCount = computed(() => listRows.value.filter((s) => s.active === false).length)
@@ -143,9 +142,14 @@ const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'snapshotVersion', header: '版本', sortable: true, width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
 ]
 
-watch([keyword, includeDisabled, pageSize, () => sourceSkus.value.length], () => {
+watch([keyword, includeDisabled, pageSize], () => {
   page.value = 1
 })
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function resetFilters() {
   keyword.value = ''
@@ -219,7 +223,7 @@ function isNonEmpty(value: string) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="物料与产品" :breadcrumbs="[{ label: '基础数据' }]" :count="`${listRows.length} 个物料`">
+    <PageHeader title="物料与产品" :breadcrumbs="[{ label: '基础数据' }]" :count="`${totalItems} 个物料`">
       <template #actions>
         <Button size="sm" variant="outline" type="button" :disabled="skusPending" @click="refreshSkus">
           <RefreshCwIcon aria-hidden="true" />
@@ -336,7 +340,7 @@ function isNonEmpty(value: string) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="物料总数" :value="listRows.length" hint="当前筛选结果" />
+      <SectionCard description="物料总数" :value="totalItems" hint="后端分页总数" />
       <SectionCard description="启用" :value="activeCount" hint="可用于计划、采购、生产" />
       <SectionCard description="停用" :value="disabledCount" hint="已归档或停用" />
     </SectionCards>
@@ -376,6 +380,6 @@ function isNonEmpty(value: string) {
       </template>
     </DataTable>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sortedRows.length" />
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="totalItems" />
   </BusinessLayout>
 </template>

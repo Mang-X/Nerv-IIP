@@ -82,6 +82,7 @@ describe('business quality composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleQualityInspectionPlans', {
       success: true,
       data: {
+        total: 34,
         items: [
           {
             id: 'plan-1',
@@ -91,15 +92,17 @@ describe('business quality composables', () => {
       },
     })
 
-    const { inspectionPlans } = useQualityInspectionPlans()
+    const { inspectionPlans, inspectionPlansTotal } = useQualityInspectionPlans()
 
     expect(listBusinessConsoleQualityInspectionPlansQueryOptions).toHaveBeenCalledWith({
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        skip: 0,
         take: 100,
       },
     })
+    expect(inspectionPlansTotal.value).toBe(34)
     expect(inspectionPlans.value).toEqual([
       {
         id: 'plan-1',
@@ -127,6 +130,7 @@ describe('business quality composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleQualityNcrs', {
       success: true,
       data: {
+        total: 56,
         items: [
           {
             id: 'ncr-1',
@@ -136,15 +140,17 @@ describe('business quality composables', () => {
       },
     })
 
-    const { closeNcr, ncrs, submitDisposition } = useQualityNcrs()
+    const { closeNcr, ncrs, ncrsTotal, submitDisposition } = useQualityNcrs()
 
     expect(listBusinessConsoleQualityNcrsQueryOptions).toHaveBeenCalledWith({
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        skip: 0,
         take: 100,
       },
     })
+    expect(ncrsTotal.value).toBe(56)
     expect(ncrs.value).toEqual([
       {
         id: 'ncr-1',

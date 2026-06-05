@@ -35,6 +35,7 @@ const {
   operationTasks,
   operationTasksError,
   operationTasksPending,
+  operationTasksTotal,
   refreshOperationTasks,
 } = useMesOperationTasks()
 
@@ -106,13 +107,15 @@ const sortedTasks = computed(() => {
 const page = ref(1)
 const pageSize = ref('10')
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedTasks = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return sortedTasks.value.slice(start, start + pageSizeNumber.value)
-})
-watch([keyword, statusFilter, workCenterFilter, shiftFilter, pageSize, () => operationTasks.value.length], () => {
+const pagedTasks = computed(() => sortedTasks.value)
+watch([keyword, statusFilter, workCenterFilter, shiftFilter, pageSize], () => {
   page.value = 1
 })
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 const columns: DataTableColumn<Row>[] = [
   { key: 'operationTaskId', header: '工序任务', sortable: true, cellClass: 'font-medium', accessor: (r) => r.operationTaskId ?? '无编号' },
@@ -184,7 +187,7 @@ function formatError(error: unknown) {
     <PageHeader
       title="工序执行"
       :breadcrumbs="[{ label: '制造执行' }]"
-      :count="`${visibleTasks.length} 个工序任务`"
+      :count="`${operationTasksTotal} 个工序任务`"
     >
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="operationTasksPending" @click="refreshOperationTasks">
@@ -198,7 +201,7 @@ function formatError(error: unknown) {
       <SectionCard description="可开工" :value="readyCount" hint="确认人员、设备、物料后进入报工" />
       <SectionCard description="执行中" :value="runningCount" hint="关注报工节拍与质量确认" />
       <SectionCard description="受阻" :value="blockedCount" hint="需班组长 / 质检 / 设备处理" />
-      <SectionCard description="任务总数" :value="visibleTasks.length" hint="当前筛选结果" />
+      <SectionCard description="任务总数" :value="operationTasksTotal" hint="后端分页总数" />
     </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
@@ -294,7 +297,7 @@ function formatError(error: unknown) {
     <DataTablePagination
       v-model:page="page"
       v-model:page-size="pageSize"
-      :total-items="sortedTasks.length"
+      :total-items="operationTasksTotal"
     />
   </BusinessLayout>
 </template>

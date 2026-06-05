@@ -7,9 +7,12 @@ public sealed record ListMesWorkOrdersQuery(
     string OrganizationId,
     string EnvironmentId,
     string? Status,
+    int Skip = 0,
     int Take = 100) : IQuery<ListMesWorkOrdersResponse>;
 
-public sealed record ListMesWorkOrdersResponse(IReadOnlyCollection<MesWorkOrderExecutionFact> Items);
+public sealed record ListMesWorkOrdersResponse(
+    IReadOnlyCollection<MesWorkOrderExecutionFact> Items,
+    int Total);
 
 public sealed record MesWorkOrderExecutionFact(
     string WorkOrderId,
@@ -37,6 +40,7 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
 {
     public async Task<ListMesWorkOrdersResponse> Handle(ListMesWorkOrdersQuery request, CancellationToken cancellationToken)
     {
+        var skip = Math.Max(0, request.Skip);
         var take = Math.Clamp(request.Take, 1, 500);
         var workOrdersQuery = dbContext.WorkOrders
             .AsNoTracking()
@@ -47,9 +51,11 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
             workOrdersQuery = workOrdersQuery.Where(x => x.Status == request.Status);
         }
 
+        var total = await workOrdersQuery.CountAsync(cancellationToken);
         var workOrders = await workOrdersQuery
             .OrderBy(x => x.DueUtc)
             .ThenBy(x => x.WorkOrderIdValue)
+            .Skip(skip)
             .Take(take)
             .Select(x => new
             {
@@ -114,7 +120,7 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
             x.Status,
             tasksByWorkOrder.GetValueOrDefault(x.WorkOrderIdValue, []))).ToArray();
 
-        return new ListMesWorkOrdersResponse(items);
+        return new ListMesWorkOrdersResponse(items, total);
     }
 
     private static IReadOnlyCollection<string> SplitAlternatives(string value)

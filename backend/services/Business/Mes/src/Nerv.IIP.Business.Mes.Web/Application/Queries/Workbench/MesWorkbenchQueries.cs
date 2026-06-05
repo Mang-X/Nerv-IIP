@@ -180,9 +180,12 @@ public sealed record ListProductionPlansQuery(
     string OrganizationId,
     string EnvironmentId,
     string? Status,
+    int Skip = 0,
     int Take = 100) : IQuery<MesProductionPlanListResponse>;
 
-public sealed record MesProductionPlanListResponse(IReadOnlyCollection<MesProductionPlanRow> Items);
+public sealed record MesProductionPlanListResponse(
+    IReadOnlyCollection<MesProductionPlanRow> Items,
+    int Total);
 
 public sealed record MesProductionPlanRow(
     string ProductionPlanId,
@@ -217,9 +220,11 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.Status == status);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var rows = await query
             .OrderBy(x => x.DueUtc)
             .ThenBy(x => x.WorkOrderIdValue)
+            .Skip(Math.Max(0, request.Skip))
             .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new
             {
@@ -252,7 +257,7 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
                 "Ready",
                 []))
             .ToArray();
-        return new MesProductionPlanListResponse(items);
+        return new MesProductionPlanListResponse(items, total);
     }
 }
 
@@ -400,7 +405,7 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
 
-        var tasks = await QueryOperationTasks(dbContext, request.OrganizationId, request.EnvironmentId, request.WorkOrderId, null, 500)
+        var tasks = await QueryOperationTasks(dbContext, request.OrganizationId, request.EnvironmentId, request.WorkOrderId, null, 0, 500)
             .ToArrayAsync(cancellationToken);
 
         return new MesWorkOrderDetailResponse(
@@ -421,7 +426,37 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
         string environmentId,
         string? workOrderId,
         string? status,
+        int skip,
         int take)
+    {
+        var query = QueryOperationTaskEntities(dbContext, organizationId, environmentId, workOrderId, status);
+
+        return query
+            .OrderBy(x => x.EarliestStartUtc)
+            .ThenBy(x => x.OperationSequence)
+            .ThenBy(x => x.OperationTaskIdValue)
+            .Skip(Math.Max(0, skip))
+            .Take(Math.Clamp(take, 1, 500))
+            .Select(x => new MesOperationTaskRow(
+                x.OperationTaskIdValue,
+                x.WorkOrderId,
+                x.Status.ToString(),
+                x.OperationSequence,
+                x.WorkCenterId,
+                x.DeviceAssetId,
+                x.ShiftId,
+                x.AssignedUserId,
+                x.EarliestStartUtc,
+                x.ExistingStartUtc,
+                "Ready"));
+    }
+
+    internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string? workOrderId,
+        string? status)
     {
         var query = dbContext.OperationTasks
             .AsNoTracking()
@@ -437,23 +472,7 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
             query = query.Where(x => x.Status.ToString() == status);
         }
 
-        return query
-            .OrderBy(x => x.EarliestStartUtc)
-            .ThenBy(x => x.OperationSequence)
-            .ThenBy(x => x.OperationTaskIdValue)
-            .Take(Math.Clamp(take, 1, 500))
-            .Select(x => new MesOperationTaskRow(
-                x.OperationTaskIdValue,
-                x.WorkOrderId,
-                x.Status.ToString(),
-                x.OperationSequence,
-                x.WorkCenterId,
-                x.DeviceAssetId,
-                x.ShiftId,
-                x.AssignedUserId,
-                x.EarliestStartUtc,
-                x.ExistingStartUtc,
-                "Ready"));
+        return query;
     }
 }
 
@@ -461,19 +480,25 @@ public sealed record ListOperationTasksQuery(
     string OrganizationId,
     string EnvironmentId,
     string? Status,
+    int Skip = 0,
     int Take = 100) : IQuery<MesOperationTaskListResponse>;
 
-public sealed record MesOperationTaskListResponse(IReadOnlyCollection<MesOperationTaskRow> Items);
+public sealed record MesOperationTaskListResponse(
+    IReadOnlyCollection<MesOperationTaskRow> Items,
+    int Total);
 
 public sealed class ListOperationTasksQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListOperationTasksQuery, MesOperationTaskListResponse>
 {
     public async Task<MesOperationTaskListResponse> Handle(ListOperationTasksQuery request, CancellationToken cancellationToken)
     {
+        var total = await GetMesWorkOrderDetailQueryHandler
+            .QueryOperationTaskEntities(dbContext, request.OrganizationId, request.EnvironmentId, null, request.Status)
+            .CountAsync(cancellationToken);
         var items = await GetMesWorkOrderDetailQueryHandler
-            .QueryOperationTasks(dbContext, request.OrganizationId, request.EnvironmentId, null, request.Status, request.Take)
+            .QueryOperationTasks(dbContext, request.OrganizationId, request.EnvironmentId, null, request.Status, request.Skip, request.Take)
             .ToArrayAsync(cancellationToken);
-        return new MesOperationTaskListResponse(items);
+        return new MesOperationTaskListResponse(items, total);
     }
 }
 
@@ -553,7 +578,7 @@ public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext
     public async Task<MesDispatchTaskListResponse> Handle(ListDispatchTasksQuery request, CancellationToken cancellationToken)
     {
         var tasks = await GetMesWorkOrderDetailQueryHandler
-            .QueryOperationTasks(dbContext, request.OrganizationId, request.EnvironmentId, null, request.Status, request.Take)
+            .QueryOperationTasks(dbContext, request.OrganizationId, request.EnvironmentId, null, request.Status, 0, request.Take)
             .Select(x => new MesDispatchTaskRow(
                 x.OperationTaskId,
                 x.WorkOrderId,
@@ -709,7 +734,7 @@ public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
     public async Task<MesWipSummaryResponse> Handle(GetWipSummaryQuery request, CancellationToken cancellationToken)
     {
         var tasks = await GetMesWorkOrderDetailQueryHandler
-            .QueryOperationTasks(dbContext, request.OrganizationId, request.EnvironmentId, null, request.Status, request.Take)
+            .QueryOperationTasks(dbContext, request.OrganizationId, request.EnvironmentId, null, request.Status, 0, request.Take)
             .ToArrayAsync(cancellationToken);
         var workOrderIds = tasks.Select(x => x.WorkOrderId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var operationTaskIds = tasks.Select(x => x.OperationTaskId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();

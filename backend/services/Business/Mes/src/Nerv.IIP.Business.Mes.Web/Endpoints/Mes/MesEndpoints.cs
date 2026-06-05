@@ -38,6 +38,7 @@ public sealed record ListMesWorkOrdersRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Status,
+    int Skip = 0,
     int Take = 100);
 
 public sealed record RecordProductionReportRequest(
@@ -358,7 +359,7 @@ public sealed class ListProductionPlansEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListProductionPlansQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Take), ct);
+        var response = await sender.Send(new ListProductionPlansQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Skip, req.Take), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -442,7 +443,7 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
     public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
     {
         var response = await sender.Send(
-            new ListMesWorkOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Take),
+            new ListMesWorkOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Skip, req.Take),
             ct);
         await Send.OkAsync(response, ct);
     }
@@ -576,7 +577,7 @@ public sealed class ListOperationTasksEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListOperationTasksQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Take), ct);
+        var response = await sender.Send(new ListOperationTasksQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Skip, req.Take), ct);
         await Send.OkAsync(response, ct);
     }
 }

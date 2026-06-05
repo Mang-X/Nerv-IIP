@@ -109,12 +109,34 @@ public sealed class ProductEngineeringReleaseApiContractTests
             new ListManufacturingBomsQuery("org-001", "env-dev", "SKU-FG-1000", "Published"),
             CancellationToken.None);
 
+        Assert.Equal(1, response.Total);
         var item = Assert.Single(response.Items);
         Assert.Equal("MBOM-1000", item.BomCode);
         var line = Assert.Single(item.MaterialLines);
         Assert.Equal("SKU-RM-1000", line.SkuCode);
         Assert.Equal(3m, line.Quantity);
         Assert.Equal("pcs", line.UnitOfMeasureCode);
+    }
+
+    [Fact]
+    public async Task List_manufacturing_boms_returns_offset_page_and_total_count()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ManufacturingBoms.AddRange(
+            ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-001", "A", "SKU-FG-1000"),
+            ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-002", "A", "SKU-FG-1000"),
+            ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-003", "A", "SKU-FG-1000"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListManufacturingBomsQueryHandler(dbContext).Handle(
+            new ListManufacturingBomsQuery("org-001", "env-dev", "SKU-FG-1000", null, Skip: 1, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("MBOM-002", item.BomCode);
     }
 
     [Fact]

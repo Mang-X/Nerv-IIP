@@ -184,7 +184,7 @@ public sealed class ReleaseEngineeringChangeEndpoint(ISender sender)
     }
 }
 
-public sealed record ListEngineeringBomsRequest(string OrganizationId, string EnvironmentId, string? ParentItemCode, string? Status);
+public sealed record ListEngineeringBomsRequest(string OrganizationId, string EnvironmentId, string? ParentItemCode, string? Status, int Skip = 0, int Take = 100);
 
 public sealed class ListEngineeringBomsEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ListEngineeringBomsRequest, ResponseData<ListEngineeringBomsResponse>>
@@ -196,12 +196,12 @@ public sealed class ListEngineeringBomsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListEngineeringBomsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListEngineeringBomsQuery(req.OrganizationId, req.EnvironmentId, req.ParentItemCode, req.Status), ct);
+        var response = await sender.Send(new ListEngineeringBomsQuery(req.OrganizationId, req.EnvironmentId, req.ParentItemCode, req.Status, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
 
-public sealed record ListManufacturingBomsRequest(string OrganizationId, string EnvironmentId, string? SkuCode, string? Status);
+public sealed record ListManufacturingBomsRequest(string OrganizationId, string EnvironmentId, string? SkuCode, string? Status, int Skip = 0, int Take = 100);
 
 public sealed class ListManufacturingBomsEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ListManufacturingBomsRequest, ResponseData<ListManufacturingBomsResponse>>
@@ -213,12 +213,12 @@ public sealed class ListManufacturingBomsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListManufacturingBomsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListManufacturingBomsQuery(req.OrganizationId, req.EnvironmentId, req.SkuCode, req.Status), ct);
+        var response = await sender.Send(new ListManufacturingBomsQuery(req.OrganizationId, req.EnvironmentId, req.SkuCode, req.Status, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
 
-public sealed record ListRoutingsRequest(string OrganizationId, string EnvironmentId, string? SkuCode, string? Status);
+public sealed record ListRoutingsRequest(string OrganizationId, string EnvironmentId, string? SkuCode, string? Status, int Skip = 0, int Take = 100);
 
 public sealed class ListRoutingsEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ListRoutingsRequest, ResponseData<ListRoutingsResponse>>
@@ -230,7 +230,7 @@ public sealed class ListRoutingsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListRoutingsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListRoutingsQuery(req.OrganizationId, req.EnvironmentId, req.SkuCode, req.Status), ct);
+        var response = await sender.Send(new ListRoutingsQuery(req.OrganizationId, req.EnvironmentId, req.SkuCode, req.Status, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }

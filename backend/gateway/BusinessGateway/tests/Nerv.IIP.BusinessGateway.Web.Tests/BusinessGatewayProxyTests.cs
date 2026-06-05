@@ -23,7 +23,14 @@ public sealed class BusinessGatewayProxyTests
     [Fact]
     public async Task List_skus_uses_internal_service_token_for_downstream_business_service()
     {
-        var masterData = new RecordingMasterDataClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("sku", "SKU-001", "Demo SKU 1", true, "v1"),
+                new BusinessConsoleResourceItem("sku", "SKU-002", "Demo SKU 2", true, "v2"),
+            ],
+        };
         await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
             services.RemoveAll<IBusinessMasterDataClient>();
@@ -34,13 +41,13 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev&take=25");
+        var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev&skip=1&take=25");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", masterData.LastInternalToken);
-        Assert.Equal(new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, 25), masterData.LastListResourcesRequest);
+        Assert.Equal(new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, 1, 25), masterData.LastListResourcesRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("SKU-001", document.RootElement.GetProperty("data").GetProperty("resources")[0].GetProperty("code").GetString());
+        Assert.Equal("SKU-002", document.RootElement.GetProperty("data").GetProperty("resources")[0].GetProperty("code").GetString());
     }
 
     [Fact]
@@ -97,11 +104,11 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev&status=open&take=20");
+        var response = await client.GetAsync("/api/business-console/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev&status=open&skip=5&take=20");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", quality.LastInternalToken);
-        Assert.Equal(new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", 20), quality.LastNcrListRequest);
+        Assert.Equal(new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", Skip: 5, Take: 20), quality.LastNcrListRequest);
     }
 
     [Fact]
@@ -118,11 +125,11 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&take=15");
+        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&skip=5&take=15");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "released", 15), mes.LastWorkOrderListRequest);
+        Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "released", 5, 15), mes.LastWorkOrderListRequest);
     }
 
     [Fact]
@@ -158,11 +165,11 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/mes/production-plans?organizationId=org-001&environmentId=env-dev&status=Converted&take=15");
+        var response = await client.GetAsync("/api/business-console/v1/mes/production-plans?organizationId=org-001&environmentId=env-dev&status=Converted&skip=10&take=15");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "Converted", 15), mes.LastProductionPlanListRequest);
+        Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "Converted", 10, 15), mes.LastProductionPlanListRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var plan = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("DemandPlanning", plan.GetProperty("sourceSystem").GetString());
@@ -1370,13 +1377,13 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListResourcesAsync(
             "internal-token-001",
-            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", true, 12),
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", true, Take: 12),
             CancellationToken.None);
 
         Assert.Equal("SKU-HTTP", response.Resources.Single().Code);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&includeDisabled=true&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&includeDisabled=true&skip=0&take=12", request.RequestUri!.PathAndQuery);
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.Equal("internal-token-001", request.Headers.Authorization.Parameter);
     }
@@ -1400,10 +1407,10 @@ public sealed class BusinessGatewayProxyTests
 
         await client.ListResourcesAsync(
             "internal-token-001",
-            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, 12),
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, Take: 12),
             CancellationToken.None);
 
-        Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&take=12", handler.Requests.Single().RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&skip=0&take=12", handler.Requests.Single().RequestUri!.PathAndQuery);
     }
 
     [Fact]
@@ -1425,7 +1432,7 @@ public sealed class BusinessGatewayProxyTests
 
         await client.ListResourcesAsync(
             "internal-token-001",
-            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", true, 12),
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", true, Take: 12),
             CancellationToken.None);
 
         Assert.Contains("includeDisabled=true", handler.Requests.Single().RequestUri!.PathAndQuery, StringComparison.Ordinal);
@@ -1438,6 +1445,7 @@ public sealed class BusinessGatewayProxyTests
         {
             data = new
             {
+                total = 1,
                 items = new[]
                 {
                     new
@@ -1569,14 +1577,14 @@ public sealed class BusinessGatewayProxyTests
 
         await client.ListProductionVersionsAsync(
             "internal-token-001",
-            new BusinessConsoleListProductionVersionsRequest("org-001", "env-dev", "FG-FRONT-SHOCK", "active"),
+            new BusinessConsoleListProductionVersionsRequest("org-001", "env-dev", "FG-FRONT-SHOCK", "active", Skip: 5, Take: 15),
             CancellationToken.None);
         await client.ResolveProductionVersionAsync(
             "internal-token-001",
             new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2025-01-15"), 100),
             CancellationToken.None);
 
-        Assert.Equal("/api/business/v1/engineering/production-versions?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&status=active", handler.Requests[0].RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/engineering/production-versions?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&status=active&skip=5&take=15", handler.Requests[0].RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", handler.Requests[0].Headers.Authorization!.Parameter);
         Assert.Equal("/api/business/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100", handler.Requests[1].RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", handler.Requests[1].Headers.Authorization!.Parameter);
@@ -1603,7 +1611,7 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
         await client.ListManufacturingBomsAsync(
             "internal-token-001",
-            new BusinessConsoleListManufacturingBomsRequest("org-001", "env-dev", "SKU-001", "Published"),
+            new BusinessConsoleListManufacturingBomsRequest("org-001", "env-dev", "SKU-001", "Published", Skip: 3, Take: 25),
             CancellationToken.None);
         await client.ReleaseManufacturingBomAsync(
             "internal-token-001",
@@ -1637,7 +1645,7 @@ public sealed class BusinessGatewayProxyTests
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/documents"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/items"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-boms/release"),
-            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/manufacturing-boms?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&status=Published"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/manufacturing-boms?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&status=Published&skip=3&take=25"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/manufacturing-boms/release"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/routings/release"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-changes/release"),
@@ -1701,6 +1709,7 @@ public sealed class BusinessGatewayProxyTests
         {
             data = new
             {
+                total = 1,
                 items = new[]
                 {
                     new
@@ -1725,13 +1734,14 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListNcrsAsync(
             "internal-token-001",
-            new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", 12),
+            new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", Skip: 4, Take: 12),
             CancellationToken.None);
 
         Assert.Equal("ncr-001", response.Items.Single().Id);
+        Assert.Equal(1, response.Total);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/business/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev&status=open&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev&status=open&skip=4&take=12", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
@@ -1742,6 +1752,7 @@ public sealed class BusinessGatewayProxyTests
         {
             data = new
             {
+                total = 1,
                 items = new[]
                 {
                     new
@@ -1763,9 +1774,10 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListInspectionPlansAsync(
             "internal-token-001",
-            new BusinessConsoleQualityListRequest("org-001", "env-dev", "active", 12),
+            new BusinessConsoleQualityListRequest("org-001", "env-dev", "active", Take: 12),
             CancellationToken.None);
 
+        Assert.Equal(1, response.Total);
         var item = Assert.Single(response.Items);
         Assert.Equal("plan-001", item.Id);
         Assert.Equal("IP-001", item.Code);
@@ -1781,6 +1793,7 @@ public sealed class BusinessGatewayProxyTests
         {
             data = new
             {
+                total = 1,
                 items = new[]
                 {
                     new
@@ -1805,9 +1818,10 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListNcrsAsync(
             "internal-token-001",
-            new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", 12),
+            new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", Take: 12),
             CancellationToken.None);
 
+        Assert.Equal(1, response.Total);
         var item = Assert.Single(response.Items);
         Assert.Equal("ncr-001", item.Id);
         Assert.Equal("NCR-001", item.Code);
@@ -1915,13 +1929,13 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListWorkOrdersAsync(
             "internal-token-001",
-            new BusinessConsoleMesListRequest("org-001", "env-dev", "released", 12),
+            new BusinessConsoleMesListRequest("org-001", "env-dev", "released", 4, 12),
             CancellationToken.None);
 
         Assert.Equal("WO-HTTP", response.Items.Single().WorkOrderId);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&skip=4&take=12", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
@@ -1955,7 +1969,7 @@ public sealed class BusinessGatewayProxyTests
 
         await client.ListResourcesAsync(
             "internal-token-001",
-            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, 100),
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, Take: 100),
             CancellationToken.None);
 
         Assert.Equal(
@@ -1977,7 +1991,7 @@ public sealed class BusinessGatewayProxyTests
 
         var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListResourcesAsync(
             "internal-token-001",
-            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, 100),
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, Take: 100),
             CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
@@ -1996,7 +2010,7 @@ public sealed class BusinessGatewayProxyTests
 
         var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListResourcesAsync(
             "internal-token-001",
-            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, 100),
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, Take: 100),
             CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.InternalServerError, ex.StatusCode);
@@ -2376,9 +2390,10 @@ public sealed class BusinessGatewayProxyTests
         {
             return new
             {
-                data = new
-                {
-                    items = Array.Empty<object>(),
+            data = new
+            {
+                total = 0,
+                items = Array.Empty<object>(),
                 },
                 success = true,
                 message = string.Empty,
@@ -2477,11 +2492,14 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             [
                 new BusinessConsoleResourceItem("sku", "SKU-001", "Demo SKU", true, "v1"),
             ];
-        resources = resources
+        var filtered = resources
             .Where(resource => string.Equals(resource.ResourceType, request.ResourceType, StringComparison.Ordinal))
+            .ToArray();
+        resources = filtered
+            .Skip(request.Skip)
             .Take(request.Take)
             .ToArray();
-        return Task.FromResult(new BusinessConsoleResourceListResponse(resources, resources.Count));
+        return Task.FromResult(new BusinessConsoleResourceListResponse(resources, filtered.Length));
     }
 
     public Task<BusinessConsoleResourceItem> CreateSkuAsync(
@@ -2658,7 +2676,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
         CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsoleQualityListResponse([]));
+        Task.FromResult(new BusinessConsoleQualityListResponse([], 0));
 
     public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordAsync(
         string internalBearerToken,
@@ -2692,7 +2710,8 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
                     "Defect",
                     null,
                     null),
-            ]));
+            ],
+            1));
     }
 
     public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
@@ -2760,7 +2779,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleEngineeringBomListResponse([]));
+        return Task.FromResult(new BusinessConsoleEngineeringBomListResponse([], 0));
     }
 
     public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
@@ -2769,7 +2788,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleManufacturingBomListResponse([]));
+        return Task.FromResult(new BusinessConsoleManufacturingBomListResponse([], 0));
     }
 
     public Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(
@@ -2789,7 +2808,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleRoutingListResponse([]));
+        return Task.FromResult(new BusinessConsoleRoutingListResponse([], 0));
     }
 
     public Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
@@ -2836,7 +2855,8 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
                     10,
                     true,
                     "active"),
-            ]));
+            ],
+            1));
     }
 
     public Task<BusinessConsoleResolveProductionVersionResponse> ResolveProductionVersionAsync(
@@ -3686,7 +3706,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     {
         LastInternalToken = internalBearerToken;
         LastProductionPlanListRequest = request;
-        return Task.FromResult(new BusinessConsoleMesProductionPlanListResponse(ProductionPlans ?? []));
+        var plans = ProductionPlans ?? [];
+        return Task.FromResult(new BusinessConsoleMesProductionPlanListResponse(plans, plans.Count));
     }
 
     public Task<BusinessConsoleMesFoundationReadinessResponse> GetProductionPlanReadinessAsync(
@@ -3723,8 +3744,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         WorkOrderListCallCount++;
         LastInternalToken = internalBearerToken;
         LastWorkOrderListRequest = request;
-        return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(
-            WorkOrders ??
+        var workOrders = WorkOrders ??
             [
                 new BusinessConsoleMesWorkOrderItem(
                     "wo-001",
@@ -3735,7 +3755,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
                     DateTimeOffset.Parse("2026-05-24T00:00:00Z"),
                     "released",
                     []),
-            ]));
+            ];
+        return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(workOrders, workOrders.Count));
     }
 
     public Task<BusinessConsoleMesWorkOrderDetailResponse> GetWorkOrderDetailAsync(
@@ -3826,7 +3847,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMesOperationTaskListResponse([]));
+        return Task.FromResult(new BusinessConsoleMesOperationTaskListResponse([], 0));
     }
 
     public Task<BusinessConsoleMesOperationTaskActionResponse> StartOperationTaskAsync(

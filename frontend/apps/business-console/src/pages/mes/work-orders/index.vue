@@ -76,6 +76,7 @@ const {
   workOrders,
   workOrdersError,
   workOrdersPending,
+  workOrdersTotal,
 } = useMesWorkOrders()
 
 const route = useRoute()
@@ -286,10 +287,7 @@ const sortedWorkOrders = computed(() => {
   })
 })
 const pageSizeNumber = computed(() => Number(tableState.pageSize) || 10)
-const pagedWorkOrders = computed(() => {
-  const start = (tableState.page - 1) * pageSizeNumber.value
-  return sortedWorkOrders.value.slice(start, start + pageSizeNumber.value)
-})
+const pagedWorkOrders = computed(() => sortedWorkOrders.value)
 
 watch(
   () => [
@@ -297,11 +295,19 @@ watch(
     appliedFilter.status,
     tableState.pageSize,
     appliedScope.workCenterCode,
-    sourceWorkOrders.value.length,
   ],
   () => {
     tableState.page = 1
   },
+)
+
+watch(
+  () => [tableState.page, tableState.pageSize],
+  () => {
+    filters.skip = (tableState.page - 1) * pageSizeNumber.value
+    filters.take = pageSizeNumber.value
+  },
+  { immediate: true },
 )
 
 watch(
@@ -644,7 +650,7 @@ function isNonEmpty(value: string) {
       </div>
 
       <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="工单数" :value="visibleWorkOrders.length" detail="当前筛选结果" />
+        <BusinessMetricCell label="工单数" :value="workOrdersTotal" detail="后端分页总数" />
         <BusinessMetricCell label="未关闭工单" :value="openOrderCount" detail="仍需现场跟进" />
         <BusinessMetricCell label="工序任务" :value="operationCount" detail="工单下可见任务" />
       </div>
@@ -766,7 +772,7 @@ function isNonEmpty(value: string) {
           <BusinessTablePagination
             v-model:page="tableState.page"
             v-model:page-size="tableState.pageSize"
-            :total-items="sortedWorkOrders.length"
+            :total-items="workOrdersTotal"
           />
         </div>
       </div>

@@ -72,6 +72,7 @@ describe('business master data composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleSkus', {
       success: true,
       data: {
+        total: 120,
         resources: [
           {
             code: 'SKU-001',
@@ -81,7 +82,7 @@ describe('business master data composables', () => {
       },
     })
 
-    const { filters, skus } = useBusinessSkus()
+    const { filters, skus, skusTotal } = useBusinessSkus()
 
     expect(filters).toMatchObject({
       organizationId: 'org-001',
@@ -91,9 +92,11 @@ describe('business master data composables', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        skip: 0,
         take: 100,
       },
     })
+    expect(skusTotal.value).toBe(120)
     expect(skus.value).toEqual([
       {
         code: 'SKU-001',
@@ -148,6 +151,7 @@ describe('business master data composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleMasterDataResources', {
       success: true,
       data: {
+        total: 42,
         resources: [
           {
             resourceType: 'uom',
@@ -157,16 +161,18 @@ describe('business master data composables', () => {
       },
     })
 
-    const { resources } = useBusinessMasterDataResources('uom')
+    const { resources, resourcesTotal } = useBusinessMasterDataResources('uom')
 
     expect(listBusinessConsoleMasterDataResourcesQueryOptions).toHaveBeenCalledWith({
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         resourceType: 'uom',
+        skip: 0,
         take: 100,
       },
     })
+    expect(resourcesTotal.value).toBe(42)
     expect(resources.value).toEqual([
       {
         resourceType: 'uom',
@@ -187,6 +193,7 @@ describe('business master data composables', () => {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         resourceType: 'site',
+        skip: 0,
         take: 100,
       },
     })
@@ -195,6 +202,7 @@ describe('business master data composables', () => {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         resourceType: 'production-line',
+        skip: 0,
         take: 100,
       },
     })

@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 
@@ -253,7 +254,7 @@ public sealed class MesEndpointContractTests
             new GetMesWorkOrderDetailQuery("org-001", "env-dev", "WO-001"),
             CancellationToken.None);
         var operations = await new ListOperationTasksQueryHandler(dbContext).Handle(
-            new ListOperationTasksQuery("org-001", "env-dev", null, 100),
+            new ListOperationTasksQuery("org-001", "env-dev", null, Take: 100),
             CancellationToken.None);
         var wip = await new GetWipSummaryQueryHandler(dbContext).Handle(
             new GetWipSummaryQuery("org-001", "env-dev", null, 100),
@@ -313,7 +314,7 @@ public sealed class MesEndpointContractTests
         Assert.Equal("DEMAND-001", workOrder.SourcePlanReference.SourceDemandReference);
 
         var plans = await new ListProductionPlansQueryHandler(dbContext).Handle(
-            new ListProductionPlansQuery("org-001", "env-dev", null, 100),
+            new ListProductionPlansQuery("org-001", "env-dev", null, Take: 100),
             CancellationToken.None);
         var plan = Assert.Single(plans.Items);
         Assert.Equal("SUG-001", plan.ProductionPlanId);
@@ -375,12 +376,32 @@ public sealed class MesEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var plans = await new ListProductionPlansQueryHandler(dbContext).Handle(
-            new ListProductionPlansQuery("org-001", "env-dev", "released", 1),
+            new ListProductionPlansQuery("org-001", "env-dev", "released", Take: 1),
             CancellationToken.None);
 
         var plan = Assert.Single(plans.Items);
         Assert.Equal("SUG-RELEASED-001", plan.ProductionPlanId);
         Assert.Equal("released", plan.Status);
+    }
+
+    [Fact]
+    public async Task Work_order_list_query_returns_offset_page_and_total_count()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var dueUtc = DateTimeOffset.Parse("2026-06-01T08:00:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 10, dueUtc));
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-002", "SKU-002", "PV-002", 1m, 10, dueUtc.AddMinutes(1)));
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-003", "SKU-003", "PV-003", 1m, 10, dueUtc.AddMinutes(2)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var page = await new ListMesWorkOrdersQueryHandler(dbContext).Handle(
+            new ListMesWorkOrdersQuery("org-001", "env-dev", null, Skip: 1, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, page.Total);
+        Assert.Equal("WO-002", Assert.Single(page.Items).WorkOrderId);
     }
 
     [Fact]
