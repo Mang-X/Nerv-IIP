@@ -1,67 +1,50 @@
 <script setup lang="ts">
-import type { NavItem } from '@nerv-iip/app-shell'
-import { AppShell } from '@nerv-iip/app-shell'
+import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
+import { AppShellT } from '@nerv-iip/app-shell'
 import { useAuthStore } from '@/stores/auth'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@nerv-iip/ui'
 import { BellIcon, Building2Icon, LayersIcon, ShieldIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
-const { t, te } = useI18n()
-
-const navItems = computed<NavItem[]>(() => [
-  { title: t('nav.instances'), icon: LayersIcon, to: { name: '/' } },
-  { title: t('nav.notifications'), icon: BellIcon, to: { path: '/notifications' } },
-  { title: t('nav.business'), icon: Building2Icon, to: { path: '/business' } },
-  {
-    title: t('nav.iam'),
-    icon: ShieldIcon,
-    isActive: true,
-    items: [
-      { title: t('nav.users'), to: { path: '/iam/users' } },
-      { title: t('nav.roles'), to: { path: '/iam/roles' } },
-      { title: t('nav.sessions'), to: { path: '/iam/sessions' } },
-    ],
-  },
-])
+const { t } = useI18n()
 
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
 const router = useRouter()
 const route = useRoute()
 
-const breadcrumbs = computed(() => {
-  const path = route?.path ?? '/'
-  const titleKey = (route?.meta?.title as string) ?? 'breadcrumb.dashboard'
-  const title = te(titleKey) ? t(titleKey) : titleKey
+// 顶部一级能力区（T 型导航的横向部分）。
+const topDomains = computed<NavDomain[]>(() => [
+  { id: 'instances', title: t('nav.instances'), icon: LayersIcon, to: { name: '/' } },
+  { id: 'notifications', title: t('nav.notifications'), icon: BellIcon, to: { path: '/notifications' } },
+  { id: 'business', title: t('nav.business'), icon: Building2Icon, to: { path: '/business' } },
+  { id: 'iam', title: t('nav.iam'), icon: ShieldIcon, to: { path: '/iam/users' } },
+])
 
-  if (path === '/' || path === '/login') {
-    return [{ label: title }]
-  }
+function resolveDomainId(path: string): string {
+  if (isUnder(path, '/iam')) return 'iam'
+  if (isUnder(path, '/notifications')) return 'notifications'
+  if (isUnder(path, '/business')) return 'business'
+  return 'instances'
+}
+function isUnder(path: string, base: string) {
+  return path === base || path.startsWith(`${base}/`)
+}
 
-  const segments = path.split('/').filter(Boolean)
-  const items: { label: string }[] = []
+const currentDomainId = computed(() => resolveDomainId(route?.path ?? '/'))
 
-  for (let i = 0; i < segments.length - 1; i++) {
-    const s = segments[i]
-    items.push({ label: s.charAt(0).toUpperCase() + s.slice(1) })
-  }
-
-  const parentLabel = items.at(-1)?.label
-  const pageLabel = parentLabel && title.startsWith(`${parentLabel} `)
-    ? title.slice(parentLabel.length + 1)
-    : title
-
-  items.push({ label: pageLabel })
-  return items
+// 当前域的左侧菜单：仅 IAM 域有二级菜单（用户/角色/会话）。
+const sideNav = computed<SideNav>(() => {
+  if (currentDomainId.value !== 'iam') return []
+  return [{
+    items: [
+      { title: t('nav.users'), to: { path: '/iam/users' } },
+      { title: t('nav.roles'), to: { path: '/iam/roles' } },
+      { title: t('nav.sessions'), to: { path: '/iam/sessions' } },
+    ],
+  }]
 })
 
 const shellUser = computed(() => {
@@ -77,32 +60,23 @@ async function signOut() {
   await auth.logout()
   await router.push('/login')
 }
+
+function openSearch() {
+  // 命令/对象搜索入口占位（与 Business Console 一致，后续接入）。
+}
 </script>
 
 <template>
-  <AppShell
+  <AppShellT
     title="Nerv-IIP"
-    :nav-items="navItems"
-    :nav-label="t('nav.platform')"
-    :sign-out-label="t('nav.signOut')"
+    :top-domains="topDomains"
+    :current-domain-id="currentDomainId"
+    :side-nav="sideNav"
     :user="shellUser"
+    :sign-out-label="t('nav.signOut')"
     @sign-out="signOut"
+    @open-search="openSearch"
   >
-    <template #header>
-      <Breadcrumb>
-        <BreadcrumbList>
-          <template v-for="(crumb, i) in breadcrumbs" :key="i">
-            <BreadcrumbSeparator v-if="i > 0" class="hidden md:block" />
-            <BreadcrumbItem v-if="i < breadcrumbs.length - 1" class="hidden md:block">
-              <span class="text-muted-foreground">{{ crumb.label }}</span>
-            </BreadcrumbItem>
-            <BreadcrumbItem v-else>
-              <BreadcrumbPage>{{ crumb.label }}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </template>
-        </BreadcrumbList>
-      </Breadcrumb>
-    </template>
     <slot />
-  </AppShell>
+  </AppShellT>
 </template>
