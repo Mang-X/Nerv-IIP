@@ -261,9 +261,9 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 制造执行 | `/mes/traceability` | 已落地（FE-8 金标准） | 追溯查询：按 FE-4 原型重做（PageHeader + SectionCards + Toolbar[查询类型/工单/批次] + DataTable）。 |
 | 制造执行 | `/mes/capacity` | 已落地（FE-8 金标准） | 产能影响按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）。 |
 | 制造执行 | `/mes/schedules` | 已落地（FE-8 金标准，过渡定位） | 规则排程按 FE-4 原型重做（PageHeader + SectionCards + 结果 DataTable + 分页 + 运行 Dialog）；不是 APS 权威，也不包含甘特。 |
-| 设备异常 | `/equipment` | 已落地/route-ready | 设备运行看板通过 BusinessGateway equipment facade 消费 backend runtime facts；页面不显示 organization/environment/debug/source metadata。 |
-| 设备异常 | `/equipment/alarms` | 已落地/route-ready | 设备报警列表通过 BusinessGateway equipment alarms facade 消费 IndustrialTelemetry 报警事实；页面只展示业务可读状态。 |
-| 设备异常 | `/equipment/:deviceAssetId` | 已落地/非菜单 | 设备详情由运行看板进入，不作为常驻菜单项；展示 current-state 与 availability 窗口。 |
+| 设备异常 | `/equipment` | 已落地（FE-9 金标准） | 设备运行看板按 FE-4 原型重做（PageHeader + SectionCards + Toolbar[设备范围] + 设备 DataTable + 当前阻塞面板）；行/阻塞「记录停机」带 deviceAssetId 跳 `/mes/downtime`（MES 设备联动）；不显示 organization/environment/debug/source metadata。 |
+| 设备异常 | `/equipment/alarms` | 已落地（FE-9 金标准） | 设备报警按 FE-4 原型重做（PageHeader + SectionCards + 报警 DataTable + RowActions[设备详情/记录停机]）；只展示业务可读状态，互链设备详情与 MES 停机。 |
+| 设备异常 | `/equipment/:deviceAssetId` | 已落地（FE-9 金标准，非菜单） | 设备详情按 FE-4 原型重做（PageHeader + SectionCards + 状态/报警卡 + 可用性窗口 DataTable）；由看板/报警进入，「记录停机」联动 MES。报警规则维护/OEE 后端已随 #266/#325 就绪，对应维护页作为后续（FE-11 设备监控）增量，本期未建。 |
 | 系统管理 | `/mes/foundation` | 过渡/诊断 | 数据就绪检查只作为系统诊断，不是 MES 一线主菜单优先入口。 |
 
 ## Business Console 能力目录

@@ -1,119 +1,110 @@
 <script setup lang="ts">
-import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
-import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import type { DataTableColumn } from '@nerv-iip/ui'
 import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipment'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { Badge, Button, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
-import { RefreshCwIcon } from 'lucide-vue-next'
+import {
+  Badge,
+  Button,
+  DataTable,
+  DropdownMenuItem,
+  PageHeader,
+  RowActions,
+  SectionCard,
+  SectionCards,
+} from '@nerv-iip/ui'
+import { EyeIcon, RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
+import { RouterLink, useRouter } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '设备报警' } })
 
+const router = useRouter()
 const { alarms, alarmsError, alarmsPending, refreshAlarms } = useBusinessEquipmentAlarms()
 
 const errorMessage = computed(() => formatError(alarmsError.value))
-const criticalCount = computed(() =>
-  alarms.value.filter((alarm) => ['critical', 'blocked'].includes((alarm.severity ?? '').toLowerCase())).length,
-)
-const warningCount = computed(() =>
-  alarms.value.filter((alarm) => (alarm.severity ?? '').toLowerCase() === 'warning').length,
-)
+const criticalCount = computed(() => alarms.value.filter((a) => ['critical', 'blocked'].includes((a.severity ?? '').toLowerCase())).length)
+const warningCount = computed(() => alarms.value.filter((a) => (a.severity ?? '').toLowerCase() === 'warning').length)
+
+type Alarm = (typeof alarms)['value'][number]
+const columns: DataTableColumn<Alarm>[] = [
+  { key: 'alarmEventId', header: '报警', cellClass: 'font-medium', accessor: (r) => r.alarmEventId ?? '无编号' },
+  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '无设备' },
+  { key: 'alarmCode', header: '报警代码', accessor: (r) => r.alarmCode ?? '无代码' },
+  { key: 'severity', header: '级别', width: 'w-24' },
+  { key: 'raisedAtUtc', header: '发生时间', width: 'w-44' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
+]
 
 function severityLabel(value?: string | null) {
-  const labels: Record<string, string> = {
-    blocked: '阻塞',
-    critical: '严重',
-    info: '信息',
-    warning: '预警',
-  }
+  const labels: Record<string, string> = { blocked: '阻塞', critical: '严重', info: '信息', warning: '预警' }
   return value ? (labels[value.toLowerCase()] ?? value) : '未知'
 }
-
 function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()
   if (severity === 'critical' || severity === 'blocked') return 'destructive'
   if (severity === 'warning') return 'warning'
   return 'secondary'
 }
-
+function recordDowntime(deviceAssetId?: string | null) {
+  void router.push({ path: '/mes/downtime', query: { deviceAssetId: deviceAssetId ?? undefined } })
+}
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败。' : ''
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader
-        domain="设备异常"
-        title="设备报警"
-        summary="查看当前未解除的设备报警，优先处理严重报警后再释放生产排程。"
-        badge="报警"
-      >
-        <template #actions>
-          <Button size="sm" type="button" variant="outline" :disabled="alarmsPending" @click="refreshAlarms">
-            <RefreshCwIcon data-icon="inline-start" />
-            刷新
-          </Button>
-        </template>
-      </BusinessPageHeader>
+    <PageHeader title="设备报警" :breadcrumbs="[{ label: '设备监控（IoT）' }]" :count="`${alarms.length} 条未解除`">
+      <template #actions>
+        <Button size="sm" type="button" variant="outline" as-child>
+          <RouterLink to="/equipment">设备看板</RouterLink>
+        </Button>
+        <Button size="sm" type="button" variant="outline" :disabled="alarmsPending" @click="refreshAlarms">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
 
-      <BusinessFormStatus :error="errorMessage" />
+    <SectionCards :columns="3">
+      <SectionCard description="报警数量" :value="alarms.length" hint="当前未解除" />
+      <SectionCard description="严重报警" :value="criticalCount" hint="需立即处理" />
+      <SectionCard description="预警报警" :value="warningCount" hint="需要跟踪" />
+    </SectionCards>
 
-      <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="报警数量" :value="alarms.length" detail="当前未解除" />
-        <BusinessMetricCell label="严重报警" :value="criticalCount" detail="需立即处理" />
-        <BusinessMetricCell label="预警报警" :value="warningCount" detail="需要跟踪" />
-      </div>
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-      <div class="overflow-hidden rounded-lg border bg-background">
-        <div class="flex items-center justify-between border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">当前/近期报警</h2>
-          <span class="text-sm text-muted-foreground">按设备进入详情</span>
-        </div>
-        <div class="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>报警</TableHead>
-                <TableHead>设备</TableHead>
-                <TableHead>报警代码</TableHead>
-                <TableHead>级别</TableHead>
-                <TableHead>发生时间</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="alarm in alarms" :key="alarm.alarmEventId ?? `${alarm.deviceAssetId}-${alarm.alarmCode}`">
-                <TableCell class="font-medium">{{ alarm.alarmEventId ?? '无编号' }}</TableCell>
-                <TableCell>
-                  <RouterLink
-                    class="text-primary underline-offset-4 hover:underline"
-                    :to="{ path: `/equipment/${alarm.deviceAssetId}` }"
-                  >
-                    {{ alarm.deviceAssetId ?? '无设备' }}
-                  </RouterLink>
-                </TableCell>
-                <TableCell>{{ alarm.alarmCode ?? '无代码' }}</TableCell>
-                <TableCell>
-                  <Badge class="rounded-sm" :variant="severityVariant(alarm.severity)">
-                    {{ severityLabel(alarm.severity) }}
-                  </Badge>
-                </TableCell>
-                <TableCell>{{ formatDateTime(alarm.raisedAtUtc) }}</TableCell>
-              </TableRow>
-              <TableEmpty v-if="alarmsPending" :colspan="5">正在加载设备报警...</TableEmpty>
-              <TableEmpty v-if="!alarms.length && !alarmsPending" :colspan="5">当前没有未解除设备报警。</TableEmpty>
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    </section>
+    <DataTable
+      :columns="columns"
+      :rows="alarms"
+      :row-key="(r) => r.alarmEventId ?? `${r.deviceAssetId}-${r.alarmCode}`"
+      :loading="alarmsPending"
+      empty-message="当前没有未解除设备报警。"
+    >
+      <template #cell-deviceAssetId="{ row }">
+        <RouterLink :to="`/equipment/${row.deviceAssetId}`" class="text-brand underline-offset-4 hover:underline">{{ row.deviceAssetId ?? '无设备' }}</RouterLink>
+      </template>
+      <template #cell-severity="{ row }">
+        <Badge class="rounded-sm" :variant="severityVariant(row.severity)">{{ severityLabel(row.severity) }}</Badge>
+      </template>
+      <template #cell-raisedAtUtc="{ row }">{{ formatDateTime(row.raisedAtUtc) }}</template>
+      <template #cell-actions="{ row }">
+        <RowActions :label="`报警操作 ${row.alarmEventId ?? ''}`">
+          <DropdownMenuItem as-child>
+            <RouterLink :to="`/equipment/${row.deviceAssetId}`"><EyeIcon aria-hidden="true" />设备详情</RouterLink>
+          </DropdownMenuItem>
+          <DropdownMenuItem @click="recordDowntime(row.deviceAssetId)">
+            <WrenchIcon aria-hidden="true" />
+            记录停机
+          </DropdownMenuItem>
+        </RowActions>
+      </template>
+    </DataTable>
   </BusinessLayout>
 </template>
