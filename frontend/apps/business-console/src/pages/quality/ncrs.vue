@@ -234,8 +234,9 @@ watch(targetNcr, (ncr) => {
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <!-- 后端补 NCR 定位查询（#326）前，跨页目标仅能提示用户自行定位；文案保持业务可执行，不暴露工程状态。 -->
     <p v-else-if="targetNcrMissing" class="text-sm text-warning" role="status">
-      未在当前结果中找到 NCR {{ targetNcrId }}，可能在其它分页或已被关闭/筛选；可翻页查找。后端补 NCR 定位查询前无法直接跳转（见 #326）。
+      未在当前列表找到 NCR {{ targetNcrId }}。请清空状态筛选、翻页查找，或联系管理员确认该 NCR 是否已归档。
     </p>
 
     <DataTable
