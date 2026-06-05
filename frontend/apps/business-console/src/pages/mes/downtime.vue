@@ -5,7 +5,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
-  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -14,7 +13,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '设备与停机' } })
 
@@ -31,17 +30,6 @@ const filtered = computed(() => {
 
 const openCount = computed(() => downtimeEvents.value.filter((x) => x.status === 'Open').length)
 const errorMessage = computed(() => formatError(downtimeEventsError.value))
-
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return filtered.value.slice(start, start + pageSizeNumber.value)
-})
-watch([keyword, pageSize, () => downtimeEvents.value.length], () => {
-  page.value = 1
-})
 
 type DowntimeRow = (typeof downtimeEvents)['value'][number]
 const columns: DataTableColumn<DowntimeRow>[] = [
@@ -91,7 +79,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="pagedRows"
+      :rows="filtered"
       row-key="downtimeEventId"
       :loading="downtimeEventsPending"
       empty-message="暂无停机事件。从工序执行记录异常会在这里汇总。"
@@ -100,12 +88,6 @@ function formatError(error: unknown) {
       <template #cell-startedAtUtc="{ row }">{{ formatDateTime(row.startedAtUtc) }}</template>
       <template #cell-recoveredAtUtc="{ row }">{{ formatDateTime(row.recoveredAtUtc) }}</template>
     </DataTable>
-
-    <DataTablePagination
-      v-model:page="page"
-      v-model:page-size="pageSize"
-      :total-items="filtered.length"
-    />
 
     <p v-if="!downtimeEventsPending && downtimeEvents.length >= filters.take" class="text-xs text-muted-foreground">
       已加载前 {{ filters.take }} 条停机事件（后端返回上限），使用搜索或状态筛选定位更多事件。

@@ -5,7 +5,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
-  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -14,7 +13,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '在制跟踪' } })
 
@@ -32,17 +31,6 @@ const filtered = computed(() => {
 const goodTotal = computed(() => wipRows.value.reduce((s, r) => s + (r.goodQuantity ?? 0), 0))
 const scrapTotal = computed(() => wipRows.value.reduce((s, r) => s + (r.scrapQuantity ?? 0), 0))
 const errorMessage = computed(() => formatError(wipError.value))
-
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return filtered.value.slice(start, start + pageSizeNumber.value)
-})
-watch([keyword, pageSize, () => wipRows.value.length], () => {
-  page.value = 1
-})
 
 type WipRow = (typeof wipRows)['value'][number]
 const columns: DataTableColumn<WipRow>[] = [
@@ -91,7 +79,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="pagedRows"
+      :rows="filtered"
       :row-key="(r) => `${r.workOrderId}-${r.operationTaskId}`"
       :loading="wipPending"
       empty-message="暂无在制数据。工单释放并排程后，在制行会出现在这里。"
@@ -101,12 +89,6 @@ function formatError(error: unknown) {
       <template #cell-goodQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.goodQuantity) }}</span></template>
       <template #cell-scrapQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.scrapQuantity) }}</span></template>
     </DataTable>
-
-    <DataTablePagination
-      v-model:page="page"
-      v-model:page-size="pageSize"
-      :total-items="filtered.length"
-    />
 
     <p v-if="!wipPending && wipRows.length >= filters.take" class="text-xs text-muted-foreground">
       已加载前 {{ filters.take }} 行在制（后端返回上限），使用搜索或状态筛选定位更多在制行。

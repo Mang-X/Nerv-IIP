@@ -5,7 +5,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
-  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -14,7 +13,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '班次交接' } })
 
@@ -31,17 +30,6 @@ const filtered = computed(() => {
 
 const openIssueTotal = computed(() => handovers.value.reduce((s, r) => s + (r.openIssueCount ?? 0), 0))
 const errorMessage = computed(() => formatError(handoversError.value))
-
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return filtered.value.slice(start, start + pageSizeNumber.value)
-})
-watch([keyword, pageSize, () => handovers.value.length], () => {
-  page.value = 1
-})
 
 type HandoverRow = (typeof handovers)['value'][number]
 const columns: DataTableColumn<HandoverRow>[] = [
@@ -90,7 +78,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="pagedRows"
+      :rows="filtered"
       row-key="handoverId"
       :loading="handoversPending"
       empty-message="暂无班次交接。班次结束时创建交接单，记录未完成事项。"
@@ -99,12 +87,6 @@ function formatError(error: unknown) {
       <template #cell-openIssueCount="{ row }"><span class="tabular-nums">{{ row.openIssueCount ?? 0 }}</span></template>
       <template #cell-createdAtUtc="{ row }">{{ formatDateTime(row.createdAtUtc) }}</template>
     </DataTable>
-
-    <DataTablePagination
-      v-model:page="page"
-      v-model:page-size="pageSize"
-      :total-items="filtered.length"
-    />
 
     <p v-if="!handoversPending && handovers.length >= filters.take" class="text-xs text-muted-foreground">
       已加载前 {{ filters.take }} 条交接（后端返回上限），使用搜索或状态筛选定位更多交接单。

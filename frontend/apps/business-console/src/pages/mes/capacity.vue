@@ -5,7 +5,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
-  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -14,7 +13,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '产能影响' } })
 
@@ -37,17 +36,6 @@ const filtered = computed(() => {
 
 const activeCount = computed(() => capacityImpacts.value.filter((item) => item.status === 'Active').length)
 const errorMessage = computed(() => formatError(capacityImpactsError.value))
-
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return filtered.value.slice(start, start + pageSizeNumber.value)
-})
-watch([keyword, pageSize, () => capacityImpacts.value.length], () => {
-  page.value = 1
-})
 
 type ImpactRow = (typeof capacityImpacts)['value'][number]
 const columns: DataTableColumn<ImpactRow>[] = [
@@ -97,7 +85,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="pagedRows"
+      :rows="filtered"
       row-key="impactId"
       :loading="capacityImpactsPending"
       empty-message="暂无产能影响。设备停机或维护冲突发生时会在这里汇总。"
@@ -106,12 +94,6 @@ function formatError(error: unknown) {
       <template #cell-effectiveFromUtc="{ row }">{{ formatDateTime(row.effectiveFromUtc) }}</template>
       <template #cell-effectiveToUtc="{ row }">{{ formatDateTime(row.effectiveToUtc) }}</template>
     </DataTable>
-
-    <DataTablePagination
-      v-model:page="page"
-      v-model:page-size="pageSize"
-      :total-items="filtered.length"
-    />
 
     <p v-if="!capacityImpactsPending && capacityImpacts.length >= filters.take" class="text-xs text-muted-foreground">
       已加载前 {{ filters.take }} 条产能影响（后端返回上限），使用搜索或状态筛选定位更多记录。

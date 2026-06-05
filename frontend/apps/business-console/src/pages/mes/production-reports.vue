@@ -5,7 +5,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
-  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -13,7 +12,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '报工记录' } })
 
@@ -37,17 +36,6 @@ const filtered = computed(() => {
 const goodTotal = computed(() => productionReports.value.reduce((s, r) => s + (r.goodQuantity ?? 0), 0))
 const scrapTotal = computed(() => productionReports.value.reduce((s, r) => s + (r.scrapQuantity ?? 0), 0))
 const errorMessage = computed(() => formatError(productionReportsError.value))
-
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return filtered.value.slice(start, start + pageSizeNumber.value)
-})
-watch([keyword, pageSize, () => productionReports.value.length], () => {
-  page.value = 1
-})
 
 type ReportRow = (typeof productionReports)['value'][number]
 const columns: DataTableColumn<ReportRow>[] = [
@@ -100,7 +88,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="pagedRows"
+      :rows="filtered"
       row-key="productionReportId"
       :loading="productionReportsPending"
       empty-message="暂无报工记录。新增报工请从工单与派工或工序执行进入。"
@@ -110,12 +98,6 @@ function formatError(error: unknown) {
       <template #cell-reworkQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.reworkQuantity) }}</span></template>
       <template #cell-reportedAtUtc="{ row }">{{ formatDateTime(row.reportedAtUtc) }}</template>
     </DataTable>
-
-    <DataTablePagination
-      v-model:page="page"
-      v-model:page-size="pageSize"
-      :total-items="filtered.length"
-    />
 
     <p v-if="!productionReportsPending && productionReports.length >= filters.take" class="text-xs text-muted-foreground">
       已加载前 {{ filters.take }} 条报工（后端返回上限），使用搜索或状态筛选定位更多报工记录。

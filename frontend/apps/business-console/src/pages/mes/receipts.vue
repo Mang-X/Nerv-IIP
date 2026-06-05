@@ -6,7 +6,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
-  DataTablePagination,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -98,17 +97,6 @@ const canCreate = computed(
     isNonEmpty(form.uomCode) &&
     isNonEmpty(form.requestedAtUtc),
 )
-
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return filtered.value.slice(start, start + pageSizeNumber.value)
-})
-watch([keyword, pageSize, () => receiptRequests.value.length], () => {
-  page.value = 1
-})
 
 watch(
   () => route.query,
@@ -233,7 +221,7 @@ function isNonEmpty(value: string) {
 
     <DataTable
       :columns="columns"
-      :rows="pagedRows"
+      :rows="filtered"
       row-key="receiptRequestId"
       :loading="receiptRequestsPending"
       empty-message="暂无完工入库请求。通常从报工完成、质量放行或工单详情发起。"
@@ -250,8 +238,6 @@ function isNonEmpty(value: string) {
         </RowActions>
       </template>
     </DataTable>
-
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="filtered.length" />
 
     <p v-if="!receiptRequestsPending && receiptRequests.length >= filters.take" class="text-xs text-muted-foreground">
       已加载前 {{ filters.take }} 条入库请求（后端返回上限），使用搜索或状态筛选定位更多请求。

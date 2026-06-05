@@ -5,7 +5,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
-  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -14,7 +13,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '派工看板' } })
 
@@ -32,17 +31,6 @@ const filtered = computed(() => {
 const blockedCount = computed(() => dispatchTasks.value.filter((x) => x.blockingReasons?.length).length)
 const dispatchableCount = computed(() => dispatchTasks.value.filter((x) => !x.blockingReasons?.length).length)
 const errorMessage = computed(() => formatError(dispatchTasksError.value))
-
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return filtered.value.slice(start, start + pageSizeNumber.value)
-})
-watch([keyword, pageSize, () => dispatchTasks.value.length], () => {
-  page.value = 1
-})
 
 type DispatchRow = (typeof dispatchTasks)['value'][number]
 const columns: DataTableColumn<DispatchRow>[] = [
@@ -96,7 +84,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="pagedRows"
+      :rows="filtered"
       row-key="operationTaskId"
       :loading="dispatchTasksPending"
       empty-message="暂无待派工序。工单释放并排程后，待派工序会出现在这里。"
@@ -113,8 +101,6 @@ function formatError(error: unknown) {
         <span v-else class="text-muted-foreground">可派工</span>
       </template>
     </DataTable>
-
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="filtered.length" />
 
     <p v-if="!dispatchTasksPending && dispatchTasks.length >= filters.take" class="text-xs text-muted-foreground">
       已加载前 {{ filters.take }} 个待派工序（后端返回上限），使用搜索或状态筛选定位更多工序。

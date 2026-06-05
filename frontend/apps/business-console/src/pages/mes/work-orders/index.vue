@@ -69,6 +69,7 @@ const {
   workOrders,
   workOrdersError,
   workOrdersPending,
+  workOrdersTotal,
 } = useMesWorkOrders()
 
 const route = useRoute()
@@ -226,17 +227,19 @@ const sortedWorkOrders = computed(() => {
   })
 })
 
-// --- Pagination ---
+// --- Pagination (server-driven: filters.skip/take, total from backend) ---
 const page = ref(1)
 const pageSize = ref('10')
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedWorkOrders = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return sortedWorkOrders.value.slice(start, start + pageSizeNumber.value)
-})
-watch([keyword, statusFilter, workCenterFilter, pageSize, () => workOrders.value.length], () => {
+// 后端已分页，当前页内仅做关键词/工作中心客户端筛选与排序，不再切片。
+const pagedWorkOrders = computed(() => sortedWorkOrders.value)
+watch([keyword, statusFilter, workCenterFilter, pageSize], () => {
   page.value = 1
 })
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 watch(
   () => rushForm.skuId,
@@ -416,7 +419,7 @@ function isNonEmpty(value: string) {
     <PageHeader
       title="工单与派工"
       :breadcrumbs="[{ label: '制造执行' }]"
-      :count="`${visibleWorkOrders.length} 个工单`"
+      :count="`${workOrdersTotal} 个工单`"
     >
       <template #actions>
         <Button size="sm" type="button" variant="outline" @click="router.push('/mes/plans')">
@@ -460,7 +463,7 @@ function isNonEmpty(value: string) {
     </div>
 
     <SectionCards :columns="3">
-      <SectionCard description="工单数" :value="visibleWorkOrders.length" hint="当前筛选结果" />
+      <SectionCard description="工单数" :value="workOrdersTotal" hint="后端分页总数" />
       <SectionCard description="未关闭工单" :value="openOrderCount" hint="仍需现场跟进" />
       <SectionCard description="工序任务" :value="operationCount" hint="工单下可见任务" />
     </SectionCards>
@@ -545,11 +548,7 @@ function isNonEmpty(value: string) {
       </template>
     </DataTable>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sortedWorkOrders.length" />
-
-    <p v-if="!workOrdersPending && workOrders.length >= filters.take" class="text-xs text-muted-foreground">
-      已加载前 {{ filters.take }} 个工单（后端返回上限），使用搜索或状态、工作中心筛选定位更多工单。
-    </p>
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="workOrdersTotal" />
 
     <Dialog v-model:open="rushSheetOpen">
       <DialogContent class="sm:max-w-2xl">

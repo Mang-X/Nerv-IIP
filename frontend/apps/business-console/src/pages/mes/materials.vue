@@ -5,7 +5,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
-  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -14,7 +13,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '齐套与物料' } })
 
@@ -38,17 +37,6 @@ const filtered = computed(() => {
 const openCount = computed(() => materialIssueRequests.value.filter((x) => x.status !== 'Closed').length)
 const closedCount = computed(() => materialIssueRequests.value.filter((x) => x.status === 'Closed').length)
 const errorMessage = computed(() => formatError(materialIssueRequestsError.value))
-
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return filtered.value.slice(start, start + pageSizeNumber.value)
-})
-watch([keyword, pageSize, () => materialIssueRequests.value.length], () => {
-  page.value = 1
-})
 
 type RequestRow = (typeof materialIssueRequests)['value'][number]
 const columns: DataTableColumn<RequestRow>[] = [
@@ -96,7 +84,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="pagedRows"
+      :rows="filtered"
       row-key="requestId"
       :loading="materialIssueRequestsPending"
       empty-message="暂无领料申请。齐套检查通过后从工单详情发起领料。"
@@ -104,12 +92,6 @@ function formatError(error: unknown) {
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-requestedAtUtc="{ row }">{{ formatDateTime(row.requestedAtUtc) }}</template>
     </DataTable>
-
-    <DataTablePagination
-      v-model:page="page"
-      v-model:page-size="pageSize"
-      :total-items="filtered.length"
-    />
 
     <p v-if="!materialIssueRequestsPending && materialIssueRequests.length >= filters.take" class="text-xs text-muted-foreground">
       已加载前 {{ filters.take }} 条领料申请（后端返回上限），使用搜索或状态筛选定位更多申请。
