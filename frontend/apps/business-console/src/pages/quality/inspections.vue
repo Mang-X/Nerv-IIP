@@ -86,6 +86,15 @@ watch(
     if (source) recordForm.sourceDocumentId = source
     if (batch) recordForm.batchNo = batch
     if (serial) recordForm.serialNo = serial
+    // 来源类型/来源服务：优先用 query 显式值；否则按入口推断——
+    // 物料批且非工序入口视为收货/WMS，避免从收货进入仍归到 MES 工序来源。
+    const sourceType = firstQuery(query.sourceType)
+    const sourceService = firstQuery(query.sourceService)
+    const receivingEntry = !!firstQuery(query.materialLotId) && !firstQuery(query.operationTaskId)
+    if (sourceType) recordForm.sourceType = sourceType
+    else if (receivingEntry) recordForm.sourceType = 'receiving'
+    if (sourceService) recordForm.sourceService = sourceService
+    else if (receivingEntry) recordForm.sourceService = 'wms'
     if (source) recordSheetOpen.value = true
   },
   { immediate: true },

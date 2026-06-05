@@ -99,7 +99,13 @@ function formatError(error: unknown) {
       </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-ncrId="{ row }">
-        <RouterLink v-if="row.ncrId" to="/quality/ncrs" class="text-brand underline-offset-4 hover:underline">{{ row.ncrId }}</RouterLink>
+        <RouterLink
+          v-if="row.ncrId"
+          :to="{ path: '/quality/ncrs', query: { ncrId: row.ncrId, workOrderId: isWorkOrder(row.sourceDocumentId) ? row.sourceDocumentId : undefined } }"
+          class="text-brand underline-offset-4 hover:underline"
+        >
+          {{ row.ncrId }}
+        </RouterLink>
         <span v-else class="text-muted-foreground">无</span>
       </template>
     </DataTable>

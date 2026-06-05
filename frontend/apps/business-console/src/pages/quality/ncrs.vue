@@ -92,6 +92,8 @@ const closeForm = reactive({
 
 // 上下文穿透：从工单带入时，关闭动作的返工工单默认填入来源工单。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+// 从 MES 质量项点具体 NCR 带入时，定位并自动打开对应 NCR 处置抽屉。
+const targetNcrId = computed(() => firstQuery(route.query.ncrId))
 
 const listErrorMessage = computed(() => formatError(ncrsError.value))
 const dispositionErrorMessage = computed(() => formatError(submitDispositionError.value))
@@ -181,6 +183,17 @@ function isPresent(value: string | undefined | null): value is string {
 watch(detailOpen, (open) => {
   if (!open) selectedNcr.value = undefined
 })
+
+// 目标 NCR 一旦出现在当前页就自动打开其处置抽屉（受服务端分页限制，仅当其落在已加载页时可定位）。
+watch(
+  [ncrs, targetNcrId],
+  () => {
+    if (!targetNcrId.value || detailOpen.value) return
+    const match = ncrs.value.find((n) => n.id === targetNcrId.value || n.code === targetNcrId.value)
+    if (match) openNcr(match)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
