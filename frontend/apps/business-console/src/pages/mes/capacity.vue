@@ -7,6 +7,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Badge,
   Button,
+  DataTablePagination,
   Field,
   FieldGroup,
   FieldLabel,
@@ -20,7 +21,7 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 definePage({
   meta: {
@@ -33,12 +34,25 @@ const {
   capacityImpacts,
   capacityImpactsError,
   capacityImpactsPending,
+  capacityImpactsTotal,
   filters,
   refreshCapacityImpacts,
 } = useMesCapacityImpacts()
 
 const errorMessage = computed(() => formatError(capacityImpactsError.value))
 const activeCount = computed(() => capacityImpacts.value.filter((item) => item.status === 'Active').length)
+const page = ref(1)
+const pageSize = ref('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+
+watch(() => filters.status, () => {
+  page.value = 1
+})
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
@@ -73,16 +87,12 @@ function formatError(error: unknown) {
             <FieldLabel for="capacity-status">状态</FieldLabel>
             <Input id="capacity-status" v-model="filters.status" placeholder="可选" />
           </Field>
-          <Field>
-            <FieldLabel for="capacity-take">数量</FieldLabel>
-            <Input id="capacity-take" v-model.number="filters.take" inputmode="numeric" type="number" />
-          </Field>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </div>
 
       <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="影响记录" :value="capacityImpacts.length" detail="当前筛选结果" />
+        <BusinessMetricCell label="影响记录" :value="capacityImpactsTotal" detail="后端筛选总数" />
         <BusinessMetricCell label="生效中" :value="activeCount" detail="Active 状态" />
         <BusinessMetricCell label="已结束" :value="capacityImpacts.length - activeCount" detail="非 Active 状态" />
       </div>
@@ -121,6 +131,7 @@ function formatError(error: unknown) {
           </Table>
         </div>
       </div>
+      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="capacityImpactsTotal" />
     </section>
   </BusinessLayout>
 </template>

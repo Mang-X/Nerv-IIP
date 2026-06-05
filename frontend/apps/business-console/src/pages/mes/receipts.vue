@@ -12,6 +12,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import {
   Button,
+  DataTablePagination,
   DropdownMenuItem,
   Field,
   FieldGroup,
@@ -50,6 +51,7 @@ const {
   receiptRequests,
   receiptRequestsError,
   receiptRequestsPending,
+  receiptRequestsTotal,
   refreshReceiptRequests,
 } = useMesFinishedGoodsReceipts()
 
@@ -102,6 +104,18 @@ const statusFilter = computed({
     filters.status = value === 'all' ? undefined : value
   },
 })
+const page = shallowRef(1)
+const pageSize = shallowRef('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+
+watch(() => filters.status, () => {
+  page.value = 1
+})
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 watch(
   () => route.query,
@@ -246,16 +260,12 @@ function isNonEmpty(value: string) {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field>
-                <FieldLabel for="receipt-list-take">数量</FieldLabel>
-                <Input id="receipt-list-take" v-model.number="filters.take" inputmode="numeric" type="number" />
-              </Field>
             </FieldGroup>
             <BusinessFormStatus :error="listErrorMessage" />
           </BusinessContextBar>
 
           <div class="grid gap-3 md:grid-cols-3">
-            <BusinessMetricCell label="入库请求" :value="receiptRequests.length" detail="当前筛选结果" />
+            <BusinessMetricCell label="入库请求" :value="receiptRequestsTotal" detail="后端筛选总数" />
             <BusinessMetricCell label="待处理" :value="pendingCount" detail="未完成请求" />
             <BusinessMetricCell label="已完成" :value="receiptRequests.length - pendingCount" detail="Completed 状态" />
           </div>
@@ -305,6 +315,7 @@ function isNonEmpty(value: string) {
               </Table>
             </div>
           </div>
+          <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="receiptRequestsTotal" />
         </div>
       </div>
 

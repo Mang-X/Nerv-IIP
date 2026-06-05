@@ -257,7 +257,7 @@ public sealed class MesEndpointContractTests
             new ListOperationTasksQuery("org-001", "env-dev", null, Take: 100),
             CancellationToken.None);
         var wip = await new GetWipSummaryQueryHandler(dbContext).Handle(
-            new GetWipSummaryQuery("org-001", "env-dev", null, 100),
+            new GetWipSummaryQuery("org-001", "env-dev", null, Take: 100),
             CancellationToken.None);
         var material = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-001"),
@@ -405,6 +405,41 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Secondary_mes_list_queries_return_offset_page_and_total_count()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+        dbContext.MaterialIssueRequests.AddRange(
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-001", "WO-MAT", "OP-MAT-10", "MAT-OIL", 1m, now.AddMinutes(1)),
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-002", "WO-MAT", "OP-MAT-20", "MAT-OIL", 1m, now.AddMinutes(2)),
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-003", "WO-MAT", "OP-MAT-30", "MAT-OIL", 1m, now.AddMinutes(3)));
+        dbContext.WorkCenterUnavailabilities.AddRange(
+            Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-001", "WC-MIX", now.AddMinutes(1), null, "breakdown", "ASSET-001"),
+            Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-002", "WC-MIX", now.AddMinutes(2), null, "breakdown", "ASSET-001"),
+            Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-003", "WC-MIX", now.AddMinutes(3), null, "breakdown", "ASSET-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var materialIssues = await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(
+            new ListMaterialIssueRequestsQuery("org-001", "env-dev", "WO-MAT", Skip: 1, Take: 1),
+            CancellationToken.None);
+        var downtimeEvents = await new ListDowntimeEventsQueryHandler(dbContext).Handle(
+            new ListDowntimeEventsQuery("org-001", "env-dev", "WC-MIX", "ASSET-001", Skip: 1, Take: 1),
+            CancellationToken.None);
+        var capacityImpacts = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
+            new ListCapacityImpactsQuery("org-001", "env-dev", "ASSET-001", Skip: 1, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, materialIssues.Total);
+        Assert.Equal("MIR-002", Assert.Single(materialIssues.Items).RequestId);
+        Assert.Equal(3, downtimeEvents.Total);
+        Assert.Equal("DOWNTIME-002", Assert.Single(downtimeEvents.Items).DowntimeEventId);
+        Assert.Equal(3, capacityImpacts.Total);
+        Assert.Equal("DOWNTIME-002", Assert.Single(capacityImpacts.Items).ImpactId);
+    }
+
+    [Fact]
     public async Task Convert_plan_endpoint_rejects_missing_due_utc_instead_of_defaulting_to_now()
     {
         await using var factory = new WebApplicationFactory<Program>()
@@ -513,6 +548,36 @@ public sealed class MesEndpointContractTests
         Assert.Equal("ASSET-001", impact.DeviceAssetId);
         Assert.Equal("WC-MIX-01", impact.WorkCenterId);
         Assert.Null(impact.EffectiveToUtc);
+    }
+
+    [Fact]
+    public async Task Secondary_mes_production_queries_return_offset_page_and_total_count()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+        dbContext.ProductionReports.AddRange(
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-001", "WO-001", "OP-10", 1m, 0m, false, now.AddMinutes(1)),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-002", "WO-001", "OP-20", 1m, 0m, false, now.AddMinutes(2)),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-003", "WO-001", "OP-30", 1m, 0m, false, now.AddMinutes(3)));
+        dbContext.FinishedGoodsReceiptRequests.AddRange(
+            Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-001", "WO-001", "SKU-001", 1m, "PCS", now.AddMinutes(1)),
+            Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-002", "WO-001", "SKU-001", 1m, "PCS", now.AddMinutes(2)),
+            Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-003", "WO-001", "SKU-001", 1m, "PCS", now.AddMinutes(3)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var reports = await new ListProductionReportsQueryHandler(dbContext).Handle(
+            new ListProductionReportsQuery("org-001", "env-dev", "WO-001", Skip: 1, Take: 1),
+            CancellationToken.None);
+        var receipts = await new ListFinishedGoodsReceiptRequestsQueryHandler(dbContext).Handle(
+            new ListFinishedGoodsReceiptRequestsQuery("org-001", "env-dev", "WO-001", Skip: 1, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, reports.Total);
+        Assert.Equal("PRPT-002", Assert.Single(reports.Items).ReportNo);
+        Assert.Equal(3, receipts.Total);
+        Assert.Equal("FGR-002", Assert.Single(receipts.Items).RequestNo);
     }
 
     [Theory]

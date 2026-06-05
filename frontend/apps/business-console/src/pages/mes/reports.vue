@@ -3,14 +3,26 @@ import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useMesProductionReports } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { Button, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
+import { Button, DataTablePagination, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '报工与完工' } })
 
-const { filters, productionReports, productionReportsError, productionReportsPending, refreshProductionReports } = useMesProductionReports()
+const { filters, productionReports, productionReportsError, productionReportsPending, productionReportsTotal, refreshProductionReports } = useMesProductionReports()
 const errorMessage = computed(() => productionReportsError.value instanceof Error ? productionReportsError.value.message : productionReportsError.value ? '请求失败。' : '')
+const page = ref(1)
+const pageSize = ref('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+
+watch(() => filters.status, () => {
+  page.value = 1
+})
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 </script>
 
 <template>
@@ -22,7 +34,6 @@ const errorMessage = computed(() => productionReportsError.value instanceof Erro
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
           <Field><FieldLabel for="reports-status">状态</FieldLabel><Input id="reports-status" v-model="filters.status" placeholder="可选" /></Field>
-          <Field><FieldLabel for="reports-take">数量上限</FieldLabel><Input id="reports-take" v-model.number="filters.take" type="number" /></Field>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </div>
@@ -44,6 +55,7 @@ const errorMessage = computed(() => productionReportsError.value instanceof Erro
           </TableBody>
         </Table>
       </div>
+      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="productionReportsTotal" />
     </section>
   </BusinessLayout>
 </template>

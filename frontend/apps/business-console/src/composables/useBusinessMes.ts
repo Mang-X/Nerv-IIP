@@ -644,6 +644,7 @@ export function useMesMaterialIssueRequests() {
     ),
     materialIssueRequestsError: requestsQuery.error,
     materialIssueRequestsPending: requestsQuery.isLoading,
+    materialIssueRequestsTotal: computed(() => envelopeTotal(requestsQuery.data.value)),
     refreshMaterialIssueRequests: requestsQuery.refetch,
   }
 }
@@ -676,6 +677,7 @@ export function useMesDispatchTasks() {
     ),
     dispatchTasksError: dispatchQuery.error,
     dispatchTasksPending: dispatchQuery.isLoading,
+    dispatchTasksTotal: computed(() => envelopeTotal(dispatchQuery.data.value)),
     filters,
     refreshDispatchTasks: dispatchQuery.refetch,
   }
@@ -700,6 +702,7 @@ export function useMesWipSummary() {
         wipQuery.data.value,
       ),
     ),
+    wipTotal: computed(() => envelopeTotal(wipQuery.data.value)),
   }
 }
 
@@ -722,6 +725,7 @@ export function useMesProductionReports() {
     ),
     productionReportsError: reportsQuery.error,
     productionReportsPending: reportsQuery.isLoading,
+    productionReportsTotal: computed(() => envelopeTotal(reportsQuery.data.value)),
     refreshProductionReports: reportsQuery.refetch,
   }
 }
@@ -759,6 +763,7 @@ export function useMesFinishedGoodsReceipts() {
     ),
     receiptRequestsError: receiptsQuery.error,
     receiptRequestsPending: receiptsQuery.isLoading,
+    receiptRequestsTotal: computed(() => envelopeTotal(receiptsQuery.data.value)),
     refreshReceiptRequests: receiptsQuery.refetch,
   }
 }
@@ -785,11 +790,14 @@ export function useMesQualityContext() {
     ),
     qualityItemsError: qualityQuery.error,
     qualityItemsPending: qualityQuery.isLoading,
+    qualityItemsTotal: computed(() => envelopeTotal(qualityQuery.data.value)),
     recordDefect: (body: BusinessConsoleMesRecordDefectRequest) => defectMutation.mutateAsync({ body }),
     recordDefectPending: defectMutation.isLoading,
     refreshQualityItems: qualityQuery.refetch,
   }
 }
+
+export const useMesRelatedQualityItems = useMesQualityContext
 
 export function useMesDowntimeEvents() {
   const filters = defaultFilters()
@@ -816,6 +824,7 @@ export function useMesDowntimeEvents() {
     ),
     downtimeEventsError: downtimeQuery.error,
     downtimeEventsPending: downtimeQuery.isLoading,
+    downtimeEventsTotal: computed(() => envelopeTotal(downtimeQuery.data.value)),
     filters,
     recordDowntimeEvent: (body: BusinessConsoleMesRecordDowntimeEventRequest) => recordMutation.mutateAsync({ body }),
     recordDowntimeEventPending: recordMutation.isLoading,
@@ -863,6 +872,7 @@ export function useMesShiftHandovers() {
     ),
     handoversError: handoversQuery.error,
     handoversPending: handoversQuery.isLoading,
+    handoversTotal: computed(() => envelopeTotal(handoversQuery.data.value)),
     refreshHandovers: handoversQuery.refetch,
   }
 }
@@ -936,6 +946,7 @@ export function useMesCapacityImpacts() {
     ),
     capacityImpactsError: capacityQuery.error,
     capacityImpactsPending: capacityQuery.isLoading,
+    capacityImpactsTotal: computed(() => envelopeTotal(capacityQuery.data.value)),
     filters,
     refreshCapacityImpacts: capacityQuery.refetch,
   }

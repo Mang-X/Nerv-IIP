@@ -1524,7 +1524,9 @@ public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     IReadOnlyCollection<string>? MaterialIds,
     string IdempotencyKey);
 
-public sealed record BusinessConsoleMesMaterialIssueRequestListResponse(IReadOnlyCollection<BusinessConsoleMesMaterialIssueRequestRow> Items);
+public sealed record BusinessConsoleMesMaterialIssueRequestListResponse(
+    IReadOnlyCollection<BusinessConsoleMesMaterialIssueRequestRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string RequestId,
@@ -1547,7 +1549,9 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     IReadOnlyCollection<string>? EvidenceFileIds,
     string IdempotencyKey);
 
-public sealed record BusinessConsoleMesDispatchTaskListResponse(IReadOnlyCollection<BusinessConsoleMesDispatchTaskRow> Items);
+public sealed record BusinessConsoleMesDispatchTaskListResponse(
+    IReadOnlyCollection<BusinessConsoleMesDispatchTaskRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesDispatchTaskRow(
     string OperationTaskId,
@@ -1598,7 +1602,9 @@ public sealed record BusinessConsoleMesOperationTaskActionResponse(
     string Status,
     DateTimeOffset ChangedAtUtc);
 
-public sealed record BusinessConsoleMesWipSummaryResponse(IReadOnlyCollection<BusinessConsoleMesWipSummaryRow> Items);
+public sealed record BusinessConsoleMesWipSummaryResponse(
+    IReadOnlyCollection<BusinessConsoleMesWipSummaryRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesWipSummaryRow(
     string WorkOrderId,
@@ -1610,7 +1616,9 @@ public sealed record BusinessConsoleMesWipSummaryRow(
     decimal ScrapQuantity,
     IReadOnlyCollection<string> BlockingReasons);
 
-public sealed record BusinessConsoleMesProductionReportListResponse(IReadOnlyCollection<BusinessConsoleMesProductionReportRow> Items);
+public sealed record BusinessConsoleMesProductionReportListResponse(
+    IReadOnlyCollection<BusinessConsoleMesProductionReportRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesProductionReportRow(
     string ProductionReportId,
@@ -1633,7 +1641,9 @@ public sealed record BusinessConsoleMesRecordDefectRequest(
     string? BatchOrSerial,
     string IdempotencyKey);
 
-public sealed record BusinessConsoleMesRelatedQualityItemListResponse(IReadOnlyCollection<BusinessConsoleMesRelatedQualityItemRow> Items);
+public sealed record BusinessConsoleMesRelatedQualityItemListResponse(
+    IReadOnlyCollection<BusinessConsoleMesRelatedQualityItemRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesRelatedQualityItemRow(
     string QualityItemId,
@@ -1643,7 +1653,9 @@ public sealed record BusinessConsoleMesRelatedQualityItemRow(
     string? DefectCode,
     string? NcrId);
 
-public sealed record BusinessConsoleMesReceiptRequestListResponse(IReadOnlyCollection<BusinessConsoleMesReceiptRequestRow> Items);
+public sealed record BusinessConsoleMesReceiptRequestListResponse(
+    IReadOnlyCollection<BusinessConsoleMesReceiptRequestRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesReceiptRequestRow(
     string ReceiptRequestId,
@@ -1666,7 +1678,9 @@ public sealed record BusinessConsoleMesCreateReceiptRequest(
 
 public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGoodsReceiptRequestId, string RequestNo);
 
-public sealed record BusinessConsoleMesDowntimeEventListResponse(IReadOnlyCollection<BusinessConsoleMesDowntimeEventRow> Items);
+public sealed record BusinessConsoleMesDowntimeEventListResponse(
+    IReadOnlyCollection<BusinessConsoleMesDowntimeEventRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesDowntimeEventRow(
     string DowntimeEventId,
@@ -1694,7 +1708,9 @@ public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
     DateTimeOffset RecoveredAtUtc,
     string IdempotencyKey);
 
-public sealed record BusinessConsoleMesShiftHandoverListResponse(IReadOnlyCollection<BusinessConsoleMesShiftHandoverRow> Items);
+public sealed record BusinessConsoleMesShiftHandoverListResponse(
+    IReadOnlyCollection<BusinessConsoleMesShiftHandoverRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesShiftHandoverRow(
     string HandoverId,
@@ -1741,7 +1757,9 @@ public sealed record BusinessConsoleMesTraceabilityNode(string NodeId, string No
 
 public sealed record BusinessConsoleMesTraceabilityEdge(string FromNodeId, string ToNodeId, string RelationType);
 
-public sealed record BusinessConsoleMesCapacityImpactListResponse(IReadOnlyCollection<BusinessConsoleMesCapacityImpactRow> Items);
+public sealed record BusinessConsoleMesCapacityImpactListResponse(
+    IReadOnlyCollection<BusinessConsoleMesCapacityImpactRow> Items,
+    int Total);
 
 public sealed record BusinessConsoleMesCapacityImpactRow(
     string ImpactId,

@@ -7,6 +7,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Badge,
   Button,
+  DataTablePagination,
   Field,
   FieldGroup,
   FieldLabel,
@@ -20,7 +21,7 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 definePage({
   meta: {
@@ -29,15 +30,27 @@ definePage({
   },
 })
 
-const { filters, refreshWip, wipError, wipPending, wipRows } = useMesWipSummary()
+const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
 
 const errorMessage = computed(() => formatError(wipError.value))
+const page = ref(1)
+const pageSize = ref('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const goodQuantity = computed(() =>
   wipRows.value.reduce((total, item) => total + (item.goodQuantity ?? 0), 0),
 )
 const scrapQuantity = computed(() =>
   wipRows.value.reduce((total, item) => total + (item.scrapQuantity ?? 0), 0),
 )
+
+watch(() => filters.status, () => {
+  page.value = 1
+})
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function formatQuantity(value?: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
@@ -70,16 +83,12 @@ function formatError(error: unknown) {
             <FieldLabel for="wip-status">状态</FieldLabel>
             <Input id="wip-status" v-model="filters.status" placeholder="可选" />
           </Field>
-          <Field>
-            <FieldLabel for="wip-take">数量</FieldLabel>
-            <Input id="wip-take" v-model.number="filters.take" inputmode="numeric" type="number" />
-          </Field>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </div>
 
       <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="在制行" :value="wipRows.length" detail="工单/工序粒度" />
+        <BusinessMetricCell label="在制行" :value="wipTotal" detail="后端筛选总数" />
         <BusinessMetricCell label="良品数" :value="formatQuantity(goodQuantity)" detail="已报工良品" />
         <BusinessMetricCell label="报废数" :value="formatQuantity(scrapQuantity)" detail="已报工报废" />
       </div>
@@ -118,6 +127,7 @@ function formatError(error: unknown) {
           </Table>
         </div>
       </div>
+      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="wipTotal" />
     </section>
   </BusinessLayout>
 </template>

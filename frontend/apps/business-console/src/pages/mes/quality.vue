@@ -3,14 +3,26 @@ import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useMesQualityContext } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { Button, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
+import { Button, DataTablePagination, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '质量与不良' } })
 
-const { filters, qualityItems, qualityItemsError, qualityItemsPending, refreshQualityItems } = useMesQualityContext()
+const { filters, qualityItems, qualityItemsError, qualityItemsPending, qualityItemsTotal, refreshQualityItems } = useMesQualityContext()
 const errorMessage = computed(() => qualityItemsError.value instanceof Error ? qualityItemsError.value.message : qualityItemsError.value ? '请求失败。' : '')
+const page = ref(1)
+const pageSize = ref('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+
+watch(() => filters.status, () => {
+  page.value = 1
+})
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 </script>
 
 <template>
@@ -22,7 +34,6 @@ const errorMessage = computed(() => qualityItemsError.value instanceof Error ? q
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
           <Field><FieldLabel for="quality-status">状态</FieldLabel><Input id="quality-status" v-model="filters.status" placeholder="可选" /></Field>
-          <Field><FieldLabel for="quality-take">数量上限</FieldLabel><Input id="quality-take" v-model.number="filters.take" type="number" /></Field>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </div>
@@ -43,6 +54,7 @@ const errorMessage = computed(() => qualityItemsError.value instanceof Error ? q
           </TableBody>
         </Table>
       </div>
+      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="qualityItemsTotal" />
     </section>
   </BusinessLayout>
 </template>

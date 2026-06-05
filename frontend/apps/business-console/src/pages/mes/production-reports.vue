@@ -6,6 +6,7 @@ import { useMesProductionReports } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
+  DataTablePagination,
   Field,
   FieldGroup,
   FieldLabel,
@@ -19,7 +20,7 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 definePage({
   meta: {
@@ -33,16 +34,29 @@ const {
   productionReports,
   productionReportsError,
   productionReportsPending,
+  productionReportsTotal,
   refreshProductionReports,
 } = useMesProductionReports()
 
 const errorMessage = computed(() => formatError(productionReportsError.value))
+const page = ref(1)
+const pageSize = ref('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const goodQuantity = computed(() =>
   productionReports.value.reduce((total, item) => total + (item.goodQuantity ?? 0), 0),
 )
 const scrapQuantity = computed(() =>
   productionReports.value.reduce((total, item) => total + (item.scrapQuantity ?? 0), 0),
 )
+
+watch(() => filters.status, () => {
+  page.value = 1
+})
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
@@ -81,16 +95,12 @@ function formatError(error: unknown) {
             <FieldLabel for="report-list-status">状态</FieldLabel>
             <Input id="report-list-status" v-model="filters.status" placeholder="可选" />
           </Field>
-          <Field>
-            <FieldLabel for="report-list-take">数量</FieldLabel>
-            <Input id="report-list-take" v-model.number="filters.take" inputmode="numeric" type="number" />
-          </Field>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </div>
 
       <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="报工记录" :value="productionReports.length" detail="当前筛选结果" />
+        <BusinessMetricCell label="报工记录" :value="productionReportsTotal" detail="后端筛选总数" />
         <BusinessMetricCell label="良品数" :value="formatQuantity(goodQuantity)" detail="累计良品" />
         <BusinessMetricCell label="报废数" :value="formatQuantity(scrapQuantity)" detail="累计报废" />
       </div>
@@ -127,6 +137,7 @@ function formatError(error: unknown) {
           </Table>
         </div>
       </div>
+      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="productionReportsTotal" />
     </section>
   </BusinessLayout>
 </template>
