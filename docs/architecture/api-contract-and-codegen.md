@@ -73,6 +73,7 @@ BusinessGateway Console OpenAPI 的生成链路固定为：
 14. #207 BusinessGateway 设备运行事实 facade 已进入 BusinessGateway Console OpenAPI 快照，`frontend/packages/api-client/openapi/business-gateway-console.v1.json` 与 `frontend/packages/api-client/src/generated/business-console/` 已通过 `pnpm -C frontend generate:api` 刷新，Business Console 只从 `@nerv-iip/api-client` 稳定入口消费。
 15. `/api/business-console/v1/search` 是 #271 全局对象搜索后端 facade，供后续 Cmd/Ctrl+K 面板消费。该 facade 从当前 bearer token 的组织/环境上下文读取 scope，并对每个对象来源分别执行 IAM permission check；无权限来源不得查询下游，也不得返回对象标题、状态或摘要。首批支持 MES 工单、MasterData SKU 和 IndustrialTelemetry 当前报警；Inventory batch/lot 与 equipment device 因当前缺少可增量搜索下游查询，必须返回 `unsupported` source/type status，不能静默截断。当前已连接来源的搜索词匹配语义是 `source-window`：Gateway 先读取每个来源的首个请求窗口，再在窗口内匹配 `q`，响应中的 `matchScope` 和 `matchScopeDescription` 必须显式暴露该限制；后续若下游接口支持 `q`/keyword 下推，再调整该语义和契约说明。
 16. MES list facade endpoints（工单、生产计划、工序任务、派工、WIP、报工、领料、完工入库、停机、交接、产能影响和相关质量项）支持服务端 `keyword` 以及适用的 `workCenterId`、`shiftId`、`deviceAssetId` 过滤；生产计划额外支持 `source` 和 `readinessStatus`。这些过滤必须在后端 `total` 计算前应用，Business Console 不得在服务端分页结果上叠加误导性的当前页关键字搜索。
+17. BusinessGateway Quality list facade endpoints（`/quality/ncrs` 与 `/quality/inspection-plans`）支持服务端 `keyword` 定位；NCR 按 `NcrId`/`NcrCode` 等公开列表字段匹配，检验方案按 `InspectionPlanId`/`PlanCode` 等公开列表字段匹配。该过滤必须在下游 Quality 服务的 `total` 计算前应用，用于 MES/Quality 跨页跳转定位和检验方案上下文穿透。
 
 Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` 语义前缀：
 

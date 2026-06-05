@@ -43,6 +43,7 @@ import { RouterLink, useRoute } from 'vue-router'
 definePage({ meta: { requiresAuth: true, title: '检验任务与记录' } })
 
 const route = useRoute()
+const initialInspectionPlanKeyword = firstQuery(route.query.inspectionPlanId)
 const {
   createInspectionRecord,
   createInspectionRecordError,
@@ -53,11 +54,12 @@ const {
   inspectionPlansPending,
   inspectionPlansTotal,
   refreshInspectionPlans,
-} = useQualityInspectionPlans()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+} = useQualityInspectionPlans(initialInspectionPlanKeyword ? { keyword: initialInspectionPlanKeyword } : {})
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status, () => filters.keyword] })
 
 const recordSuccess = shallowRef('')
 const recordSheetOpen = shallowRef(false)
+const locatedInspectionPlanId = shallowRef('')
 
 const recordForm = reactive({
   organizationId: filters.organizationId,
@@ -77,6 +79,15 @@ const recordForm = reactive({
 
 // 上下文穿透：从工单/工序/收货带入来源单据、批次、序列号。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+const targetInspectionPlanId = computed(() => firstQuery(route.query.inspectionPlanId))
+const targetInspectionPlan = computed(() =>
+  targetInspectionPlanId.value
+    ? inspectionPlans.value.find((plan) => plan.id === targetInspectionPlanId.value || plan.code === targetInspectionPlanId.value)
+    : undefined,
+)
+const targetInspectionPlanMissing = computed(() =>
+  !!targetInspectionPlanId.value && !inspectionPlansPending.value && !targetInspectionPlan.value,
+)
 watch(
   () => route.query,
   (query) => {
@@ -99,6 +110,16 @@ watch(
   },
   { immediate: true },
 )
+watch(targetInspectionPlanId, (id) => {
+  filters.status = undefined
+  filters.keyword = id || undefined
+  locatedInspectionPlanId.value = ''
+}, { immediate: true })
+watch(targetInspectionPlan, (plan) => {
+  if (!plan || locatedInspectionPlanId.value === targetInspectionPlanId.value) return
+  locatedInspectionPlanId.value = targetInspectionPlanId.value
+  useInspectionPlan(plan)
+}, { immediate: true })
 
 const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
 const createErrorMessage = computed(() => formatError(createInspectionRecordError.value))
@@ -254,6 +275,9 @@ function isPresent(value: string | undefined | null): value is string {
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-else-if="targetInspectionPlanMissing" class="text-sm text-warning" role="status">
+      未找到检验方案 {{ targetInspectionPlanId }}。请确认该方案是否已归档或无权访问。
+    </p>
 
     <DataTable
       :columns="columns"

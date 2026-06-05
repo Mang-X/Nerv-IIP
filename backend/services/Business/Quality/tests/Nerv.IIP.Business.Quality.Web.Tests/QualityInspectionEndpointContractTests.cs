@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
@@ -15,6 +16,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionPlans;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
 using Nerv.IIP.ServiceAuth;
@@ -184,6 +186,59 @@ public sealed class QualityInspectionEndpointContractTests
 
         Assert.Equal(3, response.Total);
         Assert.Single(response.Items);
+    }
+
+    [Fact]
+    public async Task List_inspection_plans_filters_keyword_before_paging_and_total_count()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.InspectionPlans.AddRange(
+            NewInspectionPlan("IQP-TARGET-001"),
+            NewInspectionPlan("IQP-OTHER-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListInspectionPlansQueryHandler(dbContext).Handle(
+            new ListInspectionPlansQuery("org-001", "env-dev", null, null, null, null, null, Keyword: "target", Skip: 0, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("IQP-TARGET-001", item.PlanCode);
+    }
+
+    [Fact]
+    public async Task List_ncrs_filters_keyword_by_id_or_code_before_paging_and_total_count()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var target = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-TARGET-001",
+            "receiving",
+            "RCV-001",
+            "SKU-RM-1000",
+            1m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        dbContext.NonconformanceReports.AddRange(
+            target,
+            NonconformanceReport.Open("org-001", "env-dev", "NCR-OTHER-001", "receiving", "RCV-002", "SKU-RM-1000", 1m, "scratch", null, null, []));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListNonconformanceReportsQueryHandler(dbContext).Handle(
+            new ListNonconformanceReportsQuery("org-001", "env-dev", null, null, null, Keyword: target.Id.ToString(), Skip: 0, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal(target.Id, item.NcrId);
+        Assert.Equal("NCR-TARGET-001", item.NcrCode);
     }
 
     [Fact]

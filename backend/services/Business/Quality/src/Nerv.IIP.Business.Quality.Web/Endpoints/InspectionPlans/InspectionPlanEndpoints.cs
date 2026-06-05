@@ -31,6 +31,7 @@ public sealed record ListInspectionPlansRequest(
     string? PartnerId,
     string? WorkCenterId,
     string? Status,
+    string? Keyword,
     int Skip = 0,
     int Take = 100);
 
@@ -94,6 +95,7 @@ public sealed class ListInspectionPlansEndpoint(ISender sender)
             req.PartnerId,
             req.WorkCenterId,
             req.Status,
+            req.Keyword,
             req.Skip,
             req.Take), ct);
         await Send.OkAsync(new ListInspectionPlansEndpointResponse(response.Items, response.Total).AsResponseData(), cancellation: ct);

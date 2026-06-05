@@ -355,6 +355,7 @@ public sealed record BusinessConsoleQualityListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Status = null,
+    string? Keyword = null,
     int Skip = 0,
     int Take = 100);
 

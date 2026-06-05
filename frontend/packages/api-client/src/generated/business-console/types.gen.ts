@@ -4153,6 +4153,7 @@ export type ListBusinessConsoleQualityInspectionPlansData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
         skip?: number;
         take?: number;
     };
@@ -4213,6 +4214,7 @@ export type ListBusinessConsoleQualityNcrsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
         skip?: number;
         take?: number;
     };

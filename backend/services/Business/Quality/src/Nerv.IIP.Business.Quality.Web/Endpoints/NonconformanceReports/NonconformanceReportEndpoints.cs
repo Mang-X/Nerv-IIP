@@ -79,6 +79,7 @@ public sealed record ListNonconformanceReportsRequest(
     string? Status,
     string? SourceType,
     string? SkuCode,
+    string? Keyword,
     int Skip = 0,
     int Take = 100);
 
@@ -163,6 +164,7 @@ public sealed class ListNonconformanceReportsEndpoint(ISender sender)
             req.Status,
             req.SourceType,
             req.SkuCode,
+            req.Keyword,
             req.Skip,
             req.Take), ct);
         await Send.OkAsync(new ListNonconformanceReportsEndpointResponse(response.Items.Select(ToDto).ToArray(), response.Total).AsResponseData(), cancellation: ct);

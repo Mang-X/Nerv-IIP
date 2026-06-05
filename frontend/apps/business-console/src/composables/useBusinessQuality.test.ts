@@ -126,6 +126,30 @@ describe('business quality composables', () => {
     expect(ncrs.value).toEqual([])
   })
 
+  it('passes keyword filters to inspection plan and NCR list queries', () => {
+    useQualityInspectionPlans({ keyword: 'IQP-001', take: 1 })
+    useQualityNcrs({ keyword: 'NCR-001', take: 1 })
+
+    expect(listBusinessConsoleQualityInspectionPlansQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        keyword: 'IQP-001',
+        skip: 0,
+        take: 1,
+      },
+    })
+    expect(listBusinessConsoleQualityNcrsQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        keyword: 'NCR-001',
+        skip: 0,
+        take: 1,
+      },
+    })
+  })
+
   it('lists NCRs with a take limit and invalidates after actions', async () => {
     coladaState.queryDataById.set('listBusinessConsoleQualityNcrs', {
       success: true,
