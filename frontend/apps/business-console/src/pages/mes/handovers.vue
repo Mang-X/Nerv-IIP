@@ -2,15 +2,17 @@
 import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useMesShiftHandovers } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { Button, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
+import { Button, DataTablePagination, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '班次交接' } })
 
-const { filters, handovers, handoversError, handoversPending, refreshHandovers } = useMesShiftHandovers()
+const { filters, handovers, handoversError, handoversPending, handoversTotal, refreshHandovers } = useMesShiftHandovers()
 const errorMessage = computed(() => handoversError.value instanceof Error ? handoversError.value.message : handoversError.value ? '请求失败。' : '')
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 </script>
 
 <template>
@@ -22,7 +24,6 @@ const errorMessage = computed(() => handoversError.value instanceof Error ? hand
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
           <Field><FieldLabel for="handover-status">状态</FieldLabel><Input id="handover-status" v-model="filters.status" placeholder="可选" /></Field>
-          <Field><FieldLabel for="handover-take">数量上限</FieldLabel><Input id="handover-take" v-model.number="filters.take" type="number" /></Field>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </div>
@@ -43,6 +44,7 @@ const errorMessage = computed(() => handoversError.value instanceof Error ? hand
           </TableBody>
         </Table>
       </div>
+      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="handoversTotal" />
     </section>
   </BusinessLayout>
 </template>

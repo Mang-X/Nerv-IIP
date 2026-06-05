@@ -48,6 +48,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     receiptRequests: ref([]),
     receiptRequestsError: ref(undefined),
     receiptRequestsPending: ref(false),
+    receiptRequestsTotal: ref(0),
     refreshReceiptRequests: vi.fn(),
   }),
   useMesOperationTasks: () => ({
@@ -67,6 +68,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     ]),
     operationTasksError: ref(undefined),
     operationTasksPending: ref(false),
+    operationTasksTotal: ref(1),
     refreshOperationTasks: vi.fn(),
   }),
   useMesProductionPlans: () => ({
@@ -90,6 +92,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     ]),
     productionPlansError: ref(undefined),
     productionPlansPending: ref(false),
+    productionPlansTotal: ref(1),
     refreshProductionPlans: vi.fn(),
   }),
   useMesWorkOrders: () => ({
@@ -123,6 +126,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     ]),
     workOrdersError: ref(undefined),
     workOrdersPending: ref(false),
+    workOrdersTotal: ref(1),
   }),
 }))
 

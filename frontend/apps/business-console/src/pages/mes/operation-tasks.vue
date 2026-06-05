@@ -3,6 +3,7 @@ import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } 
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -104,18 +105,8 @@ const sortedTasks = computed(() => {
 })
 
 // --- Pagination ---
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+const { page, pageSize } = usePagedList(filters, { resetOn: [keyword, statusFilter, workCenterFilter, shiftFilter] })
 const pagedTasks = computed(() => sortedTasks.value)
-watch([keyword, statusFilter, workCenterFilter, shiftFilter, pageSize], () => {
-  page.value = 1
-})
-
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
 
 const columns: DataTableColumn<Row>[] = [
   { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskId ?? '无编号' },

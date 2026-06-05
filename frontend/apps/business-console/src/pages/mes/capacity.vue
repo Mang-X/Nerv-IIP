@@ -3,10 +3,12 @@ import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Badge,
   Button,
+  DataTablePagination,
   Field,
   FieldGroup,
   FieldLabel,
@@ -33,12 +35,14 @@ const {
   capacityImpacts,
   capacityImpactsError,
   capacityImpactsPending,
+  capacityImpactsTotal,
   filters,
   refreshCapacityImpacts,
 } = useMesCapacityImpacts()
 
 const errorMessage = computed(() => formatError(capacityImpactsError.value))
 const activeCount = computed(() => capacityImpacts.value.filter((item) => item.status === 'Active').length)
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
@@ -73,18 +77,14 @@ function formatError(error: unknown) {
             <FieldLabel for="capacity-status">状态</FieldLabel>
             <Input id="capacity-status" v-model="filters.status" placeholder="可选" />
           </Field>
-          <Field>
-            <FieldLabel for="capacity-take">数量</FieldLabel>
-            <Input id="capacity-take" v-model.number="filters.take" inputmode="numeric" type="number" />
-          </Field>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </div>
 
       <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="影响记录" :value="capacityImpacts.length" detail="当前筛选结果" />
-        <BusinessMetricCell label="生效中" :value="activeCount" detail="Active 状态" />
-        <BusinessMetricCell label="已结束" :value="capacityImpacts.length - activeCount" detail="非 Active 状态" />
+        <BusinessMetricCell label="影响记录" :value="capacityImpactsTotal" detail="后端筛选总数" />
+        <BusinessMetricCell label="本页生效中" :value="activeCount" detail="当前页 Active 状态" />
+        <BusinessMetricCell label="本页已结束" :value="capacityImpacts.length - activeCount" detail="当前页非 Active 状态" />
       </div>
 
       <div class="overflow-hidden rounded-lg border bg-background">
@@ -121,6 +121,7 @@ function formatError(error: unknown) {
           </Table>
         </div>
       </div>
+      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="capacityImpactsTotal" />
     </section>
   </BusinessLayout>
 </template>

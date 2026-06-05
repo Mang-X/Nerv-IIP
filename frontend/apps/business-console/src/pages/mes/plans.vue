@@ -3,6 +3,7 @@ import type { BusinessConsoleMesProductionPlanRow, BusinessConsoleResourceItem }
 import type { DataTableColumn, DataTableSort, StatusTone } from '@nerv-iip/ui'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesProductionPlans } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -33,7 +34,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, shallowRef } from 'vue'
 import { useRoute } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '生产计划' } })
@@ -56,8 +57,7 @@ const keyword = ref('')
 const sourceFilter = ref(normalizeSourceQuery(route.query.source))
 const readinessFilter = ref('all')
 const sort = ref<DataTableSort | null>(null)
-const page = ref(1)
-const pageSize = ref('10')
+const { page, pageSize } = usePagedList(filters, { resetOn: [keyword, sourceFilter, readinessFilter] })
 
 const convertOpen = shallowRef(false)
 const selectedPlan = shallowRef<BusinessConsoleMesProductionPlanRow>()
@@ -110,7 +110,6 @@ const sortedPlans = computed(() => {
     return String(av).localeCompare(String(bv), 'zh-Hans-CN') * factor
   })
 })
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedPlans = computed(() => sortedPlans.value)
 
 const selectedBlockingReasons = computed(() => (selectedPlan.value?.blockingReasons ?? []).map(describeMesReadinessReason))
@@ -127,15 +126,6 @@ const columns: DataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
   { key: 'readinessStatus', header: '就绪状态', width: 'w-28' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
-
-watch([keyword, sourceFilter, readinessFilter, pageSize], () => {
-  page.value = 1
-})
-
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
 
 function openConvert(plan: BusinessConsoleMesProductionPlanRow) {
   selectedPlan.value = plan

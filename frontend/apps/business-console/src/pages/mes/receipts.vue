@@ -8,10 +8,12 @@ import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import BusinessRowActions from '@/components/business/BusinessRowActions.vue'
 import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import {
   Button,
+  DataTablePagination,
   DropdownMenuItem,
   Field,
   FieldGroup,
@@ -50,6 +52,7 @@ const {
   receiptRequests,
   receiptRequestsError,
   receiptRequestsPending,
+  receiptRequestsTotal,
   refreshReceiptRequests,
 } = useMesFinishedGoodsReceipts()
 
@@ -102,6 +105,7 @@ const statusFilter = computed({
     filters.status = value === 'all' ? undefined : value
   },
 })
+const { page, pageSize, resetPage } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 watch(
   () => route.query,
@@ -113,6 +117,7 @@ watch(
     if (workOrderId) form.workOrderId = workOrderId
     if (skuId) form.skuId = skuId
     if (quantity) form.quantity = quantity
+    resetPage()
     if (workOrderId && skuId) receiptSheetOpen.value = true
   },
   { immediate: true },
@@ -246,18 +251,14 @@ function isNonEmpty(value: string) {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field>
-                <FieldLabel for="receipt-list-take">数量</FieldLabel>
-                <Input id="receipt-list-take" v-model.number="filters.take" inputmode="numeric" type="number" />
-              </Field>
             </FieldGroup>
             <BusinessFormStatus :error="listErrorMessage" />
           </BusinessContextBar>
 
           <div class="grid gap-3 md:grid-cols-3">
-            <BusinessMetricCell label="入库请求" :value="receiptRequests.length" detail="当前筛选结果" />
-            <BusinessMetricCell label="待处理" :value="pendingCount" detail="未完成请求" />
-            <BusinessMetricCell label="已完成" :value="receiptRequests.length - pendingCount" detail="Completed 状态" />
+            <BusinessMetricCell label="入库请求" :value="receiptRequestsTotal" detail="后端筛选总数" />
+            <BusinessMetricCell label="本页待处理" :value="pendingCount" detail="当前页未完成请求" />
+            <BusinessMetricCell label="本页已完成" :value="receiptRequests.length - pendingCount" detail="当前页 Completed 状态" />
           </div>
 
           <div class="overflow-hidden rounded-lg border bg-background">
@@ -305,6 +306,7 @@ function isNonEmpty(value: string) {
               </Table>
             </div>
           </div>
+          <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="receiptRequestsTotal" />
         </div>
       </div>
 

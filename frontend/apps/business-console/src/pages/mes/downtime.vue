@@ -3,15 +3,17 @@ import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useMesDowntimeEvents } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { Button, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
+import { Button, DataTablePagination, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '设备与停机' } })
 
-const { downtimeEvents, downtimeEventsError, downtimeEventsPending, filters, refreshDowntimeEvents } = useMesDowntimeEvents()
+const { downtimeEvents, downtimeEventsError, downtimeEventsPending, downtimeEventsTotal, filters, refreshDowntimeEvents } = useMesDowntimeEvents()
 const errorMessage = computed(() => downtimeEventsError.value instanceof Error ? downtimeEventsError.value.message : downtimeEventsError.value ? '请求失败。' : '')
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 </script>
 
 <template>
@@ -23,14 +25,13 @@ const errorMessage = computed(() => downtimeEventsError.value instanceof Error ?
       <div class="grid gap-3 rounded-lg border bg-background p-4">
         <FieldGroup class="grid gap-3 md:grid-cols-4">
           <Field><FieldLabel for="downtime-status">状态</FieldLabel><Input id="downtime-status" v-model="filters.status" placeholder="可选" /></Field>
-          <Field><FieldLabel for="downtime-take">数量上限</FieldLabel><Input id="downtime-take" v-model.number="filters.take" type="number" /></Field>
         </FieldGroup>
         <BusinessFormStatus :error="errorMessage" />
       </div>
       <div class="grid gap-3 md:grid-cols-3">
-        <BusinessMetricCell label="停机事件" :value="downtimeEvents.length" detail="当前筛选结果" />
-        <BusinessMetricCell label="未恢复" :value="downtimeEvents.filter((x) => x.status === 'Open').length" detail="需处理" />
-        <BusinessMetricCell label="已恢复" :value="downtimeEvents.filter((x) => x.status !== 'Open').length" detail="已关闭" />
+        <BusinessMetricCell label="停机事件" :value="downtimeEventsTotal" detail="后端筛选总数" />
+        <BusinessMetricCell label="本页未恢复" :value="downtimeEvents.filter((x) => x.status === 'Open').length" detail="当前页需处理" />
+        <BusinessMetricCell label="本页已恢复" :value="downtimeEvents.filter((x) => x.status !== 'Open').length" detail="当前页已关闭" />
       </div>
       <div class="overflow-hidden rounded-lg border bg-background">
         <Table>
@@ -50,6 +51,7 @@ const errorMessage = computed(() => downtimeEventsError.value instanceof Error ?
           </TableBody>
         </Table>
       </div>
+      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="downtimeEventsTotal" />
     </section>
   </BusinessLayout>
 </template>
