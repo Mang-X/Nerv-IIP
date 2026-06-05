@@ -416,7 +416,7 @@ public sealed class MesEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var salesPlans = await new ListProductionPlansQueryHandler(dbContext).Handle(
-            new ListProductionPlansQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "Ready", Source: "sales", ReadinessStatus: "Ready"),
+            new ListProductionPlansQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "SalesOrder", Source: "sales", ReadinessStatus: "Ready"),
             CancellationToken.None);
         var blockedPlans = await new ListProductionPlansQueryHandler(dbContext).Handle(
             new ListProductionPlansQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Source: "sales", ReadinessStatus: "Blocked"),
@@ -429,7 +429,7 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
-    public async Task Production_plan_keyword_does_not_match_readiness_substrings()
+    public async Task Production_plan_keyword_does_not_bypass_filters_with_readiness_text()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -448,12 +448,17 @@ public sealed class MesEndpointContractTests
             new SourcePlanReference("Alpha", "Beta", "GAMMA-001", "DELTA-001")));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var plans = await new ListProductionPlansQueryHandler(dbContext).Handle(
+        var substringPlans = await new ListProductionPlansQueryHandler(dbContext).Handle(
             new ListProductionPlansQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "y"),
             CancellationToken.None);
+        var readyPlans = await new ListProductionPlansQueryHandler(dbContext).Handle(
+            new ListProductionPlansQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "ready"),
+            CancellationToken.None);
 
-        Assert.Equal(0, plans.Total);
-        Assert.Empty(plans.Items);
+        Assert.Equal(0, substringPlans.Total);
+        Assert.Empty(substringPlans.Items);
+        Assert.Equal(0, readyPlans.Total);
+        Assert.Empty(readyPlans.Items);
     }
 
     [Fact]

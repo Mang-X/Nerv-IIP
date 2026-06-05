@@ -239,8 +239,7 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
                         x.SourcePlanReference.SourceDocumentType.ToLower().Contains(keyword) ||
                         x.SourcePlanReference.SourceDocumentId.ToLower().Contains(keyword) ||
                         (x.SourcePlanReference.SourceDemandReference != null &&
-                            x.SourcePlanReference.SourceDemandReference.ToLower().Contains(keyword)))) ||
-                keyword == "ready");
+                            x.SourcePlanReference.SourceDemandReference.ToLower().Contains(keyword)))));
         }
 
         if (!string.IsNullOrWhiteSpace(request.Source))
