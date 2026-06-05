@@ -3,6 +3,7 @@ import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useMesProductionReports } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -20,7 +21,7 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 definePage({
   meta: {
@@ -39,24 +40,13 @@ const {
 } = useMesProductionReports()
 
 const errorMessage = computed(() => formatError(productionReportsError.value))
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 const goodQuantity = computed(() =>
   productionReports.value.reduce((total, item) => total + (item.goodQuantity ?? 0), 0),
 )
 const scrapQuantity = computed(() =>
   productionReports.value.reduce((total, item) => total + (item.scrapQuantity ?? 0), 0),
 )
-
-watch(() => filters.status, () => {
-  page.value = 1
-})
-
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
 
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
@@ -101,8 +91,8 @@ function formatError(error: unknown) {
 
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell label="报工记录" :value="productionReportsTotal" detail="后端筛选总数" />
-        <BusinessMetricCell label="良品数" :value="formatQuantity(goodQuantity)" detail="累计良品" />
-        <BusinessMetricCell label="报废数" :value="formatQuantity(scrapQuantity)" detail="累计报废" />
+        <BusinessMetricCell label="本页良品数" :value="formatQuantity(goodQuantity)" detail="当前页良品" />
+        <BusinessMetricCell label="本页报废数" :value="formatQuantity(scrapQuantity)" detail="当前页报废" />
       </div>
 
       <div class="overflow-hidden rounded-lg border bg-background">

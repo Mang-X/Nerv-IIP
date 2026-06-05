@@ -3,27 +3,17 @@ import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useMesMaterialIssueRequests } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { Button, DataTablePagination, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '齐套与物料' } })
 
 const { filters, materialIssueRequests, materialIssueRequestsError, materialIssueRequestsPending, materialIssueRequestsTotal, refreshMaterialIssueRequests } = useMesMaterialIssueRequests()
 const errorMessage = computed(() => materialIssueRequestsError.value instanceof Error ? materialIssueRequestsError.value.message : materialIssueRequestsError.value ? '请求失败。' : '')
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-
-watch(() => filters.status, () => {
-  page.value = 1
-})
-
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 </script>
 
 <template>
@@ -40,8 +30,8 @@ watch([page, pageSize], () => {
       </div>
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell label="领料申请" :value="materialIssueRequestsTotal" detail="后端筛选总数" />
-        <BusinessMetricCell label="待处理" :value="materialIssueRequests.filter((x) => x.status !== 'Closed').length" detail="未关闭申请" />
-        <BusinessMetricCell label="已关闭" :value="materialIssueRequests.filter((x) => x.status === 'Closed').length" detail="已完成收料" />
+        <BusinessMetricCell label="本页待处理" :value="materialIssueRequests.filter((x) => x.status !== 'Closed').length" detail="当前页未关闭申请" />
+        <BusinessMetricCell label="本页已关闭" :value="materialIssueRequests.filter((x) => x.status === 'Closed').length" detail="当前页已完成收料" />
       </div>
       <div class="overflow-hidden rounded-lg border bg-background">
         <Table>

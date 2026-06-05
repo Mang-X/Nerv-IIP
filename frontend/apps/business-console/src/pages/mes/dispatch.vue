@@ -4,27 +4,17 @@ import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import BusinessStatusBadge from '@/components/business/BusinessStatusBadge.vue'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { Button, DataTablePagination, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '派工看板' } })
 
 const { dispatchTasks, dispatchTasksError, dispatchTasksPending, dispatchTasksTotal, filters, refreshDispatchTasks } = useMesDispatchTasks()
 const errorMessage = computed(() => dispatchTasksError.value instanceof Error ? dispatchTasksError.value.message : dispatchTasksError.value ? '请求失败。' : '')
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-
-watch(() => filters.status, () => {
-  page.value = 1
-})
-
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 </script>
 
 <template>
@@ -41,8 +31,8 @@ watch([page, pageSize], () => {
       </div>
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell label="派工任务" :value="dispatchTasksTotal" detail="后端筛选总数" />
-        <BusinessMetricCell label="有阻塞" :value="dispatchTasks.filter((x) => x.blockingReasons?.length).length" detail="需处理" />
-        <BusinessMetricCell label="可派工" :value="dispatchTasks.filter((x) => !x.blockingReasons?.length).length" detail="无阻塞" />
+        <BusinessMetricCell label="本页有阻塞" :value="dispatchTasks.filter((x) => x.blockingReasons?.length).length" detail="当前页需处理" />
+        <BusinessMetricCell label="本页可派工" :value="dispatchTasks.filter((x) => !x.blockingReasons?.length).length" detail="当前页无阻塞" />
       </div>
       <div class="overflow-hidden rounded-lg border bg-background">
         <Table>

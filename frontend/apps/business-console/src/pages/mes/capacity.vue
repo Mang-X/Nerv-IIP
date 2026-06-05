@@ -3,6 +3,7 @@ import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
 import BusinessMetricCell from '@/components/business/BusinessMetricCell.vue'
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Badge,
@@ -21,7 +22,7 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 definePage({
   meta: {
@@ -41,18 +42,7 @@ const {
 
 const errorMessage = computed(() => formatError(capacityImpactsError.value))
 const activeCount = computed(() => capacityImpacts.value.filter((item) => item.status === 'Active').length)
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-
-watch(() => filters.status, () => {
-  page.value = 1
-})
-
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
@@ -93,8 +83,8 @@ function formatError(error: unknown) {
 
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell label="影响记录" :value="capacityImpactsTotal" detail="后端筛选总数" />
-        <BusinessMetricCell label="生效中" :value="activeCount" detail="Active 状态" />
-        <BusinessMetricCell label="已结束" :value="capacityImpacts.length - activeCount" detail="非 Active 状态" />
+        <BusinessMetricCell label="本页生效中" :value="activeCount" detail="当前页 Active 状态" />
+        <BusinessMetricCell label="本页已结束" :value="capacityImpacts.length - activeCount" detail="当前页非 Active 状态" />
       </div>
 
       <div class="overflow-hidden rounded-lg border bg-background">
