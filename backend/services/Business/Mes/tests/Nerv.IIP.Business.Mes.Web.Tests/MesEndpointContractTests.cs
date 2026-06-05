@@ -472,6 +472,9 @@ public sealed class MesEndpointContractTests
         await new AcceptShiftHandoverCommandHandler(dbContext).Handle(
             new AcceptShiftHandoverCommand("org-001", "env-dev", acceptedHandover.ReferenceId, now.AddMinutes(4)),
             CancellationToken.None);
+        var repeatedAccept = await new AcceptShiftHandoverCommandHandler(dbContext).Handle(
+            new AcceptShiftHandoverCommand("org-001", "env-dev", acceptedHandover.ReferenceId, now.AddMinutes(5)),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var qualityItems = await new ListRelatedQualityItemsQueryHandler(dbContext).Handle(
@@ -492,6 +495,41 @@ public sealed class MesEndpointContractTests
         Assert.Null(qualityItem.NcrId);
         Assert.Equal(3, handovers.Total);
         Assert.Equal("Accepted", Assert.Single(handovers.Items).HandoverStatus);
+        Assert.Equal(now.AddMinutes(4), repeatedAccept.AcceptedAtUtc);
+    }
+
+    [Fact]
+    public async Task Record_defect_is_idempotent_for_same_payload_and_idempotency_key()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QUALITY", "SKU-001", "PV-001", 1m, 10, now));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new RecordDefectCommandHandler(dbContext);
+        var command = new RecordDefectCommand(
+            "org-001",
+            "env-dev",
+            "WO-QUALITY",
+            "OP-10",
+            "DEF-SURFACE",
+            1m,
+            now.AddMinutes(1),
+            "defect-idem-001");
+
+        var firstResult = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var secondResult = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(firstResult, secondResult);
+        Assert.Equal(1, await dbContext.DefectRecords.CountAsync(
+            x => x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                x.WorkOrderId == "WO-QUALITY",
+            CancellationToken.None));
     }
 
     [Fact]

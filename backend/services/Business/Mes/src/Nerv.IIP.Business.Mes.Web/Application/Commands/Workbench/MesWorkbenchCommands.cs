@@ -852,7 +852,6 @@ public sealed class RecordDefectCommandHandler(ApplicationDbContext dbContext, M
             request.Quantity,
             request.RecordedAtUtc);
         dbContext.DefectRecords.Add(defect);
-        await Task.CompletedTask;
         return new MesAcceptedResponse("Accepted", defect.DefectNo, request.RecordedAtUtc);
     }
 }
@@ -981,6 +980,7 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
         DateTimeOffset effectiveAtUtc,
         CancellationToken cancellationToken)
     {
+        // This is an environment-level handover snapshot. Shift/team scoped ownership is not available for every source fact yet.
         var openDefects = await dbContext.DefectRecords.CountAsync(
             x => x.OrganizationId == organizationId &&
                 x.EnvironmentId == environmentId &&
@@ -1020,6 +1020,6 @@ public sealed class AcceptShiftHandoverCommandHandler(ApplicationDbContext dbCon
             ?? throw new KnownException($"未找到班次交接，HandoverId = {request.HandoverId}");
 
         handover.Accept(request.AcceptedAtUtc);
-        return new MesAcceptedResponse("Accepted", handover.HandoverNo, request.AcceptedAtUtc);
+        return new MesAcceptedResponse("Accepted", handover.HandoverNo, handover.AcceptedAtUtc ?? request.AcceptedAtUtc);
     }
 }

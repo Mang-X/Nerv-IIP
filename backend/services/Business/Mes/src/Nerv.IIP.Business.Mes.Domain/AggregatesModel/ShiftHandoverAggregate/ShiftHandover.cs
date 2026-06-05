@@ -63,6 +63,16 @@ public sealed class ShiftHandover : Entity<ShiftHandoverId>, IAggregateRoot
 
     public void Accept(DateTimeOffset acceptedAtUtc)
     {
+        if (HandoverStatus == AcceptedStatus)
+        {
+            return;
+        }
+
+        if (HandoverStatus != OpenStatus)
+        {
+            throw new InvalidOperationException("Only open shift handover can be accepted.");
+        }
+
         HandoverStatus = AcceptedStatus;
         AcceptedAtUtc = acceptedAtUtc;
     }
