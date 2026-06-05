@@ -8,7 +8,11 @@ public sealed record ListProductionReportsQuery(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100) : IQuery<ListProductionReportsResponse>;
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null) : IQuery<ListProductionReportsResponse>;
 
 public sealed record ListProductionReportsResponse(
     IReadOnlyCollection<ProductionReportFact> Items,
@@ -39,6 +43,15 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
             query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim().ToLower();
+            query = query.Where(x =>
+                x.ReportNo.ToLower().Contains(keyword) ||
+                x.WorkOrderId.ToLower().Contains(keyword) ||
+                x.OperationTaskId.ToLower().Contains(keyword));
+        }
+
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.ReportedAtUtc)
@@ -63,7 +76,11 @@ public sealed record ListFinishedGoodsReceiptRequestsQuery(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100) : IQuery<ListFinishedGoodsReceiptRequestsResponse>;
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null) : IQuery<ListFinishedGoodsReceiptRequestsResponse>;
 
 public sealed record ListFinishedGoodsReceiptRequestsResponse(
     IReadOnlyCollection<FinishedGoodsReceiptRequestFact> Items,
@@ -93,6 +110,15 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
             query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim().ToLower();
+            query = query.Where(x =>
+                x.RequestNo.ToLower().Contains(keyword) ||
+                x.WorkOrderId.ToLower().Contains(keyword) ||
+                x.SkuId.ToLower().Contains(keyword));
+        }
+
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.RequestedAtUtc)
@@ -116,7 +142,10 @@ public sealed record ListCapacityImpactsQuery(
     string EnvironmentId,
     string? DeviceAssetId,
     int Skip = 0,
-    int Take = 100) : IQuery<ListCapacityImpactsResponse>;
+    int Take = 100,
+    string? WorkCenterId = null,
+    string? Keyword = null,
+    string? ShiftId = null) : IQuery<ListCapacityImpactsResponse>;
 
 public sealed record ListCapacityImpactsResponse(
     IReadOnlyCollection<CapacityImpactFact> Items,
@@ -144,6 +173,21 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
         if (!string.IsNullOrWhiteSpace(request.DeviceAssetId))
         {
             query = query.Where(x => x.DeviceAssetId == request.DeviceAssetId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId))
+        {
+            query = query.Where(x => x.WorkCenterId == request.WorkCenterId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim().ToLower();
+            query = query.Where(x =>
+                x.DowntimeEventNo.ToLower().Contains(keyword) ||
+                x.WorkCenterId.ToLower().Contains(keyword) ||
+                (x.DeviceAssetId != null && x.DeviceAssetId.ToLower().Contains(keyword)) ||
+                x.Reason.ToLower().Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);

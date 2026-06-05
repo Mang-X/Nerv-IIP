@@ -7,7 +7,14 @@ import {
   getBusinessConsoleMesFoundationReadinessQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
+  listBusinessConsoleMesCapacityImpactsQueryOptions,
+  listBusinessConsoleMesDispatchTasksQueryOptions,
+  listBusinessConsoleMesDowntimeEventsQueryOptions,
+  listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
+  listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesProductionReportsQueryOptions,
+  listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
@@ -32,6 +39,7 @@ import {
 
 const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
+  queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
 }))
 
@@ -238,6 +246,7 @@ vi.mock('@pinia/colada', () => ({
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    coladaState.queryFactoriesById.set(id, optionsFactory)
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
@@ -255,6 +264,7 @@ describe('business MES composables', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     coladaState.invalidateQueries.mockClear()
+    coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
   })
 
@@ -447,6 +457,103 @@ describe('business MES composables', () => {
     expect(useMesProductionReports().productionReportsTotal.value).toBe(16)
     expect(useMesQualityContext().qualityItemsTotal.value).toBe(17)
     expect(useMesShiftHandovers().handoversTotal.value).toBe(18)
+  })
+
+  it('sends MES list search and structured filters as server query parameters', () => {
+    const workOrders = useMesWorkOrders()
+    workOrders.filters.keyword = 'filter'
+    workOrders.filters.workCenterId = 'WC-FILTER'
+    workOrders.filters.shiftId = 'SHIFT-FILTER'
+    workOrders.filters.deviceAssetId = 'DEV-FILTER'
+    workOrders.filters.status = 'Released'
+    workOrders.filters.skip = 20
+    workOrders.filters.take = 10
+
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesWorkOrders')?.()
+
+    expect(listBusinessConsoleMesWorkOrdersQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        status: 'Released',
+        keyword: 'filter',
+        workCenterId: 'WC-FILTER',
+        shiftId: 'SHIFT-FILTER',
+        deviceAssetId: 'DEV-FILTER',
+        skip: 20,
+        take: 10,
+      },
+    })
+  })
+
+  it('sends secondary MES list filters as server query parameters', () => {
+    const cases = [
+      {
+        id: 'getBusinessConsoleMesWipSummary',
+        options: getBusinessConsoleMesWipSummaryQueryOptions,
+        composable: useMesWipSummary,
+      },
+      {
+        id: 'listBusinessConsoleMesCapacityImpacts',
+        options: listBusinessConsoleMesCapacityImpactsQueryOptions,
+        composable: useMesCapacityImpacts,
+      },
+      {
+        id: 'listBusinessConsoleMesDispatchTasks',
+        options: listBusinessConsoleMesDispatchTasksQueryOptions,
+        composable: useMesDispatchTasks,
+      },
+      {
+        id: 'listBusinessConsoleMesFinishedGoodsReceiptRequests',
+        options: listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
+        composable: useMesFinishedGoodsReceipts,
+      },
+      {
+        id: 'listBusinessConsoleMesMaterialIssueRequests',
+        options: listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
+        composable: useMesMaterialIssueRequests,
+      },
+      {
+        id: 'listBusinessConsoleMesDowntimeEvents',
+        options: listBusinessConsoleMesDowntimeEventsQueryOptions,
+        composable: useMesDowntimeEvents,
+      },
+      {
+        id: 'listBusinessConsoleMesShiftHandovers',
+        options: listBusinessConsoleMesShiftHandoversQueryOptions,
+        composable: useMesShiftHandovers,
+      },
+      {
+        id: 'listBusinessConsoleMesProductionReports',
+        options: listBusinessConsoleMesProductionReportsQueryOptions,
+        composable: useMesProductionReports,
+      },
+    ] as const
+
+    for (const testCase of cases) {
+      const result = testCase.composable()
+      result.filters.keyword = 'filter'
+      result.filters.workCenterId = 'WC-FILTER'
+      result.filters.shiftId = 'SHIFT-FILTER'
+      result.filters.deviceAssetId = 'DEV-FILTER'
+      result.filters.skip = 5
+      result.filters.take = 25
+
+      coladaState.queryFactoriesById.get(testCase.id)?.()
+
+      expect(testCase.options).toHaveBeenLastCalledWith({
+        query: {
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          keyword: 'filter',
+          workCenterId: 'WC-FILTER',
+          shiftId: 'SHIFT-FILTER',
+          deviceAssetId: 'DEV-FILTER',
+          skip: 5,
+          take: 25,
+        },
+      })
+    }
   })
 
   it('creates finished goods receipt requests and invalidates dependent lists', async () => {

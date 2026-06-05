@@ -2831,12 +2831,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         SendAsync<BusinessConsoleMesWorkOrderListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/work-orders?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("status", request.Status),
-                ("skip", request.Skip),
-                ("take", request.Take)),
+            "/api/business/v1/mes/work-orders?" + ListQuery(request),
             null,
             cancellationToken);
 
@@ -3223,6 +3218,10 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("organizationId", request.OrganizationId),
             ("environmentId", request.EnvironmentId),
             ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("workCenterId", request.WorkCenterId),
+            ("shiftId", request.ShiftId),
+            ("deviceAssetId", request.DeviceAssetId),
             ("skip", request.Skip),
             ("take", request.Take));
 

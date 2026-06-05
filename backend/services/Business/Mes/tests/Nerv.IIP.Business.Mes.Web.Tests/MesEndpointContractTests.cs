@@ -440,6 +440,127 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Mes_list_queries_apply_server_filters_before_count_and_page()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+
+        var targetOrder = WorkOrder.Create("org-001", "env-dev", "WO-FILTER-001", "SKU-FILTER", "PV-001", 1m, 10, now);
+        var targetTasks = targetOrder.Release(
+            now.AddHours(-1),
+            [
+                new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
+                    "OP-FILTER-10",
+                    10,
+                    "WC-FILTER",
+                    [],
+                    TimeSpan.FromMinutes(30)),
+            ]);
+        targetTasks.Single().Assign("operator-001", "DEV-FILTER", "SHIFT-FILTER", now);
+        var otherOrder = WorkOrder.Create("org-001", "env-dev", "WO-OTHER-001", "SKU-OTHER", "PV-001", 1m, 10, now.AddMinutes(1));
+        var otherTasks = otherOrder.Release(
+            now.AddHours(-1),
+            [
+                new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
+                    "OP-OTHER-10",
+                    10,
+                    "WC-OTHER",
+                    [],
+                    TimeSpan.FromMinutes(30)),
+            ]);
+        otherTasks.Single().Assign("operator-002", "DEV-OTHER", "SHIFT-OTHER", now);
+        dbContext.WorkOrders.AddRange(targetOrder, otherOrder);
+        dbContext.OperationTasks.AddRange(targetTasks);
+        dbContext.OperationTasks.AddRange(otherTasks);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var workOrders = await new ListMesWorkOrdersQueryHandler(dbContext).Handle(
+            new ListMesWorkOrdersQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "filter", WorkCenterId: "WC-FILTER"),
+            CancellationToken.None);
+        var operationTasks = await new ListOperationTasksQueryHandler(dbContext).Handle(
+            new ListOperationTasksQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "DEV-FILTER", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER"),
+            CancellationToken.None);
+        var dispatchTasks = await new ListDispatchTasksQueryHandler(dbContext).Handle(
+            new ListDispatchTasksQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "OP-FILTER", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER"),
+            CancellationToken.None);
+        var wip = await new GetWipSummaryQueryHandler(dbContext).Handle(
+            new GetWipSummaryQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "WO-FILTER", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER"),
+            CancellationToken.None);
+
+        Assert.Equal(1, workOrders.Total);
+        Assert.Equal("WO-FILTER-001", Assert.Single(workOrders.Items).WorkOrderId);
+        Assert.Equal(1, operationTasks.Total);
+        Assert.Equal("OP-FILTER-10", Assert.Single(operationTasks.Items).OperationTaskId);
+        Assert.Equal(1, dispatchTasks.Total);
+        Assert.Equal("OP-FILTER-10", Assert.Single(dispatchTasks.Items).OperationTaskId);
+        Assert.Equal(1, wip.Total);
+        Assert.Equal("OP-FILTER-10", Assert.Single(wip.Items).OperationTaskId);
+    }
+
+    [Fact]
+    public async Task Mes_secondary_production_lists_apply_keyword_and_structured_filters_before_count()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+
+        dbContext.ProductionReports.AddRange(
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-FILTER", "WO-FILTER", "OP-FILTER", 1m, 0m, false, now),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-OTHER", "WO-OTHER", "OP-OTHER", 1m, 0m, false, now.AddMinutes(1)));
+        dbContext.FinishedGoodsReceiptRequests.AddRange(
+            Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-FILTER", "WO-FILTER", "SKU-FILTER", 1m, "PCS", now),
+            Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-OTHER", "WO-OTHER", "SKU-OTHER", 1m, "PCS", now.AddMinutes(1)));
+        dbContext.MaterialIssueRequests.AddRange(
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-FILTER", "WO-FILTER", "OP-FILTER", "MAT-FILTER", 1m, now),
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-OTHER", "WO-OTHER", "OP-OTHER", "MAT-OTHER", 1m, now.AddMinutes(1)));
+        dbContext.WorkCenterUnavailabilities.AddRange(
+            Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-FILTER", "WC-FILTER", now, null, "filter-reason", "DEV-FILTER"),
+            Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-OTHER", "WC-OTHER", now.AddMinutes(1), null, "other-reason", "DEV-OTHER"));
+        await new CreateShiftHandoverCommandHandler(dbContext).Handle(
+            new CreateShiftHandoverCommand("org-001", "env-dev", "SHIFT-FILTER", "TEAM-FILTER", now, "handover-filter"),
+            CancellationToken.None);
+        await new CreateShiftHandoverCommandHandler(dbContext).Handle(
+            new CreateShiftHandoverCommand("org-001", "env-dev", "SHIFT-OTHER", "TEAM-OTHER", now.AddMinutes(1), "handover-other"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var reports = await new ListProductionReportsQueryHandler(dbContext).Handle(
+            new ListProductionReportsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "PRPT-FILTER"),
+            CancellationToken.None);
+        var receipts = await new ListFinishedGoodsReceiptRequestsQueryHandler(dbContext).Handle(
+            new ListFinishedGoodsReceiptRequestsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "SKU-FILTER"),
+            CancellationToken.None);
+        var materialIssues = await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(
+            new ListMaterialIssueRequestsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "MAT-FILTER"),
+            CancellationToken.None);
+        var downtimeEvents = await new ListDowntimeEventsQueryHandler(dbContext).Handle(
+            new ListDowntimeEventsQuery("org-001", "env-dev", "WC-FILTER", "DEV-FILTER", Skip: 0, Take: 10, Keyword: "DOWNTIME-FILTER"),
+            CancellationToken.None);
+        var capacityImpacts = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
+            new ListCapacityImpactsQuery("org-001", "env-dev", "DEV-FILTER", Skip: 0, Take: 10, WorkCenterId: "WC-FILTER", Keyword: "filter-reason"),
+            CancellationToken.None);
+        var handovers = await new ListShiftHandoversQueryHandler(dbContext).Handle(
+            new ListShiftHandoversQuery("org-001", "env-dev", "SHIFT-FILTER", Skip: 0, Take: 10, Keyword: "TEAM-FILTER"),
+            CancellationToken.None);
+
+        Assert.Equal("PRPT-FILTER", Assert.Single(reports.Items).ReportNo);
+        Assert.Equal(1, reports.Total);
+        Assert.Equal("FGR-FILTER", Assert.Single(receipts.Items).RequestNo);
+        Assert.Equal(1, receipts.Total);
+        Assert.Equal("MIR-FILTER", Assert.Single(materialIssues.Items).RequestId);
+        Assert.Equal(1, materialIssues.Total);
+        Assert.Equal("DOWNTIME-FILTER", Assert.Single(downtimeEvents.Items).DowntimeEventId);
+        Assert.Equal(1, downtimeEvents.Total);
+        Assert.Equal("DOWNTIME-FILTER", Assert.Single(capacityImpacts.Items).ImpactId);
+        Assert.Equal(1, capacityImpacts.Total);
+        Assert.Equal("SHIFT-FILTER", Assert.Single(handovers.Items).ShiftId);
+        Assert.Equal(1, handovers.Total);
+    }
+
+    [Fact]
     public async Task Related_quality_items_and_shift_handovers_return_persisted_offset_page_and_total_count()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();

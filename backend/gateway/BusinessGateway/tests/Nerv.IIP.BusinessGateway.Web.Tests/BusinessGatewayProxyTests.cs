@@ -125,11 +125,20 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&skip=5&take=15");
+        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&skip=5&take=15");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "released", 5, 15), mes.LastWorkOrderListRequest);
+        Assert.Equal(new BusinessConsoleMesListRequest(
+            "org-001",
+            "env-dev",
+            "released",
+            "filter",
+            "WC-FILTER",
+            "SHIFT-FILTER",
+            "DEV-FILTER",
+            Skip: 5,
+            Take: 15), mes.LastWorkOrderListRequest);
     }
 
     [Fact]
@@ -165,11 +174,17 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/mes/production-plans?organizationId=org-001&environmentId=env-dev&status=Converted&skip=10&take=15");
+        var response = await client.GetAsync("/api/business-console/v1/mes/production-plans?organizationId=org-001&environmentId=env-dev&status=Converted&keyword=SUG-001&skip=10&take=15");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMesListRequest("org-001", "env-dev", "Converted", 10, 15), mes.LastProductionPlanListRequest);
+        Assert.Equal(new BusinessConsoleMesListRequest(
+            "org-001",
+            "env-dev",
+            "Converted",
+            Keyword: "SUG-001",
+            Skip: 10,
+            Take: 15), mes.LastProductionPlanListRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var plan = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("DemandPlanning", plan.GetProperty("sourceSystem").GetString());
@@ -1929,13 +1944,22 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListWorkOrdersAsync(
             "internal-token-001",
-            new BusinessConsoleMesListRequest("org-001", "env-dev", "released", 4, 12),
+            new BusinessConsoleMesListRequest(
+                "org-001",
+                "env-dev",
+                "released",
+                "filter",
+                "WC-FILTER",
+                "SHIFT-FILTER",
+                "DEV-FILTER",
+                Skip: 4,
+                Take: 12),
             CancellationToken.None);
 
         Assert.Equal("WO-HTTP", response.Items.Single().WorkOrderId);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&skip=4&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&skip=4&take=12", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
@@ -1949,8 +1973,8 @@ public sealed class BusinessGatewayProxyTests
         }));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
         var client = new HttpBusinessMesClient(httpClient);
-        var request = new BusinessConsoleMesListRequest("org-001", "env-dev", Skip: 4, Take: 12);
-        var expectedQuery = "?organizationId=org-001&environmentId=env-dev&skip=4&take=12";
+        var request = new BusinessConsoleMesListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
+        var expectedQuery = "?organizationId=org-001&environmentId=env-dev&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&skip=4&take=12";
 
         var cases = new (string Path, Func<Task<int>> Invoke)[]
         {

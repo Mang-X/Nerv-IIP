@@ -92,6 +92,12 @@ const workCenterFilter = ref('all')
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
+watch(keyword, (value) => {
+  filters.keyword = value.trim() || undefined
+})
+watch(workCenterFilter, (value) => {
+  filters.workCenterId = value === 'all' ? undefined : value
+})
 
 const statusOptions = [
   { label: '全部状态', value: 'all' },
@@ -152,19 +158,7 @@ const reportQuantitiesAreValid = computed(
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
 const skuOptions = computed(() => toResourceOptions(skus.value))
 
-const visibleWorkOrders = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  const wc = workCenterFilter.value
-  return workOrders.value.filter((order) => {
-    const statusMatched = statusFilter.value === 'all' || order.status === statusFilter.value
-    const kwMatched =
-      !kw ||
-      [order.workOrderId, order.skuId, order.productionVersionId, order.status]
-        .some((value) => (value ?? '').toLowerCase().includes(kw))
-    const wcMatched = wc === 'all' || (order.operationTasks ?? []).some((task) => (task.workCenterId ?? '') === wc)
-    return statusMatched && kwMatched && wcMatched
-  })
-})
+const visibleWorkOrders = computed(() => workOrders.value)
 
 const openOrderCount = computed(
   () => visibleWorkOrders.value.filter((order) => (order.status ?? '').toLowerCase() !== 'closed').length,
@@ -231,7 +225,7 @@ const sortedWorkOrders = computed(() => {
 const page = ref(1)
 const pageSize = ref('10')
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-// 后端已分页，当前页内仅做关键词/工作中心客户端筛选与排序，不再切片。
+// 后端已分页和过滤，当前页内仅做展示排序，不再切片。
 const pagedWorkOrders = computed(() => sortedWorkOrders.value)
 watch([keyword, statusFilter, workCenterFilter, pageSize], () => {
   page.value = 1

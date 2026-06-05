@@ -1285,6 +1285,10 @@ public sealed record BusinessConsoleMesListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
     int Skip = 0,
     int Take = 100);
 

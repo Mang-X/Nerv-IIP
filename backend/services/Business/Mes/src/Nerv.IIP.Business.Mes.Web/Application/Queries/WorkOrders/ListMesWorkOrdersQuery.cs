@@ -8,7 +8,11 @@ public sealed record ListMesWorkOrdersQuery(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100) : IQuery<ListMesWorkOrdersResponse>;
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null) : IQuery<ListMesWorkOrdersResponse>;
 
 public sealed record ListMesWorkOrdersResponse(
     IReadOnlyCollection<MesWorkOrderExecutionFact> Items,
@@ -49,6 +53,31 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             workOrdersQuery = workOrdersQuery.Where(x => x.Status == request.Status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim().ToLower();
+            workOrdersQuery = workOrdersQuery.Where(x =>
+                x.WorkOrderIdValue.ToLower().Contains(keyword) ||
+                x.SkuId.ToLower().Contains(keyword) ||
+                (x.ProductionVersionId != null && x.ProductionVersionId.ToLower().Contains(keyword)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
+            !string.IsNullOrWhiteSpace(request.ShiftId) ||
+            !string.IsNullOrWhiteSpace(request.DeviceAssetId))
+        {
+            var workCenterId = request.WorkCenterId?.Trim();
+            var shiftId = request.ShiftId?.Trim();
+            var deviceAssetId = request.DeviceAssetId?.Trim();
+            workOrdersQuery = workOrdersQuery.Where(x => dbContext.OperationTasks.Any(task =>
+                task.OrganizationId == request.OrganizationId &&
+                task.EnvironmentId == request.EnvironmentId &&
+                task.WorkOrderId == x.WorkOrderIdValue &&
+                (workCenterId == null || task.WorkCenterId == workCenterId) &&
+                (shiftId == null || task.ShiftId == shiftId) &&
+                (deviceAssetId == null || task.DeviceAssetId == deviceAssetId)));
         }
 
         var total = await workOrdersQuery.CountAsync(cancellationToken);

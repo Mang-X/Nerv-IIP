@@ -34,7 +34,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, ref, shallowRef } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '生产计划' } })
@@ -83,17 +83,15 @@ const readinessOptions = [
 ]
 
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
+watch(keyword, (value) => {
+  filters.keyword = value.trim() || undefined
+})
 const visiblePlans = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
   return productionPlans.value.filter((plan) => {
     const sourceText = `${plan.sourceSystem ?? ''} ${plan.sourceDocumentId ?? ''}`.toLowerCase()
-    const kwMatched =
-      !kw ||
-      [plan.productionPlanId, plan.sourceSystem, plan.sourceDocumentId, plan.skuId, plan.readinessStatus]
-        .some((value) => (value ?? '').toLowerCase().includes(kw))
     const sourceMatched = sourceFilter.value === 'all' || sourceText.includes(sourceFilter.value)
     const readinessMatched = readinessFilter.value === 'all' || plan.readinessStatus === readinessFilter.value
-    return kwMatched && sourceMatched && readinessMatched
+    return sourceMatched && readinessMatched
   })
 })
 const readyCount = computed(() => visiblePlans.value.filter((x) => x.readinessStatus === 'Ready').length)
@@ -236,7 +234,7 @@ function formatError(error: unknown) {
       <SectionCard description="计划总数" :value="productionPlansTotal" hint="后端分页总数" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索当前页计划号、来源、SKU">
+    <Toolbar v-model:search="keyword" search-placeholder="搜索计划号、来源、SKU">
       <template #filters>
         <Select v-model="sourceFilter">
           <SelectTrigger class="h-9 w-36" aria-label="来源"><SelectValue /></SelectTrigger>
