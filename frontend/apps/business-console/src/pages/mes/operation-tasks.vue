@@ -23,6 +23,7 @@ import {
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
+import { watchDebounced } from '@vueuse/core'
 import { ClipboardCheckIcon, EyeIcon, RefreshCwIcon, ShieldCheckIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -53,9 +54,9 @@ const shiftFilter = ref('all')
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
-watch(keyword, (value) => {
+watchDebounced(keyword, (value) => {
   filters.keyword = value.trim() || undefined
-})
+}, { debounce: 300, maxWait: 1000 })
 watch(workCenterFilter, (value) => {
   filters.workCenterId = value === 'all' ? undefined : value
 })

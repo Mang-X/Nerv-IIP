@@ -136,6 +136,8 @@ export interface MesListFilters {
   workCenterId?: string
   shiftId?: string
   deviceAssetId?: string
+  source?: string
+  readinessStatus?: string
   skip: number
   take: number
 }
@@ -246,6 +248,8 @@ function toListQuery(filters: MesListFilters) {
     ...optionalQuery('workCenterId', filters.workCenterId),
     ...optionalQuery('shiftId', filters.shiftId),
     ...optionalQuery('deviceAssetId', filters.deviceAssetId),
+    ...optionalQuery('source', filters.source),
+    ...optionalQuery('readinessStatus', filters.readinessStatus),
     skip: filters.skip,
     take: filters.take,
   }

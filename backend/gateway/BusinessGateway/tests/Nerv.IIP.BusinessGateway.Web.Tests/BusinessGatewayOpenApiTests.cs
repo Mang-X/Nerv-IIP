@@ -234,6 +234,22 @@ public sealed class BusinessGatewayOpenApiTests
 
         AssertQueryParameters(
             paths,
+            "/api/business-console/v1/mes/production-plans",
+            "get",
+            "organizationId",
+            "environmentId",
+            "status",
+            "keyword",
+            "workCenterId",
+            "shiftId",
+            "deviceAssetId",
+            "source",
+            "readinessStatus",
+            "skip",
+            "take");
+
+        AssertQueryParameters(
+            paths,
             "/api/business-console/v1/inventory/count-tasks/{countTaskId}/adjustments",
             "post",
             "organizationId",

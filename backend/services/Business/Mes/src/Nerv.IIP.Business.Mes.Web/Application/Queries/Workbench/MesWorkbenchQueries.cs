@@ -185,7 +185,9 @@ public sealed record ListProductionPlansQuery(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null) : IQuery<MesProductionPlanListResponse>;
+    string? DeviceAssetId = null,
+    string? Source = null,
+    string? ReadinessStatus = null) : IQuery<MesProductionPlanListResponse>;
 
 public sealed record MesProductionPlanListResponse(
     IReadOnlyCollection<MesProductionPlanRow> Items,
@@ -229,12 +231,37 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
             var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.WorkOrderIdValue.ToLower().Contains(keyword) ||
+                x.Status.ToLower().Contains(keyword) ||
                 x.SkuId.ToLower().Contains(keyword) ||
                 (x.ProductionVersionId != null && x.ProductionVersionId.ToLower().Contains(keyword)) ||
                 (x.SourcePlanReference != null &&
-                    (x.SourcePlanReference.SourceDocumentId.ToLower().Contains(keyword) ||
+                    (x.SourcePlanReference.SourceSystem.ToLower().Contains(keyword) ||
+                        x.SourcePlanReference.SourceDocumentType.ToLower().Contains(keyword) ||
+                        x.SourcePlanReference.SourceDocumentId.ToLower().Contains(keyword) ||
                         (x.SourcePlanReference.SourceDemandReference != null &&
-                            x.SourcePlanReference.SourceDemandReference.ToLower().Contains(keyword)))));
+                            x.SourcePlanReference.SourceDemandReference.ToLower().Contains(keyword)))) ||
+                "ready".Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Source))
+        {
+            var source = request.Source.Trim().ToLower();
+            query = query.Where(x =>
+                x.SourcePlanReference != null &&
+                (x.SourcePlanReference.SourceSystem.ToLower().Contains(source) ||
+                    x.SourcePlanReference.SourceDocumentType.ToLower().Contains(source) ||
+                    x.SourcePlanReference.SourceDocumentId.ToLower().Contains(source) ||
+                    (x.SourcePlanReference.SourceDemandReference != null &&
+                        x.SourcePlanReference.SourceDemandReference.ToLower().Contains(source))));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ReadinessStatus))
+        {
+            var readinessStatus = request.ReadinessStatus.Trim();
+            // Rows in this list currently compute readiness as Ready only; non-Ready filters intentionally return no rows.
+            query = string.Equals(readinessStatus, "Ready", StringComparison.OrdinalIgnoreCase)
+                ? query
+                : query.Where(_ => false);
         }
 
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
@@ -658,6 +685,23 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.Status.ToLower().Contains(keyword));
         }
 
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
+            !string.IsNullOrWhiteSpace(request.ShiftId) ||
+            !string.IsNullOrWhiteSpace(request.DeviceAssetId))
+        {
+            var workCenterId = request.WorkCenterId?.Trim();
+            var shiftId = request.ShiftId?.Trim();
+            var deviceAssetId = request.DeviceAssetId?.Trim();
+            query = query.Where(x => dbContext.OperationTasks.Any(task =>
+                task.OrganizationId == request.OrganizationId &&
+                task.EnvironmentId == request.EnvironmentId &&
+                ((x.OperationTaskId != null && task.OperationTaskIdValue == x.OperationTaskId) ||
+                    (x.OperationTaskId == null && task.WorkOrderId == x.WorkOrderId)) &&
+                (workCenterId == null || task.WorkCenterId == workCenterId) &&
+                (shiftId == null || task.ShiftId == shiftId) &&
+                (deviceAssetId == null || task.DeviceAssetId == deviceAssetId)));
+        }
+
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.RequestedAtUtc)
@@ -972,7 +1016,11 @@ public sealed record ListRelatedQualityItemsQuery(
     string? WorkOrderId,
     string? OperationTaskId,
     int Skip = 0,
-    int Take = 100) : IQuery<MesRelatedQualityItemListResponse>;
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null) : IQuery<MesRelatedQualityItemListResponse>;
 
 public sealed record MesRelatedQualityItemListResponse(
     IReadOnlyCollection<MesRelatedQualityItemRow> Items,
@@ -1003,6 +1051,34 @@ public sealed class ListRelatedQualityItemsQueryHandler(ApplicationDbContext dbC
         if (!string.IsNullOrWhiteSpace(request.OperationTaskId))
         {
             query = query.Where(x => x.OperationTaskId == request.OperationTaskId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim().ToLower();
+            query = query.Where(x =>
+                x.DefectNo.ToLower().Contains(keyword) ||
+                x.WorkOrderId.ToLower().Contains(keyword) ||
+                (x.OperationTaskId != null && x.OperationTaskId.ToLower().Contains(keyword)) ||
+                x.Status.ToLower().Contains(keyword) ||
+                x.DefectCode.ToLower().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
+            !string.IsNullOrWhiteSpace(request.ShiftId) ||
+            !string.IsNullOrWhiteSpace(request.DeviceAssetId))
+        {
+            var workCenterId = request.WorkCenterId?.Trim();
+            var shiftId = request.ShiftId?.Trim();
+            var deviceAssetId = request.DeviceAssetId?.Trim();
+            query = query.Where(x => dbContext.OperationTasks.Any(task =>
+                task.OrganizationId == request.OrganizationId &&
+                task.EnvironmentId == request.EnvironmentId &&
+                ((x.OperationTaskId != null && task.OperationTaskIdValue == x.OperationTaskId) ||
+                    (x.OperationTaskId == null && task.WorkOrderId == x.WorkOrderId)) &&
+                (workCenterId == null || task.WorkCenterId == workCenterId) &&
+                (shiftId == null || task.ShiftId == shiftId) &&
+                (deviceAssetId == null || task.DeviceAssetId == deviceAssetId)));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -1077,6 +1153,17 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
                 x.Reason.ToLower().Contains(keyword));
         }
 
+        if (!string.IsNullOrWhiteSpace(request.ShiftId))
+        {
+            var shiftId = request.ShiftId.Trim();
+            query = query.Where(x => dbContext.OperationTasks.Any(task =>
+                task.OrganizationId == request.OrganizationId &&
+                task.EnvironmentId == request.EnvironmentId &&
+                task.WorkCenterId == x.WorkCenterId &&
+                task.ShiftId == shiftId &&
+                (x.DeviceAssetId == null || task.DeviceAssetId == x.DeviceAssetId)));
+        }
+
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.FromUtc)
@@ -1141,6 +1228,19 @@ public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContex
                 x.ShiftId.ToLower().Contains(keyword) ||
                 x.TeamId.ToLower().Contains(keyword) ||
                 x.HandoverStatus.ToLower().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
+            !string.IsNullOrWhiteSpace(request.DeviceAssetId))
+        {
+            var workCenterId = request.WorkCenterId?.Trim();
+            var deviceAssetId = request.DeviceAssetId?.Trim();
+            query = query.Where(x => dbContext.OperationTasks.Any(task =>
+                task.OrganizationId == request.OrganizationId &&
+                task.EnvironmentId == request.EnvironmentId &&
+                task.ShiftId == x.ShiftId &&
+                (workCenterId == null || task.WorkCenterId == workCenterId) &&
+                (deviceAssetId == null || task.DeviceAssetId == deviceAssetId)));
         }
 
         var total = await query.CountAsync(cancellationToken);

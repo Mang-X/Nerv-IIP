@@ -1292,6 +1292,19 @@ public sealed record BusinessConsoleMesListRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleMesProductionPlanListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? Source = null,
+    string? ReadinessStatus = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleMesWorkOrderListResponse(
     IReadOnlyCollection<BusinessConsoleMesWorkOrderItem> Items,
     int Total);

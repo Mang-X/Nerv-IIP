@@ -13,6 +13,7 @@ import {
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
@@ -29,6 +30,7 @@ import {
   useMesMaterialIssueRequests,
   useMesOperationTasks,
   useMesOverview,
+  useMesProductionPlans,
   useMesProductionReports,
   useMesQualityContext,
   useMesSchedules,
@@ -482,6 +484,35 @@ describe('business MES composables', () => {
         deviceAssetId: 'DEV-FILTER',
         skip: 20,
         take: 10,
+      },
+    })
+  })
+
+  it('sends MES production plan source and readiness filters as server query parameters', () => {
+    const plans = useMesProductionPlans()
+    plans.filters.keyword = 'sales'
+    plans.filters.source = 'sales'
+    plans.filters.readinessStatus = 'Ready'
+    plans.filters.workCenterId = 'WC-FILTER'
+    plans.filters.shiftId = 'SHIFT-FILTER'
+    plans.filters.deviceAssetId = 'DEV-FILTER'
+    plans.filters.skip = 5
+    plans.filters.take = 25
+
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesProductionPlans')?.()
+
+    expect(listBusinessConsoleMesProductionPlansQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        keyword: 'sales',
+        workCenterId: 'WC-FILTER',
+        shiftId: 'SHIFT-FILTER',
+        deviceAssetId: 'DEV-FILTER',
+        source: 'sales',
+        readinessStatus: 'Ready',
+        skip: 5,
+        take: 25,
       },
     })
   })

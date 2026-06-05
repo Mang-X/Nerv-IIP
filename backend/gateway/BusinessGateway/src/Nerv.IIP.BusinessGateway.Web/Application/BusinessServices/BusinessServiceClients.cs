@@ -583,7 +583,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleMesProductionPlanListResponse> ListProductionPlansAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesProductionPlanListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesFoundationReadinessResponse> GetProductionPlanReadinessAsync(
@@ -2791,12 +2791,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleMesProductionPlanListResponse> ListProductionPlansAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesProductionPlanListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesProductionPlanListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/production-plans?" + ListQuery(request),
+            "/api/business/v1/mes/production-plans?" + ProductionPlanListQuery(request),
             null,
             cancellationToken);
 
@@ -3222,6 +3222,20 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("workCenterId", request.WorkCenterId),
             ("shiftId", request.ShiftId),
             ("deviceAssetId", request.DeviceAssetId),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
+    private static string ProductionPlanListQuery(BusinessConsoleMesProductionPlanListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("workCenterId", request.WorkCenterId),
+            ("shiftId", request.ShiftId),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("source", request.Source),
+            ("readinessStatus", request.ReadinessStatus),
             ("skip", request.Skip),
             ("take", request.Take));
 

@@ -45,11 +45,28 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
+            // Keep this provider-neutral for the EF InMemory contract tests; Npgsql-specific ILike would need a separate test path.
             var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.ReportNo.ToLower().Contains(keyword) ||
                 x.WorkOrderId.ToLower().Contains(keyword) ||
                 x.OperationTaskId.ToLower().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
+            !string.IsNullOrWhiteSpace(request.ShiftId) ||
+            !string.IsNullOrWhiteSpace(request.DeviceAssetId))
+        {
+            var workCenterId = request.WorkCenterId?.Trim();
+            var shiftId = request.ShiftId?.Trim();
+            var deviceAssetId = request.DeviceAssetId?.Trim();
+            query = query.Where(x => dbContext.OperationTasks.Any(task =>
+                task.OrganizationId == request.OrganizationId &&
+                task.EnvironmentId == request.EnvironmentId &&
+                task.OperationTaskIdValue == x.OperationTaskId &&
+                (workCenterId == null || task.WorkCenterId == workCenterId) &&
+                (shiftId == null || task.ShiftId == shiftId) &&
+                (deviceAssetId == null || task.DeviceAssetId == deviceAssetId)));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -117,6 +134,22 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
                 x.RequestNo.ToLower().Contains(keyword) ||
                 x.WorkOrderId.ToLower().Contains(keyword) ||
                 x.SkuId.ToLower().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
+            !string.IsNullOrWhiteSpace(request.ShiftId) ||
+            !string.IsNullOrWhiteSpace(request.DeviceAssetId))
+        {
+            var workCenterId = request.WorkCenterId?.Trim();
+            var shiftId = request.ShiftId?.Trim();
+            var deviceAssetId = request.DeviceAssetId?.Trim();
+            query = query.Where(x => dbContext.OperationTasks.Any(task =>
+                task.OrganizationId == request.OrganizationId &&
+                task.EnvironmentId == request.EnvironmentId &&
+                task.WorkOrderId == x.WorkOrderId &&
+                (workCenterId == null || task.WorkCenterId == workCenterId) &&
+                (shiftId == null || task.ShiftId == shiftId) &&
+                (deviceAssetId == null || task.DeviceAssetId == deviceAssetId)));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -188,6 +221,17 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
                 x.WorkCenterId.ToLower().Contains(keyword) ||
                 (x.DeviceAssetId != null && x.DeviceAssetId.ToLower().Contains(keyword)) ||
                 x.Reason.ToLower().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ShiftId))
+        {
+            var shiftId = request.ShiftId.Trim();
+            query = query.Where(x => dbContext.OperationTasks.Any(task =>
+                task.OrganizationId == request.OrganizationId &&
+                task.EnvironmentId == request.EnvironmentId &&
+                task.WorkCenterId == x.WorkCenterId &&
+                task.ShiftId == shiftId &&
+                (x.DeviceAssetId == null || task.DeviceAssetId == x.DeviceAssetId)));
         }
 
         var total = await query.CountAsync(cancellationToken);

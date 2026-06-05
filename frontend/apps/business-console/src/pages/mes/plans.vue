@@ -33,6 +33,7 @@ import {
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
+import { watchDebounced } from '@vueuse/core'
 import { FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -83,17 +84,16 @@ const readinessOptions = [
 ]
 
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
-watch(keyword, (value) => {
+watchDebounced(keyword, (value) => {
   filters.keyword = value.trim() || undefined
-})
-const visiblePlans = computed(() => {
-  return productionPlans.value.filter((plan) => {
-    const sourceText = `${plan.sourceSystem ?? ''} ${plan.sourceDocumentId ?? ''}`.toLowerCase()
-    const sourceMatched = sourceFilter.value === 'all' || sourceText.includes(sourceFilter.value)
-    const readinessMatched = readinessFilter.value === 'all' || plan.readinessStatus === readinessFilter.value
-    return sourceMatched && readinessMatched
-  })
-})
+}, { debounce: 300, maxWait: 1000 })
+watch(sourceFilter, (value) => {
+  filters.source = value === 'all' ? undefined : value
+}, { immediate: true })
+watch(readinessFilter, (value) => {
+  filters.readinessStatus = value === 'all' ? undefined : value
+}, { immediate: true })
+const visiblePlans = computed(() => productionPlans.value)
 const readyCount = computed(() => visiblePlans.value.filter((x) => x.readinessStatus === 'Ready').length)
 const blockedCount = computed(() => visiblePlans.value.filter((x) => x.readinessStatus !== 'Ready').length)
 

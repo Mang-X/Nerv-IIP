@@ -45,6 +45,19 @@ public sealed record ListMesWorkOrdersRequest(
     string? ShiftId = null,
     string? DeviceAssetId = null);
 
+public sealed record ListProductionPlansRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    int Skip = 0,
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? Source = null,
+    string? ReadinessStatus = null);
+
 public sealed record RecordProductionReportRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -237,7 +250,11 @@ public sealed record ListRelatedQualityItemsRequest(
     string? WorkOrderId,
     string? OperationTaskId,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null);
 
 public sealed record ListDowntimeEventsRequest(
     string OrganizationId,
@@ -384,11 +401,11 @@ public sealed class GetMesOverviewEndpoint(ISender sender)
 }
 
 public sealed class ListProductionPlansEndpoint(ISender sender)
-    : MesEndpoint<ListMesWorkOrdersRequest, MesProductionPlanListResponse>
+    : MesEndpoint<ListProductionPlansRequest, MesProductionPlanListResponse>
 {
     public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ListProductionPlansEndpoint>());
 
-    public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
+    public override async Task HandleAsync(ListProductionPlansRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new ListProductionPlansQuery(
             req.OrganizationId,
@@ -399,7 +416,9 @@ public sealed class ListProductionPlansEndpoint(ISender sender)
             req.Keyword,
             req.WorkCenterId,
             req.ShiftId,
-            req.DeviceAssetId), ct);
+            req.DeviceAssetId,
+            req.Source,
+            req.ReadinessStatus), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -794,7 +813,11 @@ public sealed class ListRelatedQualityItemsEndpoint(ISender sender)
             req.WorkOrderId,
             req.OperationTaskId,
             req.Skip,
-            req.Take), ct);
+            req.Take,
+            req.Keyword,
+            req.WorkCenterId,
+            req.ShiftId,
+            req.DeviceAssetId), ct);
         await Send.OkAsync(response, ct);
     }
 }

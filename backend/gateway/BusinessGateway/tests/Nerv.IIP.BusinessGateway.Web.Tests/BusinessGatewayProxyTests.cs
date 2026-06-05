@@ -174,15 +174,17 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/mes/production-plans?organizationId=org-001&environmentId=env-dev&status=Converted&keyword=SUG-001&skip=10&take=15");
+        var response = await client.GetAsync("/api/business-console/v1/mes/production-plans?organizationId=org-001&environmentId=env-dev&status=Converted&keyword=SUG-001&source=DemandPlanning&readinessStatus=Ready&skip=10&take=15");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMesListRequest(
+        Assert.Equal(new BusinessConsoleMesProductionPlanListRequest(
             "org-001",
             "env-dev",
             "Converted",
             Keyword: "SUG-001",
+            Source: "DemandPlanning",
+            ReadinessStatus: "Ready",
             Skip: 10,
             Take: 15), mes.LastProductionPlanListRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -3734,7 +3736,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public IReadOnlyCollection<BusinessConsoleMesProductionPlanRow>? ProductionPlans { get; init; }
 
-    public BusinessConsoleMesListRequest? LastProductionPlanListRequest { get; private set; }
+    public BusinessConsoleMesProductionPlanListRequest? LastProductionPlanListRequest { get; private set; }
 
     public BusinessConsoleMesConvertPlanToWorkOrderRequest? LastConvertPlanToWorkOrderRequest { get; private set; }
 
@@ -3764,7 +3766,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Task<BusinessConsoleMesProductionPlanListResponse> ListProductionPlansAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesProductionPlanListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;

@@ -4524,6 +4524,22 @@
             }
           },
           {
+            "name": "source",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "readinessStatus",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -15684,7 +15700,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionPlanListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -15861,6 +15877,10 @@
             "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderDetailResponse": {
         "allOf": [

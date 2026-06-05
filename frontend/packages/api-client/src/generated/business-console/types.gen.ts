@@ -1305,7 +1305,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     plannedEndUtc?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionPlanListRequest = {
     [key: string]: never;
 };
 
@@ -1358,6 +1358,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     durationTicks?: number;
     existingStartUtc?: string | null;
     existingEndUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderDetailResponse = NetCorePalExtensionsDtoResponseData & {
@@ -5119,6 +5123,8 @@ export type ListBusinessConsoleMesProductionPlansData = {
         workCenterId?: string | null;
         shiftId?: string | null;
         deviceAssetId?: string | null;
+        source?: string | null;
+        readinessStatus?: string | null;
         skip?: number;
         take?: number;
     };
