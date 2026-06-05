@@ -1019,7 +1019,15 @@ public sealed class AcceptShiftHandoverCommandHandler(ApplicationDbContext dbCon
             cancellationToken)
             ?? throw new KnownException($"未找到班次交接，HandoverId = {request.HandoverId}");
 
-        handover.Accept(request.AcceptedAtUtc);
+        try
+        {
+            handover.Accept(request.AcceptedAtUtc);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+
         return new MesAcceptedResponse("Accepted", handover.HandoverNo, handover.AcceptedAtUtc ?? request.AcceptedAtUtc);
     }
 }
