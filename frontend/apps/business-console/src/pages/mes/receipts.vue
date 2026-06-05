@@ -2,10 +2,12 @@
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  DataTablePagination,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -44,8 +46,10 @@ const {
   receiptRequests,
   receiptRequestsError,
   receiptRequestsPending,
+  receiptRequestsTotal,
   refreshReceiptRequests,
 } = useMesFinishedGoodsReceipts()
+const { page, pageSize, resetPage } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const route = useRoute()
 const router = useRouter()
@@ -107,6 +111,7 @@ watch(
     if (workOrderId) form.workOrderId = workOrderId
     if (skuId) form.skuId = skuId
     if (quantity) form.quantity = quantity
+    resetPage()
     if (workOrderId && skuId) receiptSheetOpen.value = true
   },
   { immediate: true },
@@ -187,7 +192,7 @@ function isNonEmpty(value: string) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="完工入库" :breadcrumbs="[{ label: '制造执行' }]" :count="`${filtered.length} 条入库请求`">
+    <PageHeader title="完工入库" :breadcrumbs="[{ label: '制造执行' }]" :count="`${receiptRequestsTotal} 条入库请求`">
       <template #actions>
         <Button size="sm" type="button" :disabled="!hasReceiptContext" @click="openReceiptSheet">
           <PackageCheckIcon aria-hidden="true" />
@@ -201,9 +206,9 @@ function isNonEmpty(value: string) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="入库请求" :value="receiptRequests.length" hint="生产完成后的成品入库" />
-      <SectionCard description="待处理" :value="pendingCount" hint="尚未完成入库" />
-      <SectionCard description="已完成" :value="receiptRequests.length - pendingCount" hint="已入库成功" />
+      <SectionCard description="入库请求" :value="receiptRequestsTotal" hint="后端筛选总数" />
+      <SectionCard description="本页待处理" :value="pendingCount" hint="当前页统计" />
+      <SectionCard description="本页已完成" :value="receiptRequests.length - pendingCount" hint="当前页统计" />
     </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索请求号、工单、物料">
@@ -239,9 +244,7 @@ function isNonEmpty(value: string) {
       </template>
     </DataTable>
 
-    <p v-if="!receiptRequestsPending && receiptRequests.length >= filters.take" class="text-xs text-muted-foreground">
-      已加载前 {{ filters.take }} 条入库请求（后端返回上限），使用搜索或状态筛选定位更多请求。
-    </p>
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="receiptRequestsTotal" />
 
     <Dialog v-model:open="receiptSheetOpen">
       <DialogContent>

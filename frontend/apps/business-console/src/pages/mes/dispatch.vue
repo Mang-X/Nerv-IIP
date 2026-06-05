@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -17,7 +19,8 @@ import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '派工看板' } })
 
-const { dispatchTasks, dispatchTasksError, dispatchTasksPending, filters, refreshDispatchTasks } = useMesDispatchTasks()
+const { dispatchTasks, dispatchTasksError, dispatchTasksPending, dispatchTasksTotal, filters, refreshDispatchTasks } = useMesDispatchTasks()
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const keyword = ref('')
 const filtered = computed(() => {
@@ -59,7 +62,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="派工看板" :breadcrumbs="[{ label: '制造执行' }]" :count="`${filtered.length} 个待派工序`">
+    <PageHeader title="派工看板" :breadcrumbs="[{ label: '制造执行' }]" :count="`${dispatchTasksTotal} 个待派工序`">
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="dispatchTasksPending" @click="refreshDispatchTasks">
           <RefreshCwIcon aria-hidden="true" />
@@ -69,9 +72,9 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="派工任务" :value="dispatchTasks.length" hint="按工作中心 / 设备 / 班次" />
-      <SectionCard description="可派工" :value="dispatchableCount" hint="无阻塞，可直接安排" />
-      <SectionCard description="有阻塞" :value="blockedCount" hint="先排除物料 / 质量 / 设备问题" />
+      <SectionCard description="派工任务" :value="dispatchTasksTotal" hint="后端筛选总数" />
+      <SectionCard description="本页可派工" :value="dispatchableCount" hint="当前页统计" />
+      <SectionCard description="本页有阻塞" :value="blockedCount" hint="当前页统计" />
     </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索工序、工单、工作中心、设备">
@@ -102,8 +105,6 @@ function formatError(error: unknown) {
       </template>
     </DataTable>
 
-    <p v-if="!dispatchTasksPending && dispatchTasks.length >= filters.take" class="text-xs text-muted-foreground">
-      已加载前 {{ filters.take }} 个待派工序（后端返回上限），使用搜索或状态筛选定位更多工序。
-    </p>
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="dispatchTasksTotal" />
   </BusinessLayout>
 </template>

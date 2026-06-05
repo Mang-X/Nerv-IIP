@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesWipSummary } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -17,7 +19,8 @@ import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '在制跟踪' } })
 
-const { filters, refreshWip, wipError, wipPending, wipRows } = useMesWipSummary()
+const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const keyword = ref('')
 const filtered = computed(() => {
@@ -54,7 +57,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="在制跟踪" :breadcrumbs="[{ label: '制造执行' }]" :count="`${filtered.length} 行在制`">
+    <PageHeader title="在制跟踪" :breadcrumbs="[{ label: '制造执行' }]" :count="`${wipTotal} 行在制`">
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="wipPending" @click="refreshWip">
           <RefreshCwIcon aria-hidden="true" />
@@ -64,9 +67,9 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="在制行" :value="wipRows.length" hint="工单 / 工序粒度" />
-      <SectionCard description="良品数" :value="formatQuantity(goodTotal)" hint="已报工良品" />
-      <SectionCard description="报废数" :value="formatQuantity(scrapTotal)" hint="已报工报废" />
+      <SectionCard description="在制行" :value="wipTotal" hint="后端筛选总数" />
+      <SectionCard description="本页良品数" :value="formatQuantity(goodTotal)" hint="当前页合计" />
+      <SectionCard description="本页报废数" :value="formatQuantity(scrapTotal)" hint="当前页合计" />
     </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索工单、工序、工作中心">
@@ -90,8 +93,6 @@ function formatError(error: unknown) {
       <template #cell-scrapQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.scrapQuantity) }}</span></template>
     </DataTable>
 
-    <p v-if="!wipPending && wipRows.length >= filters.take" class="text-xs text-muted-foreground">
-      已加载前 {{ filters.take }} 行在制（后端返回上限），使用搜索或状态筛选定位更多在制行。
-    </p>
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="wipTotal" />
   </BusinessLayout>
 </template>

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesShiftHandovers } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -17,7 +19,8 @@ import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '班次交接' } })
 
-const { filters, handovers, handoversError, handoversPending, refreshHandovers } = useMesShiftHandovers()
+const { filters, handovers, handoversError, handoversPending, handoversTotal, refreshHandovers } = useMesShiftHandovers()
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const keyword = ref('')
 const filtered = computed(() => {
@@ -53,7 +56,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="班次交接" :breadcrumbs="[{ label: '制造执行' }]" :count="`${filtered.length} 条交接`">
+    <PageHeader title="班次交接" :breadcrumbs="[{ label: '制造执行' }]" :count="`${handoversTotal} 条交接`">
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="handoversPending" @click="refreshHandovers">
           <RefreshCwIcon aria-hidden="true" />
@@ -63,9 +66,9 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="交接单" :value="handovers.length" hint="承接未完成工单与现场事项" />
-      <SectionCard description="未结事项" :value="openIssueTotal" hint="待下一班次承接处理" />
-      <SectionCard description="当前班次" :value="filtered.length" hint="当前筛选结果" />
+      <SectionCard description="交接单" :value="handoversTotal" hint="后端筛选总数" />
+      <SectionCard description="本页未结事项" :value="openIssueTotal" hint="当前页统计" />
+      <SectionCard description="本页当前班次" :value="filtered.length" hint="当前页统计" />
     </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索交接单、班次、班组">
@@ -88,8 +91,6 @@ function formatError(error: unknown) {
       <template #cell-createdAtUtc="{ row }">{{ formatDateTime(row.createdAtUtc) }}</template>
     </DataTable>
 
-    <p v-if="!handoversPending && handovers.length >= filters.take" class="text-xs text-muted-foreground">
-      已加载前 {{ filters.take }} 条交接（后端返回上限），使用搜索或状态筛选定位更多交接单。
-    </p>
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="handoversTotal" />
   </BusinessLayout>
 </template>

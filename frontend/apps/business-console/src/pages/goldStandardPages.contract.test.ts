@@ -9,9 +9,14 @@ const GOLD_STANDARD_PAGES = [
   'mes/operation-tasks.vue',
   'mes/work-orders/index.vue',
   'mes/schedules.vue',
-  // 次级 MES 列表（wip/capacity/dispatch/receipts/materials/downtime/handovers/production-reports）
-  // 后端尚未提供分页 total（见 #318），暂以诚实 top-N 呈现、不启用分页，故暂不纳入金标准合约；
-  // #318 落地后接服务端分页再加入。
+  'mes/wip.vue',
+  'mes/capacity.vue',
+  'mes/dispatch.vue',
+  'mes/receipts.vue',
+  'mes/materials.vue',
+  'mes/downtime.vue',
+  'mes/handovers.vue',
+  'mes/production-reports.vue',
   'master-data/skus.vue',
   'master-data/partners.vue',
   'master-data/resources.vue',

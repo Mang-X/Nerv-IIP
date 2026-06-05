@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -21,9 +23,11 @@ const {
   capacityImpacts,
   capacityImpactsError,
   capacityImpactsPending,
+  capacityImpactsTotal,
   filters,
   refreshCapacityImpacts,
 } = useMesCapacityImpacts()
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const keyword = ref('')
 const filtered = computed(() => {
@@ -60,7 +64,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="产能影响" :breadcrumbs="[{ label: '制造执行' }]" :count="`${filtered.length} 条影响`">
+    <PageHeader title="产能影响" :breadcrumbs="[{ label: '制造执行' }]" :count="`${capacityImpactsTotal} 条影响`">
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="capacityImpactsPending" @click="refreshCapacityImpacts">
           <RefreshCwIcon aria-hidden="true" />
@@ -70,9 +74,9 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="影响记录" :value="capacityImpacts.length" hint="设备停机 / 恢复 / 维护事件" />
-      <SectionCard description="生效中" :value="activeCount" hint="正在影响产能与排程" />
-      <SectionCard description="已结束" :value="capacityImpacts.length - activeCount" hint="影响已恢复" />
+      <SectionCard description="影响记录" :value="capacityImpactsTotal" hint="后端筛选总数" />
+      <SectionCard description="本页生效中" :value="activeCount" hint="当前页统计" />
+      <SectionCard description="本页已结束" :value="capacityImpacts.length - activeCount" hint="当前页统计" />
     </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索影响编号、工作中心、设备">
@@ -95,8 +99,6 @@ function formatError(error: unknown) {
       <template #cell-effectiveToUtc="{ row }">{{ formatDateTime(row.effectiveToUtc) }}</template>
     </DataTable>
 
-    <p v-if="!capacityImpactsPending && capacityImpacts.length >= filters.take" class="text-xs text-muted-foreground">
-      已加载前 {{ filters.take }} 条产能影响（后端返回上限），使用搜索或状态筛选定位更多记录。
-    </p>
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="capacityImpactsTotal" />
   </BusinessLayout>
 </template>

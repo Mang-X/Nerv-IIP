@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesMaterialIssueRequests } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -22,8 +24,10 @@ const {
   materialIssueRequests,
   materialIssueRequestsError,
   materialIssueRequestsPending,
+  materialIssueRequestsTotal,
   refreshMaterialIssueRequests,
 } = useMesMaterialIssueRequests()
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const keyword = ref('')
 const filtered = computed(() => {
@@ -59,7 +63,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="齐套与物料" :breadcrumbs="[{ label: '制造执行' }]" :count="`${filtered.length} 条领料申请`">
+    <PageHeader title="齐套与物料" :breadcrumbs="[{ label: '制造执行' }]" :count="`${materialIssueRequestsTotal} 条领料申请`">
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="materialIssueRequestsPending" @click="refreshMaterialIssueRequests">
           <RefreshCwIcon aria-hidden="true" />
@@ -69,9 +73,9 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="领料申请" :value="materialIssueRequests.length" hint="齐套 / 领料 / 线边收料" />
-      <SectionCard description="待处理" :value="openCount" hint="尚未完成收料" />
-      <SectionCard description="已关闭" :value="closedCount" hint="已完成收料" />
+      <SectionCard description="领料申请" :value="materialIssueRequestsTotal" hint="后端筛选总数" />
+      <SectionCard description="本页待处理" :value="openCount" hint="当前页统计" />
+      <SectionCard description="本页已关闭" :value="closedCount" hint="当前页统计" />
     </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索申请号、工单、仓库单号">
@@ -93,8 +97,6 @@ function formatError(error: unknown) {
       <template #cell-requestedAtUtc="{ row }">{{ formatDateTime(row.requestedAtUtc) }}</template>
     </DataTable>
 
-    <p v-if="!materialIssueRequestsPending && materialIssueRequests.length >= filters.take" class="text-xs text-muted-foreground">
-      已加载前 {{ filters.take }} 条领料申请（后端返回上限），使用搜索或状态筛选定位更多申请。
-    </p>
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="materialIssueRequestsTotal" />
   </BusinessLayout>
 </template>

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesProductionReports } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -16,7 +18,8 @@ import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '报工与完工' } })
 
-const { filters, productionReports, productionReportsError, productionReportsPending, refreshProductionReports } = useMesProductionReports()
+const { filters, productionReports, productionReportsError, productionReportsPending, productionReportsTotal, refreshProductionReports } = useMesProductionReports()
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const keyword = ref('')
 const rows = computed(() => {
@@ -53,7 +56,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="报工与完工" :breadcrumbs="[{ label: '制造执行' }]" :count="`${rows.length} 条报工`">
+    <PageHeader title="报工与完工" :breadcrumbs="[{ label: '制造执行' }]" :count="`${productionReportsTotal} 条报工`">
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="productionReportsPending" @click="refreshProductionReports">
           <RefreshCwIcon aria-hidden="true" />
@@ -63,9 +66,9 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="报工记录" :value="productionReports.length" hint="合格/不良/返工依据" />
-      <SectionCard description="合格总数" :value="goodTotal" hint="累计合格数量" />
-      <SectionCard description="不良总数" :value="scrapTotal" hint="累计不良数量" />
+      <SectionCard description="报工记录" :value="productionReportsTotal" hint="后端筛选总数" />
+      <SectionCard description="本页合格总数" :value="goodTotal" hint="当前页合计" />
+      <SectionCard description="本页不良总数" :value="scrapTotal" hint="当前页合计" />
     </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索报工单、工单、工序">
@@ -89,8 +92,6 @@ function formatError(error: unknown) {
       <template #cell-reportedAtUtc="{ row }">{{ formatDateTime(row.reportedAtUtc) }}</template>
     </DataTable>
 
-    <p v-if="!productionReportsPending && productionReports.length >= filters.take" class="text-xs text-muted-foreground">
-      已加载前 {{ filters.take }} 条报工（后端返回上限），使用搜索或状态筛选定位更多报工记录。
-    </p>
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="productionReportsTotal" />
   </BusinessLayout>
 </template>

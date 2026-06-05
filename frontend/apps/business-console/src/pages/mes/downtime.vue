@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesDowntimeEvents } from '@/composables/useBusinessMes'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  DataTablePagination,
   Input,
   PageHeader,
   SectionCard,
@@ -17,7 +19,8 @@ import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '设备与停机' } })
 
-const { downtimeEvents, downtimeEventsError, downtimeEventsPending, filters, refreshDowntimeEvents } = useMesDowntimeEvents()
+const { downtimeEvents, downtimeEventsError, downtimeEventsPending, downtimeEventsTotal, filters, refreshDowntimeEvents } = useMesDowntimeEvents()
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const keyword = ref('')
 const filtered = computed(() => {
@@ -54,7 +57,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="设备与停机" :breadcrumbs="[{ label: '制造执行' }]" :count="`${filtered.length} 条停机事件`">
+    <PageHeader title="设备与停机" :breadcrumbs="[{ label: '制造执行' }]" :count="`${downtimeEventsTotal} 条停机事件`">
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="downtimeEventsPending" @click="refreshDowntimeEvents">
           <RefreshCwIcon aria-hidden="true" />
@@ -64,9 +67,9 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="停机事件" :value="downtimeEvents.length" hint="影响生产执行的设备事件" />
-      <SectionCard description="未恢复" :value="openCount" hint="需设备 / 维修处理" />
-      <SectionCard description="已恢复" :value="downtimeEvents.length - openCount" hint="已确认恢复" />
+      <SectionCard description="停机事件" :value="downtimeEventsTotal" hint="后端筛选总数" />
+      <SectionCard description="本页未恢复" :value="openCount" hint="当前页统计" />
+      <SectionCard description="本页已恢复" :value="downtimeEvents.length - openCount" hint="当前页统计" />
     </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索停机事件、工单、设备">
@@ -89,8 +92,6 @@ function formatError(error: unknown) {
       <template #cell-recoveredAtUtc="{ row }">{{ formatDateTime(row.recoveredAtUtc) }}</template>
     </DataTable>
 
-    <p v-if="!downtimeEventsPending && downtimeEvents.length >= filters.take" class="text-xs text-muted-foreground">
-      已加载前 {{ filters.take }} 条停机事件（后端返回上限），使用搜索或状态筛选定位更多事件。
-    </p>
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="downtimeEventsTotal" />
   </BusinessLayout>
 </template>
