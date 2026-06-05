@@ -19,16 +19,18 @@ export interface QualityListFilters {
   organizationId: string
   environmentId: string
   status?: string
+  keyword?: string
   skip: number
   take: number
 }
 
-function defaultFilters(): QualityListFilters {
+function defaultFilters(initial: Partial<QualityListFilters> = {}): QualityListFilters {
   return reactive({
     organizationId: 'org-001',
     environmentId: 'env-dev',
     skip: 0,
     take: DEFAULT_TAKE,
+    ...initial,
   })
 }
 
@@ -41,6 +43,7 @@ function toListQuery(filters: QualityListFilters) {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
     ...optionalQuery('status', filters.status),
+    ...optionalQuery('keyword', filters.keyword),
     skip: filters.skip,
     take: filters.take,
   }
@@ -74,8 +77,8 @@ function isBusinessQuery(id: string) {
 
 function ignoreBackgroundError(_error: unknown) {}
 
-export function useQualityInspectionPlans() {
-  const filters = defaultFilters()
+export function useQualityInspectionPlans(initialFilters: Partial<QualityListFilters> = {}) {
+  const filters = defaultFilters(initialFilters)
 
   const plansQuery = useQuery(() =>
     listBusinessConsoleQualityInspectionPlansQueryOptions({
@@ -101,8 +104,8 @@ export function useQualityInspectionPlans() {
   }
 }
 
-export function useQualityNcrs() {
-  const filters = defaultFilters()
+export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {}) {
+  const filters = defaultFilters(initialFilters)
   const queryCache = useQueryCache()
 
   const ncrsQuery = useQuery(() =>

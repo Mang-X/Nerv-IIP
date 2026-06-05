@@ -36,6 +36,7 @@ public sealed record ListInspectionPlansQuery(
     string? PartnerId,
     string? WorkCenterId,
     string? Status,
+    string? Keyword = null,
     int Skip = 0,
     int Take = 100) : IQuery<ListInspectionPlansResponse>;
 
@@ -45,6 +46,7 @@ public sealed class ListInspectionPlansQueryValidator : AbstractValidator<ListIn
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Keyword).MaximumLength(200);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
@@ -83,6 +85,16 @@ public sealed class ListInspectionPlansQueryHandler(ApplicationDbContext dbConte
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             query = query.Where(x => x.Status == request.Status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim().ToLower();
+            var hasKeywordId = Guid.TryParse(keyword, out var keywordGuid);
+            var keywordId = hasKeywordId ? new InspectionPlanId(keywordGuid) : null;
+            query = query.Where(x =>
+                (keywordId != null && x.Id == keywordId)
+                || x.PlanCode.ToLower().Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
