@@ -55,7 +55,7 @@ const { resources: workCenterResources } = useBusinessMasterDataResources('work-
 const keyword = ref('')
 const sourceFilter = ref(normalizeSourceQuery(route.query.source))
 const readinessFilter = ref('all')
-const sort = ref<DataTableSort | null>({ key: 'plannedStartUtc', direction: 'asc' })
+const sort = ref<DataTableSort | null>(null)
 const page = ref(1)
 const pageSize = ref('10')
 
@@ -119,12 +119,12 @@ const errorMessage = computed(() => formatError(productionPlansError.value))
 const convertErrorMessage = computed(() => formatError(convertPlanToWorkOrderError.value))
 
 const columns: DataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
-  { key: 'productionPlanId', header: '计划号', sortable: true, cellClass: 'font-medium' },
-  { key: 'sourceSystem', header: '来源计划', sortable: true },
-  { key: 'skuId', header: 'SKU', sortable: true },
-  { key: 'plannedQuantity', header: '数量', align: 'end', sortable: true, width: 'w-24', accessor: (r) => r.plannedQuantity ?? 0 },
-  { key: 'plannedStartUtc', header: '计划开始', sortable: true, width: 'w-44', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
-  { key: 'readinessStatus', header: '就绪状态', sortable: true, width: 'w-28' },
+  { key: 'productionPlanId', header: '计划号', cellClass: 'font-medium' },
+  { key: 'sourceSystem', header: '来源计划' },
+  { key: 'skuId', header: 'SKU' },
+  { key: 'plannedQuantity', header: '数量', align: 'end', width: 'w-24', accessor: (r) => r.plannedQuantity ?? 0 },
+  { key: 'plannedStartUtc', header: '计划开始', width: 'w-44', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
+  { key: 'readinessStatus', header: '就绪状态', width: 'w-28' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
@@ -238,12 +238,12 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="可转工单" :value="readyCount" hint="人员/设备/物料就绪" />
-      <SectionCard description="受阻或预警" :value="blockedCount" hint="需处理后再释放" />
+      <SectionCard description="本页可转工单" :value="readyCount" hint="人员/设备/物料就绪" />
+      <SectionCard description="本页受阻或预警" :value="blockedCount" hint="需处理后再释放" />
       <SectionCard description="计划总数" :value="productionPlansTotal" hint="后端分页总数" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索计划号、来源、SKU">
+    <Toolbar v-model:search="keyword" search-placeholder="搜索当前页计划号、来源、SKU">
       <template #filters>
         <Select v-model="sourceFilter">
           <SelectTrigger class="h-9 w-36" aria-label="来源"><SelectValue /></SelectTrigger>

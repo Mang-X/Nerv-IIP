@@ -41,7 +41,7 @@ const { filters, groups, groupsError, groupsPending, groupsTotal, refreshGroups 
 
 const keyword = ref('')
 const groupFilter = ref('all')
-const sort = ref<DataTableSort | null>({ key: 'code', direction: 'asc' })
+const sort = ref<DataTableSort | null>(null)
 const page = ref(1)
 const pageSize = ref('10')
 
@@ -83,11 +83,11 @@ function countOf(type: string) {
 const errorMessage = computed(() => formatError(groupsError.value))
 
 const columns: DataTableColumn<ResourceRow>[] = [
-  { key: 'groupTitle', header: '类型', sortable: true, width: 'w-28' },
-  { key: 'code', header: '编码', sortable: true, cellClass: 'font-medium' },
-  { key: 'displayName', header: '名称', sortable: true },
-  { key: 'active', header: '状态', sortable: true, width: 'w-24' },
-  { key: 'snapshotVersion', header: '版本', sortable: true, width: 'w-28' },
+  { key: 'groupTitle', header: '类型', width: 'w-28' },
+  { key: 'code', header: '编码', cellClass: 'font-medium' },
+  { key: 'displayName', header: '名称' },
+  { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'snapshotVersion', header: '版本', width: 'w-28' },
 ]
 
 watch([keyword, groupFilter, pageSize], () => {
@@ -124,12 +124,12 @@ function formatError(error: unknown) {
 
     <SectionCards :columns="4">
       <SectionCard description="资源总数" :value="groupsTotal" hint="工厂 / 产线 / 工作中心 / 设备 等" />
-      <SectionCard description="工厂" :value="countOf('site')" hint="生产站点" />
-      <SectionCard description="产线" :value="countOf('production-line')" hint="生产线" />
-      <SectionCard description="设备" :value="countOf('device-asset')" hint="设备资产" />
+      <SectionCard description="本页工厂" :value="countOf('site')" hint="生产站点" />
+      <SectionCard description="本页产线" :value="countOf('production-line')" hint="生产线" />
+      <SectionCard description="本页设备" :value="countOf('device-asset')" hint="设备资产" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索类型、编码、名称">
+    <Toolbar v-model:search="keyword" search-placeholder="搜索当前页类型、编码、名称">
       <template #filters>
         <Select v-model="groupFilter">
           <SelectTrigger class="h-9 w-36" aria-label="资源类型"><SelectValue placeholder="全部类型" /></SelectTrigger>

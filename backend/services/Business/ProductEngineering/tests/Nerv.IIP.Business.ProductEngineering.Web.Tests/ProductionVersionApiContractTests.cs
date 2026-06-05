@@ -173,6 +173,13 @@ public sealed class ProductionVersionApiContractTests
         Assert.Equal(3, response.Total);
         var item = Assert.Single(response.Items);
         Assert.Equal("SKU-FG-2000", item.SkuCode);
+
+        var firstPage = await new ListProductionVersionsQueryHandler(dbContext).Handle(
+            new ListProductionVersionsQuery("org-001", "env-dev", null, null, Skip: -10, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, firstPage.Total);
+        Assert.Equal("SKU-FG-1000", Assert.Single(firstPage.Items).SkuCode);
     }
 
     private static ProductionVersion NewProductionVersion(string skuCode, string mbomVersionId, string routingVersionId, int priority)

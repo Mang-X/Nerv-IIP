@@ -43,7 +43,7 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
         var versions = await query
             .OrderBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
-            .Skip(request.Skip)
+            .Skip(Math.Max(0, request.Skip))
             .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new
             {
@@ -110,7 +110,7 @@ public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbCon
             .OrderBy(x => x.SkuCode)
             .ThenBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
-            .Skip(request.Skip)
+            .Skip(Math.Max(0, request.Skip))
             .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new ManufacturingBomListItem(
                 x.BomCode,
@@ -172,7 +172,7 @@ public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
         var versions = await query
             .OrderBy(x => x.RoutingCode)
             .ThenBy(x => x.Revision)
-            .Skip(request.Skip)
+            .Skip(Math.Max(0, request.Skip))
             .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new
             {

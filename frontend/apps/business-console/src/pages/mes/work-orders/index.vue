@@ -42,9 +42,6 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 import {
-  ArrowDownIcon,
-  ArrowUpDownIcon,
-  ArrowUpIcon,
   CalendarCheckIcon,
   ClipboardCheckIcon,
   EyeIcon,
@@ -98,13 +95,10 @@ const executionContext = reactive({
   workCenterCode: '',
   shiftCode: '',
 })
-type SortColumn = 'workOrderId' | 'skuId' | 'status' | 'quantity' | 'dueUtc' | 'operationCount'
 
 const tableState = reactive({
   page: 1,
   pageSize: '10',
-  sortBy: 'dueUtc' as SortColumn,
-  sortDirection: 'asc' as 'asc' | 'desc',
 })
 const filterDraft = reactive({
   keyword: '',
@@ -272,22 +266,8 @@ const visibleWorkOrders = computed(() => {
     return statusMatched && keywordMatched && workCenterMatched
   })
 })
-const sortedWorkOrders = computed(() => {
-  const direction = tableState.sortDirection === 'asc' ? 1 : -1
-
-  return [...visibleWorkOrders.value].sort((left, right) => {
-    const leftValue = sortValue(left, tableState.sortBy)
-    const rightValue = sortValue(right, tableState.sortBy)
-
-    if (typeof leftValue === 'number' && typeof rightValue === 'number') {
-      return (leftValue - rightValue) * direction
-    }
-
-    return String(leftValue).localeCompare(String(rightValue), 'zh-Hans-CN') * direction
-  })
-})
 const pageSizeNumber = computed(() => Number(tableState.pageSize) || 10)
-const pagedWorkOrders = computed(() => sortedWorkOrders.value)
+const pagedWorkOrders = computed(() => visibleWorkOrders.value)
 
 watch(
   () => [
@@ -451,28 +431,6 @@ async function submitProductionReport() {
   reportForm.idempotencyKey = newMesIdempotencyKey('production-report')
 }
 
-function setSort(column: SortColumn) {
-  if (tableState.sortBy === column) {
-    tableState.sortDirection = tableState.sortDirection === 'asc' ? 'desc' : 'asc'
-    return
-  }
-
-  tableState.sortBy = column
-  tableState.sortDirection = 'asc'
-}
-
-function sortIcon(column: SortColumn) {
-  if (tableState.sortBy !== column) return ArrowUpDownIcon
-  return tableState.sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon
-}
-
-function sortValue(order: BusinessConsoleMesWorkOrderItem, column: SortColumn) {
-  if (column === 'quantity') return order.quantity ?? 0
-  if (column === 'dueUtc') return order.dueUtc ? new Date(order.dueUtc).getTime() : 0
-  if (column === 'operationCount') return order.operationTasks?.length ?? 0
-  return order[column] ?? ''
-}
-
 function optionalText(value: string) {
   const trimmed = value.trim()
   return trimmed ? trimmed : undefined
@@ -611,7 +569,7 @@ function isNonEmpty(value: string) {
         <FieldGroup class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto]">
           <Field>
             <FieldLabel for="work-order-keyword">搜索</FieldLabel>
-            <Input id="work-order-keyword" v-model="filterDraft.keyword" placeholder="工单、物料、生产版本" @keydown.enter="applyFilters" />
+            <Input id="work-order-keyword" v-model="filterDraft.keyword" placeholder="当前页工单、物料、生产版本" @keydown.enter="applyFilters" />
           </Field>
           <Field>
             <FieldLabel for="work-order-status">状态</FieldLabel>
@@ -651,8 +609,8 @@ function isNonEmpty(value: string) {
 
       <div class="grid gap-3 md:grid-cols-3">
         <BusinessMetricCell label="工单数" :value="workOrdersTotal" detail="后端分页总数" />
-        <BusinessMetricCell label="未关闭工单" :value="openOrderCount" detail="仍需现场跟进" />
-        <BusinessMetricCell label="工序任务" :value="operationCount" detail="工单下可见任务" />
+        <BusinessMetricCell label="本页未关闭工单" :value="openOrderCount" detail="仍需现场跟进" />
+        <BusinessMetricCell label="本页工序任务" :value="operationCount" detail="工单下可见任务" />
       </div>
 
       <div class="overflow-hidden rounded-lg border bg-background">
@@ -664,36 +622,11 @@ function isNonEmpty(value: string) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('workOrderId')">
-                    工单
-                    <component :is="sortIcon('workOrderId')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('status')">
-                    状态
-                    <component :is="sortIcon('status')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead class="text-right">
-                  <Button class="-mr-3" size="sm" type="button" variant="ghost" @click="setSort('quantity')">
-                    数量
-                    <component :is="sortIcon('quantity')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('dueUtc')">
-                    交期
-                    <component :is="sortIcon('dueUtc')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
-                <TableHead>
-                  <Button class="-ml-3" size="sm" type="button" variant="ghost" @click="setSort('operationCount')">
-                    工序
-                    <component :is="sortIcon('operationCount')" data-icon="inline-end" />
-                  </Button>
-                </TableHead>
+                <TableHead>工单</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead class="text-right">数量</TableHead>
+                <TableHead>交期</TableHead>
+                <TableHead>工序</TableHead>
                 <TableHead class="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>

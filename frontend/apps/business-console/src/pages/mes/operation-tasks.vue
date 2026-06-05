@@ -85,7 +85,7 @@ const runningCount = computed(() => visibleTasks.value.filter((t) => ['Running',
 const blockedCount = computed(() => visibleTasks.value.filter((t) => ['Blocked', 'Held'].includes(t.status ?? '')).length)
 
 // --- Sort (page-owned, before pagination) ---
-const sort = ref<DataTableSort | null>({ key: 'plannedStartUtc', direction: 'asc' })
+const sort = ref<DataTableSort | null>(null)
 function sortValue(task: Row, key: string): string | number {
   if (key === 'operationSequence') return task.operationSequence ?? 0
   if (key === 'plannedStartUtc') return task.plannedStartUtc ? new Date(task.plannedStartUtc).getTime() : 0
@@ -118,15 +118,15 @@ watch([page, pageSize], () => {
 }, { immediate: true })
 
 const columns: DataTableColumn<Row>[] = [
-  { key: 'operationTaskId', header: '工序任务', sortable: true, cellClass: 'font-medium', accessor: (r) => r.operationTaskId ?? '无编号' },
-  { key: 'workOrderId', header: '工单', sortable: true },
-  { key: 'status', header: '状态', sortable: true, width: 'w-24' },
-  { key: 'operationSequence', header: '序号', align: 'end', sortable: true, width: 'w-16', accessor: (r) => r.operationSequence ?? 0 },
-  { key: 'workCenterId', header: '工作中心', sortable: true, accessor: (r) => r.workCenterId ?? '无' },
-  { key: 'deviceAssetId', header: '设备', sortable: true, accessor: (r) => r.deviceAssetId ?? '未指定' },
-  { key: 'shiftId', header: '班次', sortable: true, accessor: (r) => r.shiftId ?? '未指定' },
-  { key: 'plannedStartUtc', header: '计划开始', sortable: true, accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
-  { key: 'qualityStatus', header: '质量状态', sortable: true },
+  { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskId ?? '无编号' },
+  { key: 'workOrderId', header: '工单' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'operationSequence', header: '序号', align: 'end', width: 'w-16', accessor: (r) => r.operationSequence ?? 0 },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
+  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
+  { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
+  { key: 'plannedStartUtc', header: '计划开始', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
+  { key: 'qualityStatus', header: '质量状态' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
@@ -198,13 +198,13 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="4">
-      <SectionCard description="可开工" :value="readyCount" hint="确认人员、设备、物料后进入报工" />
-      <SectionCard description="执行中" :value="runningCount" hint="关注报工节拍与质量确认" />
-      <SectionCard description="受阻" :value="blockedCount" hint="需班组长 / 质检 / 设备处理" />
+      <SectionCard description="本页可开工" :value="readyCount" hint="确认人员、设备、物料后进入报工" />
+      <SectionCard description="本页执行中" :value="runningCount" hint="关注报工节拍与质量确认" />
+      <SectionCard description="本页受阻" :value="blockedCount" hint="需班组长 / 质检 / 设备处理" />
       <SectionCard description="任务总数" :value="operationTasksTotal" hint="后端分页总数" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
+    <Toolbar v-model:search="keyword" search-placeholder="搜索当前页任务、工单、设备">
       <template #filters>
         <Select v-model="statusFilter">
           <SelectTrigger class="h-9 w-32" aria-label="工序状态"><SelectValue /></SelectTrigger>

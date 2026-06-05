@@ -137,6 +137,13 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal(3, response.Total);
         var item = Assert.Single(response.Items);
         Assert.Equal("MBOM-002", item.BomCode);
+
+        var firstPage = await new ListManufacturingBomsQueryHandler(dbContext).Handle(
+            new ListManufacturingBomsQuery("org-001", "env-dev", "SKU-FG-1000", null, Skip: -10, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, firstPage.Total);
+        Assert.Equal("MBOM-001", Assert.Single(firstPage.Items).BomCode);
     }
 
     [Fact]

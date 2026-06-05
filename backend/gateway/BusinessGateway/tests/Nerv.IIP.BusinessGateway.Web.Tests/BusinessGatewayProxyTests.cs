@@ -2390,10 +2390,10 @@ public sealed class BusinessGatewayProxyTests
         {
             return new
             {
-            data = new
-            {
-                total = 0,
-                items = Array.Empty<object>(),
+                data = new
+                {
+                    total = 0,
+                    items = Array.Empty<object>(),
                 },
                 success = true,
                 message = string.Empty,
@@ -2672,6 +2672,8 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public BusinessConsoleQualityListRequest? LastNcrListRequest { get; private set; }
 
+    public int? NcrTotal { get; init; }
+
     public Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
@@ -2711,7 +2713,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
                     null,
                     null),
             ],
-            1));
+            NcrTotal ?? 1));
     }
 
     public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
@@ -3669,6 +3671,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; init; }
 
+    public int? WorkOrdersTotal { get; init; }
+
     public IReadOnlyCollection<BusinessConsoleMesProductionPlanRow>? ProductionPlans { get; init; }
 
     public BusinessConsoleMesListRequest? LastProductionPlanListRequest { get; private set; }
@@ -3756,7 +3760,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
                     "released",
                     []),
             ];
-        return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(workOrders, workOrders.Count));
+        return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(workOrders, WorkOrdersTotal ?? workOrders.Count));
     }
 
     public Task<BusinessConsoleMesWorkOrderDetailResponse> GetWorkOrderDetailAsync(

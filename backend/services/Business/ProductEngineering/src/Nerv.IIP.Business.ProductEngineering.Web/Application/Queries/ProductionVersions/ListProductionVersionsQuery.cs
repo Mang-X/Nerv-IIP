@@ -37,7 +37,7 @@ public sealed class ListProductionVersionsQueryHandler(ApplicationDbContext dbCo
             .ThenByDescending(x => x.IsDefault)
             .ThenBy(x => x.Priority)
             .ThenBy(x => x.ValidFrom)
-            .Skip(request.Skip)
+            .Skip(Math.Max(0, request.Skip))
             .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new
             {

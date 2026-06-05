@@ -37,7 +37,7 @@ const {
 
 const keyword = ref('')
 const roleFilter = ref<PartnerRole>('all')
-const sort = ref<DataTableSort | null>({ key: 'code', direction: 'asc' })
+const sort = ref<DataTableSort | null>(null)
 const page = ref(1)
 const pageSize = ref('10')
 
@@ -72,11 +72,11 @@ const supplierCount = computed(() => allRows.value.filter((r) => r.role === 'sup
 const errorMessage = computed(() => formatError(resourcesError.value))
 
 const columns: DataTableColumn<PartnerRow>[] = [
-  { key: 'code', header: '编码', sortable: true, cellClass: 'font-medium' },
-  { key: 'displayName', header: '名称', sortable: true },
-  { key: 'role', header: '角色', sortable: true, width: 'w-28' },
-  { key: 'active', header: '状态', sortable: true, width: 'w-24' },
-  { key: 'snapshotVersion', header: '版本', sortable: true, width: 'w-28' },
+  { key: 'code', header: '编码', cellClass: 'font-medium' },
+  { key: 'displayName', header: '名称' },
+  { key: 'role', header: '角色', width: 'w-28' },
+  { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'snapshotVersion', header: '版本', width: 'w-28' },
 ]
 
 watch([keyword, roleFilter, pageSize], () => {
@@ -113,11 +113,11 @@ function formatError(error: unknown) {
 
     <SectionCards :columns="3">
       <SectionCard description="伙伴总数" :value="resourcesTotal" hint="客户与供应商档案" />
-      <SectionCard description="客户" :value="customerCount" hint="支撑销售需求与发货" />
-      <SectionCard description="供应商" :value="supplierCount" hint="支撑采购与收货检验" />
+      <SectionCard description="本页客户" :value="customerCount" hint="支撑销售需求与发货" />
+      <SectionCard description="本页供应商" :value="supplierCount" hint="支撑采购与收货检验" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索编码、名称、版本">
+    <Toolbar v-model:search="keyword" search-placeholder="搜索当前页编码、名称、版本">
       <template #filters>
         <Select v-model="roleFilter">
           <SelectTrigger class="h-9 w-32" aria-label="伙伴角色"><SelectValue /></SelectTrigger>
