@@ -94,6 +94,11 @@ const closeForm = reactive({
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
 // 从 MES 质量项点具体 NCR 带入时，定位并自动打开对应 NCR 处置抽屉。
 const targetNcrId = computed(() => firstQuery(route.query.ncrId))
+const targetNcr = computed(() =>
+  targetNcrId.value ? ncrs.value.find((n) => n.id === targetNcrId.value || n.code === targetNcrId.value) : undefined,
+)
+const targetNcrMissing = computed(() => !!targetNcrId.value && !ncrsPending.value && !targetNcr.value)
+const locatedTargetId = shallowRef('')
 
 const listErrorMessage = computed(() => formatError(ncrsError.value))
 const dispositionErrorMessage = computed(() => formatError(submitDispositionError.value))
@@ -184,16 +189,17 @@ watch(detailOpen, (open) => {
   if (!open) selectedNcr.value = undefined
 })
 
-// 目标 NCR 一旦出现在当前页就自动打开其处置抽屉（受服务端分页限制，仅当其落在已加载页时可定位）。
-watch(
-  [ncrs, targetNcrId],
-  () => {
-    if (!targetNcrId.value || detailOpen.value) return
-    const match = ncrs.value.find((n) => n.id === targetNcrId.value || n.code === targetNcrId.value)
-    if (match) openNcr(match)
-  },
-  { immediate: true },
-)
+// 带 ncrId 进入时清空状态筛选并回到第 1 页，最大化目标 NCR 落入结果的概率，避免被状态过滤排除。
+watch(targetNcrId, (id) => {
+  if (id) filters.status = undefined
+}, { immediate: true })
+
+// 目标 NCR 出现在结果中即自动打开其处置抽屉；每个目标只自动打开一次（手动关闭后不再弹出）。
+watch(targetNcr, (ncr) => {
+  if (!ncr || locatedTargetId.value === targetNcrId.value) return
+  locatedTargetId.value = targetNcrId.value
+  openNcr(ncr)
+}, { immediate: true })
 </script>
 
 <template>
@@ -228,6 +234,9 @@ watch(
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-else-if="targetNcrMissing" class="text-sm text-warning" role="status">
+      未在当前结果中找到 NCR {{ targetNcrId }}，可能在其它分页或已被关闭/筛选；可翻页查找。后端补 NCR 定位查询前无法直接跳转（见 #326）。
+    </p>
 
     <DataTable
       :columns="columns"
