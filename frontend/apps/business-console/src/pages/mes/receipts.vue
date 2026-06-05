@@ -33,7 +33,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { EyeIcon, PackageCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '完工入库' } })
@@ -56,7 +56,6 @@ const router = useRouter()
 const successMessage = shallowRef('')
 const receiptSheetOpen = shallowRef(false)
 
-const keyword = ref('')
 const statusFilter = computed({
   get: () => filters.status || 'all',
   set: (value: string) => { filters.status = value === 'all' ? undefined : value },
@@ -77,14 +76,6 @@ const form = reactive({
   uomCode: 'EA',
   requestedAtUtc: toLocalDateTimeInput(new Date()),
   idempotencyKey: '',
-})
-
-const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return receiptRequests.value
-  return receiptRequests.value.filter((r) =>
-    [r.receiptRequestId, r.workOrderId, r.skuId].some((v) => (v ?? '').toLowerCase().includes(kw)),
-  )
 })
 
 const listErrorMessage = computed(() => formatError(receiptRequestsError.value))
@@ -211,7 +202,7 @@ function isNonEmpty(value: string) {
       <SectionCard description="本页已完成" :value="receiptRequests.length - pendingCount" hint="当前页统计" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索请求号、工单、物料">
+    <Toolbar :show-search="false">
       <template #filters>
         <Select v-model="statusFilter">
           <SelectTrigger class="h-9 w-32" aria-label="入库状态"><SelectValue /></SelectTrigger>
@@ -226,7 +217,7 @@ function isNonEmpty(value: string) {
 
     <DataTable
       :columns="columns"
-      :rows="filtered"
+      :rows="receiptRequests"
       row-key="receiptRequestId"
       :loading="receiptRequestsPending"
       empty-message="暂无完工入库请求。通常从报工完成、质量放行或工单详情发起。"

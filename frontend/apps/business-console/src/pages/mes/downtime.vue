@@ -15,21 +15,12 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '设备与停机' } })
 
 const { downtimeEvents, downtimeEventsError, downtimeEventsPending, downtimeEventsTotal, filters, refreshDowntimeEvents } = useMesDowntimeEvents()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
-
-const keyword = ref('')
-const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return downtimeEvents.value
-  return downtimeEvents.value.filter((r) =>
-    [r.downtimeEventId, r.workOrderId, r.operationTaskId, r.deviceAssetId].some((v) => (v ?? '').toLowerCase().includes(kw)),
-  )
-})
 
 const openCount = computed(() => downtimeEvents.value.filter((x) => x.status === 'Open').length)
 const errorMessage = computed(() => formatError(downtimeEventsError.value))
@@ -72,7 +63,7 @@ function formatError(error: unknown) {
       <SectionCard description="本页已恢复" :value="downtimeEvents.length - openCount" hint="当前页统计" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索停机事件、工单、设备">
+    <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="停机状态" />
       </template>
@@ -82,7 +73,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="filtered"
+      :rows="downtimeEvents"
       row-key="downtimeEventId"
       :loading="downtimeEventsPending"
       empty-message="暂无停机事件。从工序执行记录异常会在这里汇总。"

@@ -15,7 +15,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '产能影响' } })
 
@@ -28,15 +28,6 @@ const {
   refreshCapacityImpacts,
 } = useMesCapacityImpacts()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
-
-const keyword = ref('')
-const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return capacityImpacts.value
-  return capacityImpacts.value.filter((r) =>
-    [r.impactId, r.workCenterId, r.deviceAssetId, r.reasonCode].some((v) => (v ?? '').toLowerCase().includes(kw)),
-  )
-})
 
 const activeCount = computed(() => capacityImpacts.value.filter((item) => item.status === 'Active').length)
 const errorMessage = computed(() => formatError(capacityImpactsError.value))
@@ -79,7 +70,7 @@ function formatError(error: unknown) {
       <SectionCard description="本页已结束" :value="capacityImpacts.length - activeCount" hint="当前页统计" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索影响编号、工作中心、设备">
+    <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="影响状态" />
       </template>
@@ -89,7 +80,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="filtered"
+      :rows="capacityImpacts"
       row-key="impactId"
       :loading="capacityImpactsPending"
       empty-message="暂无产能影响。设备停机或维护冲突发生时会在这里汇总。"

@@ -14,26 +14,18 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '报工与完工' } })
 
 const { filters, productionReports, productionReportsError, productionReportsPending, productionReportsTotal, refreshProductionReports } = useMesProductionReports()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
-const keyword = ref('')
-const rows = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return productionReports.value
-  return productionReports.value.filter((r) =>
-    [r.productionReportId, r.workOrderId, r.operationTaskId].some((v) => (v ?? '').toLowerCase().includes(kw)),
-  )
-})
 const goodTotal = computed(() => productionReports.value.reduce((s, r) => s + (r.goodQuantity ?? 0), 0))
 const scrapTotal = computed(() => productionReports.value.reduce((s, r) => s + (r.scrapQuantity ?? 0), 0))
 const errorMessage = computed(() => formatError(productionReportsError.value))
 
-type ReportRow = (typeof rows)['value'][number]
+type ReportRow = (typeof productionReports)['value'][number]
 const columns: DataTableColumn<ReportRow>[] = [
   { key: 'productionReportId', header: '报工单', cellClass: 'font-medium' },
   { key: 'workOrderId', header: '工单' },
@@ -71,7 +63,7 @@ function formatError(error: unknown) {
       <SectionCard description="本页不良总数" :value="scrapTotal" hint="当前页合计" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索报工单、工单、工序">
+    <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="报工状态" />
       </template>
@@ -81,7 +73,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="rows"
+      :rows="productionReports"
       row-key="productionReportId"
       :loading="productionReportsPending"
       empty-message="暂无报工记录。新增报工请从工单或工序上下文进入。"

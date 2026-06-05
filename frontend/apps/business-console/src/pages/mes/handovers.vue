@@ -15,21 +15,12 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '班次交接' } })
 
 const { filters, handovers, handoversError, handoversPending, handoversTotal, refreshHandovers } = useMesShiftHandovers()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
-
-const keyword = ref('')
-const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return handovers.value
-  return handovers.value.filter((r) =>
-    [r.handoverId, r.shiftId, r.teamId].some((v) => (v ?? '').toLowerCase().includes(kw)),
-  )
-})
 
 const openIssueTotal = computed(() => handovers.value.reduce((s, r) => s + (r.openIssueCount ?? 0), 0))
 const errorMessage = computed(() => formatError(handoversError.value))
@@ -68,10 +59,10 @@ function formatError(error: unknown) {
     <SectionCards :columns="3">
       <SectionCard description="交接单" :value="handoversTotal" hint="后端筛选总数" />
       <SectionCard description="本页未结事项" :value="openIssueTotal" hint="当前页统计" />
-      <SectionCard description="本页当前班次" :value="filtered.length" hint="当前页统计" />
+      <SectionCard description="本页当前班次" :value="handovers.length" hint="当前页统计" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索交接单、班次、班组">
+    <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="交接状态" />
       </template>
@@ -81,7 +72,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="filtered"
+      :rows="handovers"
       row-key="handoverId"
       :loading="handoversPending"
       empty-message="暂无班次交接。班次结束时创建交接单，记录未完成事项。"

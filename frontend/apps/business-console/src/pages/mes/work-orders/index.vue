@@ -501,10 +501,18 @@ function isNonEmpty(value: string) {
       empty-message="当前筛选下没有工单。正常生产请先进入生产计划转工单，急单只处理临时插单。"
     >
       <template #cell-workOrderId="{ row }">
-        <button type="button" class="flex flex-col gap-0.5 text-left" @click="openOrderDetail(row)">
-          <span class="font-medium text-brand underline-offset-4 hover:underline">{{ row.workOrderId ?? '无编号' }}</span>
+        <RouterLink
+          v-if="row.workOrderId"
+          :to="`/mes/work-orders/${encodeURIComponent(row.workOrderId)}`"
+          class="flex flex-col gap-0.5 text-left"
+        >
+          <span class="font-medium text-brand underline-offset-4 hover:underline">{{ row.workOrderId }}</span>
           <span class="text-xs text-muted-foreground">{{ row.skuId ?? '无物料' }}</span>
-        </button>
+        </RouterLink>
+        <div v-else class="flex flex-col gap-0.5">
+          <span class="font-medium text-muted-foreground">无编号</span>
+          <span class="text-xs text-muted-foreground">{{ row.skuId ?? '无物料' }}</span>
+        </div>
       </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>

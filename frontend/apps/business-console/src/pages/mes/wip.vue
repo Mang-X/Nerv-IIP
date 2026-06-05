@@ -15,21 +15,12 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '在制跟踪' } })
 
 const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
-
-const keyword = ref('')
-const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return wipRows.value
-  return wipRows.value.filter((r) =>
-    [r.workOrderId, r.operationTaskId, r.workCenterId, r.status].some((v) => (v ?? '').toLowerCase().includes(kw)),
-  )
-})
 
 const goodTotal = computed(() => wipRows.value.reduce((s, r) => s + (r.goodQuantity ?? 0), 0))
 const scrapTotal = computed(() => wipRows.value.reduce((s, r) => s + (r.scrapQuantity ?? 0), 0))
@@ -72,7 +63,7 @@ function formatError(error: unknown) {
       <SectionCard description="本页报废数" :value="formatQuantity(scrapTotal)" hint="当前页合计" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索工单、工序、工作中心">
+    <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="在制状态" />
       </template>
@@ -82,7 +73,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="filtered"
+      :rows="wipRows"
       :row-key="(r) => `${r.workOrderId}-${r.operationTaskId}`"
       :loading="wipPending"
       empty-message="暂无在制数据。工单释放并排程后，在制行会出现在这里。"

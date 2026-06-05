@@ -14,7 +14,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '报工记录' } })
 
@@ -27,15 +27,6 @@ const {
   refreshProductionReports,
 } = useMesProductionReports()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
-
-const keyword = ref('')
-const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return productionReports.value
-  return productionReports.value.filter((r) =>
-    [r.productionReportId, r.workOrderId, r.operationTaskId].some((v) => (v ?? '').toLowerCase().includes(kw)),
-  )
-})
 
 const goodTotal = computed(() => productionReports.value.reduce((s, r) => s + (r.goodQuantity ?? 0), 0))
 const scrapTotal = computed(() => productionReports.value.reduce((s, r) => s + (r.scrapQuantity ?? 0), 0))
@@ -82,7 +73,7 @@ function formatError(error: unknown) {
       <SectionCard description="本页报废数" :value="formatQuantity(scrapTotal)" hint="当前页合计" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索报工单、工单、工序">
+    <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="报工状态" />
       </template>
@@ -92,7 +83,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="filtered"
+      :rows="productionReports"
       row-key="productionReportId"
       :loading="productionReportsPending"
       empty-message="暂无报工记录。新增报工请从工单与派工或工序执行进入。"

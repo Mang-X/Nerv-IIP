@@ -15,21 +15,12 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '派工看板' } })
 
 const { dispatchTasks, dispatchTasksError, dispatchTasksPending, dispatchTasksTotal, filters, refreshDispatchTasks } = useMesDispatchTasks()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
-
-const keyword = ref('')
-const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return dispatchTasks.value
-  return dispatchTasks.value.filter((r) =>
-    [r.operationTaskId, r.workOrderId, r.workCenterId, r.deviceAssetId, r.shiftId].some((v) => (v ?? '').toLowerCase().includes(kw)),
-  )
-})
 
 const blockedCount = computed(() => dispatchTasks.value.filter((x) => x.blockingReasons?.length).length)
 const dispatchableCount = computed(() => dispatchTasks.value.filter((x) => !x.blockingReasons?.length).length)
@@ -77,7 +68,7 @@ function formatError(error: unknown) {
       <SectionCard description="本页有阻塞" :value="blockedCount" hint="当前页统计" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索工序、工单、工作中心、设备">
+    <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="派工状态" />
       </template>
@@ -87,7 +78,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="filtered"
+      :rows="dispatchTasks"
       row-key="operationTaskId"
       :loading="dispatchTasksPending"
       empty-message="暂无待派工序。工单释放并排程后，待派工序会出现在这里。"

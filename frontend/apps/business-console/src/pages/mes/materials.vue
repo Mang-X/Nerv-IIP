@@ -15,7 +15,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '齐套与物料' } })
 
@@ -28,15 +28,6 @@ const {
   refreshMaterialIssueRequests,
 } = useMesMaterialIssueRequests()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
-
-const keyword = ref('')
-const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return materialIssueRequests.value
-  return materialIssueRequests.value.filter((r) =>
-    [r.requestId, r.workOrderId, r.wmsRequestId].some((v) => (v ?? '').toLowerCase().includes(kw)),
-  )
-})
 
 const openCount = computed(() => materialIssueRequests.value.filter((x) => x.status !== 'Closed').length)
 const closedCount = computed(() => materialIssueRequests.value.filter((x) => x.status === 'Closed').length)
@@ -78,7 +69,7 @@ function formatError(error: unknown) {
       <SectionCard description="本页已关闭" :value="closedCount" hint="当前页统计" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索申请号、工单、仓库单号">
+    <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="领料状态" />
       </template>
@@ -88,7 +79,7 @@ function formatError(error: unknown) {
 
     <DataTable
       :columns="columns"
-      :rows="filtered"
+      :rows="materialIssueRequests"
       row-key="requestId"
       :loading="materialIssueRequestsPending"
       empty-message="暂无领料申请。齐套检查通过后从工单详情发起领料。"
