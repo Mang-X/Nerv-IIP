@@ -429,6 +429,34 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Production_plan_keyword_does_not_match_readiness_substrings()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var dueUtc = DateTimeOffset.Parse("2026-06-01T08:00:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-ALPHA-001",
+            "SKU-ALPHA",
+            "PV-ALPHA",
+            1m,
+            10,
+            dueUtc,
+            "PCS",
+            new SourcePlanReference("Alpha", "Beta", "GAMMA-001", "DELTA-001")));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var plans = await new ListProductionPlansQueryHandler(dbContext).Handle(
+            new ListProductionPlansQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Keyword: "y"),
+            CancellationToken.None);
+
+        Assert.Equal(0, plans.Total);
+        Assert.Empty(plans.Items);
+    }
+
+    [Fact]
     public async Task Work_order_list_query_returns_offset_page_and_total_count()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
