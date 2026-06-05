@@ -28,8 +28,6 @@ function defaultFilters(initial: Partial<QualityListFilters> = {}): QualityListF
   return reactive({
     organizationId: 'org-001',
     environmentId: 'env-dev',
-    ...optionalQuery('status', initial.status),
-    ...optionalQuery('keyword', initial.keyword),
     skip: 0,
     take: DEFAULT_TAKE,
     ...initial,

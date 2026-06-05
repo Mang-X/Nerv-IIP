@@ -59,7 +59,7 @@ const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.statu
 
 const recordSuccess = shallowRef('')
 const recordSheetOpen = shallowRef(false)
-const locatedInspectionPlanId = shallowRef('')
+const recordCreatedFromLocatedPlanId = shallowRef('')
 
 const recordForm = reactive({
   organizationId: filters.organizationId,
@@ -88,6 +88,7 @@ const targetInspectionPlan = computed(() =>
 const targetInspectionPlanMissing = computed(() =>
   !!targetInspectionPlanId.value && !inspectionPlansPending.value && !targetInspectionPlan.value,
 )
+const shouldCreateRecordFromLocatedPlan = computed(() => firstQuery(route.query.action).toLowerCase() === 'create')
 watch(
   () => route.query,
   (query) => {
@@ -111,13 +112,18 @@ watch(
   { immediate: true },
 )
 watch(targetInspectionPlanId, (id) => {
-  filters.status = undefined
-  filters.keyword = id || undefined
-  locatedInspectionPlanId.value = ''
+  if (id) {
+    filters.status = undefined
+    filters.keyword = id
+  }
+  else {
+    filters.keyword = undefined
+  }
+  recordCreatedFromLocatedPlanId.value = ''
 }, { immediate: true })
-watch(targetInspectionPlan, (plan) => {
-  if (!plan || locatedInspectionPlanId.value === targetInspectionPlanId.value) return
-  locatedInspectionPlanId.value = targetInspectionPlanId.value
+watch([targetInspectionPlan, shouldCreateRecordFromLocatedPlan], ([plan, shouldCreate]) => {
+  if (!plan || !shouldCreate || recordCreatedFromLocatedPlanId.value === targetInspectionPlanId.value) return
+  recordCreatedFromLocatedPlanId.value = targetInspectionPlanId.value
   useInspectionPlan(plan)
 }, { immediate: true })
 

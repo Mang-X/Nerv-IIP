@@ -94,12 +94,7 @@ public sealed class ListInspectionPlansQueryHandler(ApplicationDbContext dbConte
             var keywordId = hasKeywordId ? new InspectionPlanId(keywordGuid) : null;
             query = query.Where(x =>
                 (keywordId != null && x.Id == keywordId)
-                || x.PlanCode.ToLower().Contains(keyword)
-                || (x.SkuCode != null && x.SkuCode.ToLower().Contains(keyword))
-                || (x.PartnerId != null && x.PartnerId.ToLower().Contains(keyword))
-                || (x.WorkCenterId != null && x.WorkCenterId.ToLower().Contains(keyword))
-                || (x.DeviceAssetId != null && x.DeviceAssetId.ToLower().Contains(keyword))
-                || (x.DocumentType != null && x.DocumentType.ToLower().Contains(keyword)));
+                || x.PlanCode.ToLower().Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);

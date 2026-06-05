@@ -82,11 +82,7 @@ public sealed class ListNonconformanceReportsQueryHandler(ApplicationDbContext d
             query = query.Where(x =>
                 (keywordId != null && x.Id == keywordId)
                 || x.NcrCode.ToLower().Contains(keyword)
-                || x.SourceDocumentId.ToLower().Contains(keyword)
-                || x.SkuCode.ToLower().Contains(keyword)
-                || x.DefectReason.ToLower().Contains(keyword)
-                || (x.BatchNo != null && x.BatchNo.ToLower().Contains(keyword))
-                || (x.SerialNo != null && x.SerialNo.ToLower().Contains(keyword)));
+                || x.SourceDocumentId.ToLower().Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);

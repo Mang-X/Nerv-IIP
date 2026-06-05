@@ -192,8 +192,13 @@ watch(detailOpen, (open) => {
 
 // 带 ncrId 进入时使用后端 keyword 定位，避免目标 NCR 因分页、筛选或排序不在当前页。
 watch(targetNcrId, (id) => {
-  filters.status = undefined
-  filters.keyword = id || undefined
+  if (id) {
+    filters.status = undefined
+    filters.keyword = id
+  }
+  else {
+    filters.keyword = undefined
+  }
   locatedTargetId.value = ''
 }, { immediate: true })
 

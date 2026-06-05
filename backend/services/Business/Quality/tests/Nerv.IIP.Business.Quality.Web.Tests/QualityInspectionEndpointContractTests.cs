@@ -189,23 +189,49 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
-    public async Task List_inspection_plans_filters_keyword_before_paging_and_total_count()
+    public async Task List_inspection_plans_filters_keyword_by_id_or_plan_code_before_paging_and_total_count()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.InspectionPlans.AddRange(
-            NewInspectionPlan("IQP-TARGET-001"),
-            NewInspectionPlan("IQP-OTHER-001"));
+        var target = NewInspectionPlan("IQP-TARGET-001");
+        dbContext.InspectionPlans.AddRange(target, NewInspectionPlan("IQP-OTHER-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var codeResponse = await new ListInspectionPlansQueryHandler(dbContext).Handle(
+            new ListInspectionPlansQuery("org-001", "env-dev", null, null, null, null, null, Keyword: "target", Skip: 0, Take: 1),
+            CancellationToken.None);
+        var idResponse = await new ListInspectionPlansQueryHandler(dbContext).Handle(
+            new ListInspectionPlansQuery("org-001", "env-dev", null, null, null, null, null, Keyword: target.Id.ToString(), Skip: 0, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(1, codeResponse.Total);
+        Assert.Equal("IQP-TARGET-001", Assert.Single(codeResponse.Items).PlanCode);
+        Assert.Equal(1, idResponse.Total);
+        Assert.Equal(target.Id, Assert.Single(idResponse.Items).InspectionPlanId);
+    }
+
+    [Fact]
+    public async Task List_inspection_plans_keyword_does_not_match_non_locator_fields()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.InspectionPlans.Add(NewInspectionPlan(
+            "IQP-OTHER-001",
+            skuCode: "SKU-TARGET-001",
+            partnerId: "PARTNER-TARGET",
+            workCenterId: "WC-TARGET",
+            deviceAssetId: "DEV-TARGET",
+            documentType: "DOC-TARGET"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListInspectionPlansQueryHandler(dbContext).Handle(
-            new ListInspectionPlansQuery("org-001", "env-dev", null, null, null, null, null, Keyword: "target", Skip: 0, Take: 1),
+            new ListInspectionPlansQuery("org-001", "env-dev", null, null, null, null, null, Keyword: "target", Skip: 0, Take: 10),
             CancellationToken.None);
 
-        Assert.Equal(1, response.Total);
-        var item = Assert.Single(response.Items);
-        Assert.Equal("IQP-TARGET-001", item.PlanCode);
+        Assert.Equal(0, response.Total);
+        Assert.Empty(response.Items);
     }
 
     [Fact]
@@ -231,14 +257,50 @@ public sealed class QualityInspectionEndpointContractTests
             NonconformanceReport.Open("org-001", "env-dev", "NCR-OTHER-001", "receiving", "RCV-002", "SKU-RM-1000", 1m, "scratch", null, null, []));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var response = await new ListNonconformanceReportsQueryHandler(dbContext).Handle(
+        var idResponse = await new ListNonconformanceReportsQueryHandler(dbContext).Handle(
             new ListNonconformanceReportsQuery("org-001", "env-dev", null, null, null, Keyword: target.Id.ToString(), Skip: 0, Take: 1),
             CancellationToken.None);
+        var codeResponse = await new ListNonconformanceReportsQueryHandler(dbContext).Handle(
+            new ListNonconformanceReportsQuery("org-001", "env-dev", null, null, null, Keyword: "target", Skip: 0, Take: 1),
+            CancellationToken.None);
+        var sourceDocumentResponse = await new ListNonconformanceReportsQueryHandler(dbContext).Handle(
+            new ListNonconformanceReportsQuery("org-001", "env-dev", null, null, null, Keyword: "RCV-001", Skip: 0, Take: 1),
+            CancellationToken.None);
 
-        Assert.Equal(1, response.Total);
-        var item = Assert.Single(response.Items);
+        Assert.Equal(1, idResponse.Total);
+        var item = Assert.Single(idResponse.Items);
         Assert.Equal(target.Id, item.NcrId);
         Assert.Equal("NCR-TARGET-001", item.NcrCode);
+        Assert.Equal("NCR-TARGET-001", Assert.Single(codeResponse.Items).NcrCode);
+        Assert.Equal("RCV-001", Assert.Single(sourceDocumentResponse.Items).SourceDocumentId);
+    }
+
+    [Fact]
+    public async Task List_ncrs_keyword_does_not_match_non_locator_fields()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.NonconformanceReports.Add(NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-OTHER-001",
+            "receiving",
+            "RCV-OTHER-001",
+            "SKU-TARGET-001",
+            1m,
+            "target-defect",
+            "BATCH-TARGET",
+            "SERIAL-TARGET",
+            []));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListNonconformanceReportsQueryHandler(dbContext).Handle(
+            new ListNonconformanceReportsQuery("org-001", "env-dev", null, null, null, Keyword: "target", Skip: 0, Take: 10),
+            CancellationToken.None);
+
+        Assert.Equal(0, response.Total);
+        Assert.Empty(response.Items);
     }
 
     [Fact]
@@ -290,18 +352,24 @@ public sealed class QualityInspectionEndpointContractTests
         return services.BuildServiceProvider();
     }
 
-    private static InspectionPlan NewInspectionPlan(string planCode)
+    private static InspectionPlan NewInspectionPlan(
+        string planCode,
+        string? skuCode = "SKU-RM-1000",
+        string? partnerId = "supplier-001",
+        string? workCenterId = null,
+        string? deviceAssetId = null,
+        string? documentType = "purchase-receipt")
     {
         return InspectionPlan.Create(
             "org-001",
             "env-dev",
             planCode,
             "receiving",
-            "SKU-RM-1000",
-            "supplier-001",
-            null,
-            null,
-            "purchase-receipt");
+            skuCode,
+            partnerId,
+            workCenterId,
+            deviceAssetId,
+            documentType);
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
