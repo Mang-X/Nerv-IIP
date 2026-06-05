@@ -46,6 +46,7 @@ const {
   skus,
   skusError,
   skusPending,
+  skusTotal,
 } = useBusinessSkus()
 
 // Optimistic rows for items the user created in this session (real entries, never placeholders).
@@ -55,7 +56,7 @@ const createSuccess = shallowRef('')
 
 const keyword = ref('')
 const includeDisabled = ref(false)
-const sort = ref<DataTableSort | null>({ key: 'code', direction: 'asc' })
+const sort = ref<DataTableSort | null>(null)
 const page = ref(1)
 const pageSize = ref('10')
 
@@ -94,10 +95,12 @@ const trackingOptions = [
 
 // Show an optimistic row only until the (invalidated) query refetches it from the
 // server — otherwise the created SKU would appear twice with a colliding rowKey.
-const sourceSkus = computed(() => {
+const pendingLocalSkus = computed(() => {
   const serverCodes = new Set(skus.value.map((s) => s.code).filter(Boolean))
-  const pendingLocal = localSkus.value.filter((s) => !s.code || !serverCodes.has(s.code))
-  return [...pendingLocal, ...skus.value]
+  return localSkus.value.filter((s) => !s.code || !serverCodes.has(s.code))
+})
+const sourceSkus = computed(() => {
+  return [...pendingLocalSkus.value, ...skus.value]
 })
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -120,10 +123,8 @@ const sortedRows = computed(() => {
   )
 })
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSizeNumber.value
-  return sortedRows.value.slice(start, start + pageSizeNumber.value)
-})
+const pagedRows = computed(() => sortedRows.value)
+const totalItems = computed(() => skusTotal.value + pendingLocalSkus.value.length)
 
 const activeCount = computed(() => listRows.value.filter((s) => s.active !== false).length)
 const disabledCount = computed(() => listRows.value.filter((s) => s.active === false).length)
@@ -136,16 +137,21 @@ const canCreateSku = computed(() =>
 )
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
-  { key: 'code', header: '物料编码', sortable: true, cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
-  { key: 'displayName', header: '物料名称', sortable: true, accessor: (r) => r.displayName ?? '无' },
-  { key: 'resourceType', header: '类型', sortable: true, width: 'w-24' },
-  { key: 'active', header: '状态', sortable: true, width: 'w-24' },
-  { key: 'snapshotVersion', header: '版本', sortable: true, width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
+  { key: 'code', header: '物料编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
+  { key: 'displayName', header: '物料名称', accessor: (r) => r.displayName ?? '无' },
+  { key: 'resourceType', header: '类型', width: 'w-24' },
+  { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
 ]
 
-watch([keyword, includeDisabled, pageSize, () => sourceSkus.value.length], () => {
+watch([keyword, includeDisabled, pageSize], () => {
   page.value = 1
 })
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function resetFilters() {
   keyword.value = ''
@@ -219,7 +225,7 @@ function isNonEmpty(value: string) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="物料与产品" :breadcrumbs="[{ label: '基础数据' }]" :count="`${listRows.length} 个物料`">
+    <PageHeader title="物料与产品" :breadcrumbs="[{ label: '基础数据' }]" :count="`${totalItems} 个物料`">
       <template #actions>
         <Button size="sm" variant="outline" type="button" :disabled="skusPending" @click="refreshSkus">
           <RefreshCwIcon aria-hidden="true" />
@@ -336,12 +342,12 @@ function isNonEmpty(value: string) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="物料总数" :value="listRows.length" hint="当前筛选结果" />
-      <SectionCard description="启用" :value="activeCount" hint="可用于计划、采购、生产" />
-      <SectionCard description="停用" :value="disabledCount" hint="已归档或停用" />
+      <SectionCard description="物料总数" :value="totalItems" hint="后端分页总数" />
+      <SectionCard description="本页启用" :value="activeCount" hint="可用于计划、采购、生产" />
+      <SectionCard description="本页停用" :value="disabledCount" hint="已归档或停用" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索物料编码、名称、版本">
+    <Toolbar v-model:search="keyword" search-placeholder="搜索当前页物料编码、名称、版本">
       <template #filters>
         <label class="flex items-center gap-2 text-sm text-muted-foreground">
           <Checkbox v-model:checked="includeDisabled" />
@@ -376,6 +382,6 @@ function isNonEmpty(value: string) {
       </template>
     </DataTable>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sortedRows.length" />
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="totalItems" />
   </BusinessLayout>
 </template>

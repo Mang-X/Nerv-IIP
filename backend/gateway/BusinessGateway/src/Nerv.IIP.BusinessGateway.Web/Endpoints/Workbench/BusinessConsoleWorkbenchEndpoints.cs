@@ -223,9 +223,9 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         {
             var response = await quality.ListNcrsAsync(
                 tokenProvider.BearerToken,
-                new BusinessConsoleQualityListRequest(request.OrganizationId, request.EnvironmentId, "open", take),
+                new BusinessConsoleQualityListRequest(request.OrganizationId, request.EnvironmentId, "open", Take: take),
                 cancellationToken);
-            kpis.Add(new("openNcrs", "Open NCRs", response.Items.Count, "BusinessQuality", "available"));
+            kpis.Add(new("openNcrs", "Open NCRs", response.Total, "BusinessQuality", "available"));
             sourceStatuses["BusinessQuality"] = SourceStatus.Available("BusinessQuality", BusinessGatewayPermissions.QualityNcrRead);
         }
         catch (BusinessServiceProxyException)
@@ -305,9 +305,9 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         {
             var response = await mes.ListWorkOrdersAsync(
                 tokenProvider.BearerToken,
-                new BusinessConsoleMesListRequest(request.OrganizationId, request.EnvironmentId, "released", take),
+                new BusinessConsoleMesListRequest(request.OrganizationId, request.EnvironmentId, "released", Take: take),
                 cancellationToken);
-            kpis.Add(new("releasedWorkOrders", "Released work orders", response.Items.Count, "BusinessMES", "available"));
+            kpis.Add(new("releasedWorkOrders", "Released work orders", response.Total, "BusinessMES", "available"));
             sourceStatuses["BusinessMES"] = SourceStatus.Available("BusinessMES", BusinessGatewayPermissions.MesWorkOrdersRead);
         }
         catch (BusinessServiceProxyException)

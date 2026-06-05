@@ -55,6 +55,7 @@ public sealed class ListBusinessConsoleSkusEndpoint(
                 request.EnvironmentId,
                 "sku",
                 request.IncludeDisabled,
+                request.Skip,
                 request.Take),
             cancellationToken);
 }

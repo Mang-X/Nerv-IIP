@@ -13,6 +13,7 @@ import type {
 import {
   Badge,
   Button,
+  DataTablePagination,
   Field,
   FieldDescription,
   FieldGroup,
@@ -33,7 +34,7 @@ import {
   TableRow,
 } from '@nerv-iip/ui'
 import { ClipboardCheckIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -50,11 +51,14 @@ const {
   inspectionPlans,
   inspectionPlansError,
   inspectionPlansPending,
+  inspectionPlansTotal,
   refreshInspectionPlans,
 } = useQualityInspectionPlans()
 
 const recordSuccess = shallowRef('')
 const recordSheetOpen = shallowRef(false)
+const page = ref(1)
+const pageSize = ref('10')
 
 const recordForm = reactive({
   organizationId: filters.organizationId,
@@ -109,6 +113,12 @@ const canCreateRecord = computed(
     (!requiresDispositionReason.value || isNonEmpty(recordForm.dispositionReason)) &&
     validResultLines.value.length > 0,
 )
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
 
 function syncContextFromFilters() {
   recordForm.organizationId = filters.organizationId
@@ -275,11 +285,7 @@ function isPresent(value: string | undefined | null): value is string {
         <FieldGroup class="grid gap-3 md:grid-cols-4">
           <Field>
             <FieldLabel for="inspection-status">状态</FieldLabel>
-            <Input id="inspection-status" v-model="filters.status" placeholder="可选" />
-          </Field>
-          <Field>
-            <FieldLabel for="inspection-take">返回条数</FieldLabel>
-            <Input id="inspection-take" v-model.number="filters.take" inputmode="numeric" type="number" />
+            <Input id="inspection-status" v-model="filters.status" placeholder="可选" @update:model-value="page = 1" />
           </Field>
         </FieldGroup>
         <BusinessFormStatus :error="listErrorMessage" />
@@ -289,7 +295,7 @@ function isPresent(value: string | undefined | null): value is string {
         <div class="overflow-hidden rounded-lg border bg-background">
           <div class="flex items-center justify-between border-b px-4 py-3">
             <h2 class="text-sm font-semibold text-foreground">检验方案</h2>
-            <span class="text-sm text-muted-foreground">返回 {{ inspectionPlans.length }} 条</span>
+            <span class="text-sm text-muted-foreground">共 {{ inspectionPlansTotal }} 条</span>
           </div>
           <div class="overflow-x-auto">
             <Table>
@@ -334,6 +340,9 @@ function isPresent(value: string | undefined | null): value is string {
                 <TableEmpty v-if="inspectionPlansPending" :colspan="4">正在加载检验方案...</TableEmpty>
               </TableBody>
             </Table>
+          </div>
+          <div class="border-t px-4 py-3">
+            <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="inspectionPlansTotal" />
           </div>
         </div>
       </div>

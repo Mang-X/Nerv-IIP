@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
@@ -179,6 +180,25 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("material-form:powder", resource.Code);
         Assert.Equal("Powder", resource.DisplayName);
         Assert.True(resource.Active);
+    }
+
+    [Fact]
+    public async Task List_resources_returns_offset_page_and_total_count()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-001", "Sku 1", "pcs", "finished-good"));
+        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-002", "Sku 2", "pcs", "finished-good"));
+        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-003", "Sku 3", "pcs", "finished-good"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListMasterDataResourcesQueryHandler(dbContext).Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Skip: 1, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        Assert.Equal("SKU-002", Assert.Single(response.Resources).Code);
     }
 
     [Fact]

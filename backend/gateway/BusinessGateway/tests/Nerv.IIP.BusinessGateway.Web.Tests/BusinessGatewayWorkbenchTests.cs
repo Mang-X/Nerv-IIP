@@ -119,8 +119,8 @@ public sealed class BusinessGatewayWorkbenchTests
         var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(
             BusinessGatewayPermissions.QualityNcrRead,
             BusinessGatewayPermissions.MesWorkOrdersRead);
-        var quality = new RecordingQualityClient();
-        var mes = new RecordingMesClient();
+        var quality = new RecordingQualityClient { NcrTotal = 137 };
+        var mes = new RecordingMesClient { WorkOrdersTotal = 246 };
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessQualityClient>();
@@ -138,6 +138,11 @@ public sealed class BusinessGatewayWorkbenchTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(100, quality.LastNcrListRequest!.Take);
         Assert.Equal(100, mes.LastWorkOrderListRequest!.Take);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var kpis = document.RootElement.GetProperty("data").GetProperty("kpis").EnumerateArray();
+        Assert.Equal(137, kpis.Single(kpi => kpi.GetProperty("key").GetString() == "openNcrs").GetProperty("value").GetInt32());
+        kpis = document.RootElement.GetProperty("data").GetProperty("kpis").EnumerateArray();
+        Assert.Equal(246, kpis.Single(kpi => kpi.GetProperty("key").GetString() == "releasedWorkOrders").GetProperty("value").GetInt32());
     }
 
     [Fact]

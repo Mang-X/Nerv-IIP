@@ -154,6 +154,52 @@ public sealed class ProductionVersionApiContractTests
         Assert.False(string.IsNullOrWhiteSpace(response.ProductionVersionId));
     }
 
+    [Fact]
+    public async Task List_production_versions_returns_offset_page_and_total_count()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ProductionVersions.AddRange(
+            NewProductionVersion("SKU-FG-1000", "mbom-1", "routing-1", 10),
+            NewProductionVersion("SKU-FG-2000", "mbom-2", "routing-2", 20),
+            NewProductionVersion("SKU-FG-3000", "mbom-3", "routing-3", 30));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListProductionVersionsQueryHandler(dbContext).Handle(
+            new ListProductionVersionsQuery("org-001", "env-dev", null, null, Skip: 1, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("SKU-FG-2000", item.SkuCode);
+
+        var firstPage = await new ListProductionVersionsQueryHandler(dbContext).Handle(
+            new ListProductionVersionsQuery("org-001", "env-dev", null, null, Skip: -10, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, firstPage.Total);
+        Assert.Equal("SKU-FG-1000", Assert.Single(firstPage.Items).SkuCode);
+    }
+
+    private static ProductionVersion NewProductionVersion(string skuCode, string mbomVersionId, string routingVersionId, int priority)
+    {
+        return ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            skuCode,
+            mbomVersionId,
+            routingVersionId,
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            priority,
+            false,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();

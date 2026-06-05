@@ -135,7 +135,9 @@ public sealed record ListProductionVersionsRequest(
     string OrganizationId,
     string EnvironmentId,
     string? SkuCode,
-    string? Status);
+    string? Status,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed class ListProductionVersionsEndpoint(ISender sender)
     : ProductionVersionEndpoint<ListProductionVersionsRequest, ResponseData<ListProductionVersionsResponse>>
@@ -148,7 +150,7 @@ public sealed class ListProductionVersionsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListProductionVersionsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListProductionVersionsQuery(req.OrganizationId, req.EnvironmentId, req.SkuCode, req.Status), ct);
+        var response = await sender.Send(new ListProductionVersionsQuery(req.OrganizationId, req.EnvironmentId, req.SkuCode, req.Status, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }

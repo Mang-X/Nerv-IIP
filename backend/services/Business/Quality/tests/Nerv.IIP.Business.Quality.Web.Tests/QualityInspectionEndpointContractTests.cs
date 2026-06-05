@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
@@ -13,6 +14,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Auth;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
 using Nerv.IIP.ServiceAuth;
@@ -165,6 +167,26 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public async Task List_inspection_plans_returns_offset_page_and_total_count()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.InspectionPlans.AddRange(
+            NewInspectionPlan("IQP-001"),
+            NewInspectionPlan("IQP-002"),
+            NewInspectionPlan("IQP-003"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListInspectionPlansQueryHandler(dbContext).Handle(
+            new ListInspectionPlansQuery("org-001", "env-dev", null, null, null, null, null, Skip: 1, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        Assert.Single(response.Items);
+    }
+
+    [Fact]
     public async Task Open_ncr_from_inspection_links_record_and_preserves_source_document_reference()
     {
         await using var provider = CreateInMemoryProvider();
@@ -211,6 +233,20 @@ public sealed class QualityInspectionEndpointContractTests
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseInMemoryDatabase($"quality-inspection-api-contract-{Guid.NewGuid():N}"));
         return services.BuildServiceProvider();
+    }
+
+    private static InspectionPlan NewInspectionPlan(string planCode)
+    {
+        return InspectionPlan.Create(
+            "org-001",
+            "env-dev",
+            planCode,
+            "receiving",
+            "SKU-RM-1000",
+            "supplier-001",
+            null,
+            null,
+            "purchase-receipt");
     }
 
     private static WebApplicationFactory<Program> CreateFactory()

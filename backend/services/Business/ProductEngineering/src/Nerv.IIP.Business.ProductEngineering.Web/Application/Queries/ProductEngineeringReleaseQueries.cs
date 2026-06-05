@@ -7,7 +7,9 @@ public sealed record ListEngineeringBomsQuery(
     string OrganizationId,
     string EnvironmentId,
     string? ParentItemCode,
-    string? Status) : IQuery<ListEngineeringBomsResponse>;
+    string? Status,
+    int Skip = 0,
+    int Take = 100) : IQuery<ListEngineeringBomsResponse>;
 
 public sealed record EngineeringBomListItem(
     string BomCode,
@@ -16,7 +18,7 @@ public sealed record EngineeringBomListItem(
     string Status,
     DateOnly? EffectiveDate);
 
-public sealed record ListEngineeringBomsResponse(IReadOnlyCollection<EngineeringBomListItem> Items);
+public sealed record ListEngineeringBomsResponse(IReadOnlyCollection<EngineeringBomListItem> Items, int Total);
 
 public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListEngineeringBomsQuery, ListEngineeringBomsResponse>
@@ -37,9 +39,12 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.Status == status);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var versions = await query
             .OrderBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
+            .Skip(Math.Max(0, request.Skip))
+            .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new
             {
                 x.BomCode,
@@ -53,7 +58,7 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
         var items = versions
             .Select(x => new EngineeringBomListItem(x.BomCode, x.Revision, x.ParentItemCode, x.Status.ToString(), x.EffectiveDate))
             .ToArray();
-        return new ListEngineeringBomsResponse(items);
+        return new ListEngineeringBomsResponse(items, total);
     }
 }
 
@@ -61,7 +66,9 @@ public sealed record ListManufacturingBomsQuery(
     string OrganizationId,
     string EnvironmentId,
     string? SkuCode,
-    string? Status) : IQuery<ListManufacturingBomsResponse>;
+    string? Status,
+    int Skip = 0,
+    int Take = 100) : IQuery<ListManufacturingBomsResponse>;
 
 public sealed record ManufacturingBomListItem(
     string BomCode,
@@ -77,7 +84,7 @@ public sealed record ManufacturingBomMaterialLineItem(
     string UnitOfMeasureCode,
     decimal ScrapRate);
 
-public sealed record ListManufacturingBomsResponse(IReadOnlyCollection<ManufacturingBomListItem> Items);
+public sealed record ListManufacturingBomsResponse(IReadOnlyCollection<ManufacturingBomListItem> Items, int Total);
 
 public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListManufacturingBomsQuery, ListManufacturingBomsResponse>
@@ -98,10 +105,13 @@ public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbCon
             query = query.Where(x => x.Status == status);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var versions = await query
             .OrderBy(x => x.SkuCode)
             .ThenBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
+            .Skip(Math.Max(0, request.Skip))
+            .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new ManufacturingBomListItem(
                 x.BomCode,
                 x.Revision,
@@ -118,7 +128,7 @@ public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbCon
                     .ToArray()))
             .ToArrayAsync(cancellationToken);
 
-        return new ListManufacturingBomsResponse(versions);
+        return new ListManufacturingBomsResponse(versions, total);
     }
 }
 
@@ -126,7 +136,9 @@ public sealed record ListRoutingsQuery(
     string OrganizationId,
     string EnvironmentId,
     string? SkuCode,
-    string? Status) : IQuery<ListRoutingsResponse>;
+    string? Status,
+    int Skip = 0,
+    int Take = 100) : IQuery<ListRoutingsResponse>;
 
 public sealed record RoutingListItem(
     string RoutingCode,
@@ -135,7 +147,7 @@ public sealed record RoutingListItem(
     string Status,
     DateOnly? EffectiveDate);
 
-public sealed record ListRoutingsResponse(IReadOnlyCollection<RoutingListItem> Items);
+public sealed record ListRoutingsResponse(IReadOnlyCollection<RoutingListItem> Items, int Total);
 
 public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListRoutingsQuery, ListRoutingsResponse>
@@ -156,9 +168,12 @@ public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
             query = query.Where(x => x.Status == status);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var versions = await query
             .OrderBy(x => x.RoutingCode)
             .ThenBy(x => x.Revision)
+            .Skip(Math.Max(0, request.Skip))
+            .Take(Math.Clamp(request.Take, 1, 500))
             .Select(x => new
             {
                 x.RoutingCode,
@@ -172,6 +187,6 @@ public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
         var items = versions
             .Select(x => new RoutingListItem(x.RoutingCode, x.Revision, x.SkuCode, x.Status.ToString(), x.EffectiveDate))
             .ToArray();
-        return new ListRoutingsResponse(items);
+        return new ListRoutingsResponse(items, total);
     }
 }
