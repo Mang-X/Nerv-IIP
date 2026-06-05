@@ -47,13 +47,18 @@ describe('Business status page', () => {
     return wrapper
   }
 
-  it('renders the Business MVP status after authenticated navigation', async () => {
+  it('renders the Business platform status after authenticated navigation', async () => {
     const wrapper = await mountAuthenticatedRoute()
 
-    expect(wrapper.text()).toContain('Business MVP status')
-    expect(wrapper.findAll('[data-test="business-service"]')).toHaveLength(12)
-    expect(wrapper.text()).toContain('#77 Full-chain acceptance')
-    expect(wrapper.text()).toContain('#78 Gantt/RFC reference is excluded')
+    expect(wrapper.text()).toContain('业务平台状态')
+    expect(wrapper.text()).toContain('范围说明')
+    expect(wrapper.text()).toContain('已交付')
+  })
+
+  it('does not leak engineering issue numbers into the UI', async () => {
+    const wrapper = await mountAuthenticatedRoute()
+
+    expect(wrapper.text()).not.toMatch(/#\d+/)
   })
 
   it('lists the delivered business backend services', async () => {
