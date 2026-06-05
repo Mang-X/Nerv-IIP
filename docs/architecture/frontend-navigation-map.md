@@ -244,8 +244,8 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 库存管理 | `/inventory/availability` | 已落地 | 库存可用量查询。 |
 | 库存管理 | `/inventory/movements` | 已落地 | 库存移动工作台。 |
 | 库存管理 | `/inventory/counts` | 已落地 | 盘点任务与调整确认。 |
-| 质量管理 | `/quality/inspections` | 已落地 | 检验计划、检验记录创建入口。 |
-| 质量管理 | `/quality/ncrs` | 已落地 | NCR 列表、处置、关闭。 |
+| 质量管理 | `/quality/inspections` | 已落地（FE-9 金标准） | 检验方案列表（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）；创建检验记录改 Dialog（动态检验特性）；上下文穿透：从工单/工序/收货带入来源单据/批次/序列号并自动开抽屉，含返回工单链接。 |
+| 质量管理 | `/quality/ncrs` | 已落地（FE-9 金标准） | NCR 列表按 FE-4 原型重做（DataTable + 服务端分页 + RowActions）；处置/关闭走 Sheet + AlertDialog；上下文穿透：从工单带入时关闭动作默认填返工工单，含返回工单链接。 |
 | 制造执行 | `/mes` | 已落地（FE-8 金标准） | 生产驾驶舱：按 FE-4 原型重做（PageHeader + 指挥导航卡 + SectionCards + 现场阻塞 DataTable + 角色工作台/下一步建议）；token 色替换 raw palette。 |
 | 制造执行 | `/mes/plans` | 已落地（FE-7 金标准） | 按 FE-4 原型重做（PageHeader + SectionCards + Toolbar[来源/就绪筛选] + DataTable + 转工单 Dialog）；展示来源计划（sourceSystem/sourceDocumentId，#272 durable link 已随 #290 落地）并打通计划→工单转换（含阻塞原因提示）。前端已消费 source 字段，不再受限。 |
 | 制造执行 | `/mes/work-orders`、`/mes/work-orders/:workOrderId` | 已落地（FE-8 金标准） | 列表按 FE-4 原型重做（PageHeader + 来源条 + 派工分组卡 + SectionCards + Toolbar[状态/工作中心] + DataTable + **服务端分页**(#317 提供 total/skip)）；急单与生产报工改 Dialog（报工对象只读、上下文带入）；详情页改 PageHeader + SectionCards + 工序/用料 DataTable。详情不是常驻菜单项。 |
@@ -254,7 +254,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 制造执行 | `/mes/operation-tasks` | 已落地 | 工序执行任务列表与动作入口。 |
 | 制造执行 | `/mes/wip` | 已落地（FE-8 金标准） | 在制跟踪按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）。 |
 | 制造执行 | `/mes/production-reports`、`/mes/reports` | 均已落地（FE-8 金标准） | 报工记录与完工汇总均按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）；新增报工从工单或工序上下文进入。 |
-| 制造执行 | `/mes/quality` | 已落地/受限 | MES 缺陷和关联 Quality 事项。 |
+| 制造执行 | `/mes/quality` | 已落地（FE-9 金标准） | MES 关联质量项按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）；来源单据/NCR 交叉链接到工单与不合格品处理，含来源工单返回链接。 |
 | 制造执行 | `/mes/receipts` | 已落地（FE-8 金标准） | 完工入库按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）；新增入库改 Dialog，工单/物料只读由工单详情或报工完成带出。 |
 | 制造执行 | `/mes/downtime` | 已落地（FE-8 金标准） | 设备与停机按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）；IndustrialTelemetry/Maintenance 联动继续深化。 |
 | 制造执行 | `/mes/handovers` | 已落地（FE-8 金标准） | 班次交接按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）。 |

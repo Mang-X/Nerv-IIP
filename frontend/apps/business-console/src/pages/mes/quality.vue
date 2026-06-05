@@ -1,50 +1,109 @@
 <script setup lang="ts">
-import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
+import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesRelatedQualityItems } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { Button, DataTablePagination, Field, FieldGroup, FieldLabel, Input, Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@nerv-iip/ui'
+import {
+  Button,
+  DataTable,
+  DataTablePagination,
+  Input,
+  PageHeader,
+  SectionCard,
+  SectionCards,
+  StatusBadge,
+  Toolbar,
+} from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '质量与不良' } })
 
+const route = useRoute()
 const { filters, qualityItems, qualityItemsError, qualityItemsPending, qualityItemsTotal, refreshQualityItems } = useMesRelatedQualityItems()
-const errorMessage = computed(() => qualityItemsError.value instanceof Error ? qualityItemsError.value.message : qualityItemsError.value ? '请求失败。' : '')
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+
+const errorMessage = computed(() => formatError(qualityItemsError.value))
+// 上下文穿透：从工单/工序带入时显示来源并提供返回链接。
+const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+const openCount = computed(() => qualityItems.value.filter((r) => (r.status ?? '').toLowerCase() !== 'closed').length)
+const ncrCount = computed(() => qualityItems.value.filter((r) => r.ncrId).length)
+
+type QualityRow = (typeof qualityItems)['value'][number]
+const columns: DataTableColumn<QualityRow>[] = [
+  { key: 'qualityItemId', header: '质量项', cellClass: 'font-medium', accessor: (r) => r.qualityItemId ?? '无' },
+  { key: 'sourceType', header: '来源类型', accessor: (r) => r.sourceType ?? '未指定' },
+  { key: 'sourceDocumentId', header: '来源单据', accessor: (r) => r.sourceDocumentId ?? '未指定' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'defectCode', header: '缺陷代码', accessor: (r) => r.defectCode ?? '无' },
+  { key: 'ncrId', header: 'NCR', accessor: (r) => r.ncrId ?? '无' },
+]
+
+function isWorkOrder(value?: string | null) {
+  return !!value && /^WO/i.test(value)
+}
+function firstQuery(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
+  return typeof value === 'string' ? value : ''
+}
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
 </script>
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader domain="生产执行" title="质量与不良" summary="查看工单和工序关联的不良、检验、NCR 和质量阻塞。">
-        <template #actions><Button size="sm" variant="outline" :disabled="qualityItemsPending" @click="refreshQualityItems"><RefreshCwIcon data-icon="inline-start" />刷新</Button></template>
-      </BusinessPageHeader>
-      <div class="grid gap-3 rounded-lg border bg-background p-4">
-        <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field><FieldLabel for="quality-status">状态</FieldLabel><Input id="quality-status" v-model="filters.status" placeholder="可选" /></Field>
-        </FieldGroup>
-        <BusinessFormStatus :error="errorMessage" />
-      </div>
-      <div class="overflow-hidden rounded-lg border bg-background">
-        <Table>
-          <TableHeader><TableRow><TableHead>质量项</TableHead><TableHead>来源类型</TableHead><TableHead>来源单据</TableHead><TableHead>状态</TableHead><TableHead>缺陷代码</TableHead><TableHead>NCR</TableHead></TableRow></TableHeader>
-          <TableBody>
-            <TableRow v-for="row in qualityItems" :key="row.qualityItemId">
-              <TableCell class="font-medium">{{ row.qualityItemId }}</TableCell>
-              <TableCell>{{ row.sourceType ?? '未指定' }}</TableCell>
-              <TableCell>{{ row.sourceDocumentId ?? '未指定' }}</TableCell>
-              <TableCell>{{ row.status ?? '未知' }}</TableCell>
-              <TableCell>{{ row.defectCode ?? '无' }}</TableCell>
-              <TableCell>{{ row.ncrId ?? '无' }}</TableCell>
-            </TableRow>
-            <TableEmpty v-if="qualityItemsPending" :colspan="6">正在加载质量信息...</TableEmpty>
-            <TableEmpty v-if="!qualityItems.length && !qualityItemsPending" :colspan="6">暂无质量或不良记录。</TableEmpty>
-          </TableBody>
-        </Table>
-      </div>
-      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="qualityItemsTotal" />
-    </section>
+    <PageHeader title="质量与不良" :breadcrumbs="[{ label: '制造执行' }]" :count="`${qualityItemsTotal} 条质量项`">
+      <template #actions>
+        <Button v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
+        </Button>
+        <Button size="sm" type="button" variant="outline" :disabled="qualityItemsPending" @click="refreshQualityItems">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
+
+    <SectionCards :columns="3">
+      <SectionCard description="质量项" :value="qualityItemsTotal" hint="后端筛选总数" />
+      <SectionCard description="本页未关闭" :value="openCount" hint="当前页待处理" />
+      <SectionCard description="本页关联 NCR" :value="ncrCount" hint="当前页已开 NCR" />
+    </SectionCards>
+
+    <Toolbar :show-search="false">
+      <template #filters>
+        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="质量状态" />
+      </template>
+    </Toolbar>
+
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <DataTable
+      :columns="columns"
+      :rows="qualityItems"
+      row-key="qualityItemId"
+      :loading="qualityItemsPending"
+      empty-message="暂无质量或不良记录。工单/工序产生检验、不良或质量阻塞后会出现在这里。"
+    >
+      <template #cell-sourceDocumentId="{ row }">
+        <RouterLink
+          v-if="isWorkOrder(row.sourceDocumentId)"
+          :to="`/mes/work-orders/${encodeURIComponent(row.sourceDocumentId!)}`"
+          class="text-brand underline-offset-4 hover:underline"
+        >
+          {{ row.sourceDocumentId }}
+        </RouterLink>
+        <span v-else>{{ row.sourceDocumentId ?? '未指定' }}</span>
+      </template>
+      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-ncrId="{ row }">
+        <RouterLink v-if="row.ncrId" to="/quality/ncrs" class="text-brand underline-offset-4 hover:underline">{{ row.ncrId }}</RouterLink>
+        <span v-else class="text-muted-foreground">无</span>
+      </template>
+    </DataTable>
+
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="qualityItemsTotal" />
   </BusinessLayout>
 </template>
