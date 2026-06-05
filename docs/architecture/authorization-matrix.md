@@ -227,6 +227,7 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `business.mes.schedules.manage` | `user` / `external-client` / `internal-service` | environment + resource | 触发规则派工、发布或撤销排产版本。 |
 | `business.mes.capacity.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看产能影响、设备不可用和执行阻塞摘要。 |
 | `business.iiot.tags.manage` | `user` / `external-client` | environment + resource | 管理设备 tag 映射、采集点和单位。 |
+| `business.iiot.alarm-rules.manage` | `user` / `external-client` | environment + resource | 管理设备报警规则阈值和启停状态；BusinessGateway telemetry alarm-rules 写面强制该权限。 |
 | `business.iiot.telemetry.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看设备状态快照、时序摘要和 OEE 输入数据；#207 BusinessGateway equipment overview/device/availability facade 已强制该权限。 |
 | `business.iiot.telemetry.write` | `connector-host` / `external-client` | environment + resource + capability | 写入受控采集样本或状态摘要；不得表达 PLC/DCS 控制授权。 |
 | `business.iiot.alarms.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工业报警、状态和处理进度；#207 BusinessGateway equipment alarms facade 已强制该权限。 |

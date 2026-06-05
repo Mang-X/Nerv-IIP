@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
@@ -50,6 +51,81 @@ public sealed class CreateTelemetryTagCommandHandler(ApplicationDbContext dbCont
         var tag = TelemetryTag.Create(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.TagKey, request.ValueType, request.UnitCode, request.SamplingPolicy);
         dbContext.TelemetryTags.Add(tag);
         return tag.Id;
+    }
+}
+
+public sealed record CreateOrUpdateAlarmRuleCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string RuleCode,
+    string AlarmCode,
+    string Severity,
+    string TagKey,
+    string ComparisonOperator,
+    decimal ThresholdValue,
+    string UnitCode,
+    bool IsEnabled) : ICommand<AlarmRuleId>;
+
+public sealed class CreateOrUpdateAlarmRuleCommandValidator : AbstractValidator<CreateOrUpdateAlarmRuleCommand>
+{
+    public CreateOrUpdateAlarmRuleCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.RuleCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AlarmCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Severity).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ComparisonOperator)
+            .NotEmpty()
+            .MaximumLength(8)
+            .Must(AlarmRule.IsSupportedComparisonOperator)
+            .WithMessage("Unsupported alarm rule comparison operator.");
+        RuleFor(x => x.UnitCode).NotEmpty().MaximumLength(50);
+    }
+}
+
+public sealed class CreateOrUpdateAlarmRuleCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CreateOrUpdateAlarmRuleCommand, AlarmRuleId>
+{
+    public async Task<AlarmRuleId> Handle(CreateOrUpdateAlarmRuleCommand request, CancellationToken cancellationToken)
+    {
+        var normalizedRuleCode = request.RuleCode.Trim();
+        var existing = await dbContext.AlarmRules.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.RuleCode == normalizedRuleCode,
+            cancellationToken);
+        if (existing is not null)
+        {
+            existing.UpdateDefinition(
+                request.AlarmCode,
+                request.Severity,
+                request.TagKey,
+                request.ComparisonOperator,
+                request.ThresholdValue,
+                request.UnitCode,
+                request.IsEnabled);
+            return existing.Id;
+        }
+
+        var rule = AlarmRule.Configure(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            normalizedRuleCode,
+            request.AlarmCode,
+            request.Severity,
+            request.TagKey,
+            request.ComparisonOperator,
+            request.ThresholdValue,
+            request.UnitCode,
+            request.IsEnabled);
+        dbContext.AlarmRules.Add(rule);
+        return rule.Id;
     }
 }
 

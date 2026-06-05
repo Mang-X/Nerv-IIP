@@ -85,8 +85,11 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/equipment/availability", "get", "getBusinessConsoleEquipmentAvailability");
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms", "get", "listBusinessConsoleEquipmentAlarms");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/tags", "get", "listBusinessConsoleTelemetryTags");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "get", "listBusinessConsoleTelemetryAlarmRules");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "post", "createOrUpdateBusinessConsoleTelemetryAlarmRule");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarms", "get", "listBusinessConsoleTelemetryAlarms");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/devices/{deviceAssetId}/history", "get", "queryBusinessConsoleTelemetryDeviceHistory");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/oee", "get", "queryBusinessConsoleTelemetryOee");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/runtime-availability", "get", "queryBusinessConsoleTelemetryRuntimeAvailability");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "get", "listBusinessConsoleMaintenanceWorkOrders");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "post", "createBusinessConsoleMaintenanceWorkOrder");

@@ -119,6 +119,110 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate.AlarmRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Alarm rule identifier.");
+
+                    b.Property<string>("AlarmCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("alarm_code")
+                        .HasComment("Alarm code raised when the rule condition is met.");
+
+                    b.Property<string>("ComparisonOperator")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("comparison_operator")
+                        .HasComment("Threshold comparison operator such as >= or <.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the alarm rule was created.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Referenced MasterData device asset identifier.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Owning environment identifier.");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_enabled")
+                        .HasComment("Whether the alarm rule is enabled for evaluation.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Owning organization identifier.");
+
+                    b.Property<string>("RuleCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_code")
+                        .HasComment("Stable alarm rule code unique within a device.");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("severity")
+                        .HasComment("Alarm severity emitted by this rule.");
+
+                    b.Property<string>("TagKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("tag_key")
+                        .HasComment("Telemetry tag key evaluated by this alarm rule.");
+
+                    b.Property<decimal>("ThresholdValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("threshold_value")
+                        .HasComment("Numeric threshold value used by the rule condition.");
+
+                    b.Property<string>("UnitCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("unit_code")
+                        .HasComment("Unit of measure code for the threshold.");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the alarm rule was last updated.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "RuleCode")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey")
+                        .HasDatabaseName("IX_alarm_rules_organization_id_environment_id_device_asset_id~1");
+
+                    b.ToTable("alarm_rules", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("BusinessIndustrialTelemetry alarm rule threshold configuration.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate.DeviceStateSnapshot", b =>
                 {
                     b.Property<Guid>("Id")

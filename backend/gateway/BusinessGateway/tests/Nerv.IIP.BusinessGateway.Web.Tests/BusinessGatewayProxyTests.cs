@@ -888,6 +888,56 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Telemetry_rule_and_oee_facades_forward_internal_token_and_scope()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        using var createResponse = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/alarm-rules", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            ruleCode = "OIL_TEMP_RULE",
+            alarmCode = "OIL_TEMP_HIGH",
+            severity = "warning",
+            tagKey = "temperature",
+            comparisonOperator = ">=",
+            thresholdValue = 95m,
+            unitCode = "celsius",
+            isEnabled = true,
+        });
+        using var listResponse = await client.GetAsync("/api/business-console/v1/telemetry/alarm-rules?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OIL-01");
+        using var oeeResponse = await client.GetAsync("/api/business-console/v1/telemetry/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OIL-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z");
+
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, oeeResponse.StatusCode);
+        Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
+        Assert.Equal(new BusinessConsoleTelemetryAlarmRuleListRequest("org-001", "env-dev", "DEV-OIL-01", null), industrialTelemetry.LastAlarmRuleListRequest);
+        Assert.Equal("OIL_TEMP_RULE", industrialTelemetry.LastAlarmRuleUpsertRequest?.RuleCode);
+        Assert.Equal(new BusinessConsoleTelemetryOeeRequest(
+            "org-001",
+            "env-dev",
+            "DEV-OIL-01",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-01T16:00:00Z", CultureInfo.InvariantCulture)),
+            industrialTelemetry.LastOeeRequest);
+        using var oeeDocument = JsonDocument.Parse(await oeeResponse.Content.ReadAsStringAsync());
+        var oee = oeeDocument.RootElement.GetProperty("data");
+        Assert.True(oee.GetProperty("performanceRateEstimated").GetBoolean());
+        Assert.True(oee.GetProperty("qualityRateEstimated").GetBoolean());
+    }
+
+    [Fact]
     public async Task Scheduling_http_client_sends_internal_token_and_downstream_routes()
     {
         var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, SchedulingResponseFor(request)));
@@ -923,29 +973,7 @@ public sealed class BusinessGatewayProxyTests
     [Fact]
     public async Task Equipment_http_clients_send_internal_token_and_downstream_routes()
     {
-        var telemetryHandler = new RecordingHandler(request => request.RequestUri!.AbsolutePath == "/api/business/v1/iiot/alarms"
-            ? JsonResponse(HttpStatusCode.OK, new
-            {
-                data = new[]
-                {
-                    new
-                    {
-                        alarmEventId = "alarm-001",
-                        organizationId = "org-001",
-                        environmentId = "env-dev",
-                        deviceAssetId = "DEV-OIL-01",
-                        alarmCode = "TEMP_HIGH",
-                        severity = "critical",
-                        status = "raised",
-                        raisedAtUtc = "2026-06-01T08:20:00Z",
-                        externalAlarmId = "EXT-ALARM-001",
-                    },
-                },
-            })
-            : JsonResponse(HttpStatusCode.OK, new
-        {
-            data = CreateAvailabilityResponse("alarm-001", EquipmentRuntimeSourceType.Alarm),
-        }));
+        var telemetryHandler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, TelemetryResponseFor(request)));
         var maintenanceHandler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
         {
             data = CreateAvailabilityResponse("maintenance-001", EquipmentRuntimeSourceType.MaintenanceWindow),
@@ -966,6 +994,9 @@ public sealed class BusinessGatewayProxyTests
         await telemetry.GetDeviceRuntimeAvailabilityAsync("internal-token-001", "DEV-OIL-01", request, CancellationToken.None);
         await telemetry.GetDeviceCurrentStateAsync("internal-token-001", "DEV-OIL-01", new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), CancellationToken.None);
         await telemetry.ListActiveAlarmsAsync("internal-token-001", new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), CancellationToken.None);
+        await telemetry.ListAlarmRulesAsync("internal-token-001", new BusinessConsoleTelemetryAlarmRuleListRequest("org-001", "env-dev", "DEV-OIL-01", true), CancellationToken.None);
+        await telemetry.CreateOrUpdateAlarmRuleAsync("internal-token-001", new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest("org-001", "env-dev", "DEV-OIL-01", "RULE-001", "TEMP_HIGH", "warning", "temperature", ">=", 95m, "celsius", true), CancellationToken.None);
+        await telemetry.QueryOeeAsync("internal-token-001", new BusinessConsoleTelemetryOeeRequest("org-001", "env-dev", "DEV-OIL-01", request.WindowStartUtc, request.WindowEndUtc), CancellationToken.None);
         await maintenance.GetAvailabilityWindowsAsync("internal-token-001", request, CancellationToken.None);
         await maintenance.GetAssetAvailabilityWindowsAsync("internal-token-001", "DEV-OIL-01", request, CancellationToken.None);
 
@@ -977,6 +1008,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("organizationId=org-001&environmentId=env-dev", telemetryHandler.Requests[2].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/iiot/alarms", telemetryHandler.Requests[3].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev&status=raised", telemetryHandler.Requests[3].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("/api/business/v1/iiot/alarm-rules", telemetryHandler.Requests[4].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OIL-01&isEnabled=true", telemetryHandler.Requests[4].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal(HttpMethod.Post, telemetryHandler.Requests[5].Method);
+        Assert.Equal("/api/business/v1/iiot/alarm-rules", telemetryHandler.Requests[5].RequestUri!.AbsolutePath);
+        Assert.Equal("/api/business/v1/iiot/oee", telemetryHandler.Requests[6].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OIL-01&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-01T16%3A00%3A00.0000000%2B00%3A00", telemetryHandler.Requests[6].RequestUri!.Query.TrimStart('?'));
         Assert.All(maintenanceHandler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter));
         Assert.Equal("/api/business/v1/maintenance/availability-windows", maintenanceHandler.Requests[0].RequestUri!.AbsolutePath);
         Assert.Equal(telemetryHandler.Requests[0].RequestUri!.Query, maintenanceHandler.Requests[0].RequestUri!.Query);
@@ -2108,6 +2145,74 @@ public sealed class BusinessGatewayProxyTests
 
     private static object ValidMasterDataCreateBody(string path) =>
         BusinessConsoleTestRequestBodies.ValidMasterDataCreateBody(path);
+
+    private static object TelemetryResponseFor(HttpRequestMessage request)
+    {
+        return request.RequestUri!.AbsolutePath switch
+        {
+            "/api/business/v1/iiot/alarms" => new
+            {
+                data = new[]
+                {
+                    new
+                    {
+                        alarmEventId = "alarm-001",
+                        organizationId = "org-001",
+                        environmentId = "env-dev",
+                        deviceAssetId = "DEV-OIL-01",
+                        alarmCode = "TEMP_HIGH",
+                        severity = "critical",
+                        status = "raised",
+                        raisedAtUtc = "2026-06-01T08:20:00Z",
+                        externalAlarmId = "EXT-ALARM-001",
+                    },
+                },
+            },
+            "/api/business/v1/iiot/alarm-rules" when request.Method == HttpMethod.Get => new
+            {
+                data = new[]
+                {
+                    new
+                    {
+                        alarmRuleId = "rule-001",
+                        organizationId = "org-001",
+                        environmentId = "env-dev",
+                        deviceAssetId = "DEV-OIL-01",
+                        ruleCode = "RULE-001",
+                        alarmCode = "TEMP_HIGH",
+                        severity = "warning",
+                        tagKey = "temperature",
+                        comparisonOperator = ">=",
+                        thresholdValue = 95m,
+                        unitCode = "celsius",
+                        isEnabled = true,
+                        updatedAtUtc = "2026-06-01T08:20:00Z",
+                    },
+                },
+            },
+            "/api/business/v1/iiot/alarm-rules" => new { data = new { alarmRuleId = "rule-001" } },
+            "/api/business/v1/iiot/oee" => new
+            {
+                data = new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    deviceAssetId = "DEV-OIL-01",
+                    windowStartUtc = "2026-06-01T08:00:00Z",
+                    windowEndUtc = "2026-06-01T16:00:00Z",
+                    stateSampleCount = 2,
+                    availabilityRate = 0.5m,
+                    performanceRate = 1m,
+                    qualityRate = 1m,
+                    oeeRate = 0.5m,
+                },
+            },
+            _ => new
+            {
+                data = CreateAvailabilityResponse("alarm-001", EquipmentRuntimeSourceType.Alarm),
+            },
+        };
+    }
 
     internal static EquipmentRuntimeAvailabilityResponse CreateAvailabilityResponse(
         string sourceReferenceId,
@@ -3496,6 +3601,12 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
 
     public BusinessConsoleEquipmentContextRequest? LastCurrentStateRequest { get; private set; }
 
+    public BusinessConsoleTelemetryAlarmRuleListRequest? LastAlarmRuleListRequest { get; private set; }
+
+    public BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest? LastAlarmRuleUpsertRequest { get; private set; }
+
+    public BusinessConsoleTelemetryOeeRequest? LastOeeRequest { get; private set; }
+
     public EquipmentRuntimeAvailabilityResponse? RuntimeAvailabilityResponse { get; init; }
 
     public EquipmentRuntimeAvailabilityResponse? DeviceRuntimeAvailabilityResponse { get; init; }
@@ -3507,6 +3618,26 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleTelemetryTagListResponse([]));
+    }
+
+    public Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryAlarmRuleListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAlarmRuleListRequest = request;
+        return Task.FromResult(new BusinessConsoleTelemetryAlarmRuleListResponse([]));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse> CreateOrUpdateAlarmRuleAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAlarmRuleUpsertRequest = request;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse("rule-001"));
     }
 
     public Task<BusinessConsoleTelemetryAlarmEventListResponse> ListAlarmsAsync(
@@ -3526,6 +3657,28 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleTelemetryHistoryResponse([]));
+    }
+
+    public Task<BusinessConsoleTelemetryOeeResponse> QueryOeeAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryOeeRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastOeeRequest = request;
+        return Task.FromResult(new BusinessConsoleTelemetryOeeResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            2,
+            0.5m,
+            1m,
+            1m,
+            0.5m,
+            true,
+            true));
     }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(

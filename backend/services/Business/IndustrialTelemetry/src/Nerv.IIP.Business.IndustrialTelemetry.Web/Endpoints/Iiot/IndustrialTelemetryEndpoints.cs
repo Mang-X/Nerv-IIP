@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
@@ -37,6 +38,20 @@ public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoin
 public sealed record CreateTelemetryTagRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey, string ValueType, string UnitCode, string SamplingPolicy);
 public sealed record CreateTelemetryTagResponse(TelemetryTagId TelemetryTagId);
 public sealed record ListTelemetryTagsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId);
+public sealed record CreateOrUpdateAlarmRuleRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string RuleCode,
+    string AlarmCode,
+    string Severity,
+    string TagKey,
+    string ComparisonOperator,
+    decimal ThresholdValue,
+    string UnitCode,
+    bool IsEnabled);
+public sealed record CreateOrUpdateAlarmRuleResponse(AlarmRuleId AlarmRuleId);
+public sealed record ListAlarmRulesRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, bool? IsEnabled);
 public sealed record RecordTelemetrySampleRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -68,6 +83,7 @@ public sealed record PostAlarmEventRequest(
 public sealed record PostAlarmEventResponse(AlarmEventId AlarmEventId);
 public sealed record ListAlarmEventsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
+public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record GetDeviceRuntimeAvailabilityRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int FreshnessMaxAgeMinutes = 60);
 public sealed record QueryRuntimeAvailabilityRequest(string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, string? DeviceAssetIds, string? WorkCenterIds, int FreshnessMaxAgeMinutes = 60);
 public sealed record GetDeviceCurrentStateRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset? AsOfUtc, int FreshnessMaxAgeMinutes = 60);
@@ -90,6 +106,39 @@ public sealed class ListTelemetryTagsEndpoint(ISender sender) : IndustrialTeleme
     public override async Task HandleAsync(ListTelemetryTagsRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new ListTelemetryTagsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateOrUpdateAlarmRuleEndpoint(ISender sender) : IndustrialTelemetryEndpoint<CreateOrUpdateAlarmRuleRequest, ResponseData<CreateOrUpdateAlarmRuleResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<CreateOrUpdateAlarmRuleEndpoint>());
+
+    public override async Task HandleAsync(CreateOrUpdateAlarmRuleRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new CreateOrUpdateAlarmRuleCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.DeviceAssetId,
+            req.RuleCode,
+            req.AlarmCode,
+            req.Severity,
+            req.TagKey,
+            req.ComparisonOperator,
+            req.ThresholdValue,
+            req.UnitCode,
+            req.IsEnabled), ct);
+        await Send.OkAsync(new CreateOrUpdateAlarmRuleResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListAlarmRulesEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListAlarmRulesRequest, ResponseData<IReadOnlyCollection<AlarmRuleListItem>>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ListAlarmRulesEndpoint>());
+
+    public override async Task HandleAsync(ListAlarmRulesRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListAlarmRulesQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.IsEnabled), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -179,6 +228,17 @@ public sealed class QueryDeviceTimelineEndpoint(ISender sender) : IndustrialTele
     }
 }
 
+public sealed class QueryOeeEndpoint(ISender sender) : IndustrialTelemetryEndpoint<QueryOeeRequest, ResponseData<OeeResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<QueryOeeEndpoint>());
+
+    public override async Task HandleAsync(QueryOeeRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new QueryOeeQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.WindowStartUtc, req.WindowEndUtc), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record IndustrialTelemetryEndpointContract(Type EndpointType, string HttpMethod, string Route, string PermissionCode, string AuthorizationPolicy, string OperationId);
 
 public static class IndustrialTelemetryEndpointContracts
@@ -187,10 +247,13 @@ public static class IndustrialTelemetryEndpointContracts
     [
         new(typeof(CreateTelemetryTagEndpoint), "POST", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotTelemetryTag"),
         new(typeof(ListTelemetryTagsEndpoint), "GET", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotTelemetryTags"),
+        new(typeof(CreateOrUpdateAlarmRuleEndpoint), "POST", "/api/business/v1/iiot/alarm-rules", IndustrialTelemetryPermissionCodes.AlarmRulesManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateBusinessIiotAlarmRule"),
+        new(typeof(ListAlarmRulesEndpoint), "GET", "/api/business/v1/iiot/alarm-rules", IndustrialTelemetryPermissionCodes.AlarmsRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotAlarmRules"),
         new(typeof(RecordTelemetrySampleEndpoint), "POST", "/api/business/v1/iiot/samples", IndustrialTelemetryPermissionCodes.TelemetryWrite, InternalServiceAuthorizationPolicy.Name, "recordBusinessIiotTelemetrySample"),
         new(typeof(PostAlarmEventEndpoint), "POST", "/api/business/v1/iiot/alarms", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "raiseBusinessIiotAlarm"),
         new(typeof(ListAlarmEventsEndpoint), "GET", "/api/business/v1/iiot/alarms", IndustrialTelemetryPermissionCodes.AlarmsRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotAlarms"),
         new(typeof(QueryDeviceTimelineEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/timeline", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotDeviceTimeline"),
+        new(typeof(QueryOeeEndpoint), "GET", "/api/business/v1/iiot/oee", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotOee"),
         new(typeof(GetDeviceRuntimeAvailabilityEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/runtime-availability", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotDeviceRuntimeAvailability"),
         new(typeof(QueryRuntimeAvailabilityEndpoint), "GET", "/api/business/v1/iiot/runtime-availability", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotRuntimeAvailability"),
         new(typeof(GetDeviceCurrentStateEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/current-state", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotDeviceCurrentState"),
