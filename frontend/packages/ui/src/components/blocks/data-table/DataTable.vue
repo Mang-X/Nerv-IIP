@@ -1,6 +1,17 @@
 <script setup lang="ts" generic="T extends object = Record<string, unknown>">
 import type { HTMLAttributes } from 'vue'
+import type {
+  ColumnDef,
+  SortingFn,
+  SortingState,
+  Updater,
+} from '@tanstack/vue-table'
 import { computed } from 'vue'
+import {
+  getCoreRowModel,
+  getSortedRowModel,
+  useVueTable,
+} from '@tanstack/vue-table'
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-vue-next'
 import {
   Table,
@@ -69,36 +80,70 @@ function widthClass(width?: string) {
   return width && !isCssDimension(width) ? width : undefined
 }
 
-const displayRows = computed(() => {
-  if (!props.clientSort || !props.sort) return props.rows
-  const { key, direction } = props.sort
-  const column = props.columns.find((c) => c.key === key)
-  if (!column) return props.rows
-  const factor = direction === 'asc' ? 1 : -1
-  return [...props.rows].sort((a, b) => {
-    const av = valueOf(a, column)
-    const bv = valueOf(b, column)
-    if (av == null && bv == null) return 0
-    if (av == null) return -factor
-    if (bv == null) return factor
-    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * factor
-    return String(av).localeCompare(String(bv), 'zh-Hans-CN') * factor
-  })
-})
-
-function toggleSort(column: DataTableColumn<T>) {
-  if (!column.sortable) return
-  const current = props.sort
-  let next: DataTableSort | null
-  if (!current || current.key !== column.key) next = { key: column.key, direction: 'asc' }
-  else if (current.direction === 'asc') next = { key: column.key, direction: 'desc' }
-  else next = null
-  emit('update:sort', next)
+// Number-aware comparator with Chinese-locale string collation — preserves the
+// previous DataTable sort semantics under TanStack's sorting model.
+const zhSortingFn: SortingFn<T> = (rowA, rowB, columnId) => {
+  const av = rowA.getValue(columnId)
+  const bv = rowB.getValue(columnId)
+  if (av == null && bv == null) return 0
+  if (av == null) return -1
+  if (bv == null) return 1
+  if (typeof av === 'number' && typeof bv === 'number') return av - bv
+  return String(av).localeCompare(String(bv), 'zh-Hans-CN')
 }
 
-function sortIcon(column: DataTableColumn<T>) {
-  if (props.sort?.key !== column.key) return ArrowUpDownIcon
-  return props.sort.direction === 'asc' ? ArrowUpIcon : ArrowDownIcon
+const columnByKey = computed(() => new Map(props.columns.map((c) => [c.key, c])))
+function colOf(key: string): DataTableColumn<T> {
+  return columnByKey.value.get(key) as DataTableColumn<T>
+}
+
+const tableColumns = computed<ColumnDef<T>[]>(() =>
+  props.columns.map((col) => ({
+    id: col.key,
+    accessorFn: (row: T) => valueOf(row, col),
+    header: col.header,
+    enableSorting: !!col.sortable,
+    sortingFn: zhSortingFn,
+  })),
+)
+
+// Controlled sorting: state derives from the `sort` prop; changes are emitted up.
+const sortingState = computed<SortingState>(() =>
+  props.sort ? [{ id: props.sort.key, desc: props.sort.direction === 'desc' }] : [],
+)
+
+function handleSortingChange(updater: Updater<SortingState>) {
+  const next = typeof updater === 'function' ? updater(sortingState.value) : updater
+  const first = next[0]
+  emit('update:sort', first ? { key: first.id, direction: first.desc ? 'desc' : 'asc' } : null)
+}
+
+const table = useVueTable({
+  get data() {
+    return props.rows
+  },
+  get columns() {
+    return tableColumns.value
+  },
+  state: {
+    get sorting() {
+      return sortingState.value
+    },
+  },
+  // When clientSort is false the parent owns ordering; TanStack only tracks state.
+  get manualSorting() {
+    return !props.clientSort
+  },
+  enableSortingRemoval: true,
+  onSortingChange: handleSortingChange,
+  getRowId: (row) => String(keyOf(row)),
+  getCoreRowModel: getCoreRowModel(),
+  getSortedRowModel: getSortedRowModel(),
+})
+
+function sortIcon(state: false | 'asc' | 'desc') {
+  if (!state) return ArrowUpDownIcon
+  return state === 'asc' ? ArrowUpIcon : ArrowDownIcon
 }
 </script>
 
@@ -107,26 +152,30 @@ function sortIcon(column: DataTableColumn<T>) {
     <div class="overflow-x-auto">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow v-for="headerGroup in table.getHeaderGroups()" :key="headerGroup.id">
             <TableHead
-              v-for="column in columns"
-              :key="column.key"
-              :class="cn(alignClass[column.align ?? 'start'], widthClass(column.width), column.headerClass)"
-              :style="widthStyle(column.width)"
+              v-for="header in headerGroup.headers"
+              :key="header.id"
+              :class="cn(
+                alignClass[colOf(header.column.id).align ?? 'start'],
+                widthClass(colOf(header.column.id).width),
+                colOf(header.column.id).headerClass,
+              )"
+              :style="widthStyle(colOf(header.column.id).width)"
             >
               <Button
-                v-if="column.sortable"
+                v-if="header.column.getCanSort()"
                 type="button"
                 variant="ghost"
                 size="sm"
                 class="-ml-3 h-8 data-[align=end]:-mr-3 data-[align=end]:ml-0"
-                :data-align="column.align ?? 'start'"
-                @click="toggleSort(column)"
+                :data-align="colOf(header.column.id).align ?? 'start'"
+                @click="header.column.getToggleSortingHandler()?.($event)"
               >
-                {{ column.header }}
-                <component :is="sortIcon(column)" class="size-4" data-icon="inline-end" aria-hidden="true" />
+                {{ colOf(header.column.id).header }}
+                <component :is="sortIcon(header.column.getIsSorted())" class="size-4" data-icon="inline-end" aria-hidden="true" />
               </Button>
-              <template v-else>{{ column.header }}</template>
+              <template v-else>{{ colOf(header.column.id).header }}</template>
             </TableHead>
           </TableRow>
         </TableHeader>
@@ -143,15 +192,20 @@ function sortIcon(column: DataTableColumn<T>) {
             </TableRow>
           </template>
 
-          <template v-else-if="displayRows.length">
-            <TableRow v-for="row in displayRows" :key="keyOf(row)">
+          <template v-else-if="table.getRowModel().rows.length">
+            <TableRow v-for="row in table.getRowModel().rows" :key="row.id">
               <TableCell
-                v-for="column in columns"
-                :key="column.key"
-                :class="cn(alignClass[column.align ?? 'start'], column.cellClass)"
+                v-for="cell in row.getVisibleCells()"
+                :key="cell.id"
+                :class="cn(alignClass[colOf(cell.column.id).align ?? 'start'], colOf(cell.column.id).cellClass)"
               >
-                <slot :name="`cell-${column.key}`" :row="row" :value="valueOf(row, column)" :column="column">
-                  {{ valueOf(row, column) }}
+                <slot
+                  :name="`cell-${cell.column.id}`"
+                  :row="row.original"
+                  :value="cell.getValue()"
+                  :column="colOf(cell.column.id)"
+                >
+                  {{ cell.getValue() }}
                 </slot>
               </TableCell>
             </TableRow>
