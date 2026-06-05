@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
@@ -23,6 +24,54 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.TagKey)
             .Select(x => new TelemetryTagListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ValueType, x.UnitCode, x.SamplingPolicy))
+            .Take(200)
+            .ToArrayAsync(cancellationToken);
+    }
+}
+
+public sealed record ListAlarmRulesQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, bool? IsEnabled) : IQuery<IReadOnlyCollection<AlarmRuleListItem>>;
+
+public sealed record AlarmRuleListItem(
+    AlarmRuleId AlarmRuleId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string RuleCode,
+    string AlarmCode,
+    string Severity,
+    string TagKey,
+    string ComparisonOperator,
+    decimal ThresholdValue,
+    string UnitCode,
+    bool IsEnabled,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListAlarmRulesQuery, IReadOnlyCollection<AlarmRuleListItem>>
+{
+    public async Task<IReadOnlyCollection<AlarmRuleListItem>> Handle(ListAlarmRulesQuery request, CancellationToken cancellationToken)
+    {
+        return await dbContext.AlarmRules
+            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => request.IsEnabled == null || x.IsEnabled == request.IsEnabled)
+            .OrderBy(x => x.DeviceAssetId)
+            .ThenBy(x => x.RuleCode)
+            .Select(x => new AlarmRuleListItem(
+                x.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.DeviceAssetId,
+                x.RuleCode,
+                x.AlarmCode,
+                x.Severity,
+                x.TagKey,
+                x.ComparisonOperator,
+                x.ThresholdValue,
+                x.UnitCode,
+                x.IsEnabled,
+                x.UpdatedAtUtc))
             .Take(200)
             .ToArrayAsync(cancellationToken);
     }
@@ -84,6 +133,136 @@ public sealed class QueryDeviceStateTimelineQueryHandler(ApplicationDbContext db
             .Take(100)
             .ToArray();
     }
+}
+
+public sealed record QueryOeeQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc) : IQuery<OeeResponse>;
+
+public sealed record OeeResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    int StateSampleCount,
+    decimal AvailabilityRate,
+    decimal PerformanceRate,
+    decimal QualityRate,
+    decimal OeeRate,
+    bool PerformanceRateEstimated,
+    bool QualityRateEstimated);
+
+public sealed class QueryOeeQueryValidator : AbstractValidator<QueryOeeQuery>
+{
+    public QueryOeeQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+    }
+}
+
+public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<QueryOeeQuery, OeeResponse>
+{
+    private static readonly HashSet<string> RunningStates = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "available",
+        "ready",
+        "running",
+        "standby",
+    };
+
+    public async Task<OeeResponse> Handle(QueryOeeQuery request, CancellationToken cancellationToken)
+    {
+        var carryInState = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc < request.WindowStartUtc)
+            .OrderByDescending(x => x.OccurredAtUtc)
+            .Select(x => new OeeStatePoint(request.WindowStartUtc, x.State))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var inWindowStates = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc >= request.WindowStartUtc)
+            .Where(x => x.OccurredAtUtc < request.WindowEndUtc)
+            .OrderBy(x => x.OccurredAtUtc)
+            .Select(x => new OeeStatePoint(x.OccurredAtUtc, x.State))
+            .ToArrayAsync(cancellationToken);
+
+        var states = carryInState is null
+            ? inWindowStates
+            : [carryInState, .. inWindowStates];
+
+        var availabilityRate = CalculateAvailabilityRate(states, request.WindowStartUtc, request.WindowEndUtc);
+        var performanceRate = states.Length > 0 ? 1m : 0m;
+        var qualityRate = states.Length > 0 ? 1m : 0m;
+        var oeeRate = availabilityRate * performanceRate * qualityRate;
+
+        return new OeeResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            states.Length,
+            Math.Round(availabilityRate, 6),
+            performanceRate,
+            qualityRate,
+            Math.Round(oeeRate, 6),
+            true,
+            true);
+    }
+
+    private static decimal CalculateAvailabilityRate(IReadOnlyList<OeeStatePoint> states, DateTimeOffset windowStartUtc, DateTimeOffset windowEndUtc)
+    {
+        if (states.Count == 0)
+        {
+            return 0m;
+        }
+
+        var totalTicks = windowEndUtc.UtcTicks - windowStartUtc.UtcTicks;
+        if (totalTicks <= 0)
+        {
+            return 0m;
+        }
+
+        var runningTicks = 0L;
+        for (var i = 0; i < states.Count; i++)
+        {
+            var segmentStart = states[i].OccurredAtUtc < windowStartUtc ? windowStartUtc : states[i].OccurredAtUtc;
+            var segmentEnd = i + 1 < states.Count ? states[i + 1].OccurredAtUtc : windowEndUtc;
+            if (segmentEnd > windowEndUtc)
+            {
+                segmentEnd = windowEndUtc;
+            }
+
+            if (segmentEnd <= segmentStart || !IsRunningState(states[i].State))
+            {
+                continue;
+            }
+
+            runningTicks += segmentEnd.UtcTicks - segmentStart.UtcTicks;
+        }
+
+        return decimal.Divide(runningTicks, totalTicks);
+    }
+
+    private static bool IsRunningState(string state)
+    {
+        return RunningStates.Contains(state);
+    }
+
+    private sealed record OeeStatePoint(DateTimeOffset OccurredAtUtc, string State);
 }
 
 public sealed record GetRuntimeCurrentStateQuery(

@@ -149,6 +149,33 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Equal(0, auth.CallCount);
     }
 
+    [Fact]
+    public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_before_permission_check()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/alarm-rules", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            ruleCode = "OIL_TEMP_RULE",
+            alarmCode = "OIL_TEMP_HIGH",
+            severity = "warning",
+            tagKey = "temperature",
+            comparisonOperator = "contains",
+            thresholdValue = 95m,
+            unitCode = "celsius",
+            isEnabled = true,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+    }
+
     [Theory]
     [MemberData(nameof(BusinessConsoleRoutes))]
     public async Task Business_console_routes_return_forbidden_when_iam_denies_permission(
@@ -231,6 +258,20 @@ public sealed class BusinessGatewayAuthorizationTests
             downstreamService = "mes",
             downstreamDocumentType = "work-order",
             downstreamDocumentId = "WO-001",
+        },
+        "/api/business-console/v1/telemetry/alarm-rules" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            ruleCode = "OIL_TEMP_RULE",
+            alarmCode = "OIL_TEMP_HIGH",
+            severity = "warning",
+            tagKey = "temperature",
+            comparisonOperator = ">=",
+            thresholdValue = 95m,
+            unitCode = "celsius",
+            isEnabled = true,
         },
         "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion" => new
         {
@@ -449,8 +490,11 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/alarms", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/tags?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarm-rules?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotAlarmsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/alarm-rules", "business.iiot.alarm-rules.manage");
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarms?deviceAssetId=DEV-OIL-01&status=raised", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/devices/DEV-OIL-01/history?fromUtc=2026-06-01T08:00:00Z&toUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/oee?deviceAssetId=DEV-OIL-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/runtime-availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/work-orders", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);

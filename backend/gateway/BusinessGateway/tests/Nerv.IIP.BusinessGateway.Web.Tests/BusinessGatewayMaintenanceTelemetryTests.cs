@@ -470,6 +470,24 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         ]));
     }
 
+    public Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryAlarmRuleListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryAlarmRuleListResponse([]));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse> CreateOrUpdateAlarmRuleAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse("rule-001"));
+    }
+
     public Task<BusinessConsoleTelemetryHistoryResponse> QueryHistoryAsync(
         string internalBearerToken,
         string deviceAssetId,
@@ -488,6 +506,27 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
                 "42",
                 DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture)),
         ]));
+    }
+
+    public Task<BusinessConsoleTelemetryOeeResponse> QueryOeeAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryOeeRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryOeeResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            0,
+            0m,
+            0m,
+            0m,
+            0m,
+            false,
+            false));
     }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(

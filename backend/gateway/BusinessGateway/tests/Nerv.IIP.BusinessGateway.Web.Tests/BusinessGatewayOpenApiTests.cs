@@ -85,8 +85,11 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/equipment/availability", "get", "getBusinessConsoleEquipmentAvailability");
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms", "get", "listBusinessConsoleEquipmentAlarms");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/tags", "get", "listBusinessConsoleTelemetryTags");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "get", "listBusinessConsoleTelemetryAlarmRules");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "post", "createOrUpdateBusinessConsoleTelemetryAlarmRule");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarms", "get", "listBusinessConsoleTelemetryAlarms");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/devices/{deviceAssetId}/history", "get", "queryBusinessConsoleTelemetryDeviceHistory");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/oee", "get", "queryBusinessConsoleTelemetryOee");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/runtime-availability", "get", "queryBusinessConsoleTelemetryRuntimeAvailability");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "get", "listBusinessConsoleMaintenanceWorkOrders");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/work-orders", "post", "createBusinessConsoleMaintenanceWorkOrder");
@@ -200,6 +203,53 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/traceability/material-lots/{materialLotId}", "get", "getBusinessConsoleMesMaterialLotTraceability");
         AssertOperationId(paths, "/api/business-console/v1/mes/capacity-impacts", "get", "listBusinessConsoleMesCapacityImpacts");
         AssertOperationId(paths, "/health", "get", "HealthEndpoint");
+
+        foreach (var mesListPath in new[]
+        {
+            "/api/business-console/v1/mes/work-orders",
+            "/api/business-console/v1/mes/production-plans",
+            "/api/business-console/v1/mes/material-issue-requests",
+            "/api/business-console/v1/mes/dispatch-tasks",
+            "/api/business-console/v1/mes/operation-tasks",
+            "/api/business-console/v1/mes/wip",
+            "/api/business-console/v1/mes/production-reports",
+            "/api/business-console/v1/mes/related-quality-items",
+            "/api/business-console/v1/mes/finished-goods-receipt-requests",
+            "/api/business-console/v1/mes/downtime-events",
+            "/api/business-console/v1/mes/shift-handovers",
+            "/api/business-console/v1/mes/capacity-impacts",
+        })
+        {
+            AssertQueryParameters(
+                paths,
+                mesListPath,
+                "get",
+                "organizationId",
+                "environmentId",
+                "status",
+                "keyword",
+                "workCenterId",
+                "shiftId",
+                "deviceAssetId",
+                "skip",
+                "take");
+        }
+
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/mes/production-plans",
+            "get",
+            "organizationId",
+            "environmentId",
+            "status",
+            "keyword",
+            "workCenterId",
+            "shiftId",
+            "deviceAssetId",
+            "source",
+            "readinessStatus",
+            "skip",
+            "take");
 
         AssertQueryParameters(
             paths,

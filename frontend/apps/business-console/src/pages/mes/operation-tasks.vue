@@ -23,6 +23,7 @@ import {
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
+import { watchDebounced } from '@vueuse/core'
 import { ClipboardCheckIcon, EyeIcon, RefreshCwIcon, ShieldCheckIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -53,6 +54,15 @@ const shiftFilter = ref('all')
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
+watchDebounced(keyword, (value) => {
+  filters.keyword = value.trim() || undefined
+}, { debounce: 300, maxWait: 1000 })
+watch(workCenterFilter, (value) => {
+  filters.workCenterId = value === 'all' ? undefined : value
+})
+watch(shiftFilter, (value) => {
+  filters.shiftId = value === 'all' ? undefined : value
+})
 
 const statusOptions = [
   { label: '全部状态', value: 'all' },
@@ -65,21 +75,7 @@ const statusOptions = [
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
 const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
 
-const visibleTasks = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  const wc = workCenterFilter.value
-  const shift = shiftFilter.value
-  return operationTasks.value.filter((task) => {
-    const statusMatched = statusFilter.value === 'all' || task.status === statusFilter.value
-    const kwMatched =
-      !kw ||
-      [task.operationTaskId, task.workOrderId, task.status, task.workCenterId, task.deviceAssetId, task.shiftId]
-        .some((value) => (value ?? '').toLowerCase().includes(kw))
-    const wcMatched = wc === 'all' || (task.workCenterId ?? '') === wc
-    const shiftMatched = shift === 'all' || (task.shiftId ?? '') === shift
-    return statusMatched && kwMatched && wcMatched && shiftMatched
-  })
-})
+const visibleTasks = computed(() => operationTasks.value)
 
 const readyCount = computed(() => visibleTasks.value.filter((t) => t.status === 'Ready').length)
 const runningCount = computed(() => visibleTasks.value.filter((t) => ['Running', 'Started', 'InProgress'].includes(t.status ?? '')).length)
@@ -195,7 +191,7 @@ function formatError(error: unknown) {
       <SectionCard description="任务总数" :value="operationTasksTotal" hint="后端分页总数" />
     </SectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索当前页任务、工单、设备">
+    <Toolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
       <template #filters>
         <Select v-model="statusFilter">
           <SelectTrigger class="h-9 w-32" aria-label="工序状态"><SelectValue /></SelectTrigger>

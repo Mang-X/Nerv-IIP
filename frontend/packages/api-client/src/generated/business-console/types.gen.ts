@@ -380,6 +380,56 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryAlarmRuleListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryAlarmRuleListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryAlarmRuleListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryAlarmRuleItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryAlarmRuleItem = {
+    alarmRuleId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    deviceAssetId?: string;
+    ruleCode?: string;
+    alarmCode?: string;
+    severity?: string;
+    tagKey?: string;
+    comparisonOperator?: string;
+    thresholdValue?: number;
+    unitCode?: string;
+    isEnabled?: boolean;
+    updatedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryAlarmRuleListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse = {
+    alarmRuleId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest = {
+    organizationId: string;
+    environmentId: string;
+    deviceAssetId: string;
+    ruleCode: string;
+    alarmCode: string;
+    severity: string;
+    tagKey: string;
+    comparisonOperator: string;
+    thresholdValue?: number;
+    unitCode: string;
+    isEnabled?: boolean;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryAlarmEventListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryAlarmEventListResponse | null;
 };
@@ -422,6 +472,29 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryHistoryRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryOeeResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryOeeResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryOeeResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    deviceAssetId?: string;
+    windowStartUtc?: string;
+    windowEndUtc?: string;
+    stateSampleCount?: number;
+    availabilityRate?: number;
+    performanceRate?: number;
+    qualityRate?: number;
+    oeeRate?: number;
+    performanceRateEstimated?: boolean;
+    qualityRateEstimated?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryOeeRequest = {
     [key: string]: never;
 };
 
@@ -1305,7 +1378,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     plannedEndUtc?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionPlanListRequest = {
     [key: string]: never;
 };
 
@@ -1358,6 +1431,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     durationTicks?: number;
     existingStartUtc?: string | null;
     existingEndUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderDetailResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3586,6 +3663,77 @@ export type ListBusinessConsoleTelemetryTagsResponses = {
 
 export type ListBusinessConsoleTelemetryTagsResponse = ListBusinessConsoleTelemetryTagsResponses[keyof ListBusinessConsoleTelemetryTagsResponses];
 
+export type ListBusinessConsoleTelemetryAlarmRulesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        deviceAssetId?: string | null;
+        isEnabled?: boolean | null;
+    };
+    url: '/api/business-console/v1/telemetry/alarm-rules';
+};
+
+export type ListBusinessConsoleTelemetryAlarmRulesErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleTelemetryAlarmRulesError = ListBusinessConsoleTelemetryAlarmRulesErrors[keyof ListBusinessConsoleTelemetryAlarmRulesErrors];
+
+export type ListBusinessConsoleTelemetryAlarmRulesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryAlarmRuleListResponse;
+};
+
+export type ListBusinessConsoleTelemetryAlarmRulesResponse = ListBusinessConsoleTelemetryAlarmRulesResponses[keyof ListBusinessConsoleTelemetryAlarmRulesResponses];
+
+export type CreateOrUpdateBusinessConsoleTelemetryAlarmRuleData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/telemetry/alarm-rules';
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryAlarmRuleErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryAlarmRuleError = CreateOrUpdateBusinessConsoleTelemetryAlarmRuleErrors[keyof CreateOrUpdateBusinessConsoleTelemetryAlarmRuleErrors];
+
+export type CreateOrUpdateBusinessConsoleTelemetryAlarmRuleResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse;
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryAlarmRuleResponse = CreateOrUpdateBusinessConsoleTelemetryAlarmRuleResponses[keyof CreateOrUpdateBusinessConsoleTelemetryAlarmRuleResponses];
+
 export type ListBusinessConsoleTelemetryAlarmsData = {
     body?: never;
     path?: never;
@@ -3663,6 +3811,45 @@ export type QueryBusinessConsoleTelemetryDeviceHistoryResponses = {
 };
 
 export type QueryBusinessConsoleTelemetryDeviceHistoryResponse = QueryBusinessConsoleTelemetryDeviceHistoryResponses[keyof QueryBusinessConsoleTelemetryDeviceHistoryResponses];
+
+export type QueryBusinessConsoleTelemetryOeeData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        deviceAssetId: string;
+        windowStartUtc: string;
+        windowEndUtc: string;
+    };
+    url: '/api/business-console/v1/telemetry/oee';
+};
+
+export type QueryBusinessConsoleTelemetryOeeErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type QueryBusinessConsoleTelemetryOeeError = QueryBusinessConsoleTelemetryOeeErrors[keyof QueryBusinessConsoleTelemetryOeeErrors];
+
+export type QueryBusinessConsoleTelemetryOeeResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryOeeResponse;
+};
+
+export type QueryBusinessConsoleTelemetryOeeResponse = QueryBusinessConsoleTelemetryOeeResponses[keyof QueryBusinessConsoleTelemetryOeeResponses];
 
 export type QueryBusinessConsoleTelemetryRuntimeAvailabilityData = {
     body?: never;
@@ -5115,6 +5302,12 @@ export type ListBusinessConsoleMesProductionPlansData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
+        source?: string | null;
+        readinessStatus?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5212,6 +5405,10 @@ export type ListBusinessConsoleMesWorkOrdersData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5400,6 +5597,10 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5465,6 +5666,10 @@ export type ListBusinessConsoleMesDispatchTasksData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5530,6 +5735,10 @@ export type ListBusinessConsoleMesOperationTasksData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5691,6 +5900,10 @@ export type GetBusinessConsoleMesWipSummaryData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5724,6 +5937,10 @@ export type ListBusinessConsoleMesProductionReportsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5811,6 +6028,10 @@ export type ListBusinessConsoleMesRelatedQualityItemsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5844,6 +6065,10 @@ export type ListBusinessConsoleMesFinishedGoodsReceiptRequestsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5904,6 +6129,10 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5996,6 +6225,10 @@ export type ListBusinessConsoleMesShiftHandoversData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -6184,6 +6417,10 @@ export type ListBusinessConsoleMesCapacityImpactsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };

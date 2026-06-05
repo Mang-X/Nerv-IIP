@@ -39,7 +39,24 @@ public sealed record ListMesWorkOrdersRequest(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null);
+
+public sealed record ListProductionPlansRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    int Skip = 0,
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? Source = null,
+    string? ReadinessStatus = null);
 
 public sealed record RecordProductionReportRequest(
     string OrganizationId,
@@ -62,7 +79,11 @@ public sealed record ListProductionReportsRequest(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null);
 
 public sealed record CreateFinishedGoodsReceiptRequestRequest(
     string OrganizationId,
@@ -83,14 +104,21 @@ public sealed record ListFinishedGoodsReceiptRequestsRequest(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null);
 
 public sealed record ListCapacityImpactsRequest(
     string OrganizationId,
     string EnvironmentId,
     string? DeviceAssetId,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null);
 
 public sealed record FoundationReadinessAreaRequest(
     string OrganizationId,
@@ -177,7 +205,11 @@ public sealed record ListMaterialIssueRequestsRequest(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null);
 
 public sealed record LineSideMaterialReceiptRequest(
     string OrganizationId,
@@ -218,7 +250,11 @@ public sealed record ListRelatedQualityItemsRequest(
     string? WorkOrderId,
     string? OperationTaskId,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null);
 
 public sealed record ListDowntimeEventsRequest(
     string OrganizationId,
@@ -226,7 +262,9 @@ public sealed record ListDowntimeEventsRequest(
     string? WorkCenterId,
     string? DeviceAssetId,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? Keyword = null,
+    string? ShiftId = null);
 
 public sealed record RecordDowntimeEventRequest(
     string OrganizationId,
@@ -253,7 +291,10 @@ public sealed record ListShiftHandoversRequest(
     string EnvironmentId,
     string? ShiftId,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? DeviceAssetId = null);
 
 public sealed record CreateShiftHandoverRequest(
     string OrganizationId,
@@ -360,13 +401,24 @@ public sealed class GetMesOverviewEndpoint(ISender sender)
 }
 
 public sealed class ListProductionPlansEndpoint(ISender sender)
-    : MesEndpoint<ListMesWorkOrdersRequest, MesProductionPlanListResponse>
+    : MesEndpoint<ListProductionPlansRequest, MesProductionPlanListResponse>
 {
     public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ListProductionPlansEndpoint>());
 
-    public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
+    public override async Task HandleAsync(ListProductionPlansRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListProductionPlansQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListProductionPlansQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Status,
+            req.Skip,
+            req.Take,
+            req.Keyword,
+            req.WorkCenterId,
+            req.ShiftId,
+            req.DeviceAssetId,
+            req.Source,
+            req.ReadinessStatus), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -450,7 +502,16 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
     public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
     {
         var response = await sender.Send(
-            new ListMesWorkOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Skip, req.Take),
+            new ListMesWorkOrdersQuery(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.Status,
+                req.Skip,
+                req.Take,
+                req.Keyword,
+                req.WorkCenterId,
+                req.ShiftId,
+                req.DeviceAssetId),
             ct);
         await Send.OkAsync(response, ct);
     }
@@ -523,7 +584,16 @@ public sealed class ListMaterialIssueRequestsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMaterialIssueRequestsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListMaterialIssueRequestsQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListMaterialIssueRequestsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.Skip,
+            req.Take,
+            req.Keyword,
+            req.WorkCenterId,
+            req.ShiftId,
+            req.DeviceAssetId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -553,7 +623,16 @@ public sealed class ListDispatchTasksEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListDispatchTasksQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListDispatchTasksQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Status,
+            req.Skip,
+            req.Take,
+            req.Keyword,
+            req.WorkCenterId,
+            req.ShiftId,
+            req.DeviceAssetId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -584,7 +663,16 @@ public sealed class ListOperationTasksEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListOperationTasksQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListOperationTasksQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Status,
+            req.Skip,
+            req.Take,
+            req.Keyword,
+            req.WorkCenterId,
+            req.ShiftId,
+            req.DeviceAssetId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -635,7 +723,16 @@ public sealed class GetWipSummaryEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new GetWipSummaryQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Skip, req.Take), ct);
+        var response = await sender.Send(new GetWipSummaryQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Status,
+            req.Skip,
+            req.Take,
+            req.Keyword,
+            req.WorkCenterId,
+            req.ShiftId,
+            req.DeviceAssetId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -669,7 +766,16 @@ public sealed class ListProductionReportsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListProductionReportsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListProductionReportsQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListProductionReportsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.Skip,
+            req.Take,
+            req.Keyword,
+            req.WorkCenterId,
+            req.ShiftId,
+            req.DeviceAssetId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -707,7 +813,11 @@ public sealed class ListRelatedQualityItemsEndpoint(ISender sender)
             req.WorkOrderId,
             req.OperationTaskId,
             req.Skip,
-            req.Take), ct);
+            req.Take,
+            req.Keyword,
+            req.WorkCenterId,
+            req.ShiftId,
+            req.DeviceAssetId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -739,7 +849,16 @@ public sealed class ListFinishedGoodsReceiptRequestsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListFinishedGoodsReceiptRequestsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListFinishedGoodsReceiptRequestsQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListFinishedGoodsReceiptRequestsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.Skip,
+            req.Take,
+            req.Keyword,
+            req.WorkCenterId,
+            req.ShiftId,
+            req.DeviceAssetId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -757,7 +876,9 @@ public sealed class ListDowntimeEventsEndpoint(ISender sender)
             req.WorkCenterId,
             req.DeviceAssetId,
             req.Skip,
-            req.Take), ct);
+            req.Take,
+            req.Keyword,
+            req.ShiftId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -807,7 +928,15 @@ public sealed class ListShiftHandoversEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListShiftHandoversRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListShiftHandoversQuery(req.OrganizationId, req.EnvironmentId, req.ShiftId, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListShiftHandoversQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ShiftId,
+            req.Skip,
+            req.Take,
+            req.Keyword,
+            req.WorkCenterId,
+            req.DeviceAssetId), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -889,7 +1018,15 @@ public sealed class ListCapacityImpactsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListCapacityImpactsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListCapacityImpactsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListCapacityImpactsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.DeviceAssetId,
+            req.Skip,
+            req.Take,
+            req.WorkCenterId,
+            req.Keyword,
+            req.ShiftId), ct);
         await Send.OkAsync(response, ct);
     }
 }
