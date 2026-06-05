@@ -1,8 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, shallowRef } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
+import { Select } from '@nerv-iip/ui'
 
-import IamListToolbar from '@/components/iam/IamListToolbar.vue'
 import SessionsPage from './index.vue'
 
 const iamState = vi.hoisted(() => ({
@@ -33,7 +33,7 @@ vi.mock('@/composables/usePermissions', () => ({
 
 vi.mock('@/composables/useIamAdmin', () => ({
   useIamSessions: () => ({
-    filters: iamState.filters,
+    filters: reactive(iamState.filters),
     refreshSessions: iamState.refreshSessions,
     revokeSession: iamState.revokeSession,
     revokeSessionError: computed(() => undefined),
@@ -70,6 +70,16 @@ vi.mock('@/composables/useIamAdmin', () => ({
   }),
 }))
 
+function mountPage() {
+  return mount(SessionsPage, {
+    global: {
+      stubs: {
+        DefaultLayout: { template: '<main><slot /></main>' },
+      },
+    },
+  })
+}
+
 describe('IAM sessions page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -77,6 +87,7 @@ describe('IAM sessions page', () => {
     iamState.filters.filterRevoked = undefined
     iamState.filters.filterSearch = undefined
     iamState.filters.pageIndex = 3
+    iamState.filters.pageSize = 20
     iamState.revokeSession.mockResolvedValue(undefined)
     iamState.refreshSessions.mockResolvedValue(undefined)
     iamState.revokeSessionPending.value = false
@@ -84,75 +95,45 @@ describe('IAM sessions page', () => {
     permissionState.canRevoke.value = true
   })
 
-  it('renders active sessions without legacy color variables', async () => {
-    const wrapper = mount(SessionsPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+  it('renders active sessions with FE-2 blocks and no legacy color variables', async () => {
+    const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.get('h1').text()).toBe('Sessions')
+    expect(wrapper.text()).toContain('会话')
     expect(wrapper.text()).toContain('session-1')
-    expect(wrapper.text()).toContain('Revoke')
+    expect(wrapper.text()).toContain('吊销')
     expect(wrapper.find('[style*="--legacy-color"]').exists()).toBe(false)
   })
 
-  it('renders active session state without the blue primary badge variant', async () => {
-    const wrapper = mount(SessionsPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+  it('renders active session state with the success-tone StatusBadge', async () => {
+    const wrapper = mountPage()
     await flushPromises()
 
-    const activeBadge = wrapper
-      .findAll('[data-slot="badge"]')
-      .find((badge) => badge.text() === 'Active')
-
-    expect(activeBadge?.attributes('data-variant')).toBe('outline')
-    expect(activeBadge?.classes()).toContain('border-emerald-200')
-    expect(activeBadge?.classes()).toContain('text-emerald-700')
+    const activeBadge = wrapper.findAll('[aria-label="状态：活跃"]')[0]
+    expect(activeBadge).toBeTruthy()
+    expect(activeBadge.text()).toBe('活跃')
+    expect(activeBadge.classes()).toContain('text-success')
   })
 
   it('maps session status filters to revoked filters', async () => {
-    const wrapper = mount(SessionsPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+    const wrapper = mountPage()
     await flushPromises()
 
-    wrapper.findComponent(IamListToolbar).vm.$emit('update:status', 'active')
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', 'active')
     await flushPromises()
 
     expect(iamState.filters.filterRevoked).toBe(false)
     expect(iamState.filters.pageIndex).toBe(1)
 
     iamState.filters.pageIndex = 3
-    wrapper.findComponent(IamListToolbar).vm.$emit('update:status', 'revoked')
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', 'revoked')
     await flushPromises()
 
     expect(iamState.filters.filterRevoked).toBe(true)
     expect(iamState.filters.pageIndex).toBe(1)
 
     iamState.filters.pageIndex = 3
-    wrapper.findComponent(IamListToolbar).vm.$emit('update:status', '')
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', 'all')
     await flushPromises()
 
     expect(iamState.filters.filterRevoked).toBeUndefined()
@@ -160,39 +141,23 @@ describe('IAM sessions page', () => {
   })
 
   it('disables revoke for the current session', async () => {
-    const wrapper = mount(SessionsPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+    const wrapper = mountPage()
     await flushPromises()
+
     expect(
-      wrapper.get('button[aria-label="Revoke session session-current"]').attributes('disabled'),
+      wrapper.get('button[aria-label="吊销会话 session-current"]').attributes('disabled'),
     ).toBeDefined()
   })
 
   it('revokes the selected session and refreshes sessions after confirmation', async () => {
-    const wrapper = mount(SessionsPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+    const wrapper = mountPage()
     await flushPromises()
-    await wrapper.get('button[aria-label="Revoke session session-1"]').trigger('click')
+
+    await wrapper.get('button[aria-label="吊销会话 session-1"]').trigger('click')
     await flushPromises()
 
     const confirmButton = [...document.body.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Revoke session',
+      (button) => button.textContent?.trim() === '吊销会话',
     )
     confirmButton?.click()
     await flushPromises()
@@ -201,62 +166,32 @@ describe('IAM sessions page', () => {
       path: { sessionId: 'session-1' },
     })
     expect(iamState.refreshSessions).toHaveBeenCalled()
-    expect(document.body.textContent).not.toContain(
-      'Revoking session-1 ends the refresh path for this session.',
-    )
   })
 
   it('disables session revoke without revoke permission', async () => {
     permissionState.canRevoke.value = false
-    const wrapper = mount(SessionsPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+    const wrapper = mountPage()
     await flushPromises()
 
     expect(
-      wrapper.get('button[aria-label="Revoke session session-1"]').attributes('disabled'),
+      wrapper.get('button[aria-label="吊销会话 session-1"]').attributes('disabled'),
     ).toBeDefined()
   })
 
   it('disables revoke for revoked sessions', async () => {
-    const wrapper = mount(SessionsPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+    const wrapper = mountPage()
     await flushPromises()
 
     expect(
-      wrapper.get('button[aria-label="Revoke session session-revoked"]').attributes('disabled'),
+      wrapper.get('button[aria-label="吊销会话 session-revoked"]').attributes('disabled'),
     ).toBeDefined()
   })
 
-  it('renders pagination when sessions exceed one page', async () => {
+  it('renders the server pagination summary when sessions exceed one page', async () => {
     iamState.totalCount.value = 45
-    const wrapper = mount(SessionsPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+    const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Showing 1-20 of 45')
+    expect(wrapper.text()).toContain('显示 1-20 / 45 条')
   })
 })

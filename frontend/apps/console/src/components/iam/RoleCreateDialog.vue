@@ -48,7 +48,7 @@ function resetForm() {
 
 function validate() {
   clearErrors()
-  errors.roleName = roleName.value.trim() ? '' : 'Role name is required.'
+  errors.roleName = roleName.value.trim() ? '' : '请输入角色名称。'
 
   return !errors.roleName
 }
@@ -78,16 +78,16 @@ watch(open, (isOpen) => {
       class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl"
     >
       <DialogHeader>
-        <DialogTitle>Create role</DialogTitle>
+        <DialogTitle>新建角色</DialogTitle>
         <DialogDescription>
-          Create an IAM role and assign permissions from the seeded catalog.
+          创建 IAM 角色并从权限目录中分配权限。
         </DialogDescription>
       </DialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
           <Field>
-            <FieldLabel for="iam-create-role-name">Role name</FieldLabel>
+            <FieldLabel for="iam-create-role-name">角色名称</FieldLabel>
             <Input
               id="iam-create-role-name"
               v-model="roleName"
@@ -105,7 +105,7 @@ watch(open, (isOpen) => {
 
         <DialogFooter show-close-button>
           <Button type="submit" :disabled="props.pending">
-            Create role
+            新建角色
           </Button>
         </DialogFooter>
       </form>

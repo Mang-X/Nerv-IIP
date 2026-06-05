@@ -51,8 +51,8 @@ function clearErrors() {
 
 function validate() {
   clearErrors()
-  errors.loginName = form.loginName.trim() ? '' : 'Login name is required.'
-  errors.email = form.email.trim() ? '' : 'Email is required.'
+  errors.loginName = form.loginName.trim() ? '' : '请输入登录名。'
+  errors.email = form.email.trim() ? '' : '请输入邮箱。'
 
   return !errors.loginName && !errors.email
 }
@@ -82,16 +82,16 @@ watch(open, (isOpen) => {
   <Dialog v-model:open="open">
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Edit user</DialogTitle>
+        <DialogTitle>编辑用户</DialogTitle>
         <DialogDescription>
-          Update the user's login name, email address, and enabled state.
+          更新用户的登录名、邮箱与启用状态。
         </DialogDescription>
       </DialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
           <Field>
-            <FieldLabel for="iam-edit-login-name">Login name</FieldLabel>
+            <FieldLabel for="iam-edit-login-name">登录名</FieldLabel>
             <Input
               id="iam-edit-login-name"
               v-model="form.loginName"
@@ -102,7 +102,7 @@ watch(open, (isOpen) => {
           </Field>
 
           <Field>
-            <FieldLabel for="iam-edit-email">Email</FieldLabel>
+            <FieldLabel for="iam-edit-email">邮箱</FieldLabel>
             <Input
               id="iam-edit-email"
               v-model="form.email"
@@ -115,7 +115,7 @@ watch(open, (isOpen) => {
 
           <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
             <div class="grid gap-1">
-              <FieldLabel for="iam-edit-enabled">Enabled</FieldLabel>
+              <FieldLabel for="iam-edit-enabled">启用</FieldLabel>
             </div>
             <Checkbox id="iam-edit-enabled" v-model:checked="form.enabled" />
           </Field>
@@ -123,7 +123,7 @@ watch(open, (isOpen) => {
 
         <DialogFooter show-close-button>
           <Button type="submit">
-            Save changes
+            保存修改
           </Button>
         </DialogFooter>
       </form>

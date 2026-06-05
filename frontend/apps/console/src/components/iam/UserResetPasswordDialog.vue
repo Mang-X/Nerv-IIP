@@ -39,7 +39,7 @@ function resetForm() {
 }
 
 function validate() {
-  errors.newPassword = form.newPassword ? '' : 'New password is required.'
+  errors.newPassword = form.newPassword ? '' : '请输入新密码。'
 
   return !errors.newPassword
 }
@@ -67,16 +67,16 @@ watch(open, (isOpen) => {
   <Dialog v-model:open="open">
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Reset password</DialogTitle>
+        <DialogTitle>重置密码</DialogTitle>
         <DialogDescription>
-          Set a new password for {{ user?.loginName || 'this user' }}.
+          为 {{ user?.loginName || '该用户' }} 设置新密码。
         </DialogDescription>
       </DialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
           <Field>
-            <FieldLabel for="iam-reset-password">New password</FieldLabel>
+            <FieldLabel for="iam-reset-password">新密码</FieldLabel>
             <Input
               id="iam-reset-password"
               v-model="form.newPassword"
@@ -90,7 +90,7 @@ watch(open, (isOpen) => {
 
         <DialogFooter show-close-button>
           <Button type="submit">
-            Reset password
+            重置密码
           </Button>
         </DialogFooter>
       </form>

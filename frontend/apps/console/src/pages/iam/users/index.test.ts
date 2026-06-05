@@ -5,12 +5,12 @@ import { computed, reactive, shallowRef } from 'vue'
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
 import UserEditDialog from '@/components/iam/UserEditDialog.vue'
 import UserResetPasswordDialog from '@/components/iam/UserResetPasswordDialog.vue'
-import UsersTable from '@/components/iam/UsersTable.vue'
 import UsersPage from './index.vue'
 
 const iamState = vi.hoisted(() => ({
   createUser: vi.fn(),
   disableUser: vi.fn(),
+  filters: { pageIndex: 1, pageSize: 20 } as { pageIndex: number; pageSize: number },
   refreshUsers: vi.fn(),
   resetUserPassword: vi.fn(),
   totalCount: { value: 1 },
@@ -32,10 +32,7 @@ vi.mock('@/composables/useIamAdmin', () => ({
     disableUser: iamState.disableUser,
     disableUserError: computed(() => undefined),
     disableUserPending: shallowRef(false),
-    filters: reactive({
-      pageIndex: 1,
-      pageSize: 20,
-    }),
+    filters: reactive(iamState.filters),
     refreshUsers: iamState.refreshUsers,
     resetUserPassword: iamState.resetUserPassword,
     resetUserPasswordError: computed(() => undefined),
@@ -58,24 +55,22 @@ vi.mock('@/composables/useIamAdmin', () => ({
 }))
 
 const dialogStubs = {
-  Dialog: {
-    template: '<div><slot /></div>',
-  },
-  DialogContent: {
-    template: '<div><slot /></div>',
-  },
-  DialogDescription: {
-    template: '<p><slot /></p>',
-  },
-  DialogFooter: {
-    template: '<footer><slot /></footer>',
-  },
-  DialogHeader: {
-    template: '<header><slot /></header>',
-  },
-  DialogTitle: {
-    template: '<h2><slot /></h2>',
-  },
+  Dialog: { template: '<div><slot /></div>' },
+  DialogContent: { template: '<div><slot /></div>' },
+  DialogDescription: { template: '<p><slot /></p>' },
+  DialogFooter: { template: '<footer><slot /></footer>' },
+  DialogHeader: { template: '<header><slot /></header>' },
+  DialogTitle: { template: '<h2><slot /></h2>' },
+}
+
+function mountPage() {
+  return mount(UsersPage, {
+    global: {
+      stubs: {
+        DefaultLayout: { template: '<main><slot /></main>' },
+      },
+    },
+  })
 }
 
 describe('IAM users page', () => {
@@ -85,129 +80,73 @@ describe('IAM users page', () => {
     iamState.disableUser.mockResolvedValue(undefined)
     iamState.refreshUsers.mockResolvedValue(undefined)
     iamState.resetUserPassword.mockResolvedValue(undefined)
+    iamState.filters.pageIndex = 1
+    iamState.filters.pageSize = 20
     iamState.totalCount.value = 1
     iamState.updateUser.mockResolvedValue(undefined)
     permissionState.canManage.value = true
   })
 
-  it('renders the users list without legacy color variables', async () => {
-    const wrapper = mount(UsersPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+  it('renders the users list with FE-2 blocks and no legacy color variables', async () => {
+    const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.get('h1').text()).toBe('Users')
+    expect(wrapper.text()).toContain('用户')
     expect(wrapper.text()).toContain('admin@nerv-iip.local')
-    expect(wrapper.text()).toContain('Create user')
+    expect(wrapper.text()).toContain('新建用户')
     expect(wrapper.find('[style*="--legacy-color"]').exists()).toBe(false)
   })
 
-  it('renders enabled status without the blue primary badge variant', async () => {
-    const wrapper = mount(UsersPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+  it('renders enabled status with the success-tone StatusBadge', async () => {
+    const wrapper = mountPage()
     await flushPromises()
 
-    const enabledBadge = wrapper
-      .findAll('[data-slot="badge"]')
-      .find((badge) => badge.text() === 'Enabled')
-
-    expect(enabledBadge?.attributes('data-variant')).toBe('success')
-    expect(enabledBadge?.classes()).toContain('border-emerald-200')
-    expect(enabledBadge?.classes()).toContain('text-emerald-700')
+    const enabledBadge = wrapper.find('[aria-label="状态：启用"]')
+    expect(enabledBadge.exists()).toBe(true)
+    expect(enabledBadge.text()).toBe('启用')
+    expect(enabledBadge.classes()).toContain('text-success')
   })
 
   it('labels search and row actions for assistive technology', async () => {
-    const wrapper = mount(UsersPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+    const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBe('Search users')
-    expect(wrapper.find('button[aria-label="Open actions for admin"]').exists()).toBe(true)
+    expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBe('搜索用户')
+    expect(wrapper.find('button[aria-label="编辑用户 admin"]').exists()).toBe(true)
+    expect(wrapper.find('button[aria-label="重置密码 admin"]').exists()).toBe(true)
+    expect(wrapper.find('button[aria-label="停用用户 admin"]').exists()).toBe(true)
   })
 
   it('disables user mutation actions without manage permission', async () => {
     permissionState.canManage.value = false
-    const wrapper = mount(UsersPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+    const wrapper = mountPage()
     await flushPromises()
 
-    const createButton = wrapper.findAll('button').find((button) => button.text() === 'Create user')
+    const createButton = wrapper.findAll('button').find((button) => button.text() === '新建用户')
     expect(createButton?.attributes('disabled')).toBeDefined()
-    expect(
-      wrapper.get('button[aria-label="Open actions for admin"]').attributes('disabled'),
-    ).toBeDefined()
+    expect(wrapper.get('button[aria-label="编辑用户 admin"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[aria-label="重置密码 admin"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[aria-label="停用用户 admin"]').attributes('disabled')).toBeDefined()
   })
 
-  it('renders pagination and changes the server page', async () => {
+  it('renders the server pagination summary and changes the server page', async () => {
     iamState.totalCount.value = 45
-    const wrapper = mount(UsersPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+    const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Showing 1-20 of 45')
-    await wrapper.get('[data-slot="pagination-next"]').trigger('click')
+    expect(wrapper.text()).toContain('显示 1-20 / 45 条')
 
-    expect(wrapper.findComponent({ name: 'IamPagination' }).exists()).toBe(true)
+    wrapper.findComponent({ name: 'DataTablePagination' }).vm.$emit('update:page', 2)
+    await flushPromises()
+
+    expect(iamState.filters.pageIndex).toBe(2)
   })
 
   it('refreshes users after resetting a password', async () => {
-    const wrapper = mount(UsersPage, {
-      global: {
-        stubs: {
-          DefaultLayout: {
-            template: '<main><slot /></main>',
-          },
-        },
-      },
-    })
-
+    const wrapper = mountPage()
     await flushPromises()
 
-    wrapper.findComponent(UsersTable).vm.$emit('resetPassword', {
-      userId: 'user-admin',
-      loginName: 'admin',
-      email: 'admin@nerv-iip.local',
-      enabled: true,
-    })
+    await wrapper.get('button[aria-label="重置密码 admin"]').trigger('click')
     wrapper.findComponent(UserResetPasswordDialog).vm.$emit('submit', {
       newPassword: 'new-password',
     })
@@ -224,14 +163,8 @@ describe('IAM users page', () => {
 describe('IAM users form dialogs', () => {
   it('renders create validation alerts only after submit', async () => {
     const wrapper = mount(UserCreateDialog, {
-      props: {
-        open: true,
-      },
-      global: {
-        stubs: {
-          ...dialogStubs,
-        },
-      },
+      props: { open: true },
+      global: { stubs: { ...dialogStubs } },
     })
 
     await flushPromises()
@@ -241,27 +174,18 @@ describe('IAM users form dialogs', () => {
     await wrapper.get('form').trigger('submit')
 
     expect(wrapper.findAll('[role="alert"]')).toHaveLength(3)
-    expect(wrapper.text()).toContain('Login name is required.')
-    expect(wrapper.text()).toContain('Email is required.')
-    expect(wrapper.text()).toContain('Password is required.')
+    expect(wrapper.text()).toContain('请输入登录名。')
+    expect(wrapper.text()).toContain('请输入邮箱。')
+    expect(wrapper.text()).toContain('请输入密码。')
   })
 
   it('renders edit validation alerts only after submit', async () => {
     const wrapper = mount(UserEditDialog, {
       props: {
         open: true,
-        user: {
-          userId: 'user-admin',
-          loginName: '',
-          email: '',
-          enabled: true,
-        },
+        user: { userId: 'user-admin', loginName: '', email: '', enabled: true },
       },
-      global: {
-        stubs: {
-          ...dialogStubs,
-        },
-      },
+      global: { stubs: { ...dialogStubs } },
     })
 
     await flushPromises()
@@ -271,26 +195,17 @@ describe('IAM users form dialogs', () => {
     await wrapper.get('form').trigger('submit')
 
     expect(wrapper.findAll('[role="alert"]')).toHaveLength(2)
-    expect(wrapper.text()).toContain('Login name is required.')
-    expect(wrapper.text()).toContain('Email is required.')
+    expect(wrapper.text()).toContain('请输入登录名。')
+    expect(wrapper.text()).toContain('请输入邮箱。')
   })
 
   it('renders reset password validation alerts only after submit', async () => {
     const wrapper = mount(UserResetPasswordDialog, {
       props: {
         open: true,
-        user: {
-          userId: 'user-admin',
-          loginName: 'admin',
-          email: 'admin@nerv-iip.local',
-          enabled: true,
-        },
+        user: { userId: 'user-admin', loginName: 'admin', email: 'admin@nerv-iip.local', enabled: true },
       },
-      global: {
-        stubs: {
-          ...dialogStubs,
-        },
-      },
+      global: { stubs: { ...dialogStubs } },
     })
 
     await flushPromises()
@@ -300,6 +215,6 @@ describe('IAM users form dialogs', () => {
     await wrapper.get('form').trigger('submit')
 
     expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
-    expect(wrapper.text()).toContain('New password is required.')
+    expect(wrapper.text()).toContain('请输入新密码。')
   })
 })
