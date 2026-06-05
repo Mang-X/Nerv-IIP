@@ -52,6 +52,7 @@ import { RouterLink, useRoute } from 'vue-router'
 definePage({ meta: { requiresAuth: true, title: '不合格品处理' } })
 
 const route = useRoute()
+const initialNcrKeyword = firstQuery(route.query.ncrId)
 const {
   closeNcr,
   closeNcrError,
@@ -65,8 +66,8 @@ const {
   submitDisposition,
   submitDispositionError,
   submitDispositionPending,
-} = useQualityNcrs()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+} = useQualityNcrs(initialNcrKeyword ? { keyword: initialNcrKeyword } : {})
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status, () => filters.keyword] })
 
 const selectedNcr = shallowRef<BusinessConsoleQualityItem>()
 const detailOpen = shallowRef(false)
@@ -189,9 +190,16 @@ watch(detailOpen, (open) => {
   if (!open) selectedNcr.value = undefined
 })
 
-// 带 ncrId 进入时清空状态筛选并回到第 1 页，最大化目标 NCR 落入结果的概率，避免被状态过滤排除。
+// 带 ncrId 进入时使用后端 keyword 定位，避免目标 NCR 因分页、筛选或排序不在当前页。
 watch(targetNcrId, (id) => {
-  if (id) filters.status = undefined
+  if (id) {
+    filters.status = undefined
+    filters.keyword = id
+  }
+  else {
+    filters.keyword = undefined
+  }
+  locatedTargetId.value = ''
 }, { immediate: true })
 
 // 目标 NCR 出现在结果中即自动打开其处置抽屉；每个目标只自动打开一次（手动关闭后不再弹出）。
@@ -234,9 +242,8 @@ watch(targetNcr, (ncr) => {
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
-    <!-- 后端补 NCR 定位查询（#326）前，跨页目标仅能提示用户自行定位；文案保持业务可执行，不暴露工程状态。 -->
     <p v-else-if="targetNcrMissing" class="text-sm text-warning" role="status">
-      未在当前列表找到 NCR {{ targetNcrId }}。请清空状态筛选、翻页查找，或联系管理员确认该 NCR 是否已归档。
+      未找到 NCR {{ targetNcrId }}。请确认该 NCR 是否已归档或无权访问。
     </p>
 
     <DataTable

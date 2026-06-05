@@ -1788,14 +1788,14 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListNcrsAsync(
             "internal-token-001",
-            new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", Skip: 4, Take: 12),
+            new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", Keyword: "NCR-001", Skip: 4, Take: 12),
             CancellationToken.None);
 
         Assert.Equal("ncr-001", response.Items.Single().Id);
         Assert.Equal(1, response.Total);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/business/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev&status=open&skip=4&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/quality/ncrs?organizationId=org-001&environmentId=env-dev&status=open&keyword=NCR-001&skip=4&take=12", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
@@ -1828,7 +1828,7 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListInspectionPlansAsync(
             "internal-token-001",
-            new BusinessConsoleQualityListRequest("org-001", "env-dev", "active", Take: 12),
+            new BusinessConsoleQualityListRequest("org-001", "env-dev", "active", Keyword: "IP-001", Take: 12),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -1838,6 +1838,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("active", item.Status);
         Assert.Equal("incoming", item.Category);
         Assert.Equal("SKU-001", item.SkuCode);
+        var request = handler.Requests.Single();
+        Assert.Equal("/api/business/v1/quality/inspection-plans?organizationId=org-001&environmentId=env-dev&status=active&keyword=IP-001&skip=0&take=12", request.RequestUri!.PathAndQuery);
     }
 
     [Fact]
