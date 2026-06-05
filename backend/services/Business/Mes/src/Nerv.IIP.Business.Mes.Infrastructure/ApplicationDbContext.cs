@@ -5,7 +5,9 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAg
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Numbering;
@@ -23,6 +25,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<ProductionReportMaterialConsumption> ProductionReportMaterialConsumptions => Set<ProductionReportMaterialConsumption>();
 
+    public DbSet<DefectRecord> DefectRecords => Set<DefectRecord>();
+
     public DbSet<MaterialRequirement> MaterialRequirements => Set<MaterialRequirement>();
 
     public DbSet<MaterialIssueRequest> MaterialIssueRequests => Set<MaterialIssueRequest>();
@@ -34,6 +38,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<DeviceAssetWorkCenterMapping> DeviceAssetWorkCenterMappings => Set<DeviceAssetWorkCenterMapping>();
 
     public DbSet<FinishedGoodsReceiptRequest> FinishedGoodsReceiptRequests => Set<FinishedGoodsReceiptRequest>();
+
+    public DbSet<ShiftHandover> ShiftHandovers => Set<ShiftHandover>();
 
     public DbSet<NumberingCounter> NumberingCounters => Set<NumberingCounter>();
 

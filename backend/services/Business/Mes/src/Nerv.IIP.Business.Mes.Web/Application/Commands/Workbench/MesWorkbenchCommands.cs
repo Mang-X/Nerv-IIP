@@ -11,6 +11,8 @@ using DomainScheduleResult = Nerv.IIP.Business.Mes.Domain.AggregatesModel.Schedu
 using DomainScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
 using DomainScheduledOperationSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduledOperationSnapshot;
 using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
+using DomainDefectRecord = Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate.DefectRecord;
+using DomainShiftHandover = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate.ShiftHandover;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -835,7 +837,23 @@ public sealed class RecordDefectCommandHandler(ApplicationDbContext dbContext, M
             request.IdempotencyKey,
             MesNumberingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.DefectCode, request.Quantity, request.RecordedAtUtc),
             cancellationToken);
-        return new MesAcceptedResponse("Accepted", allocation.Number, request.RecordedAtUtc);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MesAcceptedResponse("Accepted", allocation.Number, request.RecordedAtUtc);
+        }
+
+        var defect = DomainDefectRecord.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Number,
+            request.WorkOrderId,
+            request.OperationTaskId,
+            request.DefectCode,
+            request.Quantity,
+            request.RecordedAtUtc);
+        dbContext.DefectRecords.Add(defect);
+        await Task.CompletedTask;
+        return new MesAcceptedResponse("Accepted", defect.DefectNo, request.RecordedAtUtc);
     }
 }
 
@@ -919,7 +937,7 @@ public sealed record CreateShiftHandoverCommand(
     DateTimeOffset HandoverAtUtc,
     string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
 
-public sealed class CreateShiftHandoverCommandHandler(MesNumberingService? numberingService = null)
+public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbContext, MesNumberingService? numberingService = null)
     : ICommandHandler<CreateShiftHandoverCommand, MesAcceptedResponse>
 {
     private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
@@ -935,7 +953,51 @@ public sealed class CreateShiftHandoverCommandHandler(MesNumberingService? numbe
             request.IdempotencyKey,
             MesNumberingService.Fingerprint(request.ShiftId, request.TeamId, request.HandoverAtUtc),
             cancellationToken);
-        return new MesAcceptedResponse("Accepted", allocation.Number, request.HandoverAtUtc);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MesAcceptedResponse("Accepted", allocation.Number, request.HandoverAtUtc);
+        }
+
+        var openIssueCount = await CountOpenHandoverIssuesAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.HandoverAtUtc,
+            cancellationToken);
+        var handover = DomainShiftHandover.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Number,
+            request.ShiftId,
+            request.TeamId,
+            openIssueCount,
+            request.HandoverAtUtc);
+        dbContext.ShiftHandovers.Add(handover);
+        return new MesAcceptedResponse("Accepted", handover.HandoverNo, request.HandoverAtUtc);
+    }
+
+    private async Task<int> CountOpenHandoverIssuesAsync(
+        string organizationId,
+        string environmentId,
+        DateTimeOffset effectiveAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var openDefects = await dbContext.DefectRecords.CountAsync(
+            x => x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.Status == DomainDefectRecord.OpenStatus,
+            cancellationToken);
+        var openDowntimeEvents = await dbContext.WorkCenterUnavailabilities.CountAsync(
+            x => x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.FromUtc <= effectiveAtUtc &&
+                (x.ToUtc == null || x.ToUtc > effectiveAtUtc),
+            cancellationToken);
+        var openMaterialIssues = await dbContext.MaterialIssueRequests.CountAsync(
+            x => x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.Status != MaterialIssueRequest.ReceivedStatus,
+            cancellationToken);
+        return openDefects + openDowntimeEvents + openMaterialIssues;
     }
 }
 
@@ -945,11 +1007,19 @@ public sealed record AcceptShiftHandoverCommand(
     string HandoverId,
     DateTimeOffset AcceptedAtUtc) : ICommand<MesAcceptedResponse>;
 
-public sealed class AcceptShiftHandoverCommandHandler
+public sealed class AcceptShiftHandoverCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AcceptShiftHandoverCommand, MesAcceptedResponse>
 {
-    public Task<MesAcceptedResponse> Handle(AcceptShiftHandoverCommand request, CancellationToken cancellationToken)
+    public async Task<MesAcceptedResponse> Handle(AcceptShiftHandoverCommand request, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new MesAcceptedResponse("Accepted", request.HandoverId, request.AcceptedAtUtc));
+        var handover = await dbContext.ShiftHandovers.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                (x.HandoverNo == request.HandoverId || x.Id.Id.ToString() == request.HandoverId),
+            cancellationToken)
+            ?? throw new KnownException($"未找到班次交接，HandoverId = {request.HandoverId}");
+
+        handover.Accept(request.AcceptedAtUtc);
+        return new MesAcceptedResponse("Accepted", handover.HandoverNo, request.AcceptedAtUtc);
     }
 }

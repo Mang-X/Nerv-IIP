@@ -811,19 +811,47 @@ public sealed record MesRelatedQualityItemListResponse(
     int Total);
 
 public sealed record MesRelatedQualityItemRow(
-    string ItemId,
-    string ItemType,
-    string WorkOrderId,
-    string? OperationTaskId,
+    string QualityItemId,
+    string SourceType,
+    string SourceDocumentId,
     string Status,
-    string Summary);
+    string? DefectCode,
+    string? NcrId);
 
-public sealed class ListRelatedQualityItemsQueryHandler
+public sealed class ListRelatedQualityItemsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListRelatedQualityItemsQuery, MesRelatedQualityItemListResponse>
 {
-    public Task<MesRelatedQualityItemListResponse> Handle(ListRelatedQualityItemsQuery request, CancellationToken cancellationToken)
+    public async Task<MesRelatedQualityItemListResponse> Handle(ListRelatedQualityItemsQuery request, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new MesRelatedQualityItemListResponse([], 0));
+        var query = dbContext.DefectRecords
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
+        {
+            query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.OperationTaskId))
+        {
+            query = query.Where(x => x.OperationTaskId == request.OperationTaskId);
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(x => x.RecordedAtUtc)
+            .ThenByDescending(x => x.DefectNo)
+            .Skip(Math.Max(0, request.Skip))
+            .Take(Math.Clamp(request.Take, 1, 500))
+            .Select(x => new MesRelatedQualityItemRow(
+                x.DefectNo,
+                "Defect",
+                x.OperationTaskId ?? x.WorkOrderId,
+                x.Status,
+                x.DefectCode,
+                null))
+            .ToArrayAsync(cancellationToken);
+        return new MesRelatedQualityItemListResponse(items, total);
     }
 }
 
@@ -908,12 +936,35 @@ public sealed record MesShiftHandoverRow(
     int OpenIssueCount,
     DateTimeOffset CreatedAtUtc);
 
-public sealed class ListShiftHandoversQueryHandler
+public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListShiftHandoversQuery, MesShiftHandoverListResponse>
 {
-    public Task<MesShiftHandoverListResponse> Handle(ListShiftHandoversQuery request, CancellationToken cancellationToken)
+    public async Task<MesShiftHandoverListResponse> Handle(ListShiftHandoversQuery request, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new MesShiftHandoverListResponse([], 0));
+        var query = dbContext.ShiftHandovers
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (!string.IsNullOrWhiteSpace(request.ShiftId))
+        {
+            query = query.Where(x => x.ShiftId == request.ShiftId);
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.HandoverNo)
+            .Skip(Math.Max(0, request.Skip))
+            .Take(Math.Clamp(request.Take, 1, 500))
+            .Select(x => new MesShiftHandoverRow(
+                x.HandoverNo,
+                x.ShiftId,
+                x.TeamId,
+                x.HandoverStatus,
+                x.OpenIssueCount,
+                x.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken);
+        return new MesShiftHandoverListResponse(items, total);
     }
 }
 
