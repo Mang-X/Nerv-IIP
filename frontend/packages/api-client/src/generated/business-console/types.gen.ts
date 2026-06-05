@@ -1378,7 +1378,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     plannedEndUtc?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionPlanListRequest = {
     [key: string]: never;
 };
 
@@ -1431,6 +1431,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     durationTicks?: number;
     existingStartUtc?: string | null;
     existingEndUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderDetailResponse = NetCorePalExtensionsDtoResponseData & {
@@ -5298,6 +5302,12 @@ export type ListBusinessConsoleMesProductionPlansData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
+        source?: string | null;
+        readinessStatus?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5395,6 +5405,10 @@ export type ListBusinessConsoleMesWorkOrdersData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5583,6 +5597,10 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5648,6 +5666,10 @@ export type ListBusinessConsoleMesDispatchTasksData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5713,6 +5735,10 @@ export type ListBusinessConsoleMesOperationTasksData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5874,6 +5900,10 @@ export type GetBusinessConsoleMesWipSummaryData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5907,6 +5937,10 @@ export type ListBusinessConsoleMesProductionReportsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -5994,6 +6028,10 @@ export type ListBusinessConsoleMesRelatedQualityItemsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -6027,6 +6065,10 @@ export type ListBusinessConsoleMesFinishedGoodsReceiptRequestsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -6087,6 +6129,10 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -6179,6 +6225,10 @@ export type ListBusinessConsoleMesShiftHandoversData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
@@ -6367,6 +6417,10 @@ export type ListBusinessConsoleMesCapacityImpactsData = {
         organizationId: string;
         environmentId: string;
         status?: string | null;
+        keyword?: string | null;
+        workCenterId?: string | null;
+        shiftId?: string | null;
+        deviceAssetId?: string | null;
         skip?: number;
         take?: number;
     };
