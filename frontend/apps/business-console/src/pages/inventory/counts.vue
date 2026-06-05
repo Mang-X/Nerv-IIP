@@ -1,38 +1,35 @@
 <script setup lang="ts">
-import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
-import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
-import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
-import { useInventoryCounts } from '@/composables/useBusinessInventory'
-import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type {
   BusinessConsoleConfirmStockCountAdjustmentRequest,
   BusinessConsoleCreateStockCountTaskRequest,
 } from '@nerv-iip/api-client'
+import type { DataTableColumn } from '@nerv-iip/ui'
+import { useInventoryCounts } from '@/composables/useBusinessInventory'
+import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
+  DataTable,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DropdownMenuItem,
   Field,
   FieldGroup,
   FieldLabel,
   Input,
+  PageHeader,
+  RowActions,
   Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, ClipboardPlusIcon } from 'lucide-vue-next'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 
-definePage({
-  meta: {
-    requiresAuth: true,
-    title: 'routes.counts',
-  },
-})
+definePage({ meta: { requiresAuth: true, title: '库存盘点' } })
 
+const route = useRoute()
 const {
   confirmAdjustment,
   confirmAdjustmentError,
@@ -61,7 +58,6 @@ const taskForm = reactive({
   ownerType: 'owned',
   ownerId: '',
 })
-
 const adjustmentForm = reactive({
   countTaskId: '',
   countedQuantity: '0',
@@ -78,10 +74,27 @@ interface CountTaskQueueRow {
   countedQuantity?: number
 }
 
+const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+watch(
+  () => route.query,
+  (query) => {
+    const sku = firstQuery(query.skuCode) || firstQuery(query.skuId)
+    if (sku) taskForm.skuCode = sku
+    const site = firstQuery(query.siteCode)
+    if (site) taskForm.siteCode = site
+    const location = firstQuery(query.locationCode)
+    if (location) taskForm.locationCode = location
+    const lot = firstQuery(query.lotNo) || firstQuery(query.materialLotId)
+    if (lot) taskForm.lotNo = lot
+    const serial = firstQuery(query.serialNo)
+    if (serial) taskForm.serialNo = serial
+  },
+  { immediate: true },
+)
+
 const taskErrorMessage = computed(() => formatError(createCountTaskError.value))
 const adjustmentErrorMessage = computed(() => formatError(confirmAdjustmentError.value))
 const countTaskQueue = shallowRef<CountTaskQueueRow[]>([])
-const selectedCountTask = shallowRef<CountTaskQueueRow>()
 const canCreateTask = computed(
   () =>
     isNonEmpty(filters.organizationId) &&
@@ -100,9 +113,17 @@ const canConfirmAdjustment = computed(
     toOptionalNumber(adjustmentForm.countedQuantity) !== undefined,
 )
 
+type QueueRow = CountTaskQueueRow
+const columns: DataTableColumn<QueueRow>[] = [
+  { key: 'countTaskId', header: '任务号', cellClass: 'font-medium' },
+  { key: 'skuCode', header: '物料' },
+  { key: 'location', header: '库位', accessor: (r) => `${r.siteCode} / ${r.locationCode}` },
+  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
+]
+
 async function submitTask() {
   if (!canCreateTask.value) return
-
   const body: BusinessConsoleCreateStockCountTaskRequest = {
     organizationId: filters.organizationId.trim(),
     environmentId: filters.environmentId.trim(),
@@ -117,30 +138,29 @@ async function submitTask() {
     ownerType: optionalText(taskForm.ownerType),
     ownerId: optionalText(taskForm.ownerId),
   }
-
   const response = await createCountTask(body)
   const taskId = response?.data?.countTaskId
   taskSuccess.value = `盘点任务 ${taskId ?? body.countTaskCode} 已提交。`
-  const row: CountTaskQueueRow = {
-    countTaskId: taskId ?? body.countTaskCode ?? '待返回',
-    countTaskCode: body.countTaskCode ?? '',
-    skuCode: body.skuCode ?? '',
-    siteCode: body.siteCode ?? '',
-    locationCode: body.locationCode ?? '',
-    status: '待实盘',
-  }
-  countTaskQueue.value = [row, ...countTaskQueue.value]
+  countTaskQueue.value = [
+    {
+      countTaskId: taskId ?? body.countTaskCode ?? '待返回',
+      countTaskCode: body.countTaskCode ?? '',
+      skuCode: body.skuCode ?? '',
+      siteCode: body.siteCode ?? '',
+      locationCode: body.locationCode ?? '',
+      status: '待实盘',
+    },
+    ...countTaskQueue.value,
+  ]
   taskSheetOpen.value = false
 }
 
 async function submitAdjustment() {
   if (!canConfirmAdjustment.value) return
-
   const body: BusinessConsoleConfirmStockCountAdjustmentRequest = {
     countedQuantity: toOptionalNumber(adjustmentForm.countedQuantity),
     idempotencyKey: adjustmentForm.idempotencyKey.trim(),
   }
-
   const response = await confirmAdjustment(adjustmentForm.countTaskId.trim(), body)
   adjustmentSuccess.value = `库存调整 ${response?.data?.movementId ?? body.idempotencyKey} 已提交。`
   countTaskQueue.value = countTaskQueue.value.map((row) =>
@@ -151,32 +171,31 @@ async function submitAdjustment() {
 }
 
 function openAdjustment(row: CountTaskQueueRow) {
-  selectedCountTask.value = row
+  adjustmentSuccess.value = ''
   adjustmentForm.countTaskId = row.countTaskId
   adjustmentForm.countedQuantity = String(row.countedQuantity ?? 0)
   adjustmentForm.idempotencyKey = createAdjustmentIdempotencyKey(row.countTaskId)
   adjustmentSheetOpen.value = true
 }
-
 function createAdjustmentIdempotencyKey(countTaskId: string) {
   adjustmentKeySequence += 1
   return `count-${countTaskId}-${Date.now()}-${adjustmentKeySequence}`
 }
-
 function optionalText(value: string) {
   const trimmed = value.trim()
   return trimmed ? trimmed : undefined
 }
-
 function toOptionalNumber(value: string) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
 }
-
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败。' : ''
+function firstQuery(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
+  return typeof value === 'string' ? value : ''
 }
-
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
@@ -184,74 +203,47 @@ function isNonEmpty(value: string) {
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader
-        domain="库存"
-        title="库存盘点"
-        summary="以盘点任务为中心安排创建、实盘录入和差异确认。"
-      >
-        <template #actions>
-          <Button size="sm" type="button" @click="taskSheetOpen = true">
-            <ClipboardPlusIcon data-icon="inline-start" />
-            创建盘点任务
-          </Button>
-          <Button size="sm" type="button" variant="outline" :disabled="!selectedCountTask" @click="selectedCountTask && openAdjustment(selectedCountTask)">
-            <CheckCircle2Icon data-icon="inline-start" />
-            {{ selectedCountTask ? '确认差异' : '从任务行确认差异' }}
-          </Button>
-        </template>
-      </BusinessPageHeader>
+    <PageHeader title="库存盘点" :breadcrumbs="[{ label: '库存' }]" :count="`${countTaskQueue.length} 个本次任务`">
+      <template #actions>
+        <Button v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
+        </Button>
+        <Button size="sm" type="button" @click="taskSheetOpen = true">
+          <ClipboardPlusIcon aria-hidden="true" />
+          创建盘点任务
+        </Button>
+      </template>
+    </PageHeader>
 
-      <section class="rounded-lg border bg-background">
-        <div class="border-b px-4 py-3">
-          <h2 class="text-sm font-semibold text-foreground">盘点任务队列</h2>
-          <p class="mt-1 text-sm text-muted-foreground">任务创建后进入当前处理队列，差异确认从任务行进入。</p>
-        </div>
-        <div class="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>任务号</TableHead>
-                <TableHead>物料</TableHead>
-                <TableHead>库位</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead class="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="row in countTaskQueue" :key="row.countTaskId">
-                <TableCell class="font-medium text-foreground">{{ row.countTaskId }}</TableCell>
-                <TableCell>{{ row.skuCode }}</TableCell>
-                <TableCell>{{ row.siteCode }} / {{ row.locationCode }}</TableCell>
-                <TableCell>{{ row.status }}</TableCell>
-                <TableCell class="text-right">
-                  <Button size="sm" type="button" variant="outline" @click="openAdjustment(row)">确认差异</Button>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-        <BusinessEmptyState
-          v-if="!countTaskQueue.length"
-          title="暂未接入盘点任务列表"
-          description="当前先保留任务创建和差异确认动作，但通过抽屉承载，避免两个表单堆在主页面。"
-          action="建议先创建盘点任务，再从任务行进入差异确认。"
-        />
-      </section>
+    <p class="text-sm text-muted-foreground">
+      以盘点任务为中心：创建任务后进入处理队列，实盘完成后从任务行进入差异确认；重复提交保护由系统处理。
+    </p>
 
-      <BusinessActionSheet
-        v-model:open="taskSheetOpen"
-        title="创建盘点任务"
-        description="指定物料、工厂、库位和批次后创建盘点任务。"
-      >
-        <form class="grid gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitTask">
-          <div>
-            <p class="text-xs font-bold uppercase text-primary">任务</p>
-            <h2 class="text-base font-semibold text-foreground">创建盘点任务</h2>
-          </div>
+    <DataTable
+      :columns="columns"
+      :rows="countTaskQueue"
+      row-key="countTaskId"
+      empty-message="暂无盘点任务。先创建盘点任务，再从任务行进入差异确认。"
+    >
+      <template #cell-actions="{ row }">
+        <RowActions :label="`盘点操作 ${row.countTaskId}`">
+          <DropdownMenuItem @click="openAdjustment(row)">
+            <CheckCircle2Icon aria-hidden="true" />
+            确认差异
+          </DropdownMenuItem>
+        </RowActions>
+      </template>
+    </DataTable>
 
-          <BusinessFormStatus :error="taskErrorMessage" :success="taskSuccess" />
-
+    <Dialog v-model:open="taskSheetOpen">
+      <DialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>创建盘点任务</DialogTitle>
+          <DialogDescription>指定物料、工厂、库位和批次后创建盘点任务。</DialogDescription>
+        </DialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitTask">
+          <p v-if="taskErrorMessage" class="text-sm text-destructive" role="alert">{{ taskErrorMessage }}</p>
+          <p v-if="taskSuccess" class="text-sm text-success" role="status">{{ taskSuccess }}</p>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
               <FieldLabel for="count-task-sku">SKU</FieldLabel>
@@ -290,30 +282,26 @@ function isNonEmpty(value: string) {
               <Input id="count-task-serial" v-model="taskForm.serialNo" />
             </Field>
           </FieldGroup>
-
           <div class="flex justify-end">
             <Button type="submit" :disabled="createCountTaskPending || !canCreateTask">
-              <Spinner v-if="createCountTaskPending" data-icon="inline-start" />
-              <ClipboardPlusIcon v-else data-icon="inline-start" />
+              <Spinner v-if="createCountTaskPending" aria-hidden="true" />
+              <ClipboardPlusIcon v-else aria-hidden="true" />
               创建任务
             </Button>
           </div>
         </form>
-      </BusinessActionSheet>
+      </DialogContent>
+    </Dialog>
 
-      <BusinessActionSheet
-        v-model:open="adjustmentSheetOpen"
-        title="确认盘点差异"
-        description="从已完成实盘的任务进入差异确认，重复提交保护由系统处理。"
-      >
-        <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitAdjustment">
-          <div>
-            <p class="text-xs font-bold uppercase text-primary">调整</p>
-            <h2 class="text-base font-semibold text-foreground">确认盘点差异</h2>
-          </div>
-
-          <BusinessFormStatus :error="adjustmentErrorMessage" :success="adjustmentSuccess" />
-
+    <Dialog v-model:open="adjustmentSheetOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>确认盘点差异</DialogTitle>
+          <DialogDescription>从已完成实盘的任务进入差异确认，重复提交保护由系统处理。</DialogDescription>
+        </DialogHeader>
+        <form class="grid content-start gap-4" @submit.prevent="submitAdjustment">
+          <p v-if="adjustmentErrorMessage" class="text-sm text-destructive" role="alert">{{ adjustmentErrorMessage }}</p>
+          <p v-if="adjustmentSuccess" class="text-sm text-success" role="status">{{ adjustmentSuccess }}</p>
           <FieldGroup class="grid gap-3">
             <Field>
               <FieldLabel for="count-adjust-task-id">盘点任务</FieldLabel>
@@ -321,25 +309,18 @@ function isNonEmpty(value: string) {
             </Field>
             <Field>
               <FieldLabel for="count-adjust-quantity">实盘数量</FieldLabel>
-              <Input
-                id="count-adjust-quantity"
-                v-model="adjustmentForm.countedQuantity"
-                inputmode="decimal"
-                required
-                type="number"
-              />
+              <Input id="count-adjust-quantity" v-model="adjustmentForm.countedQuantity" inputmode="decimal" required type="number" />
             </Field>
           </FieldGroup>
-
           <div class="flex justify-end">
             <Button type="submit" :disabled="confirmAdjustmentPending || !canConfirmAdjustment">
-              <Spinner v-if="confirmAdjustmentPending" data-icon="inline-start" />
-              <CheckCircle2Icon v-else data-icon="inline-start" />
+              <Spinner v-if="confirmAdjustmentPending" aria-hidden="true" />
+              <CheckCircle2Icon v-else aria-hidden="true" />
               确认调整
             </Button>
           </div>
         </form>
-      </BusinessActionSheet>
-    </section>
+      </DialogContent>
+    </Dialog>
   </BusinessLayout>
 </template>

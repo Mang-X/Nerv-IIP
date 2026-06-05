@@ -241,9 +241,9 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 产品工程 | `/engineering` | 已落地（FE-6 金标准） | 按 FE-4 原型重做（PageHeader + SectionCards + 生产版本解析卡 + Toolbar + Tabs[MBOM/工艺路线/生产版本] DataTable），消费 ProductEngineering MBOM/工艺路线/生产版本/resolve facade；已去除 BusinessContextBar 的 org/env 暴露。工程文档、工程物料、ECO/ECN 维护页（后端 facade 未覆盖前）待建。 |
 | 需求与计划 | `/planning` | 已落地（FE-7 金标准） | 按 FE-4 原型重做（PageHeader + 新建需求/运行 MRP Dialog + SectionCards + Tabs[需求池/MRP 运行+追溯/计划建议]）；消费 DemandPlanning 需求/MRP run/pegging/建议 facade，接受建议下达 MES/ERP；已去除 BusinessContextBar 的 org/env 暴露。MPS 与计划执行分析待建。 |
 | 经营管理 | `/erp` | 已落地/窄化 | 当前是采购与供应页，消费 BusinessGateway ERP Procurement 采购订单 facade，展示供应商编码、预计到货、未到数量和部分收货状态；ERP 销售、财务和完整采购申请/RFQ/报价操作页仍按后续分期推进。 |
-| 库存管理 | `/inventory/availability` | 已落地 | 库存可用量查询。 |
-| 库存管理 | `/inventory/movements` | 已落地 | 库存移动工作台。 |
-| 库存管理 | `/inventory/counts` | 已落地 | 盘点任务与调整确认。 |
+| 库存管理 | `/inventory/availability` | 已落地（FE-9 金标准） | 库存可用量按 FE-4 原型重做（PageHeader + SectionCards[现存/可用/预留/冻结] + Toolbar[SKU/工厂/库位/批次/质量/货主] + DataTable 明细 + RowActions[发起移动/创建盘点]）；上下文穿透：从 MES 齐套/领料/入库带入 SKU/批次/库位查询，行动作把上下文带去移动/盘点，含返回工单链接。 |
+| 库存管理 | `/inventory/movements` | 已落地（FE-9 金标准） | 库存移动过账按 FE-4 原型重做（PageHeader + 受理队列 DataTable + 新建移动 Dialog）；上下文穿透：从来源单据带入 SKU/库位/批次预填。 |
+| 库存管理 | `/inventory/counts` | 已落地（FE-9 金标准） | 库存盘点按 FE-4 原型重做（PageHeader + 任务队列 DataTable + RowActions[确认差异] + 创建任务/确认差异双 Dialog）；上下文穿透：从可用量行带入 SKU/库位/批次预填。 |
 | 质量管理 | `/quality/inspections` | 已落地（FE-9 金标准） | 检验方案列表（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）；创建检验记录改 Dialog（动态检验特性）；上下文穿透：从工单/工序/收货带入来源单据/批次/序列号并自动开抽屉，含返回工单链接。 |
 | 质量管理 | `/quality/ncrs` | 已落地（FE-9 金标准） | NCR 列表按 FE-4 原型重做（DataTable + 服务端分页 + RowActions）；处置/关闭走 Sheet + AlertDialog；上下文穿透：从工单带入时关闭动作默认填返工工单，含返回工单链接。 |
 | 制造执行 | `/mes` | 已落地（FE-8 金标准） | 生产驾驶舱：按 FE-4 原型重做（PageHeader + 指挥导航卡 + SectionCards + 现场阻塞 DataTable + 角色工作台/下一步建议）；token 色替换 raw palette。 |
