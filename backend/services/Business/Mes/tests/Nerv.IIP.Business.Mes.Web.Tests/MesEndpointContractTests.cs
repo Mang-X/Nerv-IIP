@@ -440,6 +440,99 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Related_quality_items_and_shift_handovers_return_persisted_offset_page_and_total_count()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QUALITY", "SKU-001", "PV-001", 1m, 10, now));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new RecordDefectCommandHandler(dbContext).Handle(
+            new RecordDefectCommand("org-001", "env-dev", "WO-QUALITY", "OP-10", "DEF-SURFACE", 1m, now.AddMinutes(1), "defect-001"),
+            CancellationToken.None);
+        var expectedQualityItem = await new RecordDefectCommandHandler(dbContext).Handle(
+            new RecordDefectCommand("org-001", "env-dev", "WO-QUALITY", "OP-20", "DEF-MIX", 2m, now.AddMinutes(2), "defect-002"),
+            CancellationToken.None);
+        await new RecordDefectCommandHandler(dbContext).Handle(
+            new RecordDefectCommand("org-001", "env-dev", "WO-QUALITY", "OP-30", "DEF-PACK", 3m, now.AddMinutes(3), "defect-003"),
+            CancellationToken.None);
+        var shiftHandoverCommandHandler = new CreateShiftHandoverCommandHandler(dbContext);
+        await shiftHandoverCommandHandler.Handle(
+            new CreateShiftHandoverCommand("org-001", "env-dev", "SHIFT-A", "TEAM-A", now.AddMinutes(1), "handover-001"),
+            CancellationToken.None);
+        var acceptedHandover = await shiftHandoverCommandHandler.Handle(
+            new CreateShiftHandoverCommand("org-001", "env-dev", "SHIFT-A", "TEAM-B", now.AddMinutes(2), "handover-002"),
+            CancellationToken.None);
+        await shiftHandoverCommandHandler.Handle(
+            new CreateShiftHandoverCommand("org-001", "env-dev", "SHIFT-A", "TEAM-C", now.AddMinutes(3), "handover-003"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new AcceptShiftHandoverCommandHandler(dbContext).Handle(
+            new AcceptShiftHandoverCommand("org-001", "env-dev", acceptedHandover.ReferenceId, now.AddMinutes(4)),
+            CancellationToken.None);
+        var repeatedAccept = await new AcceptShiftHandoverCommandHandler(dbContext).Handle(
+            new AcceptShiftHandoverCommand("org-001", "env-dev", acceptedHandover.ReferenceId, now.AddMinutes(5)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var qualityItems = await new ListRelatedQualityItemsQueryHandler(dbContext).Handle(
+            new ListRelatedQualityItemsQuery("org-001", "env-dev", "WO-QUALITY", null, Skip: 1, Take: 1),
+            CancellationToken.None);
+        var handovers = await new ListShiftHandoversQueryHandler(dbContext).Handle(
+            new ListShiftHandoversQuery("org-001", "env-dev", "SHIFT-A", Skip: 1, Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, qualityItems.Total);
+        var qualityItem = Assert.Single(qualityItems.Items);
+        Assert.Equal(acceptedHandover.ReferenceId, Assert.Single(handovers.Items).HandoverId);
+        Assert.Equal(expectedQualityItem.ReferenceId, qualityItem.QualityItemId);
+        Assert.Equal("Defect", qualityItem.SourceType);
+        Assert.Equal("OP-20", qualityItem.SourceDocumentId);
+        Assert.Equal("Open", qualityItem.Status);
+        Assert.Equal("DEF-MIX", qualityItem.DefectCode);
+        Assert.Null(qualityItem.NcrId);
+        Assert.Equal(3, handovers.Total);
+        Assert.Equal("Accepted", Assert.Single(handovers.Items).HandoverStatus);
+        Assert.Equal(now.AddMinutes(4), repeatedAccept.AcceptedAtUtc);
+    }
+
+    [Fact]
+    public async Task Record_defect_is_idempotent_for_same_payload_and_idempotency_key()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QUALITY", "SKU-001", "PV-001", 1m, 10, now));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new RecordDefectCommandHandler(dbContext);
+        var command = new RecordDefectCommand(
+            "org-001",
+            "env-dev",
+            "WO-QUALITY",
+            "OP-10",
+            "DEF-SURFACE",
+            1m,
+            now.AddMinutes(1),
+            "defect-idem-001");
+
+        var firstResult = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var secondResult = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(firstResult, secondResult);
+        Assert.Equal(1, await dbContext.DefectRecords.CountAsync(
+            x => x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                x.WorkOrderId == "WO-QUALITY",
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Convert_plan_endpoint_rejects_missing_due_utc_instead_of_defaulting_to_now()
     {
         await using var factory = new WebApplicationFactory<Program>()
