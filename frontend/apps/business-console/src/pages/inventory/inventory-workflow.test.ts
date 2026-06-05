@@ -11,6 +11,15 @@ const inventoryState = vi.hoisted(() => ({
   postMovement: vi.fn(),
 }))
 
+const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
+const routerState = vi.hoisted(() => ({ push: vi.fn() }))
+
+vi.mock('vue-router', () => ({
+  RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
+  useRoute: () => routeState,
+  useRouter: () => routerState,
+}))
+
 vi.mock('@/composables/useBusinessInventory', () => ({
   useInventoryCounts: () => ({
     confirmAdjustment: inventoryState.confirmAdjustment,
@@ -31,84 +40,53 @@ vi.mock('@/composables/useBusinessInventory', () => ({
   }),
 }))
 
-const businessStubs = {
-  BusinessActionSheet: {
-    props: ['open', 'title', 'description'],
-    template: '<section><h2>{{ title }}</h2><p>{{ description }}</p><slot /></section>',
-  },
-  BusinessEmptyState: {
-    props: ['title', 'description', 'action'],
-    template: '<div>{{ title }} {{ description }} {{ action }}</div>',
-  },
-  BusinessFormStatus: true,
-  BusinessLayout: {
-    template: '<main><slot /></main>',
-  },
-  BusinessPageHeader: {
-    props: ['domain', 'title', 'summary'],
-    template: '<header><h1>{{ title }}</h1><p>{{ summary }}</p><slot name="actions" /></header>',
-  },
-}
-
 const uiStubs = {
-  Button: {
-    template: '<button v-bind="$attrs"><slot /></button>',
+  BusinessLayout: { template: '<main><slot /></main>' },
+  PageHeader: {
+    props: ['title', 'breadcrumbs', 'count'],
+    template: '<header><h1>{{ title }}</h1><slot name="actions" /></header>',
   },
-  Field: {
-    template: '<div><slot /></div>',
+  SectionCards: { template: '<div><slot /></div>' },
+  SectionCard: { props: ['description', 'value', 'hint'], template: '<div>{{ description }} {{ value }}</div>' },
+  Toolbar: { props: ['showSearch'], template: '<div><slot name="filters" /></div>' },
+  // DataTable stub renders rows + the cell-actions slot, exposing a design-system table marker.
+  DataTable: {
+    props: ['rows', 'columns', 'rowKey'],
+    template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>`,
   },
-  FieldGroup: {
-    template: '<div><slot /></div>',
-  },
-  FieldLabel: {
-    template: '<label><slot /></label>',
-  },
+  DataTablePagination: true,
+  RowActions: { props: ['label'], template: '<div><slot /></div>' },
+  DropdownMenuItem: { template: '<button v-bind="$attrs"><slot /></button>' },
+  DropdownMenuSeparator: true,
+  // Dialog stubs render slot content unconditionally so dialog forms are testable.
+  Dialog: { props: ['open'], template: '<div><slot /></div>' },
+  DialogContent: { template: '<div><slot /></div>' },
+  DialogHeader: { template: '<div><slot /></div>' },
+  DialogTitle: { template: '<h2><slot /></h2>' },
+  DialogDescription: { template: '<p><slot /></p>' },
+  Button: { template: '<button v-bind="$attrs"><slot /></button>' },
+  Field: { template: '<div><slot /></div>' },
+  FieldGroup: { template: '<div><slot /></div>' },
+  FieldLabel: { template: '<label><slot /></label>' },
   Input: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  Select: {
-    template: '<div><slot /></div>',
-  },
-  SelectContent: {
-    template: '<div><slot /></div>',
-  },
-  SelectItem: {
-    props: ['value'],
-    template: '<div><slot /></div>',
-  },
-  SelectTrigger: {
-    template: '<button><slot /></button>',
-  },
+  Select: { template: '<div><slot /></div>' },
+  SelectContent: { template: '<div><slot /></div>' },
+  SelectItem: { props: ['value'], template: '<div><slot /></div>' },
+  SelectTrigger: { template: '<button><slot /></button>' },
   SelectValue: true,
   Spinner: true,
-  Table: {
-    template: '<table data-ui-table><slot /></table>',
-  },
-  TableBody: {
-    template: '<tbody><slot /></tbody>',
-  },
-  TableCell: {
-    template: '<td><slot /></td>',
-  },
-  TableHead: {
-    template: '<th><slot /></th>',
-  },
-  TableHeader: {
-    template: '<thead><slot /></thead>',
-  },
-  TableRow: {
-    template: '<tr><slot /></tr>',
-  },
 }
 
 function mountInventoryPage(component: unknown) {
   return mount(component, {
     global: {
       stubs: {
-        ...businessStubs,
         ...uiStubs,
+        RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
       },
     },
   })
@@ -116,6 +94,8 @@ function mountInventoryPage(component: unknown) {
 
 describe('inventory workflow pages', () => {
   beforeEach(() => {
+    routeState.query = {}
+    routerState.push.mockReset()
     inventoryState.confirmAdjustment.mockReset()
     inventoryState.createCountTask.mockReset()
     inventoryState.postMovement.mockReset()
@@ -141,11 +121,11 @@ describe('inventory workflow pages', () => {
 
     await wrapper.find('#count-task-location').setValue('A-01')
     await wrapper.findAll('form')[0]!.trigger('submit')
-    await wrapper.findAll('button').find((button) => button.text() === '确认差异')!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('确认差异'))!.trigger('click')
     await wrapper.find('#count-adjust-quantity').setValue('5')
     await wrapper.findAll('form')[1]!.trigger('submit')
 
-    await wrapper.findAll('button').find((button) => button.text() === '确认差异')!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('确认差异'))!.trigger('click')
     await wrapper.find('#count-adjust-quantity').setValue('6')
     await wrapper.findAll('form')[1]!.trigger('submit')
 

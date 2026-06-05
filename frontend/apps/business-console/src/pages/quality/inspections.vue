@@ -1,48 +1,48 @@
 <script setup lang="ts">
-import BusinessActionSheet from '@/components/business/BusinessActionSheet.vue'
-import BusinessEmptyState from '@/components/business/BusinessEmptyState.vue'
-import BusinessFormStatus from '@/components/business/BusinessFormStatus.vue'
-import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
-import { useQualityInspectionPlans } from '@/composables/useBusinessQuality'
-import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import type {
   BusinessConsoleCreateInspectionRecordRequest,
   BusinessConsoleInspectionCharacteristicResult,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
+import type { DataTableColumn } from '@nerv-iip/ui'
+import { useQualityInspectionPlans } from '@/composables/useBusinessQuality'
+import { usePagedList } from '@/composables/usePagedList'
+import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Badge,
   Button,
+  DataTable,
   DataTablePagination,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DropdownMenuItem,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
   Input,
+  PageHeader,
+  RowActions,
+  SectionCard,
+  SectionCards,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
   Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
+  StatusBadge,
+  Toolbar,
 } from '@nerv-iip/ui'
 import { ClipboardCheckIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 
-definePage({
-  meta: {
-    requiresAuth: true,
-    title: 'routes.inspections',
-  },
-})
+definePage({ meta: { requiresAuth: true, title: '检验任务与记录' } })
 
+const route = useRoute()
 const {
   createInspectionRecord,
   createInspectionRecordError,
@@ -54,11 +54,10 @@ const {
   inspectionPlansTotal,
   refreshInspectionPlans,
 } = useQualityInspectionPlans()
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const recordSuccess = shallowRef('')
 const recordSheetOpen = shallowRef(false)
-const page = ref(1)
-const pageSize = ref('10')
 
 const recordForm = reactive({
   organizationId: filters.organizationId,
@@ -73,17 +72,33 @@ const recordForm = reactive({
   serialNo: '',
   dispositionReason: '',
   dispositionAttachmentFileIds: '',
-  resultLines: [
-    {
-      characteristicCode: '',
-      result: 'passed',
-      observedValue: '',
-      unitCode: '',
-      defectReason: '',
-      defectQuantity: '',
-    },
-  ],
+  resultLines: [emptyLine()],
 })
+
+// 上下文穿透：从工单/工序/收货带入来源单据、批次、序列号。
+const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+watch(
+  () => route.query,
+  (query) => {
+    const source = firstQuery(query.sourceDocumentId) || firstQuery(query.workOrderId) || firstQuery(query.operationTaskId)
+    const batch = firstQuery(query.batchNo) || firstQuery(query.materialLotId)
+    const serial = firstQuery(query.serialNo)
+    if (source) recordForm.sourceDocumentId = source
+    if (batch) recordForm.batchNo = batch
+    if (serial) recordForm.serialNo = serial
+    // 来源类型/来源服务：优先用 query 显式值；否则按入口推断——
+    // 物料批且非工序入口视为收货/WMS，避免从收货进入仍归到 MES 工序来源。
+    const sourceType = firstQuery(query.sourceType)
+    const sourceService = firstQuery(query.sourceService)
+    const receivingEntry = !!firstQuery(query.materialLotId) && !firstQuery(query.operationTaskId)
+    if (sourceType) recordForm.sourceType = sourceType
+    else if (receivingEntry) recordForm.sourceType = 'receiving'
+    if (sourceService) recordForm.sourceService = sourceService
+    else if (receivingEntry) recordForm.sourceService = 'wms'
+    if (source) recordSheetOpen.value = true
+  },
+  { immediate: true },
+)
 
 const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
 const createErrorMessage = computed(() => formatError(createInspectionRecordError.value))
@@ -113,56 +128,37 @@ const canCreateRecord = computed(
     (!requiresDispositionReason.value || isNonEmpty(recordForm.dispositionReason)) &&
     validResultLines.value.length > 0,
 )
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+type PlanRow = BusinessConsoleQualityItem
+const columns: DataTableColumn<PlanRow>[] = [
+  { key: 'code', header: '方案', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
+  { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'summary', header: '摘要', accessor: (r) => qualityItemSummary(r) },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
+]
 
-function syncContextFromFilters() {
-  recordForm.organizationId = filters.organizationId
-  recordForm.environmentId = filters.environmentId
+function emptyLine() {
+  return { characteristicCode: '', result: 'passed', observedValue: '', unitCode: '', defectReason: '', defectQuantity: '' }
 }
-
 function useInspectionPlan(plan: BusinessConsoleQualityItem) {
   recordForm.inspectionPlanId = plan.id ?? ''
-  if (plan.skuCode) {
-    recordForm.skuCode = plan.skuCode
-  }
+  if (plan.skuCode) recordForm.skuCode = plan.skuCode
+  recordSuccess.value = ''
   recordSheetOpen.value = true
 }
-
 function addCharacteristicRow() {
-  recordForm.resultLines.push({
-    characteristicCode: '',
-    result: 'passed',
-    observedValue: '',
-    unitCode: '',
-    defectReason: '',
-    defectQuantity: '',
-  })
+  recordForm.resultLines.push(emptyLine())
 }
-
 function removeCharacteristicRow(index: number) {
   if (recordForm.resultLines.length === 1) {
-    recordForm.resultLines[0] = {
-      characteristicCode: '',
-      result: 'passed',
-      observedValue: '',
-      unitCode: '',
-      defectReason: '',
-      defectQuantity: '',
-    }
+    recordForm.resultLines[0] = emptyLine()
     return
   }
-
   recordForm.resultLines.splice(index, 1)
 }
 
 async function submitInspectionRecord() {
   if (!canCreateRecord.value) return
-
   const body: BusinessConsoleCreateInspectionRecordRequest = {
     organizationId: recordForm.organizationId.trim(),
     environmentId: recordForm.environmentId.trim(),
@@ -178,7 +174,6 @@ async function submitInspectionRecord() {
     dispositionReason: optionalText(recordForm.dispositionReason),
     dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
   }
-
   const response = await createInspectionRecord(body)
   recordSuccess.value = `检验记录 ${response?.data?.inspectionRecordId ?? body.sourceDocumentId} 已提交。`
 }
@@ -193,63 +188,37 @@ function toCharacteristicResults(): BusinessConsoleInspectionCharacteristicResul
     defectQuantity: toOptionalNumber(line.defectQuantity),
   }))
 }
-
 function optionalText(value: string) {
   const trimmed = value.trim()
   return trimmed ? trimmed : undefined
 }
-
 function splitCsv(value: string) {
-  const values = value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-
+  const values = value.split(',').map((item) => item.trim()).filter(Boolean)
   return values.length ? values : undefined
 }
-
 function toOptionalNumber(value: string) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
 }
-
-function hasRequiredDefectContext(line: { result: string; defectReason: string; defectQuantity: string }) {
-  if (line.result === 'passed') {
-    return true
-  }
-
-  if (!isNonEmpty(line.defectReason)) {
-    return false
-  }
-
+function hasRequiredDefectContext(line: { result: string, defectReason: string, defectQuantity: string }) {
+  if (line.result === 'passed') return true
+  if (!isNonEmpty(line.defectReason)) return false
   return line.result !== 'conditional-release' || (toOptionalNumber(line.defectQuantity) ?? 0) > 0
 }
-
-function rowKey(item: BusinessConsoleQualityItem, index: number) {
-  return `${item.id ?? item.code ?? 'plan'}:${index}`
-}
-
 function qualityItemSummary(item: BusinessConsoleQualityItem) {
-  const values = [
-    item.category,
-    item.skuCode,
-    item.partnerId,
-    item.workCenterId,
-    item.deviceAssetId,
-    item.documentType,
-  ].filter(isPresent)
-
+  const values = [item.category, item.skuCode, item.partnerId, item.workCenterId, item.deviceAssetId, item.documentType].filter(isPresent)
   return values.length ? values.join(' / ') : '无'
 }
-
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败。' : ''
+function firstQuery(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
+  return typeof value === 'string' ? value : ''
 }
-
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
-
 function isPresent(value: string | undefined | null): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
@@ -257,108 +226,70 @@ function isPresent(value: string | undefined | null): value is string {
 
 <template>
   <BusinessLayout>
-    <section class="grid gap-4">
-      <BusinessPageHeader
-        domain="质量"
-        title="检验任务与记录"
-        summary="先确认检验方案和来源信息，再进入抽屉提交检验记录。"
-      >
-        <template #actions>
-          <Button size="sm" type="button" @click="recordSheetOpen = true">
-            <ClipboardCheckIcon data-icon="inline-start" />
-            创建检验记录
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            type="button"
-            :disabled="inspectionPlansPending"
-            @click="refreshInspectionPlans"
-          >
-            <RefreshCwIcon data-icon="inline-start" />
-            刷新
-          </Button>
-        </template>
-      </BusinessPageHeader>
+    <PageHeader title="检验任务与记录" :breadcrumbs="[{ label: '质量' }]" :count="`${inspectionPlansTotal} 个检验方案`">
+      <template #actions>
+        <Button v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
+        </Button>
+        <Button size="sm" type="button" @click="recordSheetOpen = true">
+          <ClipboardCheckIcon aria-hidden="true" />
+          创建检验记录
+        </Button>
+        <Button size="sm" type="button" variant="outline" :disabled="inspectionPlansPending" @click="refreshInspectionPlans">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </Button>
+      </template>
+    </PageHeader>
 
-      <div class="grid gap-3 rounded-lg border bg-background p-4">
-        <FieldGroup class="grid gap-3 md:grid-cols-4">
-          <Field>
-            <FieldLabel for="inspection-status">状态</FieldLabel>
-            <Input id="inspection-status" v-model="filters.status" placeholder="可选" @update:model-value="page = 1" />
-          </Field>
-        </FieldGroup>
-        <BusinessFormStatus :error="listErrorMessage" />
-      </div>
+    <SectionCards :columns="2">
+      <SectionCard description="检验方案" :value="inspectionPlansTotal" hint="后端筛选总数" />
+      <SectionCard description="本页方案" :value="inspectionPlans.length" hint="当前页数量" />
+    </SectionCards>
 
-      <div class="grid gap-4">
-        <div class="overflow-hidden rounded-lg border bg-background">
-          <div class="flex items-center justify-between border-b px-4 py-3">
-            <h2 class="text-sm font-semibold text-foreground">检验方案</h2>
-            <span class="text-sm text-muted-foreground">共 {{ inspectionPlansTotal }} 条</span>
-          </div>
-          <div class="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>方案</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>摘要</TableHead>
-                  <TableHead class="text-right">使用</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow v-for="(plan, index) in inspectionPlans" :key="rowKey(plan, index)">
-                  <TableCell>
-                    <div class="flex flex-col gap-0.5">
-                      <span class="font-medium">{{ plan.code ?? '无' }}</span>
-                      <span class="text-xs text-muted-foreground">{{ plan.id ?? '无方案 ID' }}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{{ plan.status ?? '未知' }}</Badge>
-                  </TableCell>
-                  <TableCell>{{ qualityItemSummary(plan) }}</TableCell>
-                  <TableCell class="text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      type="button"
-                      @click="useInspectionPlan(plan)"
-                    >
-                      选择
-                    </Button>
-                  </TableCell>
-                </TableRow>
-                <TableEmpty v-if="!inspectionPlans.length && !inspectionPlansPending" :colspan="4">
-                  <BusinessEmptyState
-                    title="当前筛选下没有检验方案"
-                    description="检验记录应从工单、收货或检验任务信息进入；缺少方案时请先维护质量规则。"
-                    action="也可以使用右上角创建检验记录进行临时补录。"
-                  />
-                </TableEmpty>
-                <TableEmpty v-if="inspectionPlansPending" :colspan="4">正在加载检验方案...</TableEmpty>
-              </TableBody>
-            </Table>
-          </div>
-          <div class="border-t px-4 py-3">
-            <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="inspectionPlansTotal" />
-          </div>
+    <Toolbar :show-search="false">
+      <template #filters>
+        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="检验状态" />
+      </template>
+    </Toolbar>
+
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+
+    <DataTable
+      :columns="columns"
+      :rows="inspectionPlans"
+      :row-key="(r) => r.id ?? r.code ?? '无'"
+      :loading="inspectionPlansPending"
+      empty-message="当前筛选下没有检验方案。检验记录应从工单、收货或检验任务进入；也可用右上角创建检验记录临时补录。"
+    >
+      <template #cell-code="{ row }">
+        <div class="flex flex-col gap-0.5">
+          <span class="font-medium">{{ row.code ?? '无' }}</span>
+          <span class="text-xs text-muted-foreground">{{ row.id ?? '无方案 ID' }}</span>
         </div>
-      </div>
+      </template>
+      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-actions="{ row }">
+        <RowActions :label="`检验方案操作 ${row.code ?? ''}`">
+          <DropdownMenuItem @click="useInspectionPlan(row)">
+            <ClipboardCheckIcon aria-hidden="true" />
+            创建检验记录
+          </DropdownMenuItem>
+        </RowActions>
+      </template>
+    </DataTable>
 
-      <BusinessActionSheet
-        v-model:open="recordSheetOpen"
-        title="创建检验记录"
-        description="检验记录应尽量从方案、工单、收货或质量任务带出信息，减少手输来源字段。"
-      >
-        <form class="grid content-start gap-4 rounded-lg border bg-background p-4" @submit.prevent="submitInspectionRecord">
-          <div>
-            <p class="text-xs font-bold uppercase text-primary">记录</p>
-            <h2 class="text-base font-semibold text-foreground">创建检验记录</h2>
-          </div>
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="inspectionPlansTotal" />
 
-          <BusinessFormStatus :error="createErrorMessage" :success="recordSuccess" />
+    <Dialog v-model:open="recordSheetOpen">
+      <DialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>创建检验记录</DialogTitle>
+          <DialogDescription>检验记录尽量从方案、工单、收货或质量任务带出信息，减少手输来源字段。</DialogDescription>
+        </DialogHeader>
+        <form class="grid content-start gap-4" @submit.prevent="submitInspectionRecord">
+          <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
+          <p v-if="recordSuccess" class="text-sm text-success" role="status">{{ recordSuccess }}</p>
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
@@ -368,36 +299,32 @@ function isPresent(value: string | undefined | null): value is string {
             <Field>
               <FieldLabel>来源类型</FieldLabel>
               <Select v-model="recordForm.sourceType">
-                <SelectTrigger aria-label="来源类型">
-                  <SelectValue />
-                </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="operation">工序</SelectItem>
-                    <SelectItem value="receiving">收货</SelectItem>
-                    <SelectItem value="final">终检</SelectItem>
-                    <SelectItem value="maintenance">维修</SelectItem>
-                    <SelectItem value="customer-return">客户退货</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel>来源服务</FieldLabel>
-                <Select v-model="recordForm.sourceService">
-                  <SelectTrigger aria-label="来源服务">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mes-operation">MES 工序</SelectItem>
-                    <SelectItem value="inventory">库存</SelectItem>
-                    <SelectItem value="wms">WMS</SelectItem>
-                    <SelectItem value="mes">MES</SelectItem>
-                    <SelectItem value="erp">ERP</SelectItem>
-                    <SelectItem value="maintenance">维修</SelectItem>
-                    <SelectItem value="purchase-receipt">采购收货</SelectItem>
-                    <SelectItem value="customer-return">客户退货</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
+                <SelectTrigger aria-label="来源类型"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="operation">工序</SelectItem>
+                  <SelectItem value="receiving">收货</SelectItem>
+                  <SelectItem value="final">终检</SelectItem>
+                  <SelectItem value="maintenance">维修</SelectItem>
+                  <SelectItem value="customer-return">客户退货</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel>来源服务</FieldLabel>
+              <Select v-model="recordForm.sourceService">
+                <SelectTrigger aria-label="来源服务"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mes-operation">MES 工序</SelectItem>
+                  <SelectItem value="inventory">库存</SelectItem>
+                  <SelectItem value="wms">WMS</SelectItem>
+                  <SelectItem value="mes">MES</SelectItem>
+                  <SelectItem value="erp">ERP</SelectItem>
+                  <SelectItem value="maintenance">维修</SelectItem>
+                  <SelectItem value="purchase-receipt">采购收货</SelectItem>
+                  <SelectItem value="customer-return">客户退货</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
             <Field>
               <FieldLabel for="record-source-document">来源单据</FieldLabel>
               <Input id="record-source-document" v-model="recordForm.sourceDocumentId" required />
@@ -408,14 +335,7 @@ function isPresent(value: string | undefined | null): value is string {
             </Field>
             <Field>
               <FieldLabel for="record-quantity">检验数量</FieldLabel>
-              <Input
-                id="record-quantity"
-                v-model="recordForm.inspectedQuantity"
-                inputmode="decimal"
-                min="0.000001"
-                required
-                type="number"
-              />
+              <Input id="record-quantity" v-model="recordForm.inspectedQuantity" inputmode="decimal" min="0.000001" required type="number" />
             </Field>
             <Field>
               <FieldLabel for="record-batch">批次</FieldLabel>
@@ -431,11 +351,10 @@ function isPresent(value: string | undefined | null): value is string {
             <div class="flex items-center justify-between">
               <h3 class="text-sm font-semibold text-foreground">检验特性</h3>
               <Button size="sm" variant="outline" type="button" @click="addCharacteristicRow">
-                <PlusIcon data-icon="inline-start" />
+                <PlusIcon aria-hidden="true" />
                 添加行
               </Button>
             </div>
-
             <div class="grid gap-2">
               <div
                 v-for="(line, index) in recordForm.resultLines"
@@ -449,9 +368,7 @@ function isPresent(value: string | undefined | null): value is string {
                 <Field>
                   <FieldLabel>结果</FieldLabel>
                   <Select v-model="line.result">
-                    <SelectTrigger :aria-label="`第 ${index + 1} 个特性结果`">
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger :aria-label="`第 ${index + 1} 个特性结果`"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="passed">合格</SelectItem>
                       <SelectItem value="failed">不合格</SelectItem>
@@ -473,12 +390,7 @@ function isPresent(value: string | undefined | null): value is string {
                 </Field>
                 <Field>
                   <FieldLabel :for="`defect-quantity-${index}`">缺陷数量</FieldLabel>
-                  <Input
-                    :id="`defect-quantity-${index}`"
-                    v-model="line.defectQuantity"
-                    inputmode="decimal"
-                    type="number"
-                  />
+                  <Input :id="`defect-quantity-${index}`" v-model="line.defectQuantity" inputmode="decimal" type="number" />
                 </Field>
                 <div class="flex items-end justify-end">
                   <Button size="icon-sm" variant="ghost" type="button" @click="removeCharacteristicRow(index)">
@@ -492,13 +404,9 @@ function isPresent(value: string | undefined | null): value is string {
 
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
-              <FieldLabel for="record-disposition">
-                处置原因{{ requiresDispositionReason ? ' *' : '' }}
-              </FieldLabel>
+              <FieldLabel for="record-disposition">处置原因{{ requiresDispositionReason ? ' *' : '' }}</FieldLabel>
               <Input id="record-disposition" v-model="recordForm.dispositionReason" :required="requiresDispositionReason" />
-              <FieldDescription v-if="requiresDispositionReason">
-                当任一特性不合格或让步放行时必填。
-              </FieldDescription>
+              <FieldDescription v-if="requiresDispositionReason">当任一特性不合格或让步放行时必填。</FieldDescription>
             </Field>
             <Field>
               <FieldLabel for="record-files">附件文件 ID</FieldLabel>
@@ -508,13 +416,13 @@ function isPresent(value: string | undefined | null): value is string {
 
           <div class="flex justify-end">
             <Button type="submit" :disabled="createInspectionRecordPending || !canCreateRecord">
-              <Spinner v-if="createInspectionRecordPending" data-icon="inline-start" />
-              <ClipboardCheckIcon v-else data-icon="inline-start" />
+              <Spinner v-if="createInspectionRecordPending" aria-hidden="true" />
+              <ClipboardCheckIcon v-else aria-hidden="true" />
               提交记录
             </Button>
           </div>
         </form>
-      </BusinessActionSheet>
-    </section>
+      </DialogContent>
+    </Dialog>
   </BusinessLayout>
 </template>
