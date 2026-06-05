@@ -78,7 +78,7 @@
 | --- | --- | --- |
 | `frontend/packages/app-shell/src/AppShell.vue` | 旧两级侧栏壳层，仍接收 `navItems`；迁移期保留以兼容尚未迁移的消费方。 | 已被 T 型 `AppShellT` 取代为长期形态；新页面不应再用旧 `AppShell`。 |
 | `frontend/packages/app-shell/src/AppShellT.vue` | FE-3 落地的 T 型壳层：顶部一级能力区（`NavTopDomains`，超出进入“更多”溢出）、左侧域内菜单（`NavSide`）、命令搜索入口（⌘/Ctrl+K + 按钮，占位待 FE-13）、顶部用户菜单、近期/星标入口；基于 FE-2 `AppShellInset`（dashboard-01 inset）。类型 `NavDomain`/`NavLink`/`NavGroup`/`SideNav`/`OverflowStrategy`/`ShellUser` 位于 `@nerv-iip/app-shell` 稳定导出。 | 命令搜索面板实装、应用切换器（九宫格）strategy 仍待后续；Console 已随 FE-10 迁入 `AppShellT`。 |
-| `frontend/apps/console/src/layouts/DefaultLayout.vue` | 已随 FE-10 迁移到 `AppShellT`：顶部一级域（实例/通知/业务/IAM）+ IAM 域内菜单（用户/角色/会话）+ route→域解析 + 用户菜单/退出。IAM 用户/角色/会话三页已随 FE-10 batch 2 迁到 FE-2 块（`PageHeader`/`Toolbar`/`DataTable`/`DataTablePagination` + 行常用操作显式按钮，文案统一中文，服务端分页/搜索沿用 composable）；运维/通知/实例看板仍按后续批次逐页迁。 | 命令搜索入口占位；主题切换待页迁批次补；console 运维/通知/实例看板 block 化进行中。 |
+| `frontend/apps/console/src/layouts/DefaultLayout.vue` | 已随 FE-10 迁移到 `AppShellT`：顶部一级域（实例/通知/业务/IAM）+ IAM 域内菜单（用户/角色/会话）+ route→域解析 + 用户菜单/退出。IAM 用户/角色/会话三页已随 FE-10 batch 2 迁到 FE-2 块（`PageHeader`/`Toolbar`/`DataTable`/`DataTablePagination` + 行常用操作显式按钮，文案统一中文，服务端分页/搜索沿用 composable）；运维任务详情/`OperationTimeline` 与通知页已随 batch 3 迁（`PageHeader` + `SectionCards` + `StatusBadge`，删除 `NotificationToolbar`，文案统一中文）；实例看板仍按后续批次迁。 | 命令搜索入口占位；主题切换待页迁批次补；console 实例看板 block 化进行中。 |
 | `frontend/apps/business-console/src/layouts/BusinessLayout.vue` | 已迁移到 `AppShellT`，导航模型由 `frontend/apps/business-console/src/navigation.ts` 驱动（顶部能力域 + 域内菜单 + route→域解析 + `permittedBy` RBAC/feature-flag 裁剪钩子），顶部集成命令搜索占位、主题色/亮暗切换和用户菜单。 | RBAC 仅落地裁剪机制，具体 permission code 仍按域逐步挂接；Gateway enforcement 为权威。 |
 
 ### AppShell T 型导航解锁路径
