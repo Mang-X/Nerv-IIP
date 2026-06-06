@@ -23,7 +23,13 @@ public sealed record CreateSalesOrderRequest(string OrganizationId, string Envir
 public sealed record CreateSalesOrderResponse(SalesOrderId SalesOrderId);
 public sealed record ReleaseDeliveryOrderRequest(string OrganizationId, string EnvironmentId, string? DeliveryOrderNo, string SalesOrderNo, IReadOnlyCollection<DeliveryOrderCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record ReleaseDeliveryOrderResponse(DeliveryOrderId DeliveryOrderId);
-public sealed record ListSalesOrdersRequest(string OrganizationId, string EnvironmentId);
+public sealed record ListSalesOrdersRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record CreateAccountPayableRequest(string OrganizationId, string EnvironmentId, string? PayableNo, string SourceDocumentNo, string SupplierCode, decimal Amount, string CurrencyCode, string? IdempotencyKey = null);
 public sealed record CreateAccountPayableResponse(AccountPayableId AccountPayableId);
@@ -34,6 +40,13 @@ public sealed record CreateCostCandidateResponse(CostCandidateId CostCandidateId
 public sealed record PostJournalVoucherRequest(string OrganizationId, string EnvironmentId, string? VoucherNo, DateOnly PostingDate, IReadOnlyCollection<JournalVoucherCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record PostJournalVoucherResponse(JournalVoucherId JournalVoucherId);
 public sealed record GetFinanceSummaryRequest(string OrganizationId, string EnvironmentId);
+public sealed record ListFinanceDocumentsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
 public sealed record GetAccountPayableBySourceDocumentRequest(string OrganizationId, string EnvironmentId, string SourceDocumentNo);
 public sealed record GetAccountReceivableBySourceDocumentRequest(string OrganizationId, string EnvironmentId, string SourceDocumentNo);
 public sealed record GetCostCandidateBySourceDocumentRequest(string OrganizationId, string EnvironmentId, string? SourceType, string SourceDocumentNo);
@@ -99,7 +112,7 @@ public sealed class ListSalesOrdersEndpoint(ISender sender) : ErpEndpoint<ListSa
 
     public override async Task HandleAsync(ListSalesOrdersRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListSalesOrdersQuery(req.OrganizationId, req.EnvironmentId), ct);
+        var response = await sender.Send(new ListSalesOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -155,6 +168,39 @@ public sealed class GetFinanceSummaryEndpoint(ISender sender) : ErpEndpoint<GetF
     public override async Task HandleAsync(GetFinanceSummaryRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new GetFinanceSummaryQuery(req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListAccountPayablesEndpoint(ISender sender) : ErpEndpoint<ListFinanceDocumentsRequest, ResponseData<ListAccountPayablesResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ListAccountPayablesEndpoint>());
+
+    public override async Task HandleAsync(ListFinanceDocumentsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListAccountPayablesQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListAccountReceivablesEndpoint(ISender sender) : ErpEndpoint<ListFinanceDocumentsRequest, ResponseData<ListAccountReceivablesResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ListAccountReceivablesEndpoint>());
+
+    public override async Task HandleAsync(ListFinanceDocumentsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListAccountReceivablesQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListCostCandidatesEndpoint(ISender sender) : ErpEndpoint<ListFinanceDocumentsRequest, ResponseData<ListCostCandidatesResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ListCostCandidatesEndpoint>());
+
+    public override async Task HandleAsync(ListFinanceDocumentsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListCostCandidatesQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -216,6 +262,9 @@ public static class ErpFinanceEndpointContracts
         new(typeof(CreateCostCandidateEndpoint), "POST", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpCostCandidate"),
         new(typeof(PostJournalVoucherEndpoint), "POST", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "postErpJournalVoucher"),
         new(typeof(GetFinanceSummaryEndpoint), "GET", "/api/business/v1/erp/finance/summary", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpFinanceSummary"),
+        new(typeof(ListAccountPayablesEndpoint), "GET", "/api/business/v1/erp/finance/payables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountPayables"),
+        new(typeof(ListAccountReceivablesEndpoint), "GET", "/api/business/v1/erp/finance/receivables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountReceivables"),
+        new(typeof(ListCostCandidatesEndpoint), "GET", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpCostCandidates"),
         new(typeof(GetAccountPayableBySourceDocumentEndpoint), "GET", "/api/business/v1/erp/finance/payables/by-source", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpPayableBySourceDocument"),
         new(typeof(GetAccountReceivableBySourceDocumentEndpoint), "GET", "/api/business/v1/erp/finance/receivables/by-source", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpReceivableBySourceDocument"),
         new(typeof(GetCostCandidateBySourceDocumentEndpoint), "GET", "/api/business/v1/erp/finance/cost-candidates/by-source", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpCostCandidateBySourceDocument"),

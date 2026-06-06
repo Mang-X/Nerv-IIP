@@ -90,7 +90,13 @@ public sealed record RecordPurchaseReceiptRequest(
 
 public sealed record RecordPurchaseReceiptResponse(PurchaseReceiptId PurchaseReceiptId);
 
-public sealed record ListPurchaseOrdersRequest(string OrganizationId, string EnvironmentId);
+public sealed record ListPurchaseOrdersRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed class CreatePurchaseRequisitionFromSuggestionEndpoint(ISender sender)
     : ErpEndpoint<CreatePurchaseRequisitionFromSuggestionRequest, ResponseData<CreatePurchaseRequisitionFromSuggestionResponse>>
@@ -187,7 +193,7 @@ public sealed class ListPurchaseOrdersEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListPurchaseOrdersRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListPurchaseOrdersQuery(req.OrganizationId, req.EnvironmentId), ct);
+        var response = await sender.Send(new ListPurchaseOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

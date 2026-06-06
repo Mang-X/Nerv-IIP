@@ -308,7 +308,7 @@ public interface IBusinessErpClient
 
     Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleErpContextRequest request,
+        BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateErpPurchaseOrderResponse> CreatePurchaseOrderAsync(
@@ -323,7 +323,22 @@ public interface IBusinessErpClient
 
     Task<BusinessConsoleErpSalesOrderListResponse> ListSalesOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleErpContextRequest request,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleErpPayableListResponse> ListPayablesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleErpReceivableListResponse> ListReceivablesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleErpCostCandidateListResponse> ListCostCandidatesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleOpenErpOpportunityResponse> OpenOpportunityAsync(
@@ -2506,7 +2521,7 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
 
     public Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleErpContextRequest request,
+        BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken) =>
         ListPurchaseOrdersCoreAsync(internalBearerToken, request, cancellationToken);
 
@@ -2534,14 +2549,45 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
 
     public Task<BusinessConsoleErpSalesOrderListResponse> ListSalesOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleErpContextRequest request,
+        BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleErpSalesOrderListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/erp/sales-orders?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId)),
+            "/api/business/v1/erp/sales-orders?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpPayableListResponse> ListPayablesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpPayableListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/payables?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpReceivableListResponse> ListReceivablesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpReceivableListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/receivables?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpCostCandidateListResponse> ListCostCandidatesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpCostCandidateListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/cost-candidates?" + ErpListQuery(request),
             null,
             cancellationToken);
 
@@ -2692,15 +2738,13 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
 
     private async Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersCoreAsync(
         string internalBearerToken,
-        BusinessConsoleErpContextRequest request,
+        BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamPurchaseOrderListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/erp/purchase-orders?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId)),
+            "/api/business/v1/erp/purchase-orders?" + ErpListQuery(request),
             null,
             cancellationToken);
 
@@ -2719,7 +2763,8 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
                     line.OrderedQuantity,
                     line.ReceivedQuantity,
                     line.UnitPrice,
-                    line.PromisedDate)).ToArray())).ToArray());
+                    line.PromisedDate)).ToArray())).ToArray(),
+            response.Total);
     }
 
     private static string ReceiptReadiness(DownstreamPurchaseOrderItem order)
@@ -2749,7 +2794,16 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             ("sourceDocumentNo", request.SourceDocumentNo),
             ("sourceType", request.SourceType));
 
-    private sealed record DownstreamPurchaseOrderListResponse(IReadOnlyCollection<DownstreamPurchaseOrderItem> Items);
+    private static string ErpListQuery(BusinessConsoleErpListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
+    private sealed record DownstreamPurchaseOrderListResponse(IReadOnlyCollection<DownstreamPurchaseOrderItem> Items, int Total);
 
     private sealed record DownstreamPurchaseOrderItem(
         string PurchaseOrderNo,

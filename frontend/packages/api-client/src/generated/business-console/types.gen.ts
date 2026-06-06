@@ -2313,6 +2313,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseOrder
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderItem>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderItem = {
@@ -2335,7 +2336,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     promisedDate?: string;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpContextRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpListRequest = {
     [key: string]: never;
 };
 
@@ -2467,6 +2468,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpSalesOrderLis
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderItem>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderItem = {
@@ -2657,6 +2659,69 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     openReceivableAmount?: number;
     costCandidateAmount?: number;
     postedVoucherCount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpContextRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPayableListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPayableListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPayableListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPayableItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPayableItem = {
+    payableNo?: string;
+    sourceDocumentNo?: string;
+    supplierCode?: string;
+    amount?: number;
+    openAmount?: number;
+    currencyCode?: string;
+    status?: string;
+    createdAtUtc?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpReceivableListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpReceivableListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpReceivableListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpReceivableItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpReceivableItem = {
+    receivableNo?: string;
+    sourceDocumentNo?: string;
+    customerCode?: string;
+    amount?: number;
+    openAmount?: number;
+    currencyCode?: string;
+    status?: string;
+    createdAtUtc?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpCostCandidateListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCostCandidateListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCostCandidateListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCostCandidateItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCostCandidateItem = {
+    candidateNo?: string;
+    sourceType?: string;
+    sourceDocumentNo?: string;
+    amount?: number;
+    currencyCode?: string;
+    status?: string;
+    createdAtUtc?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPayableSourceDocumentResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7458,6 +7523,10 @@ export type ListBusinessConsoleErpPurchaseOrdersData = {
     query: {
         organizationId: string;
         environmentId: string;
+        status?: string | null;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
     };
     url: '/api/business-console/v1/erp/procurement/purchase-orders';
 };
@@ -7635,6 +7704,10 @@ export type ListBusinessConsoleErpSalesOrdersData = {
     query: {
         organizationId: string;
         environmentId: string;
+        status?: string | null;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
     };
     url: '/api/business-console/v1/erp/sales/sales-orders';
 };
@@ -7802,6 +7875,46 @@ export type ReleaseBusinessConsoleErpDeliveryOrderResponses = {
 
 export type ReleaseBusinessConsoleErpDeliveryOrderResponse = ReleaseBusinessConsoleErpDeliveryOrderResponses[keyof ReleaseBusinessConsoleErpDeliveryOrderResponses];
 
+export type ListBusinessConsoleErpPayablesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        status?: string | null;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/payables';
+};
+
+export type ListBusinessConsoleErpPayablesErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpPayablesError = ListBusinessConsoleErpPayablesErrors[keyof ListBusinessConsoleErpPayablesErrors];
+
+export type ListBusinessConsoleErpPayablesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPayableListResponse;
+};
+
+export type ListBusinessConsoleErpPayablesResponse = ListBusinessConsoleErpPayablesResponses[keyof ListBusinessConsoleErpPayablesResponses];
+
 export type CreateBusinessConsoleErpAccountPayableData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpAccountPayableRequest;
     path?: never;
@@ -7829,6 +7942,46 @@ export type CreateBusinessConsoleErpAccountPayableResponses = {
 
 export type CreateBusinessConsoleErpAccountPayableResponse = CreateBusinessConsoleErpAccountPayableResponses[keyof CreateBusinessConsoleErpAccountPayableResponses];
 
+export type ListBusinessConsoleErpReceivablesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        status?: string | null;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/receivables';
+};
+
+export type ListBusinessConsoleErpReceivablesErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpReceivablesError = ListBusinessConsoleErpReceivablesErrors[keyof ListBusinessConsoleErpReceivablesErrors];
+
+export type ListBusinessConsoleErpReceivablesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpReceivableListResponse;
+};
+
+export type ListBusinessConsoleErpReceivablesResponse = ListBusinessConsoleErpReceivablesResponses[keyof ListBusinessConsoleErpReceivablesResponses];
+
 export type CreateBusinessConsoleErpAccountReceivableData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpAccountReceivableRequest;
     path?: never;
@@ -7855,6 +8008,46 @@ export type CreateBusinessConsoleErpAccountReceivableResponses = {
 };
 
 export type CreateBusinessConsoleErpAccountReceivableResponse = CreateBusinessConsoleErpAccountReceivableResponses[keyof CreateBusinessConsoleErpAccountReceivableResponses];
+
+export type ListBusinessConsoleErpCostCandidatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        status?: string | null;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/cost-candidates';
+};
+
+export type ListBusinessConsoleErpCostCandidatesErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpCostCandidatesError = ListBusinessConsoleErpCostCandidatesErrors[keyof ListBusinessConsoleErpCostCandidatesErrors];
+
+export type ListBusinessConsoleErpCostCandidatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpCostCandidateListResponse;
+};
+
+export type ListBusinessConsoleErpCostCandidatesResponse = ListBusinessConsoleErpCostCandidatesResponses[keyof ListBusinessConsoleErpCostCandidatesResponses];
 
 export type CreateBusinessConsoleErpCostCandidateData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpCostCandidateRequest;

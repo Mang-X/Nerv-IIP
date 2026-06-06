@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import BusinessPageHeader from '@/components/business/BusinessPageHeader.vue'
-import BusinessTablePagination from '@/components/business/BusinessTablePagination.vue'
 import { useBusinessErp } from '@/composables/useBusinessErp'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Badge,
   Button,
+  DataTablePagination,
   Field,
   FieldGroup,
   FieldLabel,
@@ -24,8 +25,9 @@ import {
   TableHeader,
   TableRow,
 } from '@nerv-iip/ui'
+import { watchDebounced } from '@vueuse/core'
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '采购与供应' } })
 
@@ -45,16 +47,15 @@ type ProcurementRow = {
 }
 type SortColumn = 'purchaseOrderNo' | 'supplierCode' | 'skuCode' | 'openQuantity' | 'promisedDate' | 'receiptReadiness'
 
-const { purchaseOrders, purchaseOrdersPending, refreshPurchaseOrders } = useBusinessErp()
+const { filters, purchaseOrders, purchaseOrdersPending, purchaseOrdersTotal, refreshPurchaseOrders } = useBusinessErp()
 
-const filterDraft = reactive({ readiness: 'all', keyword: '' })
-const appliedFilter = reactive({ readiness: 'all', keyword: '' })
-const tableState = reactive({
-  page: 1,
-  pageSize: '10',
+const keyword = ref('')
+const statusFilter = ref('all')
+const sortState = reactive({
   sortBy: 'promisedDate' as SortColumn,
   sortDirection: 'asc' as 'asc' | 'desc',
 })
+const { page, pageSize } = usePagedList(filters, { resetOn: [keyword, statusFilter] })
 
 const rows = computed<ProcurementRow[]>(() =>
   purchaseOrders.value.flatMap((order) =>
@@ -74,24 +75,12 @@ const rows = computed<ProcurementRow[]>(() =>
     })),
   ),
 )
-const filteredRows = computed(() => {
-  const keyword = appliedFilter.keyword.trim().toLowerCase()
-  return rows.value.filter((row) => {
-    const readinessMatched = appliedFilter.readiness === 'all' || row.receiptReadiness === appliedFilter.readiness
-    const keywordMatched =
-      !keyword ||
-      [row.purchaseOrderNo, row.supplierCode, row.siteCode, row.skuCode, row.status]
-        .some((value) => value.toLowerCase().includes(keyword))
-    return readinessMatched && keywordMatched
-  })
-})
-const pageSizeNumber = computed(() => Number(tableState.pageSize) || 10)
 const sortedRows = computed(() => {
-  const direction = tableState.sortDirection === 'asc' ? 1 : -1
+  const direction = sortState.sortDirection === 'asc' ? 1 : -1
 
-  return [...filteredRows.value].sort((left, right) => {
-    const leftValue = sortValue(left, tableState.sortBy)
-    const rightValue = sortValue(right, tableState.sortBy)
+  return [...rows.value].sort((left, right) => {
+    const leftValue = sortValue(left, sortState.sortBy)
+    const rightValue = sortValue(right, sortState.sortBy)
 
     if (typeof leftValue === 'number' && typeof rightValue === 'number') {
       return (leftValue - rightValue) * direction
@@ -100,10 +89,7 @@ const sortedRows = computed(() => {
     return String(leftValue).localeCompare(String(rightValue), 'zh-Hans-CN') * direction
   })
 })
-const pagedRows = computed(() => {
-  const start = (tableState.page - 1) * pageSizeNumber.value
-  return sortedRows.value.slice(start, start + pageSizeNumber.value)
-})
+const pagedRows = computed(() => sortedRows.value)
 const pendingArrivalCount = computed(() =>
   rows.value.filter((row) => row.receiptReadiness === 'awaiting-arrival').length,
 )
@@ -114,36 +100,32 @@ const openQuantity = computed(() =>
   rows.value.reduce((total, row) => total + row.openQuantity, 0),
 )
 
-watch(
-  () => [appliedFilter.readiness, appliedFilter.keyword, tableState.pageSize],
-  () => {
-    tableState.page = 1
-  },
-)
+watch(statusFilter, (value) => {
+  filters.status = value === 'all' ? undefined : value
+}, { immediate: true })
 
-function applyFilters() {
-  appliedFilter.readiness = filterDraft.readiness
-  appliedFilter.keyword = filterDraft.keyword
-}
+watchDebounced(keyword, (value) => {
+  filters.keyword = value.trim() || undefined
+}, { debounce: 300, maxWait: 1000 })
 
 function clearFilters() {
-  filterDraft.readiness = 'all'
-  filterDraft.keyword = ''
-  applyFilters()
+  statusFilter.value = 'all'
+  keyword.value = ''
+  filters.keyword = undefined
 }
 
 function setSort(column: SortColumn) {
-  if (tableState.sortBy === column) {
-    tableState.sortDirection = tableState.sortDirection === 'asc' ? 'desc' : 'asc'
+  if (sortState.sortBy === column) {
+    sortState.sortDirection = sortState.sortDirection === 'asc' ? 'desc' : 'asc'
     return
   }
-  tableState.sortBy = column
-  tableState.sortDirection = 'asc'
+  sortState.sortBy = column
+  sortState.sortDirection = 'asc'
 }
 
 function sortIcon(column: SortColumn) {
-  if (tableState.sortBy !== column) return ArrowUpDownIcon
-  return tableState.sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon
+  if (sortState.sortBy !== column) return ArrowUpDownIcon
+  return sortState.sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon
 }
 
 function sortValue(row: ProcurementRow, column: SortColumn) {
@@ -200,25 +182,24 @@ function formatAmount(value: number) {
         <div class="p-4">
           <FieldGroup class="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto]">
             <Field>
-              <FieldLabel for="erp-readiness">供应状态</FieldLabel>
-              <Select v-model="filterDraft.readiness">
-                <SelectTrigger id="erp-readiness">
+              <FieldLabel for="erp-status">订单状态</FieldLabel>
+              <Select v-model="statusFilter">
+                <SelectTrigger id="erp-status">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部</SelectItem>
-                  <SelectItem value="awaiting-arrival">待到货</SelectItem>
-                  <SelectItem value="partially-received">部分收货</SelectItem>
-                  <SelectItem value="received">已收货</SelectItem>
+                  <SelectItem value="Released">已下达</SelectItem>
+                  <SelectItem value="Closed">已关闭</SelectItem>
+                  <SelectItem value="Cancelled">已取消</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
             <Field>
               <FieldLabel for="erp-keyword">关键字</FieldLabel>
-              <Input id="erp-keyword" v-model="filterDraft.keyword" placeholder="采购单、供应商、物料、工厂" @keydown.enter="applyFilters" />
+              <Input id="erp-keyword" v-model="keyword" placeholder="采购单、供应商、物料、工厂" />
             </Field>
             <div class="flex items-end gap-2">
-              <Button type="button" @click="applyFilters">查询</Button>
               <Button type="button" variant="outline" @click="clearFilters">清空</Button>
             </div>
           </FieldGroup>
@@ -300,16 +281,12 @@ function formatAmount(value: number) {
                 <TableCell><Badge variant="secondary">{{ readinessLabel(row.receiptReadiness) }}</Badge></TableCell>
                 <TableCell class="text-right tabular-nums">{{ formatAmount(row.amount) }}</TableCell>
               </TableRow>
-              <TableEmpty v-if="!filteredRows.length" :colspan="9">未找到采购供应明细。</TableEmpty>
+              <TableEmpty v-if="!sortedRows.length" :colspan="9">未找到采购供应明细。</TableEmpty>
             </TableBody>
           </Table>
         </div>
         <div class="border-t px-4 py-3">
-          <BusinessTablePagination
-            v-model:page="tableState.page"
-            v-model:page-size="tableState.pageSize"
-            :total-items="sortedRows.length"
-          />
+          <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="purchaseOrdersTotal" />
         </div>
       </div>
     </section>
