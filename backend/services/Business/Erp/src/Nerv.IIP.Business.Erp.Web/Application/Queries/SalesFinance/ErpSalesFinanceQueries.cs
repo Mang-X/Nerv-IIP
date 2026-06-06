@@ -14,6 +14,17 @@ public sealed record ListSalesOrdersQuery(
 public sealed record ListSalesOrdersResponse(IReadOnlyCollection<SalesOrderResponse> Items, int Total);
 public sealed record SalesOrderResponse(string SalesOrderNo, string CustomerCode, string Status, decimal TotalAmount);
 
+internal static class ErpListPaging
+{
+    public const int DefaultTake = 100;
+    public const int MaxTake = 500;
+
+    public static int NormalizeTake(int take)
+    {
+        return Math.Min(take <= 0 ? DefaultTake : take, MaxTake);
+    }
+}
+
 public sealed class ListSalesOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListSalesOrdersQuery, ListSalesOrdersResponse>
 {
@@ -26,7 +37,9 @@ public sealed class ListSalesOrdersQueryHandler(ApplicationDbContext dbContext)
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             var status = request.Status.Trim().ToLowerInvariant();
-            query = query.Where(x => x.Status == status);
+            query = status == "released"
+                ? query.Where(x => x.Status == status)
+                : query.Where(x => false);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
@@ -40,7 +53,7 @@ public sealed class ListSalesOrdersQueryHandler(ApplicationDbContext dbContext)
 
         var total = await query.CountAsync(cancellationToken);
         var skip = Math.Max(request.Skip, 0);
-        var take = request.Take <= 0 ? 100 : request.Take;
+        var take = ErpListPaging.NormalizeTake(request.Take);
         var orders = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(skip)
@@ -88,6 +101,10 @@ public sealed class ListAccountPayablesQueryHandler(ApplicationDbContext dbConte
         {
             query = query.Where(x => x.Amount <= x.PaidAmount);
         }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(x => false);
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
@@ -100,7 +117,7 @@ public sealed class ListAccountPayablesQueryHandler(ApplicationDbContext dbConte
 
         var total = await query.CountAsync(cancellationToken);
         var skip = Math.Max(request.Skip, 0);
-        var take = request.Take <= 0 ? 100 : request.Take;
+        var take = ErpListPaging.NormalizeTake(request.Take);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(skip)
@@ -157,6 +174,10 @@ public sealed class ListAccountReceivablesQueryHandler(ApplicationDbContext dbCo
         {
             query = query.Where(x => x.Amount <= x.CollectedAmount);
         }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(x => false);
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
@@ -169,7 +190,7 @@ public sealed class ListAccountReceivablesQueryHandler(ApplicationDbContext dbCo
 
         var total = await query.CountAsync(cancellationToken);
         var skip = Math.Max(request.Skip, 0);
-        var take = request.Take <= 0 ? 100 : request.Take;
+        var take = ErpListPaging.NormalizeTake(request.Take);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(skip)
@@ -217,6 +238,7 @@ public sealed class ListCostCandidatesQueryHandler(ApplicationDbContext dbContex
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
+        // Cost candidates do not yet carry a persisted lifecycle status; pending is the only list status.
         if (!string.IsNullOrWhiteSpace(request.Status)
             && !string.Equals(request.Status, "pending", StringComparison.OrdinalIgnoreCase))
         {
@@ -234,7 +256,7 @@ public sealed class ListCostCandidatesQueryHandler(ApplicationDbContext dbContex
 
         var total = await query.CountAsync(cancellationToken);
         var skip = Math.Max(request.Skip, 0);
-        var take = request.Take <= 0 ? 100 : request.Take;
+        var take = ErpListPaging.NormalizeTake(request.Take);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(skip)

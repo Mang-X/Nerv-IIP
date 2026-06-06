@@ -142,6 +142,45 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Equal("COST-001", Assert.Single(costs.Items).CandidateNo);
     }
 
+    [Fact]
+    public async Task Finance_list_queries_reject_unknown_status_and_cap_take()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+            new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "RCV-001", "SUP-001", 125.50m, "CNY"),
+            CancellationToken.None);
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 250.75m, "CNY"),
+            CancellationToken.None);
+        for (var index = 1; index <= 501; index++)
+        {
+            await new CreateCostCandidateCommandHandler(dbContext).Handle(
+                new CreateCostCandidateCommand("org-001", "env-dev", $"COST-{index:D3}", "production-report", $"RPT-{index:D3}", 90.25m, "CNY"),
+                CancellationToken.None);
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var payables = await new ListAccountPayablesQueryHandler(dbContext).Handle(
+            new ListAccountPayablesQuery("org-001", "env-dev", "not-a-status", null, 0, 100),
+            CancellationToken.None);
+        var receivables = await new ListAccountReceivablesQueryHandler(dbContext).Handle(
+            new ListAccountReceivablesQuery("org-001", "env-dev", "not-a-status", null, 0, 100),
+            CancellationToken.None);
+        var cappedCosts = await new ListCostCandidatesQueryHandler(dbContext).Handle(
+            new ListCostCandidatesQuery("org-001", "env-dev", null, null, 0, 1000),
+            CancellationToken.None);
+
+        Assert.Equal(0, payables.Total);
+        Assert.Empty(payables.Items);
+        Assert.Equal(0, receivables.Total);
+        Assert.Empty(receivables.Items);
+        Assert.Equal(501, cappedCosts.Total);
+        Assert.Equal(500, cappedCosts.Items.Count);
+    }
+
     private static async Task CreateReleasedSalesOrderAsync(
         Infrastructure.ApplicationDbContext dbContext,
         string salesOrderNo,

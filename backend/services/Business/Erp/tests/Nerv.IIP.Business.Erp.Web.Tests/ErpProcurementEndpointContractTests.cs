@@ -136,6 +136,40 @@ public sealed class ErpProcurementEndpointContractTests
     }
 
     [Fact]
+    public async Task List_purchase_orders_query_rejects_unknown_status_and_caps_take()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreatePurchaseOrderCommandHandler(dbContext);
+        for (var index = 1; index <= 501; index++)
+        {
+            await handler.Handle(new CreatePurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                $"PO-{index:D3}",
+                "SUP-001",
+                "SITE-01",
+                [new PurchaseOrderCommandLine("LINE-001", $"SKU-RM-{index:D3}", "kg", 1m, 10m, new DateOnly(2026, 6, 5))]),
+                CancellationToken.None);
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var unknownStatus = await new ListPurchaseOrdersQueryHandler(dbContext).Handle(
+            new ListPurchaseOrdersQuery("org-001", "env-dev", "not-a-status", null, 0, 100),
+            CancellationToken.None);
+        var capped = await new ListPurchaseOrdersQueryHandler(dbContext).Handle(
+            new ListPurchaseOrdersQuery("org-001", "env-dev", null, null, 0, 1000),
+            CancellationToken.None);
+
+        Assert.Equal(0, unknownStatus.Total);
+        Assert.Empty(unknownStatus.Items);
+        Assert.Equal(501, capped.Total);
+        Assert.Equal(500, capped.Items.Count);
+    }
+
+    [Fact]
     public async Task Purchase_order_command_generates_number_and_replays_idempotent_create()
     {
         await using var provider = CreateInMemoryProvider();

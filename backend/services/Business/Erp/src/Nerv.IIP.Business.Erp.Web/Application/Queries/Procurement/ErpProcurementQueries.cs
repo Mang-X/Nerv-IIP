@@ -33,6 +33,9 @@ public sealed record PurchaseOrderLineResponse(
 public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListPurchaseOrdersQuery, ListPurchaseOrdersResponse>
 {
+    private const int DefaultTake = 100;
+    private const int MaxTake = 500;
+
     public async Task<ListPurchaseOrdersResponse> Handle(ListPurchaseOrdersQuery request, CancellationToken cancellationToken)
     {
         var query = dbContext.PurchaseOrders
@@ -40,9 +43,14 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
             .Include(x => x.Lines)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (Enum.TryParse<Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderStatus>(request.Status, ignoreCase: true, out var status))
+        if (!string.IsNullOrWhiteSpace(request.Status)
+            && Enum.TryParse<Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderStatus>(request.Status.Trim(), ignoreCase: true, out var status))
         {
             query = query.Where(x => x.Status == status);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(x => false);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
@@ -57,7 +65,7 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
 
         var total = await query.CountAsync(cancellationToken);
         var skip = Math.Max(request.Skip, 0);
-        var take = request.Take <= 0 ? 100 : request.Take;
+        var take = Math.Min(request.Take <= 0 ? DefaultTake : request.Take, MaxTake);
         var orders = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(skip)
