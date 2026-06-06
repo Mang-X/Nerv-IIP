@@ -812,6 +812,14 @@ public sealed record BusinessConsoleErpContextRequest(
     string OrganizationId,
     string EnvironmentId);
 
+public sealed record BusinessConsoleErpListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleErpSourceDocumentRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -902,7 +910,8 @@ public sealed record BusinessConsoleErpPurchaseReceiptLine(
 public sealed record BusinessConsoleRecordErpPurchaseReceiptResponse(string PurchaseReceiptId);
 
 public sealed record BusinessConsoleErpPurchaseOrderListResponse(
-    IReadOnlyCollection<BusinessConsoleErpPurchaseOrderItem> Items);
+    IReadOnlyCollection<BusinessConsoleErpPurchaseOrderItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleErpPurchaseOrderItem(
     string PurchaseOrderNo,
@@ -923,7 +932,8 @@ public sealed record BusinessConsoleErpPurchaseOrderLineItem(
     DateOnly PromisedDate);
 
 public sealed record BusinessConsoleErpSalesOrderListResponse(
-    IReadOnlyCollection<BusinessConsoleErpSalesOrderItem> Items);
+    IReadOnlyCollection<BusinessConsoleErpSalesOrderItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleErpSalesOrderItem(
     string SalesOrderNo,
@@ -1045,6 +1055,47 @@ public sealed record BusinessConsoleErpFinanceSummaryResponse(
     decimal OpenReceivableAmount,
     decimal CostCandidateAmount,
     int PostedVoucherCount);
+
+public sealed record BusinessConsoleErpPayableListResponse(
+    IReadOnlyCollection<BusinessConsoleErpPayableItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpPayableItem(
+    string PayableNo,
+    string SourceDocumentNo,
+    string SupplierCode,
+    decimal Amount,
+    decimal OpenAmount,
+    string CurrencyCode,
+    string Status,
+    DateTime CreatedAtUtc);
+
+public sealed record BusinessConsoleErpReceivableListResponse(
+    IReadOnlyCollection<BusinessConsoleErpReceivableItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpReceivableItem(
+    string ReceivableNo,
+    string SourceDocumentNo,
+    string CustomerCode,
+    decimal Amount,
+    decimal OpenAmount,
+    string CurrencyCode,
+    string Status,
+    DateTime CreatedAtUtc);
+
+public sealed record BusinessConsoleErpCostCandidateListResponse(
+    IReadOnlyCollection<BusinessConsoleErpCostCandidateItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpCostCandidateItem(
+    string CandidateNo,
+    string SourceType,
+    string SourceDocumentNo,
+    decimal Amount,
+    string CurrencyCode,
+    string Status,
+    DateTime CreatedAtUtc);
 
 public sealed record BusinessConsoleErpPayableSourceDocumentResponse(
     string PayableNo,

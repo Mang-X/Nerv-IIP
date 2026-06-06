@@ -124,13 +124,36 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/sales-orders", "post", "createBusinessConsoleErpSalesOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/delivery-orders", "post", "releaseBusinessConsoleErpDeliveryOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payables", "post", "createBusinessConsoleErpAccountPayable");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/payables", "get", "listBusinessConsoleErpPayables");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/receivables", "post", "createBusinessConsoleErpAccountReceivable");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/receivables", "get", "listBusinessConsoleErpReceivables");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "post", "createBusinessConsoleErpCostCandidate");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "get", "listBusinessConsoleErpCostCandidates");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/vouchers", "post", "postBusinessConsoleErpJournalVoucher");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/summary", "get", "getBusinessConsoleErpFinanceSummary");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payables/by-source", "get", "getBusinessConsoleErpPayableBySourceDocument");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/receivables/by-source", "get", "getBusinessConsoleErpReceivableBySourceDocument");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates/by-source", "get", "getBusinessConsoleErpCostCandidateBySourceDocument");
+        foreach (var erpListPath in new[]
+        {
+            "/api/business-console/v1/erp/procurement/purchase-orders",
+            "/api/business-console/v1/erp/sales/sales-orders",
+            "/api/business-console/v1/erp/finance/payables",
+            "/api/business-console/v1/erp/finance/receivables",
+            "/api/business-console/v1/erp/finance/cost-candidates",
+        })
+        {
+            AssertQueryParameters(
+                paths,
+                erpListPath,
+                "get",
+                "organizationId",
+                "environmentId",
+                "status",
+                "keyword",
+                "skip",
+                "take");
+        }
         AssertOperationId(paths, "/api/business-console/v1/approval/templates", "get", "listBusinessConsoleApprovalTemplates");
         AssertOperationId(paths, "/api/business-console/v1/approval/templates", "post", "createOrUpdateBusinessConsoleApprovalTemplate");
         AssertOperationId(paths, "/api/business-console/v1/approval/chains", "post", "startBusinessConsoleApprovalChain");
