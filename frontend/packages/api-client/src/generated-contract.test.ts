@@ -39,6 +39,9 @@ import {
   listBusinessConsoleMesWorkOrdersQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
   listBusinessConsoleSkusQueryOptions,
+  listBusinessConsoleWmsInboundOrdersQueryOptions,
+  listBusinessConsoleWmsOutboundOrdersQueryOptions,
+  listBusinessConsoleWmsWcsTasksQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
   recordBusinessConsoleMesDefectMutationOptions,
@@ -143,5 +146,11 @@ describe('generated API client contract', () => {
     expect(getBusinessConsoleMesBatchTraceabilityQueryOptions).toBeTypeOf('function')
     expect(getBusinessConsoleMesMaterialLotTraceabilityQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesCapacityImpactsQueryOptions).toBeTypeOf('function')
+  })
+
+  it('exports Business Console WMS generated operations through stable api-client entry points', () => {
+    expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleWmsOutboundOrdersQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleWmsWcsTasksQueryOptions).toBeTypeOf('function')
   })
 })

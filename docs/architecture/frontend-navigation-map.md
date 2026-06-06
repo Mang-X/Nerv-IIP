@@ -302,8 +302,11 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 制造执行 | 计划与工单（生产驾驶舱 `/mes`、生产计划 `/mes/plans`、工单与派工 `/mes/work-orders`、派工看板 `/mes/dispatch`）；执行与齐套（齐套与物料 `/mes/materials`、工序执行 `/mes/operation-tasks`、在制跟踪 `/mes/wip`）；报工与完工（报工记录 `/mes/production-reports`、报工与完工汇总 `/mes/reports`、完工入库 `/mes/receipts`）；异常与协同（质量与不良 `/mes/quality`、设备与停机 `/mes/downtime`、异常与产能 `/mes/capacity`、规则排程 `/mes/schedules`、班次交接 `/mes/handovers`）；追溯与诊断（追溯查询 `/mes/traceability`、生产准备检查 `/mes/foundation`） |
 | 质量管理 | 检验任务与记录 `/quality/inspections`、不合格品处理 `/quality/ncrs` |
 | 库存管理 | 库存可用量 `/inventory/availability`、库存移动 `/inventory/movements`、库存盘点 `/inventory/counts` |
+| 仓储作业（“更多”内） | 收货入库 `/wms/inbound`（融合库存可用量上下文）、出库发货 `/wms/outbound`、WCS 任务 `/wms/wcs` |
 | 经营管理（“更多”内） | 采购与供应 `/erp` |
 | 设备监控（“更多”内） | 设备运行看板 `/equipment`、设备报警 `/equipment/alarms` |
+
+> **仓储作业（FE-11 #286，2026-06-06 校验）：** 后端 WMS facade（#264）已就绪并随本次接入 `@nerv-iip/api-client` 稳定导出（curated barrel 之前缺 WMS 再次补齐）。当前为只读监控批次：入库/出库/WCS 三个列表 + 入库页内嵌 Inventory 可用量上下文。**WMS list facade 暂不返回 `skip/take/total` 与状态过滤**，前端按完整列表渲染、不做假分页（已提后端跟进 #329）。创建/完成/拣货/上架/复核/盘点/WCS 派发等写操作作为 WMS batch 2 后续接入。
 
 裁剪规则：`permittedBy` 对未声明 `requiredPermissions` 的域/项默认放行（当前为宽松默认，匹配现有 route-ready 行为）；挂接具体 permission code 后按角色裁剪。导航隐藏只是 UX，Gateway per-request enforcement 仍是权威。命令搜索（⌘/Ctrl+K）入口已在顶部占位，面板实装在 FE-13。
 

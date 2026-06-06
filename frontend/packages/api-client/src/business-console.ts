@@ -71,6 +71,9 @@ export {
   runBusinessConsolePlanningMrpMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
   submitBusinessConsoleQualityNcrDispositionMutationOptions,
+  listBusinessConsoleWmsInboundOrdersQueryOptions,
+  listBusinessConsoleWmsOutboundOrdersQueryOptions,
+  listBusinessConsoleWmsWcsTasksQueryOptions,
 } from './generated/business-console/@pinia/colada.gen'
 
 export {
@@ -301,6 +304,11 @@ import type {
   NervIipContractsEquipmentRuntimeEquipmentRuntimeCurrentStateResponse,
   NervIipContractsEquipmentRuntimeEquipmentRuntimeSeverity,
   NervIipContractsEquipmentRuntimeEquipmentRuntimeSourceType,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundOrderItem,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundOrderListResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInventoryContext,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderItem,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWcsTaskItem,
 } from './generated/business-console/types.gen'
 
 export type BusinessConsoleAcceptedResponse =
@@ -612,3 +620,13 @@ export type BusinessConsoleRoutingListEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRoutingListResponse
 export type BusinessConsoleRunMrpEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRunMrpResponse
+export type BusinessConsoleWmsInboundOrderItem =
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundOrderItem
+export type BusinessConsoleWmsInboundOrderListResponse =
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundOrderListResponse
+export type BusinessConsoleWmsInventoryContext =
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInventoryContext
+export type BusinessConsoleWmsOutboundOrderItem =
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderItem
+export type BusinessConsoleWmsWcsTaskItem =
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWcsTaskItem
