@@ -29,6 +29,11 @@ import {
   PageHeader,
   SectionCard,
   SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   StatusBadge,
   Toolbar,
   toast,
@@ -60,15 +65,30 @@ const { page, pageSize } = usePagedList(filters, {
 const completeOpen = shallowRef(false)
 const pendingOrder = shallowRef<InboundRow>()
 
+// 后端 WMS InboundOrderLine 要求 uomCode/正数 receivedQuantity/stagingLocationCode/qualityStatus/ownerType 均非空。
+const QUALITY_OPTIONS = [
+  { label: '可用', value: 'available' },
+  { label: '待检', value: 'inspection' },
+  { label: '冻结', value: 'blocked' },
+  { label: '不合格', value: 'rejected' },
+]
+const OWNER_OPTIONS = [
+  { label: '自有', value: 'owned' },
+  { label: '客户', value: 'customer' },
+  { label: '供应商', value: 'supplier' },
+  { label: '寄售', value: 'consignment' },
+]
 interface InboundLine {
   skuCode: string
   uomCode: string
   receivedQuantity: string
   stagingLocationCode: string
   lotNo: string
+  qualityStatus: string
+  ownerType: string
 }
 function emptyLine(): InboundLine {
-  return { skuCode: '', uomCode: '', receivedQuantity: '', stagingLocationCode: '', lotNo: '' }
+  return { skuCode: '', uomCode: '', receivedQuantity: '', stagingLocationCode: '', lotNo: '', qualityStatus: 'available', ownerType: 'owned' }
 }
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
@@ -102,20 +122,33 @@ async function submitCreate() {
     createError.value = '请填写入库单号、来源类型、来源单据与工厂。'
     return
   }
-  const lines = createForm.lines
-    .filter((l) => l.skuCode.trim())
-    .map((l, i) => ({
-      lineNo: String(i + 1),
-      skuCode: l.skuCode.trim(),
-      uomCode: l.uomCode.trim() || undefined,
-      receivedQuantity: l.receivedQuantity ? Number(l.receivedQuantity) : undefined,
-      stagingLocationCode: l.stagingLocationCode.trim() || undefined,
-      lotNo: l.lotNo.trim() || undefined,
-    }))
-  if (lines.length === 0) {
-    createError.value = '至少填写一行明细（物料必填）。'
+  const filled = createForm.lines.filter(
+    (l) => l.skuCode.trim() || l.uomCode.trim() || l.receivedQuantity || l.stagingLocationCode.trim(),
+  )
+  if (filled.length === 0) {
+    createError.value = '至少填写一行明细。'
     return
   }
+  for (const [i, l] of filled.entries()) {
+    if (!l.skuCode.trim() || !l.uomCode.trim() || !l.stagingLocationCode.trim()) {
+      createError.value = `第 ${i + 1} 行：物料、单位、暂存库位均必填。`
+      return
+    }
+    if (!(Number(l.receivedQuantity) > 0)) {
+      createError.value = `第 ${i + 1} 行：收货数量需为正数。`
+      return
+    }
+  }
+  const lines = filled.map((l, i) => ({
+    lineNo: String(i + 1),
+    skuCode: l.skuCode.trim(),
+    uomCode: l.uomCode.trim(),
+    receivedQuantity: Number(l.receivedQuantity),
+    stagingLocationCode: l.stagingLocationCode.trim(),
+    lotNo: l.lotNo.trim() || undefined,
+    qualityStatus: l.qualityStatus,
+    ownerType: l.ownerType,
+  }))
   try {
     await createInbound({
       organizationId: filters.organizationId,
@@ -297,11 +330,23 @@ function formatError(error: unknown) {
               </Button>
             </div>
             <div v-for="(line, index) in createForm.lines" :key="index" class="flex flex-wrap items-end gap-2 rounded-md border p-2">
-              <Input v-model="line.skuCode" class="h-9 w-32" placeholder="物料" :aria-label="`第 ${index + 1} 行物料`" />
-              <Input v-model="line.uomCode" class="h-9 w-20" placeholder="单位" :aria-label="`第 ${index + 1} 行单位`" />
-              <Input v-model="line.receivedQuantity" class="h-9 w-24" type="number" placeholder="收货数量" :aria-label="`第 ${index + 1} 行收货数量`" />
-              <Input v-model="line.stagingLocationCode" class="h-9 w-24" placeholder="暂存库位" :aria-label="`第 ${index + 1} 行暂存库位`" />
-              <Input v-model="line.lotNo" class="h-9 w-28" placeholder="批次" :aria-label="`第 ${index + 1} 行批次`" />
+              <Input v-model="line.skuCode" class="h-9 w-28" placeholder="物料*" :aria-label="`第 ${index + 1} 行物料`" />
+              <Input v-model="line.uomCode" class="h-9 w-16" placeholder="单位*" :aria-label="`第 ${index + 1} 行单位`" />
+              <Input v-model="line.receivedQuantity" class="h-9 w-24" type="number" min="0" step="any" placeholder="收货数量*" :aria-label="`第 ${index + 1} 行收货数量`" />
+              <Input v-model="line.stagingLocationCode" class="h-9 w-24" placeholder="暂存库位*" :aria-label="`第 ${index + 1} 行暂存库位`" />
+              <Input v-model="line.lotNo" class="h-9 w-24" placeholder="批次" :aria-label="`第 ${index + 1} 行批次`" />
+              <Select v-model="line.qualityStatus">
+                <SelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行质量状态`"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select v-model="line.ownerType">
+                <SelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                </SelectContent>
+              </Select>
               <Button type="button" size="icon-sm" variant="ghost" :aria-label="`删除第 ${index + 1} 行`" @click="removeLine(index)">
                 <Trash2Icon class="size-4" aria-hidden="true" />
               </Button>

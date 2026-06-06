@@ -23,6 +23,11 @@ import {
   PageHeader,
   SectionCard,
   SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   StatusBadge,
   Toolbar,
   toast,
@@ -50,17 +55,30 @@ const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.statu
 
 const errorMessage = computed(() => formatError(outboundOrdersError.value ?? completeOutboundError.value ?? createOutboundError.value))
 
-const ORG = 'org-001'
-const ENV = 'env-dev'
+// 后端 WMS OutboundOrderLine 要求 uomCode/正数 requestedQuantity/pickLocationCode/qualityStatus/ownerType 均非空。
+const QUALITY_OPTIONS = [
+  { label: '可用', value: 'available' },
+  { label: '待检', value: 'inspection' },
+  { label: '冻结', value: 'blocked' },
+  { label: '不合格', value: 'rejected' },
+]
+const OWNER_OPTIONS = [
+  { label: '自有', value: 'owned' },
+  { label: '客户', value: 'customer' },
+  { label: '供应商', value: 'supplier' },
+  { label: '寄售', value: 'consignment' },
+]
 interface OutboundLine {
   skuCode: string
   uomCode: string
   requestedQuantity: string
   pickLocationCode: string
   lotNo: string
+  qualityStatus: string
+  ownerType: string
 }
 function emptyLine(): OutboundLine {
-  return { skuCode: '', uomCode: '', requestedQuantity: '', pickLocationCode: '', lotNo: '' }
+  return { skuCode: '', uomCode: '', requestedQuantity: '', pickLocationCode: '', lotNo: '', qualityStatus: 'available', ownerType: 'owned' }
 }
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
@@ -94,24 +112,37 @@ async function submitCreate() {
     createError.value = '请填写出库单号、来源类型、来源单据与工厂。'
     return
   }
-  const lines = createForm.lines
-    .filter((l) => l.skuCode.trim())
-    .map((l, i) => ({
-      lineNo: String(i + 1),
-      skuCode: l.skuCode.trim(),
-      uomCode: l.uomCode.trim() || undefined,
-      requestedQuantity: l.requestedQuantity ? Number(l.requestedQuantity) : undefined,
-      pickLocationCode: l.pickLocationCode.trim() || undefined,
-      lotNo: l.lotNo.trim() || undefined,
-    }))
-  if (lines.length === 0) {
-    createError.value = '至少填写一行明细（物料必填）。'
+  const filled = createForm.lines.filter(
+    (l) => l.skuCode.trim() || l.uomCode.trim() || l.requestedQuantity || l.pickLocationCode.trim(),
+  )
+  if (filled.length === 0) {
+    createError.value = '至少填写一行明细。'
     return
   }
+  for (const [i, l] of filled.entries()) {
+    if (!l.skuCode.trim() || !l.uomCode.trim() || !l.pickLocationCode.trim()) {
+      createError.value = `第 ${i + 1} 行：物料、单位、拣货库位均必填。`
+      return
+    }
+    if (!(Number(l.requestedQuantity) > 0)) {
+      createError.value = `第 ${i + 1} 行：需求数量需为正数。`
+      return
+    }
+  }
+  const lines = filled.map((l, i) => ({
+    lineNo: String(i + 1),
+    skuCode: l.skuCode.trim(),
+    uomCode: l.uomCode.trim(),
+    requestedQuantity: Number(l.requestedQuantity),
+    pickLocationCode: l.pickLocationCode.trim(),
+    lotNo: l.lotNo.trim() || undefined,
+    qualityStatus: l.qualityStatus,
+    ownerType: l.ownerType,
+  }))
   try {
     await createOutbound({
-      organizationId: ORG,
-      environmentId: ENV,
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
       outboundOrderNo: createForm.outboundOrderNo.trim(),
       sourceDocumentType: createForm.sourceDocumentType.trim(),
       sourceDocumentId: createForm.sourceDocumentId.trim(),
@@ -294,11 +325,23 @@ function formatError(error: unknown) {
               </Button>
             </div>
             <div v-for="(line, index) in createForm.lines" :key="index" class="flex flex-wrap items-end gap-2 rounded-md border p-2">
-              <Input v-model="line.skuCode" class="h-9 w-32" placeholder="物料" :aria-label="`第 ${index + 1} 行物料`" />
-              <Input v-model="line.uomCode" class="h-9 w-20" placeholder="单位" :aria-label="`第 ${index + 1} 行单位`" />
-              <Input v-model="line.requestedQuantity" class="h-9 w-24" type="number" placeholder="需求数量" :aria-label="`第 ${index + 1} 行需求数量`" />
-              <Input v-model="line.pickLocationCode" class="h-9 w-24" placeholder="拣货库位" :aria-label="`第 ${index + 1} 行拣货库位`" />
-              <Input v-model="line.lotNo" class="h-9 w-28" placeholder="批次" :aria-label="`第 ${index + 1} 行批次`" />
+              <Input v-model="line.skuCode" class="h-9 w-28" placeholder="物料*" :aria-label="`第 ${index + 1} 行物料`" />
+              <Input v-model="line.uomCode" class="h-9 w-16" placeholder="单位*" :aria-label="`第 ${index + 1} 行单位`" />
+              <Input v-model="line.requestedQuantity" class="h-9 w-24" type="number" min="0" step="any" placeholder="需求数量*" :aria-label="`第 ${index + 1} 行需求数量`" />
+              <Input v-model="line.pickLocationCode" class="h-9 w-24" placeholder="拣货库位*" :aria-label="`第 ${index + 1} 行拣货库位`" />
+              <Input v-model="line.lotNo" class="h-9 w-24" placeholder="批次" :aria-label="`第 ${index + 1} 行批次`" />
+              <Select v-model="line.qualityStatus">
+                <SelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行质量状态`"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select v-model="line.ownerType">
+                <SelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                </SelectContent>
+              </Select>
               <Button type="button" size="icon-sm" variant="ghost" :aria-label="`删除第 ${index + 1} 行`" @click="removeLine(index)">
                 <Trash2Icon class="size-4" aria-hidden="true" />
               </Button>

@@ -145,7 +145,9 @@ describe('WMS operate actions', () => {
     setInput('#wms-in-srctype', '采购收货')
     setInput('#wms-in-srcid', 'PO-1')
     setInput('[aria-label="第 1 行物料"]', 'SKU1')
+    setInput('[aria-label="第 1 行单位"]', 'EA')
     setInput('[aria-label="第 1 行收货数量"]', '5')
+    setInput('[aria-label="第 1 行暂存库位"]', 'A-01')
     await flushPromises()
 
     document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -162,7 +164,39 @@ describe('WMS operate actions', () => {
       sourceDocumentId: 'PO-1',
     })
     expect(body.lines).toHaveLength(1)
-    expect(body.lines[0]).toMatchObject({ lineNo: '1', skuCode: 'SKU1', receivedQuantity: 5 })
+    // 后端契约要求的行字段必须全部下发。
+    expect(body.lines[0]).toMatchObject({
+      lineNo: '1',
+      skuCode: 'SKU1',
+      uomCode: 'EA',
+      receivedQuantity: 5,
+      stagingLocationCode: 'A-01',
+      qualityStatus: 'available',
+      ownerType: 'owned',
+    })
+  })
+
+  it('blocks inbound creation when a required line field or positive quantity is missing', async () => {
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建入库单'))!.trigger('click')
+    await flushPromises()
+
+    setInput('#wms-in-no', 'IB-NEW')
+    setInput('#wms-in-site', 'S1')
+    setInput('#wms-in-srctype', '采购收货')
+    setInput('#wms-in-srcid', 'PO-1')
+    // 物料填了，但单位/库位缺失、数量非正 → 应被前端校验拦截，不发请求。
+    setInput('[aria-label="第 1 行物料"]', 'SKU1')
+    setInput('[aria-label="第 1 行收货数量"]', '0')
+    await flushPromises()
+
+    document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(wms.createInbound).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('第 1 行')
   })
 
   it('blocks inbound creation when header fields are missing', async () => {
