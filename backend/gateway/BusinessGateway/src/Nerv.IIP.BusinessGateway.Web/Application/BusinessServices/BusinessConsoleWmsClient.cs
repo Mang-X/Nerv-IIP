@@ -99,13 +99,13 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
         BusinessConsoleWmsListRequest request,
         CancellationToken cancellationToken)
     {
-        var items = await SendAsync<IReadOnlyCollection<BusinessConsoleWmsInboundOrderItem>>(
+        var page = await SendAsync<BusinessConsoleWmsInboundOrderDownstreamListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/wms/inbound-orders?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            "/api/business/v1/wms/inbound-orders?" + WmsListQuery(request),
             null,
             cancellationToken);
-        return new BusinessConsoleWmsInboundOrderListResponse(items, null, "unsupported");
+        return new BusinessConsoleWmsInboundOrderListResponse(page.Items, page.Total, null, "unsupported");
     }
 
     public Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePutawayTaskAsync(
@@ -148,13 +148,12 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
         BusinessConsoleWmsListRequest request,
         CancellationToken cancellationToken)
     {
-        var items = await SendAsync<IReadOnlyCollection<BusinessConsoleWmsOutboundOrderItem>>(
+        return await SendAsync<BusinessConsoleWmsOutboundOrderListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/wms/outbound-orders?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            "/api/business/v1/wms/outbound-orders?" + WmsListQuery(request),
             null,
             cancellationToken);
-        return new BusinessConsoleWmsOutboundOrderListResponse(items);
     }
 
     public Task<BusinessConsoleCreateWmsWarehouseTaskResponse> CreatePickingTaskAsync(
@@ -257,10 +256,25 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("externalTaskId", request.ExternalTaskId),
-                ("warehouseTaskId", request.WarehouseTaskId)),
+                ("warehouseTaskId", request.WarehouseTaskId),
+                ("skip", request.Skip),
+                ("take", request.Take),
+                ("status", request.Status),
+                ("failed", request.Failed),
+                ("keyword", request.Keyword)),
             null,
             cancellationToken);
 
-    private static string ContextQuery(string organizationId, string environmentId) =>
-        Query(("organizationId", organizationId), ("environmentId", environmentId));
+    private static string WmsListQuery(BusinessConsoleWmsListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("skip", request.Skip),
+            ("take", request.Take),
+            ("status", request.Status),
+            ("keyword", request.Keyword));
+
+    private sealed record BusinessConsoleWmsInboundOrderDownstreamListResponse(
+        IReadOnlyCollection<BusinessConsoleWmsInboundOrderItem> Items,
+        int Total);
 }

@@ -24,6 +24,7 @@ const GOLD_STANDARD_PAGES = [
   'master-data/partners.vue',
   'master-data/resources.vue',
   'master-data/reference-data.vue',
+  'wms/index.vue',
 ]
 
 const REQUIRED_BLOCKS = ['PageHeader', 'DataTable', 'DataTablePagination', 'SectionCard']

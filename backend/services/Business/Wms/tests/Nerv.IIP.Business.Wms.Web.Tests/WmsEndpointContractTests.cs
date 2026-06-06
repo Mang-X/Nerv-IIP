@@ -16,8 +16,13 @@ using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions;
+using InboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder;
+using InboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineDraft;
+using OutboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder;
+using OutboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrderLineDraft;
 using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTask;
 using WarehouseTaskId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId;
+using WcsTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate.WcsTask;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -172,6 +177,119 @@ public sealed class WmsEndpointContractTests
         Assert.NotNull(fact.CompletedAtUtc);
     }
 
+    [Fact]
+    public async Task Inbound_order_query_filters_status_keyword_before_offset_page_and_total_count()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.InboundOrders.AddRange(
+            CreateInboundOrder("IN-PAGE-001"),
+            CreateInboundOrder("IN-PAGE-002"),
+            CreateInboundOrder("IN-OTHER-001"),
+            CreateInboundOrder("IN-PAGE-CLOSED"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListInboundOrdersQueryHandler(dbContext).Handle(
+            new ListInboundOrdersQuery("org-001", "env-dev", 1, 1, "Open", "page"),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("IN-PAGE-001", item.InboundOrderNo);
+        Assert.Equal("Open", item.Status);
+    }
+
+    [Fact]
+    public async Task Outbound_order_query_filters_status_keyword_before_offset_page_and_total_count()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.OutboundOrders.AddRange(
+            CreateOutboundOrder("OUT-PAGE-001"),
+            CreateOutboundOrder("OUT-PAGE-002"),
+            CreateOutboundOrder("OUT-OTHER-001"),
+            CreateOutboundOrder("OUT-PAGE-CLOSED"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
+            new ListOutboundOrdersQuery("org-001", "env-dev", 1, 1, "Open", "page"),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("OUT-PAGE-001", item.OutboundOrderNo);
+        Assert.Equal("Open", item.Status);
+    }
+
+    [Fact]
+    public async Task Wcs_task_query_filters_status_failed_keyword_before_offset_page_and_total_count()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-PAGE-001", "IN-PAGE-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "STAGE-01", 3m);
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var failedA = WcsTask.Dispatch("org-001", "env-dev", warehouseTask.Id, "agv", "EXT-PAGE-001", """{"step":1}""");
+        failedA.Fail("PLC_TIMEOUT", "PLC timeout");
+        var failedB = WcsTask.Dispatch("org-001", "env-dev", warehouseTask.Id, "agv", "EXT-PAGE-002", """{"step":2}""");
+        failedB.Fail("PLC_TIMEOUT", "PLC timeout");
+        var completed = WcsTask.Dispatch("org-001", "env-dev", warehouseTask.Id, "agv", "EXT-PAGE-COMPLETE", """{"step":3}""");
+        completed.Complete("""{"ok":true}""");
+        dbContext.WcsTasks.AddRange(failedA, failedB, completed);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListWcsTasksQueryHandler(dbContext).Handle(
+            new ListWcsTasksQuery("org-001", "env-dev", null, null, 1, 1, "Failed", true, "page"),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("EXT-PAGE-001", item.ExternalTaskId);
+        Assert.Equal("Failed", item.Status);
+        Assert.NotNull(item.FailedAtUtc);
+    }
+
+    [Fact]
+    public async Task Wms_list_queries_reject_numeric_status_filters()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var inboundOrder = CreateInboundOrder("IN-NUMERIC-001");
+        var outboundOrder = CreateOutboundOrder("OUT-NUMERIC-001");
+        var warehouseTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-NUMERIC-001", "IN-NUMERIC-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "STAGE-01", 3m);
+        dbContext.InboundOrders.Add(inboundOrder);
+        dbContext.OutboundOrders.Add(outboundOrder);
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var wcsTask = WcsTask.Dispatch("org-001", "env-dev", warehouseTask.Id, "agv", "EXT-NUMERIC-001", """{"step":1}""");
+        wcsTask.Fail("PLC_TIMEOUT", "PLC timeout");
+        dbContext.WcsTasks.Add(wcsTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var inboundResult = await new ListInboundOrdersQueryHandler(dbContext).Handle(
+            new ListInboundOrdersQuery("org-001", "env-dev", 0, 100, "0", null),
+            CancellationToken.None);
+        var outboundResult = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
+            new ListOutboundOrdersQuery("org-001", "env-dev", 0, 100, "0", null),
+            CancellationToken.None);
+        var wcsResult = await new ListWcsTasksQueryHandler(dbContext).Handle(
+            new ListWcsTasksQuery("org-001", "env-dev", null, null, 0, 100, "2", null, null),
+            CancellationToken.None);
+
+        Assert.Equal(0, inboundResult.Total);
+        Assert.Empty(inboundResult.Items);
+        Assert.Equal(0, outboundResult.Total);
+        Assert.Empty(outboundResult.Items);
+        Assert.Equal(0, wcsResult.Total);
+        Assert.Empty(wcsResult.Items);
+    }
+
     public static IEnumerable<object[]> EndpointTypes()
     {
         return WmsEndpointContracts.All.Select(x => new object[] { x.EndpointType });
@@ -234,6 +352,42 @@ public sealed class WmsEndpointContractTests
         {
             return Task.CompletedTask;
         }
+    }
+
+    private static InboundOrder CreateInboundOrder(string orderNo)
+    {
+        var order = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            orderNo,
+            "purchase-receipt",
+            $"PO-{orderNo}",
+            "SITE-01",
+            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)]);
+        if (orderNo.Contains("CLOSED", StringComparison.Ordinal))
+        {
+            order.Complete($"idem-{orderNo}");
+        }
+
+        return order;
+    }
+
+    private static OutboundOrder CreateOutboundOrder(string orderNo)
+    {
+        var order = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            orderNo,
+            "sales-shipment",
+            $"SO-{orderNo}",
+            "SITE-01",
+            [new OutboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "BIN-01", null, null, "qualified", "company", null)]);
+        if (orderNo.Contains("CLOSED", StringComparison.Ordinal))
+        {
+            order.CompletePackReview($"PACK-{orderNo}", true, $"idem-{orderNo}");
+        }
+
+        return order;
     }
 }
 
