@@ -4,6 +4,13 @@ import type { DataTableColumn } from '@nerv-iip/ui'
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   DataTable,
   Input,
@@ -12,15 +19,48 @@ import {
   SectionCards,
   StatusBadge,
   Toolbar,
+  toast,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, shallowRef } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '收货入库' } })
 
-const { filters, inboundOrders, inventoryContext, inboundError, inboundPending, refreshInbound } = useWmsInboundOrders()
+const {
+  filters,
+  inboundOrders,
+  inventoryContext,
+  inboundError,
+  inboundPending,
+  refreshInbound,
+  completeInbound,
+  completeInboundPending,
+  completeInboundError,
+} = useWmsInboundOrders()
 
-const errorMessage = computed(() => formatError(inboundError.value))
+const completeOpen = shallowRef(false)
+const pendingOrder = shallowRef<InboundRow>()
+
+function isCompleted(row: InboundRow) {
+  return (row.status ?? '').toLowerCase() === 'completed'
+}
+function openComplete(row: InboundRow) {
+  pendingOrder.value = row
+  completeOpen.value = true
+}
+async function confirmComplete() {
+  const id = pendingOrder.value?.inboundOrderId
+  if (!id) return
+  try {
+    await completeInbound(id)
+    completeOpen.value = false
+    toast.success('入库单已完成')
+  } catch {
+    // 失败信息由页面错误区呈现。
+  }
+}
+
+const errorMessage = computed(() => formatError(inboundError.value ?? completeInboundError.value))
 const onHandQuantity = computed(() => inventoryContext.value?.onHandQuantity ?? 0)
 const availableQuantity = computed(() => inventoryContext.value?.availableQuantity ?? 0)
 const reservedQuantity = computed(() => inventoryContext.value?.reservedQuantity ?? 0)
@@ -34,7 +74,8 @@ type InboundRow = BusinessConsoleWmsInboundOrderItem
 const columns: DataTableColumn<InboundRow>[] = [
   { key: 'inboundOrderNo', header: '入库单号', cellClass: 'font-medium', accessor: (r) => r.inboundOrderNo ?? '无' },
   { key: 'status', header: '状态', width: 'w-28' },
-  { key: 'createdAtUtc', header: '创建时间', align: 'end', width: 'w-44', accessor: (r) => formatDateTime(r.createdAtUtc) },
+  { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
 ]
 
 function rowKey(row: InboundRow) {
@@ -93,6 +134,33 @@ function formatError(error: unknown) {
       empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"
     >
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-actions="{ row }">
+        <Button
+          size="sm"
+          type="button"
+          variant="outline"
+          :aria-label="`完成入库 ${row.inboundOrderNo ?? ''}`"
+          :disabled="isCompleted(row) || !row.inboundOrderId"
+          @click="openComplete(row)"
+        >
+          完成入库
+        </Button>
+      </template>
     </DataTable>
+
+    <AlertDialog v-model:open="completeOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>完成入库</AlertDialogTitle>
+          <AlertDialogDescription>
+            确认完成入库单 {{ pendingOrder?.inboundOrderNo ?? '' }}？完成后将按已收货明细过账入库。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="completeInboundPending">取消</AlertDialogCancel>
+          <Button type="button" :disabled="completeInboundPending" @click="confirmComplete">完成入库</Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </BusinessLayout>
 </template>

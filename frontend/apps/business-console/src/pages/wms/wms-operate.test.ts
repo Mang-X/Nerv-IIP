@@ -1,0 +1,122 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { computed, reactive, shallowRef } from 'vue'
+
+import InboundPage from './inbound.vue'
+import OutboundPage from './outbound.vue'
+import WcsPage from './wcs.vue'
+
+const wms = vi.hoisted(() => ({
+  completeInbound: vi.fn(),
+  completeOutbound: vi.fn(),
+  failWcs: vi.fn(),
+}))
+
+vi.mock('@nerv-iip/ui', async (orig) => ({
+  ...(await orig<typeof import('@nerv-iip/ui')>()),
+  toast: { success: vi.fn(), error: vi.fn() },
+}))
+
+vi.mock('@/composables/useBusinessWms', () => ({
+  useWmsInboundOrders: () => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
+    inboundOrders: computed(() => [
+      { inboundOrderId: 'ib-1', inboundOrderNo: 'IB-1', status: 'created', createdAtUtc: '2026-06-01T00:00:00Z' },
+    ]),
+    inventoryContext: computed(() => undefined),
+    inboundError: shallowRef(undefined),
+    inboundPending: shallowRef(false),
+    refreshInbound: vi.fn(),
+    completeInbound: wms.completeInbound,
+    completeInboundPending: shallowRef(false),
+    completeInboundError: shallowRef(undefined),
+  }),
+  useWmsOutboundOrders: () => ({
+    outboundOrders: computed(() => [
+      { outboundOrderId: 'ob-1', outboundOrderNo: 'OB-1', status: 'created', createdAtUtc: '2026-06-01T00:00:00Z' },
+    ]),
+    outboundError: shallowRef(undefined),
+    outboundPending: shallowRef(false),
+    refreshOutbound: vi.fn(),
+    completeOutbound: wms.completeOutbound,
+    completeOutboundPending: shallowRef(false),
+    completeOutboundError: shallowRef(undefined),
+  }),
+  useWmsWcsTasks: () => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
+    wcsTasks: computed(() => [
+      { wcsTaskId: 'w-1', externalTaskId: 'EXT-1', warehouseTaskId: 'WT-1', adapterType: 'docker', status: 'dispatched', attemptCount: 1 },
+    ]),
+    wcsError: shallowRef(undefined),
+    wcsPending: shallowRef(false),
+    refreshWcs: vi.fn(),
+    dispatchWcs: vi.fn(),
+    dispatchWcsPending: shallowRef(false),
+    dispatchWcsError: shallowRef(undefined),
+    failWcs: wms.failWcs,
+    failWcsPending: shallowRef(false),
+    failWcsError: shallowRef(undefined),
+    completeWcs: vi.fn(),
+    completeWcsPending: shallowRef(false),
+    completeWcsError: shallowRef(undefined),
+  }),
+}))
+
+const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
+
+describe('WMS operate actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    document.body.innerHTML = ''
+    wms.completeInbound.mockResolvedValue(undefined)
+    wms.completeOutbound.mockResolvedValue(undefined)
+    wms.failWcs.mockResolvedValue(undefined)
+  })
+
+  it('completes an inbound order after confirmation', async () => {
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成入库 IB-1"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('确认完成入库单 IB-1')
+    expect(wms.completeInbound).not.toHaveBeenCalled()
+
+    const confirm = [...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === '完成入库')
+    confirm?.click()
+    await flushPromises()
+
+    expect(wms.completeInbound).toHaveBeenCalledWith('ib-1')
+  })
+
+  it('requires a pack review number before completing outbound review', async () => {
+    const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
+    await flushPromises()
+
+    // Submit without a review number → validation blocks the mutation.
+    document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wms.completeOutbound).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('请输入复核单号。')
+
+    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
+    input.value = 'PR-1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(wms.completeOutbound).toHaveBeenCalledWith('ob-1', { packReviewNo: 'PR-1', passed: true })
+  })
+
+  it('renders per-row WCS action menus', async () => {
+    const wrapper = mount(WcsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.find('button[aria-label="WCS 任务操作 EXT-1"]').exists()).toBe(true)
+  })
+})

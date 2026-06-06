@@ -6,21 +6,142 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DropdownMenuItem,
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
   Input,
   PageHeader,
+  RowActions,
   SectionCard,
   SectionCards,
   StatusBadge,
   Toolbar,
+  toast,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { CheckCircle2Icon, RefreshCwIcon, SendIcon, XCircleIcon } from 'lucide-vue-next'
+import { computed, reactive, shallowRef } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: 'WCS 任务' } })
 
-const { filters, wcsTasks, wcsError, wcsPending, refreshWcs } = useWmsWcsTasks()
+const {
+  filters,
+  wcsTasks,
+  wcsError,
+  wcsPending,
+  refreshWcs,
+  dispatchWcs,
+  dispatchWcsPending,
+  dispatchWcsError,
+  failWcs,
+  failWcsPending,
+  failWcsError,
+  completeWcs,
+  completeWcsPending,
+  completeWcsError,
+} = useWmsWcsTasks()
 
-const errorMessage = computed(() => formatError(wcsError.value))
+const errorMessage = computed(() =>
+  formatError(wcsError.value ?? dispatchWcsError.value ?? failWcsError.value ?? completeWcsError.value),
+)
+
+type Action = 'dispatch' | 'fail' | 'complete'
+const openAction = shallowRef<Action | ''>('')
+const pendingTask = shallowRef<WcsRow>()
+const formError = shallowRef('')
+const dispatchForm = reactive({ adapterType: '', externalTaskId: '', payloadJson: '{}' })
+const failForm = reactive({ failureCode: '', failureMessage: '' })
+const completeForm = reactive({ completionPayloadJson: '{}' })
+
+const actionPending = computed(() => dispatchWcsPending.value || failWcsPending.value || completeWcsPending.value)
+
+function openDialog(action: Action, row: WcsRow) {
+  pendingTask.value = row
+  formError.value = ''
+  if (action === 'dispatch') {
+    dispatchForm.adapterType = row.adapterType ?? ''
+    dispatchForm.externalTaskId = row.externalTaskId ?? ''
+    dispatchForm.payloadJson = '{}'
+  } else if (action === 'fail') {
+    failForm.failureCode = ''
+    failForm.failureMessage = ''
+  } else {
+    completeForm.completionPayloadJson = '{}'
+  }
+  openAction.value = action
+}
+
+function invalidJson(value: string) {
+  try {
+    JSON.parse(value)
+    return false
+  } catch {
+    return true
+  }
+}
+
+async function submitDispatch() {
+  const id = pendingTask.value?.warehouseTaskId
+  if (!id) return
+  if (!dispatchForm.adapterType.trim() || !dispatchForm.externalTaskId.trim()) {
+    formError.value = '请填写适配器与外部任务号。'
+    return
+  }
+  if (invalidJson(dispatchForm.payloadJson)) {
+    formError.value = '派发载荷必须是合法 JSON。'
+    return
+  }
+  try {
+    await dispatchWcs(id, {
+      adapterType: dispatchForm.adapterType.trim(),
+      externalTaskId: dispatchForm.externalTaskId.trim(),
+      payloadJson: dispatchForm.payloadJson,
+    })
+    openAction.value = ''
+    toast.success('WCS 任务已派发')
+  } catch {
+    // 失败信息由页面错误区呈现。
+  }
+}
+
+async function submitFail() {
+  const id = pendingTask.value?.externalTaskId
+  if (!id) return
+  if (!failForm.failureCode.trim() || !failForm.failureMessage.trim()) {
+    formError.value = '请填写失败代码与说明。'
+    return
+  }
+  try {
+    await failWcs(id, { failureCode: failForm.failureCode.trim(), failureMessage: failForm.failureMessage.trim() })
+    openAction.value = ''
+    toast.success('已标记为失败')
+  } catch {
+    // 失败信息由页面错误区呈现。
+  }
+}
+
+async function submitComplete() {
+  const id = pendingTask.value?.externalTaskId
+  if (!id) return
+  if (invalidJson(completeForm.completionPayloadJson)) {
+    formError.value = '完成回执必须是合法 JSON。'
+    return
+  }
+  try {
+    await completeWcs(id, { completionPayloadJson: completeForm.completionPayloadJson })
+    openAction.value = ''
+    toast.success('WCS 任务已完成')
+  } catch {
+    // 失败信息由页面错误区呈现。
+  }
+}
 const failedCount = computed(() => wcsTasks.value.filter((t) => !!t.failedAtUtc || (t.status ?? '').toLowerCase() === 'failed').length)
 
 type WcsRow = BusinessConsoleWmsWcsTaskItem
@@ -31,7 +152,8 @@ const columns: DataTableColumn<WcsRow>[] = [
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'attemptCount', header: '尝试次数', align: 'end', width: 'w-24', accessor: (r) => r.attemptCount ?? 0 },
   { key: 'failure', header: '失败原因' },
-  { key: 'dispatchedAtUtc', header: '派发时间', align: 'end', width: 'w-44', accessor: (r) => formatDateTime(r.dispatchedAtUtc) },
+  { key: 'dispatchedAtUtc', header: '派发时间', accessor: (r) => formatDateTime(r.dispatchedAtUtc) },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
 function rowKey(row: WcsRow) {
@@ -87,6 +209,97 @@ function formatError(error: unknown) {
         </div>
         <span v-else class="text-muted-foreground">无</span>
       </template>
+      <template #cell-actions="{ row }">
+        <RowActions :label="`WCS 任务操作 ${row.externalTaskId ?? ''}`">
+          <DropdownMenuItem :disabled="!row.warehouseTaskId" @click="openDialog('dispatch', row)">
+            <SendIcon aria-hidden="true" />
+            重新派发
+          </DropdownMenuItem>
+          <DropdownMenuItem :disabled="!row.externalTaskId" @click="openDialog('fail', row)">
+            <XCircleIcon aria-hidden="true" />
+            标记失败
+          </DropdownMenuItem>
+          <DropdownMenuItem :disabled="!row.externalTaskId" @click="openDialog('complete', row)">
+            <CheckCircle2Icon aria-hidden="true" />
+            标记完成
+          </DropdownMenuItem>
+        </RowActions>
+      </template>
     </DataTable>
+
+    <Dialog :open="openAction === 'dispatch'" @update:open="(v) => { if (!v) openAction = '' }">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>重新派发 WCS 任务</DialogTitle>
+          <DialogDescription>将仓库任务派发到设备控制系统（WCS）适配器。</DialogDescription>
+        </DialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitDispatch">
+          <FieldGroup>
+            <Field>
+              <FieldLabel for="wcs-adapter">适配器</FieldLabel>
+              <Input id="wcs-adapter" v-model="dispatchForm.adapterType" autocomplete="off" />
+            </Field>
+            <Field>
+              <FieldLabel for="wcs-external">外部任务号</FieldLabel>
+              <Input id="wcs-external" v-model="dispatchForm.externalTaskId" autocomplete="off" />
+            </Field>
+            <Field>
+              <FieldLabel for="wcs-payload">派发载荷（JSON）</FieldLabel>
+              <Input id="wcs-payload" v-model="dispatchForm.payloadJson" class="font-mono" autocomplete="off" />
+            </Field>
+            <FieldError v-if="formError" :errors="[formError]" />
+          </FieldGroup>
+          <DialogFooter show-close-button>
+            <Button type="submit" :disabled="actionPending">派发</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog :open="openAction === 'fail'" @update:open="(v) => { if (!v) openAction = '' }">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>标记 WCS 任务失败</DialogTitle>
+          <DialogDescription>记录 {{ pendingTask?.externalTaskId ?? '' }} 的失败代码与说明，便于后续重试。</DialogDescription>
+        </DialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitFail">
+          <FieldGroup>
+            <Field>
+              <FieldLabel for="wcs-failure-code">失败代码</FieldLabel>
+              <Input id="wcs-failure-code" v-model="failForm.failureCode" autocomplete="off" />
+            </Field>
+            <Field>
+              <FieldLabel for="wcs-failure-message">失败说明</FieldLabel>
+              <Input id="wcs-failure-message" v-model="failForm.failureMessage" autocomplete="off" />
+            </Field>
+            <FieldError v-if="formError" :errors="[formError]" />
+          </FieldGroup>
+          <DialogFooter show-close-button>
+            <Button type="submit" variant="destructive" :disabled="actionPending">标记失败</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog :open="openAction === 'complete'" @update:open="(v) => { if (!v) openAction = '' }">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>标记 WCS 任务完成</DialogTitle>
+          <DialogDescription>提交 {{ pendingTask?.externalTaskId ?? '' }} 的完成回执。</DialogDescription>
+        </DialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitComplete">
+          <FieldGroup>
+            <Field>
+              <FieldLabel for="wcs-completion">完成回执（JSON）</FieldLabel>
+              <Input id="wcs-completion" v-model="completeForm.completionPayloadJson" class="font-mono" autocomplete="off" />
+            </Field>
+            <FieldError v-if="formError" :errors="[formError]" />
+          </FieldGroup>
+          <DialogFooter show-close-button>
+            <Button type="submit" :disabled="actionPending">完成</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   </BusinessLayout>
 </template>
