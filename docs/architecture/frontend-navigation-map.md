@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-06-03；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-06-06（FE-10 console 迁移完成、FE-11 仓储作业只读批次接入）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 
