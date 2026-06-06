@@ -60,7 +60,14 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
     },
   ],
   'planning': [{ items: [{ title: '需求与物料计划', to: { path: '/planning' } }] }],
-  'erp': [{ items: [{ title: '采购与供应', to: { path: '/erp' } }] }],
+  'erp': [
+    {
+      items: [
+        { title: '采购与供应', to: { path: '/erp' } },
+        { title: '销售订单', to: { path: '/erp/sales' } },
+      ],
+    },
+  ],
   'mes': [
     {
       label: '计划与工单',

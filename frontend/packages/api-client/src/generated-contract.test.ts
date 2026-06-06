@@ -42,6 +42,8 @@ import {
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
+  listBusinessConsoleErpSalesOrdersQueryOptions,
+  createBusinessConsoleErpSalesOrderMutationOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
   recordBusinessConsoleMesDefectMutationOptions,
@@ -149,5 +151,7 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsOutboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsWcsTasksQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleErpSalesOrdersQueryOptions).toBeTypeOf('function')
+    expect(createBusinessConsoleErpSalesOrderMutationOptions).toBeTypeOf('function')
   })
 })
