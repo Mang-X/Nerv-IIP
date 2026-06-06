@@ -64,7 +64,13 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
     {
         var response = await _wms.ListInboundOrdersAsync(
             _tokenProvider.BearerToken,
-            new BusinessConsoleWmsListRequest(request.OrganizationId, request.EnvironmentId),
+            new BusinessConsoleWmsListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Skip,
+                request.Take,
+                request.Status,
+                request.Keyword),
             cancellationToken);
         var inventoryContext = await TryGetInventoryContextAsync(request, bearerToken, cancellationToken);
         return response with
@@ -551,6 +557,10 @@ public sealed class BusinessConsoleWmsInboundOrderListRequestValidator
         RuleFor(x => x.QualityStatus).MaximumLength(50);
         RuleFor(x => x.OwnerType).MaximumLength(50);
         RuleFor(x => x.OwnerId).MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Keyword).MaximumLength(150);
     }
 }
 
@@ -714,6 +724,10 @@ public sealed class BusinessConsoleWmsListRequestValidator : Validator<BusinessC
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Keyword).MaximumLength(150);
     }
 }
 
@@ -725,5 +739,9 @@ public sealed class BusinessConsoleWmsWcsTaskListRequestValidator : Validator<Bu
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ExternalTaskId).MaximumLength(150);
         RuleFor(x => x.WarehouseTaskId).MaximumLength(150);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Keyword).MaximumLength(150);
     }
 }

@@ -59,13 +59,23 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(shell.props('title')).toBe('Nerv-IIP 业务控制台')
     const domains = shell.props('topDomains') as Domain[]
     expect(domains.map((d) => d.id)).toEqual([
-      'workbench', 'master-data', 'engineering', 'planning', 'mes', 'quality', 'inventory', 'erp', 'equipment',
+      'workbench', 'master-data', 'engineering', 'planning', 'mes', 'quality', 'inventory', 'wms', 'erp', 'equipment',
     ])
     // Current domain resolved from the route, with its domain-local side nav.
     expect(shell.props('currentDomainId')).toBe('inventory')
     const sideNav = shell.props('sideNav') as SideGroup[]
     const sideTitles = sideNav.flatMap((g) => g.items.map((i) => i.title))
     expect(sideTitles).toEqual(['库存可用量', '库存移动', '库存盘点'])
+  })
+
+  it('resolves WMS routes to the 仓储作业 domain', () => {
+    routeState.path = '/wms'
+    const wrapper = mountLayout()
+    const shell = wrapper.getComponent(AppShellTStub)
+
+    expect(shell.props('currentDomainId')).toBe('wms')
+    const sideNav = shell.props('sideNav') as SideGroup[]
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收发货与 WCS'])
   })
 
   it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {

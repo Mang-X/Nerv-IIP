@@ -33,6 +33,7 @@ export const BUSINESS_DOMAINS: NavDomain[] = [
   { id: 'mes', title: '制造执行', icon: FactoryIcon, to: { path: '/mes' } },
   { id: 'quality', title: '质量管理', icon: ClipboardCheckIcon, to: { path: '/quality/inspections' } },
   { id: 'inventory', title: '库存管理', icon: PackageSearchIcon, to: { path: '/inventory/availability' } },
+  { id: 'wms', title: '仓储作业', icon: PackageSearchIcon, to: { path: '/wms' } },
   { id: 'erp', title: '经营管理', icon: ReceiptTextIcon, to: { path: '/erp' } },
   { id: 'equipment', title: '设备监控', icon: ActivityIcon, to: { path: '/equipment' } },
 ]
@@ -120,6 +121,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       ],
     },
   ],
+  'wms': [{ items: [{ title: '收发货与 WCS', to: { path: '/wms' } }] }],
   'equipment': [
     {
       items: [
@@ -147,6 +149,7 @@ export function resolveDomainId(path: string): string {
   if (isUnder(path, '/mes')) return 'mes'
   if (isUnder(path, '/quality')) return 'quality'
   if (isUnder(path, '/inventory')) return 'inventory'
+  if (isUnder(path, '/wms')) return 'wms'
   if (isUnder(path, '/equipment')) return 'equipment'
   return 'workbench'
 }
