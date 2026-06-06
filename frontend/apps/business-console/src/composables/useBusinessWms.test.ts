@@ -25,6 +25,13 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleWmsWcsTasks' }],
     query: vi.fn(),
   })),
+  completeBusinessConsoleWmsInboundOrderMutationOptions: vi.fn(() => ({})),
+  completeBusinessConsoleWmsOutboundOrderMutationOptions: vi.fn(() => ({})),
+  completeBusinessConsoleWmsWcsTaskMutationOptions: vi.fn(() => ({})),
+  createBusinessConsoleWmsInboundOrderMutationOptions: vi.fn(() => ({})),
+  createBusinessConsoleWmsOutboundOrderMutationOptions: vi.fn(() => ({})),
+  dispatchBusinessConsoleWmsWcsTaskMutationOptions: vi.fn(() => ({})),
+  failBusinessConsoleWmsWcsTaskMutationOptions: vi.fn(() => ({})),
 }))
 
 vi.mock('@pinia/colada', () => ({
@@ -40,6 +47,11 @@ vi.mock('@pinia/colada', () => ({
       refetch: vi.fn(),
     }
   }),
+  useMutation: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    isLoading: shallowRef(false),
+    error: shallowRef(),
+  })),
 }))
 
 describe('business WMS composables', () => {

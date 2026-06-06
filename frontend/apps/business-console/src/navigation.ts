@@ -34,7 +34,7 @@ export const BUSINESS_DOMAINS: NavDomain[] = [
   { id: 'mes', title: '制造执行', icon: FactoryIcon, to: { path: '/mes' } },
   { id: 'quality', title: '质量管理', icon: ClipboardCheckIcon, to: { path: '/quality/inspections' } },
   { id: 'inventory', title: '库存管理', icon: PackageSearchIcon, to: { path: '/inventory/availability' } },
-  { id: 'wms', title: '仓储作业', icon: WarehouseIcon, to: { path: '/wms' } },
+  { id: 'wms', title: '仓储作业', icon: WarehouseIcon, to: { path: '/wms/inbound' } },
   { id: 'erp', title: '经营管理', icon: ReceiptTextIcon, to: { path: '/erp' } },
   { id: 'equipment', title: '设备监控', icon: ActivityIcon, to: { path: '/equipment' } },
 ]
@@ -122,7 +122,15 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       ],
     },
   ],
-  'wms': [{ items: [{ title: '收发货与 WCS', to: { path: '/wms' } }] }],
+  'wms': [
+    {
+      items: [
+        { title: '收货入库', to: { path: '/wms/inbound' } },
+        { title: '出库发货', to: { path: '/wms/outbound' } },
+        { title: 'WCS 任务', to: { path: '/wms/wcs' } },
+      ],
+    },
+  ],
   'equipment': [
     {
       items: [

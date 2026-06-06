@@ -14,6 +14,7 @@ const STATUS_LABELS: Record<string, string> = {
   conditionalrelease: '条件放行',
   created: '已创建',
   disabled: '停用',
+  dispatched: '已派发',
   failed: '失败',
   held: '暂停',
   inprogress: '执行中',
@@ -39,7 +40,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const TONE_BY_STATUS: Record<StatusTone, string[]> = {
   success: ['ready', 'completed', 'closed', 'passed', 'available', 'active', 'approved'],
-  info: ['running', 'inprogress', 'in-progress', 'started', 'manual', 'released', 'issued', 'scheduled'],
+  info: ['running', 'inprogress', 'in-progress', 'started', 'manual', 'released', 'issued', 'scheduled', 'dispatched'],
   danger: ['blocked', 'failed', 'rejected', 'unavailable', 'cancelled', 'disabled'],
   warning: [
     'pending',
