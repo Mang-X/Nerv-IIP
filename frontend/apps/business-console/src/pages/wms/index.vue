@@ -158,7 +158,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="仓储作业" :breadcrumbs="[{ label: '供应链执行' }]" :count="`${inboundOrdersTotal + outboundOrdersTotal + wcsTasksTotal} 条仓储记录`">
+    <PageHeader title="仓储作业" :breadcrumbs="[{ label: '供应链执行' }]" :count="`入库 ${inboundOrdersTotal} / 出库 ${outboundOrdersTotal} / WCS ${wcsTasksTotal}`">
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="pageBusy" @click="refreshAll">
           <RefreshCwIcon aria-hidden="true" />

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
@@ -29,7 +30,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
-        if (Enum.TryParse<InboundOrderStatus>(request.Status, true, out var status))
+        if (WmsListQueryFilters.TryParseStatus<InboundOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
         }
@@ -40,8 +41,8 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
-            var keyword = request.Keyword.Trim();
-            query = query.Where(x => x.InboundOrderNo.Contains(keyword));
+            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
+            query = query.Where(x => x.InboundOrderNo.ToUpper().Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -79,7 +80,7 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
-        if (Enum.TryParse<OutboundOrderStatus>(request.Status, true, out var status))
+        if (WmsListQueryFilters.TryParseStatus<OutboundOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
         }
@@ -90,8 +91,8 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
-            var keyword = request.Keyword.Trim();
-            query = query.Where(x => x.OutboundOrderNo.Contains(keyword));
+            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
+            query = query.Where(x => x.OutboundOrderNo.ToUpper().Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -154,7 +155,7 @@ public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
             query = query.Where(x => x.WarehouseTaskId == request.WarehouseTaskId);
         }
 
-        if (Enum.TryParse<WcsTaskStatus>(request.Status, true, out var status))
+        if (WmsListQueryFilters.TryParseStatus<WcsTaskStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
         }
@@ -174,8 +175,8 @@ public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
-            var keyword = request.Keyword.Trim();
-            query = query.Where(x => x.ExternalTaskId.Contains(keyword));
+            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
+            query = query.Where(x => x.ExternalTaskId.ToUpper().Contains(keyword));
         }
 
         var skip = Math.Max(0, request.Skip);
@@ -202,5 +203,26 @@ public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
                 x.CompletedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new ListWcsTasksResponse(items, total);
+    }
+}
+
+internal static class WmsListQueryFilters
+{
+    public static bool TryParseStatus<TStatus>(string? value, out TStatus status)
+        where TStatus : struct, Enum
+    {
+        status = default;
+        var trimmed = value?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed) || int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+        {
+            return false;
+        }
+
+        return Enum.TryParse(trimmed, true, out status) && Enum.IsDefined(status);
+    }
+
+    public static string NormalizeKeyword(string? value)
+    {
+        return value?.Trim().ToUpperInvariant() ?? string.Empty;
     }
 }

@@ -191,12 +191,12 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListInboundOrdersQueryHandler(dbContext).Handle(
-            new ListInboundOrdersQuery("org-001", "env-dev", 1, 1, "Open", "PAGE"),
+            new ListInboundOrdersQuery("org-001", "env-dev", 1, 1, "Open", "page"),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
         var item = Assert.Single(result.Items);
-        Assert.StartsWith("IN-PAGE-", item.InboundOrderNo, StringComparison.Ordinal);
+        Assert.Equal("IN-PAGE-001", item.InboundOrderNo);
         Assert.Equal("Open", item.Status);
     }
 
@@ -214,12 +214,12 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
-            new ListOutboundOrdersQuery("org-001", "env-dev", 1, 1, "Open", "PAGE"),
+            new ListOutboundOrdersQuery("org-001", "env-dev", 1, 1, "Open", "page"),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
         var item = Assert.Single(result.Items);
-        Assert.StartsWith("OUT-PAGE-", item.OutboundOrderNo, StringComparison.Ordinal);
+        Assert.Equal("OUT-PAGE-001", item.OutboundOrderNo);
         Assert.Equal("Open", item.Status);
     }
 
@@ -243,14 +243,51 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListWcsTasksQueryHandler(dbContext).Handle(
-            new ListWcsTasksQuery("org-001", "env-dev", null, null, 1, 1, "Failed", true, "PAGE"),
+            new ListWcsTasksQuery("org-001", "env-dev", null, null, 1, 1, "Failed", true, "page"),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
         var item = Assert.Single(result.Items);
-        Assert.StartsWith("EXT-PAGE-", item.ExternalTaskId, StringComparison.Ordinal);
+        Assert.Equal("EXT-PAGE-001", item.ExternalTaskId);
         Assert.Equal("Failed", item.Status);
         Assert.NotNull(item.FailedAtUtc);
+    }
+
+    [Fact]
+    public async Task Wms_list_queries_reject_numeric_status_filters()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var inboundOrder = CreateInboundOrder("IN-NUMERIC-001");
+        var outboundOrder = CreateOutboundOrder("OUT-NUMERIC-001");
+        var warehouseTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-NUMERIC-001", "IN-NUMERIC-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "STAGE-01", 3m);
+        dbContext.InboundOrders.Add(inboundOrder);
+        dbContext.OutboundOrders.Add(outboundOrder);
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var wcsTask = WcsTask.Dispatch("org-001", "env-dev", warehouseTask.Id, "agv", "EXT-NUMERIC-001", """{"step":1}""");
+        wcsTask.Fail("PLC_TIMEOUT", "PLC timeout");
+        dbContext.WcsTasks.Add(wcsTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var inboundResult = await new ListInboundOrdersQueryHandler(dbContext).Handle(
+            new ListInboundOrdersQuery("org-001", "env-dev", 0, 100, "0", null),
+            CancellationToken.None);
+        var outboundResult = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
+            new ListOutboundOrdersQuery("org-001", "env-dev", 0, 100, "0", null),
+            CancellationToken.None);
+        var wcsResult = await new ListWcsTasksQueryHandler(dbContext).Handle(
+            new ListWcsTasksQuery("org-001", "env-dev", null, null, 0, 100, "2", null, null),
+            CancellationToken.None);
+
+        Assert.Equal(0, inboundResult.Total);
+        Assert.Empty(inboundResult.Items);
+        Assert.Equal(0, outboundResult.Total);
+        Assert.Empty(outboundResult.Items);
+        Assert.Equal(0, wcsResult.Total);
+        Assert.Empty(wcsResult.Items);
     }
 
     public static IEnumerable<object[]> EndpointTypes()
