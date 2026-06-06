@@ -110,6 +110,7 @@ async function handleMarkAllRead() {
             :mark-read-pending="markReadPending"
             :messages="unreadMessages"
             :pending="messagesPending"
+            section-id="unread"
             show-mark-read
             title="未读消息"
             @mark-read="handleMarkRead"
@@ -118,6 +119,7 @@ async function handleMarkAllRead() {
             empty-text="暂无已读通知。"
             :messages="readMessages"
             :pending="messagesPending"
+            section-id="read"
             title="已读消息"
           />
         </div>

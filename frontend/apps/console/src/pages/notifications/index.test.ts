@@ -115,6 +115,9 @@ describe('Notifications page', () => {
     expect(wrapper.text()).toContain('Deployment complete')
     expect(wrapper.text()).toContain('acknowledge')
     expect(wrapper.text()).toContain('node: node-a')
+    // 两个消息分区必须有稳定且唯一的标题 id（中文标题不能塌成同一个 id）。
+    expect(wrapper.find('#notification-unread-title').exists()).toBe(true)
+    expect(wrapper.find('#notification-read-title').exists()).toBe(true)
   })
 
   it('calls mark read and batch read actions', async () => {

@@ -13,6 +13,13 @@ import { useIamUsers } from '@/composables/useIamAdmin'
 import { useHasPermission } from '@/composables/usePermissions'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   DataTable,
   DataTablePagination,
@@ -68,7 +75,9 @@ const canManageUsers = useHasPermission('iam.users.manage')
 const createDialogOpen = shallowRef(false)
 const editDialogOpen = shallowRef(false)
 const resetPasswordDialogOpen = shallowRef(false)
+const disableDialogOpen = shallowRef(false)
 const selectedUser = shallowRef<ConsoleIamUserResponse>()
+const pendingDisableUser = shallowRef<ConsoleIamUserResponse>()
 
 const pageError = computed(
   () =>
@@ -170,12 +179,19 @@ async function handleUpdate(payload: Required<ConsoleUpdateIamUserRequest>) {
   toast.success('用户已更新')
 }
 
-async function handleDisable(user: ConsoleIamUserResponse) {
-  const userId = user.userId
+function openDisableDialog(user: ConsoleIamUserResponse) {
+  pendingDisableUser.value = user
+  disableDialogOpen.value = true
+}
+
+async function confirmDisable() {
+  const user = pendingDisableUser.value
+  const userId = user?.userId
   if (!userId) return
 
   const data: DisableUserData = { path: { userId } }
   await disableUser(data)
+  disableDialogOpen.value = false
   await refreshUsers()
   toast.success('用户已停用')
 }
@@ -263,7 +279,7 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
               variant="destructive"
               :aria-label="`停用用户 ${userLabel(row)}`"
               :disabled="!canManageUsers || row.enabled === false"
-              @click="handleDisable(row)"
+              @click="openDisableDialog(row)"
             >
               停用
             </Button>
@@ -280,6 +296,23 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         :user="selectedUser"
         @submit="handleResetPassword"
       />
+
+      <AlertDialog v-model:open="disableDialogOpen">
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>停用用户</AlertDialogTitle>
+            <AlertDialogDescription>
+              确认停用用户 {{ pendingDisableUser ? userLabel(pendingDisableUser) : '' }}？停用后该用户将无法登录控制台。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel :disabled="disableUserPending">取消</AlertDialogCancel>
+            <Button type="button" variant="destructive" :disabled="disableUserPending" @click="confirmDisable">
+              停用
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   </DefaultLayout>
 </template>

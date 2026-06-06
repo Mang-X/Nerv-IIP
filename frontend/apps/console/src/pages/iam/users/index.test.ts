@@ -76,6 +76,7 @@ function mountPage() {
 describe('IAM users page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    document.body.innerHTML = ''
     iamState.createUser.mockResolvedValue(undefined)
     iamState.disableUser.mockResolvedValue(undefined)
     iamState.refreshUsers.mockResolvedValue(undefined)
@@ -140,6 +141,26 @@ describe('IAM users page', () => {
     await flushPromises()
 
     expect(iamState.filters.pageIndex).toBe(2)
+  })
+
+  it('confirms before disabling a user', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="停用用户 admin"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('确认停用用户 admin')
+    expect(iamState.disableUser).not.toHaveBeenCalled()
+
+    const confirmButton = [...document.body.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === '停用',
+    )
+    confirmButton?.click()
+    await flushPromises()
+
+    expect(iamState.disableUser).toHaveBeenCalledWith({ path: { userId: 'user-admin' } })
+    expect(iamState.refreshUsers).toHaveBeenCalled()
   })
 
   it('refreshes users after resetting a password', async () => {

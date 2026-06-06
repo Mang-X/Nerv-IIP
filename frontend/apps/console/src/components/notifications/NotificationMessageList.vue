@@ -2,6 +2,7 @@
 import type { NotificationMessageResponse } from '@nerv-iip/api-client'
 import { Button, Skeleton, StatusBadge } from '@nerv-iip/ui'
 import { CheckIcon } from 'lucide-vue-next'
+import { computed } from 'vue'
 import {
   formatNotificationDate,
   formatResource,
@@ -18,25 +19,25 @@ const props = defineProps<{
   pending?: boolean
   showMarkRead?: boolean
   title: string
+  /** Stable, unique section key for the heading id / aria-labelledby (e.g. 'unread'). */
+  sectionId: string
 }>()
 
 const emit = defineEmits<{
   markRead: [messageId: string]
 }>()
 
+const titleId = computed(() => `notification-${props.sectionId}-title`)
+
 function rowKey(message: NotificationMessageResponse, index: number) {
   return message.messageId ?? `message:${index}`
-}
-
-function sectionTitleId(title: string) {
-  return `notification-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-title`
 }
 </script>
 
 <template>
-  <section class="overflow-hidden rounded-lg border bg-card" :aria-labelledby="sectionTitleId(props.title)">
+  <section class="overflow-hidden rounded-lg border bg-card" :aria-labelledby="titleId">
     <div class="flex items-center justify-between border-b px-4 py-3">
-      <h2 :id="sectionTitleId(props.title)" class="text-sm font-semibold">{{ props.title }}</h2>
+      <h2 :id="titleId" class="text-sm font-semibold">{{ props.title }}</h2>
       <span class="text-xs font-semibold text-muted-foreground">{{ props.messages.length }}</span>
     </div>
 
