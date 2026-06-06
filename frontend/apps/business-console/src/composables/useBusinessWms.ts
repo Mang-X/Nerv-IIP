@@ -2,11 +2,15 @@ import {
   completeBusinessConsoleWmsInboundOrderMutationOptions,
   completeBusinessConsoleWmsOutboundOrderMutationOptions,
   completeBusinessConsoleWmsWcsTaskMutationOptions,
+  createBusinessConsoleWmsInboundOrderMutationOptions,
+  createBusinessConsoleWmsOutboundOrderMutationOptions,
   dispatchBusinessConsoleWmsWcsTaskMutationOptions,
   failBusinessConsoleWmsWcsTaskMutationOptions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
+  type BusinessConsoleCreateWmsInboundOrderRequest,
+  type BusinessConsoleCreateWmsOutboundOrderRequest,
   type BusinessConsoleWmsInboundOrderItem,
   type BusinessConsoleWmsInventoryContext,
   type BusinessConsoleWmsOutboundOrderItem,
@@ -78,6 +82,12 @@ export function useWmsInboundOrders() {
       void query.refetch()
     },
   })
+  const createMutation = useMutation({
+    ...createBusinessConsoleWmsInboundOrderMutationOptions(),
+    onSuccess() {
+      void query.refetch()
+    },
+  })
 
   return {
     filters,
@@ -96,6 +106,10 @@ export function useWmsInboundOrders() {
       }),
     completeInboundPending: completeMutation.isLoading,
     completeInboundError: completeMutation.error,
+    createInbound: (body: BusinessConsoleCreateWmsInboundOrderRequest) =>
+      createMutation.mutateAsync({ body }),
+    createInboundPending: createMutation.isLoading,
+    createInboundError: createMutation.error,
   }
 }
 
@@ -108,6 +122,12 @@ export function useWmsOutboundOrders() {
 
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsOutboundOrderMutationOptions(),
+    onSuccess() {
+      void query.refetch()
+    },
+  })
+  const createMutation = useMutation({
+    ...createBusinessConsoleWmsOutboundOrderMutationOptions(),
     onSuccess() {
       void query.refetch()
     },
@@ -128,6 +148,10 @@ export function useWmsOutboundOrders() {
       }),
     completeOutboundPending: completeMutation.isLoading,
     completeOutboundError: completeMutation.error,
+    createOutbound: (body: BusinessConsoleCreateWmsOutboundOrderRequest) =>
+      createMutation.mutateAsync({ body }),
+    createOutboundPending: createMutation.isLoading,
+    createOutboundError: createMutation.error,
   }
 }
 

@@ -10,6 +10,8 @@ const wms = vi.hoisted(() => ({
   completeInbound: vi.fn(),
   completeOutbound: vi.fn(),
   failWcs: vi.fn(),
+  createInbound: vi.fn(),
+  createOutbound: vi.fn(),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -30,6 +32,9 @@ vi.mock('@/composables/useBusinessWms', () => ({
     completeInbound: wms.completeInbound,
     completeInboundPending: shallowRef(false),
     completeInboundError: shallowRef(undefined),
+    createInbound: wms.createInbound,
+    createInboundPending: shallowRef(false),
+    createInboundError: shallowRef(undefined),
   }),
   useWmsOutboundOrders: () => ({
     outboundOrders: computed(() => [
@@ -41,6 +46,9 @@ vi.mock('@/composables/useBusinessWms', () => ({
     completeOutbound: wms.completeOutbound,
     completeOutboundPending: shallowRef(false),
     completeOutboundError: shallowRef(undefined),
+    createOutbound: wms.createOutbound,
+    createOutboundPending: shallowRef(false),
+    createOutboundError: shallowRef(undefined),
   }),
   useWmsWcsTasks: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
@@ -71,7 +79,15 @@ describe('WMS operate actions', () => {
     wms.completeInbound.mockResolvedValue(undefined)
     wms.completeOutbound.mockResolvedValue(undefined)
     wms.failWcs.mockResolvedValue(undefined)
+    wms.createInbound.mockResolvedValue(undefined)
+    wms.createOutbound.mockResolvedValue(undefined)
   })
+
+  function setInput(selector: string, value: string) {
+    const el = document.body.querySelector<HTMLInputElement>(selector)!
+    el.value = value
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
 
   it('completes an inbound order after confirmation', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
@@ -111,6 +127,52 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     expect(wms.completeOutbound).toHaveBeenCalledWith('ob-1', { packReviewNo: 'PR-1', passed: true })
+  })
+
+  it('creates an inbound order with a line item', async () => {
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建入库单'))!.trigger('click')
+    await flushPromises()
+
+    setInput('#wms-in-no', 'IB-NEW')
+    setInput('#wms-in-site', 'S1')
+    setInput('#wms-in-srctype', '采购收货')
+    setInput('#wms-in-srcid', 'PO-1')
+    setInput('[aria-label="第 1 行物料"]', 'SKU1')
+    setInput('[aria-label="第 1 行收货数量"]', '5')
+    await flushPromises()
+
+    document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(wms.createInbound).toHaveBeenCalledTimes(1)
+    const body = wms.createInbound.mock.calls[0][0]
+    expect(body).toMatchObject({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      inboundOrderNo: 'IB-NEW',
+      siteCode: 'S1',
+      sourceDocumentType: '采购收货',
+      sourceDocumentId: 'PO-1',
+    })
+    expect(body.lines).toHaveLength(1)
+    expect(body.lines[0]).toMatchObject({ lineNo: '1', skuCode: 'SKU1', receivedQuantity: 5 })
+  })
+
+  it('blocks inbound creation when header fields are missing', async () => {
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建入库单'))!.trigger('click')
+    await flushPromises()
+
+    document.body.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(wms.createInbound).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('请填写入库单号、来源类型、来源单据与工厂。')
   })
 
   it('renders per-row WCS action menus', async () => {
