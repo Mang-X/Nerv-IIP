@@ -308,7 +308,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 > **仓储作业（FE-11 #286，2026-06-06 校验）：** 后端 WMS facade（#264）已接入 `@nerv-iip/api-client` 稳定导出。入库/出库/WCS 三个列表（**已随 #329/#331 落地服务端分页 `skip/take/total` + 状态/关键字过滤**，前端用 `usePagedList` + `DataTablePagination`，无假分页）+ 入库页内嵌 Inventory 可用量上下文。写操作已接入：完成入库（幂等键）、出库复核（packReviewNo/passed）、WCS 派发/标记失败/完成（行内操作 + 确认/表单）、新建入库单 / 新建出库单（动态行明细表单）。拣货/上架/盘点为 create-only 端点且**无对应 list facade**，建成后无法回看，已在 #329 追加「补 list 端点」诉求，待后端补齐再做页面，暂不提供半截入口。
 
-> **经营管理 / 销售（FE-11 #286 / #267，2026-06-06 校验）：** ERP 销售 facade 已随本次接入 `@nerv-iip/api-client` curated barrel（此前只在 generated 层）。`/erp/sales` 销售订单页：列表（销售单号/客户/状态/金额 + 计数与总额）+ 新建销售订单（由已批准报价 `quotationNo` 转换，org/env 取 `businessContext`）。**ERP list facade 暂无 `skip/take/total` 与状态过滤**（销售页按完整列表渲染、不做假分页；采购页仍客户端切片），已提后端 **#332**。报价/RFQ 管理、财务 AP/AR/成本与采购页 block 化为后续批次；旧 `/erp` 采购页仍为 legacy block（待迁）。
+> **经营管理 / 销售（FE-11 #286 / #267，2026-06-06 校验）：** ERP 销售 facade 已随本次接入 `@nerv-iip/api-client` curated barrel（此前只在 generated 层）。`/erp/sales` 销售订单页：列表（销售单号/客户/状态/金额 + 计数与总额，**已随 #332/#334 落地服务端分页 `skip/take/total` + 状态/关键字过滤**，前端用 `usePagedList` + `DataTablePagination`，无假分页）+ 新建销售订单（由已批准报价 `quotationNo` 转换，org/env 取 `businessContext`）。采购页 `/erp` 也已随 #332 接服务端分页。报价/RFQ 管理、财务 AP/AR/成本页为后续批次；旧 `/erp` 采购页仍为 legacy block（待 block 化迁移）。
 
 裁剪规则：`permittedBy` 对未声明 `requiredPermissions` 的域/项默认放行（当前为宽松默认，匹配现有 route-ready 行为）；挂接具体 permission code 后按角色裁剪。导航隐藏只是 UX，Gateway per-request enforcement 仍是权威。命令搜索（⌘/Ctrl+K）入口已在顶部占位，面板实装在 FE-13。
 

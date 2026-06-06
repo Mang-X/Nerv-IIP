@@ -2,10 +2,12 @@
 import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useErpSalesOrders } from '@/composables/useBusinessErp'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  DataTablePagination,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -21,6 +23,7 @@ import {
   SectionCard,
   SectionCards,
   StatusBadge,
+  Toolbar,
   toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -29,14 +32,17 @@ import { computed, reactive, shallowRef } from 'vue'
 definePage({ meta: { requiresAuth: true, title: '销售订单' } })
 
 const {
+  filters,
   salesOrders,
   salesOrdersError,
   salesOrdersPending,
+  salesOrdersTotal,
   refreshSalesOrders,
   createSalesOrder,
   createSalesOrderPending,
   createSalesOrderError,
 } = useErpSalesOrders()
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status, () => filters.keyword] })
 
 const errorMessage = computed(() => formatError(salesOrdersError.value ?? createSalesOrderError.value))
 const totalAmount = computed(() => salesOrders.value.reduce((sum, o) => sum + (o.totalAmount ?? 0), 0))
@@ -92,7 +98,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="销售订单" :breadcrumbs="[{ label: '经营管理' }]" :count="`${salesOrders.length} 张销售订单`">
+    <PageHeader title="销售订单" :breadcrumbs="[{ label: '经营管理' }]" :count="`${salesOrdersTotal} 张销售订单`">
       <template #actions>
         <Button size="sm" type="button" variant="outline" :disabled="salesOrdersPending" @click="refreshSalesOrders">
           <RefreshCwIcon aria-hidden="true" />
@@ -106,10 +112,17 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="销售订单" :value="salesOrders.length" hint="当前返回总数" />
-      <SectionCard description="未完成" :value="openCount" hint="待发货/收款" />
-      <SectionCard description="订单总额" :value="formatAmount(totalAmount)" hint="本次返回合计" />
+      <SectionCard description="销售订单" :value="salesOrdersTotal" hint="后端返回总数" />
+      <SectionCard description="本页未完成" :value="openCount" hint="待发货/收款" />
+      <SectionCard description="本页金额" :value="formatAmount(totalAmount)" hint="当前页合计" />
     </SectionCards>
+
+    <Toolbar :show-search="false">
+      <template #filters>
+        <Input v-model="filters.keyword" class="h-9 w-44" placeholder="销售单号/客户（可选）" aria-label="关键字" />
+        <Input v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="销售订单状态" />
+      </template>
+    </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
@@ -123,6 +136,8 @@ function formatError(error: unknown) {
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-totalAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalAmount ?? 0) }}</span></template>
     </DataTable>
+
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="salesOrdersTotal" />
 
     <Dialog v-model:open="createOpen">
       <DialogContent>

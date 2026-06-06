@@ -413,13 +413,14 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/erp/procurement/purchase-orders?organizationId=org-001&environmentId=env-dev");
+        var response = await client.GetAsync("/api/business-console/v1/erp/procurement/purchase-orders?organizationId=org-001&environmentId=env-dev&status=Released&keyword=SUP-001&skip=5&take=20");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", erp.LastInternalToken);
-        Assert.Equal(new BusinessConsoleErpContextRequest("org-001", "env-dev"), erp.LastPurchaseOrderListRequest);
+        Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "Released", "SUP-001", 5, 20), erp.LastPurchaseOrderListRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("PO-001", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("purchaseOrderNo").GetString());
+        Assert.Equal(1, document.RootElement.GetProperty("data").GetProperty("total").GetInt32());
         Assert.False(document.RootElement.GetProperty("data").GetProperty("items")[0].TryGetProperty("supplierName", out _));
         Assert.Equal("partially-received", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("receiptReadiness").GetString());
     }
@@ -438,14 +439,41 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var sales = await client.GetAsync("/api/business-console/v1/erp/sales/sales-orders?organizationId=org-001&environmentId=env-dev");
+        var sales = await client.GetAsync("/api/business-console/v1/erp/sales/sales-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=CUST-001&skip=10&take=20");
         var payable = await client.GetAsync("/api/business-console/v1/erp/finance/payables/by-source?organizationId=org-001&environmentId=env-dev&sourceDocumentNo=PR-001");
 
         Assert.Equal(HttpStatusCode.OK, sales.StatusCode);
         Assert.Equal(HttpStatusCode.OK, payable.StatusCode);
         Assert.Equal("internal-test-token", erp.LastInternalToken);
-        Assert.Equal(new BusinessConsoleErpContextRequest("org-001", "env-dev"), erp.LastSalesOrderListRequest);
+        Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "released", "CUST-001", 10, 20), erp.LastSalesOrderListRequest);
         Assert.Equal(new BusinessConsoleErpSourceDocumentRequest("org-001", "env-dev", "PR-001"), erp.LastFinanceSourceDocumentRequest);
+    }
+
+    [Fact]
+    public async Task Erp_finance_lists_use_internal_service_token_and_pass_server_paging_filters()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var payables = await client.GetAsync("/api/business-console/v1/erp/finance/payables?organizationId=org-001&environmentId=env-dev&status=open&keyword=SUP-001&skip=2&take=15");
+        var receivables = await client.GetAsync("/api/business-console/v1/erp/finance/receivables?organizationId=org-001&environmentId=env-dev&status=open&keyword=CUST-001&skip=3&take=16");
+        var costs = await client.GetAsync("/api/business-console/v1/erp/finance/cost-candidates?organizationId=org-001&environmentId=env-dev&status=pending&keyword=production&skip=4&take=17");
+
+        Assert.Equal(HttpStatusCode.OK, payables.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, receivables.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, costs.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "open", "SUP-001", 2, 15), erp.LastPayableListRequest);
+        Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "open", "CUST-001", 3, 16), erp.LastReceivableListRequest);
+        Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "pending", "production", 4, 17), erp.LastCostCandidateListRequest);
     }
 
     [Fact]
@@ -3170,9 +3198,15 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public string? LastInternalToken { get; private set; }
 
-    public BusinessConsoleErpContextRequest? LastPurchaseOrderListRequest { get; private set; }
+    public BusinessConsoleErpListRequest? LastPurchaseOrderListRequest { get; private set; }
 
-    public BusinessConsoleErpContextRequest? LastSalesOrderListRequest { get; private set; }
+    public BusinessConsoleErpListRequest? LastSalesOrderListRequest { get; private set; }
+
+    public BusinessConsoleErpListRequest? LastPayableListRequest { get; private set; }
+
+    public BusinessConsoleErpListRequest? LastReceivableListRequest { get; private set; }
+
+    public BusinessConsoleErpListRequest? LastCostCandidateListRequest { get; private set; }
 
     public BusinessConsoleErpSourceDocumentRequest? LastFinanceSourceDocumentRequest { get; private set; }
 
@@ -3205,7 +3239,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleErpContextRequest request,
+        BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken)
     {
         PurchaseOrderListCallCount++;
@@ -3230,7 +3264,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                             20m,
                             DateOnly.Parse("2026-06-06")),
                     ]),
-            ]));
+            ],
+            1));
     }
 
     public Task<BusinessConsoleCreateErpPurchaseOrderResponse> CreatePurchaseOrderAsync(
@@ -3253,7 +3288,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public Task<BusinessConsoleErpSalesOrderListResponse> ListSalesOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleErpContextRequest request,
+        BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
@@ -3261,7 +3296,44 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         return Task.FromResult(new BusinessConsoleErpSalesOrderListResponse(
         [
             new BusinessConsoleErpSalesOrderItem("SO-001", "CUST-001", "Released", 1200m),
-        ]));
+        ],
+        1));
+    }
+
+    public Task<BusinessConsoleErpPayableListResponse> ListPayablesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPayableListRequest = request;
+        return Task.FromResult(new BusinessConsoleErpPayableListResponse(
+            [new BusinessConsoleErpPayableItem("AP-001", "RCV-001", "SUP-001", 100m, 80m, "CNY", "open", DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture))],
+            1));
+    }
+
+    public Task<BusinessConsoleErpReceivableListResponse> ListReceivablesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReceivableListRequest = request;
+        return Task.FromResult(new BusinessConsoleErpReceivableListResponse(
+            [new BusinessConsoleErpReceivableItem("AR-001", "DO-001", "CUST-001", 100m, 80m, "CNY", "open", DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture))],
+            1));
+    }
+
+    public Task<BusinessConsoleErpCostCandidateListResponse> ListCostCandidatesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCostCandidateListRequest = request;
+        return Task.FromResult(new BusinessConsoleErpCostCandidateListResponse(
+            [new BusinessConsoleErpCostCandidateItem("COST-001", "production-report", "RPT-001", 100m, "CNY", "pending", DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture))],
+            1));
     }
 
     public Task<BusinessConsoleOpenErpOpportunityResponse> OpenOpportunityAsync(

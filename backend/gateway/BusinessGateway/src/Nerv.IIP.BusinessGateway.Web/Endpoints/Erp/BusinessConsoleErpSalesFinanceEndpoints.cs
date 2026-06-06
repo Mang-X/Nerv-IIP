@@ -13,16 +13,16 @@ public sealed class ListBusinessConsoleErpSalesOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessErpClient erp,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpContextRequest, BusinessConsoleErpSalesOrderListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpSalesOrderListResponse>(
         auth,
         BusinessGatewayPermissions.ErpSalesRead)
 {
-    protected override string OrganizationId(BusinessConsoleErpContextRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleErpContextRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleErpSalesOrderListResponse> ForwardAsync(
-        BusinessConsoleErpContextRequest request,
+        BusinessConsoleErpListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.ListSalesOrdersAsync(tokenProvider.BearerToken, request, cancellationToken);
@@ -257,6 +257,72 @@ public sealed class GetBusinessConsoleErpFinanceSummaryEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/finance/payables")]
+[BusinessGatewayOperationId("listBusinessConsoleErpPayables")]
+public sealed class ListBusinessConsoleErpPayablesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpPayableListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpPayableListResponse> ForwardAsync(
+        BusinessConsoleErpListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListPayablesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/finance/receivables")]
+[BusinessGatewayOperationId("listBusinessConsoleErpReceivables")]
+public sealed class ListBusinessConsoleErpReceivablesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpReceivableListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpReceivableListResponse> ForwardAsync(
+        BusinessConsoleErpListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListReceivablesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/finance/cost-candidates")]
+[BusinessGatewayOperationId("listBusinessConsoleErpCostCandidates")]
+public sealed class ListBusinessConsoleErpCostCandidatesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpCostCandidateListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpCostCandidateListResponse> ForwardAsync(
+        BusinessConsoleErpListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListCostCandidatesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpGet("/api/business-console/v1/erp/finance/payables/by-source")]
 [BusinessGatewayOperationId("getBusinessConsoleErpPayableBySourceDocument")]
 public sealed class GetBusinessConsoleErpPayableBySourceDocumentEndpoint(
@@ -321,4 +387,3 @@ public sealed class GetBusinessConsoleErpCostCandidateBySourceDocumentEndpoint(
         CancellationToken cancellationToken) =>
         erp.GetCostCandidateBySourceDocumentAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
-

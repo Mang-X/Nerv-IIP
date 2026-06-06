@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, shallowRef } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 
 import SalesPage from './sales.vue'
 
@@ -13,11 +13,13 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 vi.mock('@/composables/useBusinessErp', () => ({
   useErpSalesOrders: () => ({
+    filters: reactive({ skip: 0, take: 10 }),
     salesOrders: computed(() => [
       { salesOrderNo: 'SO-1', customerCode: 'CUST-1', status: 'confirmed', totalAmount: 1234.5 },
     ]),
     salesOrdersError: shallowRef(undefined),
     salesOrdersPending: shallowRef(false),
+    salesOrdersTotal: computed(() => 1),
     refreshSalesOrders: vi.fn(),
     createSalesOrder: erp.createSalesOrder,
     createSalesOrderPending: shallowRef(false),
