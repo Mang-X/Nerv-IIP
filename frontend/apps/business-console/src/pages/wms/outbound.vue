@@ -2,11 +2,13 @@
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useWmsOutboundOrders } from '@/composables/useBusinessWms'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   Checkbox,
   DataTable,
+  DataTablePagination,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -22,6 +24,7 @@ import {
   SectionCard,
   SectionCards,
   StatusBadge,
+  Toolbar,
   toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
@@ -30,10 +33,12 @@ import { computed, reactive, shallowRef } from 'vue'
 definePage({ meta: { requiresAuth: true, title: '出库发货' } })
 
 const {
+  filters,
   outboundOrders,
-  outboundError,
-  outboundPending,
-  refreshOutbound,
+  outboundOrdersError,
+  outboundOrdersPending,
+  outboundOrdersTotal,
+  refreshOutboundOrders,
   completeOutbound,
   completeOutboundPending,
   completeOutboundError,
@@ -41,8 +46,9 @@ const {
   createOutboundPending,
   createOutboundError,
 } = useWmsOutboundOrders()
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
-const errorMessage = computed(() => formatError(outboundError.value ?? completeOutboundError.value ?? createOutboundError.value))
+const errorMessage = computed(() => formatError(outboundOrdersError.value ?? completeOutboundError.value ?? createOutboundError.value))
 
 const ORG = 'org-001'
 const ENV = 'env-dev'
@@ -178,7 +184,7 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="出库发货" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${outboundOrders.length} 张出库单`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="outboundPending" @click="refreshOutbound">
+        <Button size="sm" type="button" variant="outline" :disabled="outboundOrdersPending" @click="refreshOutboundOrders">
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </Button>
@@ -190,9 +196,15 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="2">
-      <SectionCard description="出库单" :value="outboundOrders.length" hint="当前返回总数" />
-      <SectionCard description="未完成" :value="openCount" hint="待拣货/复核/发运" />
+      <SectionCard description="出库单" :value="outboundOrdersTotal" hint="后端返回总数" />
+      <SectionCard description="本页未完成" :value="openCount" hint="待拣货/复核/发运" />
     </SectionCards>
+
+    <Toolbar :show-search="false">
+      <template #filters>
+        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="出库单状态" />
+      </template>
+    </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
@@ -200,7 +212,7 @@ function formatError(error: unknown) {
       :columns="columns"
       :rows="outboundOrders"
       :row-key="rowKey"
-      :loading="outboundPending"
+      :loading="outboundOrdersPending"
       empty-message="暂无出库单。发货作业产生出库单后会出现在这里。"
     >
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
@@ -217,6 +229,8 @@ function formatError(error: unknown) {
         </Button>
       </template>
     </DataTable>
+
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="outboundOrdersTotal" />
 
     <Dialog v-model:open="reviewOpen">
       <DialogContent>

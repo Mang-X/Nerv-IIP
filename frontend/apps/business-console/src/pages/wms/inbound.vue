@@ -2,6 +2,7 @@
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   AlertDialog,
@@ -13,6 +14,7 @@ import {
   AlertDialogTitle,
   Button,
   DataTable,
+  DataTablePagination,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -40,9 +42,10 @@ const {
   filters,
   inboundOrders,
   inventoryContext,
-  inboundError,
-  inboundPending,
-  refreshInbound,
+  inboundOrdersError,
+  inboundOrdersPending,
+  inboundOrdersTotal,
+  refreshInboundOrders,
   completeInbound,
   completeInboundPending,
   completeInboundError,
@@ -50,6 +53,9 @@ const {
   createInboundPending,
   createInboundError,
 } = useWmsInboundOrders()
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [() => filters.status, () => filters.skuCode, () => filters.siteCode, () => filters.locationCode, () => filters.lotNo],
+})
 
 const completeOpen = shallowRef(false)
 const pendingOrder = shallowRef<InboundRow>()
@@ -146,7 +152,7 @@ async function confirmComplete() {
   }
 }
 
-const errorMessage = computed(() => formatError(inboundError.value ?? completeInboundError.value ?? createInboundError.value))
+const errorMessage = computed(() => formatError(inboundOrdersError.value ?? completeInboundError.value ?? createInboundError.value))
 const onHandQuantity = computed(() => inventoryContext.value?.onHandQuantity ?? 0)
 const availableQuantity = computed(() => inventoryContext.value?.availableQuantity ?? 0)
 const reservedQuantity = computed(() => inventoryContext.value?.reservedQuantity ?? 0)
@@ -182,9 +188,9 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="收货入库" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${inboundOrders.length} 张入库单`">
+    <PageHeader title="收货入库" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${inboundOrdersTotal} 张入库单`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="inboundPending" @click="refreshInbound">
+        <Button size="sm" type="button" variant="outline" :disabled="inboundOrdersPending" @click="refreshInboundOrders">
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </Button>
@@ -211,6 +217,7 @@ function formatError(error: unknown) {
         <Input v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
         <Input v-model="filters.locationCode" class="h-9 w-24" placeholder="库位" aria-label="库位" />
         <Input v-model="filters.lotNo" class="h-9 w-28" placeholder="批次" aria-label="批次" />
+        <Input v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="入库单状态" />
       </template>
     </Toolbar>
 
@@ -220,7 +227,7 @@ function formatError(error: unknown) {
       :columns="columns"
       :rows="inboundOrders"
       :row-key="rowKey"
-      :loading="inboundPending"
+      :loading="inboundOrdersPending"
       empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"
     >
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
@@ -237,6 +244,8 @@ function formatError(error: unknown) {
         </Button>
       </template>
     </DataTable>
+
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="inboundOrdersTotal" />
 
     <AlertDialog v-model:open="completeOpen">
       <AlertDialogContent>

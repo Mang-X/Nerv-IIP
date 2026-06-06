@@ -21,14 +21,15 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsInboundOrders: () => ({
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     inboundOrders: computed(() => [
       { inboundOrderId: 'ib-1', inboundOrderNo: 'IB-1', status: 'created', createdAtUtc: '2026-06-01T00:00:00Z' },
     ]),
     inventoryContext: computed(() => undefined),
-    inboundError: shallowRef(undefined),
-    inboundPending: shallowRef(false),
-    refreshInbound: vi.fn(),
+    inboundOrdersError: shallowRef(undefined),
+    inboundOrdersPending: shallowRef(false),
+    inboundOrdersTotal: computed(() => 1),
+    refreshInboundOrders: vi.fn(),
     completeInbound: wms.completeInbound,
     completeInboundPending: shallowRef(false),
     completeInboundError: shallowRef(undefined),
@@ -37,12 +38,14 @@ vi.mock('@/composables/useBusinessWms', () => ({
     createInboundError: shallowRef(undefined),
   }),
   useWmsOutboundOrders: () => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     outboundOrders: computed(() => [
       { outboundOrderId: 'ob-1', outboundOrderNo: 'OB-1', status: 'created', createdAtUtc: '2026-06-01T00:00:00Z' },
     ]),
-    outboundError: shallowRef(undefined),
-    outboundPending: shallowRef(false),
-    refreshOutbound: vi.fn(),
+    outboundOrdersError: shallowRef(undefined),
+    outboundOrdersPending: shallowRef(false),
+    outboundOrdersTotal: computed(() => 1),
+    refreshOutboundOrders: vi.fn(),
     completeOutbound: wms.completeOutbound,
     completeOutboundPending: shallowRef(false),
     completeOutboundError: shallowRef(undefined),
@@ -51,13 +54,14 @@ vi.mock('@/composables/useBusinessWms', () => ({
     createOutboundError: shallowRef(undefined),
   }),
   useWmsWcsTasks: () => ({
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     wcsTasks: computed(() => [
       { wcsTaskId: 'w-1', externalTaskId: 'EXT-1', warehouseTaskId: 'WT-1', adapterType: 'docker', status: 'dispatched', attemptCount: 1 },
     ]),
-    wcsError: shallowRef(undefined),
-    wcsPending: shallowRef(false),
-    refreshWcs: vi.fn(),
+    wcsTasksError: shallowRef(undefined),
+    wcsTasksPending: shallowRef(false),
+    wcsTasksTotal: computed(() => 1),
+    refreshWcsTasks: vi.fn(),
     dispatchWcs: vi.fn(),
     dispatchWcsPending: shallowRef(false),
     dispatchWcsError: shallowRef(undefined),

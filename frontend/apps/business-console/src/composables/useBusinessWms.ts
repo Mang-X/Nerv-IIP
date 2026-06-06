@@ -12,36 +12,28 @@ import {
   type BusinessConsoleCreateWmsInboundOrderRequest,
   type BusinessConsoleCreateWmsOutboundOrderRequest,
   type BusinessConsoleWmsInboundOrderItem,
+  type BusinessConsoleWmsInboundOrderListEnvelope,
   type BusinessConsoleWmsInventoryContext,
   type BusinessConsoleWmsOutboundOrderItem,
+  type BusinessConsoleWmsOutboundOrderListEnvelope,
   type BusinessConsoleWmsWcsTaskItem,
+  type BusinessConsoleWmsWcsTaskListEnvelope,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 
-// WMS facade 当前的 list 端点只接受组织/环境（入库另含库存维度过滤），
-// 不返回 skip/take/total，因此前端按完整列表渲染，不做假分页（见 nav-map 与后端跟进 issue）。
-const ORG = 'org-001'
-const ENV = 'env-dev'
+const DEFAULT_TAKE = 100
 
-function optionalQuery<T>(key: string, value: T | undefined) {
-  return value === undefined || value === '' ? {} : { [key]: value }
-}
-
-function unwrap<T>(envelope: { success?: boolean; data?: T | null } | undefined): T | undefined {
-  return envelope?.success ? envelope.data ?? undefined : undefined
-}
-
-// 写操作需要幂等键以防重复提交；浏览器原生 UUID，测试环境（jsdom）亦可用。
-function makeIdempotencyKey(): string {
-  const c = globalThis.crypto
-  if (c && typeof c.randomUUID === 'function') return c.randomUUID()
-  return `idem-${Date.now()}-${Math.round(Math.random() * 1e9)}`
-}
-
-export interface WmsInboundFilters {
+export interface WmsListFilters {
   organizationId: string
   environmentId: string
+  skip: number
+  take: number
+  status?: string
+  keyword?: string
+}
+
+export interface WmsInboundListFilters extends WmsListFilters {
   skuCode?: string
   uomCode?: string
   siteCode?: string
@@ -53,14 +45,66 @@ export interface WmsInboundFilters {
   ownerId?: string
 }
 
-export function useWmsInboundOrders() {
-  const filters = reactive<WmsInboundFilters>({ organizationId: ORG, environmentId: ENV })
+export interface WmsWcsTaskListFilters extends WmsListFilters {
+  externalTaskId?: string
+  warehouseTaskId?: string
+  failed?: boolean
+}
 
-  const query = useQuery(() =>
+function defaultFilters<T extends WmsListFilters>(initial: Partial<T> = {}): T {
+  return reactive({
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
+    skip: 0,
+    take: DEFAULT_TAKE,
+    ...initial,
+  }) as T
+}
+
+function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
+  return value === undefined || value === '' ? {} : { [key]: value }
+}
+
+function baseQuery(filters: WmsListFilters) {
+  return {
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    skip: filters.skip,
+    take: filters.take,
+    ...optionalQuery('status', filters.status),
+    ...optionalQuery('keyword', filters.keyword),
+  }
+}
+
+function listItems<TItem>(envelope: { success?: boolean, data?: { items?: TItem[] } | null } | undefined) {
+  if (!envelope?.success) {
+    return []
+  }
+
+  return envelope.data?.items ?? []
+}
+
+function listTotal(envelope: { success?: boolean, data?: { total?: number } | null } | undefined) {
+  if (!envelope?.success) {
+    return 0
+  }
+
+  return envelope.data?.total ?? 0
+}
+
+// 写操作需要幂等键以防重复提交；浏览器原生 UUID，测试环境（jsdom）亦可用。
+function makeIdempotencyKey(): string {
+  const c = globalThis.crypto
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID()
+  return `idem-${Date.now()}-${Math.round(Math.random() * 1e9)}`
+}
+
+export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilters> = {}) {
+  const filters = defaultFilters<WmsInboundListFilters>(initialFilters)
+  const inboundOrdersQuery = useQuery(() =>
     listBusinessConsoleWmsInboundOrdersQueryOptions({
       query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
+        ...baseQuery(filters),
         ...optionalQuery('skuCode', filters.skuCode),
         ...optionalQuery('uomCode', filters.uomCode),
         ...optionalQuery('siteCode', filters.siteCode),
@@ -74,30 +118,32 @@ export function useWmsInboundOrders() {
     }),
   )
 
-  const data = computed(() => unwrap(query.data.value))
-
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsInboundOrderMutationOptions(),
     onSuccess() {
-      void query.refetch()
+      void inboundOrdersQuery.refetch()
     },
   })
   const createMutation = useMutation({
     ...createBusinessConsoleWmsInboundOrderMutationOptions(),
     onSuccess() {
-      void query.refetch()
+      void inboundOrdersQuery.refetch()
     },
   })
 
   return {
     filters,
-    inboundOrders: computed<BusinessConsoleWmsInboundOrderItem[]>(() => data.value?.items ?? []),
-    inventoryContext: computed<BusinessConsoleWmsInventoryContext | undefined>(
-      () => data.value?.inventoryContext ?? undefined,
+    inboundOrders: computed<BusinessConsoleWmsInboundOrderItem[]>(() =>
+      listItems<BusinessConsoleWmsInboundOrderItem>(inboundOrdersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined),
     ),
-    inboundError: query.error,
-    inboundPending: query.isLoading,
-    refreshInbound: query.refetch,
+    inventoryContext: computed<BusinessConsoleWmsInventoryContext | undefined>(() => {
+      const envelope = inboundOrdersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined
+      return envelope?.success ? envelope.data?.inventoryContext ?? undefined : undefined
+    }),
+    inboundOrdersError: inboundOrdersQuery.error,
+    inboundOrdersPending: inboundOrdersQuery.isLoading,
+    inboundOrdersTotal: computed(() => listTotal(inboundOrdersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined)),
+    refreshInboundOrders: inboundOrdersQuery.refetch,
     completeInbound: (inboundOrderId: string) =>
       completeMutation.mutateAsync({
         path: { inboundOrderId },
@@ -113,37 +159,40 @@ export function useWmsInboundOrders() {
   }
 }
 
-export function useWmsOutboundOrders() {
-  const query = useQuery(() =>
+export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {}) {
+  const filters = defaultFilters<WmsListFilters>(initialFilters)
+  const outboundOrdersQuery = useQuery(() =>
     listBusinessConsoleWmsOutboundOrdersQueryOptions({
-      query: { organizationId: ORG, environmentId: ENV },
+      query: baseQuery(filters),
     }),
   )
 
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsOutboundOrderMutationOptions(),
     onSuccess() {
-      void query.refetch()
+      void outboundOrdersQuery.refetch()
     },
   })
   const createMutation = useMutation({
     ...createBusinessConsoleWmsOutboundOrderMutationOptions(),
     onSuccess() {
-      void query.refetch()
+      void outboundOrdersQuery.refetch()
     },
   })
 
   return {
-    outboundOrders: computed<BusinessConsoleWmsOutboundOrderItem[]>(
-      () => unwrap(query.data.value)?.items ?? [],
+    filters,
+    outboundOrders: computed<BusinessConsoleWmsOutboundOrderItem[]>(() =>
+      listItems<BusinessConsoleWmsOutboundOrderItem>(outboundOrdersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined),
     ),
-    outboundError: query.error,
-    outboundPending: query.isLoading,
-    refreshOutbound: query.refetch,
+    outboundOrdersError: outboundOrdersQuery.error,
+    outboundOrdersPending: outboundOrdersQuery.isLoading,
+    outboundOrdersTotal: computed(() => listTotal(outboundOrdersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined)),
+    refreshOutboundOrders: outboundOrdersQuery.refetch,
     completeOutbound: (outboundOrderId: string, payload: { packReviewNo: string; passed: boolean }) =>
       completeMutation.mutateAsync({
         path: { outboundOrderId },
-        query: { organizationId: ORG, environmentId: ENV },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
         body: { ...payload, idempotencyKey: makeIdempotencyKey() },
       }),
     completeOutboundPending: completeMutation.isLoading,
@@ -155,23 +204,15 @@ export function useWmsOutboundOrders() {
   }
 }
 
-export interface WmsWcsFilters {
-  organizationId: string
-  environmentId: string
-  externalTaskId?: string
-  warehouseTaskId?: string
-}
-
-export function useWmsWcsTasks() {
-  const filters = reactive<WmsWcsFilters>({ organizationId: ORG, environmentId: ENV })
-
-  const query = useQuery(() =>
+export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = {}) {
+  const filters = defaultFilters<WmsWcsTaskListFilters>(initialFilters)
+  const wcsTasksQuery = useQuery(() =>
     listBusinessConsoleWmsWcsTasksQueryOptions({
       query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
+        ...baseQuery(filters),
         ...optionalQuery('externalTaskId', filters.externalTaskId),
         ...optionalQuery('warehouseTaskId', filters.warehouseTaskId),
+        ...optionalQuery('failed', filters.failed),
       },
     }),
   )
@@ -179,32 +220,34 @@ export function useWmsWcsTasks() {
   function withQuery() {
     return { organizationId: filters.organizationId, environmentId: filters.environmentId }
   }
-
   const dispatchMutation = useMutation({
     ...dispatchBusinessConsoleWmsWcsTaskMutationOptions(),
     onSuccess() {
-      void query.refetch()
+      void wcsTasksQuery.refetch()
     },
   })
   const failMutation = useMutation({
     ...failBusinessConsoleWmsWcsTaskMutationOptions(),
     onSuccess() {
-      void query.refetch()
+      void wcsTasksQuery.refetch()
     },
   })
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsWcsTaskMutationOptions(),
     onSuccess() {
-      void query.refetch()
+      void wcsTasksQuery.refetch()
     },
   })
 
   return {
     filters,
-    wcsTasks: computed<BusinessConsoleWmsWcsTaskItem[]>(() => unwrap(query.data.value)?.items ?? []),
-    wcsError: query.error,
-    wcsPending: query.isLoading,
-    refreshWcs: query.refetch,
+    wcsTasks: computed<BusinessConsoleWmsWcsTaskItem[]>(() =>
+      listItems<BusinessConsoleWmsWcsTaskItem>(wcsTasksQuery.data.value as BusinessConsoleWmsWcsTaskListEnvelope | undefined),
+    ),
+    wcsTasksError: wcsTasksQuery.error,
+    wcsTasksPending: wcsTasksQuery.isLoading,
+    wcsTasksTotal: computed(() => listTotal(wcsTasksQuery.data.value as BusinessConsoleWmsWcsTaskListEnvelope | undefined)),
+    refreshWcsTasks: wcsTasksQuery.refetch,
     dispatchWcs: (
       warehouseTaskId: string,
       payload: { adapterType: string; externalTaskId: string; payloadJson: string },

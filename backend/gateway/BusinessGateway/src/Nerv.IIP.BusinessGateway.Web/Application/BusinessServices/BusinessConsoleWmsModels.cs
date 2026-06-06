@@ -130,7 +130,11 @@ public sealed record BusinessConsoleCompleteWmsWcsTaskRequest(
 
 public sealed record BusinessConsoleWmsListRequest(
     string OrganizationId,
-    string EnvironmentId);
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null);
 
 public sealed record BusinessConsoleWmsInboundOrderListRequest(
     string OrganizationId,
@@ -143,10 +147,15 @@ public sealed record BusinessConsoleWmsInboundOrderListRequest(
     string? SerialNo,
     string? QualityStatus,
     string? OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null);
 
 public sealed record BusinessConsoleWmsInboundOrderListResponse(
     IReadOnlyCollection<BusinessConsoleWmsInboundOrderItem> Items,
+    int Total,
     BusinessConsoleWmsInventoryContext? InventoryContext,
     string SourceStatus);
 
@@ -157,7 +166,8 @@ public sealed record BusinessConsoleWmsInboundOrderItem(
     DateTime CreatedAtUtc);
 
 public sealed record BusinessConsoleWmsOutboundOrderListResponse(
-    IReadOnlyCollection<BusinessConsoleWmsOutboundOrderItem> Items);
+    IReadOnlyCollection<BusinessConsoleWmsOutboundOrderItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleWmsOutboundOrderItem(
     string OutboundOrderId,
@@ -169,10 +179,16 @@ public sealed record BusinessConsoleWmsWcsTaskListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? ExternalTaskId,
-    string? WarehouseTaskId);
+    string? WarehouseTaskId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    bool? Failed = null,
+    string? Keyword = null);
 
 public sealed record BusinessConsoleWmsWcsTaskListResponse(
-    IReadOnlyCollection<BusinessConsoleWmsWcsTaskItem> Items);
+    IReadOnlyCollection<BusinessConsoleWmsWcsTaskItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleWmsWcsTaskItem(
     string WcsTaskId,

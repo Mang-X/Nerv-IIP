@@ -2,10 +2,12 @@
 import type { BusinessConsoleWmsWcsTaskItem } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useWmsWcsTasks } from '@/composables/useBusinessWms'
+import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
+  DataTablePagination,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -34,9 +36,10 @@ definePage({ meta: { requiresAuth: true, title: 'WCS 任务' } })
 const {
   filters,
   wcsTasks,
-  wcsError,
-  wcsPending,
-  refreshWcs,
+  wcsTasksError,
+  wcsTasksPending,
+  wcsTasksTotal,
+  refreshWcsTasks,
   dispatchWcs,
   dispatchWcsPending,
   dispatchWcsError,
@@ -47,9 +50,12 @@ const {
   completeWcsPending,
   completeWcsError,
 } = useWmsWcsTasks()
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [() => filters.status, () => filters.externalTaskId, () => filters.warehouseTaskId],
+})
 
 const errorMessage = computed(() =>
-  formatError(wcsError.value ?? dispatchWcsError.value ?? failWcsError.value ?? completeWcsError.value),
+  formatError(wcsTasksError.value ?? dispatchWcsError.value ?? failWcsError.value ?? completeWcsError.value),
 )
 
 type Action = 'dispatch' | 'fail' | 'complete'
@@ -171,9 +177,9 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="WCS 任务" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${wcsTasks.length} 个任务`">
+    <PageHeader title="WCS 任务" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${wcsTasksTotal} 个任务`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="wcsPending" @click="refreshWcs">
+        <Button size="sm" type="button" variant="outline" :disabled="wcsTasksPending" @click="refreshWcsTasks">
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </Button>
@@ -181,14 +187,15 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="2">
-      <SectionCard description="WCS 任务" :value="wcsTasks.length" hint="当前返回总数" />
-      <SectionCard description="失败任务" :value="failedCount" hint="需人工跟进重试" />
+      <SectionCard description="WCS 任务" :value="wcsTasksTotal" hint="后端返回总数" />
+      <SectionCard description="本页失败任务" :value="failedCount" hint="需人工跟进重试" />
     </SectionCards>
 
     <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.externalTaskId" class="h-9 w-40" placeholder="外部任务号" aria-label="外部任务号" />
         <Input v-model="filters.warehouseTaskId" class="h-9 w-40" placeholder="仓库任务" aria-label="仓库任务" />
+        <Input v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="任务状态" />
       </template>
     </Toolbar>
 
@@ -198,7 +205,7 @@ function formatError(error: unknown) {
       :columns="columns"
       :rows="wcsTasks"
       :row-key="rowKey"
-      :loading="wcsPending"
+      :loading="wcsTasksPending"
       empty-message="暂无 WCS 任务。派发到设备控制系统的任务会出现在这里。"
     >
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
@@ -226,6 +233,8 @@ function formatError(error: unknown) {
         </RowActions>
       </template>
     </DataTable>
+
+    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="wcsTasksTotal" />
 
     <Dialog :open="openAction === 'dispatch'" @update:open="(v) => { if (!v) openAction = '' }">
       <DialogContent>

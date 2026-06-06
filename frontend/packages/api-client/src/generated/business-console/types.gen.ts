@@ -135,6 +135,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsInboundOrderL
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundOrderListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundOrderItem>;
+    total?: number;
     inventoryContext?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInventoryContext | null;
     sourceStatus?: string;
 };
@@ -247,6 +248,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsOutboundOrder
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderItem>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderItem = {
@@ -335,6 +337,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWcsTaskListRe
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWcsTaskListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWcsTaskItem>;
+    total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWcsTaskItem = {
@@ -3119,6 +3122,10 @@ export type ListBusinessConsoleWmsInboundOrdersData = {
         qualityStatus?: string | null;
         ownerType?: string | null;
         ownerId?: string | null;
+        skip?: number;
+        take?: number;
+        status?: string | null;
+        keyword?: string | null;
     };
     url: '/api/business-console/v1/wms/inbound-orders';
 };
@@ -3264,6 +3271,10 @@ export type ListBusinessConsoleWmsOutboundOrdersData = {
     query: {
         organizationId: string;
         environmentId: string;
+        skip?: number;
+        take?: number;
+        status?: string | null;
+        keyword?: string | null;
     };
     url: '/api/business-console/v1/wms/outbound-orders';
 };
@@ -3596,6 +3607,11 @@ export type ListBusinessConsoleWmsWcsTasksData = {
         environmentId: string;
         externalTaskId?: string | null;
         warehouseTaskId?: string | null;
+        skip?: number;
+        take?: number;
+        status?: string | null;
+        failed?: boolean | null;
+        keyword?: string | null;
     };
     url: '/api/business-console/v1/wms/wcs-tasks';
 };

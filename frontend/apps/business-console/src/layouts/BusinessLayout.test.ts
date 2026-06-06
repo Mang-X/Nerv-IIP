@@ -68,6 +68,16 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(sideTitles).toEqual(['库存可用量', '库存移动', '库存盘点'])
   })
 
+  it('resolves WMS routes to the 仓储作业 domain', () => {
+    routeState.path = '/wms/inbound'
+    const wrapper = mountLayout()
+    const shell = wrapper.getComponent(AppShellTStub)
+
+    expect(shell.props('currentDomainId')).toBe('wms')
+    const sideNav = shell.props('sideNav') as SideGroup[]
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收货入库', '出库发货', 'WCS 任务'])
+  })
+
   it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {
     routeState.path = '/mes/foundation'
     const wrapper = mountLayout()
