@@ -5,23 +5,40 @@ import type {
   ConsoleResetIamUserPasswordRequest,
   ConsoleUpdateIamUserRequest,
 } from '@nerv-iip/api-client'
-import IamPagination from '@/components/iam/IamPagination.vue'
-import IamListToolbar from '@/components/iam/IamListToolbar.vue'
-import IamPageHeader from '@/components/iam/IamPageHeader.vue'
+import type { DataTableColumn } from '@nerv-iip/ui'
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
 import UserEditDialog from '@/components/iam/UserEditDialog.vue'
 import UserResetPasswordDialog from '@/components/iam/UserResetPasswordDialog.vue'
-import UsersTable from '@/components/iam/UsersTable.vue'
 import { useIamUsers } from '@/composables/useIamAdmin'
 import { useHasPermission } from '@/composables/usePermissions'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import { Alert, AlertDescription, AlertTitle, toast } from '@nerv-iip/ui'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+  DataTable,
+  DataTablePagination,
+  PageHeader,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  StatusBadge,
+  Toolbar,
+  toast,
+} from '@nerv-iip/ui'
 import { computed, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
     requiresAuth: true,
-    title: 'IAM Users',
+    title: 'IAM 用户',
   },
 })
 
@@ -50,6 +67,7 @@ type CreateUserData = Parameters<typeof createUser>[0]
 type DisableUserData = Parameters<typeof disableUser>[0]
 type ResetUserPasswordData = Parameters<typeof resetUserPassword>[0]
 type UpdateUserData = Parameters<typeof updateUser>[0]
+type UserRow = ConsoleIamUserResponse
 
 const search = shallowRef('')
 const status = shallowRef<'' | 'enabled' | 'disabled'>('')
@@ -57,7 +75,9 @@ const canManageUsers = useHasPermission('iam.users.manage')
 const createDialogOpen = shallowRef(false)
 const editDialogOpen = shallowRef(false)
 const resetPasswordDialogOpen = shallowRef(false)
+const disableDialogOpen = shallowRef(false)
 const selectedUser = shallowRef<ConsoleIamUserResponse>()
+const pendingDisableUser = shallowRef<ConsoleIamUserResponse>()
 
 const pageError = computed(
   () =>
@@ -77,6 +97,37 @@ const tablePending = computed(
     resetUserPasswordPending.value,
 )
 
+// 服务端分页桥接：composable 用 1-based pageIndex + 数字 pageSize；
+// DataTablePagination 用 number page + string pageSize。
+const page = computed({
+  get: () => filters.pageIndex,
+  set: (value: number) => {
+    filters.pageIndex = value
+  },
+})
+const pageSize = computed({
+  get: () => String(filters.pageSize),
+  set: (value: string) => {
+    filters.pageSize = Number(value) || 20
+    filters.pageIndex = 1
+  },
+})
+
+const statusModel = computed({
+  get: () => status.value || 'all',
+  set: (value: string) => {
+    status.value = value === 'enabled' || value === 'disabled' ? value : ''
+  },
+})
+
+const columns: DataTableColumn<UserRow>[] = [
+  { key: 'loginName', header: '登录名', cellClass: 'font-medium', accessor: (r) => r.loginName || '—' },
+  { key: 'email', header: '邮箱', accessor: (r) => r.email || '—' },
+  { key: 'userId', header: '用户 ID', cellClass: 'font-mono text-xs text-muted-foreground', accessor: (r) => r.userId || '—' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-56' },
+]
+
 watch(
   [search, status],
   ([nextSearch, nextStatus]) => {
@@ -88,15 +139,13 @@ watch(
 )
 
 function statusToEnabledFilter(nextStatus: '' | 'enabled' | 'disabled') {
-  if (nextStatus === 'enabled') {
-    return true
-  }
-
-  if (nextStatus === 'disabled') {
-    return false
-  }
-
+  if (nextStatus === 'enabled') return true
+  if (nextStatus === 'disabled') return false
   return undefined
+}
+
+function userLabel(user: ConsoleIamUserResponse) {
+  return user.loginName || user.userId || '用户'
 }
 
 function openCreateDialog() {
@@ -114,102 +163,131 @@ function openResetPasswordDialog(user: ConsoleIamUserResponse) {
 }
 
 async function handleCreate(payload: Required<ConsoleCreateIamUserRequest>) {
-  const data: CreateUserData = {
-    body: payload,
-  }
-
+  const data: CreateUserData = { body: payload }
   await createUser(data)
   await refreshUsers()
-  toast.success('User created')
+  toast.success('用户已创建')
 }
 
 async function handleUpdate(payload: Required<ConsoleUpdateIamUserRequest>) {
   const userId = selectedUser.value?.userId
-  if (!userId) {
-    return
-  }
+  if (!userId) return
 
-  const data: UpdateUserData = {
-    body: payload,
-    path: { userId },
-  }
-
+  const data: UpdateUserData = { body: payload, path: { userId } }
   await updateUser(data)
   await refreshUsers()
-  toast.success('User updated')
+  toast.success('用户已更新')
 }
 
-async function handleDisable(user: ConsoleIamUserResponse) {
-  const userId = user.userId
-  if (!userId) {
-    return
-  }
+function openDisableDialog(user: ConsoleIamUserResponse) {
+  pendingDisableUser.value = user
+  disableDialogOpen.value = true
+}
 
-  const data: DisableUserData = {
-    path: { userId },
-  }
+async function confirmDisable() {
+  const user = pendingDisableUser.value
+  const userId = user?.userId
+  if (!userId) return
 
+  const data: DisableUserData = { path: { userId } }
   await disableUser(data)
+  disableDialogOpen.value = false
   await refreshUsers()
-  toast.success('User disabled')
+  toast.success('用户已停用')
 }
 
 async function handleResetPassword(payload: Required<ConsoleResetIamUserPasswordRequest>) {
   const userId = selectedUser.value?.userId
-  if (!userId) {
-    return
-  }
+  if (!userId) return
 
-  const data: ResetUserPasswordData = {
-    body: payload,
-    path: { userId },
-  }
-
+  const data: ResetUserPasswordData = { body: payload, path: { userId } }
   await resetUserPassword(data)
   await refreshUsers()
-  toast.success('Password reset')
+  toast.success('密码已重置')
 }
 </script>
 
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <IamPageHeader
-        title="Users"
-        description="Manage IAM users that can sign in to the Nerv IIP console."
-      />
+      <PageHeader title="用户" :breadcrumbs="[{ label: '身份与访问' }]" :count="`${totalCount} 个用户`">
+        <template #actions>
+          <Button type="button" :disabled="!canManageUsers" @click="openCreateDialog">新建用户</Button>
+        </template>
+      </PageHeader>
 
-      <IamListToolbar
-        v-model:search="search"
-        v-model:status="status"
-        action-label="Create user"
-        :action-disabled="!canManageUsers"
-        search-label="Search users"
-        search-placeholder="Search users"
-        show-status-filter
-        @action="openCreateDialog"
-      />
+      <Toolbar
+        :search="search"
+        search-label="搜索用户"
+        search-placeholder="搜索用户"
+        @update:search="search = $event"
+      >
+        <template #filters>
+          <Select v-model="statusModel">
+            <SelectTrigger class="h-9 w-36" aria-label="按状态筛选">
+              <SelectValue placeholder="状态" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部状态</SelectItem>
+              <SelectItem value="enabled">已启用</SelectItem>
+              <SelectItem value="disabled">已禁用</SelectItem>
+            </SelectContent>
+          </Select>
+        </template>
+      </Toolbar>
 
-      <Alert v-if="pageError" variant="destructive">
-        <AlertTitle>Unable to complete user request</AlertTitle>
-        <AlertDescription>{{ pageError.message }}</AlertDescription>
-      </Alert>
+      <p v-if="pageError" class="text-sm text-destructive" role="alert">{{ pageError.message }}</p>
 
-      <UsersTable
-        :can-manage="canManageUsers"
-        :pending="tablePending"
-        :users="users"
-        @disable="handleDisable"
-        @edit="openEditDialog"
-        @reset-password="openResetPasswordDialog"
-      />
+      <DataTable
+        :columns="columns"
+        :rows="users"
+        row-key="userId"
+        :loading="tablePending"
+        empty-message="没有符合当前条件的用户。"
+      >
+        <template #cell-status="{ row }">
+          <StatusBadge
+            :label="row.enabled === false ? '禁用' : '启用'"
+            :tone="row.enabled === false ? 'neutral' : 'success'"
+          />
+        </template>
+        <template #cell-actions="{ row }">
+          <div class="flex items-center justify-end gap-2">
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              :aria-label="`编辑用户 ${userLabel(row)}`"
+              :disabled="!canManageUsers"
+              @click="openEditDialog(row)"
+            >
+              编辑
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              :aria-label="`重置密码 ${userLabel(row)}`"
+              :disabled="!canManageUsers"
+              @click="openResetPasswordDialog(row)"
+            >
+              重置密码
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="destructive"
+              :aria-label="`停用用户 ${userLabel(row)}`"
+              :disabled="!canManageUsers || row.enabled === false"
+              @click="openDisableDialog(row)"
+            >
+              停用
+            </Button>
+          </div>
+        </template>
+      </DataTable>
 
-      <IamPagination
-        :page-index="filters.pageIndex"
-        :page-size="filters.pageSize"
-        :total-count="totalCount"
-        @page-change="filters.pageIndex = $event"
-      />
+      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="totalCount" />
 
       <UserCreateDialog v-model:open="createDialogOpen" @submit="handleCreate" />
       <UserEditDialog v-model:open="editDialogOpen" :user="selectedUser" @submit="handleUpdate" />
@@ -218,6 +296,23 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         :user="selectedUser"
         @submit="handleResetPassword"
       />
+
+      <AlertDialog v-model:open="disableDialogOpen">
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>停用用户</AlertDialogTitle>
+            <AlertDialogDescription>
+              确认停用用户 {{ pendingDisableUser ? userLabel(pendingDisableUser) : '' }}？停用后该用户将无法登录控制台。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel :disabled="disableUserPending">取消</AlertDialogCancel>
+            <Button type="button" variant="destructive" :disabled="disableUserPending" @click="confirmDisable">
+              停用
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   </DefaultLayout>
 </template>

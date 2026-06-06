@@ -48,24 +48,24 @@ function confirmRevoke() {
   <AlertDialog v-model:open="open">
     <AlertDialogContent>
       <AlertDialogHeader>
-        <AlertDialogTitle>Revoke session</AlertDialogTitle>
+        <AlertDialogTitle>吊销会话</AlertDialogTitle>
         <AlertDialogDescription>
-          Revoking {{ props.session?.sessionId }} ends the refresh path for this session.
+          吊销 {{ props.session?.sessionId }} 将终止该会话的刷新链路。
           <span v-if="props.session?.sessionId === props.currentSessionId"
-            >This is your current session and you may be signed out.</span
+            >这是你当前的会话，可能会被登出。</span
           >
         </AlertDialogDescription>
       </AlertDialogHeader>
 
       <AlertDialogFooter>
-        <AlertDialogCancel :disabled="props.pending"> Cancel </AlertDialogCancel>
+        <AlertDialogCancel :disabled="props.pending"> 取消 </AlertDialogCancel>
         <Button
           type="button"
           variant="destructive"
           :disabled="props.pending || !canConfirm"
           @click="confirmRevoke"
         >
-          {{ props.pending ? 'Revoking...' : 'Revoke session' }}
+          {{ props.pending ? '吊销中…' : '吊销会话' }}
         </Button>
       </AlertDialogFooter>
     </AlertDialogContent>

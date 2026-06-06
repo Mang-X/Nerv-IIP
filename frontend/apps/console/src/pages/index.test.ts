@@ -149,7 +149,7 @@ describe('Console index page', () => {
       global: {
         plugins: [
           pinia,
-          createConsoleI18n({ locale: 'en-US' }),
+          createConsoleI18n({ locale: 'zh-CN' }),
           [PiniaColada, { queryOptions: { gcTime: 300_000 } }],
         ],
         stubs: {
@@ -168,8 +168,8 @@ describe('Console index page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Demo API')
-    expect(wrapper.text()).toContain('running')
-    expect(wrapper.text()).toContain('Restart')
+    expect(wrapper.text()).toContain('运行中')
+    expect(wrapper.text()).toContain('重启')
     expect(listConsoleInstancesQueryOptions).toHaveBeenCalledWith({
       query: {
         organizationId: 'org-page-test',
@@ -185,8 +185,9 @@ describe('Console index page', () => {
 
     await flushPromises()
 
-    const destructiveBadges = wrapper.findAll('[data-variant="destructive"]')
-    expect(destructiveBadges.some((badge) => badge.text() === 'unhealthy')).toBe(true)
+    const dangerBadges = wrapper.findAll('[aria-label="状态：不健康"]')
+    expect(dangerBadges.length).toBeGreaterThan(0)
+    expect(dangerBadges.some((badge) => badge.classes().includes('text-destructive'))).toBe(true)
   })
 
   it('distinguishes detail load failure from the empty detail state and retries manually', async () => {
@@ -195,12 +196,12 @@ describe('Console index page', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Unable to load instance detail')
+    expect(wrapper.text()).toContain('无法加载实例详情')
     expect(wrapper.text()).toContain('detail fetch failed')
-    expect(wrapper.text()).not.toContain('Select an instance to inspect its runtime facts.')
+    expect(wrapper.text()).not.toContain('选择一个实例以查看其运行时信息。')
 
     apiState.failDetail = false
-    const retryButton = wrapper.findAll('button').find((button) => button.text() === 'Retry')
+    const retryButton = wrapper.findAll('button').find((button) => button.text() === '重试')
     expect(retryButton).toBeDefined()
 
     await retryButton!.trigger('click')
@@ -208,7 +209,7 @@ describe('Console index page', () => {
 
     expect(apiState.detailFetchCount).toBeGreaterThanOrEqual(2)
     expect(wrapper.text()).toContain('runtime.restart')
-    expect(wrapper.text()).not.toContain('Unable to load instance detail')
+    expect(wrapper.text()).not.toContain('无法加载实例详情')
   })
 
   it('keeps the detail error state visible when a manual retry also fails', async () => {
@@ -219,16 +220,16 @@ describe('Console index page', () => {
 
     expect(wrapper.text()).toContain('detail fetch failed')
 
-    const retryButton = wrapper.findAll('button').find((button) => button.text() === 'Retry')
+    const retryButton = wrapper.findAll('button').find((button) => button.text() === '重试')
     expect(retryButton).toBeDefined()
 
     await retryButton!.trigger('click')
     await flushPromises()
 
     expect(apiState.detailFetchCount).toBeGreaterThanOrEqual(2)
-    expect(wrapper.text()).toContain('Unable to load instance detail')
+    expect(wrapper.text()).toContain('无法加载实例详情')
     expect(wrapper.text()).toContain('detail retry still failed')
-    expect(wrapper.text()).not.toContain('Select an instance to inspect its runtime facts.')
+    expect(wrapper.text()).not.toContain('选择一个实例以查看其运行时信息。')
   })
 
   it('keeps restart success visible when list refetch fails after invalidation', async () => {
@@ -238,7 +239,7 @@ describe('Console index page', () => {
 
     await flushPromises()
 
-    const restartButton = wrapper.findAll('button').find((button) => button.text() === 'Restart')
+    const restartButton = wrapper.findAll('button').find((button) => button.text() === '重启')
     expect(restartButton).toBeDefined()
 
     await restartButton!.trigger('click')

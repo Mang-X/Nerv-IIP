@@ -48,9 +48,9 @@ function clearErrors() {
 
 function validate() {
   clearErrors()
-  errors.loginName = form.loginName.trim() ? '' : 'Login name is required.'
-  errors.email = form.email.trim() ? '' : 'Email is required.'
-  errors.password = form.password ? '' : 'Password is required.'
+  errors.loginName = form.loginName.trim() ? '' : '请输入登录名。'
+  errors.email = form.email.trim() ? '' : '请输入邮箱。'
+  errors.password = form.password ? '' : '请输入密码。'
 
   return !errors.loginName && !errors.email && !errors.password
 }
@@ -80,16 +80,16 @@ watch(open, (isOpen) => {
   <Dialog v-model:open="open">
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Create user</DialogTitle>
+        <DialogTitle>新建用户</DialogTitle>
         <DialogDescription>
-          Add a console user with a login name, email address, and initial password.
+          创建一个控制台用户，填写登录名、邮箱与初始密码。
         </DialogDescription>
       </DialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
           <Field>
-            <FieldLabel for="iam-create-login-name">Login name</FieldLabel>
+            <FieldLabel for="iam-create-login-name">登录名</FieldLabel>
             <Input
               id="iam-create-login-name"
               v-model="form.loginName"
@@ -100,7 +100,7 @@ watch(open, (isOpen) => {
           </Field>
 
           <Field>
-            <FieldLabel for="iam-create-email">Email</FieldLabel>
+            <FieldLabel for="iam-create-email">邮箱</FieldLabel>
             <Input
               id="iam-create-email"
               v-model="form.email"
@@ -112,7 +112,7 @@ watch(open, (isOpen) => {
           </Field>
 
           <Field>
-            <FieldLabel for="iam-create-password">Password</FieldLabel>
+            <FieldLabel for="iam-create-password">密码</FieldLabel>
             <Input
               id="iam-create-password"
               v-model="form.password"
@@ -126,7 +126,7 @@ watch(open, (isOpen) => {
 
         <DialogFooter show-close-button>
           <Button type="submit">
-            Create user
+            新建用户
           </Button>
         </DialogFooter>
       </form>

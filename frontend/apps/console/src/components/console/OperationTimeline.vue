@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Badge, Card, CardContent, CardHeader, CardTitle, Separator } from '@nerv-iip/ui'
 import type { OperationTaskResponse } from '@nerv-iip/api-client'
+import type { StatusTone } from '@nerv-iip/ui'
+import { Card, CardContent, CardHeader, CardTitle, Separator, StatusBadge } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -14,13 +15,31 @@ type OperationAttempt = NonNullable<OperationTaskResponse['attempts']>[number]
 const auditRecords = computed(() => props.operationTask?.auditRecords ?? [])
 const attempts = computed(() => props.operationTask?.attempts ?? [])
 
-function badgeVariant(status?: string | null) {
+const STATUS_LABELS: Record<string, string> = {
+  completed: '已完成',
+  success: '成功',
+  succeeded: '成功',
+  failed: '失败',
+  failure: '失败',
+  cancelled: '已取消',
+  canceled: '已取消',
+  pending: '待处理',
+  queued: '排队中',
+  running: '执行中',
+  loading: '加载中',
+  unknown: '未知',
+}
+
+function statusTone(status?: string | null): StatusTone {
   const s = status?.toLowerCase()
-  return s === 'failed' || s === 'cancelled' || s === 'canceled' || s === 'failure'
-    ? 'destructive'
-    : s === 'completed' || s === 'success'
-      ? 'success'
-      : 'secondary'
+  if (s === 'failed' || s === 'cancelled' || s === 'canceled' || s === 'failure') return 'danger'
+  if (s === 'completed' || s === 'success' || s === 'succeeded') return 'success'
+  return 'neutral'
+}
+
+function statusLabel(status?: string | null) {
+  if (!status) return props.pending ? '加载中' : '未知'
+  return STATUS_LABELS[status.toLowerCase()] ?? status
 }
 
 function attemptKey(attempt: OperationAttempt, index: number) {
@@ -37,14 +56,12 @@ function auditRecordKey(record: AuditRecord, index: number) {
     <CardHeader class="pb-3">
       <div class="flex items-center justify-between gap-4">
         <div class="flex flex-col gap-0.5">
-          <p class="text-xs font-bold uppercase tracking-wider text-primary">Operation</p>
+          <p class="text-xs font-bold uppercase tracking-wider text-primary">运维操作</p>
           <CardTitle id="operation-timeline-title" class="text-xl">
-            {{ operationTask?.operationCode ?? 'Task' }}
+            {{ operationTask?.operationCode ?? '任务' }}
           </CardTitle>
         </div>
-        <Badge :variant="badgeVariant(operationTask?.status)">
-          {{ operationTask?.status ?? (pending ? 'loading' : 'unknown') }}
-        </Badge>
+        <StatusBadge :label="statusLabel(operationTask?.status)" :tone="statusTone(operationTask?.status)" />
       </div>
     </CardHeader>
 
@@ -52,17 +69,17 @@ function auditRecordKey(record: AuditRecord, index: number) {
 
     <CardContent class="pt-4">
       <p v-if="pending && !operationTask" class="text-sm text-muted-foreground">
-        Loading operation task...
+        正在加载运维任务…
       </p>
 
       <template v-else-if="operationTask">
         <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4 m-0">
           <div
             v-for="[label, value] in [
-              ['Task ID', operationTask.operationTaskId ?? 'Unknown'],
-              ['Instance', operationTask.instanceKey ?? 'Unknown'],
-              ['Requested by', operationTask.requestedBy ?? 'Unknown'],
-              ['Requested at', operationTask.requestedAtUtc ?? 'Unknown'],
+              ['任务 ID', operationTask.operationTaskId ?? '未知'],
+              ['实例', operationTask.instanceKey ?? '未知'],
+              ['申请人', operationTask.requestedBy ?? '未知'],
+              ['申请时间', operationTask.requestedAtUtc ?? '未知'],
             ]"
             :key="label"
             class="flex flex-col gap-0.5 rounded-md border bg-muted/40 p-3"
@@ -75,7 +92,7 @@ function auditRecordKey(record: AuditRecord, index: number) {
         <Separator class="my-4" />
 
         <section aria-labelledby="attempts-title">
-          <h2 id="attempts-title" class="mb-3 text-base font-semibold">Attempts</h2>
+          <h2 id="attempts-title" class="mb-3 text-base font-semibold">执行尝试</h2>
           <ol v-if="attempts.length" class="flex flex-col gap-3 list-none m-0 p-0">
             <li
               v-for="(attempt, index) in attempts"
@@ -83,13 +100,11 @@ function auditRecordKey(record: AuditRecord, index: number) {
               class="flex flex-col gap-1 border-l-2 border-primary pl-3"
             >
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <strong class="text-sm">{{ attempt.attemptId ?? 'Attempt' }}</strong>
-                <Badge :variant="badgeVariant(attempt.status)">
-                  {{ attempt.status ?? 'unknown' }}
-                </Badge>
+                <strong class="text-sm">{{ attempt.attemptId ?? '尝试' }}</strong>
+                <StatusBadge :label="statusLabel(attempt.status)" :tone="statusTone(attempt.status)" />
               </div>
               <span class="text-xs text-muted-foreground break-anywhere">
-                {{ attempt.startedAtUtc ?? 'No start time' }}
+                {{ attempt.startedAtUtc ?? '无开始时间' }}
               </span>
               <span v-if="attempt.finishedAtUtc" class="text-xs text-muted-foreground break-anywhere">
                 {{ attempt.finishedAtUtc }}
@@ -99,13 +114,13 @@ function auditRecordKey(record: AuditRecord, index: number) {
               </span>
             </li>
           </ol>
-          <p v-else class="text-sm text-muted-foreground">No attempts reported yet.</p>
+          <p v-else class="text-sm text-muted-foreground">暂无执行尝试。</p>
         </section>
 
         <Separator class="my-4" />
 
         <section aria-labelledby="audit-title">
-          <h2 id="audit-title" class="mb-3 text-base font-semibold">Audit Records</h2>
+          <h2 id="audit-title" class="mb-3 text-base font-semibold">审计记录</h2>
           <ol v-if="auditRecords.length" class="flex flex-col gap-3 list-none m-0 p-0">
             <li
               v-for="(record, index) in auditRecords"
@@ -113,22 +128,22 @@ function auditRecordKey(record: AuditRecord, index: number) {
               class="flex flex-col gap-1 border-l-2 border-primary pl-3"
             >
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <strong class="text-sm">{{ record.action ?? 'Audit event' }}</strong>
-                <span class="text-sm">{{ record.actor ?? 'Unknown actor' }}</span>
+                <strong class="text-sm">{{ record.action ?? '审计事件' }}</strong>
+                <span class="text-sm">{{ record.actor ?? '未知操作者' }}</span>
               </div>
               <span class="text-xs text-muted-foreground break-anywhere">
-                {{ record.occurredAtUtc ?? 'No timestamp' }}
+                {{ record.occurredAtUtc ?? '无时间戳' }}
               </span>
               <span class="text-xs text-muted-foreground break-anywhere">
-                {{ record.correlationId ?? 'No correlation ID' }}
+                {{ record.correlationId ?? '无关联 ID' }}
               </span>
             </li>
           </ol>
-          <p v-else class="text-sm text-muted-foreground">No audit records reported yet.</p>
+          <p v-else class="text-sm text-muted-foreground">暂无审计记录。</p>
         </section>
       </template>
 
-      <p v-else class="text-sm text-muted-foreground">Operation task was not found.</p>
+      <p v-else class="text-sm text-muted-foreground">未找到该运维任务。</p>
     </CardContent>
   </Card>
 </template>

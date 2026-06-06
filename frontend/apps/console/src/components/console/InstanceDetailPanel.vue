@@ -1,15 +1,8 @@
 <script setup lang="ts">
-import {
-  Badge,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Separator,
-  Skeleton,
-} from '@nerv-iip/ui'
 import type { InstanceDetailResponse } from '@nerv-iip/api-client'
+import { Card, CardContent, CardHeader, CardTitle, Separator, Skeleton, StatusBadge } from '@nerv-iip/ui'
 import { computed } from 'vue'
+import { instanceStatusLabel, instanceTone } from './instanceStatus'
 
 const props = defineProps<{
   instance?: InstanceDetailResponse
@@ -19,15 +12,6 @@ const props = defineProps<{
 type Capability = NonNullable<InstanceDetailResponse['capabilities']>[number]
 
 const metadataEntries = computed(() => Object.entries(props.instance?.metadata ?? {}))
-
-function badgeVariant(status?: string | null) {
-  const s = status?.toLowerCase()
-  return s === 'failed' || s === 'unhealthy' || s === 'stopped' || s === 'cancelled' || s === 'canceled'
-    ? 'destructive'
-    : s === 'running' || s === 'healthy'
-      ? 'success'
-      : 'secondary'
-}
 
 function capabilityKey(capability: Capability, index: number) {
   const code = capability.capabilityCode ?? 'unknown'
@@ -41,9 +25,9 @@ function capabilityKey(capability: Capability, index: number) {
 <template>
   <Card class="min-w-0" aria-labelledby="detail-panel-title">
     <CardHeader class="pb-3">
-      <p class="text-xs font-bold uppercase tracking-wider text-primary">Selected</p>
+      <p class="text-xs font-bold uppercase tracking-wider text-primary">已选实例</p>
       <CardTitle id="detail-panel-title" class="text-lg">
-        {{ instance?.instanceName ?? instance?.instanceKey ?? 'Instance detail' }}
+        {{ instance?.instanceName ?? instance?.instanceKey ?? '实例详情' }}
       </CardTitle>
     </CardHeader>
 
@@ -59,43 +43,39 @@ function capabilityKey(capability: Capability, index: number) {
       <template v-else-if="instance">
         <dl class="grid gap-3">
           <div class="grid gap-0.5">
-            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Application</dt>
-            <dd class="break-anywhere text-sm">{{ instance.applicationName ?? instance.applicationKey ?? 'Unknown' }}</dd>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">应用</dt>
+            <dd class="break-anywhere text-sm">{{ instance.applicationName ?? instance.applicationKey ?? '未知' }}</dd>
           </div>
           <div class="grid gap-0.5">
-            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Node</dt>
-            <dd class="break-anywhere text-sm">{{ instance.nodeName ?? instance.nodeKey ?? 'Unassigned' }}</dd>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">节点</dt>
+            <dd class="break-anywhere text-sm">{{ instance.nodeName ?? instance.nodeKey ?? '未分配' }}</dd>
           </div>
           <div class="grid gap-0.5">
-            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Status</dt>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">状态</dt>
             <dd>
-              <Badge :variant="badgeVariant(instance.reportedStatus)">
-                {{ instance.reportedStatus ?? 'unknown' }}
-              </Badge>
+              <StatusBadge :label="instanceStatusLabel(instance.reportedStatus)" :tone="instanceTone(instance.reportedStatus)" />
             </dd>
           </div>
           <div class="grid gap-0.5">
-            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Health</dt>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">健康</dt>
             <dd>
-              <Badge :variant="badgeVariant(instance.healthStatus)">
-                {{ instance.healthStatus ?? 'unknown' }}
-              </Badge>
+              <StatusBadge :label="instanceStatusLabel(instance.healthStatus)" :tone="instanceTone(instance.healthStatus)" />
             </dd>
           </div>
           <div class="grid gap-0.5">
-            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Last heartbeat</dt>
-            <dd class="text-sm">{{ instance.lastHeartbeatAtUtc ?? 'Not reported' }}</dd>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">最近心跳</dt>
+            <dd class="text-sm">{{ instance.lastHeartbeatAtUtc ?? '未上报' }}</dd>
           </div>
           <div class="grid gap-0.5">
-            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Last state</dt>
-            <dd class="text-sm">{{ instance.lastStateObservedAtUtc ?? 'Not reported' }}</dd>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">最近状态</dt>
+            <dd class="text-sm">{{ instance.lastStateObservedAtUtc ?? '未上报' }}</dd>
           </div>
         </dl>
 
         <Separator class="my-4" />
 
         <section aria-labelledby="capabilities-title">
-          <h3 id="capabilities-title" class="mb-3 text-sm font-semibold">Capabilities</h3>
+          <h3 id="capabilities-title" class="mb-3 text-sm font-semibold">能力</h3>
           <ul v-if="instance.capabilities?.length" class="flex flex-col gap-2 p-0 list-none m-0">
             <li
               v-for="(capability, index) in instance.capabilities"
@@ -103,21 +83,21 @@ function capabilityKey(capability: Capability, index: number) {
               class="flex flex-col gap-0.5 rounded-md border bg-muted/40 p-3"
             >
               <span class="break-anywhere text-sm font-semibold">
-                {{ capability.capabilityCode ?? 'unknown' }}
+                {{ capability.capabilityCode ?? '未知' }}
               </span>
-              <span class="text-xs text-muted-foreground">{{ capability.category ?? 'uncategorized' }}</span>
+              <span class="text-xs text-muted-foreground">{{ capability.category ?? '未分类' }}</span>
               <span class="text-xs text-muted-foreground">
-                {{ capability.supportedOperations?.join(', ') ?? 'No operations' }}
+                {{ capability.supportedOperations?.join('、') ?? '无可用操作' }}
               </span>
             </li>
           </ul>
-          <p v-else class="text-sm text-muted-foreground">No capabilities reported.</p>
+          <p v-else class="text-sm text-muted-foreground">暂无能力上报。</p>
         </section>
 
         <Separator class="my-4" />
 
         <section aria-labelledby="metadata-title">
-          <h3 id="metadata-title" class="mb-3 text-sm font-semibold">Metadata</h3>
+          <h3 id="metadata-title" class="mb-3 text-sm font-semibold">元数据</h3>
           <dl v-if="metadataEntries.length" class="flex flex-col gap-2 m-0">
             <div
               v-for="[key, value] in metadataEntries"
@@ -128,12 +108,12 @@ function capabilityKey(capability: Capability, index: number) {
               <dd class="break-anywhere text-sm m-0">{{ value }}</dd>
             </div>
           </dl>
-          <p v-else class="text-sm text-muted-foreground">No metadata reported.</p>
+          <p v-else class="text-sm text-muted-foreground">暂无元数据。</p>
         </section>
       </template>
 
       <p v-else class="text-sm text-muted-foreground">
-        Select an instance to inspect its runtime facts.
+        选择一个实例以查看其运行时信息。
       </p>
     </CardContent>
   </Card>

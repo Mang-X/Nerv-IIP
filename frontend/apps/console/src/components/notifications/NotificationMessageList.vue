@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import type { NotificationMessageResponse } from '@nerv-iip/api-client'
-import { Badge, Button, Skeleton } from '@nerv-iip/ui'
+import { Button, Skeleton, StatusBadge } from '@nerv-iip/ui'
 import { CheckIcon } from 'lucide-vue-next'
+import { computed } from 'vue'
 import {
   formatNotificationDate,
   formatResource,
   messageTitle,
-  notificationBadgeVariant,
+  notificationSeverityLabel,
+  notificationStatusLabel,
+  notificationTone,
 } from './notificationFormatters'
 
 const props = defineProps<{
@@ -16,25 +19,25 @@ const props = defineProps<{
   pending?: boolean
   showMarkRead?: boolean
   title: string
+  /** Stable, unique section key for the heading id / aria-labelledby (e.g. 'unread'). */
+  sectionId: string
 }>()
 
 const emit = defineEmits<{
   markRead: [messageId: string]
 }>()
 
+const titleId = computed(() => `notification-${props.sectionId}-title`)
+
 function rowKey(message: NotificationMessageResponse, index: number) {
   return message.messageId ?? `message:${index}`
-}
-
-function sectionTitleId(title: string) {
-  return `notification-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-title`
 }
 </script>
 
 <template>
-  <section class="overflow-hidden rounded-lg border bg-background" :aria-labelledby="sectionTitleId(props.title)">
+  <section class="overflow-hidden rounded-lg border bg-card" :aria-labelledby="titleId">
     <div class="flex items-center justify-between border-b px-4 py-3">
-      <h2 :id="sectionTitleId(props.title)" class="text-sm font-semibold">{{ props.title }}</h2>
+      <h2 :id="titleId" class="text-sm font-semibold">{{ props.title }}</h2>
       <span class="text-xs font-semibold text-muted-foreground">{{ props.messages.length }}</span>
     </div>
 
@@ -59,7 +62,7 @@ function sectionTitleId(title: string) {
           </div>
           <Button
             v-if="props.showMarkRead && message.messageId"
-            :aria-label="`Mark ${messageTitle(message)} read`"
+            :aria-label="`标记已读：${messageTitle(message)}`"
             :disabled="props.markReadPending"
             size="icon-sm"
             type="button"
@@ -71,12 +74,8 @@ function sectionTitleId(title: string) {
         </div>
 
         <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge :variant="notificationBadgeVariant(message.severity)">
-            {{ message.severity ?? 'normal' }}
-          </Badge>
-          <Badge :variant="notificationBadgeVariant(message.status)">
-            {{ message.status ?? 'unknown' }}
-          </Badge>
+          <StatusBadge :label="notificationSeverityLabel(message.severity)" :tone="notificationTone(message.severity)" />
+          <StatusBadge :label="notificationStatusLabel(message.status)" :tone="notificationTone(message.status)" />
           <span>{{ formatResource(message.resource) }}</span>
           <span>{{ formatNotificationDate(message.createdAtUtc) }}</span>
         </div>

@@ -41,7 +41,7 @@ const permissionGroups = computed(() => {
   const groups = new Map<string, ConsoleIamPermissionResponse[]>()
 
   for (const permission of filteredPermissions.value) {
-    const domain = permission.domain || 'Other'
+    const domain = permission.domain || '其他'
     groups.set(domain, [...(groups.get(domain) ?? []), permission])
   }
 
@@ -73,17 +73,17 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
 <template>
   <FieldGroup class="gap-4">
     <Field>
-      <FieldLabel for="iam-permission-search">Search permissions</FieldLabel>
+      <FieldLabel for="iam-permission-search">搜索权限</FieldLabel>
       <Input
         id="iam-permission-search"
         v-model="search"
-        placeholder="Search permission code, domain, or description"
+        placeholder="搜索权限码、域或描述"
         type="search"
       />
     </Field>
 
     <div class="flex items-start justify-between gap-3 text-sm">
-      <span class="text-muted-foreground">{{ selectedCount }} selected</span>
+      <span class="text-muted-foreground">已选 {{ selectedCount }} 项</span>
       <div class="flex max-h-20 flex-wrap justify-end gap-1.5 overflow-y-auto">
         <PermissionCodeBadge v-for="code in selectedCodes" :key="code" :code="code" />
       </div>
@@ -93,7 +93,7 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
       v-if="permissionGroups.length === 0"
       class="rounded-lg border p-4 text-sm text-muted-foreground"
     >
-      No permissions match the current search.
+      没有匹配的权限。
     </div>
 
     <div

@@ -110,22 +110,25 @@ describe('Notifications page', () => {
   it('renders unread/read messages and open tasks', () => {
     const wrapper = mountPage()
 
-    expect(wrapper.get('h1').text()).toBe('Notifications')
+    expect(wrapper.text()).toContain('通知')
     expect(wrapper.text()).toContain('Disk pressure')
     expect(wrapper.text()).toContain('Deployment complete')
     expect(wrapper.text()).toContain('acknowledge')
     expect(wrapper.text()).toContain('node: node-a')
+    // 两个消息分区必须有稳定且唯一的标题 id（中文标题不能塌成同一个 id）。
+    expect(wrapper.find('#notification-unread-title').exists()).toBe(true)
+    expect(wrapper.find('#notification-read-title').exists()).toBe(true)
   })
 
   it('calls mark read and batch read actions', async () => {
     const wrapper = mountPage()
 
-    await wrapper.find('button[aria-label="Mark Disk pressure read"]').trigger('click')
+    await wrapper.find('button[aria-label="标记已读：Disk pressure"]').trigger('click')
     await flushPromises()
 
     expect(notificationState.markRead).toHaveBeenCalledWith('msg-1')
 
-    await wrapper.find('button[aria-label="Mark all unread notifications read"]').trigger('click')
+    await wrapper.find('button[aria-label="全部标记已读"]').trigger('click')
     await flushPromises()
 
     expect(notificationState.markAllUnreadRead).toHaveBeenCalled()
@@ -135,11 +138,11 @@ describe('Notifications page', () => {
     notificationState.markRead.mockRejectedValue(new Error('Forbidden'))
     const wrapper = mountPage()
 
-    await wrapper.find('button[aria-label="Mark Disk pressure read"]').trigger('click')
+    await wrapper.find('button[aria-label="标记已读：Disk pressure"]').trigger('click')
     await flushPromises()
 
     expect(notificationState.markRead).toHaveBeenCalledWith('msg-1')
-    expect(toastState.success).not.toHaveBeenCalledWith('Notification marked read')
+    expect(toastState.success).not.toHaveBeenCalledWith('通知已标记为已读')
   })
 
   it('disables bulk write while another notification operation is pending', () => {
@@ -147,9 +150,7 @@ describe('Notifications page', () => {
     const wrapper = mountPage()
 
     expect(
-      wrapper
-        .find('button[aria-label="Mark all unread notifications read"]')
-        .attributes('disabled'),
+      wrapper.find('button[aria-label="全部标记已读"]').attributes('disabled'),
     ).toBeDefined()
   })
 
@@ -157,7 +158,7 @@ describe('Notifications page', () => {
     notificationState.markReadError.value = new Error('Forbidden')
     const wrapper = mountPage()
 
-    expect(wrapper.text()).toContain('Unable to update notifications')
+    expect(wrapper.text()).toContain('无法更新通知')
     expect(wrapper.text()).toContain('Forbidden')
   })
 })

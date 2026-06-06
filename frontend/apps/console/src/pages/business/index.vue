@@ -1,18 +1,17 @@
 <script setup lang="ts">
+import type { DataTableColumn } from '@nerv-iip/ui'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import {
-  Badge,
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  DataTable,
+  PageHeader,
+  SectionCard,
+  SectionCards,
+  StatusBadge,
 } from '@nerv-iip/ui'
 
 definePage({
@@ -22,95 +21,77 @@ definePage({
   },
 })
 
-const businessServices = [
-  { name: 'BusinessMasterData', scope: 'Layer 0 master data', issue: '#72/#127' },
-  { name: 'BusinessProductEngineering', scope: 'Engineering documents, items, BOM, routing and changes', issue: '#127' },
-  { name: 'BusinessInventory', scope: 'Locations, ledgers, movements and stock count', issue: '#131' },
-  { name: 'BusinessQuality', scope: 'Inspection plans, records and nonconformance facts', issue: '#132' },
-  { name: 'BusinessMES', scope: 'Work orders, operation tasks and execution reporting', issue: '#135' },
-  { name: 'BusinessDemandPlanning', scope: 'Demand sources, MPS, MRP and pegging', issue: '#128' },
-  { name: 'BarcodeLabel', scope: 'Barcode rules, label templates, print batches and scans', issue: '#133' },
-  { name: 'BusinessApproval', scope: 'Business approval templates, chains, steps and decisions', issue: '#134' },
-  { name: 'WMS', scope: 'Inbound, outbound, warehouse tasks and WCS boundary', issue: '#136' },
-  { name: 'BusinessIndustrialTelemetry', scope: 'Telemetry tags, device snapshots, alarms and summaries', issue: '#129' },
-  { name: 'BusinessMaintenance', scope: 'Work orders, PM plans, inspections, downtime and spare parts', issue: '#130' },
-  { name: 'BusinessERP', scope: 'Procurement, sales and finance MVP facts', issue: '#137/#138/#139' },
-] as const
+interface BusinessService {
+  name: string
+  scope: string
+}
+
+// 已交付的业务后端服务快照（平台视角）。仅展示服务与能力范围，不暴露工程内部追踪号。
+const businessServices: BusinessService[] = [
+  { name: 'BusinessMasterData', scope: '基础主数据（Layer 0）' },
+  { name: 'BusinessProductEngineering', scope: '工程文档、物料、BOM、工艺路线与变更' },
+  { name: 'BusinessInventory', scope: '库位、台账、移动与盘点' },
+  { name: 'BusinessQuality', scope: '检验计划、记录与不良事实' },
+  { name: 'BusinessMES', scope: '工单、工序任务与执行报工' },
+  { name: 'BusinessDemandPlanning', scope: '需求来源、MPS、MRP 与挂账' },
+  { name: 'BarcodeLabel', scope: '条码规则、标签模板、打印批次与扫描' },
+  { name: 'BusinessApproval', scope: '业务审批模板、审批链、步骤与决策' },
+  { name: 'WMS', scope: '入库、出库、仓库任务与 WCS 边界' },
+  { name: 'BusinessIndustrialTelemetry', scope: '遥测点位、设备快照、告警与汇总' },
+  { name: 'BusinessMaintenance', scope: '工单、PM 计划、点检、停机与备件' },
+  { name: 'BusinessERP', scope: '采购、销售与财务 MVP 事实' },
+]
+
+const columns: DataTableColumn<BusinessService>[] = [
+  { key: 'name', header: '服务', cellClass: 'font-medium' },
+  { key: 'scope', header: '能力范围', cellClass: 'text-muted-foreground' },
+  { key: 'status', header: '状态', align: 'end', width: 'w-24' },
+]
 </script>
 
 <template>
   <DefaultLayout>
-    <div class="grid gap-4">
-      <div class="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p class="text-xs font-bold uppercase text-primary">Business platform</p>
-          <h1 class="text-xl font-semibold text-foreground">Business MVP status</h1>
-          <p class="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Delivered backend capabilities, acceptance readiness and current scope boundaries for
-            the business platform MVP.
-          </p>
-        </div>
-        <Badge variant="secondary">12 services delivered</Badge>
-      </div>
+    <section class="grid gap-6">
+      <PageHeader
+        title="业务平台状态"
+        :breadcrumbs="[{ label: '平台' }]"
+        :count="`${businessServices.length} 项服务`"
+      />
+
+      <SectionCards :columns="3">
+        <SectionCard description="已交付服务" :value="businessServices.length" hint="业务后端能力层" />
+        <SectionCard description="就绪状态" value="已交付" hint="后端能力可用" />
+        <SectionCard description="覆盖范围" value="主线 MVP" hint="跨服务全链路验收推进中" />
+      </SectionCards>
 
       <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Card class="min-w-0">
+        <div class="grid min-w-0 content-start gap-2">
+          <p class="text-sm text-muted-foreground">
+            业务平台 MVP 已交付的后端能力与当前范围边界快照。
+          </p>
+          <DataTable
+            :columns="columns"
+            :rows="businessServices"
+            row-key="name"
+            empty-message="暂无已交付的业务服务。"
+          >
+            <template #cell-status>
+              <StatusBadge label="已交付" tone="success" />
+            </template>
+          </DataTable>
+        </div>
+
+        <Card class="content-start">
           <CardHeader>
-            <CardTitle>Delivered backend services</CardTitle>
-            <CardDescription>
-              Current readiness snapshot for the business service layer.
-            </CardDescription>
+            <CardTitle>范围说明</CardTitle>
+            <CardDescription>业务平台在本控制台的能力边界。</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Service</TableHead>
-                  <TableHead>Capability</TableHead>
-                  <TableHead class="w-28">Issue</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow
-                  v-for="service in businessServices"
-                  :key="service.name"
-                  data-test="business-service"
-                >
-                  <TableCell class="font-medium">{{ service.name }}</TableCell>
-                  <TableCell class="text-muted-foreground">{{ service.scope }}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{{ service.issue }}</Badge>
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+          <CardContent class="grid gap-2 text-sm text-muted-foreground">
+            <p>下一步聚焦打通各业务服务的全链路验收路径，将已交付的 MVP 事实串成可验证的跨服务链路。</p>
+            <p>甘特图 / RFC 等排程编辑能力不在本控制台 MVP 范围，此处不引入时间线编辑器或排程工作流。</p>
           </CardContent>
         </Card>
-
-        <div class="grid content-start gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>#77 Full-chain acceptance</CardTitle>
-              <CardDescription>Next mainline for cross-service business demo readiness.</CardDescription>
-            </CardHeader>
-            <CardContent class="grid gap-2 text-sm text-muted-foreground">
-              <p>Connect the delivered MVP facts into a verifiable cross-service path.</p>
-              <p>Use the acceptance harness baseline as the expansion point for the seven chains.</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>#78 Gantt/RFC reference is excluded</CardTitle>
-              <CardDescription>Reference material only, not part of this backend/domain route.</CardDescription>
-            </CardHeader>
-            <CardContent class="text-sm text-muted-foreground">
-              #78 remains outside this Console MVP entry; no timeline editor, Gantt view or RFC
-              workflow is introduced here.
-            </CardContent>
-          </Card>
-        </div>
       </div>
-    </div>
+    </section>
   </DefaultLayout>
 </template>

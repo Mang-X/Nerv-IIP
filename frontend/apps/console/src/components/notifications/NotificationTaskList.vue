@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NotificationTaskResponse } from '@nerv-iip/api-client'
-import { Badge, Skeleton } from '@nerv-iip/ui'
-import { formatNotificationDate, notificationBadgeVariant } from './notificationFormatters'
+import { Skeleton, StatusBadge } from '@nerv-iip/ui'
+import { formatNotificationDate, notificationStatusLabel, notificationTone } from './notificationFormatters'
 
 const props = defineProps<{
   pending?: boolean
@@ -14,9 +14,9 @@ function rowKey(task: NotificationTaskResponse, index: number) {
 </script>
 
 <template>
-  <section class="overflow-hidden rounded-lg border bg-background" aria-labelledby="notification-tasks-title">
+  <section class="overflow-hidden rounded-lg border bg-card" aria-labelledby="notification-tasks-title">
     <div class="flex items-center justify-between border-b px-4 py-3">
-      <h2 id="notification-tasks-title" class="text-sm font-semibold">Open tasks</h2>
+      <h2 id="notification-tasks-title" class="text-sm font-semibold">待办任务</h2>
       <span class="text-xs font-semibold text-muted-foreground">{{ props.tasks.length }}</span>
     </div>
 
@@ -29,22 +29,20 @@ function rowKey(task: NotificationTaskResponse, index: number) {
         <div class="flex min-w-0 items-start justify-between gap-3">
           <div class="min-w-0">
             <p class="break-anywhere text-sm font-semibold">
-              {{ task.taskType ?? 'notification task' }}
+              {{ task.taskType ?? '通知任务' }}
             </p>
             <p class="break-anywhere text-xs text-muted-foreground">
-              {{ task.actionRef ?? task.messageId ?? task.taskId ?? 'No action reference' }}
+              {{ task.actionRef ?? task.messageId ?? task.taskId ?? '无动作引用' }}
             </p>
           </div>
-          <Badge :variant="notificationBadgeVariant(task.status)">
-            {{ task.status ?? 'unknown' }}
-          </Badge>
+          <StatusBadge :label="notificationStatusLabel(task.status)" :tone="notificationTone(task.status)" />
         </div>
         <p class="text-xs text-muted-foreground">{{ formatNotificationDate(task.createdAtUtc) }}</p>
       </li>
     </ul>
 
     <p v-else class="px-4 py-8 text-center text-sm text-muted-foreground">
-      No open notification tasks.
+      暂无待办通知任务。
     </p>
   </section>
 </template>
