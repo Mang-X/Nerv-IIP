@@ -1,11 +1,9 @@
 /**
  * 基础数据 · 前端受控值（字典 CodeSet）常量 —— Phase 1 数据源。
  *
- * 背景：后端 ReferenceData 暂无「按 CodeSet 列出」端点，也无生产种子（见
- * docs/architecture/master-data-module-product-design.md §5、§7.4 issue #346）。
- * 因此本文件是 Phase 1 的受控值唯一来源，物料表单等下拉从这里取选项。
- * Phase 2 后端字典就绪后，将由 `listReferenceDataByCodeSet(codeSet)` 实时拉取替换，
- * 届时本文件作为兜底/默认即可。CodeSet 命名与 §5.1 对齐。
+ * 权威规范：docs/architecture/master-data-dictionary-rules.md（CodeSet 目录、码值、治理）。
+ * 本文件是 Phase 1 的受控值兜底来源，码值必须与该规范 §2 一致;物料表单等下拉从这里取选项。
+ * Phase 2 后端字典种子对齐规范后，改由 `?codeSet=` 实时拉取，本文件降级为离线兜底。
  */
 
 export interface RefOption {
@@ -59,21 +57,22 @@ export const SHELF_LIFE_OPTIONS: RefOption[] = [
   { value: 'expiry-controlled', label: '到期管控' },
 ]
 
-/** 仓储条件（CodeSet: storage-condition，平台预置+工厂可维护）。 */
+/** 仓储条件（CodeSet: storage-condition，平台预置+工厂可维护；码值见数据字典规则 §2.1）。 */
 export const STORAGE_CONDITION_OPTIONS: RefOption[] = [
   { value: 'ambient', label: '常温' },
-  { value: 'cold-2-8', label: '冷藏（2-8℃）' },
+  { value: 'refrigerated', label: '冷藏' },
   { value: 'frozen', label: '冷冻' },
   { value: 'dry', label: '干燥/防潮' },
   { value: 'esd', label: '防静电' },
   { value: 'hazardous', label: '危化品' },
 ]
 
-/** 条码规则（CodeSet: barcode-rule，工厂可维护）。 */
+/** 条码规则（CodeSet: barcode-rule，平台预置+工厂可维护；码值见数据字典规则 §2.1）。 */
 export const BARCODE_RULE_OPTIONS: RefOption[] = [
-  { value: 'code128-internal', label: '内部条码（Code128）' },
+  { value: 'code128', label: 'Code128' },
+  { value: 'ean13', label: 'EAN-13' },
   { value: 'gs1-128', label: 'GS1-128' },
-  { value: 'qr-traceability', label: '追溯二维码' },
+  { value: 'qr', label: '二维码' },
   { value: 'customer-spec', label: '客户指定' },
 ]
 

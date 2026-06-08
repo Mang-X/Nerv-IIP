@@ -135,6 +135,8 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 
 ## 5. 字典体系与种子数据
 
+> ⚠️ **权威规范已独立成文**:CodeSet 目录、标准码值、治理规则、字段校验映射、前后端对齐以 [`master-data-dictionary-rules.md`](./master-data-dictionary-rules.md) 为单一事实源。本节为概览,如与该文件冲突以该文件为准。
+
 ### 5.1 平台应预置的 CodeSet（受控值清单）
 
 | CodeSet | 用途 | 示例码值（code=中文名） | 类别 |
