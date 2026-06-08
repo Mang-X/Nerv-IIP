@@ -39,14 +39,16 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 
 describe('master-data facilities page', () => {
-  it('renders the title, three tabs, sample rows and create buttons', async () => {
+  it('renders the title, four tabs, sample rows and create buttons', async () => {
     const wrapper = mount(FacilitiesPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('工厂与产线')
+    expect(wrapper.text()).toContain('工厂 → 车间（组织层·建设中） → 产线 → 工作中心 → 设备')
     const tabs = wrapper.findAll('[role="tab"]').map((t) => t.text())
     expect(tabs.some((t) => t.includes('工厂'))).toBe(true)
     expect(tabs.some((t) => t.includes('产线'))).toBe(true)
+    expect(tabs.some((t) => t === '车间')).toBe(true)
     expect(tabs.some((t) => t.includes('工作中心'))).toBe(true)
 
     expect(wrapper.text()).toContain('宁波工厂')

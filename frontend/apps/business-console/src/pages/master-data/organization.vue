@@ -7,7 +7,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
-import { useMasterDataResource } from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources, useMasterDataResource } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -45,12 +45,14 @@ import {
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '组织与日历' } })
+definePage({ meta: { requiresAuth: true, title: '组织与人员' } })
 
 const departments = useMasterDataResource<BusinessConsoleCreateDepartmentRequest>('department')
 const teams = useMasterDataResource<BusinessConsoleCreateTeamRequest>('team')
 const shifts = useMasterDataResource<BusinessConsoleCreateShiftRequest>('shift')
 const calendars = useMasterDataResource<BusinessConsoleCreateWorkCalendarRequest>('work-calendar')
+// 人员技能为只读列表（登记入口待后端组织建模——IAM 用户接入后开放）。
+const skills = useBusinessMasterDataResources('personnel-skill')
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
@@ -80,6 +82,7 @@ function refreshAll() {
   void teams.refresh()
   void shifts.refresh()
   void calendars.refresh()
+  void skills.refreshResources()
 }
 
 // ---- 部门 ----
@@ -223,11 +226,23 @@ async function submitCal() {
   calShowErrors.value = false
   calOpen.value = false
 }
+
+// ---- 人员技能（只读，登记入口禁用占位）----
+const skillKeyword = ref('')
+const skillPage = ref(1)
+const skillPageSize = ref('10')
+const skillRows = computed(() => filterRows(skills.resources.value, skillKeyword.value))
+const skillListError = computed(() => formatError(skills.resourcesError.value))
+watch([skillKeyword, skillPageSize], () => { skillPage.value = 1 })
+watch([skillPage, skillPageSize], () => {
+  skills.filters.skip = (skillPage.value - 1) * (Number(skillPageSize.value) || 10)
+  skills.filters.take = Number(skillPageSize.value) || 10
+}, { immediate: true })
 </script>
 
 <template>
   <BusinessLayout>
-    <PageHeader title="组织与日历" :breadcrumbs="[{ label: '基础数据' }]" :count="`${departments.total.value} 个部门`">
+    <PageHeader title="组织与人员" :breadcrumbs="[{ label: '基础数据' }]" :count="`${departments.total.value} 个部门`">
       <template #actions>
         <Button size="sm" variant="outline" type="button" :disabled="departments.pending.value" @click="refreshAll">
           <RefreshCwIcon aria-hidden="true" />
@@ -235,6 +250,10 @@ async function submitCal() {
         </Button>
       </template>
     </PageHeader>
+
+    <p class="text-sm text-muted-foreground">
+      工人来自系统用户（IAM）；此处维护人员技能矩阵（技能 / 等级 / 有效期）。班组成员与工人选择器待后端组织建模支持。
+    </p>
 
     <SectionCards :columns="4">
       <SectionCard description="部门数" :value="departments.total.value" hint="组织结构" />
@@ -249,6 +268,7 @@ async function submitCal() {
         <TabsTrigger value="team">班组 ({{ teams.total.value }})</TabsTrigger>
         <TabsTrigger value="shift">班次 ({{ shifts.total.value }})</TabsTrigger>
         <TabsTrigger value="work-calendar">工作日历 ({{ calendars.total.value }})</TabsTrigger>
+        <TabsTrigger value="personnel-skill">人员技能 ({{ skills.resourcesTotal.value }})</TabsTrigger>
       </TabsList>
 
       <!-- 部门 -->
@@ -468,6 +488,22 @@ async function submitCal() {
           <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
         </DataTable>
         <DataTablePagination v-model:page="calPage" v-model:page-size="calPageSize" :total-items="calendars.total.value" />
+      </TabsContent>
+
+      <!-- 人员技能（只读：列表来自 personnel-skill 资源；登记入口待 IAM 用户接入，见 #348） -->
+      <TabsContent value="personnel-skill" class="grid gap-3">
+        <Toolbar v-model:search="skillKeyword" search-placeholder="在当前页内筛选技能编码、名称">
+          <template #actions>
+            <Button size="sm" type="button" disabled title="登记需先接入系统用户，待后端组织建模支持">
+              <PlusIcon aria-hidden="true" />登记技能
+            </Button>
+          </template>
+        </Toolbar>
+        <p v-if="skillListError" class="text-sm text-destructive" role="alert">{{ skillListError }}</p>
+        <DataTable :columns="columns" :rows="skillRows" :row-key="rowKey" :loading="skills.resourcesPending.value" empty-message="暂无人员技能。可清空筛选后再试。">
+          <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
+        </DataTable>
+        <DataTablePagination v-model:page="skillPage" v-model:page-size="skillPageSize" :total-items="skills.resourcesTotal.value" />
       </TabsContent>
     </Tabs>
   </BusinessLayout>

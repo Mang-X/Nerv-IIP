@@ -10,6 +10,11 @@ import { useMasterDataResource } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
   DataTable,
   DataTablePagination,
   Dialog,
@@ -221,6 +226,8 @@ function refreshAll() {
       </template>
     </PageHeader>
 
+    <p class="text-sm text-muted-foreground">层级：工厂 → 车间（组织层·建设中） → 产线 → 工作中心 → 设备</p>
+
     <SectionCards :columns="3">
       <SectionCard description="工厂数" :value="sites.total.value" hint="生产站点" />
       <SectionCard description="产线数" :value="lines.total.value" hint="所属各工厂" />
@@ -231,6 +238,7 @@ function refreshAll() {
       <TabsList>
         <TabsTrigger value="site">工厂 ({{ sites.total.value }})</TabsTrigger>
         <TabsTrigger value="line">产线 ({{ lines.total.value }})</TabsTrigger>
+        <TabsTrigger value="workshop">车间</TabsTrigger>
         <TabsTrigger value="work-center">工作中心 ({{ workCenters.total.value }})</TabsTrigger>
       </TabsList>
 
@@ -361,6 +369,21 @@ function refreshAll() {
         <DataTablePagination v-model:page="linePage" v-model:page-size="linePageSize" :total-items="lines.total.value" />
       </TabsContent>
 
+      <!-- 车间（组织层·建设中，后端尚无 Workshop 实体，本期仅占位预留，见 #348） -->
+      <TabsContent value="workshop" class="grid gap-3">
+        <Card>
+          <CardHeader>
+            <CardTitle class="text-base">车间（组织层·建设中）</CardTitle>
+            <CardDescription>工厂下的组织 / 区域层</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p class="text-sm text-muted-foreground">
+              车间作为工厂下的组织 / 区域层，正在建设。建成后可在此维护车间，并将产线与工作中心归属到对应车间。
+            </p>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
       <!-- 工作中心 -->
       <TabsContent value="work-center" class="grid gap-3">
         <Toolbar v-model:search="wcKeyword" search-placeholder="在当前页内筛选工作中心编码、名称">
@@ -413,7 +436,7 @@ function refreshAll() {
                     <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.defaultCalendarCode)">
                       <FieldLabel for="wc-cal">默认工作日历 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="wc-cal" v-model="wcForm.defaultCalendarCode" autocomplete="off" required />
-                      <FieldDescription>填写「组织与日历」页中已建工作日历的编码。</FieldDescription>
+                      <FieldDescription>填写「组织与人员」页中已建工作日历的编码。</FieldDescription>
                     </Field>
                     <Field>
                       <FieldLabel for="wc-cap">日产能（分钟） <span class="text-destructive">*</span></FieldLabel>

@@ -30,8 +30,23 @@ function stubResource(resourceType: string) {
   }
 }
 
+function stubReadonlyResource(resourceType: string) {
+  const rows = resourceType === 'personnel-skill'
+    ? [{ resourceType, code: 'SKILL-A', displayName: '焊接技能', active: true, snapshotVersion: '1' }]
+    : []
+  return {
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
+    resources: computed(() => rows),
+    resourcesTotal: computed(() => rows.length),
+    resourcesError: shallowRef(undefined),
+    resourcesPending: shallowRef(false),
+    refreshResources: vi.fn(),
+  }
+}
+
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
+  useBusinessMasterDataResources: (resourceType: string) => stubReadonlyResource(resourceType),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -42,16 +57,17 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 
 describe('master-data organization page', () => {
-  it('renders the title, four tabs, sample row and create button', async () => {
+  it('renders the title, five tabs, sample row and create button', async () => {
     const wrapper = mount(OrganizationPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('组织与日历')
+    expect(wrapper.text()).toContain('组织与人员')
     const tabs = wrapper.findAll('[role="tab"]').map((t) => t.text())
     expect(tabs.some((t) => t.includes('部门'))).toBe(true)
     expect(tabs.some((t) => t.includes('班组'))).toBe(true)
     expect(tabs.some((t) => t.includes('班次'))).toBe(true)
     expect(tabs.some((t) => t.includes('工作日历'))).toBe(true)
+    expect(tabs.some((t) => t.includes('人员技能'))).toBe(true)
 
     expect(wrapper.text()).toContain('总装部')
     expect(wrapper.findAll('button').some((b) => b.text().includes('新建部门'))).toBe(true)
