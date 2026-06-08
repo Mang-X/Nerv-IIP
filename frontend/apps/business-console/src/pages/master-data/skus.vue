@@ -62,6 +62,7 @@ const {
 // Optimistic rows for items the user created in this session (real entries, never placeholders).
 const localSkus = shallowRef<BusinessConsoleResourceItem[]>([])
 const createOpen = shallowRef(false)
+const createShowErrors = ref(false)
 const createSuccess = shallowRef('')
 
 const keyword = ref('')
@@ -170,7 +171,10 @@ function resetCreateForm() {
   Object.assign(createForm, { ...SKU_FORM_DEFAULTS, idempotencyKey: newSkuIdempotencyKey() })
 }
 async function submitSku() {
-  if (!canCreateSku.value) return
+  if (!canCreateSku.value) {
+    createShowErrors.value = true
+    return
+  }
   const body: BusinessConsoleCreateSkuRequest = {
     organizationId: createForm.organizationId.trim(),
     environmentId: createForm.environmentId.trim(),
@@ -195,12 +199,14 @@ async function submitSku() {
   ]
   createSuccess.value = `物料「${body.name}」已创建${createdCode ? `，编号 ${createdCode}` : ''}。`
   resetCreateForm()
+  createShowErrors.value = false
   createOpen.value = false
 }
 function newSkuIdempotencyKey() {
   return `sku-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
-function syncContextFromFilters() {
+function syncContextFromFilters(open: boolean) {
+  if (open) createShowErrors.value = false
   createForm.organizationId = filters.organizationId
   createForm.environmentId = filters.environmentId
 }
@@ -242,7 +248,7 @@ function isNonEmpty(value: string) {
                   <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">保存后由系统分配</div>
                   <FieldDescription>无需手填，系统自动编号。</FieldDescription>
                 </Field>
-                <Field :data-invalid="!isNonEmpty(createForm.name)">
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                   <FieldLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="sku-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
                 </Field>
@@ -340,7 +346,7 @@ function isNonEmpty(value: string) {
               </FieldGroup>
               <DialogFooter>
                 <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createSkuPending || !canCreateSku">
+                <Button type="submit" :disabled="createSkuPending">
                   <Spinner v-if="createSkuPending" aria-hidden="true" />
                   保存物料
                 </Button>

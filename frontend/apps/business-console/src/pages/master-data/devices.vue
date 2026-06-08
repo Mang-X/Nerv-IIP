@@ -61,6 +61,7 @@ const keyword = ref('')
 const page = ref(1)
 const pageSize = ref('10')
 const createOpen = ref(false)
+const createShowErrors = ref(false)
 const createForm = reactive({
   code: '',
   model: '',
@@ -94,6 +95,7 @@ const canCreateDevice = computed(() =>
 const createErrorMessage = computed(() => formatError(devices.createError.value))
 const listErrorMessage = computed(() => formatError(devices.error.value))
 
+watch(createOpen, (open) => { if (open) createShowErrors.value = false })
 watch([keyword, pageSize], () => { page.value = 1 })
 watch([page, pageSize], () => {
   devices.filters.skip = (page.value - 1) * (Number(pageSize.value) || 10)
@@ -115,7 +117,10 @@ function refreshAll() {
   void workCenters.refresh()
 }
 async function submitDevice() {
-  if (!canCreateDevice.value) return
+  if (!canCreateDevice.value) {
+    createShowErrors.value = true
+    return
+  }
   await devices.create({
     organizationId: devices.filters.organizationId,
     environmentId: devices.filters.environmentId,
@@ -136,6 +141,7 @@ async function submitDevice() {
     code: '', model: '', manufacturer: '', serialNo: '', assetClassCode: '',
     lineCode: '', workCenterCode: '', criticality: DEVICE_DEFAULTS.criticality, maintainable: DEVICE_DEFAULTS.maintainable,
   })
+  createShowErrors.value = false
   createOpen.value = false
 }
 </script>
@@ -163,23 +169,23 @@ async function submitDevice() {
             <form class="grid gap-4" @submit.prevent="submitDevice">
               <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="!isNonEmpty(createForm.code)">
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
                   <FieldLabel for="dev-code">设备编码 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="dev-code" v-model="createForm.code" autocomplete="off" required />
                 </Field>
-                <Field :data-invalid="!isNonEmpty(createForm.model)">
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.model)">
                   <FieldLabel for="dev-model">设备型号 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="dev-model" v-model="createForm.model" autocomplete="off" required />
                 </Field>
-                <Field :data-invalid="!isNonEmpty(createForm.manufacturer)">
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.manufacturer)">
                   <FieldLabel for="dev-maker">制造商 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="dev-maker" v-model="createForm.manufacturer" autocomplete="off" required />
                 </Field>
-                <Field :data-invalid="!isNonEmpty(createForm.serialNo)">
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.serialNo)">
                   <FieldLabel for="dev-serial">出厂序列号 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="dev-serial" v-model="createForm.serialNo" autocomplete="off" required />
                 </Field>
-                <Field :data-invalid="!isNonEmpty(createForm.assetClassCode)">
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.assetClassCode)">
                   <FieldLabel for="dev-class">设备类别 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="dev-class" v-model="createForm.assetClassCode" autocomplete="off" required />
                   <FieldDescription>填写「数据字典」中维护的设备类别编码。</FieldDescription>
@@ -222,7 +228,7 @@ async function submitDevice() {
               </FieldGroup>
               <DialogFooter>
                 <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="devices.createPending.value || !canCreateDevice">
+                <Button type="submit" :disabled="devices.createPending.value">
                   <Spinner v-if="devices.createPending.value" aria-hidden="true" />
                   保存设备
                 </Button>

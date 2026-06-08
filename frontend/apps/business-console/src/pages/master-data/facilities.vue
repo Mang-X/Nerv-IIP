@@ -80,12 +80,14 @@ const siteKeyword = ref('')
 const sitePage = ref(1)
 const sitePageSize = ref('10')
 const siteOpen = ref(false)
+const siteShowErrors = ref(false)
 const siteForm = reactive({ code: '', name: '', timezone: DEFAULT_TIMEZONE })
 const siteRows = computed(() => filterRows(sites.items.value, siteKeyword.value))
 const canCreateSite = computed(() => [siteForm.code, siteForm.name, siteForm.timezone].every(isNonEmpty))
 const siteCreateError = computed(() => formatError(sites.createError.value))
 const siteListError = computed(() => formatError(sites.error.value))
 
+watch(siteOpen, (open) => { if (open) siteShowErrors.value = false })
 watch([siteKeyword, sitePageSize], () => { sitePage.value = 1 })
 watch([sitePage, sitePageSize], () => {
   sites.filters.skip = (sitePage.value - 1) * (Number(sitePageSize.value) || 10)
@@ -93,7 +95,10 @@ watch([sitePage, sitePageSize], () => {
 }, { immediate: true })
 
 async function submitSite() {
-  if (!canCreateSite.value) return
+  if (!canCreateSite.value) {
+    siteShowErrors.value = true
+    return
+  }
   await sites.create({
     organizationId: sites.filters.organizationId,
     environmentId: sites.filters.environmentId,
@@ -103,6 +108,7 @@ async function submitSite() {
   })
   toast.success(`工厂「${siteForm.name.trim()}」已创建。`)
   Object.assign(siteForm, { code: '', name: '', timezone: DEFAULT_TIMEZONE })
+  siteShowErrors.value = false
   siteOpen.value = false
 }
 
@@ -111,12 +117,14 @@ const lineKeyword = ref('')
 const linePage = ref(1)
 const linePageSize = ref('10')
 const lineOpen = ref(false)
+const lineShowErrors = ref(false)
 const lineForm = reactive({ code: '', name: '', siteCode: '' })
 const lineRows = computed(() => filterRows(lines.items.value, lineKeyword.value))
 const canCreateLine = computed(() => [lineForm.code, lineForm.name, lineForm.siteCode].every(isNonEmpty))
 const lineCreateError = computed(() => formatError(lines.createError.value))
 const lineListError = computed(() => formatError(lines.error.value))
 
+watch(lineOpen, (open) => { if (open) lineShowErrors.value = false })
 watch([lineKeyword, linePageSize], () => { linePage.value = 1 })
 watch([linePage, linePageSize], () => {
   lines.filters.skip = (linePage.value - 1) * (Number(linePageSize.value) || 10)
@@ -124,7 +132,10 @@ watch([linePage, linePageSize], () => {
 }, { immediate: true })
 
 async function submitLine() {
-  if (!canCreateLine.value) return
+  if (!canCreateLine.value) {
+    lineShowErrors.value = true
+    return
+  }
   await lines.create({
     organizationId: lines.filters.organizationId,
     environmentId: lines.filters.environmentId,
@@ -134,6 +145,7 @@ async function submitLine() {
   })
   toast.success(`产线「${lineForm.name.trim()}」已创建。`)
   Object.assign(lineForm, { code: '', name: '', siteCode: '' })
+  lineShowErrors.value = false
   lineOpen.value = false
 }
 
@@ -142,6 +154,7 @@ const wcKeyword = ref('')
 const wcPage = ref(1)
 const wcPageSize = ref('10')
 const wcOpen = ref(false)
+const wcShowErrors = ref(false)
 const wcForm = reactive({ code: '', name: '', plantCode: '', lineCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
 const wcRows = computed(() => filterRows(workCenters.items.value, wcKeyword.value))
 const canCreateWorkCenter = computed(() =>
@@ -151,6 +164,7 @@ const canCreateWorkCenter = computed(() =>
 const wcCreateError = computed(() => formatError(workCenters.createError.value))
 const wcListError = computed(() => formatError(workCenters.error.value))
 
+watch(wcOpen, (open) => { if (open) wcShowErrors.value = false })
 watch([wcKeyword, wcPageSize], () => { wcPage.value = 1 })
 watch([wcPage, wcPageSize], () => {
   workCenters.filters.skip = (wcPage.value - 1) * (Number(wcPageSize.value) || 10)
@@ -158,7 +172,10 @@ watch([wcPage, wcPageSize], () => {
 }, { immediate: true })
 
 async function submitWorkCenter() {
-  if (!canCreateWorkCenter.value) return
+  if (!canCreateWorkCenter.value) {
+    wcShowErrors.value = true
+    return
+  }
   await workCenters.create({
     organizationId: workCenters.filters.organizationId,
     environmentId: workCenters.filters.environmentId,
@@ -174,6 +191,7 @@ async function submitWorkCenter() {
   })
   toast.success(`工作中心「${wcForm.name.trim()}」已创建。`)
   Object.assign(wcForm, { code: '', name: '', plantCode: '', lineCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
+  wcShowErrors.value = false
   wcOpen.value = false
 }
 
@@ -235,15 +253,15 @@ function refreshAll() {
                 <form class="grid gap-4" @submit.prevent="submitSite">
                   <p v-if="siteCreateError" class="text-sm text-destructive" role="alert">{{ siteCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="!isNonEmpty(siteForm.code)">
+                    <Field :data-invalid="siteShowErrors && !isNonEmpty(siteForm.code)">
                       <FieldLabel for="site-code">工厂编码 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="site-code" v-model="siteForm.code" autocomplete="off" required />
                     </Field>
-                    <Field :data-invalid="!isNonEmpty(siteForm.name)">
+                    <Field :data-invalid="siteShowErrors && !isNonEmpty(siteForm.name)">
                       <FieldLabel for="site-name">工厂名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="site-name" v-model="siteForm.name" autocomplete="off" required />
                     </Field>
-                    <Field :data-invalid="!isNonEmpty(siteForm.timezone)">
+                    <Field :data-invalid="siteShowErrors && !isNonEmpty(siteForm.timezone)">
                       <FieldLabel for="site-tz">时区 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="site-tz" v-model="siteForm.timezone" autocomplete="off" required />
                       <FieldDescription>如 Asia/Shanghai，用于排程与报表的本地时间。</FieldDescription>
@@ -251,7 +269,7 @@ function refreshAll() {
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="siteOpen = false">取消</Button>
-                    <Button type="submit" :disabled="sites.createPending.value || !canCreateSite">
+                    <Button type="submit" :disabled="sites.createPending.value">
                       <Spinner v-if="sites.createPending.value" aria-hidden="true" />
                       保存工厂
                     </Button>
@@ -295,11 +313,11 @@ function refreshAll() {
                 <form class="grid gap-4" @submit.prevent="submitLine">
                   <p v-if="lineCreateError" class="text-sm text-destructive" role="alert">{{ lineCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="!isNonEmpty(lineForm.code)">
+                    <Field :data-invalid="lineShowErrors && !isNonEmpty(lineForm.code)">
                       <FieldLabel for="line-code">产线编码 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="line-code" v-model="lineForm.code" autocomplete="off" required />
                     </Field>
-                    <Field :data-invalid="!isNonEmpty(lineForm.name)">
+                    <Field :data-invalid="lineShowErrors && !isNonEmpty(lineForm.name)">
                       <FieldLabel for="line-name">产线名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="line-name" v-model="lineForm.name" autocomplete="off" required />
                     </Field>
@@ -318,7 +336,7 @@ function refreshAll() {
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="lineOpen = false">取消</Button>
-                    <Button type="submit" :disabled="lines.createPending.value || !canCreateLine">
+                    <Button type="submit" :disabled="lines.createPending.value">
                       <Spinner v-if="lines.createPending.value" aria-hidden="true" />
                       保存产线
                     </Button>
@@ -362,11 +380,11 @@ function refreshAll() {
                 <form class="grid gap-4" @submit.prevent="submitWorkCenter">
                   <p v-if="wcCreateError" class="text-sm text-destructive" role="alert">{{ wcCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="!isNonEmpty(wcForm.code)">
+                    <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.code)">
                       <FieldLabel for="wc-code">工作中心编码 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="wc-code" v-model="wcForm.code" autocomplete="off" required />
                     </Field>
-                    <Field :data-invalid="!isNonEmpty(wcForm.name)">
+                    <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.name)">
                       <FieldLabel for="wc-name">工作中心名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="wc-name" v-model="wcForm.name" autocomplete="off" required />
                     </Field>
@@ -392,7 +410,7 @@ function refreshAll() {
                         </SelectContent>
                       </Select>
                     </Field>
-                    <Field :data-invalid="!isNonEmpty(wcForm.defaultCalendarCode)">
+                    <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.defaultCalendarCode)">
                       <FieldLabel for="wc-cal">默认工作日历 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="wc-cal" v-model="wcForm.defaultCalendarCode" autocomplete="off" required />
                       <FieldDescription>填写「组织与日历」页中已建工作日历的编码。</FieldDescription>
@@ -405,7 +423,7 @@ function refreshAll() {
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="wcOpen = false">取消</Button>
-                    <Button type="submit" :disabled="workCenters.createPending.value || !canCreateWorkCenter">
+                    <Button type="submit" :disabled="workCenters.createPending.value">
                       <Spinner v-if="workCenters.createPending.value" aria-hidden="true" />
                       保存工作中心
                     </Button>

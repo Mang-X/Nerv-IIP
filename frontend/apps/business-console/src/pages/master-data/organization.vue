@@ -87,18 +87,23 @@ const deptKeyword = ref('')
 const deptPage = ref(1)
 const deptPageSize = ref('10')
 const deptOpen = ref(false)
+const deptShowErrors = ref(false)
 const deptForm = reactive({ code: '', name: '', parentDepartmentCode: '' })
 const deptRows = computed(() => filterRows(departments.items.value, deptKeyword.value))
 const canCreateDept = computed(() => [deptForm.code, deptForm.name].every(isNonEmpty))
 const deptCreateError = computed(() => formatError(departments.createError.value))
 const deptListError = computed(() => formatError(departments.error.value))
+watch(deptOpen, (open) => { if (open) deptShowErrors.value = false })
 watch([deptKeyword, deptPageSize], () => { deptPage.value = 1 })
 watch([deptPage, deptPageSize], () => {
   departments.filters.skip = (deptPage.value - 1) * (Number(deptPageSize.value) || 10)
   departments.filters.take = Number(deptPageSize.value) || 10
 }, { immediate: true })
 async function submitDept() {
-  if (!canCreateDept.value) return
+  if (!canCreateDept.value) {
+    deptShowErrors.value = true
+    return
+  }
   await departments.create({
     organizationId: departments.filters.organizationId,
     environmentId: departments.filters.environmentId,
@@ -108,6 +113,7 @@ async function submitDept() {
   })
   toast.success(`部门「${deptForm.name.trim()}」已创建。`)
   Object.assign(deptForm, { code: '', name: '', parentDepartmentCode: '' })
+  deptShowErrors.value = false
   deptOpen.value = false
 }
 
@@ -116,18 +122,23 @@ const teamKeyword = ref('')
 const teamPage = ref(1)
 const teamPageSize = ref('10')
 const teamOpen = ref(false)
+const teamShowErrors = ref(false)
 const teamForm = reactive({ code: '', name: '', departmentCode: '', shiftCode: '' })
 const teamRows = computed(() => filterRows(teams.items.value, teamKeyword.value))
 const canCreateTeam = computed(() => [teamForm.code, teamForm.name, teamForm.departmentCode, teamForm.shiftCode].every(isNonEmpty))
 const teamCreateError = computed(() => formatError(teams.createError.value))
 const teamListError = computed(() => formatError(teams.error.value))
+watch(teamOpen, (open) => { if (open) teamShowErrors.value = false })
 watch([teamKeyword, teamPageSize], () => { teamPage.value = 1 })
 watch([teamPage, teamPageSize], () => {
   teams.filters.skip = (teamPage.value - 1) * (Number(teamPageSize.value) || 10)
   teams.filters.take = Number(teamPageSize.value) || 10
 }, { immediate: true })
 async function submitTeam() {
-  if (!canCreateTeam.value) return
+  if (!canCreateTeam.value) {
+    teamShowErrors.value = true
+    return
+  }
   await teams.create({
     organizationId: teams.filters.organizationId,
     environmentId: teams.filters.environmentId,
@@ -138,6 +149,7 @@ async function submitTeam() {
   })
   toast.success(`班组「${teamForm.name.trim()}」已创建。`)
   Object.assign(teamForm, { code: '', name: '', departmentCode: '', shiftCode: '' })
+  teamShowErrors.value = false
   teamOpen.value = false
 }
 
@@ -146,18 +158,23 @@ const shiftKeyword = ref('')
 const shiftPage = ref(1)
 const shiftPageSize = ref('10')
 const shiftOpen = ref(false)
+const shiftShowErrors = ref(false)
 const shiftForm = reactive({ code: '', name: '', startsAt: '08:00', endsAt: '16:00', paidMinutes: '480' })
 const shiftRows = computed(() => filterRows(shifts.items.value, shiftKeyword.value))
 const canCreateShift = computed(() => [shiftForm.code, shiftForm.name].every(isNonEmpty) && (Number(shiftForm.paidMinutes) || 0) > 0)
 const shiftCreateError = computed(() => formatError(shifts.createError.value))
 const shiftListError = computed(() => formatError(shifts.error.value))
+watch(shiftOpen, (open) => { if (open) shiftShowErrors.value = false })
 watch([shiftKeyword, shiftPageSize], () => { shiftPage.value = 1 })
 watch([shiftPage, shiftPageSize], () => {
   shifts.filters.skip = (shiftPage.value - 1) * (Number(shiftPageSize.value) || 10)
   shifts.filters.take = Number(shiftPageSize.value) || 10
 }, { immediate: true })
 async function submitShift() {
-  if (!canCreateShift.value) return
+  if (!canCreateShift.value) {
+    shiftShowErrors.value = true
+    return
+  }
   await shifts.create({
     organizationId: shifts.filters.organizationId,
     environmentId: shifts.filters.environmentId,
@@ -169,6 +186,7 @@ async function submitShift() {
   })
   toast.success(`班次「${shiftForm.name.trim()}」已创建。`)
   Object.assign(shiftForm, { code: '', name: '', startsAt: '08:00', endsAt: '16:00', paidMinutes: '480' })
+  shiftShowErrors.value = false
   shiftOpen.value = false
 }
 
@@ -177,18 +195,23 @@ const calKeyword = ref('')
 const calPage = ref(1)
 const calPageSize = ref('10')
 const calOpen = ref(false)
+const calShowErrors = ref(false)
 const calForm = reactive({ code: '', name: '' })
 const calRows = computed(() => filterRows(calendars.items.value, calKeyword.value))
 const canCreateCal = computed(() => [calForm.code, calForm.name].every(isNonEmpty))
 const calCreateError = computed(() => formatError(calendars.createError.value))
 const calListError = computed(() => formatError(calendars.error.value))
+watch(calOpen, (open) => { if (open) calShowErrors.value = false })
 watch([calKeyword, calPageSize], () => { calPage.value = 1 })
 watch([calPage, calPageSize], () => {
   calendars.filters.skip = (calPage.value - 1) * (Number(calPageSize.value) || 10)
   calendars.filters.take = Number(calPageSize.value) || 10
 }, { immediate: true })
 async function submitCal() {
-  if (!canCreateCal.value) return
+  if (!canCreateCal.value) {
+    calShowErrors.value = true
+    return
+  }
   await calendars.create({
     organizationId: calendars.filters.organizationId,
     environmentId: calendars.filters.environmentId,
@@ -197,6 +220,7 @@ async function submitCal() {
   })
   toast.success(`工作日历「${calForm.name.trim()}」已创建。`)
   Object.assign(calForm, { code: '', name: '' })
+  calShowErrors.value = false
   calOpen.value = false
 }
 </script>
@@ -243,11 +267,11 @@ async function submitCal() {
                 <form class="grid gap-4" @submit.prevent="submitDept">
                   <p v-if="deptCreateError" class="text-sm text-destructive" role="alert">{{ deptCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="!isNonEmpty(deptForm.code)">
+                    <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.code)">
                       <FieldLabel for="dept-code">部门编码 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="dept-code" v-model="deptForm.code" autocomplete="off" required />
                     </Field>
-                    <Field :data-invalid="!isNonEmpty(deptForm.name)">
+                    <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.name)">
                       <FieldLabel for="dept-name">部门名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="dept-name" v-model="deptForm.name" autocomplete="off" required />
                     </Field>
@@ -266,7 +290,7 @@ async function submitCal() {
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="deptOpen = false">取消</Button>
-                    <Button type="submit" :disabled="departments.createPending.value || !canCreateDept">
+                    <Button type="submit" :disabled="departments.createPending.value">
                       <Spinner v-if="departments.createPending.value" aria-hidden="true" />保存部门
                     </Button>
                   </DialogFooter>
@@ -298,11 +322,11 @@ async function submitCal() {
                 <form class="grid gap-4" @submit.prevent="submitTeam">
                   <p v-if="teamCreateError" class="text-sm text-destructive" role="alert">{{ teamCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="!isNonEmpty(teamForm.code)">
+                    <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.code)">
                       <FieldLabel for="team-code">班组编码 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="team-code" v-model="teamForm.code" autocomplete="off" required />
                     </Field>
-                    <Field :data-invalid="!isNonEmpty(teamForm.name)">
+                    <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.name)">
                       <FieldLabel for="team-name">班组名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="team-name" v-model="teamForm.name" autocomplete="off" required />
                     </Field>
@@ -331,7 +355,7 @@ async function submitCal() {
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="teamOpen = false">取消</Button>
-                    <Button type="submit" :disabled="teams.createPending.value || !canCreateTeam">
+                    <Button type="submit" :disabled="teams.createPending.value">
                       <Spinner v-if="teams.createPending.value" aria-hidden="true" />保存班组
                     </Button>
                   </DialogFooter>
@@ -363,11 +387,11 @@ async function submitCal() {
                 <form class="grid gap-4" @submit.prevent="submitShift">
                   <p v-if="shiftCreateError" class="text-sm text-destructive" role="alert">{{ shiftCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="!isNonEmpty(shiftForm.code)">
+                    <Field :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.code)">
                       <FieldLabel for="shift-code">班次编码 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="shift-code" v-model="shiftForm.code" autocomplete="off" required />
                     </Field>
-                    <Field :data-invalid="!isNonEmpty(shiftForm.name)">
+                    <Field :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.name)">
                       <FieldLabel for="shift-name">班次名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="shift-name" v-model="shiftForm.name" autocomplete="off" required />
                     </Field>
@@ -387,7 +411,7 @@ async function submitCal() {
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="shiftOpen = false">取消</Button>
-                    <Button type="submit" :disabled="shifts.createPending.value || !canCreateShift">
+                    <Button type="submit" :disabled="shifts.createPending.value">
                       <Spinner v-if="shifts.createPending.value" aria-hidden="true" />保存班次
                     </Button>
                   </DialogFooter>
@@ -419,18 +443,18 @@ async function submitCal() {
                 <form class="grid gap-4" @submit.prevent="submitCal">
                   <p v-if="calCreateError" class="text-sm text-destructive" role="alert">{{ calCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="!isNonEmpty(calForm.code)">
+                    <Field :data-invalid="calShowErrors && !isNonEmpty(calForm.code)">
                       <FieldLabel for="cal-code">日历编码 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="cal-code" v-model="calForm.code" autocomplete="off" required />
                     </Field>
-                    <Field :data-invalid="!isNonEmpty(calForm.name)">
+                    <Field :data-invalid="calShowErrors && !isNonEmpty(calForm.name)">
                       <FieldLabel for="cal-name">日历名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="cal-name" v-model="calForm.name" autocomplete="off" required />
                     </Field>
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="calOpen = false">取消</Button>
-                    <Button type="submit" :disabled="calendars.createPending.value || !canCreateCal">
+                    <Button type="submit" :disabled="calendars.createPending.value">
                       <Spinner v-if="calendars.createPending.value" aria-hidden="true" />保存日历
                     </Button>
                   </DialogFooter>
