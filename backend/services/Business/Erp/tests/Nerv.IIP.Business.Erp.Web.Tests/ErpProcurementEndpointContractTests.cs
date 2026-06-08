@@ -150,6 +150,43 @@ public sealed class ErpProcurementEndpointContractTests
     }
 
     [Fact]
+    public async Task List_requests_for_quotation_query_applies_skip_offset()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateRequestForQuotationCommandHandler(dbContext);
+        await handler.Handle(new CreateRequestForQuotationCommand(
+            "org-001",
+            "env-dev",
+            "RFQ-001",
+            ["SUP-001"],
+            [new RfqCommandLine("LINE-001", "SKU-RM-001", "kg", 1m, "SITE-01", new DateOnly(2026, 6, 5))]), CancellationToken.None);
+        await Task.Delay(10, CancellationToken.None);
+        await handler.Handle(new CreateRequestForQuotationCommand(
+            "org-001",
+            "env-dev",
+            "RFQ-002",
+            ["SUP-001"],
+            [new RfqCommandLine("LINE-001", "SKU-RM-002", "kg", 1m, "SITE-01", new DateOnly(2026, 6, 5))]), CancellationToken.None);
+        await Task.Delay(10, CancellationToken.None);
+        await handler.Handle(new CreateRequestForQuotationCommand(
+            "org-001",
+            "env-dev",
+            "RFQ-003",
+            ["SUP-001"],
+            [new RfqCommandLine("LINE-001", "SKU-RM-003", "kg", 1m, "SITE-01", new DateOnly(2026, 6, 5))]), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListRequestsForQuotationQueryHandler(dbContext).Handle(
+            new ListRequestsForQuotationQuery("org-001", "env-dev", null, null, 1, 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        Assert.Equal("RFQ-002", Assert.Single(response.Items).RfqNo);
+    }
+
+    [Fact]
     public async Task List_purchase_orders_query_returns_procurement_projection()
     {
         await using var provider = CreateInMemoryProvider();

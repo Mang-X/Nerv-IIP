@@ -30,13 +30,13 @@ public sealed class ListOpportunitiesQueryHandler(ApplicationDbContext dbContext
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (string.Equals(request.Status, "open", StringComparison.OrdinalIgnoreCase))
+        if (ErpListPaging.IsUnknownSingleStatus(request.Status, "open"))
         {
-            query = query.Where(x => x.Status == "open");
+            query = query.Where(x => false);
         }
         else if (!string.IsNullOrWhiteSpace(request.Status))
         {
-            query = query.Where(x => false);
+            query = query.Where(x => x.Status == "open");
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
@@ -96,7 +96,6 @@ public sealed class ListQuotationsQueryHandler(ApplicationDbContext dbContext)
     {
         var query = dbContext.Quotations
             .AsNoTracking()
-            .Include(x => x.Lines)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.Status)
@@ -186,11 +185,9 @@ public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContex
     {
         var query = dbContext.DeliveryOrders
             .AsNoTracking()
-            .Include(x => x.Lines)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (!string.IsNullOrWhiteSpace(request.Status)
-            && !string.Equals(request.Status, "released", StringComparison.OrdinalIgnoreCase))
+        if (ErpListPaging.IsUnknownSingleStatus(request.Status, "released"))
         {
             query = query.Where(x => false);
         }
@@ -235,6 +232,12 @@ internal static class ErpListPaging
     public static int NormalizeTake(int take)
     {
         return Math.Min(take <= 0 ? DefaultTake : take, MaxTake);
+    }
+
+    public static bool IsUnknownSingleStatus(string? status, string allowedStatus)
+    {
+        return !string.IsNullOrWhiteSpace(status)
+            && !string.Equals(status.Trim(), allowedStatus, StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -516,11 +519,9 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
     {
         var query = dbContext.JournalVouchers
             .AsNoTracking()
-            .Include(x => x.Lines)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (!string.IsNullOrWhiteSpace(request.Status)
-            && !string.Equals(request.Status, "posted", StringComparison.OrdinalIgnoreCase))
+        if (ErpListPaging.IsUnknownSingleStatus(request.Status, "posted"))
         {
             query = query.Where(x => false);
         }

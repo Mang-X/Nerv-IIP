@@ -47,8 +47,6 @@ public sealed class ListRequestsForQuotationQueryHandler(ApplicationDbContext db
     {
         var query = dbContext.RequestForQuotations
             .AsNoTracking()
-            .Include(x => x.Suppliers)
-            .Include(x => x.Lines)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.Status)
@@ -137,7 +135,6 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
     {
         var query = dbContext.PurchaseOrders
             .AsNoTracking()
-            .Include(x => x.Lines)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.Status)

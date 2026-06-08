@@ -194,6 +194,26 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
+    public async Task New_sales_finance_list_queries_apply_skip_offset()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateQuotationAsync(dbContext, "QUO-001", "CUST-001", "SKU-FG-001");
+        await Task.Delay(10, CancellationToken.None);
+        await CreateQuotationAsync(dbContext, "QUO-002", "CUST-001", "SKU-FG-002");
+        await Task.Delay(10, CancellationToken.None);
+        await CreateQuotationAsync(dbContext, "QUO-003", "CUST-001", "SKU-FG-003");
+
+        var response = await new ListQuotationsQueryHandler(dbContext).Handle(
+            new ListQuotationsQuery("org-001", "env-dev", null, null, 1, 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        Assert.Equal("QUO-002", Assert.Single(response.Items).QuotationNo);
+    }
+
+    [Fact]
     public async Task Finance_source_document_queries_return_precise_ap_ar_and_cost_facts()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
