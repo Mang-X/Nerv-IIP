@@ -200,10 +200,12 @@ public sealed class ErpSalesFinanceEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         await CreateQuotationAsync(dbContext, "QUO-001", "CUST-001", "SKU-FG-001");
-        await Task.Delay(10, CancellationToken.None);
         await CreateQuotationAsync(dbContext, "QUO-002", "CUST-001", "SKU-FG-002");
-        await Task.Delay(10, CancellationToken.None);
         await CreateQuotationAsync(dbContext, "QUO-003", "CUST-001", "SKU-FG-003");
+        SetQuotationCreatedAt(dbContext, "QUO-001", new DateTime(2026, 6, 1, 0, 0, 1, DateTimeKind.Utc));
+        SetQuotationCreatedAt(dbContext, "QUO-002", new DateTime(2026, 6, 1, 0, 0, 2, DateTimeKind.Utc));
+        SetQuotationCreatedAt(dbContext, "QUO-003", new DateTime(2026, 6, 1, 0, 0, 3, DateTimeKind.Utc));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListQuotationsQueryHandler(dbContext).Handle(
             new ListQuotationsQuery("org-001", "env-dev", null, null, 1, 1),
@@ -394,6 +396,15 @@ public sealed class ErpSalesFinanceEndpointContractTests
                 [new QuotationCommandLine("LINE-001", skuCode, "EA", 2m, 100m, new DateOnly(2026, 7, 1))]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private static void SetQuotationCreatedAt(
+        Infrastructure.ApplicationDbContext dbContext,
+        string quotationNo,
+        DateTime createdAtUtc)
+    {
+        var quotation = dbContext.Quotations.Single(x => x.QuotationNo == quotationNo);
+        dbContext.Entry(quotation).Property(x => x.CreatedAtUtc).CurrentValue = createdAtUtc;
     }
 }
 

@@ -162,20 +162,22 @@ public sealed class ErpProcurementEndpointContractTests
             "RFQ-001",
             ["SUP-001"],
             [new RfqCommandLine("LINE-001", "SKU-RM-001", "kg", 1m, "SITE-01", new DateOnly(2026, 6, 5))]), CancellationToken.None);
-        await Task.Delay(10, CancellationToken.None);
         await handler.Handle(new CreateRequestForQuotationCommand(
             "org-001",
             "env-dev",
             "RFQ-002",
             ["SUP-001"],
             [new RfqCommandLine("LINE-001", "SKU-RM-002", "kg", 1m, "SITE-01", new DateOnly(2026, 6, 5))]), CancellationToken.None);
-        await Task.Delay(10, CancellationToken.None);
         await handler.Handle(new CreateRequestForQuotationCommand(
             "org-001",
             "env-dev",
             "RFQ-003",
             ["SUP-001"],
             [new RfqCommandLine("LINE-001", "SKU-RM-003", "kg", 1m, "SITE-01", new DateOnly(2026, 6, 5))]), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        SetRfqCreatedAt(dbContext, "RFQ-001", new DateTime(2026, 6, 1, 0, 0, 1, DateTimeKind.Utc));
+        SetRfqCreatedAt(dbContext, "RFQ-002", new DateTime(2026, 6, 1, 0, 0, 2, DateTimeKind.Utc));
+        SetRfqCreatedAt(dbContext, "RFQ-003", new DateTime(2026, 6, 1, 0, 0, 3, DateTimeKind.Utc));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListRequestsForQuotationQueryHandler(dbContext).Handle(
@@ -318,5 +320,11 @@ public sealed class ErpProcurementEndpointContractTests
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();
+    }
+
+    private static void SetRfqCreatedAt(ApplicationDbContext dbContext, string rfqNo, DateTime createdAtUtc)
+    {
+        var rfq = dbContext.RequestForQuotations.Single(x => x.RfqNo == rfqNo);
+        dbContext.Entry(rfq).Property(x => x.CreatedAtUtc).CurrentValue = createdAtUtc;
     }
 }
