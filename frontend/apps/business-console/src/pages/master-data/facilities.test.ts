@@ -6,6 +6,7 @@ import FacilitiesPage from './facilities.vue'
 
 const stub = vi.hoisted(() => ({
   create: vi.fn(),
+  createWorkshop: vi.fn(),
 }))
 
 function stubResource(resourceType: string) {
@@ -27,6 +28,21 @@ function stubResource(resourceType: string) {
   }
 }
 
+function stubWorkshops() {
+  const rows = [{ resourceType: 'workshop', code: 'WS-A', displayName: '总装车间', active: true, siteCode: 'PLANT-A' }]
+  return {
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
+    workshops: computed(() => rows),
+    workshopsTotal: computed(() => rows.length),
+    workshopsError: shallowRef(undefined),
+    workshopsPending: shallowRef(false),
+    refreshWorkshops: vi.fn(),
+    createWorkshop: stub.createWorkshop,
+    createWorkshopError: shallowRef(undefined),
+    createWorkshopPending: shallowRef(false),
+  }
+}
+
 function stubActions() {
   return {
     update: vi.fn(),
@@ -41,6 +57,7 @@ function stubActions() {
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
+  useBusinessWorkshops: () => stubWorkshops(),
   useMasterDataResourceActions: () => stubActions(),
 }))
 
@@ -57,15 +74,31 @@ describe('master-data facilities page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('工厂与产线')
-    expect(wrapper.text()).toContain('工厂 → 车间（组织层·建设中） → 产线 → 工作中心 → 设备')
+    expect(wrapper.text()).toContain('工厂 → 车间 → 产线 → 工作中心 → 设备')
     const tabs = wrapper.findAll('[role="tab"]').map((t) => t.text())
     expect(tabs.some((t) => t.includes('工厂'))).toBe(true)
+    expect(tabs.some((t) => t.includes('车间'))).toBe(true)
     expect(tabs.some((t) => t.includes('产线'))).toBe(true)
-    expect(tabs.some((t) => t === '车间')).toBe(true)
     expect(tabs.some((t) => t.includes('工作中心'))).toBe(true)
 
     expect(wrapper.text()).toContain('宁波工厂')
     expect(wrapper.findAll('button').some((b) => b.text().includes('新建工厂'))).toBe(true)
+  })
+
+  it('renders real workshop list with create button and per-row actions', async () => {
+    const wrapper = mount(FacilitiesPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const workshopTab = wrapper.findAll('[role="tab"]').find((t) => t.text().includes('车间'))
+    expect(workshopTab).toBeTruthy()
+    await workshopTab!.trigger('focus')
+    await workshopTab!.trigger('mousedown')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('总装车间')
+    expect(wrapper.findAll('button').some((b) => b.text().includes('新建车间'))).toBe(true)
+    const triggers = wrapper.findAll('button').filter((b) => b.attributes('aria-label')?.includes('操作'))
+    expect(triggers.length).toBeGreaterThan(0)
   })
 
   it('exposes per-row actions (detail / rename / disable)', async () => {

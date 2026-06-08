@@ -7,15 +7,10 @@ import type {
 } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
-import { useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
+import { useBusinessWorkshops, useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
   DataTable,
   DataTablePagination,
   Dialog,
@@ -61,9 +56,11 @@ const WORK_CENTER_DEFAULTS = {
 }
 
 const sites = useMasterDataResource<BusinessConsoleCreateSiteRequest>('site')
+const workshops = useBusinessWorkshops()
 const lines = useMasterDataResource<BusinessConsoleCreateProductionLineRequest>('production-line')
 const workCenters = useMasterDataResource<BusinessConsoleCreateWorkCenterRequest>('work-center')
 const siteActions = useMasterDataResourceActions('site')
+const workshopActions = useMasterDataResourceActions('workshop')
 const lineActions = useMasterDataResourceActions('production-line')
 const wcActions = useMasterDataResourceActions('work-center')
 
@@ -75,13 +72,33 @@ const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
+const workshopColumns: DataTableColumn<BusinessConsoleResourceItem>[] = [
+  { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
+  { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
+  { key: 'siteCode', header: '所属工厂', width: 'w-32' },
+  { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
+]
+
 const facilityActionError = computed(() =>
-  formatError(siteActions.actionError.value ?? lineActions.actionError.value ?? wcActions.actionError.value),
+  formatError(
+    siteActions.actionError.value
+    ?? workshopActions.actionError.value
+    ?? lineActions.actionError.value
+    ?? wcActions.actionError.value,
+  ),
 )
 function siteDetailFields(row: BusinessConsoleResourceItem) {
   return [
     { label: '工厂编码', value: row.code ?? '' },
     { label: '工厂名称', value: row.displayName ?? '' },
+  ]
+}
+function workshopDetailFields(row: BusinessConsoleResourceItem) {
+  return [
+    { label: '车间编码', value: row.code ?? '' },
+    { label: '车间名称', value: row.displayName ?? '' },
+    { label: '所属工厂', value: row.siteCode ?? '' },
   ]
 }
 function lineDetailFields(row: BusinessConsoleResourceItem) {
@@ -148,13 +165,54 @@ async function submitSite() {
   siteOpen.value = false
 }
 
+// ---- 车间 ----
+const workshopKeyword = ref('')
+const workshopPage = ref(1)
+const workshopPageSize = ref('10')
+const workshopOpen = ref(false)
+const workshopShowErrors = ref(false)
+const workshopForm = reactive({ code: '', name: '', siteCode: '', managerUserId: '', description: '' })
+const workshopRows = computed(() => filterRows(workshops.workshops.value, workshopKeyword.value))
+const canCreateWorkshop = computed(() => [workshopForm.code, workshopForm.name, workshopForm.siteCode].every(isNonEmpty))
+const workshopCreateError = computed(() => formatError(workshops.createWorkshopError.value))
+const workshopListError = computed(() => formatError(workshops.workshopsError.value))
+
+watch(workshopOpen, (open) => { if (open) workshopShowErrors.value = false })
+watch([workshopKeyword, workshopPageSize], () => { workshopPage.value = 1 })
+watch([workshopPage, workshopPageSize], () => {
+  workshops.filters.skip = (workshopPage.value - 1) * (Number(workshopPageSize.value) || 10)
+  workshops.filters.take = Number(workshopPageSize.value) || 10
+}, { immediate: true })
+
+async function submitWorkshop() {
+  if (!canCreateWorkshop.value) {
+    workshopShowErrors.value = true
+    return
+  }
+  const manager = workshopForm.managerUserId.trim()
+  const note = workshopForm.description.trim()
+  await workshops.createWorkshop({
+    organizationId: workshops.filters.organizationId,
+    environmentId: workshops.filters.environmentId,
+    code: workshopForm.code.trim(),
+    name: workshopForm.name.trim(),
+    siteCode: workshopForm.siteCode.trim(),
+    ...(manager ? { managerUserId: manager } : {}),
+    ...(note ? { description: note } : {}),
+  })
+  toast.success(`车间「${workshopForm.name.trim()}」已创建。`)
+  Object.assign(workshopForm, { code: '', name: '', siteCode: '', managerUserId: '', description: '' })
+  workshopShowErrors.value = false
+  workshopOpen.value = false
+}
+
 // ---- 产线 ----
 const lineKeyword = ref('')
 const linePage = ref(1)
 const linePageSize = ref('10')
 const lineOpen = ref(false)
 const lineShowErrors = ref(false)
-const lineForm = reactive({ code: '', name: '', siteCode: '' })
+const lineForm = reactive({ code: '', name: '', siteCode: '', workshopCode: '' })
 const lineRows = computed(() => filterRows(lines.items.value, lineKeyword.value))
 const canCreateLine = computed(() => [lineForm.code, lineForm.name, lineForm.siteCode].every(isNonEmpty))
 const lineCreateError = computed(() => formatError(lines.createError.value))
@@ -172,15 +230,17 @@ async function submitLine() {
     lineShowErrors.value = true
     return
   }
+  const workshopCode = lineForm.workshopCode.trim()
   await lines.create({
     organizationId: lines.filters.organizationId,
     environmentId: lines.filters.environmentId,
     code: lineForm.code.trim(),
     name: lineForm.name.trim(),
     siteCode: lineForm.siteCode.trim(),
+    ...(workshopCode ? { workshopCode } : {}),
   })
   toast.success(`产线「${lineForm.name.trim()}」已创建。`)
-  Object.assign(lineForm, { code: '', name: '', siteCode: '' })
+  Object.assign(lineForm, { code: '', name: '', siteCode: '', workshopCode: '' })
   lineShowErrors.value = false
   lineOpen.value = false
 }
@@ -191,7 +251,7 @@ const wcPage = ref(1)
 const wcPageSize = ref('10')
 const wcOpen = ref(false)
 const wcShowErrors = ref(false)
-const wcForm = reactive({ code: '', name: '', plantCode: '', lineCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
+const wcForm = reactive({ code: '', name: '', plantCode: '', lineCode: '', workshopCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
 const wcRows = computed(() => filterRows(workCenters.items.value, wcKeyword.value))
 const canCreateWorkCenter = computed(() =>
   [wcForm.code, wcForm.name, wcForm.plantCode, wcForm.lineCode, wcForm.defaultCalendarCode].every(isNonEmpty)
@@ -212,6 +272,7 @@ async function submitWorkCenter() {
     wcShowErrors.value = true
     return
   }
+  const workshopCode = wcForm.workshopCode.trim()
   await workCenters.create({
     organizationId: workCenters.filters.organizationId,
     environmentId: workCenters.filters.environmentId,
@@ -224,9 +285,10 @@ async function submitWorkCenter() {
     resourceType: WORK_CENTER_DEFAULTS.resourceType,
     capacityUnit: WORK_CENTER_DEFAULTS.capacityUnit,
     finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
+    ...(workshopCode ? { workshopCode } : {}),
   })
   toast.success(`工作中心「${wcForm.name.trim()}」已创建。`)
-  Object.assign(wcForm, { code: '', name: '', plantCode: '', lineCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
+  Object.assign(wcForm, { code: '', name: '', plantCode: '', lineCode: '', workshopCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
   wcShowErrors.value = false
   wcOpen.value = false
 }
@@ -241,6 +303,7 @@ function filterRows(items: BusinessConsoleResourceItem[], keyword: string) {
 
 function refreshAll() {
   void sites.refresh()
+  void workshops.refreshWorkshops()
   void lines.refresh()
   void workCenters.refresh()
 }
@@ -257,10 +320,11 @@ function refreshAll() {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">层级：工厂 → 车间（组织层·建设中） → 产线 → 工作中心 → 设备</p>
+    <p class="text-sm text-muted-foreground">层级：工厂 → 车间 → 产线 → 工作中心 → 设备</p>
 
-    <SectionCards :columns="3">
+    <SectionCards :columns="4">
       <SectionCard description="工厂数" :value="sites.total.value" hint="生产站点" />
+      <SectionCard description="车间数" :value="workshops.workshopsTotal.value" hint="工厂下组织层" />
       <SectionCard description="产线数" :value="lines.total.value" hint="所属各工厂" />
       <SectionCard description="工作中心数" :value="workCenters.total.value" hint="产能资源" />
     </SectionCards>
@@ -269,7 +333,7 @@ function refreshAll() {
       <TabsList>
         <TabsTrigger value="site">工厂 ({{ sites.total.value }})</TabsTrigger>
         <TabsTrigger value="line">产线 ({{ lines.total.value }})</TabsTrigger>
-        <TabsTrigger value="workshop">车间</TabsTrigger>
+        <TabsTrigger value="workshop">车间 ({{ workshops.workshopsTotal.value }})</TabsTrigger>
         <TabsTrigger value="work-center">工作中心 ({{ workCenters.total.value }})</TabsTrigger>
       </TabsList>
 
@@ -376,6 +440,18 @@ function refreshAll() {
                       </Select>
                       <FieldDescription>缺少工厂？先到「工厂」页新建。</FieldDescription>
                     </Field>
+                    <Field>
+                      <FieldLabel for="line-workshop">所属车间</FieldLabel>
+                      <Select v-model="lineForm.workshopCode">
+                        <SelectTrigger id="line-workshop"><SelectValue placeholder="可选，请选择车间" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem v-for="w in workshops.workshops.value" :key="w.code" :value="w.code ?? ''">
+                            {{ w.displayName ?? w.code }}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FieldDescription>可选。归属到工厂下的车间。</FieldDescription>
+                    </Field>
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="lineOpen = false">取消</Button>
@@ -407,19 +483,86 @@ function refreshAll() {
         <DataTablePagination v-model:page="linePage" v-model:page-size="linePageSize" :total-items="lines.total.value" />
       </TabsContent>
 
-      <!-- 车间（组织层·建设中，后端尚无 Workshop 实体，本期仅占位预留，见 #348） -->
+      <!-- 车间（工厂下的组织 / 区域层，产线与工作中心可归属到车间） -->
       <TabsContent value="workshop" class="grid gap-3">
-        <Card>
-          <CardHeader>
-            <CardTitle class="text-base">车间（组织层·建设中）</CardTitle>
-            <CardDescription>工厂下的组织 / 区域层</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p class="text-sm text-muted-foreground">
-              车间作为工厂下的组织 / 区域层，正在建设。建成后可在此维护车间，并将产线与工作中心归属到对应车间。
-            </p>
-          </CardContent>
-        </Card>
+        <Toolbar v-model:search="workshopKeyword" search-placeholder="在当前页内筛选车间编码、名称">
+          <template #actions>
+            <Dialog v-model:open="workshopOpen">
+              <DialogTrigger as-child>
+                <Button size="sm" type="button">
+                  <PlusIcon aria-hidden="true" />
+                  新建车间
+                </Button>
+              </DialogTrigger>
+              <DialogContent class="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>新建车间</DialogTitle>
+                  <DialogDescription>在所属工厂下登记一个车间。带 * 为必填项。</DialogDescription>
+                </DialogHeader>
+                <form class="grid gap-4" @submit.prevent="submitWorkshop">
+                  <p v-if="workshopCreateError" class="text-sm text-destructive" role="alert">{{ workshopCreateError }}</p>
+                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
+                    <Field :data-invalid="workshopShowErrors && !isNonEmpty(workshopForm.code)">
+                      <FieldLabel for="workshop-code">车间编码 <span class="text-destructive">*</span></FieldLabel>
+                      <Input id="workshop-code" v-model="workshopForm.code" autocomplete="off" required />
+                    </Field>
+                    <Field :data-invalid="workshopShowErrors && !isNonEmpty(workshopForm.name)">
+                      <FieldLabel for="workshop-name">车间名称 <span class="text-destructive">*</span></FieldLabel>
+                      <Input id="workshop-name" v-model="workshopForm.name" autocomplete="off" required />
+                    </Field>
+                    <Field>
+                      <FieldLabel for="workshop-site">所属工厂 <span class="text-destructive">*</span></FieldLabel>
+                      <Select v-model="workshopForm.siteCode">
+                        <SelectTrigger id="workshop-site"><SelectValue placeholder="请选择工厂" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem v-for="s in sites.items.value" :key="s.code" :value="s.code ?? ''">
+                            {{ s.displayName ?? s.code }}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FieldDescription>缺少工厂？先到「工厂」页新建。</FieldDescription>
+                    </Field>
+                    <Field>
+                      <FieldLabel for="workshop-manager">负责人</FieldLabel>
+                      <Input id="workshop-manager" v-model="workshopForm.managerUserId" autocomplete="off" />
+                      <FieldDescription>可选，车间负责人。</FieldDescription>
+                    </Field>
+                    <Field class="sm:col-span-2">
+                      <FieldLabel for="workshop-desc">说明</FieldLabel>
+                      <Input id="workshop-desc" v-model="workshopForm.description" autocomplete="off" />
+                    </Field>
+                  </FieldGroup>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" @click="workshopOpen = false">取消</Button>
+                    <Button type="submit" :disabled="workshops.createWorkshopPending.value">
+                      <Spinner v-if="workshops.createWorkshopPending.value" aria-hidden="true" />
+                      保存车间
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </template>
+        </Toolbar>
+        <p v-if="workshopListError" class="text-sm text-destructive" role="alert">{{ workshopListError }}</p>
+        <DataTable
+          :columns="workshopColumns"
+          :rows="workshopRows"
+          :row-key="rowKey"
+          :loading="workshops.workshopsPending.value"
+          empty-message="暂无车间。可清空筛选或新建车间。"
+        >
+          <template #cell-siteCode="{ row }">
+            {{ row.siteCode ?? '无' }}
+          </template>
+          <template #cell-active="{ row }">
+            <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+          </template>
+          <template #cell-actions="{ row }">
+            <MasterDataRowActions :row="row" entity-label="车间" :detail-fields="workshopDetailFields(row)" :actions="workshopActions" />
+          </template>
+        </DataTable>
+        <DataTablePagination v-model:page="workshopPage" v-model:page-size="workshopPageSize" :total-items="workshops.workshopsTotal.value" />
       </TabsContent>
 
       <!-- 工作中心 -->
@@ -470,6 +613,18 @@ function refreshAll() {
                           </SelectItem>
                         </SelectContent>
                       </Select>
+                    </Field>
+                    <Field>
+                      <FieldLabel for="wc-workshop">所属车间</FieldLabel>
+                      <Select v-model="wcForm.workshopCode">
+                        <SelectTrigger id="wc-workshop"><SelectValue placeholder="可选，请选择车间" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem v-for="w in workshops.workshops.value" :key="w.code" :value="w.code ?? ''">
+                            {{ w.displayName ?? w.code }}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FieldDescription>可选。归属到工厂下的车间。</FieldDescription>
                     </Field>
                     <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.defaultCalendarCode)">
                       <FieldLabel for="wc-cal">默认工作日历 <span class="text-destructive">*</span></FieldLabel>

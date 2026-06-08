@@ -8,14 +8,17 @@ import {
   createBusinessConsoleTeamMutationOptions,
   createBusinessConsoleWorkCalendarMutationOptions,
   createBusinessConsoleWorkCenterMutationOptions,
+  createBusinessConsoleWorkshopMutationOptions,
   disableBusinessConsoleMasterDataResourceMutationOptions,
   enableBusinessConsoleMasterDataResourceMutationOptions,
   listBusinessConsoleMasterDataResourcesQueryOptions,
   listBusinessConsoleSkusQueryOptions,
+  listBusinessConsoleWorkshopsQueryOptions,
   registerBusinessConsoleDeviceAssetMutationOptions,
   updateBusinessConsoleMasterDataResourceMutationOptions,
   type BusinessConsoleCreateBusinessPartnerRequest,
   type BusinessConsoleCreateSkuRequest,
+  type BusinessConsoleCreateWorkshopRequest,
   type BusinessConsoleResourceItem,
   type BusinessConsoleResourceListEnvelope,
   type BusinessConsoleUpdateMasterDataResourceRequest,
@@ -182,6 +185,51 @@ export function useBusinessPartners() {
     partnersError: partnersQuery.error,
     partnersPending: partnersQuery.isLoading,
     partnersTotal: computed(() => resourceTotal(partnersQuery.data.value)),
+  }
+}
+
+/**
+ * 车间的「列表 + 新建」。车间是工厂下的组织 / 区域层（工厂 → 车间 → 产线 → 工作中心）。
+ * 列表走车间专属端点（返回通用 resource 列表形状：含 code/displayName/active/siteCode），
+ * 新建走车间专属端点（需 code/name/siteCode，managerUserId/description 可选）。
+ * onSuccess 同时失效车间列表与通用 resources 列表（产线/工作中心归属读时复用）。
+ */
+export function useBusinessWorkshops() {
+  const filters = defaultListFilters()
+  const queryCache = useQueryCache()
+
+  const workshopsQuery = useQuery(() =>
+    listBusinessConsoleWorkshopsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('includeDisabled', filters.includeDisabled),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
+
+  const createWorkshopMutation = useMutation({
+    ...createBusinessConsoleWorkshopMutationOptions(),
+    onSuccess() {
+      for (const id of ['listBusinessConsoleWorkshops', 'listBusinessConsoleMasterDataResources']) {
+        void queryCache.invalidateQueries({ predicate: isBusinessQuery(id) }).catch(ignoreBackgroundError)
+      }
+    },
+  })
+
+  return {
+    createWorkshop: (body: BusinessConsoleCreateWorkshopRequest) =>
+      createWorkshopMutation.mutateAsync({ body }),
+    createWorkshopError: createWorkshopMutation.error,
+    createWorkshopPending: createWorkshopMutation.isLoading,
+    filters,
+    refreshWorkshops: workshopsQuery.refetch,
+    workshops: computed<BusinessConsoleResourceItem[]>(() => resourceItems(workshopsQuery.data.value)),
+    workshopsError: workshopsQuery.error,
+    workshopsPending: workshopsQuery.isLoading,
+    workshopsTotal: computed(() => resourceTotal(workshopsQuery.data.value)),
   }
 }
 
