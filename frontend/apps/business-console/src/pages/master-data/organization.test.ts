@@ -56,10 +56,51 @@ function stubActions() {
   }
 }
 
+function stubWorkers() {
+  const rows = [
+    { userId: 'usr-1', displayName: '张三', employeeNo: 'E001', department: '总装部', status: 'active' },
+    { userId: 'usr-2', displayName: '李四', employeeNo: 'E002', department: '焊接部', status: 'active' },
+  ]
+  return {
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', keyword: undefined, pageIndex: 0, pageSize: 100 }),
+    refresh: vi.fn(),
+    workers: computed(() => rows),
+    workersError: shallowRef(undefined),
+    workersPending: shallowRef(false),
+    workersTotal: computed(() => rows.length),
+  }
+}
+
+function stubTeamMembers() {
+  const rows = [{ teamCode: 'TEAM-A', userId: 'usr-1', isLeader: true, active: true }]
+  return {
+    members: computed(() => rows),
+    membersError: shallowRef(undefined),
+    membersPending: shallowRef(false),
+    refresh: vi.fn(),
+    addMember: vi.fn(),
+    addPending: shallowRef(false),
+    removeMember: vi.fn(),
+    removePending: shallowRef(false),
+    memberError: shallowRef(undefined),
+  }
+}
+
+function stubSkillAssignment() {
+  return {
+    assign: vi.fn(),
+    assignPending: shallowRef(false),
+    assignError: shallowRef(undefined),
+  }
+}
+
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
   useBusinessMasterDataResources: (resourceType: string) => stubReadonlyResource(resourceType),
   useMasterDataResourceActions: () => stubActions(),
+  useBusinessWorkers: () => stubWorkers(),
+  useTeamMembers: () => stubTeamMembers(),
+  usePersonnelSkillAssignment: () => stubSkillAssignment(),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -92,5 +133,54 @@ describe('master-data organization page', () => {
 
     const triggers = wrapper.findAll('button').filter((b) => b.attributes('aria-label')?.includes('操作'))
     expect(triggers.length).toBeGreaterThan(0)
+  })
+
+  it('offers a 管理成员 entry on team rows and an enabled 登记技能 button', async () => {
+    const wrapper = mount(OrganizationPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const teamTab = wrapper.findAll('[role="tab"]').find((t) => t.text().includes('班组'))
+    await teamTab!.trigger('focus')
+    await teamTab!.trigger('mousedown')
+    await flushPromises()
+    expect(wrapper.findAll('button').some((b) => b.text().includes('管理成员'))).toBe(true)
+
+    const skillTab = wrapper.findAll('[role="tab"]').find((t) => t.text().includes('人员技能'))
+    await skillTab!.trigger('focus')
+    await skillTab!.trigger('mousedown')
+    await flushPromises()
+    const registerButton = wrapper.findAll('button').find((b) => b.text().includes('登记技能'))
+    expect(registerButton).toBeDefined()
+    expect(registerButton!.attributes('disabled')).toBeUndefined()
+  })
+})
+
+// WorkerSelect 的下拉来自 reka-ui Select（内容懒挂载到 body），单测里把 Select 原语
+// 替换成同步渲染插槽的轻量桩，以断言「选项展示工人姓名 / 工号，而非 userId」。
+const selectStubs = {
+  Select: { template: '<div><slot /></div>' },
+  SelectTrigger: { template: '<button type="button" role="combobox"><slot /></button>' },
+  SelectValue: { props: ['placeholder'], template: '<span>{{ placeholder }}</span>' },
+  SelectContent: { template: '<div><slot /></div>' },
+  SelectItem: { props: ['value'], template: '<div role="option"><slot /></div>' },
+  Input: { template: '<input />' },
+}
+
+describe('worker selector', () => {
+  it('renders worker names (not userId) as options', async () => {
+    const WorkerSelect = (await import('@/components/masterData/WorkerSelect.vue')).default
+    const wrapper = mount(WorkerSelect, {
+      props: { modelValue: '' },
+      global: { stubs: selectStubs },
+    })
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('张三')
+    expect(text).toContain('E001')
+    expect(text).toContain('总装部')
+    expect(text).not.toContain('usr-1')
+
+    wrapper.unmount()
   })
 })

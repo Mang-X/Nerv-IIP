@@ -8,7 +8,9 @@ import type {
 } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
-import { useBusinessMasterDataResources, useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
+import TeamMembersDialog from '@/components/masterData/TeamMembersDialog.vue'
+import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
+import { useBusinessMasterDataResources, useMasterDataResource, useMasterDataResourceActions, usePersonnelSkillAssignment } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -43,7 +45,7 @@ import {
   toast,
   Toolbar,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { PlusIcon, RefreshCwIcon, UsersIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '组织与人员' } })
@@ -52,8 +54,9 @@ const departments = useMasterDataResource<BusinessConsoleCreateDepartmentRequest
 const teams = useMasterDataResource<BusinessConsoleCreateTeamRequest>('team')
 const shifts = useMasterDataResource<BusinessConsoleCreateShiftRequest>('shift')
 const calendars = useMasterDataResource<BusinessConsoleCreateWorkCalendarRequest>('work-calendar')
-// 人员技能为只读列表（登记入口待后端组织建模——IAM 用户接入后开放）。
+// 人员技能：列表只读 + 登记可写（工人选择器 + 技能编码 + 等级）。
 const skills = useBusinessMasterDataResources('personnel-skill')
+const skillAssignment = usePersonnelSkillAssignment()
 const deptActions = useMasterDataResourceActions('department')
 const teamActions = useMasterDataResourceActions('team')
 const shiftActions = useMasterDataResourceActions('shift')
@@ -66,9 +69,6 @@ const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
-// 人员技能为只读 Tab，列表不含操作列。
-const readonlyColumns: DataTableColumn<BusinessConsoleResourceItem>[] = columns.slice(0, 4)
-
 const orgActionError = computed(() =>
   formatError(
     deptActions.actionError.value ?? teamActions.actionError.value
@@ -177,6 +177,15 @@ async function submitTeam() {
   teamOpen.value = false
 }
 
+// ---- 班组成员维护（弹窗，按行打开）----
+const membersOpen = ref(false)
+const membersTeam = reactive({ code: '', name: '' })
+function openMembers(row: BusinessConsoleResourceItem) {
+  membersTeam.code = row.code ?? ''
+  membersTeam.name = row.displayName ?? row.code ?? ''
+  membersOpen.value = true
+}
+
 // ---- 班次 ----
 const shiftKeyword = ref('')
 const shiftPage = ref(1)
@@ -248,17 +257,53 @@ async function submitCal() {
   calOpen.value = false
 }
 
-// ---- 人员技能（只读，登记入口禁用占位）----
+// ---- 人员技能（列表只读 + 登记可写）----
 const skillKeyword = ref('')
 const skillPage = ref(1)
 const skillPageSize = ref('10')
 const skillRows = computed(() => filterRows(skills.resources.value, skillKeyword.value))
 const skillListError = computed(() => formatError(skills.resourcesError.value))
+const skillActions = useMasterDataResourceActions('personnel-skill')
 watch([skillKeyword, skillPageSize], () => { skillPage.value = 1 })
 watch([skillPage, skillPageSize], () => {
   skills.filters.skip = (skillPage.value - 1) * (Number(skillPageSize.value) || 10)
   skills.filters.take = Number(skillPageSize.value) || 10
 }, { immediate: true })
+
+const SKILL_LEVELS = [
+  { value: 'junior', label: '初级' },
+  { value: 'intermediate', label: '中级' },
+  { value: 'senior', label: '高级' },
+  { value: 'expert', label: '专家' },
+] as const
+const skillOpen = ref(false)
+const skillShowErrors = ref(false)
+const skillForm = reactive({ userId: '', skillCode: '', level: '', effectiveFrom: '' })
+const canAssignSkill = computed(() =>
+  isNonEmpty(skillForm.userId) && isNonEmpty(skillForm.skillCode) && isNonEmpty(skillForm.level),
+)
+const skillAssignError = computed(() => formatError(skillAssignment.assignError.value))
+watch(skillOpen, (open) => {
+  if (open) {
+    skillShowErrors.value = false
+    Object.assign(skillForm, { userId: '', skillCode: '', level: '', effectiveFrom: '' })
+  }
+})
+async function submitSkill() {
+  if (!canAssignSkill.value) {
+    skillShowErrors.value = true
+    return
+  }
+  await skillAssignment.assign({
+    userId: skillForm.userId,
+    skillCode: skillForm.skillCode.trim(),
+    level: skillForm.level,
+    effectiveFrom: skillForm.effectiveFrom.trim() || undefined,
+  })
+  toast.success('已登记人员技能。')
+  skillShowErrors.value = false
+  skillOpen.value = false
+}
 </script>
 
 <template>
@@ -273,7 +318,7 @@ watch([skillPage, skillPageSize], () => {
     </PageHeader>
 
     <p class="text-sm text-muted-foreground">
-      工人来自系统用户（IAM）；此处维护人员技能矩阵（技能 / 等级 / 有效期）。班组成员与工人选择器待后端组织建模支持。
+      工人来自系统用户（IAM）。可在班组行内维护成员（含组长），并为工人登记技能与等级；选择工人时按姓名 / 工号检索。
     </p>
 
     <SectionCards :columns="4">
@@ -413,7 +458,18 @@ watch([skillPage, skillPageSize], () => {
         <DataTable :columns="columns" :rows="teamRows" :row-key="rowKey" :loading="teams.pending.value" empty-message="暂无班组。可清空筛选或新建班组。">
           <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
           <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="班组" :detail-fields="baseDetailFields(row, '班组编码', '班组名称')" :actions="teamActions" />
+            <div class="flex items-center justify-end gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                :disabled="!row.code"
+                @click="openMembers(row)"
+              >
+                <UsersIcon aria-hidden="true" />管理成员
+              </Button>
+              <MasterDataRowActions :row="row" entity-label="班组" :detail-fields="baseDetailFields(row, '班组编码', '班组名称')" :actions="teamActions" />
+            </div>
           </template>
         </DataTable>
         <DataTablePagination v-model:page="teamPage" v-model:page-size="teamPageSize" :total-items="teams.total.value" />
@@ -524,21 +580,67 @@ watch([skillPage, skillPageSize], () => {
         <DataTablePagination v-model:page="calPage" v-model:page-size="calPageSize" :total-items="calendars.total.value" />
       </TabsContent>
 
-      <!-- 人员技能（只读：列表来自 personnel-skill 资源；登记入口待 IAM 用户接入，见 #348） -->
+      <!-- 人员技能（列表只读 + 登记可写：工人选择器 + 技能编码 + 等级 + 生效日期） -->
       <TabsContent value="personnel-skill" class="grid gap-3">
         <Toolbar v-model:search="skillKeyword" search-placeholder="在当前页内筛选技能编码、名称">
           <template #actions>
-            <Button size="sm" type="button" disabled title="登记需先接入系统用户，待后端组织建模支持">
-              <PlusIcon aria-hidden="true" />登记技能
-            </Button>
+            <Dialog v-model:open="skillOpen">
+              <DialogTrigger as-child>
+                <Button size="sm" type="button"><PlusIcon aria-hidden="true" />登记技能</Button>
+              </DialogTrigger>
+              <DialogContent class="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>登记人员技能</DialogTitle>
+                  <DialogDescription>为某位工人登记一项技能与等级，可选填生效日期。带 * 为必填项。</DialogDescription>
+                </DialogHeader>
+                <form class="grid gap-4" @submit.prevent="submitSkill">
+                  <p v-if="skillAssignError" class="text-sm text-destructive" role="alert">{{ skillAssignError }}</p>
+                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
+                    <Field class="sm:col-span-2" :data-invalid="skillShowErrors && !isNonEmpty(skillForm.userId)">
+                      <FieldLabel for="skill-worker">工人 <span class="text-destructive">*</span></FieldLabel>
+                      <WorkerSelect id="skill-worker" v-model="skillForm.userId" placeholder="搜索并选择工人" />
+                    </Field>
+                    <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.skillCode)">
+                      <FieldLabel for="skill-code">技能 <span class="text-destructive">*</span></FieldLabel>
+                      <Input id="skill-code" v-model="skillForm.skillCode" autocomplete="off" required />
+                    </Field>
+                    <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.level)">
+                      <FieldLabel for="skill-level">等级 <span class="text-destructive">*</span></FieldLabel>
+                      <Select v-model="skillForm.level">
+                        <SelectTrigger id="skill-level"><SelectValue placeholder="请选择等级" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem v-for="lvl in SKILL_LEVELS" :key="lvl.value" :value="lvl.value">{{ lvl.label }}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field>
+                      <FieldLabel for="skill-from">生效日期</FieldLabel>
+                      <Input id="skill-from" v-model="skillForm.effectiveFrom" type="date" />
+                      <FieldDescription>留空表示即时生效。</FieldDescription>
+                    </Field>
+                  </FieldGroup>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" @click="skillOpen = false">取消</Button>
+                    <Button type="submit" :disabled="skillAssignment.assignPending.value">
+                      <Spinner v-if="skillAssignment.assignPending.value" aria-hidden="true" />登记技能
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </template>
         </Toolbar>
         <p v-if="skillListError" class="text-sm text-destructive" role="alert">{{ skillListError }}</p>
-        <DataTable :columns="readonlyColumns" :rows="skillRows" :row-key="rowKey" :loading="skills.resourcesPending.value" empty-message="暂无人员技能。可清空筛选后再试。">
+        <DataTable :columns="columns" :rows="skillRows" :row-key="rowKey" :loading="skills.resourcesPending.value" empty-message="暂无人员技能。可清空筛选或登记技能。">
           <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
+          <template #cell-actions="{ row }">
+            <MasterDataRowActions :row="row" entity-label="人员技能" :detail-fields="baseDetailFields(row, '技能编码', '技能名称')" :actions="skillActions" />
+          </template>
         </DataTable>
         <DataTablePagination v-model:page="skillPage" v-model:page-size="skillPageSize" :total-items="skills.resourcesTotal.value" />
       </TabsContent>
     </Tabs>
+
+    <TeamMembersDialog v-model:open="membersOpen" :team-code="membersTeam.code" :team-name="membersTeam.name" />
   </BusinessLayout>
 </template>

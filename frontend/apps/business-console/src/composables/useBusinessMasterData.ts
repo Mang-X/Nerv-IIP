@@ -1,4 +1,6 @@
 import {
+  addBusinessConsoleTeamMemberMutationOptions,
+  assignBusinessConsolePersonnelSkillMutationOptions,
   createBusinessConsoleDepartmentMutationOptions,
   createBusinessConsoleProductionLineMutationOptions,
   createBusinessConsoleShiftMutationOptions,
@@ -14,8 +16,11 @@ import {
   enableBusinessConsoleMasterDataResourceMutationOptions,
   listBusinessConsoleMasterDataResourcesQueryOptions,
   listBusinessConsoleSkusQueryOptions,
+  listBusinessConsoleTeamMembersQueryOptions,
+  listBusinessConsoleWorkersQueryOptions,
   listBusinessConsoleWorkshopsQueryOptions,
   registerBusinessConsoleDeviceAssetMutationOptions,
+  removeBusinessConsoleTeamMemberMutationOptions,
   updateBusinessConsoleMasterDataResourceMutationOptions,
   type BusinessConsoleCreateBusinessPartnerRequest,
   type BusinessConsoleCreateReferenceDataCodeRequest,
@@ -23,10 +28,14 @@ import {
   type BusinessConsoleCreateWorkshopRequest,
   type BusinessConsoleResourceItem,
   type BusinessConsoleResourceListEnvelope,
+  type BusinessConsoleTeamMemberItem,
+  type BusinessConsoleTeamMemberListEnvelope,
   type BusinessConsoleUpdateMasterDataResourceRequest,
+  type BusinessConsoleWorkerDirectoryEnvelope,
+  type BusinessConsoleWorkerDirectoryItem,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseMutationOptions, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
 const DEFAULT_TAKE = 100
 
@@ -434,5 +443,171 @@ export function useMasterDataResourceActions(resourceType: string) {
     disablePending: disableMutation.isLoading,
     enablePending: enableMutation.isLoading,
     actionError: computed(() => updateMutation.error.value ?? disableMutation.error.value ?? enableMutation.error.value),
+  }
+}
+
+export interface WorkerDirectoryFilters extends BusinessContextFilters {
+  keyword?: string
+  pageIndex: number
+  pageSize: number
+}
+
+function workerItems(envelope: BusinessConsoleWorkerDirectoryEnvelope | undefined) {
+  if (!envelope?.success) {
+    return []
+  }
+
+  return envelope.data?.items ?? []
+}
+
+function workerTotal(envelope: BusinessConsoleWorkerDirectoryEnvelope | undefined) {
+  if (!envelope?.success) {
+    return 0
+  }
+
+  return envelope.data?.totalCount ?? 0
+}
+
+/**
+ * 工人目录（人员选择器数据源）。读自 `/master-data/workers`（注意分页用 pageIndex/pageSize，
+ * 非 skip/take），支持服务端 keyword 检索。仅暴露姓名 / 工号 / 部门给 UI，userId 内部使用。
+ */
+export function useBusinessWorkers() {
+  const filters = reactive<WorkerDirectoryFilters>({
+    ...defaultContext(),
+    keyword: undefined,
+    pageIndex: 0,
+    pageSize: DEFAULT_TAKE,
+  })
+
+  const workersQuery = useQuery(() =>
+    listBusinessConsoleWorkersQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('keyword', filters.keyword),
+        pageIndex: filters.pageIndex,
+        pageSize: filters.pageSize,
+      },
+    }),
+  )
+
+  return {
+    filters,
+    refresh: workersQuery.refetch,
+    workers: computed<BusinessConsoleWorkerDirectoryItem[]>(() => workerItems(workersQuery.data.value)),
+    workersError: workersQuery.error,
+    workersPending: workersQuery.isLoading,
+    workersTotal: computed(() => workerTotal(workersQuery.data.value)),
+  }
+}
+
+function teamMemberItems(envelope: BusinessConsoleTeamMemberListEnvelope | undefined) {
+  if (!envelope?.success) {
+    return []
+  }
+
+  return envelope.data?.members ?? []
+}
+
+export interface TeamMemberAddInput {
+  userId: string
+  isLeader?: boolean
+  effectiveFrom?: string
+}
+
+/**
+ * 某班组的成员维护：按 teamCode 列成员 + 添加成员 + 移除成员。teamCode 以 getter/ref 传入
+ * 以便随选中行切换；增删成功后互相失效，列表即时刷新。移除走 DELETE（body 带 org/env）。
+ */
+export function useTeamMembers(teamCode: MaybeRefOrGetter<string | undefined>) {
+  const ctx = defaultContext()
+  const queryCache = useQueryCache()
+
+  function invalidate() {
+    void queryCache
+      .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleTeamMembers') })
+      .catch(ignoreBackgroundError)
+  }
+
+  const membersQuery = useQuery(() => {
+    const code = toValue(teamCode)
+    return {
+      ...listBusinessConsoleTeamMembersQueryOptions({
+        path: { teamCode: code ?? '' },
+        query: { organizationId: ctx.organizationId, environmentId: ctx.environmentId },
+      }),
+      enabled: Boolean(code),
+    }
+  })
+
+  const addMutation = useMutation({ ...addBusinessConsoleTeamMemberMutationOptions(), onSuccess: invalidate } as unknown as UseMutationOptions)
+  const removeMutation = useMutation({ ...removeBusinessConsoleTeamMemberMutationOptions(), onSuccess: invalidate } as unknown as UseMutationOptions)
+
+  return {
+    members: computed<BusinessConsoleTeamMemberItem[]>(() => teamMemberItems(membersQuery.data.value)),
+    membersError: membersQuery.error,
+    membersPending: membersQuery.isLoading,
+    refresh: membersQuery.refetch,
+    addMember: (input: TeamMemberAddInput) =>
+      (addMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({
+        path: { teamCode: toValue(teamCode) ?? '' },
+        body: {
+          organizationId: ctx.organizationId,
+          environmentId: ctx.environmentId,
+          userId: input.userId,
+          ...optionalQuery('isLeader', input.isLeader),
+          ...optionalQuery('effectiveFrom', input.effectiveFrom),
+        },
+      }),
+    addPending: addMutation.isLoading,
+    removeMember: (userId: string) =>
+      (removeMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({
+        path: { teamCode: toValue(teamCode) ?? '', userId },
+        body: { organizationId: ctx.organizationId, environmentId: ctx.environmentId },
+      }),
+    removePending: removeMutation.isLoading,
+    memberError: computed(() => addMutation.error.value ?? removeMutation.error.value),
+  }
+}
+
+export interface PersonnelSkillAssignInput {
+  userId: string
+  skillCode: string
+  level: string
+  effectiveFrom?: string
+}
+
+/**
+ * 人员技能登记：把某工人的某技能登记为某等级（走 `/master-data/personnel-skills`）。
+ * 成功后失效通用 resources 列表（人员技能列表读自 `useBusinessMasterDataResources('personnel-skill')`）。
+ */
+export function usePersonnelSkillAssignment() {
+  const ctx = defaultContext()
+  const queryCache = useQueryCache()
+
+  const assignMutation = useMutation({
+    ...assignBusinessConsolePersonnelSkillMutationOptions(),
+    onSuccess() {
+      void queryCache
+        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleMasterDataResources') })
+        .catch(ignoreBackgroundError)
+    },
+  } as unknown as UseMutationOptions)
+
+  return {
+    assign: (input: PersonnelSkillAssignInput) =>
+      (assignMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({
+        body: {
+          organizationId: ctx.organizationId,
+          environmentId: ctx.environmentId,
+          userId: input.userId,
+          skillCode: input.skillCode,
+          level: input.level,
+          ...optionalQuery('effectiveFrom', input.effectiveFrom),
+        },
+      }),
+    assignPending: assignMutation.isLoading,
+    assignError: assignMutation.error,
   }
 }
