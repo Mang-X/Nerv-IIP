@@ -12,6 +12,8 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Context.CAP;
+using NetCorePal.Extensions.DistributedLocks;
+using NetCorePal.Extensions.DistributedTransactions.CAP;
 using NetCorePal.Extensions.NewtonsoftJson;
 using Newtonsoft.Json;
 using Prometheus;
@@ -61,6 +63,8 @@ try
 
     builder.Services.AddErpPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<ErpNumberingService>();
+    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)

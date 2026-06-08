@@ -42,6 +42,59 @@ public sealed class FastEndpointsArchitectureTests
         "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web"
     };
 
+    public static TheoryData<string> CommandLockWebProjects => new()
+    {
+        "backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web",
+        "backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web",
+        "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web",
+        "backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web",
+        "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web",
+        "backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web",
+        "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web",
+        "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web",
+        "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web",
+        "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
+    };
+
+    public static TheoryData<string> CapUnitOfWorkWebProjects => new()
+    {
+        "backend/services/AppHub/src/Nerv.IIP.AppHub.Web",
+        "backend/services/Ops/src/Nerv.IIP.Ops.Web",
+        "backend/services/Notification/src/Nerv.IIP.Notification.Web",
+        "backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web",
+        "backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web",
+        "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web",
+        "backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web",
+        "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web",
+        "backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web",
+        "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web",
+        "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web",
+        "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web",
+        "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web",
+        "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
+    };
+
+    public static TheoryData<string> LocalPostgreSqlAppHostResources => new()
+    {
+        "apphub",
+        "iam",
+        "ops",
+        "notification",
+        "businessMasterData",
+        "businessProductEngineering",
+        "businessInventory",
+        "businessQuality",
+        "businessMes",
+        "businessDemandPlanning",
+        "businessBarcodeLabel",
+        "businessApproval",
+        "businessWms",
+        "businessIndustrialTelemetry",
+        "businessMaintenance",
+        "businessErp",
+        "businessScheduling"
+    };
+
     [Theory]
     [MemberData(nameof(ResponseDataWebProjects))]
     public void Platform_web_projects_use_response_data_and_known_exception_middleware(string projectDirectory)
@@ -53,6 +106,33 @@ public sealed class FastEndpointsArchitectureTests
 
         Assert.Contains("UseKnownExceptionHandler", programText);
         Assert.All(sourceFiles, file => Assert.DoesNotContain("WriteAsJsonAsync", File.ReadAllText(file)));
+    }
+
+    [Theory]
+    [MemberData(nameof(CommandLockWebProjects))]
+    public void Command_lock_services_register_distributed_lock(string projectDirectory)
+    {
+        var root = FindRepositoryRoot();
+        var programText = File.ReadAllText(Path.Combine(root, projectDirectory, "Program.cs"));
+
+        Assert.Contains("AddCommandLockBehavior", programText);
+        Assert.Contains("AddInMemoryDistributedLock", programText);
+    }
+
+    [Theory]
+    [MemberData(nameof(CapUnitOfWorkWebProjects))]
+    public void Cap_unit_of_work_services_register_cap_transaction_factory(string projectDirectory)
+    {
+        var root = FindRepositoryRoot();
+        var fullProjectDirectory = Path.Combine(root, projectDirectory);
+        var programText = File.ReadAllText(Path.Combine(fullProjectDirectory, "Program.cs"));
+        var sourceText = string.Join(
+            Environment.NewLine,
+            Directory.GetFiles(fullProjectDirectory, "*.cs", SearchOption.AllDirectories)
+                .Select(File.ReadAllText));
+
+        Assert.Contains("UseCap<ApplicationDbContext>", sourceText);
+        Assert.Contains("AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>", programText);
     }
 
     [Fact]
@@ -114,6 +194,36 @@ public sealed class FastEndpointsArchitectureTests
             programText);
         Assert.Matches(
             "notification[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
+            programText);
+    }
+
+    [Theory]
+    [MemberData(nameof(LocalPostgreSqlAppHostResources))]
+    public void Aspire_apphost_local_postgresql_resources_enable_development_automigration(string resourceVariable)
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+
+        Assert.Matches(
+            $"{resourceVariable}[\\s\\S]*WithEnvironment\\(\"Persistence__Provider\", \"PostgreSQL\"\\)[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
+            programText);
+    }
+
+    [Fact]
+    public void Aspire_apphost_vite_apps_use_fixed_unproxied_local_ports()
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+
+        Assert.Contains("AddViteApp(\"console\", \"../../../frontend/apps/console\")", programText);
+        Assert.Matches(
+            "AddViteApp\\(\"console\", \"../../../frontend/apps/console\"\\)[\\s\\S]*WithHttpEndpoint\\(port: 5105, name: \"http\", isProxied: false\\)",
+            programText);
+        Assert.Contains("AddViteApp(\"business-console\", \"../../../frontend/apps/business-console\")", programText);
+        Assert.Matches(
+            "AddViteApp\\(\"business-console\", \"../../../frontend/apps/business-console\"\\)[\\s\\S]*WithHttpEndpoint\\(port: 5125, name: \"http\", isProxied: false\\)",
             programText);
     }
 

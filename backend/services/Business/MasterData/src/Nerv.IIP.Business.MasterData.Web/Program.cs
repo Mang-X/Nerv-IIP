@@ -23,6 +23,8 @@ using Nerv.IIP.Caching;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.DistributedLocks;
+using NetCorePal.Extensions.DistributedTransactions.CAP;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.WithClientIp()
@@ -131,6 +133,8 @@ try
         masterDataConnectionString,
         builder.Environment.IsDevelopment());
     builder.Services.AddScoped<MasterDataNumberingService>();
+    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IMasterDataIntegrationEventContextAccessor, HttpMasterDataIntegrationEventContextAccessor>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();

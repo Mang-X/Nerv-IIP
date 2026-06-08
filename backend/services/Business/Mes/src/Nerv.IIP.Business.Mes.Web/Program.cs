@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Mes.Web;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.DistributedTransactions.CAP;
 
 var builder = WebApplication.CreateBuilder(args);
 var isTesting = builder.Environment.IsEnvironment("Testing");
@@ -40,6 +41,7 @@ builder.Services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
 builder.Services.AddScoped<MesFoundationReadinessService>();
 builder.Services.AddSingleton<RuleScheduler>();
 builder.Services.AddScoped<MesNumberingService>();
+builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
 builder.Services.AddMesCapIntegrationEvents(builder.Configuration, builder.Environment.EnvironmentName, isTesting);

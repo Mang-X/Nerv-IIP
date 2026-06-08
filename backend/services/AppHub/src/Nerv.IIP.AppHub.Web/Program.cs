@@ -9,6 +9,7 @@ using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
 using NetCorePal.Extensions.AspNetCore;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.DistributedTransactions.CAP;
 using NetCorePal.Extensions.DependencyInjection;
 using System.Net;
 
@@ -34,6 +35,7 @@ builder.Services.AddNervIipCaching(builder.Configuration, "apphub");
 builder.Services.AddNervIipObservability(builder.Configuration, "apphub");
 if (usePostgreSql)
 {
+    builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext();
     builder.Services.AddEnvContext("X-Environment-Id");
     builder.Services.AddCapContextProcessor();
