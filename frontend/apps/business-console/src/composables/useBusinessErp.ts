@@ -1,15 +1,30 @@
 import {
   createBusinessConsoleErpSalesOrderMutationOptions,
   getBusinessConsoleErpFinanceSummaryQueryOptions,
+  listBusinessConsoleErpDeliveryOrdersQueryOptions,
+  listBusinessConsoleErpJournalVouchersQueryOptions,
+  listBusinessConsoleErpOpportunitiesQueryOptions,
   listBusinessConsoleErpPurchaseOrdersQueryOptions,
+  listBusinessConsoleErpQuotationsQueryOptions,
   listBusinessConsoleErpReceivablesQueryOptions,
+  listBusinessConsoleErpRequestsForQuotationQueryOptions,
   listBusinessConsoleErpSalesOrdersQueryOptions,
+  type BusinessConsoleErpDeliveryOrderItem,
+  type BusinessConsoleErpDeliveryOrderListEnvelope,
   type BusinessConsoleErpFinanceSummaryEnvelope,
   type BusinessConsoleErpFinanceSummaryResponse,
+  type BusinessConsoleErpJournalVoucherItem,
+  type BusinessConsoleErpJournalVoucherListEnvelope,
+  type BusinessConsoleErpOpportunityItem,
+  type BusinessConsoleErpOpportunityListEnvelope,
   type BusinessConsoleErpPurchaseOrderItem,
   type BusinessConsoleErpPurchaseOrderListEnvelope,
+  type BusinessConsoleErpQuotationItem,
+  type BusinessConsoleErpQuotationListEnvelope,
   type BusinessConsoleErpReceivableItem,
   type BusinessConsoleErpReceivableListEnvelope,
+  type BusinessConsoleErpRequestForQuotationItem,
+  type BusinessConsoleErpRequestForQuotationListEnvelope,
   type BusinessConsoleErpSalesOrderItem,
   type BusinessConsoleErpSalesOrderListEnvelope,
 } from '@nerv-iip/api-client'
@@ -24,6 +39,43 @@ export interface BusinessErpListFilters {
   keyword?: string
   skip: number
   take: number
+}
+
+interface ErpListQuery {
+  organizationId: string
+  environmentId: string
+  status?: string
+  keyword?: string
+  skip: number
+  take: number
+}
+
+// 通用「单据列表」工厂：org/env 取 businessContext，服务端分页 skip/take + 状态/关键字过滤，无假分页。
+function useErpDocumentList<TItem, TEnvelope extends { success?: boolean; data?: { items?: TItem[]; total?: number } | null }>(
+  buildOptions: (query: ErpListQuery) => unknown,
+) {
+  const businessContext = useBusinessContextStore()
+  const filters = reactive<BusinessErpListFilters>({ skip: 0, take: DEFAULT_TAKE })
+  const query = useQuery(() =>
+    // 各单据的 query options 类型仅 data 泛型不同，统一经工厂收敛，故此处收窄。
+    buildOptions({
+      organizationId: businessContext.organizationId,
+      environmentId: businessContext.environmentId,
+      status: filters.status,
+      keyword: filters.keyword,
+      skip: filters.skip,
+      take: filters.take,
+    }) as never,
+  )
+
+  return {
+    filters,
+    items: computed<TItem[]>(() => unwrapItems(query.data.value as TEnvelope | undefined)),
+    total: computed(() => unwrapTotal(query.data.value as TEnvelope | undefined)),
+    error: query.error,
+    pending: query.isLoading,
+    refresh: query.refetch,
+  }
 }
 
 function unwrapItems<T>(envelope: { success?: boolean; data?: { items?: T[] } | null } | undefined): T[] {
@@ -188,4 +240,37 @@ export function useErpFinance() {
     receivablesPending: receivablesQuery.isLoading,
     refreshReceivables: receivablesQuery.refetch,
   }
+}
+
+// 销售漏斗读面（#335）：报价 / 商机 / 发货单
+export function useErpQuotations() {
+  return useErpDocumentList<BusinessConsoleErpQuotationItem, BusinessConsoleErpQuotationListEnvelope>(
+    (query) => listBusinessConsoleErpQuotationsQueryOptions({ query }),
+  )
+}
+
+export function useErpOpportunities() {
+  return useErpDocumentList<BusinessConsoleErpOpportunityItem, BusinessConsoleErpOpportunityListEnvelope>(
+    (query) => listBusinessConsoleErpOpportunitiesQueryOptions({ query }),
+  )
+}
+
+export function useErpDeliveryOrders() {
+  return useErpDocumentList<BusinessConsoleErpDeliveryOrderItem, BusinessConsoleErpDeliveryOrderListEnvelope>(
+    (query) => listBusinessConsoleErpDeliveryOrdersQueryOptions({ query }),
+  )
+}
+
+// 采购漏斗读面（#335）：询价单（RFQ）
+export function useErpRequestsForQuotation() {
+  return useErpDocumentList<BusinessConsoleErpRequestForQuotationItem, BusinessConsoleErpRequestForQuotationListEnvelope>(
+    (query) => listBusinessConsoleErpRequestsForQuotationQueryOptions({ query }),
+  )
+}
+
+// 财务读面（#335）：会计凭证
+export function useErpJournalVouchers() {
+  return useErpDocumentList<BusinessConsoleErpJournalVoucherItem, BusinessConsoleErpJournalVoucherListEnvelope>(
+    (query) => listBusinessConsoleErpJournalVouchersQueryOptions({ query }),
+  )
 }

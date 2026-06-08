@@ -1,7 +1,17 @@
 <script setup lang="ts">
-import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleErpDeliveryOrderItem,
+  BusinessConsoleErpOpportunityItem,
+  BusinessConsoleErpQuotationItem,
+  BusinessConsoleErpSalesOrderItem,
+} from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
-import { useErpSalesOrders } from '@/composables/useBusinessErp'
+import {
+  useErpDeliveryOrders,
+  useErpOpportunities,
+  useErpQuotations,
+  useErpSalesOrders,
+} from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -23,41 +33,76 @@ import {
   SectionCard,
   SectionCards,
   StatusBadge,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   Toolbar,
   toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '销售订单' } })
+definePage({ meta: { requiresAuth: true, title: '销售管理' } })
 
-const {
-  filters,
-  salesOrders,
-  salesOrdersError,
-  salesOrdersPending,
-  salesOrdersTotal,
-  refreshSalesOrders,
-  createSalesOrder,
-  createSalesOrderPending,
-  createSalesOrderError,
-} = useErpSalesOrders()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status, () => filters.keyword] })
+// 销售漏斗：商机 → 报价 → 销售订单 → 发货单（同一业务域，按页内 Tabs 组织）
+const orders = useErpSalesOrders()
+const ordersPaged = usePagedList(orders.filters, { resetOn: [() => orders.filters.status, () => orders.filters.keyword] })
 
-const errorMessage = computed(() => formatError(salesOrdersError.value ?? createSalesOrderError.value))
-const totalAmount = computed(() => salesOrders.value.reduce((sum, o) => sum + (o.totalAmount ?? 0), 0))
-const openCount = computed(
-  () => salesOrders.value.filter((o) => !['completed', 'closed', 'cancelled'].includes((o.status ?? '').toLowerCase())).length,
-)
+const quotations = useErpQuotations()
+const quotationsPaged = usePagedList(quotations.filters, { resetOn: [() => quotations.filters.status, () => quotations.filters.keyword] })
 
-type SalesRow = BusinessConsoleErpSalesOrderItem
-const columns: DataTableColumn<SalesRow>[] = [
+const opportunities = useErpOpportunities()
+const opportunitiesPaged = usePagedList(opportunities.filters, { resetOn: [() => opportunities.filters.status, () => opportunities.filters.keyword] })
+
+const deliveries = useErpDeliveryOrders()
+const deliveriesPaged = usePagedList(deliveries.filters, { resetOn: [() => deliveries.filters.status, () => deliveries.filters.keyword] })
+
+const activeTab = shallowRef<'orders' | 'quotations' | 'opportunities' | 'deliveries'>('orders')
+
+const ordersError = computed(() => formatError(orders.salesOrdersError.value ?? createSalesOrderError.value))
+const quotationsError = computed(() => formatError(quotations.error.value))
+const opportunitiesError = computed(() => formatError(opportunities.error.value))
+const deliveriesError = computed(() => formatError(deliveries.error.value))
+
+function refreshActive() {
+  if (activeTab.value === 'orders') void orders.refreshSalesOrders()
+  else if (activeTab.value === 'quotations') void quotations.refresh()
+  else if (activeTab.value === 'opportunities') void opportunities.refresh()
+  else void deliveries.refresh()
+}
+
+const orderColumns: DataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
   { key: 'salesOrderNo', header: '销售单号', cellClass: 'font-medium', accessor: (r) => r.salesOrderNo ?? '无' },
   { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '无' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'totalAmount', header: '金额', align: 'end', width: 'w-32', accessor: (r) => r.totalAmount ?? 0 },
 ]
+const quotationColumns: DataTableColumn<BusinessConsoleErpQuotationItem>[] = [
+  { key: 'quotationNo', header: '报价单号', cellClass: 'font-medium', accessor: (r) => r.quotationNo ?? '无' },
+  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '无' },
+  { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'expiresOn', header: '有效期至', width: 'w-32', accessor: (r) => formatDate(r.expiresOn) },
+  { key: 'totalAmount', header: '金额', align: 'end', width: 'w-32', accessor: (r) => r.totalAmount ?? 0 },
+]
+const opportunityColumns: DataTableColumn<BusinessConsoleErpOpportunityItem>[] = [
+  { key: 'opportunityNo', header: '商机编号', cellClass: 'font-medium', accessor: (r) => r.opportunityNo ?? '无' },
+  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '无' },
+  { key: 'topic', header: '主题', accessor: (r) => r.topic ?? '无' },
+  { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'openedAtUtc', header: '创建时间', width: 'w-32', accessor: (r) => formatDate(r.openedAtUtc) },
+]
+const deliveryColumns: DataTableColumn<BusinessConsoleErpDeliveryOrderItem>[] = [
+  { key: 'deliveryOrderNo', header: '发货单号', cellClass: 'font-medium', accessor: (r) => r.deliveryOrderNo ?? '无' },
+  { key: 'salesOrderNo', header: '关联销售单', accessor: (r) => r.salesOrderNo ?? '无' },
+  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '无' },
+  { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'releasedAtUtc', header: '发货时间', width: 'w-32', accessor: (r) => formatDate(r.releasedAtUtc) },
+]
 
+const ordersAmount = computed(() => orders.salesOrders.value.reduce((sum, o) => sum + (o.totalAmount ?? 0), 0))
+
+const { createSalesOrder, createSalesOrderPending, createSalesOrderError } = orders
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
 const createForm = reactive({ quotationNo: '', salesOrderNo: '' })
@@ -85,11 +130,13 @@ async function submitCreate() {
   }
 }
 
-function rowKey(row: SalesRow) {
-  return row.salesOrderNo ?? '销售订单'
-}
 function formatAmount(value: number) {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 2 }).format(value)
+}
+function formatDate(value?: string) {
+  if (!value) return '无'
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '无' : d.toLocaleDateString('zh-CN')
 }
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
@@ -98,9 +145,9 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="销售订单" :breadcrumbs="[{ label: '经营管理' }]" :count="`${salesOrdersTotal} 张销售订单`">
+    <PageHeader title="销售管理" :breadcrumbs="[{ label: '经营管理' }]" :count="`${orders.salesOrdersTotal.value} 张销售订单`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="salesOrdersPending" @click="refreshSalesOrders">
+        <Button size="sm" type="button" variant="outline" @click="refreshActive">
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </Button>
@@ -111,33 +158,103 @@ function formatError(error: unknown) {
       </template>
     </PageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="销售订单" :value="salesOrdersTotal" hint="后端返回总数" />
-      <SectionCard description="本页未完成" :value="openCount" hint="待发货/收款" />
-      <SectionCard description="本页金额" :value="formatAmount(totalAmount)" hint="当前页合计" />
+    <SectionCards :columns="4">
+      <SectionCard description="商机" :value="opportunities.total.value" hint="线索/跟进" />
+      <SectionCard description="报价单" :value="quotations.total.value" hint="待转订单" />
+      <SectionCard description="销售订单" :value="orders.salesOrdersTotal.value" hint="本页金额合计" :sub="formatAmount(ordersAmount)" />
+      <SectionCard description="发货单" :value="deliveries.total.value" hint="履约出货" />
     </SectionCards>
 
-    <Toolbar :show-search="false">
-      <template #filters>
-        <Input v-model="filters.keyword" class="h-9 w-44" placeholder="销售单号/客户（可选）" aria-label="关键字" />
-        <Input v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="销售订单状态" />
-      </template>
-    </Toolbar>
+    <Tabs v-model="activeTab">
+      <TabsList>
+        <TabsTrigger value="orders">销售订单</TabsTrigger>
+        <TabsTrigger value="quotations">报价单</TabsTrigger>
+        <TabsTrigger value="opportunities">商机</TabsTrigger>
+        <TabsTrigger value="deliveries">发货单</TabsTrigger>
+      </TabsList>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+      <TabsContent value="orders" class="grid gap-4">
+        <Toolbar :show-search="false">
+          <template #filters>
+            <Input v-model="orders.filters.keyword" class="h-9 w-44" placeholder="销售单号/客户（可选）" aria-label="销售订单关键字" />
+            <Input v-model="orders.filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="销售订单状态" />
+          </template>
+        </Toolbar>
+        <p v-if="ordersError" class="text-sm text-destructive" role="alert">{{ ordersError }}</p>
+        <DataTable
+          :columns="orderColumns"
+          :rows="orders.salesOrders.value"
+          :row-key="(r: BusinessConsoleErpSalesOrderItem) => r.salesOrderNo ?? '销售订单'"
+          :loading="orders.salesOrdersPending.value"
+          empty-message="暂无销售订单。报价批准并转换后会出现在这里。"
+        >
+          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+          <template #cell-totalAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalAmount ?? 0) }}</span></template>
+        </DataTable>
+        <DataTablePagination v-model:page="ordersPaged.page.value" v-model:page-size="ordersPaged.pageSize.value" :total-items="orders.salesOrdersTotal.value" />
+      </TabsContent>
 
-    <DataTable
-      :columns="columns"
-      :rows="salesOrders"
-      :row-key="rowKey"
-      :loading="salesOrdersPending"
-      empty-message="暂无销售订单。报价批准并转换后会出现在这里。"
-    >
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
-      <template #cell-totalAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalAmount ?? 0) }}</span></template>
-    </DataTable>
+      <TabsContent value="quotations" class="grid gap-4">
+        <Toolbar :show-search="false">
+          <template #filters>
+            <Input v-model="quotations.filters.keyword" class="h-9 w-44" placeholder="报价单号/客户（可选）" aria-label="报价单关键字" />
+            <Input v-model="quotations.filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="报价单状态" />
+          </template>
+        </Toolbar>
+        <p v-if="quotationsError" class="text-sm text-destructive" role="alert">{{ quotationsError }}</p>
+        <DataTable
+          :columns="quotationColumns"
+          :rows="quotations.items.value"
+          :row-key="(r: BusinessConsoleErpQuotationItem) => r.quotationNo ?? '报价单'"
+          :loading="quotations.pending.value"
+          empty-message="暂无报价单。"
+        >
+          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+          <template #cell-totalAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalAmount ?? 0) }}</span></template>
+        </DataTable>
+        <DataTablePagination v-model:page="quotationsPaged.page.value" v-model:page-size="quotationsPaged.pageSize.value" :total-items="quotations.total.value" />
+      </TabsContent>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="salesOrdersTotal" />
+      <TabsContent value="opportunities" class="grid gap-4">
+        <Toolbar :show-search="false">
+          <template #filters>
+            <Input v-model="opportunities.filters.keyword" class="h-9 w-44" placeholder="商机编号/客户（可选）" aria-label="商机关键字" />
+            <Input v-model="opportunities.filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="商机状态" />
+          </template>
+        </Toolbar>
+        <p v-if="opportunitiesError" class="text-sm text-destructive" role="alert">{{ opportunitiesError }}</p>
+        <DataTable
+          :columns="opportunityColumns"
+          :rows="opportunities.items.value"
+          :row-key="(r: BusinessConsoleErpOpportunityItem) => r.opportunityNo ?? '商机'"
+          :loading="opportunities.pending.value"
+          empty-message="暂无商机。"
+        >
+          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+        </DataTable>
+        <DataTablePagination v-model:page="opportunitiesPaged.page.value" v-model:page-size="opportunitiesPaged.pageSize.value" :total-items="opportunities.total.value" />
+      </TabsContent>
+
+      <TabsContent value="deliveries" class="grid gap-4">
+        <Toolbar :show-search="false">
+          <template #filters>
+            <Input v-model="deliveries.filters.keyword" class="h-9 w-44" placeholder="发货单号/客户（可选）" aria-label="发货单关键字" />
+            <Input v-model="deliveries.filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="发货单状态" />
+          </template>
+        </Toolbar>
+        <p v-if="deliveriesError" class="text-sm text-destructive" role="alert">{{ deliveriesError }}</p>
+        <DataTable
+          :columns="deliveryColumns"
+          :rows="deliveries.items.value"
+          :row-key="(r: BusinessConsoleErpDeliveryOrderItem) => r.deliveryOrderNo ?? '发货单'"
+          :loading="deliveries.pending.value"
+          empty-message="暂无发货单。"
+        >
+          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+        </DataTable>
+        <DataTablePagination v-model:page="deliveriesPaged.page.value" v-model:page-size="deliveriesPaged.pageSize.value" :total-items="deliveries.total.value" />
+      </TabsContent>
+    </Tabs>
 
     <Dialog v-model:open="createOpen">
       <DialogContent>

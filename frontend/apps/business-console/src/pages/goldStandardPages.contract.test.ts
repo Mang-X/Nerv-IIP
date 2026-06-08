@@ -27,6 +27,7 @@ const GOLD_STANDARD_PAGES = [
   'wms/inbound.vue',
   'wms/outbound.vue',
   'wms/wcs.vue',
+  'erp/index.vue',
   'erp/sales.vue',
   'erp/finance.vue',
 ]

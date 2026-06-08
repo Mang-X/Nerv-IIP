@@ -24,6 +24,16 @@ vi.mock('@/composables/useBusinessErp', () => ({
     receivablesPending: shallowRef(false),
     refreshReceivables: vi.fn(),
   }),
+  useErpJournalVouchers: () => ({
+    filters: reactive({ skip: 0, take: 10 }),
+    items: computed(() => [
+      { voucherNo: 'JV-1', postingDate: '2026-06-03', status: 'posted', totalDebitAmount: 500, totalCreditAmount: 500 },
+    ]),
+    total: computed(() => 1),
+    error: shallowRef(undefined),
+    pending: shallowRef(false),
+    refresh: vi.fn(),
+  }),
 }))
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
@@ -43,5 +53,13 @@ describe('ERP finance page', () => {
     expect(wrapper.text()).toContain('已过账凭证')
     expect(wrapper.text()).toContain('AR-1')
     expect(wrapper.text()).toContain('CUST-1')
+  })
+
+  it('offers 应收账款 and 会计凭证 tabs', async () => {
+    const wrapper = mount(FinancePage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const tabLabels = wrapper.findAll('[role="tab"]').map((t) => t.text())
+    expect(tabLabels).toEqual(expect.arrayContaining(['应收账款', '会计凭证']))
   })
 })

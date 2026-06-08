@@ -11,6 +11,17 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
+function listMock<T>(items: T[]) {
+  return {
+    filters: reactive({ skip: 0, take: 10 }),
+    items: computed(() => items),
+    total: computed(() => items.length),
+    error: shallowRef(undefined),
+    pending: shallowRef(false),
+    refresh: vi.fn(),
+  }
+}
+
 vi.mock('@/composables/useBusinessErp', () => ({
   useErpSalesOrders: () => ({
     filters: reactive({ skip: 0, take: 10 }),
@@ -25,6 +36,15 @@ vi.mock('@/composables/useBusinessErp', () => ({
     createSalesOrderPending: shallowRef(false),
     createSalesOrderError: shallowRef(undefined),
   }),
+  useErpQuotations: () => listMock([
+    { quotationNo: 'Q-1', customerCode: 'CUST-1', status: 'approved', expiresOn: '2026-07-01', totalAmount: 999 },
+  ]),
+  useErpOpportunities: () => listMock([
+    { opportunityNo: 'OPP-1', customerCode: 'CUST-1', topic: '新产线扩产', status: 'open', openedAtUtc: '2026-06-01' },
+  ]),
+  useErpDeliveryOrders: () => listMock([
+    { deliveryOrderNo: 'DO-1', salesOrderNo: 'SO-1', customerCode: 'CUST-1', status: 'released', releasedAtUtc: '2026-06-05' },
+  ]),
 }))
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
@@ -47,6 +67,14 @@ describe('ERP sales orders page', () => {
     expect(wrapper.text()).toContain('SO-1')
     expect(wrapper.text()).toContain('CUST-1')
     expect(wrapper.text()).toContain('新建销售订单')
+  })
+
+  it('organises the sales funnel into 商机/报价/订单/发货 tabs', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const tabLabels = wrapper.findAll('[role="tab"]').map((t) => t.text())
+    expect(tabLabels).toEqual(expect.arrayContaining(['销售订单', '报价单', '商机', '发货单']))
   })
 
   it('creates a sales order from a quotation number', async () => {
