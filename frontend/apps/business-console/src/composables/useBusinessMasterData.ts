@@ -3,6 +3,7 @@ import {
   createBusinessConsoleProductionLineMutationOptions,
   createBusinessConsoleShiftMutationOptions,
   createBusinessConsoleSiteMutationOptions,
+  createBusinessConsoleBusinessPartnerMutationOptions,
   createBusinessConsoleSkuMutationOptions,
   createBusinessConsoleTeamMutationOptions,
   createBusinessConsoleWorkCalendarMutationOptions,
@@ -13,6 +14,7 @@ import {
   listBusinessConsoleSkusQueryOptions,
   registerBusinessConsoleDeviceAssetMutationOptions,
   updateBusinessConsoleMasterDataResourceMutationOptions,
+  type BusinessConsoleCreateBusinessPartnerRequest,
   type BusinessConsoleCreateSkuRequest,
   type BusinessConsoleResourceItem,
   type BusinessConsoleResourceListEnvelope,
@@ -135,6 +137,51 @@ export function useBusinessSkus() {
     skusError: skusQuery.error,
     skusPending: skusQuery.isLoading,
     skusTotal: computed(() => resourceTotal(skusQuery.data.value)),
+  }
+}
+
+/**
+ * 业务伙伴的「列表 + 新建」。列表走通用 resources 端点（含 typed partnerType/partnerRoles/taxId），
+ * 新建走 business-partner 专属端点（需显式 partnerType 主角色 + 可选 partnerRoles 附加角色）。
+ * 角色一律取真实 typed 字段，绝不靠 code 子串推断。
+ */
+export function useBusinessPartners() {
+  const filters = defaultResourceFilters('business-partner')
+  const queryCache = useQueryCache()
+
+  const partnersQuery = useQuery(() =>
+    listBusinessConsoleMasterDataResourcesQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        resourceType: filters.resourceType,
+        ...optionalQuery('includeDisabled', filters.includeDisabled),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
+
+  const createPartnerMutation = useMutation({
+    ...createBusinessConsoleBusinessPartnerMutationOptions(),
+    onSuccess() {
+      void queryCache
+        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleMasterDataResources') })
+        .catch(ignoreBackgroundError)
+    },
+  })
+
+  return {
+    createPartner: (body: BusinessConsoleCreateBusinessPartnerRequest) =>
+      createPartnerMutation.mutateAsync({ body }),
+    createPartnerError: createPartnerMutation.error,
+    createPartnerPending: createPartnerMutation.isLoading,
+    filters,
+    refreshPartners: partnersQuery.refetch,
+    partners: computed<BusinessConsoleResourceItem[]>(() => resourceItems(partnersQuery.data.value)),
+    partnersError: partnersQuery.error,
+    partnersPending: partnersQuery.isLoading,
+    partnersTotal: computed(() => resourceTotal(partnersQuery.data.value)),
   }
 }
 
