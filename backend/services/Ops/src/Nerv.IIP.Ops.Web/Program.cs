@@ -12,6 +12,7 @@ using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
 using Nerv.IIP.Ops.Web.Application.IntegrationEvents;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.DistributedTransactions.CAP;
 using NetCorePal.Extensions.DependencyInjection;
 using System.Net;
 
@@ -45,6 +46,7 @@ builder.Services.AddMediatR(configuration =>
 });
 if (usePostgreSql)
 {
+    builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext();
     builder.Services.AddEnvContext("X-Environment-Id");
     builder.Services.AddCapContextProcessor();

@@ -11,6 +11,8 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Context.CAP;
+using NetCorePal.Extensions.DistributedLocks;
+using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Newtonsoft.Json;
 using Prometheus;
 using Serilog;
@@ -58,6 +60,8 @@ try
     }
 
     builder.Services.AddBarcodeLabelPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();

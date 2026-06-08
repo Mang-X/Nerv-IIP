@@ -13,6 +13,8 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Context.CAP;
+using NetCorePal.Extensions.DistributedLocks;
+using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
 using Serilog;
 using Serilog.Formatting.Json;
@@ -59,6 +61,8 @@ try
     }
 
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
