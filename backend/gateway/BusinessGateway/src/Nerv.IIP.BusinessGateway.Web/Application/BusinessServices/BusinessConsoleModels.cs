@@ -909,6 +909,25 @@ public sealed record BusinessConsoleErpPurchaseReceiptLine(
 
 public sealed record BusinessConsoleRecordErpPurchaseReceiptResponse(string PurchaseReceiptId);
 
+public sealed record BusinessConsoleErpRequestForQuotationListResponse(
+    IReadOnlyCollection<BusinessConsoleErpRequestForQuotationItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpRequestForQuotationItem(
+    string RfqNo,
+    string Status,
+    IReadOnlyCollection<string> SupplierCodes,
+    IReadOnlyCollection<BusinessConsoleErpRequestForQuotationLineItem> Lines,
+    DateTime CreatedAtUtc);
+
+public sealed record BusinessConsoleErpRequestForQuotationLineItem(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    string SiteCode,
+    DateOnly RequiredDate);
+
 public sealed record BusinessConsoleErpPurchaseOrderListResponse(
     IReadOnlyCollection<BusinessConsoleErpPurchaseOrderItem> Items,
     int Total);
@@ -941,6 +960,17 @@ public sealed record BusinessConsoleErpSalesOrderItem(
     string Status,
     decimal TotalAmount);
 
+public sealed record BusinessConsoleErpOpportunityListResponse(
+    IReadOnlyCollection<BusinessConsoleErpOpportunityItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpOpportunityItem(
+    string OpportunityNo,
+    string CustomerCode,
+    string Topic,
+    string Status,
+    DateTime OpenedAtUtc);
+
 public sealed record BusinessConsoleOpenErpOpportunityRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -970,6 +1000,27 @@ public sealed record BusinessConsoleErpQuotationLine(
 
 public sealed record BusinessConsoleCreateErpQuotationResponse(string QuotationId);
 
+public sealed record BusinessConsoleErpQuotationListResponse(
+    IReadOnlyCollection<BusinessConsoleErpQuotationItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpQuotationItem(
+    string QuotationNo,
+    string CustomerCode,
+    DateOnly ExpiresOn,
+    string Status,
+    decimal TotalAmount,
+    IReadOnlyCollection<BusinessConsoleErpQuotationLineItem> Lines,
+    DateTime CreatedAtUtc);
+
+public sealed record BusinessConsoleErpQuotationLineItem(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    decimal UnitPrice,
+    DateOnly RequiredDate);
+
 public sealed record BusinessConsoleApproveErpQuotationRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -997,6 +1048,22 @@ public sealed record BusinessConsoleErpDeliveryOrderLine(
     decimal Quantity);
 
 public sealed record BusinessConsoleReleaseErpDeliveryOrderResponse(string DeliveryOrderId);
+
+public sealed record BusinessConsoleErpDeliveryOrderListResponse(
+    IReadOnlyCollection<BusinessConsoleErpDeliveryOrderItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpDeliveryOrderItem(
+    string DeliveryOrderNo,
+    string SalesOrderNo,
+    string CustomerCode,
+    string Status,
+    IReadOnlyCollection<BusinessConsoleErpDeliveryOrderLineItem> Lines,
+    DateTime ReleasedAtUtc);
+
+public sealed record BusinessConsoleErpDeliveryOrderLineItem(
+    string SalesOrderLineNo,
+    decimal Quantity);
 
 public sealed record BusinessConsoleCreateErpAccountPayableRequest(
     string OrganizationId,
@@ -1049,6 +1116,25 @@ public sealed record BusinessConsoleErpJournalVoucherLine(
     string Memo);
 
 public sealed record BusinessConsolePostErpJournalVoucherResponse(string JournalVoucherId);
+
+public sealed record BusinessConsoleErpJournalVoucherListResponse(
+    IReadOnlyCollection<BusinessConsoleErpJournalVoucherItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpJournalVoucherItem(
+    string VoucherNo,
+    DateOnly PostingDate,
+    string Status,
+    decimal TotalDebitAmount,
+    decimal TotalCreditAmount,
+    IReadOnlyCollection<BusinessConsoleErpJournalVoucherLineItem> Lines,
+    DateTime PostedAtUtc);
+
+public sealed record BusinessConsoleErpJournalVoucherLineItem(
+    string AccountCode,
+    decimal DebitAmount,
+    decimal CreditAmount,
+    string Memo);
 
 public sealed record BusinessConsoleErpFinanceSummaryResponse(
     decimal OpenPayableAmount,

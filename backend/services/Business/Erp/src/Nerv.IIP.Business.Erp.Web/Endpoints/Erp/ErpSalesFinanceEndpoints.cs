@@ -30,6 +30,13 @@ public sealed record ListSalesOrdersRequest(
     string? Keyword = null,
     int Skip = 0,
     int Take = 100);
+public sealed record ListSalesDocumentsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record CreateAccountPayableRequest(string OrganizationId, string EnvironmentId, string? PayableNo, string SourceDocumentNo, string SupplierCode, decimal Amount, string CurrencyCode, string? IdempotencyKey = null);
 public sealed record CreateAccountPayableResponse(AccountPayableId AccountPayableId);
@@ -62,6 +69,17 @@ public sealed class OpenOpportunityEndpoint(ISender sender) : ErpEndpoint<OpenOp
     }
 }
 
+public sealed class ListOpportunitiesEndpoint(ISender sender) : ErpEndpoint<ListSalesDocumentsRequest, ResponseData<ListOpportunitiesResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<ListOpportunitiesEndpoint>());
+
+    public override async Task HandleAsync(ListSalesDocumentsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListOpportunitiesQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class CreateQuotationEndpoint(ISender sender) : ErpEndpoint<CreateQuotationRequest, ResponseData<CreateQuotationResponse>>
 {
     public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<CreateQuotationEndpoint>());
@@ -70,6 +88,17 @@ public sealed class CreateQuotationEndpoint(ISender sender) : ErpEndpoint<Create
     {
         var id = await sender.Send(new CreateQuotationCommand(req.OrganizationId, req.EnvironmentId, req.QuotationNo, req.CustomerCode, req.ExpiresOn, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateQuotationResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListQuotationsEndpoint(ISender sender) : ErpEndpoint<ListSalesDocumentsRequest, ResponseData<ListQuotationsResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<ListQuotationsEndpoint>());
+
+    public override async Task HandleAsync(ListSalesDocumentsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListQuotationsQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -103,6 +132,17 @@ public sealed class ReleaseDeliveryOrderEndpoint(ISender sender) : ErpEndpoint<R
     {
         var id = await sender.Send(new ReleaseDeliveryOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeliveryOrderNo, req.SalesOrderNo, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new ReleaseDeliveryOrderResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListDeliveryOrdersEndpoint(ISender sender) : ErpEndpoint<ListSalesDocumentsRequest, ResponseData<ListDeliveryOrdersResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<ListDeliveryOrdersEndpoint>());
+
+    public override async Task HandleAsync(ListSalesDocumentsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListDeliveryOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -158,6 +198,17 @@ public sealed class PostJournalVoucherEndpoint(ISender sender) : ErpEndpoint<Pos
     {
         var id = await sender.Send(new PostJournalVoucherCommand(req.OrganizationId, req.EnvironmentId, req.VoucherNo, req.PostingDate, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new PostJournalVoucherResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListJournalVouchersEndpoint(ISender sender) : ErpEndpoint<ListFinanceDocumentsRequest, ResponseData<ListJournalVouchersResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ListJournalVouchersEndpoint>());
+
+    public override async Task HandleAsync(ListFinanceDocumentsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListJournalVouchersQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -243,10 +294,13 @@ public static class ErpSalesEndpointContracts
     public static readonly IReadOnlyCollection<ErpEndpointContract> All =
     [
         new(typeof(OpenOpportunityEndpoint), "POST", "/api/business/v1/erp/opportunities", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "openErpOpportunity"),
+        new(typeof(ListOpportunitiesEndpoint), "GET", "/api/business/v1/erp/opportunities", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpOpportunities"),
         new(typeof(CreateQuotationEndpoint), "POST", "/api/business/v1/erp/quotations", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "createErpQuotation"),
+        new(typeof(ListQuotationsEndpoint), "GET", "/api/business/v1/erp/quotations", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpQuotations"),
         new(typeof(ApproveQuotationEndpoint), "POST", "/api/business/v1/erp/quotations/{quotationId}/approve", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "approveErpQuotation"),
         new(typeof(CreateSalesOrderEndpoint), "POST", "/api/business/v1/erp/sales-orders", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "createErpSalesOrder"),
         new(typeof(ReleaseDeliveryOrderEndpoint), "POST", "/api/business/v1/erp/delivery-orders", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "releaseErpDeliveryOrder"),
+        new(typeof(ListDeliveryOrdersEndpoint), "GET", "/api/business/v1/erp/delivery-orders", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpDeliveryOrders"),
         new(typeof(ListSalesOrdersEndpoint), "GET", "/api/business/v1/erp/sales-orders", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpSalesOrders"),
     ];
 
@@ -261,6 +315,7 @@ public static class ErpFinanceEndpointContracts
         new(typeof(CreateAccountReceivableEndpoint), "POST", "/api/business/v1/erp/finance/receivables", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpAccountReceivable"),
         new(typeof(CreateCostCandidateEndpoint), "POST", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpCostCandidate"),
         new(typeof(PostJournalVoucherEndpoint), "POST", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "postErpJournalVoucher"),
+        new(typeof(ListJournalVouchersEndpoint), "GET", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpJournalVouchers"),
         new(typeof(GetFinanceSummaryEndpoint), "GET", "/api/business/v1/erp/finance/summary", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpFinanceSummary"),
         new(typeof(ListAccountPayablesEndpoint), "GET", "/api/business/v1/erp/finance/payables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountPayables"),
         new(typeof(ListAccountReceivablesEndpoint), "GET", "/api/business/v1/erp/finance/receivables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountReceivables"),

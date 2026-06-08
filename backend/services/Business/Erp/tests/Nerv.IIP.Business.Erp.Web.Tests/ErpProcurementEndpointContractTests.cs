@@ -18,7 +18,7 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(6, contracts.Length);
+        Assert.Equal(7, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -45,6 +45,11 @@ public sealed class ErpProcurementEndpointContractTests
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "recordErpPurchaseReceipt");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/erp/rfqs"
+            && x.PermissionCode == ErpPermissionCodes.ProcurementRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listErpRequestsForQuotation");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/erp/purchase-orders"
             && x.PermissionCode == ErpPermissionCodes.ProcurementRead
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
@@ -55,6 +60,7 @@ public sealed class ErpProcurementEndpointContractTests
     [InlineData(typeof(CreatePurchaseRequisitionFromSuggestionEndpoint))]
     [InlineData(typeof(CreateRequestForQuotationEndpoint))]
     [InlineData(typeof(ReceiveSupplierQuotationEndpoint))]
+    [InlineData(typeof(ListRequestsForQuotationEndpoint))]
     [InlineData(typeof(CreatePurchaseOrderEndpoint))]
     [InlineData(typeof(RecordPurchaseReceiptEndpoint))]
     [InlineData(typeof(ListPurchaseOrdersEndpoint))]
@@ -69,6 +75,117 @@ public sealed class ErpProcurementEndpointContractTests
 
         Assert.Contains(typeof(ISender), parameterTypes);
         Assert.DoesNotContain(typeof(ApplicationDbContext), parameterTypes);
+    }
+
+    [Fact]
+    public async Task List_requests_for_quotation_query_applies_status_keyword_and_server_paging()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateRequestForQuotationCommandHandler(dbContext);
+        await handler.Handle(new CreateRequestForQuotationCommand(
+            "org-001",
+            "env-dev",
+            "RFQ-001",
+            ["SUP-001"],
+            [new RfqCommandLine("LINE-001", "SKU-RM-1000", "kg", 3m, "SITE-01", new DateOnly(2026, 6, 5))]), CancellationToken.None);
+        await handler.Handle(new CreateRequestForQuotationCommand(
+            "org-001",
+            "env-dev",
+            "RFQ-002",
+            ["SUP-002", "SUP-003"],
+            [new RfqCommandLine("LINE-001", "SKU-RM-2000", "kg", 4m, "SITE-02", new DateOnly(2026, 6, 6))]), CancellationToken.None);
+        await handler.Handle(new CreateRequestForQuotationCommand(
+            "org-other",
+            "env-dev",
+            "RFQ-003",
+            ["SUP-002"],
+            [new RfqCommandLine("LINE-001", "SKU-RM-3000", "kg", 5m, "SITE-02", new DateOnly(2026, 6, 7))]), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListRequestsForQuotationQueryHandler(dbContext).Handle(
+            new ListRequestsForQuotationQuery("org-001", "env-dev", "Open", "SUP-002", 0, 1),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("RFQ-002", item.RfqNo);
+        Assert.Equal("Open", item.Status);
+        Assert.Contains("SUP-003", item.SupplierCodes);
+        Assert.Equal("SKU-RM-2000", Assert.Single(item.Lines).SkuCode);
+    }
+
+    [Fact]
+    public async Task List_requests_for_quotation_query_rejects_unknown_status_and_caps_take()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateRequestForQuotationCommandHandler(dbContext);
+        for (var index = 1; index <= 501; index++)
+        {
+            await handler.Handle(new CreateRequestForQuotationCommand(
+                "org-001",
+                "env-dev",
+                $"RFQ-{index:D3}",
+                ["SUP-001"],
+                [new RfqCommandLine("LINE-001", $"SKU-RM-{index:D3}", "kg", 1m, "SITE-01", new DateOnly(2026, 6, 5))]),
+                CancellationToken.None);
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var unknownStatus = await new ListRequestsForQuotationQueryHandler(dbContext).Handle(
+            new ListRequestsForQuotationQuery("org-001", "env-dev", "not-a-status", null, 0, 100),
+            CancellationToken.None);
+        var capped = await new ListRequestsForQuotationQueryHandler(dbContext).Handle(
+            new ListRequestsForQuotationQuery("org-001", "env-dev", null, null, 0, 1000),
+            CancellationToken.None);
+
+        Assert.Equal(0, unknownStatus.Total);
+        Assert.Empty(unknownStatus.Items);
+        Assert.Equal(501, capped.Total);
+        Assert.Equal(500, capped.Items.Count);
+    }
+
+    [Fact]
+    public async Task List_requests_for_quotation_query_applies_skip_offset()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateRequestForQuotationCommandHandler(dbContext);
+        await handler.Handle(new CreateRequestForQuotationCommand(
+            "org-001",
+            "env-dev",
+            "RFQ-001",
+            ["SUP-001"],
+            [new RfqCommandLine("LINE-001", "SKU-RM-001", "kg", 1m, "SITE-01", new DateOnly(2026, 6, 5))]), CancellationToken.None);
+        await handler.Handle(new CreateRequestForQuotationCommand(
+            "org-001",
+            "env-dev",
+            "RFQ-002",
+            ["SUP-001"],
+            [new RfqCommandLine("LINE-001", "SKU-RM-002", "kg", 1m, "SITE-01", new DateOnly(2026, 6, 5))]), CancellationToken.None);
+        await handler.Handle(new CreateRequestForQuotationCommand(
+            "org-001",
+            "env-dev",
+            "RFQ-003",
+            ["SUP-001"],
+            [new RfqCommandLine("LINE-001", "SKU-RM-003", "kg", 1m, "SITE-01", new DateOnly(2026, 6, 5))]), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        SetRfqCreatedAt(dbContext, "RFQ-001", new DateTime(2026, 6, 1, 0, 0, 1, DateTimeKind.Utc));
+        SetRfqCreatedAt(dbContext, "RFQ-002", new DateTime(2026, 6, 1, 0, 0, 2, DateTimeKind.Utc));
+        SetRfqCreatedAt(dbContext, "RFQ-003", new DateTime(2026, 6, 1, 0, 0, 3, DateTimeKind.Utc));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListRequestsForQuotationQueryHandler(dbContext).Handle(
+            new ListRequestsForQuotationQuery("org-001", "env-dev", null, null, 1, 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        Assert.Equal("RFQ-002", Assert.Single(response.Items).RfqNo);
     }
 
     [Fact]
@@ -203,5 +320,11 @@ public sealed class ErpProcurementEndpointContractTests
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();
+    }
+
+    private static void SetRfqCreatedAt(ApplicationDbContext dbContext, string rfqNo, DateTime createdAtUtc)
+    {
+        var rfq = dbContext.RequestForQuotations.Single(x => x.RfqNo == rfqNo);
+        dbContext.Entry(rfq).Property(x => x.CreatedAtUtc).CurrentValue = createdAtUtc;
     }
 }

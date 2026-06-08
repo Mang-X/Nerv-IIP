@@ -1,7 +1,151 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
+
+public sealed record ListOpportunitiesQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100) : IQuery<ListOpportunitiesResponse>;
+
+public sealed record ListOpportunitiesResponse(IReadOnlyCollection<OpportunityListItem> Items, int Total);
+
+public sealed record OpportunityListItem(
+    string OpportunityNo,
+    string CustomerCode,
+    string Topic,
+    string Status,
+    DateTime OpenedAtUtc);
+
+public sealed class ListOpportunitiesQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListOpportunitiesQuery, ListOpportunitiesResponse>
+{
+    public async Task<ListOpportunitiesResponse> Handle(ListOpportunitiesQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.Opportunities
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (ErpListPaging.IsUnknownSingleStatus(request.Status, "open"))
+        {
+            query = query.Where(x => false);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(x => x.Status == "open");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim();
+            query = query.Where(x =>
+                x.OpportunityNo.Contains(keyword)
+                || x.CustomerCode.Contains(keyword)
+                || x.Topic.Contains(keyword));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var skip = Math.Max(request.Skip, 0);
+        var take = ErpListPaging.NormalizeTake(request.Take);
+        var items = await query
+            .OrderByDescending(x => x.OpenedAtUtc)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new OpportunityListItem(x.OpportunityNo, x.CustomerCode, x.Topic, x.Status, x.OpenedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        return new ListOpportunitiesResponse(items, total);
+    }
+}
+
+public sealed record ListQuotationsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100) : IQuery<ListQuotationsResponse>;
+
+public sealed record ListQuotationsResponse(IReadOnlyCollection<QuotationListItem> Items, int Total);
+
+public sealed record QuotationListItem(
+    string QuotationNo,
+    string CustomerCode,
+    DateOnly ExpiresOn,
+    string Status,
+    decimal TotalAmount,
+    IReadOnlyCollection<QuotationLineListItem> Lines,
+    DateTime CreatedAtUtc);
+
+public sealed record QuotationLineListItem(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    decimal UnitPrice,
+    DateOnly RequiredDate);
+
+public sealed class ListQuotationsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListQuotationsQuery, ListQuotationsResponse>
+{
+    public async Task<ListQuotationsResponse> Handle(ListQuotationsQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.Quotations
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (!string.IsNullOrWhiteSpace(request.Status)
+            && Enum.TryParse<QuotationStatus>(request.Status.Trim(), ignoreCase: true, out var status))
+        {
+            query = query.Where(x => x.Status == status);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(x => false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim();
+            query = query.Where(x =>
+                x.QuotationNo.Contains(keyword)
+                || x.CustomerCode.Contains(keyword)
+                || x.Lines.Any(line => line.SkuCode.Contains(keyword)));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var skip = Math.Max(request.Skip, 0);
+        var take = ErpListPaging.NormalizeTake(request.Take);
+        var items = await query
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new QuotationListItem(
+                x.QuotationNo,
+                x.CustomerCode,
+                x.ExpiresOn,
+                x.Status.ToString(),
+                x.TotalAmount,
+                x.Lines
+                    .OrderBy(line => line.LineNo)
+                    .Select(line => new QuotationLineListItem(
+                        line.LineNo,
+                        line.SkuCode,
+                        line.UomCode,
+                        line.Quantity,
+                        line.UnitPrice,
+                        line.RequiredDate))
+                    .ToArray(),
+                x.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        return new ListQuotationsResponse(items, total);
+    }
+}
 
 public sealed record ListSalesOrdersQuery(
     string OrganizationId,
@@ -14,6 +158,72 @@ public sealed record ListSalesOrdersQuery(
 public sealed record ListSalesOrdersResponse(IReadOnlyCollection<SalesOrderResponse> Items, int Total);
 public sealed record SalesOrderResponse(string SalesOrderNo, string CustomerCode, string Status, decimal TotalAmount);
 
+public sealed record ListDeliveryOrdersQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100) : IQuery<ListDeliveryOrdersResponse>;
+
+public sealed record ListDeliveryOrdersResponse(IReadOnlyCollection<DeliveryOrderListItem> Items, int Total);
+
+public sealed record DeliveryOrderListItem(
+    string DeliveryOrderNo,
+    string SalesOrderNo,
+    string CustomerCode,
+    string Status,
+    IReadOnlyCollection<DeliveryOrderLineListItem> Lines,
+    DateTime ReleasedAtUtc);
+
+public sealed record DeliveryOrderLineListItem(string SalesOrderLineNo, decimal Quantity);
+
+public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListDeliveryOrdersQuery, ListDeliveryOrdersResponse>
+{
+    public async Task<ListDeliveryOrdersResponse> Handle(ListDeliveryOrdersQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.DeliveryOrders
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (ErpListPaging.IsUnknownSingleStatus(request.Status, "released"))
+        {
+            query = query.Where(x => false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim();
+            query = query.Where(x =>
+                x.DeliveryOrderNo.Contains(keyword)
+                || x.SalesOrderNo.Contains(keyword)
+                || x.CustomerCode.Contains(keyword));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var skip = Math.Max(request.Skip, 0);
+        var take = ErpListPaging.NormalizeTake(request.Take);
+        var items = await query
+            .OrderByDescending(x => x.ReleasedAtUtc)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new DeliveryOrderListItem(
+                x.DeliveryOrderNo,
+                x.SalesOrderNo,
+                x.CustomerCode,
+                "released",
+                x.Lines
+                    .OrderBy(line => line.SalesOrderLineNo)
+                    .Select(line => new DeliveryOrderLineListItem(line.SalesOrderLineNo, line.Quantity))
+                    .ToArray(),
+                x.ReleasedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        return new ListDeliveryOrdersResponse(items, total);
+    }
+}
+
 internal static class ErpListPaging
 {
     public const int DefaultTake = 100;
@@ -22,6 +232,12 @@ internal static class ErpListPaging
     public static int NormalizeTake(int take)
     {
         return Math.Min(take <= 0 ? DefaultTake : take, MaxTake);
+    }
+
+    public static bool IsUnknownSingleStatus(string? status, string allowedStatus)
+    {
+        return !string.IsNullOrWhiteSpace(status)
+            && !string.Equals(status.Trim(), allowedStatus, StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -272,6 +488,75 @@ public sealed class ListCostCandidatesQueryHandler(ApplicationDbContext dbContex
             .ToArrayAsync(cancellationToken);
 
         return new ListCostCandidatesResponse(items, total);
+    }
+}
+
+public sealed record ListJournalVouchersQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100) : IQuery<ListJournalVouchersResponse>;
+
+public sealed record ListJournalVouchersResponse(IReadOnlyCollection<JournalVoucherListItem> Items, int Total);
+
+public sealed record JournalVoucherListItem(
+    string VoucherNo,
+    DateOnly PostingDate,
+    string Status,
+    decimal TotalDebitAmount,
+    decimal TotalCreditAmount,
+    IReadOnlyCollection<JournalVoucherLineListItem> Lines,
+    DateTime PostedAtUtc);
+
+public sealed record JournalVoucherLineListItem(string AccountCode, decimal DebitAmount, decimal CreditAmount, string Memo);
+
+public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListJournalVouchersQuery, ListJournalVouchersResponse>
+{
+    public async Task<ListJournalVouchersResponse> Handle(ListJournalVouchersQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.JournalVouchers
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (ErpListPaging.IsUnknownSingleStatus(request.Status, "posted"))
+        {
+            query = query.Where(x => false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim();
+            query = query.Where(x =>
+                x.VoucherNo.Contains(keyword)
+                || x.Lines.Any(line =>
+                    line.AccountCode.Contains(keyword)
+                    || line.Memo.Contains(keyword)));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var skip = Math.Max(request.Skip, 0);
+        var take = ErpListPaging.NormalizeTake(request.Take);
+        var items = await query
+            .OrderByDescending(x => x.PostedAtUtc)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new JournalVoucherListItem(
+                x.VoucherNo,
+                x.PostingDate,
+                "posted",
+                x.Lines.Sum(line => line.DebitAmount),
+                x.Lines.Sum(line => line.CreditAmount),
+                x.Lines
+                    .OrderBy(line => line.AccountCode)
+                    .Select(line => new JournalVoucherLineListItem(line.AccountCode, line.DebitAmount, line.CreditAmount, line.Memo))
+                    .ToArray(),
+                x.PostedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        return new ListJournalVouchersResponse(items, total);
     }
 }
 

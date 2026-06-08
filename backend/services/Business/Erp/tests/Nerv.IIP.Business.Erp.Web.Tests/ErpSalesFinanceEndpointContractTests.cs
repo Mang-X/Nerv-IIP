@@ -16,12 +16,15 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpSalesEndpointContracts.All.ToArray();
 
-        Assert.Equal(6, contracts.Length);
+        Assert.Equal(9, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.PermissionCode == ErpPermissionCodes.SalesManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "openErpOpportunity");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpOpportunities");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/quotations" && x.OperationId == "createErpQuotation");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/quotations" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpQuotations");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/quotations/{quotationId}/approve" && x.OperationId == "approveErpQuotation");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders" && x.OperationId == "createErpSalesOrder");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/delivery-orders" && x.OperationId == "releaseErpDeliveryOrder");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/delivery-orders" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpDeliveryOrders");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpSalesOrders");
     }
 
@@ -30,11 +33,12 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpFinanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(11, contracts.Length);
+        Assert.Equal(12, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpAccountPayable");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/receivables" && x.OperationId == "createErpAccountReceivable");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/cost-candidates" && x.OperationId == "createErpCostCandidate");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/vouchers" && x.OperationId == "postErpJournalVoucher");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/vouchers" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpJournalVouchers");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/summary" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpFinanceSummary");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpAccountPayables");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/receivables" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpAccountReceivables");
@@ -42,6 +46,173 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables/by-source" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpPayableBySourceDocument");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/receivables/by-source" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpReceivableBySourceDocument");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/cost-candidates/by-source" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpCostCandidateBySourceDocument");
+    }
+
+    [Fact]
+    public async Task List_opportunities_query_applies_status_keyword_and_server_paging()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var handler = new OpenOpportunityCommandHandler(dbContext);
+        await handler.Handle(new OpenOpportunityCommand("org-001", "env-dev", "OPP-001", "CUST-001", "Line expansion"), CancellationToken.None);
+        await handler.Handle(new OpenOpportunityCommand("org-001", "env-dev", "OPP-002", "CUST-002", "New product launch"), CancellationToken.None);
+        await handler.Handle(new OpenOpportunityCommand("org-other", "env-dev", "OPP-003", "CUST-002", "Other org"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListOpportunitiesQueryHandler(dbContext).Handle(
+            new ListOpportunitiesQuery("org-001", "env-dev", "open", "product", 0, 1),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("OPP-002", item.OpportunityNo);
+        Assert.Equal("CUST-002", item.CustomerCode);
+        Assert.Equal("open", item.Status);
+    }
+
+    [Fact]
+    public async Task List_quotations_query_applies_status_keyword_and_server_paging()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateQuotationAsync(dbContext, "QUO-001", "CUST-001", "SKU-FG-001");
+        await CreateQuotationAsync(dbContext, "QUO-002", "CUST-002", "SKU-FG-002");
+        await CreateQuotationAsync(dbContext, "QUO-003", "CUST-002", "SKU-FG-003", "org-other");
+
+        var response = await new ListQuotationsQueryHandler(dbContext).Handle(
+            new ListQuotationsQuery("org-001", "env-dev", "Draft", "SKU-FG-002", 0, 1),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("QUO-002", item.QuotationNo);
+        Assert.Equal("CUST-002", item.CustomerCode);
+        Assert.Equal("Draft", item.Status);
+        Assert.Equal(200m, item.TotalAmount);
+        Assert.Equal("SKU-FG-002", Assert.Single(item.Lines).SkuCode);
+    }
+
+    [Fact]
+    public async Task List_delivery_orders_query_applies_status_keyword_and_server_paging()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateReleasedSalesOrderAsync(dbContext, "SO-001", "QUO-001", "CUST-001", "SKU-FG-001");
+        await CreateReleasedSalesOrderAsync(dbContext, "SO-002", "QUO-002", "CUST-002", "SKU-FG-002");
+        await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-001", "SO-001", [new DeliveryOrderCommandLine("LINE-001", 1m)]),
+            CancellationToken.None);
+        await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-002", "SO-002", [new DeliveryOrderCommandLine("LINE-001", 1m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListDeliveryOrdersQueryHandler(dbContext).Handle(
+            new ListDeliveryOrdersQuery("org-001", "env-dev", "released", "CUST-002", 0, 1),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("DO-002", item.DeliveryOrderNo);
+        Assert.Equal("SO-002", item.SalesOrderNo);
+        Assert.Equal("released", item.Status);
+        Assert.Equal(1m, Assert.Single(item.Lines).Quantity);
+    }
+
+    [Fact]
+    public async Task List_journal_vouchers_query_applies_status_keyword_and_server_paging()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new PostJournalVoucherCommandHandler(dbContext).Handle(
+            new PostJournalVoucherCommand(
+                "org-001",
+                "env-dev",
+                "JV-001",
+                new DateOnly(2026, 6, 1),
+                [
+                    new JournalVoucherCommandLine("1401", 100m, 0m, "inventory"),
+                    new JournalVoucherCommandLine("2202", 0m, 100m, "payable"),
+                ]),
+            CancellationToken.None);
+        await new PostJournalVoucherCommandHandler(dbContext).Handle(
+            new PostJournalVoucherCommand(
+                "org-001",
+                "env-dev",
+                "JV-002",
+                new DateOnly(2026, 6, 2),
+                [
+                    new JournalVoucherCommandLine("6001", 250m, 0m, "cost"),
+                    new JournalVoucherCommandLine("1401", 0m, 250m, "inventory"),
+                ]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListJournalVouchersQueryHandler(dbContext).Handle(
+            new ListJournalVouchersQuery("org-001", "env-dev", "posted", "6001", 0, 1),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("JV-002", item.VoucherNo);
+        Assert.Equal("posted", item.Status);
+        Assert.Equal(250m, item.TotalDebitAmount);
+        Assert.Equal(250m, item.TotalCreditAmount);
+    }
+
+    [Fact]
+    public async Task New_sales_finance_list_queries_reject_unknown_status_and_cap_take()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        for (var index = 1; index <= 501; index++)
+        {
+            await new OpenOpportunityCommandHandler(dbContext).Handle(
+                new OpenOpportunityCommand("org-001", "env-dev", $"OPP-{index:D3}", "CUST-001", $"Topic {index:D3}"),
+                CancellationToken.None);
+            await CreateQuotationAsync(dbContext, $"QUO-{index:D3}", "CUST-001", $"SKU-FG-{index:D3}");
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var unknownOpportunities = await new ListOpportunitiesQueryHandler(dbContext).Handle(
+            new ListOpportunitiesQuery("org-001", "env-dev", "not-a-status", null, 0, 100),
+            CancellationToken.None);
+        var cappedQuotations = await new ListQuotationsQueryHandler(dbContext).Handle(
+            new ListQuotationsQuery("org-001", "env-dev", null, null, 0, 1000),
+            CancellationToken.None);
+
+        Assert.Equal(0, unknownOpportunities.Total);
+        Assert.Empty(unknownOpportunities.Items);
+        Assert.Equal(501, cappedQuotations.Total);
+        Assert.Equal(500, cappedQuotations.Items.Count);
+    }
+
+    [Fact]
+    public async Task New_sales_finance_list_queries_apply_skip_offset()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateQuotationAsync(dbContext, "QUO-001", "CUST-001", "SKU-FG-001");
+        await CreateQuotationAsync(dbContext, "QUO-002", "CUST-001", "SKU-FG-002");
+        await CreateQuotationAsync(dbContext, "QUO-003", "CUST-001", "SKU-FG-003");
+        SetQuotationCreatedAt(dbContext, "QUO-001", new DateTime(2026, 6, 1, 0, 0, 1, DateTimeKind.Utc));
+        SetQuotationCreatedAt(dbContext, "QUO-002", new DateTime(2026, 6, 1, 0, 0, 2, DateTimeKind.Utc));
+        SetQuotationCreatedAt(dbContext, "QUO-003", new DateTime(2026, 6, 1, 0, 0, 3, DateTimeKind.Utc));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListQuotationsQueryHandler(dbContext).Handle(
+            new ListQuotationsQuery("org-001", "env-dev", null, null, 1, 1),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        Assert.Equal("QUO-002", Assert.Single(response.Items).QuotationNo);
     }
 
     [Fact]
@@ -206,6 +377,34 @@ public sealed class ErpSalesFinanceEndpointContractTests
             new CreateSalesOrderCommand(organizationId, "env-dev", salesOrderNo, quotationNo),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private static async Task CreateQuotationAsync(
+        Infrastructure.ApplicationDbContext dbContext,
+        string quotationNo,
+        string customerCode,
+        string skuCode,
+        string organizationId = "org-001")
+    {
+        await new CreateQuotationCommandHandler(dbContext).Handle(
+            new CreateQuotationCommand(
+                organizationId,
+                "env-dev",
+                quotationNo,
+                customerCode,
+                new DateOnly(2026, 12, 31),
+                [new QuotationCommandLine("LINE-001", skuCode, "EA", 2m, 100m, new DateOnly(2026, 7, 1))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private static void SetQuotationCreatedAt(
+        Infrastructure.ApplicationDbContext dbContext,
+        string quotationNo,
+        DateTime createdAtUtc)
+    {
+        var quotation = dbContext.Quotations.Single(x => x.QuotationNo == quotationNo);
+        dbContext.Entry(quotation).Property(x => x.CreatedAtUtc).CurrentValue = createdAtUtc;
     }
 }
 

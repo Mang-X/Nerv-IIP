@@ -112,16 +112,20 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOptionalIntegerQueryParameter(paths, "/api/business-console/v1/workbench/summary", "get", "take");
         AssertJwtBearerSecurity(paths, "/api/business-console/v1/workbench/summary", "get");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-orders", "get", "listBusinessConsoleErpPurchaseOrders");
+        AssertOperationId(paths, "/api/business-console/v1/erp/procurement/rfqs", "get", "listBusinessConsoleErpRequestsForQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion", "post", "createBusinessConsoleErpPurchaseRequisitionFromSuggestion");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/rfqs", "post", "createBusinessConsoleErpRequestForQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/supplier-quotations", "post", "receiveBusinessConsoleErpSupplierQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-orders", "post", "createBusinessConsoleErpPurchaseOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-receipts", "post", "recordBusinessConsoleErpPurchaseReceipt");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/sales-orders", "get", "listBusinessConsoleErpSalesOrders");
+        AssertOperationId(paths, "/api/business-console/v1/erp/sales/opportunities", "get", "listBusinessConsoleErpOpportunities");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/opportunities", "post", "openBusinessConsoleErpOpportunity");
+        AssertOperationId(paths, "/api/business-console/v1/erp/sales/quotations", "get", "listBusinessConsoleErpQuotations");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/quotations", "post", "createBusinessConsoleErpQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/quotations/{quotationNo}/approve", "post", "approveBusinessConsoleErpQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/sales-orders", "post", "createBusinessConsoleErpSalesOrder");
+        AssertOperationId(paths, "/api/business-console/v1/erp/sales/delivery-orders", "get", "listBusinessConsoleErpDeliveryOrders");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/delivery-orders", "post", "releaseBusinessConsoleErpDeliveryOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payables", "post", "createBusinessConsoleErpAccountPayable");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payables", "get", "listBusinessConsoleErpPayables");
@@ -130,17 +134,23 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "post", "createBusinessConsoleErpCostCandidate");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "get", "listBusinessConsoleErpCostCandidates");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/vouchers", "post", "postBusinessConsoleErpJournalVoucher");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/vouchers", "get", "listBusinessConsoleErpJournalVouchers");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/summary", "get", "getBusinessConsoleErpFinanceSummary");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payables/by-source", "get", "getBusinessConsoleErpPayableBySourceDocument");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/receivables/by-source", "get", "getBusinessConsoleErpReceivableBySourceDocument");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates/by-source", "get", "getBusinessConsoleErpCostCandidateBySourceDocument");
         foreach (var erpListPath in new[]
         {
+            "/api/business-console/v1/erp/procurement/rfqs",
             "/api/business-console/v1/erp/procurement/purchase-orders",
+            "/api/business-console/v1/erp/sales/opportunities",
+            "/api/business-console/v1/erp/sales/quotations",
             "/api/business-console/v1/erp/sales/sales-orders",
+            "/api/business-console/v1/erp/sales/delivery-orders",
             "/api/business-console/v1/erp/finance/payables",
             "/api/business-console/v1/erp/finance/receivables",
             "/api/business-console/v1/erp/finance/cost-candidates",
+            "/api/business-console/v1/erp/finance/vouchers",
         })
         {
             AssertQueryParameters(
