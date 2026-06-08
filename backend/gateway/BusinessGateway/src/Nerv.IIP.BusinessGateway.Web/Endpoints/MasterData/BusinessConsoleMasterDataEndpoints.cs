@@ -150,6 +150,18 @@ public sealed class BusinessConsoleListWorkshopsRequestValidator : Validator<Bus
     }
 }
 
+public sealed class BusinessConsoleWorkerDirectoryRequestValidator : Validator<BusinessConsoleWorkerDirectoryRequest>
+{
+    public BusinessConsoleWorkerDirectoryRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Keyword).MaximumLength(100);
+        RuleFor(x => x.PageIndex).GreaterThan(0);
+        RuleFor(x => x.PageSize).InclusiveBetween(1, 200);
+    }
+}
+
 public sealed class BusinessConsoleCreateWorkshopRequestValidator : Validator<BusinessConsoleCreateWorkshopRequest>
 {
     public BusinessConsoleCreateWorkshopRequestValidator()
@@ -588,6 +600,31 @@ public sealed class CreateBusinessConsoleWorkshopEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         masterData.CreateWorkshopAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
+[HttpGet("/api/business-console/v1/master-data/workers")]
+[BusinessGatewayOperationId("listBusinessConsoleWorkers")]
+public sealed class ListBusinessConsoleWorkersEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIamDirectoryClient iamDirectory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWorkerDirectoryRequest, BusinessConsoleWorkerDirectoryResponse>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesRead)
+{
+    protected override string OrganizationId(BusinessConsoleWorkerDirectoryRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleWorkerDirectoryRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleWorkerDirectoryResponse> ForwardAsync(
+        BusinessConsoleWorkerDirectoryRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        // IAM users are currently platform-global; organization/environment are enforced as BusinessGateway auth scope.
+        return iamDirectory.ListWorkersAsync(tokenProvider.BearerToken, request, cancellationToken);
+    }
 }
 
 [Tags("Business Console MasterData")]

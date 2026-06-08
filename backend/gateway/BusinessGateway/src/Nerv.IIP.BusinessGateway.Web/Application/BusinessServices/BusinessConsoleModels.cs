@@ -50,6 +50,28 @@ public sealed record BusinessConsoleListWorkshopsRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleWorkerDirectoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int PageIndex = 1,
+    int PageSize = 20,
+    bool IncludeDisabled = false);
+
+public sealed record BusinessConsoleWorkerDirectoryResponse(
+    int PageIndex,
+    int PageSize,
+    int TotalCount,
+    IReadOnlyList<BusinessConsoleWorkerDirectoryItem> Items);
+
+public sealed record BusinessConsoleWorkerDirectoryItem(
+    string UserId,
+    string DisplayName,
+    string? EmployeeNo,
+    string? Department,
+    string Status,
+    string? Email);
+
 public sealed record BusinessConsoleCreateSkuRequest(
     string OrganizationId,
     string EnvironmentId,

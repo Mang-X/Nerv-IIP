@@ -2133,6 +2133,30 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     description?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWorkerDirectoryResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryResponse = {
+    pageIndex?: number;
+    pageSize?: number;
+    totalCount?: number;
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem = {
+    userId?: string;
+    displayName?: string;
+    employeeNo?: string | null;
+    department?: string | null;
+    status?: string;
+    email?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryRequest = {
+    [key: string]: never;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSiteRequest = {
     organizationId: string;
     environmentId: string;
@@ -7526,6 +7550,46 @@ export type CreateBusinessConsoleWorkshopResponses = {
 };
 
 export type CreateBusinessConsoleWorkshopResponse = CreateBusinessConsoleWorkshopResponses[keyof CreateBusinessConsoleWorkshopResponses];
+
+export type ListBusinessConsoleWorkersData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        pageIndex?: number;
+        pageSize?: number;
+        includeDisabled?: boolean;
+    };
+    url: '/api/business-console/v1/master-data/workers';
+};
+
+export type ListBusinessConsoleWorkersErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleWorkersError = ListBusinessConsoleWorkersErrors[keyof ListBusinessConsoleWorkersErrors];
+
+export type ListBusinessConsoleWorkersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWorkerDirectoryResponse;
+};
+
+export type ListBusinessConsoleWorkersResponse = ListBusinessConsoleWorkersResponses[keyof ListBusinessConsoleWorkersResponses];
 
 export type CreateBusinessConsoleSiteData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSiteRequest;

@@ -9,6 +9,7 @@ using Nerv.IIP.Iam.Web.Application.Users;
 using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Observability;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
 using NetCorePal.Extensions.DependencyInjection;
 using System.Net;
@@ -28,6 +29,7 @@ builder.Services.AddMediatR(configuration =>
 builder.Services.AddNervIipCaching(builder.Configuration, "iam");
 builder.Services.AddNervIipObservability(builder.Configuration, "iam");
 builder.Services.AddNervIipLocalization();
+builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, builder.Environment);
 builder.Services.AddIamPersistence(builder.Configuration);
 builder.Services.Configure<IamSeedOptions>(builder.Configuration.GetSection("Iam:Seed"));
 builder.Services.Configure<EnterpriseIdentityOptions>(builder.Configuration.GetSection("Iam:EnterpriseIdentity"));
@@ -94,6 +96,8 @@ var app = builder.Build();
 app.UseNervIipCorrelation();
 app.UseNervIipRequestLocalization();
 app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = HttpStatusCode.BadRequest });
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseFastEndpoints();
 
 if (usesPostgreSql && autoMigrate)

@@ -124,6 +124,14 @@ public interface IBusinessMasterDataClient
         CancellationToken cancellationToken);
 }
 
+public interface IBusinessIamDirectoryClient
+{
+    Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
+        string internalBearerToken,
+        BusinessConsoleWorkerDirectoryRequest request,
+        CancellationToken cancellationToken);
+}
+
 public interface IBusinessInventoryClient
 {
     Task<BusinessConsoleInventoryAvailabilityResponse> GetAvailabilityAsync(
@@ -1514,6 +1522,25 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
 
     private static string ResourcePath(string resourceType, string code) =>
         $"/api/business/v1/master-data/resources/{Uri.EscapeDataString(resourceType)}/{Uri.EscapeDataString(code)}";
+}
+
+public sealed class HttpBusinessIamDirectoryClient(HttpClient httpClient)
+    : BusinessServiceHttpClient(httpClient), IBusinessIamDirectoryClient
+{
+    public Task<BusinessConsoleWorkerDirectoryResponse> ListWorkersAsync(
+        string internalBearerToken,
+        BusinessConsoleWorkerDirectoryRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWorkerDirectoryResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/internal/iam/v1/workers?" + Query(
+                ("filterSearch", request.Keyword),
+                ("pageIndex", request.PageIndex),
+                ("pageSize", request.PageSize),
+                ("filterEnabled", request.IncludeDisabled ? null : true)),
+            null,
+            cancellationToken);
 }
 
 public sealed class HttpBusinessInventoryClient(HttpClient httpClient)

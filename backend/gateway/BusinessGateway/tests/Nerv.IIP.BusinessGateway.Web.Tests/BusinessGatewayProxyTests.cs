@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
@@ -170,6 +171,66 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleAddTeamMemberRequest("org-001", "env-dev", "T-001", "user-001", true, new DateOnly(2026, 1, 1), null), masterData.LastAddTeamMemberRequest);
         Assert.Equal(new BusinessConsoleListTeamMembersRequest("org-001", "env-dev", "T-001", true), masterData.LastListTeamMembersRequest);
         Assert.Equal(new BusinessConsoleRemoveTeamMemberRequest("org-001", "env-dev", "T-001", "user-001", "transferred"), masterData.LastRemoveTeamMemberRequest);
+    }
+
+    [Fact]
+    public async Task Master_data_worker_directory_facade_uses_internal_service_token_for_iam_worker_lookup()
+    {
+        var handler = new RecordingHandler(request =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    data = new
+                    {
+                        pageIndex = 1,
+                        pageSize = 10,
+                        totalCount = 1,
+                        items = new[]
+                        {
+                            new
+                            {
+                                userId = "user-worker-001",
+                                displayName = "operator.wang",
+                                employeeNo = (string?)null,
+                                department = (string?)null,
+                                status = "active",
+                                email = "operator.wang@nerv-iip.local",
+                            },
+                        },
+                    },
+                    success = true,
+                    message = string.Empty,
+                    code = 0,
+                }),
+            });
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+                new NamedPrimaryHandlerFilter("IBusinessIamDirectoryClient", handler));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/master-data/workers?organizationId=org-001&environmentId=env-dev&keyword=operator&pageIndex=1&pageSize=10&includeDisabled=false");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.MasterDataResourcesRead, auth.LastRequirement!.PermissionCode);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/internal/iam/v1/workers?filterSearch=operator&pageIndex=1&pageSize=10&filterEnabled=true", request.RequestUri!.PathAndQuery);
+        Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+        Assert.Equal("internal-test-token", request.Headers.Authorization.Parameter);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var worker = document.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("user-worker-001", worker.GetProperty("userId").GetString());
+        Assert.Equal("operator.wang", worker.GetProperty("displayName").GetString());
+        Assert.Equal(JsonValueKind.Null, worker.GetProperty("employeeNo").ValueKind);
+        Assert.Equal("active", worker.GetProperty("status").GetString());
     }
 
     [Fact]
@@ -2935,6 +2996,20 @@ public sealed class BusinessGatewayProxyTests
             Requests.Add(request);
             return Task.FromResult(responseFactory(request));
         }
+    }
+
+    private sealed class NamedPrimaryHandlerFilter(string clientName, HttpMessageHandler handler)
+        : IHttpMessageHandlerBuilderFilter
+    {
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) =>
+            builder =>
+            {
+                next(builder);
+                if (string.Equals(builder.Name, clientName, StringComparison.Ordinal))
+                {
+                    builder.PrimaryHandler = handler;
+                }
+            };
     }
 }
 
