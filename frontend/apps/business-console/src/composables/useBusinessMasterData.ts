@@ -7,12 +7,16 @@ import {
   createBusinessConsoleTeamMutationOptions,
   createBusinessConsoleWorkCalendarMutationOptions,
   createBusinessConsoleWorkCenterMutationOptions,
+  disableBusinessConsoleMasterDataResourceMutationOptions,
+  enableBusinessConsoleMasterDataResourceMutationOptions,
   listBusinessConsoleMasterDataResourcesQueryOptions,
   listBusinessConsoleSkusQueryOptions,
   registerBusinessConsoleDeviceAssetMutationOptions,
+  updateBusinessConsoleMasterDataResourceMutationOptions,
   type BusinessConsoleCreateSkuRequest,
   type BusinessConsoleResourceItem,
   type BusinessConsoleResourceListEnvelope,
+  type BusinessConsoleUpdateMasterDataResourceRequest,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseMutationOptions, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive } from 'vue'
@@ -255,5 +259,36 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
       (createMutation.mutateAsync as unknown as (vars: { body: TBody }) => Promise<unknown>)({ body }),
     createError: createMutation.error,
     createPending: createMutation.isLoading,
+  }
+}
+
+/**
+ * 任一基础数据资源的「编辑 / 停用 / 启用」——走 #344 的通用端点
+ * `PATCH|POST /master-data/resources/{resourceType}/{code}[/disable|/enable]`。
+ * 与列表 hook 解耦,页面在 RowActions 里组合使用;成功后失效相关列表查询。
+ */
+export function useMasterDataResourceActions(resourceType: string) {
+  const ctx = defaultContext()
+  const queryCache = useQueryCache()
+  function invalidate() {
+    for (const id of ['listBusinessConsoleMasterDataResources', 'listBusinessConsoleSkus']) {
+      void queryCache.invalidateQueries({ predicate: isBusinessQuery(id) }).catch(ignoreBackgroundError)
+    }
+  }
+  const updateMutation = useMutation({ ...updateBusinessConsoleMasterDataResourceMutationOptions(), onSuccess: invalidate } as unknown as UseMutationOptions)
+  const disableMutation = useMutation({ ...disableBusinessConsoleMasterDataResourceMutationOptions(), onSuccess: invalidate } as unknown as UseMutationOptions)
+  const enableMutation = useMutation({ ...enableBusinessConsoleMasterDataResourceMutationOptions(), onSuccess: invalidate } as unknown as UseMutationOptions)
+  const withCtx = (extra: Record<string, unknown>) => ({ organizationId: ctx.organizationId, environmentId: ctx.environmentId, ...extra })
+  const callPathBody = (m: typeof updateMutation, code: string, extra: Record<string, unknown>) =>
+    (m.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ path: { resourceType, code }, body: withCtx(extra) })
+
+  return {
+    update: (code: string, patch: Partial<BusinessConsoleUpdateMasterDataResourceRequest>) => callPathBody(updateMutation, code, patch),
+    disable: (code: string) => callPathBody(disableMutation, code, {}),
+    enable: (code: string) => callPathBody(enableMutation, code, {}),
+    updatePending: updateMutation.isLoading,
+    disablePending: disableMutation.isLoading,
+    enablePending: enableMutation.isLoading,
+    actionError: computed(() => updateMutation.error.value ?? disableMutation.error.value ?? enableMutation.error.value),
   }
 }
