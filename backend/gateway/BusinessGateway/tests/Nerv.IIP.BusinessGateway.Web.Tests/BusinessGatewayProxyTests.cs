@@ -192,7 +192,7 @@ public sealed class BusinessGatewayProxyTests
                             {
                                 userId = "user-worker-001",
                                 displayName = "operator.wang",
-                                employeeNo = "operator.wang",
+                                employeeNo = (string?)null,
                                 department = (string?)null,
                                 status = "active",
                                 email = "operator.wang@nerv-iip.local",
@@ -229,7 +229,7 @@ public sealed class BusinessGatewayProxyTests
         var worker = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("user-worker-001", worker.GetProperty("userId").GetString());
         Assert.Equal("operator.wang", worker.GetProperty("displayName").GetString());
-        Assert.Equal("operator.wang", worker.GetProperty("employeeNo").GetString());
+        Assert.Equal(JsonValueKind.Null, worker.GetProperty("employeeNo").ValueKind);
         Assert.Equal("active", worker.GetProperty("status").GetString());
     }
 

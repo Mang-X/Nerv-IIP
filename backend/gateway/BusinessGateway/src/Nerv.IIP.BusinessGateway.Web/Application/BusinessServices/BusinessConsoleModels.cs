@@ -67,7 +67,7 @@ public sealed record BusinessConsoleWorkerDirectoryResponse(
 public sealed record BusinessConsoleWorkerDirectoryItem(
     string UserId,
     string DisplayName,
-    string EmployeeNo,
+    string? EmployeeNo,
     string? Department,
     string Status,
     string? Email);

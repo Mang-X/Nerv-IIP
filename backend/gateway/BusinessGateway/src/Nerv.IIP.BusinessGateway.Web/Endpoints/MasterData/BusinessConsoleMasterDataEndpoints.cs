@@ -620,8 +620,11 @@ public sealed class ListBusinessConsoleWorkersEndpoint(
     protected override Task<BusinessConsoleWorkerDirectoryResponse> ForwardAsync(
         BusinessConsoleWorkerDirectoryRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        iamDirectory.ListWorkersAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        // IAM users are currently platform-global; organization/environment are enforced as BusinessGateway auth scope.
+        return iamDirectory.ListWorkersAsync(tokenProvider.BearerToken, request, cancellationToken);
+    }
 }
 
 [Tags("Business Console MasterData")]

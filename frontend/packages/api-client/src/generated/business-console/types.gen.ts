@@ -2147,7 +2147,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem = {
     userId?: string;
     displayName?: string;
-    employeeNo?: string;
+    employeeNo?: string | null;
     department?: string | null;
     status?: string;
     email?: string | null;

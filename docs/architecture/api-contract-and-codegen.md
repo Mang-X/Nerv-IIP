@@ -79,7 +79,7 @@ BusinessGateway Console OpenAPI 的生成链路固定为：
 20. BusinessGateway BarcodeLabel facade 已补齐条码规则、标签模板、打印批次和扫码记录的服务端分页读面。`/barcode/rules`、`/barcode/print-batches`、`/barcode/templates`、`/barcode/scans` 均返回 `{ items,total }` 或等价分页响应，并在下游 BarcodeLabel 服务的 `total` 计算前应用 `skip/take` 与支持的过滤条件。
 21. BusinessGateway IndustrialTelemetry/Equipment facade 的 tags、alarm-rules、alarms、equipment alarms 列表均使用服务端分页响应，并支持设备、状态等下游已暴露过滤；BusinessGateway 不在当前页结果上二次模拟全量过滤。
 22. BusinessGateway Maintenance facade 已补齐点检列表、备件列表/创建，以及工单/保养计划分页读面。停机归因仍由 MES downtime execution facts 与 Maintenance downtime reason/availability window 各自拥有，不在 Gateway facade 层合并成新的持久事实。
-23. BusinessGateway MasterData facade 已补齐通用资源 detail/update/disable/enable、typed list 字段、reference-data `codeSet` 过滤、workshop/team-member 接口、面向工人选择器的 IAM worker directory facade，以及 BusinessPartner 多角色和 `taxId` 字段。BusinessGateway 只透传 MasterData lifecycle 请求和 IAM 权限检查，不在 facade 层重写主数据生命周期；worker directory 使用 internal service token 读取 IAM 最小 worker DTO，不要求业务用户具备 Console IAM Admin 权限。
+23. BusinessGateway MasterData facade 已补齐通用资源 detail/update/disable/enable、typed list 字段、reference-data `codeSet` 过滤、workshop/team-member 接口、面向工人选择器的 IAM worker directory facade，以及 BusinessPartner 多角色和 `taxId` 字段。BusinessGateway 只透传 MasterData lifecycle 请求和 IAM 权限检查，不在 facade 层重写主数据生命周期；worker directory 使用 internal service token 读取 IAM 最小 worker DTO，不要求业务用户具备 Console IAM Admin 权限。IAM 当前没有真实工号字段，worker directory 只保证 `userId` 和可读 `displayName`，`employeeNo` 可为空。
 
 Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` 语义前缀：
 

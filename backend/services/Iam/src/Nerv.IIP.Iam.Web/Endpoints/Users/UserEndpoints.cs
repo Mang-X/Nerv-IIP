@@ -25,7 +25,7 @@ public sealed record ListUsersRequest(
 public sealed record WorkerDirectoryUserResponse(
     string UserId,
     string DisplayName,
-    string EmployeeNo,
+    string? EmployeeNo,
     string? Department,
     string Status,
     string? Email);
@@ -81,8 +81,9 @@ public sealed class ListWorkerDirectoryEndpoint(IMediator mediator)
         var status = user.Enabled ? "active" : "disabled";
         return new WorkerDirectoryUserResponse(
             user.UserId,
+            // TODO: Replace this fallback once IAM stores worker profile display names and employee numbers.
             user.LoginName,
-            user.LoginName,
+            null,
             null,
             status,
             user.Email);

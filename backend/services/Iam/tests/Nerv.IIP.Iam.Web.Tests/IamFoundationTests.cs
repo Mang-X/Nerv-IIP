@@ -193,7 +193,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         var admin = Assert.Single(workers!.Items);
         Assert.Equal("user-admin", admin.UserId);
         Assert.Equal("admin", admin.DisplayName);
-        Assert.Equal("admin", admin.EmployeeNo);
+        Assert.Null(admin.EmployeeNo);
         Assert.Null(admin.Department);
         Assert.Equal("active", admin.Status);
     }
@@ -513,7 +513,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     private sealed record WorkerDirectoryUserResponse(
         string UserId,
         string DisplayName,
-        string EmployeeNo,
+        string? EmployeeNo,
         string? Department,
         string Status,
         string? Email);

@@ -21826,7 +21826,8 @@
             "type": "string"
           },
           "employeeNo": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "department": {
             "type": "string",

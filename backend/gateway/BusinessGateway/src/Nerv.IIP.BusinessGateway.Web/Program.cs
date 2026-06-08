@@ -67,7 +67,7 @@ builder.Services.AddHttpClient<IBusinessGatewayAuthorizationClient, HttpBusiness
 builder.Services.AddHttpClient<IBusinessIamDirectoryClient, HttpBusinessIamDirectoryClient>(client =>
 {
     client.BaseAddress = iamBaseAddress;
-}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IBusinessMasterDataClient, HttpBusinessMasterDataClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
