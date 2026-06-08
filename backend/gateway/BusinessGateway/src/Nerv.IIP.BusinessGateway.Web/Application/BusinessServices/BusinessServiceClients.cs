@@ -306,6 +306,11 @@ public interface IBusinessErpClient
         BusinessConsoleReceiveErpSupplierQuotationRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleErpRequestForQuotationListResponse> ListRequestsForQuotationAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -326,6 +331,21 @@ public interface IBusinessErpClient
         BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleErpOpportunityListResponse> ListOpportunitiesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleErpQuotationListResponse> ListQuotationsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleErpDeliveryOrderListResponse> ListDeliveryOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleErpPayableListResponse> ListPayablesAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -337,6 +357,11 @@ public interface IBusinessErpClient
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleErpCostCandidateListResponse> ListCostCandidatesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleErpJournalVoucherListResponse> ListJournalVouchersAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken);
@@ -2519,6 +2544,17 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             request,
             cancellationToken);
 
+    public Task<BusinessConsoleErpRequestForQuotationListResponse> ListRequestsForQuotationAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpRequestForQuotationListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/rfqs?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -2558,6 +2594,39 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleErpOpportunityListResponse> ListOpportunitiesAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpOpportunityListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/opportunities?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpQuotationListResponse> ListQuotationsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpQuotationListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/quotations?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpDeliveryOrderListResponse> ListDeliveryOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpDeliveryOrderListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/delivery-orders?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleErpPayableListResponse> ListPayablesAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -2588,6 +2657,17 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/erp/finance/cost-candidates?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpJournalVoucherListResponse> ListJournalVouchersAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpJournalVoucherListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/vouchers?" + ErpListQuery(request),
             null,
             cancellationToken);
 

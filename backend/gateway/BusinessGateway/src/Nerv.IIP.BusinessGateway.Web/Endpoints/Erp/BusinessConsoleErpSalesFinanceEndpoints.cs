@@ -29,6 +29,28 @@ public sealed class ListBusinessConsoleErpSalesOrdersEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/sales/opportunities")]
+[BusinessGatewayOperationId("listBusinessConsoleErpOpportunities")]
+public sealed class ListBusinessConsoleErpOpportunitiesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpOpportunityListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpSalesRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpOpportunityListResponse> ForwardAsync(
+        BusinessConsoleErpListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListOpportunitiesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpPost("/api/business-console/v1/erp/sales/opportunities")]
 [BusinessGatewayOperationId("openBusinessConsoleErpOpportunity")]
 public sealed class OpenBusinessConsoleErpOpportunityEndpoint(
@@ -48,6 +70,28 @@ public sealed class OpenBusinessConsoleErpOpportunityEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.OpenOpportunityAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/sales/quotations")]
+[BusinessGatewayOperationId("listBusinessConsoleErpQuotations")]
+public sealed class ListBusinessConsoleErpQuotationsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpQuotationListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpSalesRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpQuotationListResponse> ForwardAsync(
+        BusinessConsoleErpListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListQuotationsAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console ERP")]
@@ -122,6 +166,28 @@ public sealed class CreateBusinessConsoleErpSalesOrderEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.CreateSalesOrderAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/sales/delivery-orders")]
+[BusinessGatewayOperationId("listBusinessConsoleErpDeliveryOrders")]
+public sealed class ListBusinessConsoleErpDeliveryOrdersEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpDeliveryOrderListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpSalesRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpDeliveryOrderListResponse> ForwardAsync(
+        BusinessConsoleErpListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListDeliveryOrdersAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console ERP")]
@@ -232,6 +298,28 @@ public sealed class PostBusinessConsoleErpJournalVoucherEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.PostJournalVoucherAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/finance/vouchers")]
+[BusinessGatewayOperationId("listBusinessConsoleErpJournalVouchers")]
+public sealed class ListBusinessConsoleErpJournalVouchersEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpJournalVoucherListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpJournalVoucherListResponse> ForwardAsync(
+        BusinessConsoleErpListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListJournalVouchersAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console ERP")]

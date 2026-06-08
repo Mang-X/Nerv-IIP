@@ -9465,6 +9465,145 @@
         ]
       }
     },
+    "/api/business-console/v1/erp/procurement/rfqs": {
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleErpRequestsForQuotation",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpRequestForQuotationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleErpRequestForQuotation",
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateErpRequestForQuotationRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpRequestForQuotationRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpRequestForQuotationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion": {
       "post": {
         "tags": [
@@ -9502,51 +9641,6 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/FastEndpointsErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Forbidden"
-          }
-        },
-        "security": [
-          {
-            "JWTBearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/business-console/v1/erp/procurement/rfqs": {
-      "post": {
-        "tags": [
-          "Business Console ERP",
-          "Api"
-        ],
-        "operationId": "createBusinessConsoleErpRequestForQuotation",
-        "requestBody": {
-          "x-name": "BusinessConsoleCreateErpRequestForQuotationRequest",
-          "description": "",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpRequestForQuotationRequest"
-              }
-            }
-          },
-          "required": true,
-          "x-position": 1
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpRequestForQuotationResponse"
                 }
               }
             }
@@ -9795,6 +9889,100 @@
       }
     },
     "/api/business-console/v1/erp/sales/opportunities": {
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleErpOpportunities",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpOpportunityListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
       "post": {
         "tags": [
           "Business Console ERP",
@@ -9840,6 +10028,100 @@
       }
     },
     "/api/business-console/v1/erp/sales/quotations": {
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleErpQuotations",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpQuotationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
       "post": {
         "tags": [
           "Business Console ERP",
@@ -9940,6 +10222,100 @@
       }
     },
     "/api/business-console/v1/erp/sales/delivery-orders": {
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleErpDeliveryOrders",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpDeliveryOrderListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
       "post": {
         "tags": [
           "Business Console ERP",
@@ -10428,6 +10804,100 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsolePostErpJournalVoucherResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleErpJournalVouchers",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpJournalVoucherListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
                 }
               }
             }
@@ -20260,6 +20730,97 @@
         "type": "object",
         "additionalProperties": false
       },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpRequestForQuotationListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpRequestForQuotationListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpRequestForQuotationListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpRequestForQuotationItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpRequestForQuotationItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "rfqNo": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "supplierCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpRequestForQuotationLineItem"
+            }
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpRequestForQuotationLineItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lineNo": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "siteCode": {
+            "type": "string"
+          },
+          "requiredDate": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpPurchaseRequisitionResponse": {
         "allOf": [
           {
@@ -20749,6 +21310,65 @@
           }
         }
       },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpOpportunityListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOpportunityListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOpportunityListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOpportunityItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOpportunityItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "opportunityNo": {
+            "type": "string"
+          },
+          "customerCode": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "openedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleOpenErpOpportunityResponse": {
         "allOf": [
           {
@@ -20802,6 +21422,103 @@
           "idempotencyKey": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpQuotationListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "quotationNo": {
+            "type": "string"
+          },
+          "customerCode": {
+            "type": "string"
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string"
+          },
+          "totalAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationLineItem"
+            }
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationLineItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lineNo": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "requiredDate": {
+            "type": "string",
+            "format": "date"
           }
         }
       },
@@ -20974,6 +21691,84 @@
           "idempotencyKey": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpDeliveryOrderListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deliveryOrderNo": {
+            "type": "string"
+          },
+          "salesOrderNo": {
+            "type": "string"
+          },
+          "customerCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderLineItem"
+            }
+          },
+          "releasedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderLineItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "salesOrderLineNo": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
@@ -21299,6 +22094,97 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpJournalVoucherLine": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accountCode": {
+            "type": "string"
+          },
+          "debitAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "creditAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "memo": {
+            "type": "string"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpJournalVoucherListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpJournalVoucherListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpJournalVoucherListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpJournalVoucherItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpJournalVoucherItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "voucherNo": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string"
+          },
+          "totalDebitAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "totalCreditAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpJournalVoucherLineItem"
+            }
+          },
+          "postedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpJournalVoucherLineItem": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
