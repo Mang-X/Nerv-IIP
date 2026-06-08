@@ -1,9 +1,15 @@
 import {
   createBusinessConsoleErpSalesOrderMutationOptions,
+  getBusinessConsoleErpFinanceSummaryQueryOptions,
   listBusinessConsoleErpPurchaseOrdersQueryOptions,
+  listBusinessConsoleErpReceivablesQueryOptions,
   listBusinessConsoleErpSalesOrdersQueryOptions,
+  type BusinessConsoleErpFinanceSummaryEnvelope,
+  type BusinessConsoleErpFinanceSummaryResponse,
   type BusinessConsoleErpPurchaseOrderItem,
   type BusinessConsoleErpPurchaseOrderListEnvelope,
+  type BusinessConsoleErpReceivableItem,
+  type BusinessConsoleErpReceivableListEnvelope,
   type BusinessConsoleErpSalesOrderItem,
   type BusinessConsoleErpSalesOrderListEnvelope,
 } from '@nerv-iip/api-client'
@@ -34,6 +40,10 @@ function unwrapTotal(envelope: { success?: boolean; data?: { total?: number } | 
   }
 
   return envelope.data?.total ?? 0
+}
+
+function unwrapData<T>(envelope: { success?: boolean; data?: T | null } | undefined): T | undefined {
+  return envelope?.success ? envelope.data ?? undefined : undefined
 }
 
 // 写操作幂等键，避免重复提交；浏览器原生 UUID，测试环境亦可用。
@@ -128,5 +138,54 @@ export function useErpSalesOrders() {
       }),
     createSalesOrderPending: createMutation.isLoading,
     createSalesOrderError: createMutation.error,
+  }
+}
+
+export function useErpFinance() {
+  const businessContext = useBusinessContextStore()
+
+  const summaryQuery = useQuery(() =>
+    getBusinessConsoleErpFinanceSummaryQueryOptions({
+      query: {
+        organizationId: businessContext.organizationId,
+        environmentId: businessContext.environmentId,
+      },
+    }),
+  )
+
+  const filters = reactive<BusinessErpListFilters>({
+    skip: 0,
+    take: DEFAULT_TAKE,
+  })
+  const receivablesQuery = useQuery(() =>
+    listBusinessConsoleErpReceivablesQueryOptions({
+      query: {
+        organizationId: businessContext.organizationId,
+        environmentId: businessContext.environmentId,
+        status: filters.status,
+        keyword: filters.keyword,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
+
+  return {
+    summary: computed<BusinessConsoleErpFinanceSummaryResponse | undefined>(() =>
+      unwrapData(summaryQuery.data.value as BusinessConsoleErpFinanceSummaryEnvelope | undefined),
+    ),
+    summaryError: summaryQuery.error,
+    summaryPending: summaryQuery.isLoading,
+    refreshSummary: summaryQuery.refetch,
+    filters,
+    receivables: computed<BusinessConsoleErpReceivableItem[]>(() =>
+      unwrapItems(receivablesQuery.data.value as BusinessConsoleErpReceivableListEnvelope | undefined),
+    ),
+    receivablesTotal: computed(() =>
+      unwrapTotal(receivablesQuery.data.value as BusinessConsoleErpReceivableListEnvelope | undefined),
+    ),
+    receivablesError: receivablesQuery.error,
+    receivablesPending: receivablesQuery.isLoading,
+    refreshReceivables: receivablesQuery.refetch,
   }
 }

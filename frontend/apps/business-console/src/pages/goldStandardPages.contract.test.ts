@@ -28,6 +28,7 @@ const GOLD_STANDARD_PAGES = [
   'wms/outbound.vue',
   'wms/wcs.vue',
   'erp/sales.vue',
+  'erp/finance.vue',
 ]
 
 const REQUIRED_BLOCKS = ['PageHeader', 'DataTable', 'DataTablePagination', 'SectionCard']

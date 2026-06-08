@@ -65,6 +65,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       items: [
         { title: '采购与供应', to: { path: '/erp' } },
         { title: '销售订单', to: { path: '/erp/sales' } },
+        { title: '财务', to: { path: '/erp/finance' } },
       ],
     },
   ],
