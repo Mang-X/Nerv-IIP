@@ -8,6 +8,28 @@ using Nerv.IIP.ServiceAuth;
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 
 [Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/procurement/rfqs")]
+[BusinessGatewayOperationId("listBusinessConsoleErpRequestsForQuotation")]
+public sealed class ListBusinessConsoleErpRequestsForQuotationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpRequestForQuotationListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpProcurementRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpRequestForQuotationListResponse> ForwardAsync(
+        BusinessConsoleErpListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListRequestsForQuotationAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpPost("/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion")]
 [BusinessGatewayOperationId("createBusinessConsoleErpPurchaseRequisitionFromSuggestion")]
 public sealed class CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionEndpoint(
@@ -130,4 +152,3 @@ public sealed class BusinessConsoleCreateErpPurchaseRequisitionRequestValidator 
         RuleFor(x => x.Quantity).GreaterThan(0);
     }
 }
-
