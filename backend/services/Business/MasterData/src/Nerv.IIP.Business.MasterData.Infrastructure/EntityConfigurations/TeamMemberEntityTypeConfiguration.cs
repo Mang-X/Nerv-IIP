@@ -21,7 +21,9 @@ public sealed class TeamMemberEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the team membership was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the team membership was last updated.");
         builder.Ignore(x => x.Code);
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.TeamCode, x.UserId, x.EffectiveFrom }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.TeamCode, x.UserId })
+            .IsUnique()
+            .HasFilter("disabled = false");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.TeamCode, x.Disabled });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.UserId, x.Disabled });
     }

@@ -1005,8 +1005,9 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "UserId", "Disabled");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "TeamCode", "UserId", "EffectiveFrom")
-                        .IsUnique();
+                    b.HasIndex("OrganizationId", "EnvironmentId", "TeamCode", "UserId")
+                        .IsUnique()
+                        .HasFilter("disabled = false");
 
                     b.ToTable("team_members", "business_masterdata", t =>
                         {

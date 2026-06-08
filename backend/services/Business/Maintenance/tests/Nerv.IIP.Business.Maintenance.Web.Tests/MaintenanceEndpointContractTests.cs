@@ -118,6 +118,23 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Maintenance_spare_part_create_rejects_completed_work_order_with_known_exception()
+    {
+        await using var dbContext = CreateDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "high", "operator-001");
+        workOrder.Complete("restored", "mechanical", 15, []);
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new CreateMaintenanceSparePartCommandHandler(dbContext).Handle(
+                new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "EA"),
+                CancellationToken.None));
+
+        Assert.Equal("Completed maintenance work orders are immutable.", exception.Message);
+    }
+
+    [Fact]
     public async Task Asset_availability_query_returns_active_alarm_and_planned_maintenance_windows()
     {
         await using var dbContext = CreateDbContext();

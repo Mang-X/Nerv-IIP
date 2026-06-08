@@ -358,6 +358,8 @@ public sealed class HttpGatewayFileStorageClient(
     private static string BuildListQuery(ListFilesRequest request)
     {
         var values = new List<string>();
+        Add(values, "organizationId", request.OrganizationId);
+        Add(values, "environmentId", request.EnvironmentId);
         Add(values, "filePurpose", request.FilePurpose);
         Add(values, "uploaderId", request.UploaderId);
         Add(values, "createdFromUtc", request.CreatedFromUtc?.ToString("O"));

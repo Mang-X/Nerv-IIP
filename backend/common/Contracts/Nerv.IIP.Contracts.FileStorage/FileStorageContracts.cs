@@ -24,6 +24,8 @@ public sealed record CompleteUploadSessionRequest(
 public sealed record CreateDownloadGrantRequest(string OrganizationId, string EnvironmentId);
 
 public sealed record ListFilesRequest(
+    string OrganizationId,
+    string EnvironmentId,
     string? FilePurpose,
     string? UploaderId,
     DateTimeOffset? CreatedFromUtc,

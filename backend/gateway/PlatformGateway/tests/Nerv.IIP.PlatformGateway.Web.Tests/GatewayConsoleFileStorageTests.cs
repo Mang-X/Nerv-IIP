@@ -77,6 +77,7 @@ public sealed class GatewayConsoleFileStorageTests
         using var request = AuthorizedRequest(
             HttpMethod.Get,
             "/api/console/v1/files?filePurpose=notification-attachment&uploaderId=user-001&createdFromUtc=2026-06-01T00%3A00%3A00Z&createdToUtc=2026-06-08T00%3A00%3A00Z&status=available&skip=10&take=20");
+        AddTenantHeaders(request);
 
         var response = await factory.CreateClient().SendAsync(request);
 
@@ -85,6 +86,8 @@ public sealed class GatewayConsoleFileStorageTests
         Assert.Equal(1, body.Total);
         Assert.Equal("file-001", Assert.Single(body.Items).FileId);
         Assert.NotNull(files.LastListRequest);
+        Assert.Equal("org-001", files.LastListRequest.OrganizationId);
+        Assert.Equal("env-dev", files.LastListRequest.EnvironmentId);
         Assert.Equal("notification-attachment", files.LastListRequest.FilePurpose);
         Assert.Equal("user-001", files.LastListRequest.UploaderId);
         Assert.Equal(DateTimeOffset.Parse("2026-06-01T00:00:00Z"), files.LastListRequest.CreatedFromUtc);
@@ -93,6 +96,28 @@ public sealed class GatewayConsoleFileStorageTests
         Assert.Equal(10, files.LastListRequest.Skip);
         Assert.Equal(20, files.LastListRequest.Take);
         Assert.Equal(GatewayPermissions.FilesRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal("file", auth.LastRequirement.ResourceType);
+    }
+
+    [Fact]
+    public async Task List_files_requires_explicit_tenant_headers()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files");
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<object>>();
+        Assert.NotNull(envelope);
+        Assert.False(envelope.Success);
+        Assert.Equal("X-Organization-Id and X-Environment-Id headers are required.", envelope.Message);
+        Assert.Null(files.LastListRequest);
+        Assert.Null(auth.LastRequirement);
     }
 
     [Fact]
@@ -128,6 +153,8 @@ public sealed class GatewayConsoleFileStorageTests
 
         var response = await files.ListFilesAsync(
             new ListFilesRequest(
+                "org-001",
+                "env-dev",
                 "notification-attachment",
                 "user-001",
                 DateTimeOffset.Parse("2026-06-01T00:00:00Z"),
@@ -141,7 +168,7 @@ public sealed class GatewayConsoleFileStorageTests
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal(
-            "/api/files/v1/files?filePurpose=notification-attachment&uploaderId=user-001&createdFromUtc=2026-06-01T00%3A00%3A00.0000000%2B00%3A00&createdToUtc=2026-06-08T00%3A00%3A00.0000000%2B00%3A00&status=available&skip=10&take=20",
+            "/api/files/v1/files?organizationId=org-001&environmentId=env-dev&filePurpose=notification-attachment&uploaderId=user-001&createdFromUtc=2026-06-01T00%3A00%3A00.0000000%2B00%3A00&createdToUtc=2026-06-08T00%3A00%3A00.0000000%2B00%3A00&status=available&skip=10&take=20",
             request.RequestUri.PathAndQuery);
         Assert.Equal("Bearer", request.Authorization!.Scheme);
         Assert.Equal("internal-test-token", request.Authorization.Parameter);
@@ -378,6 +405,12 @@ public sealed class GatewayConsoleFileStorageTests
         var request = new HttpRequestMessage(method, requestUri);
         request.Headers.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
         return request;
+    }
+
+    private static void AddTenantHeaders(HttpRequestMessage request)
+    {
+        request.Headers.Add("X-Organization-Id", "org-001");
+        request.Headers.Add("X-Environment-Id", "env-dev");
     }
 
     private static CreateUploadSessionRequest CreateUploadSessionRequest() =>

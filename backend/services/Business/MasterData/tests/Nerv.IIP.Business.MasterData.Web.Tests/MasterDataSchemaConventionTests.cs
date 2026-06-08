@@ -82,6 +82,25 @@ public sealed class MasterDataSchemaConventionTests
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
+    [Fact]
+    public void Team_member_unique_index_matches_active_membership_lookup()
+    {
+        using var fixture = CreateFixture();
+        var entityType = fixture.DbContext.Model.FindEntityType(typeof(TeamMember));
+        Assert.NotNull(entityType);
+
+        var index = Assert.Single(entityType.GetIndexes(), candidate =>
+            candidate.IsUnique &&
+            candidate.Properties.Select(property => property.Name)
+                .SequenceEqual(["OrganizationId", "EnvironmentId", "TeamCode", "UserId"]));
+
+        Assert.Equal("disabled = false", index.GetFilter());
+        Assert.DoesNotContain(entityType.GetIndexes(), candidate =>
+            candidate.IsUnique &&
+            candidate.Properties.Select(property => property.Name)
+                .SequenceEqual(["OrganizationId", "EnvironmentId", "TeamCode", "UserId", "EffectiveFrom"]));
+    }
+
     private static SchemaFixture CreateFixture()
     {
         var services = new ServiceCollection();

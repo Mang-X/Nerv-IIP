@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
@@ -97,16 +98,24 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
                 await dbContext.DeviceAssets.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
             "reference-data" => UpdateMasterDataResourceCommandHandler.Detail(
-                await dbContext.ReferenceDataCodes.AsNoTracking()
-                    .SingleOrDefaultAsync(x =>
-                        x.OrganizationId == request.OrganizationId &&
-                        x.EnvironmentId == request.EnvironmentId &&
-                        x.Code == request.Code &&
-                        (string.IsNullOrWhiteSpace(request.CodeSet) || x.CodeSet == request.CodeSet),
-                        cancellationToken)
+                await FindReferenceDataCodeAsync(request, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
             _ => throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'."),
         };
+    }
+
+    private async Task<ReferenceDataCode?> FindReferenceDataCodeAsync(
+        GetMasterDataResourceDetailQuery request,
+        CancellationToken cancellationToken)
+    {
+        var codeSet = RequireReferenceDataCodeSet(request.CodeSet);
+        return await dbContext.ReferenceDataCodes.AsNoTracking()
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.CodeSet == codeSet &&
+                x.Code == request.Code,
+                cancellationToken);
     }
 
     internal static string NormalizeType(string resourceType)
@@ -118,6 +127,16 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
             "reference-data-code" => "reference-data",
             var value => value,
         };
+    }
+
+    internal static string RequireReferenceDataCodeSet(string? codeSet)
+    {
+        if (string.IsNullOrWhiteSpace(codeSet))
+        {
+            throw new KnownException("Reference data codeSet is required when addressing a reference-data resource.");
+        }
+
+        return codeSet.Trim();
     }
 
     private static KnownException NotFound(string resourceType, string code) =>

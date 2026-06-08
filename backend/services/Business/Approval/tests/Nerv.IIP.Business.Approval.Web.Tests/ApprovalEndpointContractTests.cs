@@ -225,11 +225,15 @@ public sealed class ApprovalEndpointContractTests
             NewTemplateCommand() with { TemplateCode = "ECO;DROP" });
         var resolveResult = new ResolveApprovalStepCommandValidator().Validate(
             new ResolveApprovalStepCommand(new ApprovalChainId(Guid.CreateVersion7()), 1, "user", "u-engineering", "escalate", null));
+        var decisionsResult = new ListApprovalDecisionsQueryValidator().Validate(
+            new ListApprovalDecisionsQuery("org-001", "env-dev", "not-a-guid", null, null, null, null, null, 0, 10));
 
         Assert.False(templateResult.IsValid);
         Assert.Contains(templateResult.Errors, x => x.ErrorMessage.Contains("letters", StringComparison.OrdinalIgnoreCase));
         Assert.False(resolveResult.IsValid);
         Assert.Contains(resolveResult.Errors, x => x.ErrorMessage.Contains("approve", StringComparison.OrdinalIgnoreCase));
+        Assert.False(decisionsResult.IsValid);
+        Assert.Contains(decisionsResult.Errors, x => x.ErrorMessage.Contains("valid GUID", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

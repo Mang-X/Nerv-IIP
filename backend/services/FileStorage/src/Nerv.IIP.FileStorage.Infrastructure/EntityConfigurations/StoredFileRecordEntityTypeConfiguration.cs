@@ -90,6 +90,7 @@ public sealed class StoredFileRecordEntityTypeConfiguration : IEntityTypeConfigu
             .HasComment("UTC timestamp when the file became available.");
 
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OwnerService, x.OwnerType, x.OwnerId });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CompletedAtUtc });
         builder.HasIndex(x => x.ObjectKey).IsUnique();
     }
 }

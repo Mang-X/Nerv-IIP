@@ -202,15 +202,18 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         await dbContext.DeviceAssets.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
         ?? throw NotFound(request.ResourceType, request.Code);
 
-    private async Task<ReferenceDataCode> FindReferenceDataCodeAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
-        await dbContext.ReferenceDataCodes
+    private async Task<ReferenceDataCode> FindReferenceDataCodeAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken)
+    {
+        var codeSet = GetMasterDataResourceDetailQueryHandler.RequireReferenceDataCodeSet(request.CodeSet);
+        return await dbContext.ReferenceDataCodes
             .SingleOrDefaultAsync(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.Code == request.Code &&
-                (string.IsNullOrWhiteSpace(request.CodeSet) || x.CodeSet == request.CodeSet),
+                x.CodeSet == codeSet &&
+                x.Code == request.Code,
                 cancellationToken)
         ?? throw NotFound(request.ResourceType, request.Code);
+    }
 
     internal static KnownException NotFound(string resourceType, string code) =>
         new($"Master data resource '{resourceType}:{code}' was not found.");
@@ -311,11 +314,12 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(ApplicationDbCont
                 if (request.Enabled) device.Enable(reason); else device.Disable(reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(device);
             case "reference-data":
+                var codeSet = GetMasterDataResourceDetailQueryHandler.RequireReferenceDataCodeSet(request.CodeSet);
                 var referenceData = await dbContext.ReferenceDataCodes.SingleOrDefaultAsync(x =>
                     x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId &&
-                    x.Code == request.Code &&
-                    (string.IsNullOrWhiteSpace(request.CodeSet) || x.CodeSet == request.CodeSet),
+                    x.CodeSet == codeSet &&
+                    x.Code == request.Code,
                     cancellationToken)
                     ?? throw UpdateMasterDataResourceCommandHandler.NotFound(request.ResourceType, request.Code);
                 if (request.Enabled) referenceData.Enable(reason); else referenceData.Disable(reason);

@@ -408,7 +408,7 @@ export type NervIipContractsFileStorageFileListResponse = {
     items?: Array<NervIipContractsFileStorageFileMetadataResponse>;
 };
 
-export type NervIipContractsFileStorageListFilesRequest = {
+export type NervIipPlatformGatewayWebEndpointsFilesConsoleListFilesRequest = {
     [key: string]: never;
 };
 

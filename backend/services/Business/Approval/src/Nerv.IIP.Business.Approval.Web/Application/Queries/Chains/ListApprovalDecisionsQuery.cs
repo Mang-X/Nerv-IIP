@@ -40,7 +40,10 @@ public sealed class ListApprovalDecisionsQueryValidator : AbstractValidator<List
     {
         RuleFor(x => x.OrganizationId).RequiredApprovalCode(100);
         RuleFor(x => x.EnvironmentId).RequiredApprovalCode(100);
-        RuleFor(x => x.ChainId).MaximumLength(150);
+        RuleFor(x => x.ChainId)
+            .MaximumLength(150)
+            .Must(value => string.IsNullOrWhiteSpace(value) || Guid.TryParse(value, out _))
+            .WithMessage("ChainId must be a valid GUID.");
         RuleFor(x => x.ActorType).MaximumLength(50);
         RuleFor(x => x.ActorRef).MaximumLength(150);
         RuleFor(x => x.Decision).MaximumLength(50);

@@ -135,6 +135,11 @@ public sealed class CreateMaintenanceSparePartCommandHandler(ApplicationDbContex
                     && x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
             ?? throw new KnownException($"Maintenance work order was not found: {request.WorkOrderId}");
+        if (workOrder.Status != MaintenanceWorkOrderStatus.Open)
+        {
+            throw new KnownException("Completed maintenance work orders are immutable.");
+        }
+
         var sparePart = workOrder.AddSparePartLine(new SparePartLineDraft(request.SkuCode, request.Quantity, request.UomCode));
         return sparePart.Id;
     }

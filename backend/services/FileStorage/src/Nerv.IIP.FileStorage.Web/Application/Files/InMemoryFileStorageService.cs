@@ -202,9 +202,17 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (string.IsNullOrWhiteSpace(request.OrganizationId) || string.IsNullOrWhiteSpace(request.EnvironmentId))
+        {
+            return Task.FromResult(FileStorageResult<FileListResponse>.BadRequest("OrganizationId and EnvironmentId are required."));
+        }
+
         var skip = NormalizeSkip(request.Skip);
         var take = NormalizeTake(request.Take);
-        var query = files.Values.AsEnumerable();
+        var query = files.Values
+            .Where(file =>
+                string.Equals(file.OrganizationId, request.OrganizationId, StringComparison.Ordinal) &&
+                string.Equals(file.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal));
         query = ApplyFileFilters(
             query,
             request.FilePurpose,

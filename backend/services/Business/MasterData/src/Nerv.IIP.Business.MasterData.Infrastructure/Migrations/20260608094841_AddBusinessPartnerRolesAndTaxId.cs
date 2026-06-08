@@ -10,6 +10,23 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM (
+                            SELECT organization_id, environment_id, code
+                            FROM business_masterdata.business_partners
+                            GROUP BY organization_id, environment_id, code
+                            HAVING COUNT(*) > 1
+                        ) duplicate_partner_codes
+                    ) THEN
+                        RAISE EXCEPTION 'Business partner duplicate code exists across partner types. Resolve duplicate (organization_id, environment_id, code) rows before applying AddBusinessPartnerRolesAndTaxId.';
+                    END IF;
+                END $$;
+                """);
+
             migrationBuilder.DropIndex(
                 name: "IX_business_partners_organization_id_environment_id_partner_ty~",
                 schema: "business_masterdata",

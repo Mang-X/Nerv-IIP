@@ -354,6 +354,38 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Reference_data_detail_update_and_enable_require_code_set()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "quality-level", "none", "None"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "shelf-life-policy", "none", "No Shelf Life"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var detailHandler = new GetMasterDataResourceDetailQueryHandler(dbContext);
+        var updateHandler = new UpdateMasterDataResourceCommandHandler(dbContext);
+        var enabledHandler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+
+        await Assert.ThrowsAsync<KnownException>(() => detailHandler.Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "reference-data", "none"),
+            CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => updateHandler.Handle(
+            new UpdateMasterDataResourceCommand("org-001", "env-dev", "reference-data", "none", Name: "Updated"),
+            CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "reference-data", "none", false, Reason: "disabled"),
+            CancellationToken.None));
+
+        var detail = await detailHandler.Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "reference-data", "none", "shelf-life-policy"),
+            CancellationToken.None);
+
+        Assert.Equal("shelf-life-policy", detail.CodeSet);
+        Assert.Equal("No Shelf Life", detail.DisplayName);
+    }
+
+    [Fact]
     public async Task List_resources_returns_offset_page_and_total_count()
     {
         await using var provider = CreateInMemoryProvider();

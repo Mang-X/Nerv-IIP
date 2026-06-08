@@ -97,8 +97,9 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                 name: "IX_team_members_organization_id_environment_id_team_code_user_~",
                 schema: "business_masterdata",
                 table: "team_members",
-                columns: new[] { "organization_id", "environment_id", "team_code", "user_id", "effective_from" },
-                unique: true);
+                columns: new[] { "organization_id", "environment_id", "team_code", "user_id" },
+                unique: true,
+                filter: "disabled = false");
 
             migrationBuilder.CreateIndex(
                 name: "IX_team_members_organization_id_environment_id_user_id_disabled",

@@ -215,6 +215,23 @@ public sealed class FileStoragePostgreSqlServiceTests
                 now.AddMinutes(-30),
                 now.AddMinutes(-30)),
             StoredFileRecord.Create(
+                "file_other_tenant",
+                "org-002",
+                "prod",
+                "Notification",
+                "Message",
+                "user-001",
+                "notification-attachment",
+                "other-tenant.csv",
+                "text/csv",
+                15,
+                null,
+                "org-002/file_other_tenant",
+                "pending",
+                "available",
+                now.AddMinutes(-25),
+                now.AddMinutes(-25)),
+            StoredFileRecord.Create(
                 "file_archived",
                 "org-001",
                 "prod",
@@ -235,6 +252,8 @@ public sealed class FileStoragePostgreSqlServiceTests
 
         var result = await service.ListFilesAsync(
             new ListFilesRequest(
+                "org-001",
+                "prod",
                 "notification-attachment",
                 "user-001",
                 now.AddHours(-3),
@@ -251,6 +270,33 @@ public sealed class FileStoragePostgreSqlServiceTests
         Assert.Equal("file_match_1", item.FileId);
         Assert.Equal("user-001", item.Owner.OwnerId);
         AssertObjectKeyIsNotExposed(result.Value);
+    }
+
+    [Fact]
+    public async Task InMemoryListFiles_FiltersByTenantBeforeOtherFilters()
+    {
+        var service = new InMemoryFileStorageService();
+        var orgFile = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
+        var otherTenantFile = (await service.CreateUploadSessionAsync(
+            CreateUploadRequest() with { OrganizationId = "org-002" },
+            CancellationToken.None)).Value!;
+        Assert.Equal(StatusCodes.Status200OK, (await service.CompleteUploadSessionAsync(
+            orgFile.UploadSessionId,
+            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096),
+            CancellationToken.None)).StatusCode);
+        Assert.Equal(StatusCodes.Status200OK, (await service.CompleteUploadSessionAsync(
+            otherTenantFile.UploadSessionId,
+            new CompleteUploadSessionRequest("org-002", "prod", "application-package", "sha256:test", 4096),
+            CancellationToken.None)).StatusCode);
+
+        var result = await service.ListFilesAsync(
+            new ListFilesRequest("org-001", "prod", "application-package", null, null, null, "available"),
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        var item = Assert.Single(result.Value!.Items);
+        Assert.Equal(orgFile.FileId, item.FileId);
+        Assert.Equal("org-001", item.OrganizationId);
     }
 
     [Fact]

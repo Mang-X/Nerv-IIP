@@ -42,7 +42,7 @@ Source:
 | `production_lines` | business | 产线主数据，归属于 site/plant，可选归属 workshop。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + code` 是业务唯一键；`site_code` 为上级站点业务引用；`workshop_code` 为可选车间业务引用。 | 唯一索引保护 line code；`site_code + disabled`、`workshop_code + disabled` 支持按站点或车间列活跃产线。 | 聚合创建后保留；停用表示不再接收新计划或执行引用。 |
 | `shifts` | business | 班次主数据，用于日历、班组、排班、计划和执行。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + code` 是业务唯一键；`starts_at`、`ends_at`、`crosses_midnight`、`paid_minutes` 描述本地班次窗口。 | 唯一索引保护 shift code；`disabled` 支持快速扫描活跃班次。 | 聚合创建后保留；停用表示不再给新日历或班组使用。 |
 | `reference_data_codes` | business | 跨域引用代码表，例如物料形态、储存条件、资产类别、危险类别、质量特性定义或工艺参数定义。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + code_set + code` 是业务唯一键。 | 唯一索引保护同一 code set 内 code 不重复；`code_set + disabled` 支持按代码集查询可用代码。 | 聚合创建后保留；语义变化应新建或停用旧 code，避免静默改变历史解释。 |
-| `team_members` | business | 班组成员关系，连接 MasterData team 与 IAM/user id。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + team_code + user_id + effective_from` 是业务唯一键；`is_leader`、`effective_from`、`effective_to` 和 `disabled` 描述成员关系生命周期。 | 唯一索引防止同一人员在同一班组同一起始日重复；`team_code + disabled` 支持列班组成员；`user_id + disabled` 支持按人员反查班组。 | 创建后保留历史；移除成员使用 `disabled` 标记，不物理删除。 |
+| `team_members` | business | 班组成员关系，连接 MasterData team 与 IAM/user id。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + team_code + user_id` 在 `disabled = false` 时是当前成员唯一键；`effective_from/effective_to` 保存历史有效期。 | 部分唯一索引防止同一人员在同一班组存在多个 active 关系，同时允许移除后保留历史并重新加入；`team_code + disabled` 支持列班组成员；`user_id + disabled` 支持按人员反查班组。 | 创建后保留历史；移除成员使用 `disabled` 标记，不物理删除。 |
 | `work_centers` | business | 工作中心和资源主数据，用于产能计划、工艺路线、流程设备选择和执行路由。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + code` 是业务唯一键；`resource_type`、`plant_code`、`line_code`、`workshop_code`、`default_calendar_code`、`capacity_unit` 和 `finite_capacity` 描述资源层级和计划能力。 | 唯一索引保护工作中心 code；`disabled`、`workshop_code + disabled` 支持快速扫描活跃工作中心和按车间过滤。 | 聚合创建后保留；停用表示不再接收计划或执行任务。 |
 | `work_calendars` | business | 工作日历聚合根，定义可用于工作中心或计划的日历代码。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + code` 是业务唯一键。 | 唯一索引保护日历 code；`disabled` 支持快速扫描活跃日历。 | 聚合创建后保留；停用表示日历不再分配给新计划。 |
 | `work_calendar_working_times` | business | 工作日历拥有的周期性工作时间窗口。 | `id` 为 owned row Guid；`work_calendar_id` 指向 `work_calendars`；`day_of_week + starts_at + ends_at` 表示本地工作窗口。 | `work_calendar_id` 支持按日历加载所有工作时间；随聚合级联维护。 | owned collection，生命周期完全跟随 `work_calendars` 聚合。 |
@@ -57,6 +57,10 @@ Source:
 Known gaps:
 
 1. CAP system tables 当前只在 catalog 中标记 system-owned，后续可补 table comment 便于数据库工具展示。
+
+Release notes:
+
+1. `AddBusinessPartnerRolesAndTaxId` 将 `business_partners.code` 从 partner-type 内唯一收紧为组织/环境内唯一；迁移会在创建新唯一索引前检查重复 `(organization_id, environment_id, code)`，发现旧数据重复时中止并要求先合并或重命名。
 
 ## BusinessQuality Schema
 
@@ -546,10 +550,11 @@ Source:
 2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/FileStoragePersistenceServiceCollectionExtensions.cs`
 3. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/EntityConfigurations/*.cs`
 4. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260521061426_InitialFileStorageSchema.cs`
+5. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260608105829_AddStoredFilesTenantListIndex.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
-| `stored_files` | business | FileStorage 已完成文件的公开元数据与内部对象定位事实。 | `file_id` 为业务生成 string ID；`object_key` 唯一且仅限内部持久化；`organization_id + environment_id + owner_service + owner_type + owner_id` 支持按业务 owner 查询。 |
+| `stored_files` | business | FileStorage 已完成文件的公开元数据与内部对象定位事实。 | `file_id` 为业务生成 string ID；`object_key` 唯一且仅限内部持久化；`organization_id + environment_id + owner_service + owner_type + owner_id` 支持按业务 owner 查询；`organization_id + environment_id + completed_at_utc` 支持 Console 文件列表按租户分页读取。 |
 | `upload_sessions` | business | 上传会话元数据，记录预留 fileId、调用方上下文、provider、过期时间和完成状态。 | `upload_session_id` 为业务生成 string ID；`file_id` 唯一；`object_key` 唯一；`organization_id + environment_id + expires_at_utc` 支持过期会话扫描。 |
 | `download_grants` | business | 短期下载授权元数据，当前用于平台控制下载路径；tus provider 下可映射到本地 tus 字节内容。 | `download_grant_id` 为业务生成 string ID；`file_id` 指向 `stored_files`；`organization_id + environment_id + file_id + expires_at_utc` 支持授权校验和清理。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 FileStorage 已应用迁移。 | 必须位于 `filestorage` schema；业务代码不直接读写。 |
