@@ -29,11 +29,20 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationIdsAreUnique(document);
 
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources", "get", "listBusinessConsoleMasterDataResources");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/resources/{resourceType}/{code}", "get", "getBusinessConsoleMasterDataResourceDetail");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/resources/{resourceType}/{code}", "patch", "updateBusinessConsoleMasterDataResource");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/resources/{resourceType}/{code}/disable", "post", "disableBusinessConsoleMasterDataResource");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/resources/{resourceType}/{code}/enable", "post", "enableBusinessConsoleMasterDataResource");
         AssertOperationId(paths, "/api/business-console/v1/master-data/skus", "get", "listBusinessConsoleSkus");
         AssertOperationId(paths, "/api/business-console/v1/master-data/skus", "post", "createBusinessConsoleSku");
         AssertOperationId(paths, "/api/business-console/v1/master-data/business-partners", "post", "createBusinessConsoleBusinessPartner");
         AssertOperationId(paths, "/api/business-console/v1/master-data/units-of-measure", "post", "createBusinessConsoleUnitOfMeasure");
         AssertOperationId(paths, "/api/business-console/v1/master-data/uom-conversions", "post", "createBusinessConsoleUomConversion");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/workshops", "get", "listBusinessConsoleWorkshops");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/workshops", "post", "createBusinessConsoleWorkshop");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/teams/{teamCode}/members", "get", "listBusinessConsoleTeamMembers");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/teams/{teamCode}/members", "post", "addBusinessConsoleTeamMember");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/teams/{teamCode}/members/{userId}", "delete", "removeBusinessConsoleTeamMember");
         AssertOperationId(paths, "/api/business-console/v1/master-data/sites", "post", "createBusinessConsoleSite");
         AssertOperationId(paths, "/api/business-console/v1/master-data/production-lines", "post", "createBusinessConsoleProductionLine");
         AssertOperationId(paths, "/api/business-console/v1/master-data/work-centers", "post", "createBusinessConsoleWorkCenter");
@@ -98,6 +107,9 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/maintenance/plans", "get", "listBusinessConsoleMaintenancePlans");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/plans", "post", "createBusinessConsoleMaintenancePlan");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/inspections", "post", "recordBusinessConsoleMaintenanceInspection");
+        AssertOperationId(paths, "/api/business-console/v1/maintenance/inspections", "get", "listBusinessConsoleMaintenanceInspections");
+        AssertOperationId(paths, "/api/business-console/v1/maintenance/spare-parts", "get", "listBusinessConsoleMaintenanceSpareParts");
+        AssertOperationId(paths, "/api/business-console/v1/maintenance/spare-parts", "post", "createBusinessConsoleMaintenanceSparePart");
         AssertOperationId(paths, "/api/business-console/v1/maintenance/availability-windows", "get", "queryBusinessConsoleMaintenanceAvailabilityWindows");
         AssertOperationId(paths, "/api/business-console/v1/search", "get", "searchBusinessConsoleObjects");
         AssertOperationId(paths, "/api/business-console/v1/workbench/summary", "get", "getBusinessConsoleWorkbenchSummary");
@@ -166,14 +178,86 @@ public sealed class BusinessGatewayOpenApiTests
         }
         AssertOperationId(paths, "/api/business-console/v1/approval/templates", "get", "listBusinessConsoleApprovalTemplates");
         AssertOperationId(paths, "/api/business-console/v1/approval/templates", "post", "createOrUpdateBusinessConsoleApprovalTemplate");
+        AssertOperationId(paths, "/api/business-console/v1/approval/chains", "get", "listBusinessConsoleApprovalChains");
         AssertOperationId(paths, "/api/business-console/v1/approval/chains", "post", "startBusinessConsoleApprovalChain");
         AssertOperationId(paths, "/api/business-console/v1/approval/chains/{chainId}", "get", "getBusinessConsoleApprovalChain");
         AssertOperationId(paths, "/api/business-console/v1/approval/tasks", "get", "listBusinessConsoleApprovalTasks");
+        AssertOperationId(paths, "/api/business-console/v1/approval/decisions", "get", "listBusinessConsoleApprovalDecisions");
         AssertOperationId(paths, "/api/business-console/v1/approval/chains/{chainId}/steps/{stepNo}/resolve", "post", "resolveBusinessConsoleApprovalStep");
+        AssertOperationId(paths, "/api/business-console/v1/approval/delegations", "get", "listBusinessConsoleApprovalDelegations");
+        AssertOperationId(paths, "/api/business-console/v1/approval/delegations", "post", "createBusinessConsoleApprovalDelegation");
+        AssertOperationId(paths, "/api/business-console/v1/approval/delegations/{delegationId}/revoke", "post", "revokeBusinessConsoleApprovalDelegation");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/approval/templates",
+            "get",
+            "organizationId",
+            "environmentId",
+            "documentType",
+            "isActive",
+            "skip",
+            "take");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/approval/tasks",
+            "get",
+            "organizationId",
+            "environmentId",
+            "actorType",
+            "actorRef",
+            "skip",
+            "take");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/approval/chains",
+            "get",
+            "organizationId",
+            "environmentId",
+            "status",
+            "startedBy",
+            "sourceService",
+            "documentType",
+            "documentId",
+            "skip",
+            "take");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/approval/decisions",
+            "get",
+            "organizationId",
+            "environmentId",
+            "chainId",
+            "actorType",
+            "actorRef",
+            "decision",
+            "documentType",
+            "documentId",
+            "skip",
+            "take");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/approval/delegations",
+            "get",
+            "organizationId",
+            "environmentId",
+            "status",
+            "delegatorActorRef",
+            "delegateActorRef",
+            "documentType",
+            "skip",
+            "take");
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/approval/delegations/{delegationId}/revoke",
+            "post",
+            "organizationId",
+            "environmentId");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/rules", "get", "listBusinessConsoleBarcodeRules");
         AssertOperationId(paths, "/api/business-console/v1/barcode/rules", "post", "createOrUpdateBusinessConsoleBarcodeRule");
         AssertOperationId(paths, "/api/business-console/v1/barcode/templates", "get", "listBusinessConsoleBarcodeTemplates");
         AssertOperationId(paths, "/api/business-console/v1/barcode/templates", "post", "createOrUpdateBusinessConsoleBarcodeTemplate");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "post", "createBusinessConsoleBarcodePrintBatch");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "get", "listBusinessConsoleBarcodePrintBatches");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}", "get", "getBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "post", "recordBusinessConsoleBarcodeScan");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "get", "listBusinessConsoleBarcodeScans");

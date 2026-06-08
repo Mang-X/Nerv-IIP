@@ -18,7 +18,12 @@ public sealed class BarcodeLabelEndpointContractTests
     {
         var contracts = BarcodeLabelEndpointContracts.All.ToArray();
 
-        Assert.Equal(7, contracts.Length);
+        Assert.Equal(9, contracts.Length);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/barcodes/rules"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.TemplatesManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listBusinessBarcodeRules");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/barcodes/rules"
             && x.PermissionCode == BarcodeLabelPermissionCodes.TemplatesManage
@@ -40,6 +45,11 @@ public sealed class BarcodeLabelEndpointContractTests
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "createBusinessBarcodePrintBatch");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/barcodes/print-batches"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.Print
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listBusinessBarcodePrintBatches");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/barcodes/print-batches/{printBatchId}"
             && x.PermissionCode == BarcodeLabelPermissionCodes.Print
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
@@ -57,10 +67,12 @@ public sealed class BarcodeLabelEndpointContractTests
     }
 
     [Theory]
+    [InlineData(typeof(ListBarcodeRulesEndpoint))]
     [InlineData(typeof(CreateOrUpdateBarcodeRuleEndpoint))]
     [InlineData(typeof(CreateOrUpdateLabelTemplateEndpoint))]
     [InlineData(typeof(ListLabelTemplatesEndpoint))]
     [InlineData(typeof(CreateLabelPrintBatchEndpoint))]
+    [InlineData(typeof(ListLabelPrintBatchesEndpoint))]
     [InlineData(typeof(GetLabelPrintBatchEndpoint))]
     [InlineData(typeof(RecordScanEndpoint))]
     [InlineData(typeof(ListScansEndpoint))]

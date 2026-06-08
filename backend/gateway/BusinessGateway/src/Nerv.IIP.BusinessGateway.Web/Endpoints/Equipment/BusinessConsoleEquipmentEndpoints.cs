@@ -203,19 +203,36 @@ public sealed class ListBusinessConsoleEquipmentAlarmsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessIndustrialTelemetryClient industrialTelemetry,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessEquipmentProxyEndpoint<BusinessConsoleEquipmentContextRequest, BusinessConsoleEquipmentAlarmListResponse>(
+    : AuthorizedBusinessEquipmentProxyEndpoint<BusinessConsoleEquipmentAlarmListRequest, BusinessConsoleEquipmentAlarmListPageResponse>(
         auth,
         BusinessGatewayPermissions.IiotAlarmsRead)
 {
-    protected override string OrganizationId(BusinessConsoleEquipmentContextRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleEquipmentAlarmListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleEquipmentContextRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleEquipmentAlarmListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleEquipmentAlarmListResponse> ForwardAsync(
-        BusinessConsoleEquipmentContextRequest request,
+    protected override string? ResourceType(BusinessConsoleEquipmentAlarmListRequest request) => request.DeviceAssetId is null ? null : "device-asset";
+
+    protected override string? ResourceId(BusinessConsoleEquipmentAlarmListRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleEquipmentAlarmListPageResponse> ForwardAsync(
+        BusinessConsoleEquipmentAlarmListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         industrialTelemetry.ListActiveAlarmsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleEquipmentAlarmListRequestValidator : Validator<BusinessConsoleEquipmentAlarmListRequest>
+{
+    public BusinessConsoleEquipmentAlarmListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
 }
 
 public sealed class BusinessConsoleEquipmentContextRequestValidator : Validator<BusinessConsoleEquipmentContextRequest>

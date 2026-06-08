@@ -4,6 +4,12 @@ public sealed record BusinessConsoleMaintenanceContextRequest(
     string OrganizationId,
     string EnvironmentId);
 
+public sealed record BusinessConsoleMaintenanceListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleMaintenanceSparePartInput(
     string SkuCode,
     decimal Quantity,
@@ -55,7 +61,10 @@ public sealed record BusinessConsoleRecordMaintenanceInspectionRequest(
 public sealed record BusinessConsoleRecordMaintenanceInspectionResponse(string InspectionId);
 
 public sealed record BusinessConsoleMaintenanceWorkOrderListResponse(
-    IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderItem> Items);
+    IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderItem> Items,
+    int Skip,
+    int Take,
+    int Total);
 
 public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     string WorkOrderId,
@@ -67,7 +76,10 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     DateTimeOffset OpenedAtUtc);
 
 public sealed record BusinessConsoleMaintenancePlanListResponse(
-    IReadOnlyCollection<BusinessConsoleMaintenancePlanItem> Items);
+    IReadOnlyCollection<BusinessConsoleMaintenancePlanItem> Items,
+    int Skip,
+    int Take,
+    int Total);
 
 public sealed record BusinessConsoleMaintenancePlanItem(
     string PlanId,
@@ -75,3 +87,41 @@ public sealed record BusinessConsoleMaintenancePlanItem(
     string PlanCode,
     string Interval,
     DateOnly StartsOn);
+
+public sealed record BusinessConsoleMaintenanceInspectionListResponse(
+    IReadOnlyCollection<BusinessConsoleMaintenanceInspectionItem> Items,
+    int Skip,
+    int Take,
+    int Total);
+
+public sealed record BusinessConsoleMaintenanceInspectionItem(
+    string InspectionId,
+    string? PlanId,
+    string? WorkOrderId,
+    string Inspector,
+    string Result,
+    DateTimeOffset InspectedAtUtc);
+
+public sealed record BusinessConsoleMaintenanceSparePartListResponse(
+    IReadOnlyCollection<BusinessConsoleMaintenanceSparePartItem> Items,
+    int Skip,
+    int Take,
+    int Total);
+
+public sealed record BusinessConsoleMaintenanceSparePartItem(
+    string SparePartLineId,
+    string WorkOrderId,
+    string DeviceAssetId,
+    string SkuCode,
+    decimal Quantity,
+    string? UomCode);
+
+public sealed record BusinessConsoleCreateMaintenanceSparePartRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string SkuCode,
+    decimal Quantity,
+    string? UomCode);
+
+public sealed record BusinessConsoleCreateMaintenanceSparePartResponse(string SparePartLineId);

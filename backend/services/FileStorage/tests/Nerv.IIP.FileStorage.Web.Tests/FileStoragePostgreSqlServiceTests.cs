@@ -140,6 +140,120 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
+    public async Task ListFiles_FiltersByPurposeUploaderTimeAndStatusAndReturnsTotal()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = new PostgreSqlFileStorageService(dbContext);
+        var now = DateTimeOffset.UtcNow;
+        dbContext.StoredFiles.AddRange(
+            StoredFileRecord.Create(
+                "file_old",
+                "org-001",
+                "prod",
+                "Notification",
+                "Message",
+                "user-001",
+                "notification-attachment",
+                "old.csv",
+                "text/csv",
+                10,
+                null,
+                "org-001/file_old",
+                "pending",
+                "available",
+                now.AddHours(-4),
+                now.AddHours(-4)),
+            StoredFileRecord.Create(
+                "file_match_1",
+                "org-001",
+                "prod",
+                "Notification",
+                "Message",
+                "user-001",
+                "notification-attachment",
+                "first.csv",
+                "text/csv",
+                11,
+                null,
+                "org-001/file_match_1",
+                "pending",
+                "available",
+                now.AddHours(-2),
+                now.AddHours(-2)),
+            StoredFileRecord.Create(
+                "file_match_2",
+                "org-001",
+                "prod",
+                "Notification",
+                "Message",
+                "user-001",
+                "notification-attachment",
+                "second.csv",
+                "text/csv",
+                12,
+                null,
+                "org-001/file_match_2",
+                "pending",
+                "available",
+                now.AddHours(-1),
+                now.AddHours(-1)),
+            StoredFileRecord.Create(
+                "file_different_uploader",
+                "org-001",
+                "prod",
+                "Notification",
+                "Message",
+                "user-002",
+                "notification-attachment",
+                "other.csv",
+                "text/csv",
+                13,
+                null,
+                "org-001/file_different_uploader",
+                "pending",
+                "available",
+                now.AddMinutes(-30),
+                now.AddMinutes(-30)),
+            StoredFileRecord.Create(
+                "file_archived",
+                "org-001",
+                "prod",
+                "Notification",
+                "Message",
+                "user-001",
+                "notification-attachment",
+                "archived.csv",
+                "text/csv",
+                14,
+                null,
+                "org-001/file_archived",
+                "pending",
+                "archived",
+                now.AddMinutes(-20),
+                now.AddMinutes(-20)));
+        await dbContext.SaveChangesAsync();
+
+        var result = await service.ListFilesAsync(
+            new ListFilesRequest(
+                "notification-attachment",
+                "user-001",
+                now.AddHours(-3),
+                now,
+                "available",
+                Skip: 1,
+                Take: 1),
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        Assert.NotNull(result.Value);
+        Assert.Equal(2, result.Value.Total);
+        var item = Assert.Single(result.Value.Items);
+        Assert.Equal("file_match_1", item.FileId);
+        Assert.Equal("user-001", item.Owner.OwnerId);
+        AssertObjectKeyIsNotExposed(result.Value);
+    }
+
+    [Fact]
     public async Task TryGetUploadSessionIdForDownloadGrant_ExpiredGrant_ReturnsFalse()
     {
         await using var dbContext = CreateDbContext();

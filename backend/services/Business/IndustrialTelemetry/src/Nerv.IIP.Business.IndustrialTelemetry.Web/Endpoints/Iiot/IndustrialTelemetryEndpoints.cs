@@ -37,7 +37,7 @@ public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoin
 
 public sealed record CreateTelemetryTagRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey, string ValueType, string UnitCode, string SamplingPolicy);
 public sealed record CreateTelemetryTagResponse(TelemetryTagId TelemetryTagId);
-public sealed record ListTelemetryTagsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId);
+public sealed record ListTelemetryTagsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = 100);
 public sealed record CreateOrUpdateAlarmRuleRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -51,7 +51,7 @@ public sealed record CreateOrUpdateAlarmRuleRequest(
     string UnitCode,
     bool IsEnabled);
 public sealed record CreateOrUpdateAlarmRuleResponse(AlarmRuleId AlarmRuleId);
-public sealed record ListAlarmRulesRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, bool? IsEnabled);
+public sealed record ListAlarmRulesRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, bool? IsEnabled, int Skip = 0, int Take = 100);
 public sealed record RecordTelemetrySampleRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -81,7 +81,7 @@ public sealed record PostAlarmEventRequest(
     string? ClearedBy,
     string? ClearReason);
 public sealed record PostAlarmEventResponse(AlarmEventId AlarmEventId);
-public sealed record ListAlarmEventsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status);
+public sealed record ListAlarmEventsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
 public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record GetDeviceRuntimeAvailabilityRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int FreshnessMaxAgeMinutes = 60);
@@ -99,13 +99,13 @@ public sealed class CreateTelemetryTagEndpoint(ISender sender) : IndustrialTelem
     }
 }
 
-public sealed class ListTelemetryTagsEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListTelemetryTagsRequest, ResponseData<IReadOnlyCollection<TelemetryTagListItem>>>
+public sealed class ListTelemetryTagsEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListTelemetryTagsRequest, ResponseData<PagedListResponse<TelemetryTagListItem>>>
 {
     public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ListTelemetryTagsEndpoint>());
 
     public override async Task HandleAsync(ListTelemetryTagsRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListTelemetryTagsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId), ct);
+        var result = await sender.Send(new ListTelemetryTagsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Skip, req.Take), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -132,13 +132,13 @@ public sealed class CreateOrUpdateAlarmRuleEndpoint(ISender sender) : Industrial
     }
 }
 
-public sealed class ListAlarmRulesEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListAlarmRulesRequest, ResponseData<IReadOnlyCollection<AlarmRuleListItem>>>
+public sealed class ListAlarmRulesEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListAlarmRulesRequest, ResponseData<PagedListResponse<AlarmRuleListItem>>>
 {
     public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ListAlarmRulesEndpoint>());
 
     public override async Task HandleAsync(ListAlarmRulesRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListAlarmRulesQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.IsEnabled), ct);
+        var result = await sender.Send(new ListAlarmRulesQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.IsEnabled, req.Skip, req.Take), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -206,13 +206,13 @@ public sealed class GetDeviceCurrentStateEndpoint(ISender sender) : IndustrialTe
     }
 }
 
-public sealed class ListAlarmEventsEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListAlarmEventsRequest, ResponseData<IReadOnlyCollection<AlarmEventListItem>>>
+public sealed class ListAlarmEventsEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListAlarmEventsRequest, ResponseData<PagedListResponse<AlarmEventListItem>>>
 {
     public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ListAlarmEventsEndpoint>());
 
     public override async Task HandleAsync(ListAlarmEventsRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListAlarmEventsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Status), ct);
+        var result = await sender.Send(new ListAlarmEventsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Status, req.Skip, req.Take), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -236,6 +236,33 @@ public sealed class QueryOeeEndpoint(ISender sender) : IndustrialTelemetryEndpoi
     {
         var result = await sender.Send(new QueryOeeQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.WindowStartUtc, req.WindowEndUtc), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListTelemetryTagsRequestValidator : Validator<ListTelemetryTagsRequest>
+{
+    public ListTelemetryTagsRequestValidator()
+    {
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class ListAlarmRulesRequestValidator : Validator<ListAlarmRulesRequest>
+{
+    public ListAlarmRulesRequestValidator()
+    {
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class ListAlarmEventsRequestValidator : Validator<ListAlarmEventsRequest>
+{
+    public ListAlarmEventsRequestValidator()
+    {
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 

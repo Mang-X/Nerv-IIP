@@ -129,6 +129,41 @@ public class DeviceAsset : Entity<DeviceAssetId>, IAggregateRoot
             externalReferences);
     }
 
+    public void UpdateCapability(
+        string model,
+        string lineCode,
+        string workCenterCode,
+        string assetClassCode,
+        string manufacturer,
+        string serialNo,
+        decimal? minimumCapacity,
+        decimal? maximumCapacity,
+        string capacityUomCode,
+        string criticality,
+        bool maintainable,
+        bool telemetryEnabled)
+    {
+        if (minimumCapacity.HasValue && maximumCapacity.HasValue && maximumCapacity.Value < minimumCapacity.Value)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCapacity), "Maximum capacity cannot be less than minimum capacity.");
+        }
+
+        EnsureEnabled();
+        Model = Required(model);
+        LineCode = Required(lineCode);
+        WorkCenterCode = Required(workCenterCode);
+        AssetClassCode = Required(assetClassCode);
+        Manufacturer = Optional(manufacturer);
+        SerialNo = Optional(serialNo);
+        MinimumCapacity = minimumCapacity;
+        MaximumCapacity = maximumCapacity;
+        CapacityUomCode = Optional(capacityUomCode);
+        Criticality = Required(criticality);
+        Maintainable = maintainable;
+        TelemetryEnabled = telemetryEnabled;
+        Touch();
+    }
+
     public void Disable(string reason)
     {
         var validReason = Required(reason);
@@ -136,6 +171,25 @@ public class DeviceAsset : Entity<DeviceAssetId>, IAggregateRoot
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(DeviceAsset), OrganizationId, EnvironmentId, Code, validReason));
+        this.AddDomainEvent(new DeviceAssetChangedDomainEvent(OrganizationId, EnvironmentId, Code));
+    }
+
+    public void Enable(string reason)
+    {
+        _ = Required(reason);
+        if (!Disabled)
+        {
+            return;
+        }
+
+        Disabled = false;
+        Touch();
+    }
+
+    private void Touch()
+    {
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(DeviceAsset), OrganizationId, EnvironmentId, Code));
         this.AddDomainEvent(new DeviceAssetChangedDomainEvent(OrganizationId, EnvironmentId, Code));
     }
 

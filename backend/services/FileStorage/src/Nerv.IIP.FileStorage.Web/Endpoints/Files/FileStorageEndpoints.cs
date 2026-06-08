@@ -46,6 +46,19 @@ public sealed class GetFileMetadataEndpoint(IFileStorageService files)
 }
 
 [Tags("Files")]
+[HttpGet("/api/files/v1/files")]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+public sealed class ListFilesEndpoint(IFileStorageService files)
+    : Endpoint<ListFilesRequest, FileListResponse>
+{
+    public override async Task HandleAsync(ListFilesRequest req, CancellationToken ct)
+    {
+        var result = await files.ListFilesAsync(req, ct);
+        await this.SendResultAsync(result, ct);
+    }
+}
+
+[Tags("Files")]
 [HttpPost("/api/files/v1/files/{fileId}/download-grants")]
 [Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class CreateDownloadGrantEndpoint(IFileStorageService files)

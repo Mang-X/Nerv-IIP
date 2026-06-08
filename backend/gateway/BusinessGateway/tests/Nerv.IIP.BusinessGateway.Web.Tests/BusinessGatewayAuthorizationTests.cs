@@ -273,6 +273,33 @@ public sealed class BusinessGatewayAuthorizationTests
             unitCode = "celsius",
             isEnabled = true,
         },
+        "/api/business-console/v1/approval/delegations" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            delegatorActorType = "user",
+            delegatorActorRef = "u-manager",
+            delegateActorType = "user",
+            delegateActorRef = "u-backup",
+            documentType = "purchase-order",
+            effectiveFromUtc = "2026-06-01T00:00:00Z",
+            effectiveToUtc = "2026-06-30T00:00:00Z",
+            reason = "travel",
+            createdBy = "u-manager",
+        },
+        "/api/business-console/v1/approval/delegations/delegation-001/revoke" => new
+        {
+            revokedBy = "u-manager",
+        },
+        "/api/business-console/v1/master-data/teams/T-001/members" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            teamCode = "T-001",
+            userId = "user-001",
+            isLeader = true,
+            effectiveFrom = "2026-01-01",
+        },
         "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion" => new
         {
             organizationId = "org-001",
@@ -426,6 +453,15 @@ public sealed class BusinessGatewayAuthorizationTests
             result = "pass",
             inspectedAtUtc = "2026-06-01T09:00:00Z",
         },
+        "/api/business-console/v1/maintenance/spare-parts" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workOrderId = "wo-maint-001",
+            skuCode = "SPARE-001",
+            quantity = 1,
+            uomCode = "EA",
+        },
         _ => new { organizationId = "org-001", environmentId = "env-dev" },
         };
     }
@@ -434,6 +470,15 @@ public sealed class BusinessGatewayAuthorizationTests
     {
         var routes = new TheoryData<HttpMethod, string, string>();
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/resources", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/resources/sku/SKU-001", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Patch, "/api/business-console/v1/master-data/resources/sku/SKU-001", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/disable", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/enable", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/workshops", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/workshops", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/teams/T-001/members", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/teams/T-001/members", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Delete, "/api/business-console/v1/master-data/teams/T-001/members/user-001", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/skus", BusinessGatewayPermissions.MasterDataProductsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/skus", BusinessGatewayPermissions.MasterDataProductsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/business-partners", BusinessGatewayPermissions.MasterDataPartnersManage);
@@ -503,6 +548,9 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/inspections", BusinessGatewayPermissions.MaintenancePlansManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/inspections", BusinessGatewayPermissions.MaintenancePlansRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/spare-parts", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/spare-parts", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/availability-windows?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/rfqs", BusinessGatewayPermissions.ErpProcurementRead);
@@ -531,14 +579,21 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/cost-candidates/by-source?sourceType=production&sourceDocumentNo=WO-001", BusinessGatewayPermissions.ErpFinanceRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/approval/templates", BusinessGatewayPermissions.ApprovalsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/approval/templates", BusinessGatewayPermissions.ApprovalsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/approval/chains", BusinessGatewayPermissions.ApprovalsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/approval/chains", BusinessGatewayPermissions.ApprovalsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/approval/chains/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", BusinessGatewayPermissions.ApprovalsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/approval/tasks?actorType=user&actorRef=user-admin", BusinessGatewayPermissions.ApprovalsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/approval/decisions", BusinessGatewayPermissions.ApprovalsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/approval/chains/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9/steps/1/resolve", BusinessGatewayPermissions.ApprovalsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/approval/delegations", BusinessGatewayPermissions.ApprovalsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/approval/delegations", BusinessGatewayPermissions.ApprovalsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/approval/delegations/delegation-001/revoke", BusinessGatewayPermissions.ApprovalsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/rules", BusinessGatewayPermissions.BarcodeTemplatesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/rules", BusinessGatewayPermissions.BarcodeTemplatesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/templates", BusinessGatewayPermissions.BarcodeTemplatesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/templates", BusinessGatewayPermissions.BarcodeTemplatesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/print-batches", BusinessGatewayPermissions.BarcodePrint);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/print-batches", BusinessGatewayPermissions.BarcodePrint);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/print-batches/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", BusinessGatewayPermissions.BarcodePrint);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);

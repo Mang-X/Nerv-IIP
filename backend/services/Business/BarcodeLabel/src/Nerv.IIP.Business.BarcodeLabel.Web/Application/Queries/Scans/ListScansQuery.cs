@@ -9,7 +9,11 @@ public sealed record ListScansQuery(
     string? DeviceCode,
     string? ScannedValue,
     string? SourceWorkflow,
-    string? SourceDocumentId) : IQuery<IReadOnlyCollection<ScanRecordSummary>>;
+    string? SourceDocumentId,
+    int Skip = 0,
+    int Take = 100) : IQuery<ScanRecordListResult>;
+
+public sealed record ScanRecordListResult(IReadOnlyCollection<ScanRecordSummary> Items, int Total);
 
 public sealed record ScanRecordSummary(
     ScanRecordId ScanRecordId,
@@ -31,13 +35,15 @@ public sealed class ListScansQueryValidator : AbstractValidator<ListScansQuery>
         RuleFor(x => x.ScannedValue).MaximumLength(200);
         RuleFor(x => x.SourceWorkflow).MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).MaximumLength(150);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 
 public sealed class ListScansQueryHandler(ApplicationDbContext dbContext)
-    : IQueryHandler<ListScansQuery, IReadOnlyCollection<ScanRecordSummary>>
+    : IQueryHandler<ListScansQuery, ScanRecordListResult>
 {
-    public async Task<IReadOnlyCollection<ScanRecordSummary>> Handle(ListScansQuery request, CancellationToken cancellationToken)
+    public async Task<ScanRecordListResult> Handle(ListScansQuery request, CancellationToken cancellationToken)
     {
         var query = dbContext.ScanRecords.Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
         if (!string.IsNullOrWhiteSpace(request.DeviceCode))
@@ -60,10 +66,14 @@ public sealed class ListScansQueryHandler(ApplicationDbContext dbContext)
             query = query.Where(x => x.SourceDocumentId == request.SourceDocumentId);
         }
 
-        return await query
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
             .OrderByDescending(x => x.ScannedAtUtc)
-            .Take(200)
+            .ThenByDescending(x => x.Id)
+            .Skip(request.Skip)
+            .Take(request.Take)
             .Select(x => new ScanRecordSummary(x.Id, x.DeviceCode, x.ScannedValue, x.SourceWorkflow, x.SourceDocumentId, x.Result, x.RejectionReason, x.ScannedAtUtc))
             .ToArrayAsync(cancellationToken);
+        return new ScanRecordListResult(items, total);
     }
 }

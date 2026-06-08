@@ -12,10 +12,12 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Numbering;
 using Nerv.IIP.Testing.EntityFramework;
@@ -54,10 +56,12 @@ public sealed class MasterDataSchemaConventionTests
             typeof(BusinessPartner),
             typeof(Department),
             typeof(Team),
+            typeof(TeamMember),
             typeof(PersonnelSkill),
             typeof(UnitOfMeasure),
             typeof(UomConversion),
             typeof(Site),
+            typeof(Workshop),
             typeof(ProductionLine),
             typeof(Shift),
             typeof(ReferenceDataCode),

@@ -3,10 +3,13 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 public sealed record BusinessConsoleTelemetryTagListRequest(
     string OrganizationId,
     string EnvironmentId,
-    string? DeviceAssetId);
+    string? DeviceAssetId,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleTelemetryTagListResponse(
-    IReadOnlyCollection<BusinessConsoleTelemetryTagItem> Items);
+    IReadOnlyCollection<BusinessConsoleTelemetryTagItem> Items,
+    int Total = 0);
 
 public sealed record BusinessConsoleTelemetryTagItem(
     string TelemetryTagId,
@@ -22,10 +25,13 @@ public sealed record BusinessConsoleTelemetryAlarmRuleListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? DeviceAssetId,
-    bool? IsEnabled);
+    bool? IsEnabled,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleTelemetryAlarmRuleListResponse(
-    IReadOnlyCollection<BusinessConsoleTelemetryAlarmRuleItem> Items);
+    IReadOnlyCollection<BusinessConsoleTelemetryAlarmRuleItem> Items,
+    int Total = 0);
 
 public sealed record BusinessConsoleTelemetryAlarmRuleItem(
     string AlarmRuleId,
@@ -62,10 +68,13 @@ public sealed record BusinessConsoleTelemetryAlarmListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? DeviceAssetId,
-    string? Status);
+    string? Status,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleTelemetryAlarmEventListResponse(
-    IReadOnlyCollection<BusinessConsoleTelemetryAlarmEventItem> Items);
+    IReadOnlyCollection<BusinessConsoleTelemetryAlarmEventItem> Items,
+    int Total = 0);
 
 public sealed record BusinessConsoleTelemetryAlarmEventItem(
     string AlarmEventId,
@@ -78,6 +87,18 @@ public sealed record BusinessConsoleTelemetryAlarmEventItem(
     DateTimeOffset RaisedAtUtc,
     DateTimeOffset? ClearedAtUtc,
     string ExternalAlarmId);
+
+public sealed record BusinessConsoleEquipmentAlarmListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DeviceAssetId,
+    string? Status,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleEquipmentAlarmListPageResponse(
+    IReadOnlyCollection<Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAlarmSummary> Items,
+    int Total = 0);
 
 public sealed record BusinessConsoleTelemetryHistoryRequest(
     string OrganizationId,

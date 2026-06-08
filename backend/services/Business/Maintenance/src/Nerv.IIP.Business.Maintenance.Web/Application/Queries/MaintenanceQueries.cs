@@ -6,41 +6,131 @@ using Nerv.IIP.Contracts.EquipmentRuntime;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 
-public sealed record ListMaintenanceWorkOrdersQuery(string? OrganizationId, string? EnvironmentId) : IQuery<IReadOnlyCollection<MaintenanceWorkOrderListItem>>;
+public sealed record PagedMaintenanceListResponse<T>(IReadOnlyCollection<T> Items, int Skip, int Take, int Total);
+
+public sealed record ListMaintenanceWorkOrdersQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>;
 
 public sealed record MaintenanceWorkOrderListItem(MaintenanceWorkOrderId WorkOrderId, string DeviceAssetId, string Priority, string Status, string? SourceAlarmId, DateTimeOffset OpenedAtUtc);
 
 public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext dbContext)
-    : IQueryHandler<ListMaintenanceWorkOrdersQuery, IReadOnlyCollection<MaintenanceWorkOrderListItem>>
+    : IQueryHandler<ListMaintenanceWorkOrdersQuery, PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>
 {
-    public async Task<IReadOnlyCollection<MaintenanceWorkOrderListItem>> Handle(ListMaintenanceWorkOrdersQuery request, CancellationToken cancellationToken)
+    public async Task<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>> Handle(ListMaintenanceWorkOrdersQuery request, CancellationToken cancellationToken)
     {
-        return await dbContext.MaintenanceWorkOrders
+        var skip = NormalizeSkip(request.Skip);
+        var take = NormalizeTake(request.Take);
+        var query = dbContext.MaintenanceWorkOrders
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
             .OrderByDescending(x => x.OpenedAtUtc)
             .Select(x => new MaintenanceWorkOrderListItem(x.Id, x.DeviceAssetId, x.Priority, x.Status.ToString(), x.SourceAlarmId, x.OpenedAtUtc))
-            .Take(100)
+            .Skip(skip)
+            .Take(take)
             .ToArrayAsync(cancellationToken);
+        return new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>(items, skip, take, total);
     }
+
+    internal static int NormalizeSkip(int skip) => Math.Max(0, skip);
+
+    internal static int NormalizeTake(int take) => Math.Clamp(take, 1, 200);
 }
 
-public sealed record ListMaintenancePlansQuery(string? OrganizationId, string? EnvironmentId) : IQuery<IReadOnlyCollection<MaintenancePlanListItem>>;
+public sealed record ListMaintenancePlansQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<MaintenancePlanListItem>>;
 
 public sealed record MaintenancePlanListItem(MaintenancePlanId PlanId, string DeviceAssetId, string PlanCode, string Interval, DateOnly StartsOn);
 
 public sealed class ListMaintenancePlansQueryHandler(ApplicationDbContext dbContext)
-    : IQueryHandler<ListMaintenancePlansQuery, IReadOnlyCollection<MaintenancePlanListItem>>
+    : IQueryHandler<ListMaintenancePlansQuery, PagedMaintenanceListResponse<MaintenancePlanListItem>>
 {
-    public async Task<IReadOnlyCollection<MaintenancePlanListItem>> Handle(ListMaintenancePlansQuery request, CancellationToken cancellationToken)
+    public async Task<PagedMaintenanceListResponse<MaintenancePlanListItem>> Handle(ListMaintenancePlansQuery request, CancellationToken cancellationToken)
     {
-        return await dbContext.MaintenancePlans
+        var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
+        var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
+        var query = dbContext.MaintenancePlans
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Select(x => new MaintenancePlanListItem(x.Id, x.DeviceAssetId, x.PlanCode, x.Interval, x.StartsOn))
-            .Take(100)
+            .Skip(skip)
+            .Take(take)
             .ToArrayAsync(cancellationToken);
+        return new PagedMaintenanceListResponse<MaintenancePlanListItem>(items, skip, take, total);
+    }
+}
+
+public sealed record ListMaintenanceInspectionsQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<MaintenanceInspectionListItem>>;
+
+public sealed record MaintenanceInspectionListItem(
+    MaintenanceInspectionId InspectionId,
+    MaintenancePlanId? PlanId,
+    MaintenanceWorkOrderId? WorkOrderId,
+    string Inspector,
+    string Result,
+    DateTimeOffset InspectedAtUtc);
+
+public sealed class ListMaintenanceInspectionsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListMaintenanceInspectionsQuery, PagedMaintenanceListResponse<MaintenanceInspectionListItem>>
+{
+    public async Task<PagedMaintenanceListResponse<MaintenanceInspectionListItem>> Handle(ListMaintenanceInspectionsQuery request, CancellationToken cancellationToken)
+    {
+        var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
+        var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
+        var query = dbContext.MaintenanceInspections
+            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(x => x.InspectedAtUtc)
+            .Select(x => new MaintenanceInspectionListItem(x.Id, x.PlanId, x.WorkOrderId, x.Inspector, x.Result, x.InspectedAtUtc))
+            .Skip(skip)
+            .Take(take)
+            .ToArrayAsync(cancellationToken);
+        return new PagedMaintenanceListResponse<MaintenanceInspectionListItem>(items, skip, take, total);
+    }
+}
+
+public sealed record ListMaintenanceSparePartsQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<MaintenanceSparePartListItem>>;
+
+public sealed record MaintenanceSparePartListItem(
+    SparePartLineId SparePartLineId,
+    MaintenanceWorkOrderId WorkOrderId,
+    string DeviceAssetId,
+    string SkuCode,
+    decimal Quantity,
+    string? UomCode);
+
+public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListMaintenanceSparePartsQuery, PagedMaintenanceListResponse<MaintenanceSparePartListItem>>
+{
+    public async Task<PagedMaintenanceListResponse<MaintenanceSparePartListItem>> Handle(ListMaintenanceSparePartsQuery request, CancellationToken cancellationToken)
+    {
+        var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
+        var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
+        var query =
+            from sparePart in dbContext.SparePartLines
+            join workOrder in dbContext.MaintenanceWorkOrders
+                on EF.Property<MaintenanceWorkOrderId>(sparePart, "MaintenanceWorkOrderId") equals workOrder.Id
+            where request.OrganizationId == null || workOrder.OrganizationId == request.OrganizationId
+            where request.EnvironmentId == null || workOrder.EnvironmentId == request.EnvironmentId
+            select new MaintenanceSparePartListItem(
+                sparePart.Id,
+                workOrder.Id,
+                workOrder.DeviceAssetId,
+                sparePart.SkuCode,
+                sparePart.Quantity,
+                sparePart.UomCode);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderBy(x => x.SkuCode)
+            .ThenBy(x => x.SparePartLineId)
+            .Skip(skip)
+            .Take(take)
+            .ToArrayAsync(cancellationToken);
+        return new PagedMaintenanceListResponse<MaintenanceSparePartListItem>(items, skip, take, total);
     }
 }
 

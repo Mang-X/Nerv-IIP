@@ -116,6 +116,14 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         }
     }
 
+    public SparePartLine AddSparePartLine(SparePartLineDraft draft)
+    {
+        EnsureOpen();
+        var line = SparePartLine.Create(draft);
+        sparePartLines.Add(line);
+        return line;
+    }
+
     private void EnsureOpen()
     {
         if (Status == MaintenanceWorkOrderStatus.Completed)

@@ -37,18 +37,49 @@ public class Site : Entity<SiteId>, IAggregateRoot
         return new Site(organizationId, environmentId, code, name, timezone);
     }
 
+    public void Update(string name, string timezone)
+    {
+        EnsureEnabled();
+        Name = Required(name);
+        Timezone = Required(timezone);
+        Touch();
+    }
+
     public void Disable(string reason)
     {
         var validReason = Required(reason);
-        if (Disabled)
-        {
-            throw new InvalidOperationException("Disabled site cannot be changed.");
-        }
-
+        EnsureEnabled();
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(Site), OrganizationId, EnvironmentId, Code, validReason));
         this.AddDomainEvent(new ResourceChangedDomainEvent(nameof(Site), OrganizationId, EnvironmentId, Code));
+    }
+
+    public void Enable(string reason)
+    {
+        _ = Required(reason);
+        if (!Disabled)
+        {
+            return;
+        }
+
+        Disabled = false;
+        Touch();
+    }
+
+    private void Touch()
+    {
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(Site), OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new ResourceChangedDomainEvent(nameof(Site), OrganizationId, EnvironmentId, Code));
+    }
+
+    private void EnsureEnabled()
+    {
+        if (Disabled)
+        {
+            throw new InvalidOperationException("Disabled site cannot be changed.");
+        }
     }
 
     private static string Required(string value)

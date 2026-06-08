@@ -1,0 +1,338 @@
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
+using Nerv.IIP.Business.MasterData.Web.Application.Queries;
+
+namespace Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
+
+public sealed record UpdateMasterDataResourceCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ResourceType,
+    string Code,
+    string? CodeSet = null,
+    string? Name = null,
+    string? BaseUomCode = null,
+    string? Category = null,
+    string? MaterialType = null,
+    string? BatchTrackingPolicy = null,
+    string? SerialTrackingPolicy = null,
+    string? ShelfLifePolicyCode = null,
+    string? StorageConditionCode = null,
+    string? DefaultBarcodeRuleCode = null,
+    bool? QualityRequired = null,
+    string? PartnerType = null,
+    string? Timezone = null,
+    string? SiteCode = null,
+    string? ManagerUserId = null,
+    string? Description = null,
+    string? PlantCode = null,
+    string? LineCode = null,
+    string? WorkshopCode = null,
+    int? CapacityMinutesPerDay = null,
+    string? ResourceKind = null,
+    string? DefaultCalendarCode = null,
+    string? CapacityUnit = null,
+    bool? FiniteCapacity = null,
+    string? WorkCenterCode = null,
+    string? AssetClassCode = null,
+    string? Model = null,
+    string? Manufacturer = null,
+    string? SerialNo = null,
+    decimal? MinimumCapacity = null,
+    decimal? MaximumCapacity = null,
+    string? CapacityUomCode = null,
+    string? Criticality = null,
+    bool? Maintainable = null,
+    bool? TelemetryEnabled = null,
+    string? DimensionType = null,
+    int? Precision = null,
+    string? RoundingMode = null,
+    IReadOnlyCollection<string>? PartnerRoles = null,
+    string? TaxId = null) : ICommand<MasterDataResourceDetail>;
+
+public sealed record SetMasterDataResourceEnabledCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ResourceType,
+    string Code,
+    bool Enabled,
+    string? CodeSet = null,
+    string Reason = "") : ICommand<MasterDataResourceDetail>;
+
+public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<UpdateMasterDataResourceCommand, MasterDataResourceDetail>
+{
+    public async Task<MasterDataResourceDetail> Handle(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken)
+    {
+        var type = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
+        switch (type)
+        {
+            case "sku":
+                var sku = await FindSkuAsync(request, cancellationToken);
+                sku.UpdateIndustrial(
+                    request.Name ?? sku.Name,
+                    request.BaseUomCode ?? sku.BaseUomCode,
+                    request.Category ?? sku.Category,
+                    request.MaterialType ?? sku.MaterialType,
+                    request.BatchTrackingPolicy ?? sku.BatchTrackingPolicy,
+                    request.SerialTrackingPolicy ?? sku.SerialTrackingPolicy,
+                    request.ShelfLifePolicyCode ?? sku.ShelfLifePolicyCode,
+                    request.StorageConditionCode ?? sku.StorageConditionCode,
+                    request.DefaultBarcodeRuleCode ?? sku.DefaultBarcodeRuleCode,
+                    request.QualityRequired ?? sku.QualityRequired);
+                return Detail(sku);
+            case "unit-of-measure":
+                var uom = await FindUnitOfMeasureAsync(request, cancellationToken);
+                uom.Update(
+                    request.Name ?? uom.Name,
+                    request.DimensionType ?? uom.DimensionType,
+                    request.Precision ?? uom.Precision,
+                    request.RoundingMode ?? uom.RoundingMode);
+                return Detail(uom);
+            case "business-partner":
+                var partner = await FindBusinessPartnerAsync(request, cancellationToken);
+                var taxId = string.IsNullOrWhiteSpace(request.TaxId) ? null : request.TaxId.Trim();
+                if (taxId is not null &&
+                    !string.Equals(taxId, partner.TaxId, StringComparison.Ordinal) &&
+                    await dbContext.BusinessPartners.AnyAsync(x =>
+                        x.OrganizationId == request.OrganizationId &&
+                        x.EnvironmentId == request.EnvironmentId &&
+                        x.TaxId == taxId,
+                        cancellationToken))
+                {
+                    throw new KnownException($"Business partner tax id '{taxId}' already exists.");
+                }
+
+                partner.Update(
+                    request.Name ?? partner.Name,
+                    request.PartnerRoles ?? [request.PartnerType ?? partner.PartnerType],
+                    taxId ?? partner.TaxId);
+                return Detail(partner);
+            case "site":
+                var site = await FindSiteAsync(request, cancellationToken);
+                site.Update(request.Name ?? site.Name, request.Timezone ?? site.Timezone);
+                return Detail(site);
+            case "workshop":
+                var workshop = await FindWorkshopAsync(request, cancellationToken);
+                workshop.Update(
+                    request.Name ?? workshop.Name,
+                    request.SiteCode ?? workshop.SiteCode,
+                    request.ManagerUserId ?? workshop.ManagerUserId,
+                    request.Description ?? workshop.Description);
+                return Detail(workshop);
+            case "production-line":
+                var line = await FindProductionLineAsync(request, cancellationToken);
+                line.Update(request.Name ?? line.Name, request.SiteCode ?? line.SiteCode, request.WorkshopCode ?? line.WorkshopCode);
+                return Detail(line);
+            case "work-center":
+                var workCenter = await FindWorkCenterAsync(request, cancellationToken);
+                workCenter.UpdateResource(
+                    request.Name ?? workCenter.Name,
+                    request.CapacityMinutesPerDay ?? workCenter.CapacityMinutesPerDay,
+                    request.ResourceKind ?? workCenter.ResourceType,
+                    request.PlantCode ?? workCenter.PlantCode,
+                    request.LineCode ?? workCenter.LineCode,
+                    request.WorkshopCode ?? workCenter.WorkshopCode,
+                    request.DefaultCalendarCode ?? workCenter.DefaultCalendarCode,
+                    request.CapacityUnit ?? workCenter.CapacityUnit,
+                    request.FiniteCapacity ?? workCenter.FiniteCapacity);
+                return Detail(workCenter);
+            case "device-asset":
+                var device = await FindDeviceAssetAsync(request, cancellationToken);
+                device.UpdateCapability(
+                    request.Model ?? device.Model,
+                    request.LineCode ?? device.LineCode,
+                    request.WorkCenterCode ?? device.WorkCenterCode,
+                    request.AssetClassCode ?? device.AssetClassCode,
+                    request.Manufacturer ?? device.Manufacturer,
+                    request.SerialNo ?? device.SerialNo,
+                    request.MinimumCapacity ?? device.MinimumCapacity,
+                    request.MaximumCapacity ?? device.MaximumCapacity,
+                    request.CapacityUomCode ?? device.CapacityUomCode,
+                    request.Criticality ?? device.Criticality,
+                    request.Maintainable ?? device.Maintainable,
+                    request.TelemetryEnabled ?? device.TelemetryEnabled);
+                return Detail(device);
+            case "reference-data":
+                var referenceData = await FindReferenceDataCodeAsync(request, cancellationToken);
+                referenceData.Update(request.Name ?? referenceData.Name);
+                return Detail(referenceData);
+            default:
+                throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'.");
+        }
+    }
+
+    private async Task<Sku> FindSkuAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.Skus.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<UnitOfMeasure> FindUnitOfMeasureAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.UnitsOfMeasure.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<BusinessPartner> FindBusinessPartnerAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.BusinessPartners.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<Site> FindSiteAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.Sites.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<Workshop> FindWorkshopAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.Workshops.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<ProductionLine> FindProductionLineAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.ProductionLines.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<WorkCenter> FindWorkCenterAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.WorkCenters.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<DeviceAsset> FindDeviceAssetAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.DeviceAssets.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<ReferenceDataCode> FindReferenceDataCodeAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.ReferenceDataCodes
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.Code == request.Code &&
+                (string.IsNullOrWhiteSpace(request.CodeSet) || x.CodeSet == request.CodeSet),
+                cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    internal static KnownException NotFound(string resourceType, string code) =>
+        new($"Master data resource '{resourceType}:{code}' was not found.");
+
+    internal static MasterDataResourceDetail Detail(Sku x) =>
+        new(
+            "sku",
+            x.Code,
+            x.Name,
+            !x.Disabled,
+            x.UpdatedAtUtc.ToString("O"),
+            x.OrganizationId,
+            x.EnvironmentId,
+            x.Name,
+            x.BaseUomCode,
+            x.InventoryUomCode,
+            x.PurchaseUomCode,
+            x.SalesUomCode,
+            x.ManufacturingUomCode,
+            x.Category,
+            x.MaterialType,
+            x.BatchTrackingPolicy,
+            x.SerialTrackingPolicy,
+            x.ShelfLifePolicyCode,
+            x.StorageConditionCode,
+            x.DefaultBarcodeRuleCode,
+            x.QualityRequired,
+            Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(UnitOfMeasure x) =>
+        new("unit-of-measure", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, DimensionType: x.DimensionType, Precision: x.Precision, RoundingMode: x.RoundingMode, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(BusinessPartner x) =>
+        new("business-partner", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PartnerType: x.PartnerType, PartnerRoles: x.PartnerRoles, TaxId: x.TaxId, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(Site x) =>
+        new("site", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, Timezone: x.Timezone, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(Workshop x) =>
+        new("workshop", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, SiteCode: x.SiteCode, ManagerUserId: x.ManagerUserId, Description: x.Description, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(ProductionLine x) =>
+        new("production-line", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, SiteCode: x.SiteCode, WorkshopCode: x.WorkshopCode, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(WorkCenter x) =>
+        new("work-center", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PlantCode: x.PlantCode, LineCode: x.LineCode, WorkshopCode: x.WorkshopCode, CapacityMinutesPerDay: x.CapacityMinutesPerDay, ResourceKind: x.ResourceType, DefaultCalendarCode: x.DefaultCalendarCode, CapacityUnit: x.CapacityUnit, FiniteCapacity: x.FiniteCapacity, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(DeviceAsset x) =>
+        new("device-asset", x.Code, x.Model, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, Model: x.Model, LineCode: x.LineCode, WorkCenterCode: x.WorkCenterCode, AssetClassCode: x.AssetClassCode, Manufacturer: x.Manufacturer, SerialNo: x.SerialNo, MinimumCapacity: x.MinimumCapacity, MaximumCapacity: x.MaximumCapacity, CapacityUomCode: x.CapacityUomCode, Criticality: x.Criticality, Maintainable: x.Maintainable, TelemetryEnabled: x.TelemetryEnabled, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(ReferenceDataCode x) =>
+        new("reference-data", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, CodeSet: x.CodeSet, Status: x.Disabled ? "disabled" : "active");
+}
+
+public sealed class SetMasterDataResourceEnabledCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<SetMasterDataResourceEnabledCommand, MasterDataResourceDetail>
+{
+    public async Task<MasterDataResourceDetail> Handle(SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)
+    {
+        var reason = request.Reason;
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            reason = request.Enabled ? "enabled" : "disabled";
+        }
+        var type = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
+        switch (type)
+        {
+            case "sku":
+                var sku = await FindAsync(dbContext.Skus, request, cancellationToken);
+                if (request.Enabled) sku.Enable(reason); else sku.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(sku);
+            case "unit-of-measure":
+                var uom = await FindAsync(dbContext.UnitsOfMeasure, request, cancellationToken);
+                if (request.Enabled) uom.Enable(reason); else uom.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(uom);
+            case "business-partner":
+                var partner = await FindAsync(dbContext.BusinessPartners, request, cancellationToken);
+                if (request.Enabled) partner.Enable(reason); else partner.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(partner);
+            case "site":
+                var site = await FindAsync(dbContext.Sites, request, cancellationToken);
+                if (request.Enabled) site.Enable(reason); else site.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(site);
+            case "workshop":
+                var workshop = await FindAsync(dbContext.Workshops, request, cancellationToken);
+                if (request.Enabled) workshop.Enable(reason); else workshop.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(workshop);
+            case "production-line":
+                var line = await FindAsync(dbContext.ProductionLines, request, cancellationToken);
+                if (request.Enabled) line.Enable(reason); else line.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(line);
+            case "work-center":
+                var workCenter = await FindAsync(dbContext.WorkCenters, request, cancellationToken);
+                if (request.Enabled) workCenter.Enable(reason); else workCenter.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(workCenter);
+            case "device-asset":
+                var device = await FindAsync(dbContext.DeviceAssets, request, cancellationToken);
+                if (request.Enabled) device.Enable(reason); else device.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(device);
+            case "reference-data":
+                var referenceData = await dbContext.ReferenceDataCodes.SingleOrDefaultAsync(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.Code == request.Code &&
+                    (string.IsNullOrWhiteSpace(request.CodeSet) || x.CodeSet == request.CodeSet),
+                    cancellationToken)
+                    ?? throw UpdateMasterDataResourceCommandHandler.NotFound(request.ResourceType, request.Code);
+                if (request.Enabled) referenceData.Enable(reason); else referenceData.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(referenceData);
+            default:
+                throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'.");
+        }
+    }
+
+    private static async Task<T> FindAsync<T>(IQueryable<T> query, SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)
+        where T : class
+    {
+        var item = await query.SingleOrDefaultAsync(x =>
+            EF.Property<string>(x, "OrganizationId") == request.OrganizationId &&
+            EF.Property<string>(x, "EnvironmentId") == request.EnvironmentId &&
+            EF.Property<string>(x, "Code") == request.Code,
+            cancellationToken);
+        return item ?? throw UpdateMasterDataResourceCommandHandler.NotFound(request.ResourceType, request.Code);
+    }
+}

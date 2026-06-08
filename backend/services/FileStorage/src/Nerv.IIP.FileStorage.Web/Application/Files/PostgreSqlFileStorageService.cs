@@ -157,6 +157,51 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             : FileStorageResult<FileMetadataResponse>.Ok(ToResponse(file));
     }
 
+    public async Task<FileStorageResult<FileListResponse>> ListFilesAsync(
+        ListFilesRequest request,
+        CancellationToken cancellationToken)
+    {
+        var skip = InMemoryFileStorageService.NormalizeSkip(request.Skip);
+        var take = InMemoryFileStorageService.NormalizeTake(request.Take);
+        var query = dbContext.StoredFiles.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(request.FilePurpose))
+        {
+            query = query.Where(file => file.FilePurpose == request.FilePurpose);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.UploaderId))
+        {
+            query = query.Where(file => file.OwnerId == request.UploaderId);
+        }
+
+        if (request.CreatedFromUtc is not null)
+        {
+            query = query.Where(file => file.CreatedAtUtc >= request.CreatedFromUtc.Value);
+        }
+
+        if (request.CreatedToUtc is not null)
+        {
+            query = query.Where(file => file.CreatedAtUtc <= request.CreatedToUtc.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(file => file.Status == request.Status);
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(file => file.CompletedAtUtc)
+            .ThenBy(file => file.FileId)
+            .Skip(skip)
+            .Take(take)
+            .Select(file => ToResponse(file))
+            .ToArrayAsync(cancellationToken);
+
+        return FileStorageResult<FileListResponse>.Ok(new FileListResponse(total, items));
+    }
+
     public async Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
         string fileId,
         CreateDownloadGrantRequest request,

@@ -9,6 +9,7 @@ using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.BarcodeRules;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.LabelTemplates;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.BarcodeRules;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.LabelTemplates;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.Scans;
@@ -51,6 +52,16 @@ public sealed record CreateOrUpdateBarcodeRuleRequest(
 
 public sealed record CreateOrUpdateBarcodeRuleResponse(BarcodeRuleId BarcodeRuleId);
 
+public sealed record ListBarcodeRulesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    string? Keyword,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record ListBarcodeRulesResponse(IReadOnlyCollection<BarcodeRuleSummary> Rules, int Total);
+
 public sealed record CreateOrUpdateLabelTemplateRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -62,9 +73,14 @@ public sealed record CreateOrUpdateLabelTemplateRequest(
 
 public sealed record CreateOrUpdateLabelTemplateResponse(LabelTemplateId TemplateId);
 
-public sealed record ListLabelTemplatesRequest(string OrganizationId, string EnvironmentId, string? Status);
+public sealed record ListLabelTemplatesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    int Skip = 0,
+    int Take = 100);
 
-public sealed record ListLabelTemplatesResponse(IReadOnlyCollection<LabelTemplateSummary> Templates);
+public sealed record ListLabelTemplatesResponse(IReadOnlyCollection<LabelTemplateSummary> Templates, int Total);
 
 public sealed record CreateLabelPrintBatchRequest(
     string OrganizationId,
@@ -78,6 +94,17 @@ public sealed record CreateLabelPrintBatchRequest(
     int RequestedQuantity);
 
 public sealed record CreateLabelPrintBatchResponse(LabelPrintBatchId PrintBatchId);
+
+public sealed record ListLabelPrintBatchesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SourceDocumentType,
+    string? SourceDocumentId,
+    string? Status,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record ListLabelPrintBatchesResponse(IReadOnlyCollection<LabelPrintBatchSummary> PrintBatches, int Total);
 
 public sealed record GetLabelPrintBatchRequest(LabelPrintBatchId PrintBatchId);
 
@@ -102,9 +129,32 @@ public sealed record ListScansRequest(
     string? DeviceCode,
     string? ScannedValue,
     string? SourceWorkflow,
-    string? SourceDocumentId);
+    string? SourceDocumentId,
+    int Skip = 0,
+    int Take = 100);
 
-public sealed record ListScansResponse(IReadOnlyCollection<ScanRecordSummary> Scans);
+public sealed record ListScansResponse(IReadOnlyCollection<ScanRecordSummary> Scans, int Total);
+
+public sealed class ListBarcodeRulesEndpoint(ISender sender)
+    : BarcodeLabelEndpoint<ListBarcodeRulesRequest, ResponseData<ListBarcodeRulesResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureBarcodeLabelContract(BarcodeLabelEndpointContracts.Get<ListBarcodeRulesEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListBarcodeRulesRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListBarcodeRulesQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Status,
+            req.Keyword,
+            req.Skip,
+            req.Take), ct);
+        await Send.OkAsync(new ListBarcodeRulesResponse(result.Items, result.Total).AsResponseData(), cancellation: ct);
+    }
+}
 
 public sealed class CreateOrUpdateBarcodeRuleEndpoint(ISender sender)
     : BarcodeLabelEndpoint<CreateOrUpdateBarcodeRuleRequest, ResponseData<CreateOrUpdateBarcodeRuleResponse>>
@@ -162,8 +212,8 @@ public sealed class ListLabelTemplatesEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListLabelTemplatesRequest req, CancellationToken ct)
     {
-        var templates = await sender.Send(new ListLabelTemplatesQuery(req.OrganizationId, req.EnvironmentId, req.Status), ct);
-        await Send.OkAsync(new ListLabelTemplatesResponse(templates).AsResponseData(), cancellation: ct);
+        var result = await sender.Send(new ListLabelTemplatesQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Skip, req.Take), ct);
+        await Send.OkAsync(new ListLabelTemplatesResponse(result.Items, result.Total).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -203,6 +253,28 @@ public sealed class GetLabelPrintBatchEndpoint(ISender sender)
     {
         var batch = await sender.Send(new GetLabelPrintBatchQuery(req.PrintBatchId), ct);
         await Send.OkAsync(new GetLabelPrintBatchResponse(batch).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListLabelPrintBatchesEndpoint(ISender sender)
+    : BarcodeLabelEndpoint<ListLabelPrintBatchesRequest, ResponseData<ListLabelPrintBatchesResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureBarcodeLabelContract(BarcodeLabelEndpointContracts.Get<ListLabelPrintBatchesEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListLabelPrintBatchesRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListLabelPrintBatchesQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SourceDocumentType,
+            req.SourceDocumentId,
+            req.Status,
+            req.Skip,
+            req.Take), ct);
+        await Send.OkAsync(new ListLabelPrintBatchesResponse(result.Items, result.Total).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -246,8 +318,10 @@ public sealed class ListScansEndpoint(ISender sender)
             req.DeviceCode,
             req.ScannedValue,
             req.SourceWorkflow,
-            req.SourceDocumentId), ct);
-        await Send.OkAsync(new ListScansResponse(scans).AsResponseData(), cancellation: ct);
+            req.SourceDocumentId,
+            req.Skip,
+            req.Take), ct);
+        await Send.OkAsync(new ListScansResponse(scans.Items, scans.Total).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -263,10 +337,12 @@ public static class BarcodeLabelEndpointContracts
 {
     public static readonly IReadOnlyCollection<BarcodeLabelEndpointContract> All =
     [
+        new(typeof(ListBarcodeRulesEndpoint), "GET", "/api/business/v1/barcodes/rules", BarcodeLabelPermissionCodes.TemplatesManage, InternalServiceAuthorizationPolicy.Name, "listBusinessBarcodeRules"),
         new(typeof(CreateOrUpdateBarcodeRuleEndpoint), "POST", "/api/business/v1/barcodes/rules", BarcodeLabelPermissionCodes.TemplatesManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateBusinessBarcodeRule"),
         new(typeof(CreateOrUpdateLabelTemplateEndpoint), "POST", "/api/business/v1/barcodes/templates", BarcodeLabelPermissionCodes.TemplatesManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateBusinessBarcodeTemplate"),
         new(typeof(ListLabelTemplatesEndpoint), "GET", "/api/business/v1/barcodes/templates", BarcodeLabelPermissionCodes.TemplatesManage, InternalServiceAuthorizationPolicy.Name, "listBusinessBarcodeTemplates"),
         new(typeof(CreateLabelPrintBatchEndpoint), "POST", "/api/business/v1/barcodes/print-batches", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "createBusinessBarcodePrintBatch"),
+        new(typeof(ListLabelPrintBatchesEndpoint), "GET", "/api/business/v1/barcodes/print-batches", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "listBusinessBarcodePrintBatches"),
         new(typeof(GetLabelPrintBatchEndpoint), "GET", "/api/business/v1/barcodes/print-batches/{printBatchId}", BarcodeLabelPermissionCodes.Print, InternalServiceAuthorizationPolicy.Name, "getBusinessBarcodePrintBatch"),
         new(typeof(RecordScanEndpoint), "POST", "/api/business/v1/barcodes/scans", BarcodeLabelPermissionCodes.ScansWrite, InternalServiceAuthorizationPolicy.Name, "recordBusinessBarcodeScan"),
         new(typeof(ListScansEndpoint), "GET", "/api/business/v1/barcodes/scans", BarcodeLabelPermissionCodes.ScansWrite, InternalServiceAuthorizationPolicy.Name, "listBusinessBarcodeScans"),

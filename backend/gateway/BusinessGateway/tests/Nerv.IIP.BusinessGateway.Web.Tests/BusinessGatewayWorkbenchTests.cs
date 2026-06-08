@@ -243,12 +243,25 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
 
     public BusinessConsoleApprovalTaskListRequest? LastRequest { get; private set; }
 
+    public BusinessConsoleApprovalTemplateListRequest? LastTemplateListRequest { get; private set; }
+
+    public BusinessConsoleApprovalChainListRequest? LastChainListRequest { get; private set; }
+
+    public BusinessConsoleApprovalDecisionListRequest? LastDecisionListRequest { get; private set; }
+
+    public BusinessConsoleApprovalDelegationListRequest? LastDelegationListRequest { get; private set; }
+
+    public BusinessConsoleCreateApprovalDelegationRequest? LastCreateDelegationRequest { get; private set; }
+
+    public BusinessConsoleRevokeApprovalDelegationRequest? LastRevokeDelegationRequest { get; private set; }
+
     public Task<BusinessConsoleApprovalTemplateListResponse> ListTemplatesAsync(
         string internalBearerToken,
         BusinessConsoleApprovalTemplateListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastTemplateListRequest = request;
         return Task.FromResult(new BusinessConsoleApprovalTemplateListResponse(
         [
             new BusinessConsoleApprovalTemplateItem(
@@ -260,7 +273,8 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
                 1,
                 true,
                 []),
-        ]));
+        ],
+        1));
     }
 
     public Task<BusinessConsoleCreateOrUpdateApprovalTemplateResponse> CreateOrUpdateTemplateAsync(
@@ -279,6 +293,33 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleStartApprovalChainResponse("chain-001"));
+    }
+
+    public Task<BusinessConsoleApprovalChainListResponse> ListChainsAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalChainListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastChainListRequest = request;
+        return Task.FromResult(new BusinessConsoleApprovalChainListResponse(
+        [
+            new BusinessConsoleApprovalChainItem(
+                "chain-001",
+                request.OrganizationId,
+                request.EnvironmentId,
+                "purchase-order-default",
+                1,
+                request.Status ?? "pending",
+                request.SourceService ?? "BusinessERP",
+                request.DocumentType ?? "purchase-order",
+                request.DocumentId ?? "PO-001",
+                null,
+                request.StartedBy ?? "u-requester",
+                DateTimeOffset.Parse("2026-06-03T01:00:00Z"),
+                null),
+        ],
+        1));
     }
 
     public Task<BusinessConsoleApprovalChainResponse> GetChainAsync(
@@ -321,7 +362,34 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
                 "PO-SECRET-001",
                 null,
                 DateTimeOffset.Parse("2026-06-03T03:00:00Z")),
-            ]));
+            ],
+            1));
+    }
+
+    public Task<BusinessConsoleApprovalDecisionListResponse> ListDecisionsAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalDecisionListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDecisionListRequest = request;
+        return Task.FromResult(new BusinessConsoleApprovalDecisionListResponse(
+        [
+            new BusinessConsoleApprovalDecisionListItem(
+                "decision-001",
+                request.ChainId ?? "chain-001",
+                1,
+                request.ActorType ?? "user",
+                request.ActorRef ?? "u-manager",
+                request.Decision ?? "approve",
+                "ok",
+                DateTimeOffset.Parse("2026-06-03T02:00:00Z"),
+                "BusinessERP",
+                request.DocumentType ?? "purchase-order",
+                request.DocumentId ?? "PO-001",
+                null),
+        ],
+        1));
     }
 
     public Task<BusinessConsoleResolveApprovalStepResponse> ResolveStepAsync(
@@ -331,6 +399,57 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleResolveApprovalStepResponse("decision-001"));
+    }
+
+    public Task<BusinessConsoleApprovalDelegationListResponse> ListDelegationsAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalDelegationListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDelegationListRequest = request;
+        return Task.FromResult(new BusinessConsoleApprovalDelegationListResponse(
+        [
+            new BusinessConsoleApprovalDelegationItem(
+                "delegation-001",
+                request.OrganizationId,
+                request.EnvironmentId,
+                "user",
+                request.DelegatorActorRef ?? "u-manager",
+                "user",
+                request.DelegateActorRef ?? "u-backup",
+                request.DocumentType ?? "purchase-order",
+                DateTimeOffset.Parse("2026-06-01T00:00:00Z"),
+                DateTimeOffset.Parse("2026-06-30T00:00:00Z"),
+                request.Status ?? "active",
+                "travel",
+                "u-manager",
+                DateTimeOffset.Parse("2026-05-31T00:00:00Z"),
+                null,
+                null),
+        ],
+        1));
+    }
+
+    public Task<BusinessConsoleCreateApprovalDelegationResponse> CreateDelegationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateApprovalDelegationRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateDelegationRequest = request;
+        return Task.FromResult(new BusinessConsoleCreateApprovalDelegationResponse("delegation-001"));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> RevokeDelegationAsync(
+        string internalBearerToken,
+        string delegationId,
+        BusinessConsoleRevokeApprovalDelegationRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastRevokeDelegationRequest = request with { DelegationId = delegationId };
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 }
 

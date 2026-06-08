@@ -278,7 +278,7 @@ public sealed class BusinessConsoleSearchService(
             var response = await WithSourceTimeoutAsync(
                 token => industrialTelemetry.ListActiveAlarmsAsync(
                     tokenProvider.BearerToken,
-                    new BusinessConsoleEquipmentContextRequest(organizationId, environmentId),
+                    new BusinessConsoleEquipmentAlarmListRequest(organizationId, environmentId, null, "raised", Take: take),
                     token),
                 cancellationToken);
             results.AddRange(response.Items

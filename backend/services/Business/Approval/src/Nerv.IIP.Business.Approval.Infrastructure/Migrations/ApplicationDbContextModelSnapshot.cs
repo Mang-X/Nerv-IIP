@@ -258,6 +258,119 @@ namespace Nerv.IIP.Business.Approval.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate.ApprovalDelegation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Approval delegation id.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the delegation was created.");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("created_by")
+                        .HasComment("Public actor reference that created the delegation.");
+
+                    b.Property<string>("DelegateActorRef")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("delegate_actor_ref")
+                        .HasComment("Public actor reference that receives delegated approval authority.");
+
+                    b.Property<string>("DelegateActorType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("delegate_actor_type")
+                        .HasComment("Delegate actor type such as user, group or permission.");
+
+                    b.Property<string>("DelegatorActorRef")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("delegator_actor_ref")
+                        .HasComment("Public actor reference that delegates approval authority.");
+
+                    b.Property<string>("DelegatorActorType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("delegator_actor_type")
+                        .HasComment("Delegating actor type such as user, group or permission.");
+
+                    b.Property<string>("DocumentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("document_type")
+                        .HasComment("Optional document type scope for this delegation.");
+
+                    b.Property<DateTimeOffset>("EffectiveFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from_utc")
+                        .HasComment("UTC time when the delegation starts.");
+
+                    b.Property<DateTimeOffset>("EffectiveToUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_to_utc")
+                        .HasComment("UTC time when the delegation expires.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the delegation applies.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the delegation.");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason")
+                        .HasComment("Optional reason recorded when creating the delegation.");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at_utc")
+                        .HasComment("UTC time when the delegation was revoked.");
+
+                    b.Property<string>("RevokedBy")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("revoked_by")
+                        .HasComment("Public actor reference that revoked the delegation.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Delegation status: active or revoked.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DelegatorActorRef", "DocumentType");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "DelegateActorRef");
+
+                    b.ToTable("approval_delegations", "business_approval", t =>
+                        {
+                            t.HasComment("Business approval actor delegation authorizations.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate.ApprovalTemplate", b =>
                 {
                     b.Property<Guid>("Id")

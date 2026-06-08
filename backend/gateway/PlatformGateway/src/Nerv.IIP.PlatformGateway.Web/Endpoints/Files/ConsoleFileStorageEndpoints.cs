@@ -49,6 +49,26 @@ public sealed class CompleteConsoleFileUploadSessionEndpoint(
 }
 
 [Tags("Console Files")]
+[HttpGet("/api/console/v1/files")]
+[GatewayOperationId("listConsoleFiles")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class ListConsoleFilesEndpoint(
+    IGatewayIamAuthClient iam,
+    IGatewayAuthorizationClient auth,
+    IGatewayFileStorageClient files)
+    : AuthorizedProxyEndpoint<ListFilesRequest, FileListResponse>(
+        iam,
+        auth,
+        GatewayPermissions.FilesRead)
+{
+    protected override Task<FileListResponse> ForwardAsync(
+        string bearerToken,
+        ListFilesRequest request,
+        CancellationToken cancellationToken) =>
+        files.ListFilesAsync(request, cancellationToken);
+}
+
+[Tags("Console Files")]
 [HttpGet("/api/console/v1/files/{fileId}")]
 [GatewayOperationId("getConsoleFileMetadata")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]

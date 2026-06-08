@@ -37,18 +37,48 @@ public class ReferenceDataCode : Entity<ReferenceDataCodeId>, IAggregateRoot
         return new ReferenceDataCode(organizationId, environmentId, codeSet, code, name);
     }
 
+    public void Update(string name)
+    {
+        EnsureEnabled();
+        Name = Required(name);
+        Touch();
+    }
+
     public void Disable(string reason)
     {
         var validReason = Required(reason);
-        if (Disabled)
-        {
-            throw new InvalidOperationException("Disabled reference data code cannot be changed.");
-        }
-
+        EnsureEnabled();
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(ReferenceDataCode), OrganizationId, EnvironmentId, Code, validReason));
         this.AddDomainEvent(new ReferenceDataCodeChangedDomainEvent(OrganizationId, EnvironmentId, CodeSet, Code));
+    }
+
+    public void Enable(string reason)
+    {
+        _ = Required(reason);
+        if (!Disabled)
+        {
+            return;
+        }
+
+        Disabled = false;
+        Touch();
+    }
+
+    private void Touch()
+    {
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(ReferenceDataCode), OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new ReferenceDataCodeChangedDomainEvent(OrganizationId, EnvironmentId, CodeSet, Code));
+    }
+
+    private void EnsureEnabled()
+    {
+        if (Disabled)
+        {
+            throw new InvalidOperationException("Disabled reference data code cannot be changed.");
+        }
     }
 
     private static string Required(string value)

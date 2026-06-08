@@ -8,6 +8,28 @@ using Nerv.IIP.ServiceAuth;
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Barcode;
 
 [Tags("Business Console Barcode")]
+[HttpGet("/api/business-console/v1/barcode/rules")]
+[BusinessGatewayOperationId("listBusinessConsoleBarcodeRules")]
+public sealed class ListBusinessConsoleBarcodeRulesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessBarcodeLabelClient barcode,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleBarcodeRuleListRequest, BusinessConsoleBarcodeRuleListResponse>(
+        auth,
+        BusinessGatewayPermissions.BarcodeTemplatesManage)
+{
+    protected override string OrganizationId(BusinessConsoleBarcodeRuleListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleBarcodeRuleListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleBarcodeRuleListResponse> ForwardAsync(
+        BusinessConsoleBarcodeRuleListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        barcode.ListRulesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Barcode")]
 [HttpPost("/api/business-console/v1/barcode/rules")]
 [BusinessGatewayOperationId("createOrUpdateBusinessConsoleBarcodeRule")]
 public sealed class CreateOrUpdateBusinessConsoleBarcodeRuleEndpoint(
@@ -96,6 +118,28 @@ public sealed class CreateBusinessConsoleBarcodePrintBatchEndpoint(
 }
 
 [Tags("Business Console Barcode")]
+[HttpGet("/api/business-console/v1/barcode/print-batches")]
+[BusinessGatewayOperationId("listBusinessConsoleBarcodePrintBatches")]
+public sealed class ListBusinessConsoleBarcodePrintBatchesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessBarcodeLabelClient barcode,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleBarcodePrintBatchListRequest, BusinessConsoleBarcodePrintBatchListResponse>(
+        auth,
+        BusinessGatewayPermissions.BarcodePrint)
+{
+    protected override string OrganizationId(BusinessConsoleBarcodePrintBatchListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleBarcodePrintBatchListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleBarcodePrintBatchListResponse> ForwardAsync(
+        BusinessConsoleBarcodePrintBatchListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        barcode.ListPrintBatchesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Barcode")]
 [HttpGet("/api/business-console/v1/barcode/print-batches/{printBatchId}")]
 [BusinessGatewayOperationId("getBusinessConsoleBarcodePrintBatch")]
 public sealed class GetBusinessConsoleBarcodePrintBatchEndpoint(
@@ -169,6 +213,19 @@ public sealed class ListBusinessConsoleBarcodeScansEndpoint(
         barcode.ListScansAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+public sealed class BusinessConsoleBarcodeRuleListRequestValidator : Validator<BusinessConsoleBarcodeRuleListRequest>
+{
+    public BusinessConsoleBarcodeRuleListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Status).MaximumLength(30);
+        RuleFor(x => x.Keyword).MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
 public sealed class BusinessConsoleBarcodeTemplateListRequestValidator : Validator<BusinessConsoleBarcodeTemplateListRequest>
 {
     public BusinessConsoleBarcodeTemplateListRequestValidator()
@@ -176,6 +233,36 @@ public sealed class BusinessConsoleBarcodeTemplateListRequestValidator : Validat
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Status).MaximumLength(30);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 
+public sealed class BusinessConsoleBarcodePrintBatchListRequestValidator : Validator<BusinessConsoleBarcodePrintBatchListRequest>
+{
+    public BusinessConsoleBarcodePrintBatchListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceDocumentType).MaximumLength(100);
+        RuleFor(x => x.SourceDocumentId).MaximumLength(150);
+        RuleFor(x => x.Status).MaximumLength(30);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class BusinessConsoleBarcodeScanListRequestValidator : Validator<BusinessConsoleBarcodeScanListRequest>
+{
+    public BusinessConsoleBarcodeScanListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceCode).MaximumLength(100);
+        RuleFor(x => x.ScannedValue).MaximumLength(200);
+        RuleFor(x => x.SourceWorkflow).MaximumLength(100);
+        RuleFor(x => x.SourceDocumentId).MaximumLength(150);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}

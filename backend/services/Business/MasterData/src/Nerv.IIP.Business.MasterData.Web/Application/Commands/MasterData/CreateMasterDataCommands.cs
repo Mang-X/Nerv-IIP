@@ -35,13 +35,42 @@ public sealed record CreateSkuCommand(
     IReadOnlyCollection<string> ComplianceTags,
     string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateSkuCommandHandler(ISkuRepository repository, MasterDataNumberingService? numberingService = null)
-    : ICommandHandler<CreateSkuCommand, MasterDataResourceResult>
+public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, MasterDataResourceResult>
 {
-    private readonly MasterDataNumberingService _numberingService = numberingService ?? new MasterDataNumberingService();
+    private static readonly (string CodeSet, Func<CreateSkuCommand, (string Code, string Field)> Accessor)[] ControlledFields =
+    [
+        ("product-category", request => (request.Category, nameof(request.Category))),
+        ("material-type", request => (request.MaterialType, nameof(request.MaterialType))),
+        ("shelf-life-policy", request => (request.ShelfLifePolicyCode, nameof(request.ShelfLifePolicyCode))),
+        ("storage-condition", request => (request.StorageConditionCode, nameof(request.StorageConditionCode))),
+        ("barcode-rule", request => (request.DefaultBarcodeRuleCode, nameof(request.DefaultBarcodeRuleCode)))
+    ];
+
+    private readonly ISkuRepository _repository;
+    private readonly IReferenceDataCodeRepository? _referenceDataRepository;
+    private readonly MasterDataNumberingService _numberingService;
+
+    public CreateSkuCommandHandler(ISkuRepository repository, MasterDataNumberingService? numberingService = null)
+    {
+        _repository = repository;
+        _referenceDataRepository = null;
+        _numberingService = numberingService ?? new MasterDataNumberingService();
+    }
+
+    public CreateSkuCommandHandler(
+        ISkuRepository repository,
+        IReferenceDataCodeRepository referenceDataRepository,
+        MasterDataNumberingService? numberingService = null)
+    {
+        _repository = repository;
+        _referenceDataRepository = referenceDataRepository;
+        _numberingService = numberingService ?? new MasterDataNumberingService();
+    }
 
     public async Task<MasterDataResourceResult> Handle(CreateSkuCommand request, CancellationToken cancellationToken)
     {
+        await ValidateControlledReferenceDataAsync(request, cancellationToken);
+
         var allocation = await _numberingService.AllocateSkuCodeAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -51,7 +80,7 @@ public sealed class CreateSkuCommandHandler(ISkuRepository repository, MasterDat
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            var persisted = await repository.FindByBusinessKeyAsync(
+            var persisted = await _repository.FindByBusinessKeyAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 allocation.Code,
@@ -64,7 +93,7 @@ public sealed class CreateSkuCommandHandler(ISkuRepository repository, MasterDat
             return new MasterDataResourceResult("sku", persisted.Code, persisted.Name);
         }
 
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
+        if (await _repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
         {
             throw new KnownException($"SKU '{allocation.Code}' already exists.");
         }
@@ -84,8 +113,36 @@ public sealed class CreateSkuCommandHandler(ISkuRepository repository, MasterDat
             request.DefaultBarcodeRuleCode,
             request.QualityRequired,
             request.ComplianceTags);
-        await repository.AddAsync(sku, cancellationToken);
+        await _repository.AddAsync(sku, cancellationToken);
         return new MasterDataResourceResult("sku", sku.Code, sku.Name);
+    }
+
+    private async Task ValidateControlledReferenceDataAsync(CreateSkuCommand request, CancellationToken cancellationToken)
+    {
+        if (_referenceDataRepository is null)
+        {
+            return;
+        }
+
+        foreach (var (codeSet, accessor) in ControlledFields)
+        {
+            var (code, field) = accessor(request);
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                throw new KnownException($"SKU field '{field}' must reference an active '{codeSet}' code.");
+            }
+
+            var exists = await _referenceDataRepository.ExistsActiveAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                codeSet,
+                code.Trim(),
+                cancellationToken);
+            if (!exists)
+            {
+                throw new KnownException($"SKU field '{field}' references inactive or missing reference data '{codeSet}:{code}'.");
+            }
+        }
     }
 
     private static string SkuPayloadFingerprint(CreateSkuCommand request)
@@ -186,16 +243,24 @@ public sealed record CreateBusinessPartnerCommand(
     string EnvironmentId,
     string Code,
     string PartnerType,
-    string Name) : ICommand<MasterDataResourceResult>;
+    string Name,
+    IReadOnlyCollection<string>? PartnerRoles = null,
+    string? TaxId = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateBusinessPartnerCommandHandler(IBusinessPartnerRepository repository)
     : ICommandHandler<CreateBusinessPartnerCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateBusinessPartnerCommand request, CancellationToken cancellationToken)
     {
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, request.PartnerType, request.Code, cancellationToken))
+        if (await repository.ExistsCodeAsync(request.OrganizationId, request.EnvironmentId, request.Code, cancellationToken))
         {
-            throw new KnownException($"Business partner '{request.PartnerType}:{request.Code}' already exists.");
+            throw new KnownException($"Business partner '{request.Code}' already exists.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TaxId) &&
+            await repository.ExistsTaxIdAsync(request.OrganizationId, request.EnvironmentId, request.TaxId.Trim(), cancellationToken))
+        {
+            throw new KnownException($"Business partner tax id '{request.TaxId}' already exists.");
         }
 
         var partner = BusinessPartner.Create(
@@ -203,7 +268,9 @@ public sealed class CreateBusinessPartnerCommandHandler(IBusinessPartnerReposito
             request.EnvironmentId,
             request.Code,
             request.PartnerType,
-            request.Name);
+            request.Name,
+            request.PartnerRoles,
+            request.TaxId);
         await repository.AddAsync(partner, cancellationToken);
         return new MasterDataResourceResult("business-partner", partner.Code, partner.Name);
     }
@@ -338,7 +405,8 @@ public sealed record CreateProductionLineCommand(
     string EnvironmentId,
     string Code,
     string Name,
-    string SiteCode) : ICommand<MasterDataResourceResult>;
+    string SiteCode,
+    string? WorkshopCode = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateProductionLineCommandHandler(IProductionLineRepository repository)
     : ICommandHandler<CreateProductionLineCommand, MasterDataResourceResult>
@@ -355,7 +423,8 @@ public sealed class CreateProductionLineCommandHandler(IProductionLineRepository
             request.EnvironmentId,
             request.Code,
             request.Name,
-            request.SiteCode);
+            request.SiteCode,
+            request.WorkshopCode);
         await repository.AddAsync(line, cancellationToken);
         return new MasterDataResourceResult("production-line", line.Code, line.Name);
     }
@@ -404,7 +473,8 @@ public sealed record CreateWorkCenterCommand(
     string LineCode,
     string DefaultCalendarCode,
     string CapacityUnit,
-    bool FiniteCapacity) : ICommand<MasterDataResourceResult>;
+    bool FiniteCapacity,
+    string? WorkshopCode = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateWorkCenterCommandHandler(IWorkCenterRepository repository)
     : ICommandHandler<CreateWorkCenterCommand, MasterDataResourceResult>
@@ -425,6 +495,7 @@ public sealed class CreateWorkCenterCommandHandler(IWorkCenterRepository reposit
             request.ResourceType,
             request.PlantCode,
             request.LineCode,
+            request.WorkshopCode,
             request.DefaultCalendarCode,
             request.CapacityUnit,
             request.FiniteCapacity);
