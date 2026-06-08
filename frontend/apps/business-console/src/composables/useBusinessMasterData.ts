@@ -4,6 +4,7 @@ import {
   createBusinessConsoleShiftMutationOptions,
   createBusinessConsoleSiteMutationOptions,
   createBusinessConsoleBusinessPartnerMutationOptions,
+  createBusinessConsoleReferenceDataCodeMutationOptions,
   createBusinessConsoleSkuMutationOptions,
   createBusinessConsoleTeamMutationOptions,
   createBusinessConsoleWorkCalendarMutationOptions,
@@ -17,6 +18,7 @@ import {
   registerBusinessConsoleDeviceAssetMutationOptions,
   updateBusinessConsoleMasterDataResourceMutationOptions,
   type BusinessConsoleCreateBusinessPartnerRequest,
+  type BusinessConsoleCreateReferenceDataCodeRequest,
   type BusinessConsoleCreateSkuRequest,
   type BusinessConsoleCreateWorkshopRequest,
   type BusinessConsoleResourceItem,
@@ -230,6 +232,53 @@ export function useBusinessWorkshops() {
     workshopsError: workshopsQuery.error,
     workshopsPending: workshopsQuery.isLoading,
     workshopsTotal: computed(() => resourceTotal(workshopsQuery.data.value)),
+  }
+}
+
+/**
+ * 数据字典的「按 CodeSet 列出 + 新增码值」。字典是平台受控值来源（物料分类 / 单位量纲 /
+ * 仓储条件等下拉取自这里）。列表走通用 resources 端点并带 codeSet 服务端过滤（真分页），
+ * 新增走 reference-data 专属端点（需 codeSet/code/name + org/env）。
+ */
+export function useReferenceDataCodes() {
+  const filters = reactive<MasterDataResourceFilters & { codeSet?: string }>({
+    ...defaultResourceFilters('reference-data'),
+  })
+  const queryCache = useQueryCache()
+
+  const codesQuery = useQuery(() =>
+    listBusinessConsoleMasterDataResourcesQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        resourceType: filters.resourceType,
+        ...optionalQuery('includeDisabled', filters.includeDisabled),
+        ...optionalQuery('codeSet', filters.codeSet),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
+
+  const createCodeMutation = useMutation({
+    ...createBusinessConsoleReferenceDataCodeMutationOptions(),
+    onSuccess() {
+      void queryCache
+        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleMasterDataResources') })
+        .catch(ignoreBackgroundError)
+    },
+  })
+
+  return {
+    createCode: (body: BusinessConsoleCreateReferenceDataCodeRequest) => createCodeMutation.mutateAsync({ body }),
+    createCodeError: createCodeMutation.error,
+    createCodePending: createCodeMutation.isLoading,
+    filters,
+    refreshCodes: codesQuery.refetch,
+    codes: computed<BusinessConsoleResourceItem[]>(() => resourceItems(codesQuery.data.value)),
+    codesError: codesQuery.error,
+    codesPending: codesQuery.isLoading,
+    codesTotal: computed(() => resourceTotal(codesQuery.data.value)),
   }
 }
 
