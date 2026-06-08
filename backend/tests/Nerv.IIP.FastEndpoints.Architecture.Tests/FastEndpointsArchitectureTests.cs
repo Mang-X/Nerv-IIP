@@ -46,6 +46,7 @@ public sealed class FastEndpointsArchitectureTests
     {
         "backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web",
         "backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web",
+        "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web",
         "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web",
         "backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web",
         "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web",
@@ -53,6 +54,7 @@ public sealed class FastEndpointsArchitectureTests
         "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web",
         "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web",
         "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web",
+        "backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web",
         "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
     };
 
@@ -63,6 +65,7 @@ public sealed class FastEndpointsArchitectureTests
         "backend/services/Notification/src/Nerv.IIP.Notification.Web",
         "backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web",
         "backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web",
+        "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web",
         "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web",
         "backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web",
         "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web",
@@ -71,6 +74,7 @@ public sealed class FastEndpointsArchitectureTests
         "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web",
         "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web",
         "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web",
+        "backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web",
         "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
     };
 
@@ -206,7 +210,7 @@ public sealed class FastEndpointsArchitectureTests
         var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
 
         Assert.Matches(
-            $"{resourceVariable}[\\s\\S]*WithEnvironment\\(\"Persistence__Provider\", \"PostgreSQL\"\\)[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
+            $"var {resourceVariable} =(?:(?!\\bvar )[\\s\\S])*?WithEnvironment\\(\"Persistence__Provider\", \"PostgreSQL\"\\)(?:(?!\\bvar )[\\s\\S])*?WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
             programText);
     }
 
