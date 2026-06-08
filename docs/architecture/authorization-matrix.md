@@ -154,7 +154,7 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `business.masterdata.products.manage` | `user` / `external-client` | organization / environment + resource | 创建、修改、启停 SKU 和产品基础属性。 |
 | `business.masterdata.partners.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看客户、供应商、承运商。 |
 | `business.masterdata.partners.manage` | `user` / `external-client` | organization / environment + resource | 创建、修改、启停业务伙伴。 |
-| `business.masterdata.resources.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看工作中心、工作日历、设备资产和人员业务属性。 |
+| `business.masterdata.resources.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看工作中心、工作日历、设备资产、人员业务属性，以及 BusinessGateway 工人选择器所需的 IAM worker directory 最小读面。 |
 | `business.masterdata.resources.manage` | `user` / `external-client` | organization / environment + resource | 管理工作中心、工作日历、设备资产和人员业务属性。 |
 | `business.engineering.documents.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 CAD、图纸、工艺文件等工程文件引用和版本。 |
 | `business.engineering.documents.manage` | `user` / `external-client` | environment + resource | 注册、归档和关联工程文件；文件本体仍归 File Storage。 |

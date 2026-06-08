@@ -176,6 +176,29 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
+    public async Task Internal_worker_directory_lists_users_without_user_iam_admin_permission()
+    {
+        var anonymous = await _client.GetAsync("/internal/iam/v1/workers?filterSearch=admin&pageIndex=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/internal/iam/v1/workers?filterSearch=admin&pageIndex=1&pageSize=10&filterEnabled=true");
+        request.Headers.Authorization = new("Bearer", "local-internal-service-token");
+
+        var response = await _client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var workers = await ReadResponseDataAsync<PagedListResponse<WorkerDirectoryUserResponse>>(response);
+        var admin = Assert.Single(workers!.Items);
+        Assert.Equal("user-admin", admin.UserId);
+        Assert.Equal("admin", admin.DisplayName);
+        Assert.Equal("admin", admin.EmployeeNo);
+        Assert.Null(admin.Department);
+        Assert.Equal("active", admin.Status);
+    }
+
+    [Fact]
     public async Task In_memory_role_management_creates_role_updates_permissions_and_lists_catalog()
     {
         var catalogResponse = await _client.GetAsync("/api/iam/v1/permissions");
@@ -487,6 +510,13 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
     private sealed record PagedListResponse<T>(int PageIndex, int PageSize, int TotalCount, IReadOnlyList<T> Items);
     private sealed record UserResponse(string UserId, string LoginName, string Email, bool Enabled);
+    private sealed record WorkerDirectoryUserResponse(
+        string UserId,
+        string DisplayName,
+        string EmployeeNo,
+        string? Department,
+        string Status,
+        string? Email);
     private sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
     private sealed record PermissionCatalogResponse(IReadOnlyList<PermissionCatalogItemResponse> Items);
     private sealed record PermissionCatalogItemResponse(string Code, string Domain, string Description, bool Seeded);

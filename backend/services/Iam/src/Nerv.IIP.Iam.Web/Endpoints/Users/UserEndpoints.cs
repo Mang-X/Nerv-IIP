@@ -6,6 +6,7 @@ using Nerv.IIP.Iam.Web.Application.Commands.Users;
 using Nerv.IIP.Iam.Web.Application.Queries.Users;
 using Nerv.IIP.Iam.Web.Application.Users;
 using Nerv.IIP.Iam.Web.Endpoints;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Users;
@@ -20,6 +21,14 @@ public sealed record ListUsersRequest(
     string? SortOrder,
     string? FilterSearch,
     bool? FilterEnabled);
+
+public sealed record WorkerDirectoryUserResponse(
+    string UserId,
+    string DisplayName,
+    string EmployeeNo,
+    string? Department,
+    string Status,
+    string? Email);
 
 [HttpGet("/api/iam/v1/users")]
 [AllowAnonymous]
@@ -41,6 +50,42 @@ public sealed class ListUsersEndpoint(IIamPermissionAuthorizer authorizer, IMedi
             req.FilterSearch,
             filterEnabled: req.FilterEnabled)), ct);
         await Send.OkAsync(users.AsResponseData(), ct);
+    }
+}
+
+[HttpGet("/internal/iam/v1/workers")]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+public sealed class ListWorkerDirectoryEndpoint(IMediator mediator)
+    : Endpoint<ListUsersRequest, ResponseData<PagedListResponse<WorkerDirectoryUserResponse>>>
+{
+    public override async Task HandleAsync(ListUsersRequest req, CancellationToken ct)
+    {
+        var users = await mediator.Send(new ListUsersQuery(IamListQueryOptions.Create(
+            req.PageIndex,
+            req.PageSize,
+            req.SortBy,
+            req.SortOrder,
+            req.FilterSearch,
+            filterEnabled: req.FilterEnabled)), ct);
+
+        var response = new PagedListResponse<WorkerDirectoryUserResponse>(
+            users.PageIndex,
+            users.PageSize,
+            users.TotalCount,
+            users.Items.Select(ToWorker).ToArray());
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+
+    private static WorkerDirectoryUserResponse ToWorker(UserResponse user)
+    {
+        var status = user.Enabled ? "active" : "disabled";
+        return new WorkerDirectoryUserResponse(
+            user.UserId,
+            user.LoginName,
+            user.LoginName,
+            null,
+            status,
+            user.Email);
     }
 }
 
