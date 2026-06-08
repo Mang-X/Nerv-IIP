@@ -17,6 +17,12 @@ const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
 }))
 
+function mutationOptionStub() {
+  return vi.fn(() => ({
+    mutation: vi.fn(async (vars: { body: unknown }) => ({ success: true, data: vars.body })),
+  }))
+}
+
 vi.mock('@nerv-iip/api-client', () => ({
   createBusinessConsoleSkuMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
@@ -24,6 +30,14 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
+  createBusinessConsoleSiteMutationOptions: mutationOptionStub(),
+  createBusinessConsoleProductionLineMutationOptions: mutationOptionStub(),
+  createBusinessConsoleWorkCenterMutationOptions: mutationOptionStub(),
+  registerBusinessConsoleDeviceAssetMutationOptions: mutationOptionStub(),
+  createBusinessConsoleShiftMutationOptions: mutationOptionStub(),
+  createBusinessConsoleWorkCalendarMutationOptions: mutationOptionStub(),
+  createBusinessConsoleTeamMutationOptions: mutationOptionStub(),
+  createBusinessConsoleDepartmentMutationOptions: mutationOptionStub(),
   listBusinessConsoleMasterDataResourcesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMasterDataResources' }],
     query: vi.fn(),
