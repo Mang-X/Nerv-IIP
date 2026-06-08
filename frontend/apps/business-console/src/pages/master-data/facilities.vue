@@ -6,7 +6,8 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
-import { useMasterDataResource } from '@/composables/useBusinessMasterData'
+import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import { useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -62,13 +63,43 @@ const WORK_CENTER_DEFAULTS = {
 const sites = useMasterDataResource<BusinessConsoleCreateSiteRequest>('site')
 const lines = useMasterDataResource<BusinessConsoleCreateProductionLineRequest>('production-line')
 const workCenters = useMasterDataResource<BusinessConsoleCreateWorkCenterRequest>('work-center')
+const siteActions = useMasterDataResourceActions('site')
+const lineActions = useMasterDataResourceActions('production-line')
+const wcActions = useMasterDataResourceActions('work-center')
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'active', header: '状态', width: 'w-24' },
   { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
+
+const facilityActionError = computed(() =>
+  formatError(siteActions.actionError.value ?? lineActions.actionError.value ?? wcActions.actionError.value),
+)
+function siteDetailFields(row: BusinessConsoleResourceItem) {
+  return [
+    { label: '工厂编码', value: row.code ?? '' },
+    { label: '工厂名称', value: row.displayName ?? '' },
+  ]
+}
+function lineDetailFields(row: BusinessConsoleResourceItem) {
+  return [
+    { label: '产线编码', value: row.code ?? '' },
+    { label: '产线名称', value: row.displayName ?? '' },
+    { label: '所属工厂', value: row.siteCode ?? '' },
+  ]
+}
+function workCenterDetailFields(row: BusinessConsoleResourceItem) {
+  return [
+    { label: '工作中心编码', value: row.code ?? '' },
+    { label: '工作中心名称', value: row.displayName ?? '' },
+    { label: '所属工厂', value: row.plantCode ?? '' },
+    { label: '所属产线', value: row.lineCode ?? '' },
+    { label: '日产能（分钟）', value: row.capacityMinutesPerDay != null ? String(row.capacityMinutesPerDay) : '' },
+  ]
+}
 
 function rowKey(item: BusinessConsoleResourceItem) {
   return `${item.resourceType ?? ''}:${item.code || item.displayName || ''}`
@@ -288,6 +319,7 @@ function refreshAll() {
           </template>
         </Toolbar>
         <p v-if="siteListError" class="text-sm text-destructive" role="alert">{{ siteListError }}</p>
+        <p v-else-if="facilityActionError" class="text-sm text-destructive" role="alert">{{ facilityActionError }}</p>
         <DataTable
           :columns="columns"
           :rows="siteRows"
@@ -297,6 +329,9 @@ function refreshAll() {
         >
           <template #cell-active="{ row }">
             <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+          </template>
+          <template #cell-actions="{ row }">
+            <MasterDataRowActions :row="row" entity-label="工厂" :detail-fields="siteDetailFields(row)" :actions="siteActions" />
           </template>
         </DataTable>
         <DataTablePagination v-model:page="sitePage" v-model:page-size="sitePageSize" :total-items="sites.total.value" />
@@ -364,6 +399,9 @@ function refreshAll() {
         >
           <template #cell-active="{ row }">
             <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+          </template>
+          <template #cell-actions="{ row }">
+            <MasterDataRowActions :row="row" entity-label="产线" :detail-fields="lineDetailFields(row)" :actions="lineActions" />
           </template>
         </DataTable>
         <DataTablePagination v-model:page="linePage" v-model:page-size="linePageSize" :total-items="lines.total.value" />
@@ -466,6 +504,9 @@ function refreshAll() {
         >
           <template #cell-active="{ row }">
             <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+          </template>
+          <template #cell-actions="{ row }">
+            <MasterDataRowActions :row="row" entity-label="工作中心" :detail-fields="workCenterDetailFields(row)" :actions="wcActions" />
           </template>
         </DataTable>
         <DataTablePagination v-model:page="wcPage" v-model:page-size="wcPageSize" :total-items="workCenters.total.value" />

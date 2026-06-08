@@ -4,7 +4,8 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
-import { useMasterDataResource } from '@/composables/useBusinessMasterData'
+import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import { useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -56,6 +57,7 @@ const DEVICE_DEFAULTS = {
 const devices = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('device-asset')
 const lines = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('production-line')
 const workCenters = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('work-center')
+const deviceActions = useMasterDataResourceActions('device-asset')
 
 const keyword = ref('')
 const page = ref(1)
@@ -79,7 +81,19 @@ const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'displayName', header: '设备名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'active', header: '状态', width: 'w-24' },
   { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
+
+function deviceDetailFields(row: BusinessConsoleResourceItem) {
+  return [
+    { label: '设备编码', value: row.code ?? '' },
+    { label: '设备名称', value: row.displayName ?? '' },
+    { label: '所属产线', value: row.lineCode ?? '' },
+    { label: '所属工作中心', value: row.workCenterCode ?? '' },
+  ]
+}
+
+const deviceActionErrorMessage = computed(() => formatError(deviceActions.actionError.value))
 
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -250,6 +264,7 @@ async function submitDevice() {
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选设备编码、名称" />
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-else-if="deviceActionErrorMessage" class="text-sm text-destructive" role="alert">{{ deviceActionErrorMessage }}</p>
 
     <DataTable
       :columns="columns"
@@ -260,6 +275,9 @@ async function submitDevice() {
     >
       <template #cell-active="{ row }">
         <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+      </template>
+      <template #cell-actions="{ row }">
+        <MasterDataRowActions :row="row" entity-label="设备" :detail-fields="deviceDetailFields(row)" :actions="deviceActions" />
       </template>
     </DataTable>
 

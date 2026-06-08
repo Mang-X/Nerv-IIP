@@ -7,7 +7,8 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
-import { useBusinessMasterDataResources, useMasterDataResource } from '@/composables/useBusinessMasterData'
+import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import { useBusinessMasterDataResources, useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -53,13 +54,33 @@ const shifts = useMasterDataResource<BusinessConsoleCreateShiftRequest>('shift')
 const calendars = useMasterDataResource<BusinessConsoleCreateWorkCalendarRequest>('work-calendar')
 // 人员技能为只读列表（登记入口待后端组织建模——IAM 用户接入后开放）。
 const skills = useBusinessMasterDataResources('personnel-skill')
+const deptActions = useMasterDataResourceActions('department')
+const teamActions = useMasterDataResourceActions('team')
+const shiftActions = useMasterDataResourceActions('shift')
+const calActions = useMasterDataResourceActions('work-calendar')
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'active', header: '状态', width: 'w-24' },
   { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
+// 人员技能为只读 Tab，列表不含操作列。
+const readonlyColumns: DataTableColumn<BusinessConsoleResourceItem>[] = columns.slice(0, 4)
+
+const orgActionError = computed(() =>
+  formatError(
+    deptActions.actionError.value ?? teamActions.actionError.value
+    ?? shiftActions.actionError.value ?? calActions.actionError.value,
+  ),
+)
+function baseDetailFields(row: BusinessConsoleResourceItem, codeLabel: string, nameLabel: string) {
+  return [
+    { label: codeLabel, value: row.code ?? '' },
+    { label: nameLabel, value: row.displayName ?? '' },
+  ]
+}
 
 function rowKey(item: BusinessConsoleResourceItem) {
   return `${item.resourceType ?? ''}:${item.code || item.displayName || ''}`
@@ -320,8 +341,12 @@ watch([skillPage, skillPageSize], () => {
           </template>
         </Toolbar>
         <p v-if="deptListError" class="text-sm text-destructive" role="alert">{{ deptListError }}</p>
+        <p v-else-if="orgActionError" class="text-sm text-destructive" role="alert">{{ orgActionError }}</p>
         <DataTable :columns="columns" :rows="deptRows" :row-key="rowKey" :loading="departments.pending.value" empty-message="暂无部门。可清空筛选或新建部门。">
           <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
+          <template #cell-actions="{ row }">
+            <MasterDataRowActions :row="row" entity-label="部门" :detail-fields="baseDetailFields(row, '部门编码', '部门名称')" :actions="deptActions" />
+          </template>
         </DataTable>
         <DataTablePagination v-model:page="deptPage" v-model:page-size="deptPageSize" :total-items="departments.total.value" />
       </TabsContent>
@@ -387,6 +412,9 @@ watch([skillPage, skillPageSize], () => {
         <p v-if="teamListError" class="text-sm text-destructive" role="alert">{{ teamListError }}</p>
         <DataTable :columns="columns" :rows="teamRows" :row-key="rowKey" :loading="teams.pending.value" empty-message="暂无班组。可清空筛选或新建班组。">
           <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
+          <template #cell-actions="{ row }">
+            <MasterDataRowActions :row="row" entity-label="班组" :detail-fields="baseDetailFields(row, '班组编码', '班组名称')" :actions="teamActions" />
+          </template>
         </DataTable>
         <DataTablePagination v-model:page="teamPage" v-model:page-size="teamPageSize" :total-items="teams.total.value" />
       </TabsContent>
@@ -443,6 +471,9 @@ watch([skillPage, skillPageSize], () => {
         <p v-if="shiftListError" class="text-sm text-destructive" role="alert">{{ shiftListError }}</p>
         <DataTable :columns="columns" :rows="shiftRows" :row-key="rowKey" :loading="shifts.pending.value" empty-message="暂无班次。可清空筛选或新建班次。">
           <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
+          <template #cell-actions="{ row }">
+            <MasterDataRowActions :row="row" entity-label="班次" :detail-fields="baseDetailFields(row, '班次编码', '班次名称')" :actions="shiftActions" />
+          </template>
         </DataTable>
         <DataTablePagination v-model:page="shiftPage" v-model:page-size="shiftPageSize" :total-items="shifts.total.value" />
       </TabsContent>
@@ -486,6 +517,9 @@ watch([skillPage, skillPageSize], () => {
         <p v-if="calListError" class="text-sm text-destructive" role="alert">{{ calListError }}</p>
         <DataTable :columns="columns" :rows="calRows" :row-key="rowKey" :loading="calendars.pending.value" empty-message="暂无工作日历。可清空筛选或新建日历。">
           <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
+          <template #cell-actions="{ row }">
+            <MasterDataRowActions :row="row" entity-label="工作日历" :detail-fields="baseDetailFields(row, '日历编码', '日历名称')" :actions="calActions" />
+          </template>
         </DataTable>
         <DataTablePagination v-model:page="calPage" v-model:page-size="calPageSize" :total-items="calendars.total.value" />
       </TabsContent>
@@ -500,7 +534,7 @@ watch([skillPage, skillPageSize], () => {
           </template>
         </Toolbar>
         <p v-if="skillListError" class="text-sm text-destructive" role="alert">{{ skillListError }}</p>
-        <DataTable :columns="columns" :rows="skillRows" :row-key="rowKey" :loading="skills.resourcesPending.value" empty-message="暂无人员技能。可清空筛选后再试。">
+        <DataTable :columns="readonlyColumns" :rows="skillRows" :row-key="rowKey" :loading="skills.resourcesPending.value" empty-message="暂无人员技能。可清空筛选后再试。">
           <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
         </DataTable>
         <DataTablePagination v-model:page="skillPage" v-model:page-size="skillPageSize" :total-items="skills.resourcesTotal.value" />

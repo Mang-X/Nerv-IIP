@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { BusinessConsoleCreateSkuRequest, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
-import { useBusinessSkus } from '@/composables/useBusinessMasterData'
+import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import { useBusinessSkus, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -58,6 +59,7 @@ const {
   skusPending,
   skusTotal,
 } = useBusinessSkus()
+const skuActions = useMasterDataResourceActions('sku')
 
 // Optimistic rows for items the user created in this session (real entries, never placeholders).
 const localSkus = shallowRef<BusinessConsoleResourceItem[]>([])
@@ -133,6 +135,7 @@ const activeCount = computed(() => listRows.value.filter((s) => s.active !== fal
 const disabledCount = computed(() => listRows.value.filter((s) => s.active === false).length)
 const createErrorMessage = computed(() => formatError(createSkuError.value))
 const listErrorMessage = computed(() => formatError(skusError.value))
+const skuActionErrorMessage = computed(() => formatError(skuActions.actionError.value))
 const canCreateSku = computed(() =>
   [createForm.name, createForm.baseUomCode, createForm.category, createForm.materialType,
     createForm.batchTrackingPolicy, createForm.serialTrackingPolicy, createForm.shelfLifePolicyCode,
@@ -145,7 +148,22 @@ const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'resourceType', header: '类型', width: 'w-24' },
   { key: 'active', header: '状态', width: 'w-24' },
   { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
+
+function labelOf(options: ReadonlyArray<{ value: string, label: string }>, value?: string | null) {
+  if (!value) return ''
+  return options.find((o) => o.value === value)?.label ?? value
+}
+function skuDetailFields(row: BusinessConsoleResourceItem) {
+  return [
+    { label: '物料编码', value: row.code ?? '' },
+    { label: '物料名称', value: row.displayName ?? '' },
+    { label: '产品分类', value: labelOf(PRODUCT_CATEGORY_OPTIONS, row.category) },
+    { label: '物料类型', value: labelOf(MATERIAL_TYPE_OPTIONS, row.materialType) },
+    { label: '基本单位', value: labelOf(UOM_OPTIONS, row.baseUomCode) },
+  ]
+}
 
 watch([keyword, includeDisabled, pageSize], () => {
   page.value = 1
@@ -376,6 +394,7 @@ function isNonEmpty(value: string) {
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-else-if="skuActionErrorMessage" class="text-sm text-destructive" role="alert">{{ skuActionErrorMessage }}</p>
     <p v-else-if="createSuccess" class="text-sm text-success" role="status">{{ createSuccess }}</p>
 
     <DataTable
@@ -395,6 +414,9 @@ function isNonEmpty(value: string) {
       </template>
       <template #cell-snapshotVersion="{ value }">
         <span class="tabular-nums">{{ value }}</span>
+      </template>
+      <template #cell-actions="{ row }">
+        <MasterDataRowActions :row="row" entity-label="物料" :detail-fields="skuDetailFields(row)" :actions="skuActions" />
       </template>
     </DataTable>
 

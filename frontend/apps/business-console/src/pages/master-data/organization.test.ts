@@ -44,9 +44,22 @@ function stubReadonlyResource(resourceType: string) {
   }
 }
 
+function stubActions() {
+  return {
+    update: vi.fn(),
+    disable: vi.fn(),
+    enable: vi.fn(),
+    updatePending: shallowRef(false),
+    disablePending: shallowRef(false),
+    enablePending: shallowRef(false),
+    actionError: shallowRef(undefined),
+  }
+}
+
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
   useBusinessMasterDataResources: (resourceType: string) => stubReadonlyResource(resourceType),
+  useMasterDataResourceActions: () => stubActions(),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -71,5 +84,13 @@ describe('master-data organization page', () => {
 
     expect(wrapper.text()).toContain('总装部')
     expect(wrapper.findAll('button').some((b) => b.text().includes('新建部门'))).toBe(true)
+  })
+
+  it('exposes per-row actions (detail / rename / disable)', async () => {
+    const wrapper = mount(OrganizationPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const triggers = wrapper.findAll('button').filter((b) => b.attributes('aria-label')?.includes('操作'))
+    expect(triggers.length).toBeGreaterThan(0)
   })
 })
