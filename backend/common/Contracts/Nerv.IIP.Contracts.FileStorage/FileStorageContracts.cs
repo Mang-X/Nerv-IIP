@@ -23,6 +23,17 @@ public sealed record CompleteUploadSessionRequest(
 
 public sealed record CreateDownloadGrantRequest(string OrganizationId, string EnvironmentId);
 
+public sealed record ListFilesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? FilePurpose,
+    string? UploaderId,
+    DateTimeOffset? CreatedFromUtc,
+    DateTimeOffset? CreatedToUtc,
+    string? Status,
+    int? Skip = null,
+    int? Take = null);
+
 public sealed record CreateUploadSessionResponse(
     string UploadSessionId,
     string FileId,
@@ -45,6 +56,8 @@ public sealed record FileMetadataResponse(
     string Status,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset CompletedAtUtc);
+
+public sealed record FileListResponse(int Total, IReadOnlyList<FileMetadataResponse> Items);
 
 public sealed record DownloadGrantResponse(
     string FileId,

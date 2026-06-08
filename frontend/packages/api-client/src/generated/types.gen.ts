@@ -399,6 +399,19 @@ export type NervIipContractsFileStorageCompleteUploadSessionRequest = {
     sizeBytes?: number | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfFileListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsFileStorageFileListResponse | null;
+};
+
+export type NervIipContractsFileStorageFileListResponse = {
+    total?: number;
+    items?: Array<NervIipContractsFileStorageFileMetadataResponse>;
+};
+
+export type NervIipPlatformGatewayWebEndpointsFilesConsoleListFilesRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsFileStorageDownloadGrantResponse | null;
 };
@@ -1137,6 +1150,41 @@ export type CompleteConsoleFileUploadSessionResponses = {
 };
 
 export type CompleteConsoleFileUploadSessionResponse = CompleteConsoleFileUploadSessionResponses[keyof CompleteConsoleFileUploadSessionResponses];
+
+export type ListConsoleFilesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        filePurpose?: string | null;
+        uploaderId?: string | null;
+        createdFromUtc?: string | null;
+        createdToUtc?: string | null;
+        status?: string | null;
+        skip?: number | null;
+        take?: number | null;
+    };
+    url: '/api/console/v1/files';
+};
+
+export type ListConsoleFilesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListConsoleFilesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfFileListResponse;
+};
+
+export type ListConsoleFilesResponse = ListConsoleFilesResponses[keyof ListConsoleFilesResponses];
 
 export type GetConsoleFileMetadataData = {
     body?: never;

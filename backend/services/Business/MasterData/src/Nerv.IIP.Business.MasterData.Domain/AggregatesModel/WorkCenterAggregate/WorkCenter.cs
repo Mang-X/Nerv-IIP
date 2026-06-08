@@ -19,6 +19,7 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         string resourceType,
         string plantCode,
         string lineCode,
+        string? workshopCode,
         string defaultCalendarCode,
         string capacityUnit,
         bool finiteCapacity)
@@ -36,6 +37,7 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         ResourceType = Required(resourceType);
         PlantCode = Optional(plantCode);
         LineCode = Optional(lineCode);
+        WorkshopCode = NormalizeOptional(workshopCode);
         DefaultCalendarCode = Optional(defaultCalendarCode);
         CapacityUnit = Required(capacityUnit);
         FiniteCapacity = finiteCapacity;
@@ -53,6 +55,7 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
     public string ResourceType { get; private set; } = string.Empty;
     public string PlantCode { get; private set; } = string.Empty;
     public string LineCode { get; private set; } = string.Empty;
+    public string? WorkshopCode { get; private set; }
     public string DefaultCalendarCode { get; private set; } = string.Empty;
     public string CapacityUnit { get; private set; } = string.Empty;
     public bool FiniteCapacity { get; private set; }
@@ -62,7 +65,7 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
 
     public static WorkCenter Create(string organizationId, string environmentId, string code, string name, int capacityMinutesPerDay)
     {
-        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay, "work-center", string.Empty, string.Empty, string.Empty, "minute", true);
+        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay, "work-center", string.Empty, string.Empty, null, string.Empty, "minute", true);
     }
 
     public static WorkCenter CreateResource(
@@ -78,7 +81,66 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         string capacityUnit,
         bool finiteCapacity)
     {
-        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay, resourceType, plantCode, lineCode, defaultCalendarCode, capacityUnit, finiteCapacity);
+        return CreateResource(organizationId, environmentId, code, name, capacityMinutesPerDay, resourceType, plantCode, lineCode, null, defaultCalendarCode, capacityUnit, finiteCapacity);
+    }
+
+    public static WorkCenter CreateResource(
+        string organizationId,
+        string environmentId,
+        string code,
+        string name,
+        int capacityMinutesPerDay,
+        string resourceType,
+        string plantCode,
+        string lineCode,
+        string? workshopCode,
+        string defaultCalendarCode,
+        string capacityUnit,
+        bool finiteCapacity)
+    {
+        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay, resourceType, plantCode, lineCode, workshopCode, defaultCalendarCode, capacityUnit, finiteCapacity);
+    }
+
+    public void UpdateResource(
+        string name,
+        int capacityMinutesPerDay,
+        string resourceType,
+        string plantCode,
+        string lineCode,
+        string defaultCalendarCode,
+        string capacityUnit,
+        bool finiteCapacity)
+    {
+        UpdateResource(name, capacityMinutesPerDay, resourceType, plantCode, lineCode, null, defaultCalendarCode, capacityUnit, finiteCapacity);
+    }
+
+    public void UpdateResource(
+        string name,
+        int capacityMinutesPerDay,
+        string resourceType,
+        string plantCode,
+        string lineCode,
+        string? workshopCode,
+        string defaultCalendarCode,
+        string capacityUnit,
+        bool finiteCapacity)
+    {
+        if (capacityMinutesPerDay <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capacityMinutesPerDay), "Capacity minutes per day must be positive.");
+        }
+
+        EnsureEnabled();
+        Name = Required(name);
+        CapacityMinutesPerDay = capacityMinutesPerDay;
+        ResourceType = Required(resourceType);
+        PlantCode = Optional(plantCode);
+        LineCode = Optional(lineCode);
+        WorkshopCode = NormalizeOptional(workshopCode);
+        DefaultCalendarCode = Optional(defaultCalendarCode);
+        CapacityUnit = Required(capacityUnit);
+        FiniteCapacity = finiteCapacity;
+        Touch();
     }
 
     public void Disable(string reason)
@@ -88,6 +150,25 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(WorkCenter), OrganizationId, EnvironmentId, Code, validReason));
+        this.AddDomainEvent(new ResourceChangedDomainEvent(nameof(WorkCenter), OrganizationId, EnvironmentId, Code));
+    }
+
+    public void Enable(string reason)
+    {
+        _ = Required(reason);
+        if (!Disabled)
+        {
+            return;
+        }
+
+        Disabled = false;
+        Touch();
+    }
+
+    private void Touch()
+    {
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(WorkCenter), OrganizationId, EnvironmentId, Code));
         this.AddDomainEvent(new ResourceChangedDomainEvent(nameof(WorkCenter), OrganizationId, EnvironmentId, Code));
     }
 
@@ -107,5 +188,10 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
     private static string Optional(string value)
     {
         return value?.Trim() ?? string.Empty;
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 }

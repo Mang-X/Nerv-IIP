@@ -122,6 +122,37 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         Touch();
     }
 
+    public void UpdateIndustrial(
+        string name,
+        string baseUomCode,
+        string category,
+        string materialType,
+        string batchTrackingPolicy,
+        string serialTrackingPolicy,
+        string shelfLifePolicyCode,
+        string storageConditionCode,
+        string defaultBarcodeRuleCode,
+        bool qualityRequired)
+    {
+        EnsureEnabled();
+        Name = Required(name);
+        Unit = Required(baseUomCode);
+        BaseUomCode = Unit;
+        InventoryUomCode = Unit;
+        PurchaseUomCode = Unit;
+        SalesUomCode = Unit;
+        ManufacturingUomCode = Unit;
+        Category = Required(category);
+        MaterialType = Required(materialType);
+        BatchTrackingPolicy = Required(batchTrackingPolicy);
+        SerialTrackingPolicy = Required(serialTrackingPolicy);
+        ShelfLifePolicyCode = Optional(shelfLifePolicyCode);
+        StorageConditionCode = Optional(storageConditionCode);
+        DefaultBarcodeRuleCode = Optional(defaultBarcodeRuleCode);
+        QualityRequired = qualityRequired;
+        Touch();
+    }
+
     public void Disable(string reason)
     {
         var validReason = Required(reason);
@@ -130,6 +161,18 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(Sku), OrganizationId, EnvironmentId, Code, validReason));
         this.AddDomainEvent(new SkuDisabledDomainEvent(OrganizationId, EnvironmentId, Code, validReason));
+    }
+
+    public void Enable(string reason)
+    {
+        _ = Required(reason);
+        if (!Disabled)
+        {
+            return;
+        }
+
+        Disabled = false;
+        Touch();
     }
 
     private void Touch()

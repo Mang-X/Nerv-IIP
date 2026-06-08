@@ -17,6 +17,22 @@ public interface IBusinessMasterDataClient
         BusinessConsoleListResourcesRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMasterDataResourceDetail> GetResourceDetailAsync(
+        string internalBearerToken,
+        BusinessConsoleMasterDataResourceRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
+        string internalBearerToken,
+        BusinessConsoleUpdateMasterDataResourceRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMasterDataResourceDetail> SetResourceEnabledAsync(
+        string internalBearerToken,
+        BusinessConsoleSetMasterDataResourceEnabledRequest request,
+        bool enabled,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleResourceItem> CreateSkuAsync(
         string internalBearerToken,
         BusinessConsoleCreateSkuRequest request,
@@ -35,6 +51,11 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleResourceItem> CreateUomConversionAsync(
         string internalBearerToken,
         BusinessConsoleCreateUomConversionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateWorkshopAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkshopRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> CreateSiteAsync(
@@ -70,6 +91,21 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleResourceItem> CreateTeamAsync(
         string internalBearerToken,
         BusinessConsoleCreateTeamRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> AddTeamMemberAsync(
+        string internalBearerToken,
+        BusinessConsoleAddTeamMemberRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleTeamMemberListResponse> ListTeamMembersAsync(
+        string internalBearerToken,
+        BusinessConsoleListTeamMembersRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> RemoveTeamMemberAsync(
+        string internalBearerToken,
+        BusinessConsoleRemoveTeamMemberRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> CreateDepartmentAsync(
@@ -434,6 +470,11 @@ public interface IBusinessErpClient
 
 public interface IBusinessBarcodeLabelClient
 {
+    Task<BusinessConsoleBarcodeRuleListResponse> ListRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodeRuleListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCreateOrUpdateBarcodeRuleResponse> CreateOrUpdateRuleAsync(
         string internalBearerToken,
         BusinessConsoleCreateOrUpdateBarcodeRuleRequest request,
@@ -457,6 +498,11 @@ public interface IBusinessBarcodeLabelClient
     Task<BusinessConsoleBarcodePrintBatchResponse> GetPrintBatchAsync(
         string internalBearerToken,
         BusinessConsoleBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleBarcodePrintBatchListResponse> ListPrintBatchesAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodePrintBatchListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleRecordBarcodeScanResponse> RecordScanAsync(
@@ -520,9 +566,9 @@ public interface IBusinessIndustrialTelemetryClient
         BusinessConsoleEquipmentContextRequest request,
         CancellationToken cancellationToken);
 
-    Task<BusinessConsoleEquipmentAlarmListResponse> ListActiveAlarmsAsync(
+    Task<BusinessConsoleEquipmentAlarmListPageResponse> ListActiveAlarmsAsync(
         string internalBearerToken,
-        BusinessConsoleEquipmentContextRequest request,
+        BusinessConsoleEquipmentAlarmListRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -541,7 +587,7 @@ public interface IBusinessMaintenanceClient
 
     Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceContextRequest request,
+        BusinessConsoleMaintenanceListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMaintenanceWorkOrderItem> GetWorkOrderAsync(
@@ -552,7 +598,7 @@ public interface IBusinessMaintenanceClient
 
     Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceContextRequest request,
+        BusinessConsoleMaintenanceListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateMaintenancePlanResponse> CreatePlanAsync(
@@ -563,6 +609,21 @@ public interface IBusinessMaintenanceClient
     Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
         string internalBearerToken,
         BusinessConsoleRecordMaintenanceInspectionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMaintenanceInspectionListResponse> ListInspectionsAsync(
+        string internalBearerToken,
+        BusinessConsoleMaintenanceListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMaintenanceSparePartListResponse> ListSparePartsAsync(
+        string internalBearerToken,
+        BusinessConsoleMaintenanceListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCreateMaintenanceSparePartResponse> CreateSparePartAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceSparePartRequest request,
         CancellationToken cancellationToken);
 
     Task<EquipmentRuntimeAvailabilityResponse> GetAvailabilityWindowsAsync(
@@ -594,6 +655,11 @@ public interface IBusinessApprovalClient
         BusinessConsoleStartApprovalChainRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleApprovalChainListResponse> ListChainsAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalChainListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleApprovalChainResponse> GetChainAsync(
         string internalBearerToken,
         BusinessConsoleApprovalChainRequest request,
@@ -604,9 +670,30 @@ public interface IBusinessApprovalClient
         BusinessConsoleApprovalTaskListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleApprovalDecisionListResponse> ListDecisionsAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalDecisionListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleResolveApprovalStepResponse> ResolveStepAsync(
         string internalBearerToken,
         BusinessConsoleResolveApprovalStepRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleApprovalDelegationListResponse> ListDelegationsAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalDelegationListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCreateApprovalDelegationResponse> CreateDelegationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateApprovalDelegationRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> RevokeDelegationAsync(
+        string internalBearerToken,
+        string delegationId,
+        BusinessConsoleRevokeApprovalDelegationRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -1018,23 +1105,22 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
 public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : BusinessServiceHttpClient(httpClient), IBusinessApprovalClient
 {
-    public async Task<BusinessConsoleApprovalTemplateListResponse> ListTemplatesAsync(
+    public Task<BusinessConsoleApprovalTemplateListResponse> ListTemplatesAsync(
         string internalBearerToken,
         BusinessConsoleApprovalTemplateListRequest request,
-        CancellationToken cancellationToken)
-    {
-        var items = await SendAsync<IReadOnlyCollection<BusinessConsoleApprovalTemplateItem>>(
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleApprovalTemplateListResponse>(
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/approvals/templates?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("documentType", request.DocumentType),
-                ("isActive", request.IsActive)),
+                ("isActive", request.IsActive),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
-        return new BusinessConsoleApprovalTemplateListResponse(items);
-    }
 
     public Task<BusinessConsoleCreateOrUpdateApprovalTemplateResponse> CreateOrUpdateTemplateAsync(
         string internalBearerToken,
@@ -1058,6 +1144,26 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
             request,
             cancellationToken);
 
+    public Task<BusinessConsoleApprovalChainListResponse> ListChainsAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalChainListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleApprovalChainListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/approvals/chains?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", request.Status),
+                ("startedBy", request.StartedBy),
+                ("sourceService", request.SourceService),
+                ("documentType", request.DocumentType),
+                ("documentId", request.DocumentId),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleApprovalChainResponse> GetChainAsync(
         string internalBearerToken,
         BusinessConsoleApprovalChainRequest request,
@@ -1069,23 +1175,43 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
             null,
             cancellationToken);
 
-    public async Task<BusinessConsoleApprovalTaskListResponse> ListPendingTasksAsync(
+    public Task<BusinessConsoleApprovalTaskListResponse> ListPendingTasksAsync(
         string internalBearerToken,
         BusinessConsoleApprovalTaskListRequest request,
-        CancellationToken cancellationToken)
-    {
-        var items = await SendAsync<IReadOnlyCollection<BusinessConsoleApprovalTaskItem>>(
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleApprovalTaskListResponse>(
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/approvals/tasks?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("actorType", request.ActorType),
-                ("actorRef", request.ActorRef)),
+                ("actorRef", request.ActorRef),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
-        return new BusinessConsoleApprovalTaskListResponse(items);
-    }
+
+    public Task<BusinessConsoleApprovalDecisionListResponse> ListDecisionsAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalDecisionListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleApprovalDecisionListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/approvals/decisions?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("chainId", request.ChainId),
+                ("actorType", request.ActorType),
+                ("actorRef", request.ActorRef),
+                ("decision", request.Decision),
+                ("documentType", request.DocumentType),
+                ("documentId", request.DocumentId),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
 
     public Task<BusinessConsoleResolveApprovalStepResponse> ResolveStepAsync(
         string internalBearerToken,
@@ -1095,6 +1221,50 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}/steps/{request.StepNo.ToString(CultureInfo.InvariantCulture)}/resolve",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleApprovalDelegationListResponse> ListDelegationsAsync(
+        string internalBearerToken,
+        BusinessConsoleApprovalDelegationListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleApprovalDelegationListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/approvals/delegations?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", request.Status),
+                ("delegatorActorRef", request.DelegatorActorRef),
+                ("delegateActorRef", request.DelegateActorRef),
+                ("documentType", request.DocumentType),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleCreateApprovalDelegationResponse> CreateDelegationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateApprovalDelegationRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCreateApprovalDelegationResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/approvals/delegations",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> RevokeDelegationAsync(
+        string internalBearerToken,
+        string delegationId,
+        BusinessConsoleRevokeApprovalDelegationRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/approvals/delegations/{Uri.EscapeDataString(delegationId)}/revoke?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
             request,
             cancellationToken);
 }
@@ -1154,11 +1324,49 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("resourceType", request.ResourceType),
                 ("includeDisabled", TrueFlag(request.IncludeDisabled)),
                 ("skip", request.Skip),
-                ("take", request.Take)),
+                ("take", request.Take),
+                ("codeSet", request.CodeSet)),
             null,
             cancellationToken);
         return response.Total > 0 ? response : response with { Total = response.Resources.Count };
     }
+
+    public Task<BusinessConsoleMasterDataResourceDetail> GetResourceDetailAsync(
+        string internalBearerToken,
+        BusinessConsoleMasterDataResourceRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMasterDataResourceDetail>(
+            internalBearerToken,
+            HttpMethod.Get,
+            ResourcePath(request.ResourceType, request.Code) + "?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("codeSet", request.CodeSet)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMasterDataResourceDetail> UpdateResourceAsync(
+        string internalBearerToken,
+        BusinessConsoleUpdateMasterDataResourceRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMasterDataResourceDetail>(
+            internalBearerToken,
+            HttpMethod.Patch,
+            ResourcePath(request.ResourceType, request.Code),
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleMasterDataResourceDetail> SetResourceEnabledAsync(
+        string internalBearerToken,
+        BusinessConsoleSetMasterDataResourceEnabledRequest request,
+        bool enabled,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMasterDataResourceDetail>(
+            internalBearerToken,
+            HttpMethod.Post,
+            ResourcePath(request.ResourceType, request.Code) + (enabled ? "/enable" : "/disable"),
+            request,
+            cancellationToken);
 
     public Task<BusinessConsoleResourceItem> CreateSkuAsync(
         string internalBearerToken,
@@ -1188,6 +1396,12 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         BusinessConsoleCreateUomConversionRequest request,
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/uom-conversions", request, cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateWorkshopAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateWorkshopRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/workshops", request, cancellationToken);
 
     public Task<BusinessConsoleResourceItem> CreateSiteAsync(
         string internalBearerToken,
@@ -1231,6 +1445,43 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/teams", request, cancellationToken);
 
+    public Task<BusinessConsoleResourceItem> AddTeamMemberAsync(
+        string internalBearerToken,
+        BusinessConsoleAddTeamMemberRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, $"/api/business/v1/master-data/teams/{Uri.EscapeDataString(request.TeamCode)}/members", request, cancellationToken);
+
+    public Task<BusinessConsoleTeamMemberListResponse> ListTeamMembersAsync(
+        string internalBearerToken,
+        BusinessConsoleListTeamMembersRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleTeamMemberListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/master-data/teams/{Uri.EscapeDataString(request.TeamCode)}/members?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("teamCode", request.TeamCode),
+                ("includeDisabled", TrueFlag(request.IncludeDisabled))),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> RemoveTeamMemberAsync(
+        string internalBearerToken,
+        BusinessConsoleRemoveTeamMemberRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleResourceItem>(
+            internalBearerToken,
+            HttpMethod.Delete,
+            $"/api/business/v1/master-data/teams/{Uri.EscapeDataString(request.TeamCode)}/members/{Uri.EscapeDataString(request.UserId)}?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("teamCode", request.TeamCode),
+                ("userId", request.UserId),
+                ("reason", request.Reason)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleResourceItem> CreateDepartmentAsync(
         string internalBearerToken,
         BusinessConsoleCreateDepartmentRequest request,
@@ -1260,6 +1511,9 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             path,
             request,
             cancellationToken);
+
+    private static string ResourcePath(string resourceType, string code) =>
+        $"/api/business/v1/master-data/resources/{Uri.EscapeDataString(resourceType)}/{Uri.EscapeDataString(code)}";
 }
 
 public sealed class HttpBusinessInventoryClient(HttpClient httpClient)
@@ -2054,16 +2308,18 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         BusinessConsoleTelemetryTagListRequest request,
         CancellationToken cancellationToken)
     {
-        var tags = await SendAsync<IReadOnlyCollection<DownstreamTelemetryTagListItem>>(
+        var page = await SendAsync<DownstreamListResponse<DownstreamTelemetryTagListItem>>(
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/iiot/tags?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
-                ("deviceAssetId", request.DeviceAssetId)),
+                ("deviceAssetId", request.DeviceAssetId),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
-        return new BusinessConsoleTelemetryTagListResponse(tags.Select(tag =>
+        return new BusinessConsoleTelemetryTagListResponse(page.Items.Select(tag =>
             new BusinessConsoleTelemetryTagItem(
                 FormatJsonScalar(tag.TelemetryTagId),
                 tag.OrganizationId,
@@ -2072,7 +2328,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 tag.TagKey,
                 tag.ValueType,
                 tag.UnitCode,
-                tag.SamplingPolicy)).ToArray());
+                tag.SamplingPolicy)).ToArray(), page.Total);
     }
 
     public async Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
@@ -2080,17 +2336,19 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         BusinessConsoleTelemetryAlarmRuleListRequest request,
         CancellationToken cancellationToken)
     {
-        var rules = await SendAsync<IReadOnlyCollection<DownstreamAlarmRuleListItem>>(
+        var page = await SendAsync<DownstreamListResponse<DownstreamAlarmRuleListItem>>(
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/iiot/alarm-rules?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("deviceAssetId", request.DeviceAssetId),
-                ("isEnabled", request.IsEnabled)),
+                ("isEnabled", request.IsEnabled),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
-        return new BusinessConsoleTelemetryAlarmRuleListResponse(rules.Select(rule =>
+        return new BusinessConsoleTelemetryAlarmRuleListResponse(page.Items.Select(rule =>
             new BusinessConsoleTelemetryAlarmRuleItem(
                 FormatJsonScalar(rule.AlarmRuleId),
                 rule.OrganizationId,
@@ -2104,7 +2362,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 rule.ThresholdValue,
                 rule.UnitCode,
                 rule.IsEnabled,
-                rule.UpdatedAtUtc)).ToArray());
+                rule.UpdatedAtUtc)).ToArray(), page.Total);
     }
 
     public async Task<BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse> CreateOrUpdateAlarmRuleAsync(
@@ -2126,17 +2384,19 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         BusinessConsoleTelemetryAlarmListRequest request,
         CancellationToken cancellationToken)
     {
-        var alarms = await SendAsync<IReadOnlyCollection<DownstreamAlarmEventListItem>>(
+        var page = await SendAsync<DownstreamListResponse<DownstreamAlarmEventListItem>>(
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/iiot/alarms?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("deviceAssetId", request.DeviceAssetId),
-                ("status", request.Status)),
+                ("status", request.Status),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
-        return new BusinessConsoleTelemetryAlarmEventListResponse(alarms.Select(alarm =>
+        return new BusinessConsoleTelemetryAlarmEventListResponse(page.Items.Select(alarm =>
             new BusinessConsoleTelemetryAlarmEventItem(
                 FormatJsonScalar(alarm.AlarmEventId),
                 alarm.OrganizationId,
@@ -2147,7 +2407,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 alarm.Status,
                 alarm.RaisedAtUtc,
                 alarm.ClearedAtUtc,
-                alarm.ExternalAlarmId)).ToArray());
+                alarm.ExternalAlarmId)).ToArray(), page.Total);
     }
 
     public async Task<BusinessConsoleTelemetryHistoryResponse> QueryHistoryAsync(
@@ -2223,23 +2483,30 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             cancellationToken,
             EquipmentRuntimeJson.Options);
 
-    public async Task<BusinessConsoleEquipmentAlarmListResponse> ListActiveAlarmsAsync(
+    public async Task<BusinessConsoleEquipmentAlarmListPageResponse> ListActiveAlarmsAsync(
         string internalBearerToken,
-        BusinessConsoleEquipmentContextRequest request,
+        BusinessConsoleEquipmentAlarmListRequest request,
         CancellationToken cancellationToken)
     {
         var alarms = await ListAlarmsAsync(
             internalBearerToken,
-            new BusinessConsoleTelemetryAlarmListRequest(request.OrganizationId, request.EnvironmentId, null, "raised"),
+            new BusinessConsoleTelemetryAlarmListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DeviceAssetId,
+                request.Status ?? "raised",
+                request.Skip,
+                request.Take),
             cancellationToken);
-        return new BusinessConsoleEquipmentAlarmListResponse(
+        return new BusinessConsoleEquipmentAlarmListPageResponse(
             alarms.Items.Select(alarm => new EquipmentRuntimeAlarmSummary(
                 alarm.AlarmEventId,
                 alarm.DeviceAssetId,
                 alarm.AlarmCode,
                 alarm.Severity,
                 alarm.RaisedAtUtc,
-                alarm.ExternalAlarmId)).ToArray());
+                alarm.ExternalAlarmId)).ToArray(),
+            alarms.Total);
     }
 
     private static string AvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
@@ -2267,6 +2534,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         JsonValueKind.Number => value.GetRawText(),
         _ => value.ToString(),
     };
+
+    private sealed record DownstreamListResponse<T>(IReadOnlyCollection<T> Items, int Total);
 
     private sealed record DownstreamAlarmEventListItem(
         JsonElement AlarmEventId,
@@ -2347,16 +2616,16 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
 
     public async Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceContextRequest request,
+        BusinessConsoleMaintenanceListRequest request,
         CancellationToken cancellationToken)
     {
-        var workOrders = await SendAsync<IReadOnlyCollection<DownstreamMaintenanceWorkOrderListItem>>(
+        var workOrders = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem>>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/maintenance/work-orders?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            "/api/business/v1/maintenance/work-orders?" + ListQuery(request.OrganizationId, request.EnvironmentId, request.Skip, request.Take),
             null,
             cancellationToken);
-        return new BusinessConsoleMaintenanceWorkOrderListResponse(workOrders.Select(workOrder =>
+        return new BusinessConsoleMaintenanceWorkOrderListResponse(workOrders.Items.Select(workOrder =>
             new BusinessConsoleMaintenanceWorkOrderItem(
                 FormatJsonScalar(workOrder.WorkOrderId),
                 workOrder.DeviceAssetId,
@@ -2364,7 +2633,10 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 workOrder.Status,
                 workOrder.SourceAlarmId,
                 null,
-                workOrder.OpenedAtUtc)).ToArray());
+                workOrder.OpenedAtUtc)).ToArray(),
+            workOrders.Skip,
+            workOrders.Take,
+            workOrders.Total);
     }
 
     public async Task<BusinessConsoleMaintenanceWorkOrderItem> GetWorkOrderAsync(
@@ -2373,7 +2645,7 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         BusinessConsoleMaintenanceContextRequest request,
         CancellationToken cancellationToken)
     {
-        var workOrders = await ListWorkOrdersAsync(internalBearerToken, request, cancellationToken);
+        var workOrders = await ListWorkOrdersAsync(internalBearerToken, new BusinessConsoleMaintenanceListRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
         return workOrders.Items.SingleOrDefault(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal))
             ?? throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.NotFound,
@@ -2382,22 +2654,25 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
 
     public async Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceContextRequest request,
+        BusinessConsoleMaintenanceListRequest request,
         CancellationToken cancellationToken)
     {
-        var plans = await SendAsync<IReadOnlyCollection<DownstreamMaintenancePlanListItem>>(
+        var plans = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenancePlanListItem>>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/maintenance/plans?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            "/api/business/v1/maintenance/plans?" + ListQuery(request.OrganizationId, request.EnvironmentId, request.Skip, request.Take),
             null,
             cancellationToken);
-        return new BusinessConsoleMaintenancePlanListResponse(plans.Select(plan =>
+        return new BusinessConsoleMaintenancePlanListResponse(plans.Items.Select(plan =>
             new BusinessConsoleMaintenancePlanItem(
                 FormatJsonScalar(plan.PlanId),
                 plan.DeviceAssetId,
                 plan.PlanCode,
                 plan.Interval,
-                plan.StartsOn)).ToArray());
+                plan.StartsOn)).ToArray(),
+            plans.Skip,
+            plans.Take,
+            plans.Total);
     }
 
     public async Task<BusinessConsoleCreateMaintenancePlanResponse> CreatePlanAsync(
@@ -2426,6 +2701,68 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             request,
             cancellationToken);
         return new BusinessConsoleRecordMaintenanceInspectionResponse(FormatJsonScalar(response.InspectionId));
+    }
+
+    public async Task<BusinessConsoleMaintenanceInspectionListResponse> ListInspectionsAsync(
+        string internalBearerToken,
+        BusinessConsoleMaintenanceListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var inspections = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceInspectionListItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/maintenance/inspections?" + ListQuery(request.OrganizationId, request.EnvironmentId, request.Skip, request.Take),
+            null,
+            cancellationToken);
+        return new BusinessConsoleMaintenanceInspectionListResponse(inspections.Items.Select(inspection =>
+            new BusinessConsoleMaintenanceInspectionItem(
+                FormatJsonScalar(inspection.InspectionId),
+                FormatOptionalJsonScalar(inspection.PlanId),
+                FormatOptionalJsonScalar(inspection.WorkOrderId),
+                inspection.Inspector,
+                inspection.Result,
+                inspection.InspectedAtUtc)).ToArray(),
+            inspections.Skip,
+            inspections.Take,
+            inspections.Total);
+    }
+
+    public async Task<BusinessConsoleMaintenanceSparePartListResponse> ListSparePartsAsync(
+        string internalBearerToken,
+        BusinessConsoleMaintenanceListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var spareParts = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceSparePartListItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/maintenance/spare-parts?" + ListQuery(request.OrganizationId, request.EnvironmentId, request.Skip, request.Take),
+            null,
+            cancellationToken);
+        return new BusinessConsoleMaintenanceSparePartListResponse(spareParts.Items.Select(sparePart =>
+            new BusinessConsoleMaintenanceSparePartItem(
+                FormatJsonScalar(sparePart.SparePartLineId),
+                FormatJsonScalar(sparePart.WorkOrderId),
+                sparePart.DeviceAssetId,
+                sparePart.SkuCode,
+                sparePart.Quantity,
+                sparePart.UomCode)).ToArray(),
+            spareParts.Skip,
+            spareParts.Take,
+            spareParts.Total);
+    }
+
+    public async Task<BusinessConsoleCreateMaintenanceSparePartResponse> CreateSparePartAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceSparePartRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateMaintenanceSparePartResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/maintenance/spare-parts",
+            request,
+            cancellationToken);
+        return new BusinessConsoleCreateMaintenanceSparePartResponse(FormatJsonScalar(response.SparePartLineId));
     }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetAvailabilityWindowsAsync(
@@ -2472,12 +2809,22 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
     private static string ContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));
 
+    private static string ListQuery(string organizationId, string environmentId, int skip, int take) =>
+        Query(("organizationId", organizationId), ("environmentId", environmentId), ("skip", skip), ("take", take));
+
     private static string FormatJsonScalar(JsonElement value) => value.ValueKind switch
     {
         JsonValueKind.String => value.GetString() ?? string.Empty,
         JsonValueKind.Number => value.GetRawText(),
         _ => value.ToString(),
     };
+
+    private static string? FormatOptionalJsonScalar(JsonElement? value) =>
+        value is null || value.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
+            ? null
+            : FormatJsonScalar(value.Value);
+
+    private sealed record DownstreamMaintenancePagedResponse<T>(IReadOnlyCollection<T> Items, int Skip, int Take, int Total);
 
     private sealed record DownstreamMaintenanceWorkOrderListItem(
         JsonElement WorkOrderId,
@@ -2494,6 +2841,22 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string Interval,
         DateOnly StartsOn);
 
+    private sealed record DownstreamMaintenanceInspectionListItem(
+        JsonElement InspectionId,
+        JsonElement? PlanId,
+        JsonElement? WorkOrderId,
+        string Inspector,
+        string Result,
+        DateTimeOffset InspectedAtUtc);
+
+    private sealed record DownstreamMaintenanceSparePartListItem(
+        JsonElement SparePartLineId,
+        JsonElement WorkOrderId,
+        string DeviceAssetId,
+        string SkuCode,
+        decimal Quantity,
+        string? UomCode);
+
     private sealed record DownstreamCreateMaintenanceWorkOrderResponse(JsonElement WorkOrderId);
 
     private sealed record DownstreamCompleteMaintenanceWorkOrderRequest(
@@ -2506,6 +2869,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
     private sealed record DownstreamCreateMaintenancePlanResponse(JsonElement PlanId);
 
     private sealed record DownstreamRecordMaintenanceInspectionResponse(JsonElement InspectionId);
+
+    private sealed record DownstreamCreateMaintenanceSparePartResponse(JsonElement SparePartLineId);
 }
 
 public sealed class HttpBusinessErpClient(HttpClient httpClient)
@@ -2906,6 +3271,23 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
 public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessBarcodeLabelClient
 {
+    public Task<BusinessConsoleBarcodeRuleListResponse> ListRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodeRuleListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBarcodeRuleListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/barcodes/rules?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", request.Status),
+                ("keyword", request.Keyword),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleCreateOrUpdateBarcodeRuleResponse> CreateOrUpdateRuleAsync(
         string internalBearerToken,
         BusinessConsoleCreateOrUpdateBarcodeRuleRequest request,
@@ -2927,7 +3309,9 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
             "/api/business/v1/barcodes/templates?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
-                ("status", request.Status)),
+                ("status", request.Status),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
 
@@ -2964,6 +3348,24 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleBarcodePrintBatchListResponse> ListPrintBatchesAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodePrintBatchListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBarcodePrintBatchListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/barcodes/print-batches?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("sourceDocumentType", request.SourceDocumentType),
+                ("sourceDocumentId", request.SourceDocumentId),
+                ("status", request.Status),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleRecordBarcodeScanResponse> RecordScanAsync(
         string internalBearerToken,
         BusinessConsoleRecordBarcodeScanRequest request,
@@ -2988,7 +3390,9 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
                 ("deviceCode", request.DeviceCode),
                 ("scannedValue", request.ScannedValue),
                 ("sourceWorkflow", request.SourceWorkflow),
-                ("sourceDocumentId", request.SourceDocumentId)),
+                ("sourceDocumentId", request.SourceDocumentId),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
 }

@@ -7,7 +7,21 @@ public sealed record BusinessConsoleResourceItem(
     string Code,
     string DisplayName,
     bool Active,
-    string SnapshotVersion);
+    string SnapshotVersion,
+    string? PartnerType = null,
+    IReadOnlyCollection<string>? PartnerRoles = null,
+    string? SiteCode = null,
+    string? PlantCode = null,
+    string? LineCode = null,
+    string? WorkshopCode = null,
+    int? CapacityMinutesPerDay = null,
+    string? WorkCenterCode = null,
+    string? Status = null,
+    string? Category = null,
+    string? MaterialType = null,
+    string? CodeSet = null,
+    string? BaseUomCode = null,
+    string? TaxId = null);
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
@@ -19,9 +33,17 @@ public sealed record BusinessConsoleListResourcesRequest(
     string ResourceType,
     bool IncludeDisabled = false,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? CodeSet = null);
 
 public sealed record BusinessConsoleListSkusRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    bool IncludeDisabled = false,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleListWorkshopsRequest(
     string OrganizationId,
     string EnvironmentId,
     bool IncludeDisabled = false,
@@ -50,7 +72,9 @@ public sealed record BusinessConsoleCreateBusinessPartnerRequest(
     string EnvironmentId,
     string Code,
     string PartnerType,
-    string Name);
+    string Name,
+    IReadOnlyCollection<string>? PartnerRoles = null,
+    string? TaxId = null);
 
 public sealed record BusinessConsoleCreateUnitOfMeasureRequest(
     string OrganizationId,
@@ -84,7 +108,8 @@ public sealed record BusinessConsoleCreateProductionLineRequest(
     string EnvironmentId,
     string Code,
     string Name,
-    string SiteCode);
+    string SiteCode,
+    string? WorkshopCode = null);
 
 public sealed record BusinessConsoleCreateWorkCenterRequest(
     string OrganizationId,
@@ -97,7 +122,52 @@ public sealed record BusinessConsoleCreateWorkCenterRequest(
     string LineCode,
     string DefaultCalendarCode,
     string CapacityUnit,
-    bool FiniteCapacity);
+    bool FiniteCapacity,
+    string? WorkshopCode = null);
+
+public sealed record BusinessConsoleCreateWorkshopRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Code,
+    string Name,
+    string SiteCode,
+    string? ManagerUserId,
+    string? Description);
+
+public sealed record BusinessConsoleAddTeamMemberRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string TeamCode,
+    string UserId,
+    bool IsLeader,
+    DateOnly EffectiveFrom,
+    DateOnly? EffectiveTo);
+
+public sealed record BusinessConsoleListTeamMembersRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string TeamCode,
+    bool IncludeDisabled = false);
+
+public sealed record BusinessConsoleRemoveTeamMemberRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string TeamCode,
+    string UserId,
+    string Reason = "");
+
+public sealed record BusinessConsoleTeamMemberItem(
+    string TeamCode,
+    string UserId,
+    bool IsLeader,
+    DateOnly EffectiveFrom,
+    DateOnly? EffectiveTo,
+    bool Active,
+    string SnapshotVersion);
+
+public sealed record BusinessConsoleTeamMemberListResponse(
+    IReadOnlyCollection<BusinessConsoleTeamMemberItem> Members,
+    int Total);
 
 public sealed record BusinessConsoleRegisterDeviceAssetRequest(
     string OrganizationId,
@@ -162,6 +232,118 @@ public sealed record BusinessConsoleCreateReferenceDataCodeRequest(
     string CodeSet,
     string Code,
     string Name);
+
+public sealed record BusinessConsoleMasterDataResourceRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ResourceType,
+    string Code,
+    string? CodeSet = null);
+
+public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ResourceType,
+    string Code,
+    string? CodeSet = null,
+    string? Name = null,
+    string? BaseUomCode = null,
+    string? Category = null,
+    string? MaterialType = null,
+    string? BatchTrackingPolicy = null,
+    string? SerialTrackingPolicy = null,
+    string? ShelfLifePolicyCode = null,
+    string? StorageConditionCode = null,
+    string? DefaultBarcodeRuleCode = null,
+    bool? QualityRequired = null,
+    string? PartnerType = null,
+    string? Timezone = null,
+    string? SiteCode = null,
+    string? ManagerUserId = null,
+    string? Description = null,
+    string? PlantCode = null,
+    string? LineCode = null,
+    string? WorkshopCode = null,
+    int? CapacityMinutesPerDay = null,
+    string? ResourceKind = null,
+    string? DefaultCalendarCode = null,
+    string? CapacityUnit = null,
+    bool? FiniteCapacity = null,
+    string? WorkCenterCode = null,
+    string? AssetClassCode = null,
+    string? Model = null,
+    string? Manufacturer = null,
+    string? SerialNo = null,
+    decimal? MinimumCapacity = null,
+    decimal? MaximumCapacity = null,
+    string? CapacityUomCode = null,
+    string? Criticality = null,
+    bool? Maintainable = null,
+    bool? TelemetryEnabled = null,
+    string? DimensionType = null,
+    int? Precision = null,
+    string? RoundingMode = null,
+    IReadOnlyCollection<string>? PartnerRoles = null,
+    string? TaxId = null);
+
+public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ResourceType,
+    string Code,
+    string? CodeSet = null,
+    string Reason = "");
+
+public sealed record BusinessConsoleMasterDataResourceDetail(
+    string ResourceType,
+    string Code,
+    string DisplayName,
+    bool Active,
+    string SnapshotVersion,
+    string OrganizationId,
+    string EnvironmentId,
+    string? Name = null,
+    string? BaseUomCode = null,
+    string? InventoryUomCode = null,
+    string? PurchaseUomCode = null,
+    string? SalesUomCode = null,
+    string? ManufacturingUomCode = null,
+    string? Category = null,
+    string? MaterialType = null,
+    string? BatchTrackingPolicy = null,
+    string? SerialTrackingPolicy = null,
+    string? ShelfLifePolicyCode = null,
+    string? StorageConditionCode = null,
+    string? DefaultBarcodeRuleCode = null,
+    bool? QualityRequired = null,
+    string? PartnerType = null,
+    IReadOnlyCollection<string>? PartnerRoles = null,
+    string? Timezone = null,
+    string? SiteCode = null,
+    string? PlantCode = null,
+    string? LineCode = null,
+    int? CapacityMinutesPerDay = null,
+    string? ResourceKind = null,
+    string? DefaultCalendarCode = null,
+    string? CapacityUnit = null,
+    bool? FiniteCapacity = null,
+    string? WorkCenterCode = null,
+    string? AssetClassCode = null,
+    string? Model = null,
+    string? Manufacturer = null,
+    string? SerialNo = null,
+    decimal? MinimumCapacity = null,
+    decimal? MaximumCapacity = null,
+    string? CapacityUomCode = null,
+    string? Criticality = null,
+    bool? Maintainable = null,
+    bool? TelemetryEnabled = null,
+    string? CodeSet = null,
+    string? DimensionType = null,
+    int? Precision = null,
+    string? RoundingMode = null,
+    string? TaxId = null,
+    string? Status = null);
 
 public sealed record BusinessConsoleWorkbenchSummaryRequest(
     string OrganizationId,
@@ -234,10 +416,13 @@ public sealed record BusinessConsoleApprovalTaskListRequest(
     string OrganizationId,
     string EnvironmentId,
     string ActorType,
-    string ActorRef);
+    string ActorRef,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleApprovalTaskListResponse(
-    IReadOnlyCollection<BusinessConsoleApprovalTaskItem> Items);
+    IReadOnlyCollection<BusinessConsoleApprovalTaskItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleApprovalTaskItem(
     string ChainId,
@@ -1213,10 +1398,13 @@ public sealed record BusinessConsoleApprovalTemplateListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? DocumentType = null,
-    bool? IsActive = null);
+    bool? IsActive = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleApprovalTemplateListResponse(
-    IReadOnlyCollection<BusinessConsoleApprovalTemplateItem> Items);
+    IReadOnlyCollection<BusinessConsoleApprovalTemplateItem> Items,
+    int Total);
 
 public sealed record BusinessConsoleApprovalTemplateItem(
     string TemplateId,
@@ -1259,6 +1447,36 @@ public sealed record BusinessConsoleStartApprovalChainRequest(
 
 public sealed record BusinessConsoleStartApprovalChainResponse(string ChainId);
 
+public sealed record BusinessConsoleApprovalChainListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? StartedBy = null,
+    string? SourceService = null,
+    string? DocumentType = null,
+    string? DocumentId = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleApprovalChainListResponse(
+    IReadOnlyCollection<BusinessConsoleApprovalChainItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleApprovalChainItem(
+    string ChainId,
+    string OrganizationId,
+    string EnvironmentId,
+    string TemplateCode,
+    int TemplateVersion,
+    string Status,
+    string SourceService,
+    string DocumentType,
+    string DocumentId,
+    string? DocumentLineId,
+    string StartedBy,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? CompletedAtUtc);
+
 public sealed record BusinessConsoleApprovalChainRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1297,6 +1515,36 @@ public sealed record BusinessConsoleApprovalDecisionItem(
     string? Comment,
     DateTimeOffset DecidedAtUtc);
 
+public sealed record BusinessConsoleApprovalDecisionListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? ChainId = null,
+    string? ActorType = null,
+    string? ActorRef = null,
+    string? Decision = null,
+    string? DocumentType = null,
+    string? DocumentId = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleApprovalDecisionListResponse(
+    IReadOnlyCollection<BusinessConsoleApprovalDecisionListItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleApprovalDecisionListItem(
+    string DecisionId,
+    string ChainId,
+    int StepNo,
+    string ActorType,
+    string ActorRef,
+    string Decision,
+    string? Comment,
+    DateTimeOffset DecidedAtUtc,
+    string SourceService,
+    string DocumentType,
+    string DocumentId,
+    string? DocumentLineId);
+
 public sealed record BusinessConsoleResolveApprovalStepRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1308,6 +1556,59 @@ public sealed record BusinessConsoleResolveApprovalStepRequest(
     string? Comment);
 
 public sealed record BusinessConsoleResolveApprovalStepResponse(string DecisionId);
+
+public sealed record BusinessConsoleApprovalDelegationListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? DelegatorActorRef = null,
+    string? DelegateActorRef = null,
+    string? DocumentType = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleApprovalDelegationListResponse(
+    IReadOnlyCollection<BusinessConsoleApprovalDelegationItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleApprovalDelegationItem(
+    string DelegationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DelegatorActorType,
+    string DelegatorActorRef,
+    string DelegateActorType,
+    string DelegateActorRef,
+    string? DocumentType,
+    DateTimeOffset EffectiveFromUtc,
+    DateTimeOffset EffectiveToUtc,
+    string Status,
+    string? Reason,
+    string CreatedBy,
+    DateTimeOffset CreatedAtUtc,
+    string? RevokedBy,
+    DateTimeOffset? RevokedAtUtc);
+
+public sealed record BusinessConsoleCreateApprovalDelegationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DelegatorActorType,
+    string DelegatorActorRef,
+    string DelegateActorType,
+    string DelegateActorRef,
+    string? DocumentType,
+    DateTimeOffset EffectiveFromUtc,
+    DateTimeOffset EffectiveToUtc,
+    string? Reason,
+    string CreatedBy);
+
+public sealed record BusinessConsoleCreateApprovalDelegationResponse(string DelegationId);
+
+public sealed record BusinessConsoleRevokeApprovalDelegationRequest(
+    [property: RouteParam] string DelegationId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string RevokedBy);
 
 public sealed record BusinessConsoleCreateOrUpdateBarcodeRuleRequest(
     string OrganizationId,
@@ -1322,13 +1623,38 @@ public sealed record BusinessConsoleCreateOrUpdateBarcodeRuleRequest(
 
 public sealed record BusinessConsoleCreateOrUpdateBarcodeRuleResponse(string BarcodeRuleId);
 
+public sealed record BusinessConsoleBarcodeRuleListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleBarcodeRuleListResponse(
+    IReadOnlyCollection<BusinessConsoleBarcodeRuleItem> Rules,
+    int Total);
+
+public sealed record BusinessConsoleBarcodeRuleItem(
+    string BarcodeRuleId,
+    string RuleCode,
+    string BarcodeType,
+    string Prefix,
+    int Length,
+    string ChecksumRule,
+    IReadOnlyCollection<string> AllowedSourceDocumentTypes,
+    string Status);
+
 public sealed record BusinessConsoleBarcodeTemplateListRequest(
     string OrganizationId,
     string EnvironmentId,
-    string? Status = null);
+    string? Status = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleBarcodeTemplateListResponse(
-    IReadOnlyCollection<BusinessConsoleBarcodeTemplateItem> Templates);
+    IReadOnlyCollection<BusinessConsoleBarcodeTemplateItem> Templates,
+    int Total);
 
 public sealed record BusinessConsoleBarcodeTemplateItem(
     string TemplateId,
@@ -1367,6 +1693,29 @@ public sealed record BusinessConsoleBarcodePrintBatchRequest(
     string EnvironmentId,
     string PrintBatchId);
 
+public sealed record BusinessConsoleBarcodePrintBatchListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SourceDocumentType = null,
+    string? SourceDocumentId = null,
+    string? Status = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleBarcodePrintBatchListResponse(
+    IReadOnlyCollection<BusinessConsoleBarcodePrintBatchItem> PrintBatches,
+    int Total);
+
+public sealed record BusinessConsoleBarcodePrintBatchItem(
+    string PrintBatchId,
+    string LabelTemplateId,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string IdempotencyKey,
+    int RequestedQuantity,
+    string Status,
+    DateTimeOffset CreatedAtUtc);
+
 public sealed record BusinessConsoleBarcodePrintBatchResponse(
     BusinessConsoleBarcodePrintBatchDetail PrintBatch);
 
@@ -1404,10 +1753,13 @@ public sealed record BusinessConsoleBarcodeScanListRequest(
     string? DeviceCode = null,
     string? ScannedValue = null,
     string? SourceWorkflow = null,
-    string? SourceDocumentId = null);
+    string? SourceDocumentId = null,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record BusinessConsoleBarcodeScanListResponse(
-    IReadOnlyCollection<BusinessConsoleBarcodeScanRecordItem> Scans);
+    IReadOnlyCollection<BusinessConsoleBarcodeScanRecordItem> Scans,
+    int Total);
 
 public sealed record BusinessConsoleBarcodeScanRecordItem(
     string ScanRecordId,

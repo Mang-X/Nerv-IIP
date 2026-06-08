@@ -8,10 +8,12 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using System.Reflection;
 
 namespace Nerv.IIP.Business.MasterData.Domain.Tests;
@@ -143,11 +145,15 @@ public sealed class MasterDataAggregateTests
     public void Resource_hierarchy_shift_and_reference_data_are_business_master_facts()
     {
         var site = Site.Create("org-001", "env-dev", "SITE-SH", "Shanghai Site", "Asia/Shanghai");
-        var line = ProductionLine.Create("org-001", "env-dev", "LINE-MIX-01", "Mixing Line 01", site.Code);
+        var workshop = Workshop.Create("org-001", "env-dev", "WS-MIX", "Mixing Workshop", site.Code, "user-manager", "Process area");
+        var line = ProductionLine.Create("org-001", "env-dev", "LINE-MIX-01", "Mixing Line 01", site.Code, workshop.Code);
         var shift = Shift.Create("org-001", "env-dev", "SHIFT-NIGHT", "Night Shift", TimeOnly.FromTimeSpan(TimeSpan.FromHours(22)), TimeOnly.FromTimeSpan(TimeSpan.FromHours(6)), 420);
         var code = ReferenceDataCode.Create("org-001", "env-dev", "material-form", "powder", "Powder");
 
+        Assert.Equal("SITE-SH", workshop.SiteCode);
+        Assert.Equal("user-manager", workshop.ManagerUserId);
         Assert.Equal("SITE-SH", line.SiteCode);
+        Assert.Equal("WS-MIX", line.WorkshopCode);
         Assert.True(shift.CrossesMidnight);
         Assert.Equal("material-form", code.CodeSet);
         Assert.Equal("powder", code.Code);
@@ -165,6 +171,7 @@ public sealed class MasterDataAggregateTests
             "process-unit",
             "PLANT-01",
             "LINE-MIX-01",
+            "WS-MIX",
             "CAL-24X5",
             "L",
             true);
@@ -188,8 +195,33 @@ public sealed class MasterDataAggregateTests
 
         Assert.Equal("process-unit", workCenter.ResourceType);
         Assert.Equal("PLANT-01", workCenter.PlantCode);
+        Assert.Equal("WS-MIX", workCenter.WorkshopCode);
         Assert.Equal("L", asset.CapacityUomCode);
         Assert.Equal(500m, asset.MinimumCapacity);
         Assert.Equal("MIXER-01", asset.ExternalReferences["scada"]);
+    }
+
+    [Fact]
+    public void Team_member_tracks_user_membership_leadership_and_remove_lifecycle()
+    {
+        var member = TeamMember.Assign(
+            "org-001",
+            "env-dev",
+            "TEAM-A",
+            "user-worker-001",
+            true,
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 12, 31));
+
+        Assert.Equal("TEAM-A", member.TeamCode);
+        Assert.Equal("user-worker-001", member.UserId);
+        Assert.True(member.IsLeader);
+        Assert.True(member.IsEffectiveOn(new DateOnly(2026, 7, 1)));
+
+        member.Remove("transferred");
+
+        Assert.True(member.Disabled);
+        Assert.False(member.IsEffectiveOn(new DateOnly(2026, 7, 1)));
+        Assert.Throws<InvalidOperationException>(() => member.Remove("again"));
     }
 }

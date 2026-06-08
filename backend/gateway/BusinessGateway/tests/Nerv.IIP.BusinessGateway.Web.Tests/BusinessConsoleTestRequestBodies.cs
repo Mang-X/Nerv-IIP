@@ -7,6 +7,7 @@ internal static class BusinessConsoleTestRequestBodies
         "/api/business-console/v1/master-data/business-partners" or
         "/api/business-console/v1/master-data/units-of-measure" or
         "/api/business-console/v1/master-data/uom-conversions" or
+        "/api/business-console/v1/master-data/workshops" or
         "/api/business-console/v1/master-data/sites" or
         "/api/business-console/v1/master-data/production-lines" or
         "/api/business-console/v1/master-data/work-centers" or
@@ -77,6 +78,16 @@ internal static class BusinessConsoleTestRequestBodies
             ["precision"] = 6,
             ["roundingMode"] = "half-up",
             ["effectiveFrom"] = "2026-01-01",
+        },
+        "/api/business-console/v1/master-data/workshops" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["code"] = "WS-01",
+            ["name"] = "Workshop 1",
+            ["siteCode"] = "SITE-01",
+            ["managerUserId"] = "user-manager",
+            ["description"] = "Process area",
         },
         "/api/business-console/v1/master-data/sites" => new()
         {

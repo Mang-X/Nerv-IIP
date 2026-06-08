@@ -135,11 +135,40 @@ public sealed class IndustrialTelemetryEndpointContractTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var document = JsonDocument.Parse(body);
-        var rule = Assert.Single(document.RootElement.GetProperty("data").EnumerateArray());
+        var data = document.RootElement.GetProperty("data");
+        var rule = Assert.Single(data.GetProperty("items").EnumerateArray());
+        Assert.Equal(1, data.GetProperty("total").GetInt32());
         Assert.Equal("OIL_TEMP_RULE", rule.GetProperty("ruleCode").GetString());
         Assert.Equal("temperature", rule.GetProperty("tagKey").GetString());
         Assert.Equal(100m, rule.GetProperty("thresholdValue").GetDecimal());
         Assert.True(rule.GetProperty("isEnabled").GetBoolean());
+    }
+
+    [Fact]
+    public async Task List_endpoints_apply_device_status_and_pagination_with_total()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostTagAsync(client, "DEV-PAGE-01", "temperature");
+        await PostTagAsync(client, "DEV-PAGE-01", "pressure");
+        await PostTagAsync(client, "DEV-PAGE-02", "temperature");
+        await UpsertAlarmRuleAsync(client, "DEV-PAGE-01", "PAGE_RULE_01", "temperature", ">=", 90m, true);
+        await UpsertAlarmRuleAsync(client, "DEV-PAGE-01", "PAGE_RULE_02", "pressure", ">=", 10m, false);
+        await UpsertAlarmRuleAsync(client, "DEV-PAGE-02", "PAGE_RULE_03", "temperature", ">=", 90m, true);
+        await PostAlarmAsync(client, "DEV-PAGE-01", "PAGE_ALARM_01", "warning", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "page-alarm-001");
+        await PostAlarmAsync(client, "DEV-PAGE-01", "PAGE_ALARM_02", "critical", new DateTimeOffset(2026, 6, 1, 8, 5, 0, TimeSpan.Zero), "page-alarm-002");
+        await ClearAlarmAsync(client, "DEV-PAGE-01", "PAGE_ALARM_02", "critical", new DateTimeOffset(2026, 6, 1, 8, 5, 0, TimeSpan.Zero), "page-alarm-002", new DateTimeOffset(2026, 6, 1, 8, 30, 0, TimeSpan.Zero));
+        await PostAlarmAsync(client, "DEV-PAGE-02", "PAGE_ALARM_03", "warning", new DateTimeOffset(2026, 6, 1, 8, 10, 0, TimeSpan.Zero), "page-alarm-003");
+
+        using var tagsResponse = await client.GetAsync("/api/business/v1/iiot/tags?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PAGE-01&skip=1&take=1");
+        using var rulesResponse = await client.GetAsync("/api/business/v1/iiot/alarm-rules?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PAGE-01&isEnabled=true&skip=0&take=1");
+        using var alarmsResponse = await client.GetAsync("/api/business/v1/iiot/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PAGE-01&status=raised&skip=0&take=1");
+
+        AssertPagedResponse(await tagsResponse.Content.ReadAsStringAsync(), expectedTotal: 2, expectedItems: 1);
+        AssertPagedResponse(await rulesResponse.Content.ReadAsStringAsync(), expectedTotal: 1, expectedItems: 1);
+        AssertPagedResponse(await alarmsResponse.Content.ReadAsStringAsync(), expectedTotal: 1, expectedItems: 1);
     }
 
     [Fact]
@@ -339,6 +368,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(
             3,
             document.RootElement.GetProperty("data")
+                .GetProperty("items")
                 .EnumerateArray()
                 .Count(x => x.GetProperty("externalAlarmId").GetString() == "shared-alarm-ext-001"));
     }
@@ -485,6 +515,30 @@ public sealed class IndustrialTelemetryEndpointContractTests
         });
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.IsSuccessStatusCode, $"Expected alarm post to succeed, got {(int)response.StatusCode}: {body}");
+    }
+
+    private static async Task PostTagAsync(HttpClient client, string deviceAssetId, string tagKey)
+    {
+        using var response = await client.PostAsJsonAsync("/api/business/v1/iiot/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId,
+            tagKey,
+            valueType = "number",
+            unitCode = "unit",
+            samplingPolicy = "sample-10s",
+        });
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected tag post to succeed, got {(int)response.StatusCode}: {body}");
+    }
+
+    private static void AssertPagedResponse(string body, int expectedTotal, int expectedItems)
+    {
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(expectedTotal, data.GetProperty("total").GetInt32());
+        Assert.Equal(expectedItems, data.GetProperty("items").GetArrayLength());
     }
 
     private static async Task UpsertAlarmRuleAsync(

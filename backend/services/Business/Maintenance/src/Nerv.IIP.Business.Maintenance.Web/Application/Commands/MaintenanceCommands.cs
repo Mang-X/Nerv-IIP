@@ -101,6 +101,50 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(ApplicationDbCont
     }
 }
 
+public sealed record CreateMaintenanceSparePartCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    MaintenanceWorkOrderId WorkOrderId,
+    string SkuCode,
+    decimal Quantity,
+    string? UomCode) : ICommand<SparePartLineId>;
+
+public sealed class CreateMaintenanceSparePartCommandValidator : AbstractValidator<CreateMaintenanceSparePartCommand>
+{
+    public CreateMaintenanceSparePartCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty();
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Quantity).GreaterThan(0);
+        RuleFor(x => x.UomCode).MaximumLength(50);
+    }
+}
+
+public sealed class CreateMaintenanceSparePartCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CreateMaintenanceSparePartCommand, SparePartLineId>
+{
+    public async Task<SparePartLineId> Handle(CreateMaintenanceSparePartCommand request, CancellationToken cancellationToken)
+    {
+        var workOrder = await dbContext.MaintenanceWorkOrders
+            .Include(x => x.SparePartLines)
+            .SingleOrDefaultAsync(
+                x => x.Id == request.WorkOrderId
+                    && x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId,
+                cancellationToken)
+            ?? throw new KnownException($"Maintenance work order was not found: {request.WorkOrderId}");
+        if (workOrder.Status != MaintenanceWorkOrderStatus.Open)
+        {
+            throw new KnownException("Completed maintenance work orders are immutable.");
+        }
+
+        var sparePart = workOrder.AddSparePartLine(new SparePartLineDraft(request.SkuCode, request.Quantity, request.UomCode));
+        return sparePart.Id;
+    }
+}
+
 public sealed record CreateMaintenancePlanCommand(
     string OrganizationId,
     string EnvironmentId,

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Approval.Domain;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Infrastructure;
 using Nerv.IIP.Testing.EntityFramework;
@@ -40,6 +41,7 @@ public sealed class ApprovalSchemaConventionTests
             typeof(ApprovalChain),
             typeof(ApprovalStep),
             typeof(ApprovalDecision),
+            typeof(ApprovalDelegation),
         };
 
         var failures = new List<string>();

@@ -1,11 +1,14 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Web.Application.Auth;
 using Nerv.IIP.Business.Approval.Web.Application.Commands.Chains;
+using Nerv.IIP.Business.Approval.Web.Application.Commands.Delegations;
 using Nerv.IIP.Business.Approval.Web.Application.Commands.Templates;
 using Nerv.IIP.Business.Approval.Web.Application.Queries.Chains;
+using Nerv.IIP.Business.Approval.Web.Application.Queries.Delegations;
 using Nerv.IIP.Business.Approval.Web.Application.Queries.Templates;
 using Nerv.IIP.ServiceAuth;
 
@@ -56,7 +59,20 @@ public sealed record ListApprovalTemplatesRequest(
     string? OrganizationId,
     string? EnvironmentId,
     string? DocumentType,
-    bool? IsActive);
+    bool? IsActive,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record ListApprovalChainsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    string? StartedBy,
+    string? SourceService,
+    string? DocumentType,
+    string? DocumentId,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record StartApprovalChainRequest(
     string OrganizationId,
@@ -76,7 +92,21 @@ public sealed record ListPendingApprovalTasksRequest(
     string OrganizationId,
     string EnvironmentId,
     string ActorType,
-    string ActorRef);
+    string ActorRef,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record ListApprovalDecisionsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? ChainId,
+    string? ActorType,
+    string? ActorRef,
+    string? Decision,
+    string? DocumentType,
+    string? DocumentId,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed record ResolveApprovalStepRequest(
     ApprovalChainId ChainId,
@@ -87,6 +117,39 @@ public sealed record ResolveApprovalStepRequest(
     string? Comment);
 
 public sealed record ResolveApprovalStepResponse(ApprovalDecisionId DecisionId);
+
+public sealed record ListApprovalDelegationsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    string? DelegatorActorRef,
+    string? DelegateActorRef,
+    string? DocumentType,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record CreateApprovalDelegationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DelegatorActorType,
+    string DelegatorActorRef,
+    string DelegateActorType,
+    string DelegateActorRef,
+    string? DocumentType,
+    DateTimeOffset EffectiveFromUtc,
+    DateTimeOffset EffectiveToUtc,
+    string? Reason,
+    string CreatedBy);
+
+public sealed record CreateApprovalDelegationResponse(ApprovalDelegationId DelegationId);
+
+public sealed record RevokeApprovalDelegationRequest(
+    ApprovalDelegationId DelegationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string RevokedBy);
+
+public sealed record RevokeApprovalDelegationResponse(bool Accepted);
 
 public sealed class CreateOrUpdateApprovalTemplateEndpoint(ISender sender)
     : ApprovalEndpoint<CreateOrUpdateApprovalTemplateRequest, ResponseData<CreateOrUpdateApprovalTemplateResponse>>
@@ -117,7 +180,7 @@ public sealed class CreateOrUpdateApprovalTemplateEndpoint(ISender sender)
 }
 
 public sealed class ListApprovalTemplatesEndpoint(ISender sender)
-    : ApprovalEndpoint<ListApprovalTemplatesRequest, ResponseData<IReadOnlyCollection<ApprovalTemplateResponse>>>
+    : ApprovalEndpoint<ListApprovalTemplatesRequest, ResponseData<ApprovalTemplateListResponse>>
 {
     public override void Configure()
     {
@@ -126,7 +189,31 @@ public sealed class ListApprovalTemplatesEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListApprovalTemplatesRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListApprovalTemplatesQuery(req.OrganizationId, req.EnvironmentId, req.DocumentType, req.IsActive), ct);
+        var response = await sender.Send(new ListApprovalTemplatesQuery(req.OrganizationId, req.EnvironmentId, req.DocumentType, req.IsActive, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListApprovalChainsEndpoint(ISender sender)
+    : ApprovalEndpoint<ListApprovalChainsRequest, ResponseData<ApprovalChainListResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<ListApprovalChainsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListApprovalChainsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListApprovalChainsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Status,
+            req.StartedBy,
+            req.SourceService,
+            req.DocumentType,
+            req.DocumentId,
+            req.Skip,
+            req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -170,7 +257,7 @@ public sealed class GetApprovalChainEndpoint(ISender sender)
 }
 
 public sealed class ListPendingApprovalTasksEndpoint(ISender sender)
-    : ApprovalEndpoint<ListPendingApprovalTasksRequest, ResponseData<IReadOnlyCollection<PendingApprovalTaskResponse>>>
+    : ApprovalEndpoint<ListPendingApprovalTasksRequest, ResponseData<PendingApprovalTaskListResponse>>
 {
     public override void Configure()
     {
@@ -179,7 +266,32 @@ public sealed class ListPendingApprovalTasksEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListPendingApprovalTasksRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListPendingApprovalTasksQuery(req.OrganizationId, req.EnvironmentId, req.ActorType, req.ActorRef), ct);
+        var response = await sender.Send(new ListPendingApprovalTasksQuery(req.OrganizationId, req.EnvironmentId, req.ActorType, req.ActorRef, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListApprovalDecisionsEndpoint(ISender sender)
+    : ApprovalEndpoint<ListApprovalDecisionsRequest, ResponseData<ApprovalDecisionListResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<ListApprovalDecisionsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListApprovalDecisionsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListApprovalDecisionsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ChainId,
+            req.ActorType,
+            req.ActorRef,
+            req.Decision,
+            req.DocumentType,
+            req.DocumentId,
+            req.Skip,
+            req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -205,6 +317,75 @@ public sealed class ResolveApprovalStepEndpoint(ISender sender)
     }
 }
 
+public sealed class ListApprovalDelegationsEndpoint(ISender sender)
+    : ApprovalEndpoint<ListApprovalDelegationsRequest, ResponseData<ApprovalDelegationListResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<ListApprovalDelegationsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListApprovalDelegationsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListApprovalDelegationsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Status,
+            req.DelegatorActorRef,
+            req.DelegateActorRef,
+            req.DocumentType,
+            req.Skip,
+            req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateApprovalDelegationEndpoint(ISender sender)
+    : ApprovalEndpoint<CreateApprovalDelegationRequest, ResponseData<CreateApprovalDelegationResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<CreateApprovalDelegationEndpoint>());
+    }
+
+    public override async Task HandleAsync(CreateApprovalDelegationRequest req, CancellationToken ct)
+    {
+        var delegationId = await sender.Send(new CreateApprovalDelegationCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.DelegatorActorType,
+            req.DelegatorActorRef,
+            req.DelegateActorType,
+            req.DelegateActorRef,
+            req.DocumentType,
+            req.EffectiveFromUtc,
+            req.EffectiveToUtc,
+            req.Reason,
+            req.CreatedBy), ct);
+        await Send.OkAsync(new CreateApprovalDelegationResponse(delegationId).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class RevokeApprovalDelegationEndpoint(ISender sender)
+    : ApprovalEndpoint<RevokeApprovalDelegationRequest, ResponseData<RevokeApprovalDelegationResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<RevokeApprovalDelegationEndpoint>());
+    }
+
+    public override async Task HandleAsync(RevokeApprovalDelegationRequest req, CancellationToken ct)
+    {
+        var delegationId = Route<ApprovalDelegationId>("delegationId") ?? req.DelegationId;
+        await sender.Send(new RevokeApprovalDelegationCommand(
+            delegationId,
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.RevokedBy), ct);
+        await Send.OkAsync(new RevokeApprovalDelegationResponse(true).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record ApprovalEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -219,10 +400,15 @@ public static class ApprovalEndpointContracts
     [
         new(typeof(CreateOrUpdateApprovalTemplateEndpoint), "POST", "/api/business/v1/approvals/templates", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateApprovalTemplate"),
         new(typeof(ListApprovalTemplatesEndpoint), "GET", "/api/business/v1/approvals/templates", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalTemplates"),
+        new(typeof(ListApprovalChainsEndpoint), "GET", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalChains"),
         new(typeof(StartApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "startApprovalChain"),
         new(typeof(GetApprovalChainEndpoint), "GET", "/api/business/v1/approvals/chains/{chainId}", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "getApprovalChain"),
         new(typeof(ListPendingApprovalTasksEndpoint), "GET", "/api/business/v1/approvals/tasks", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listPendingApprovalTasks"),
+        new(typeof(ListApprovalDecisionsEndpoint), "GET", "/api/business/v1/approvals/decisions", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDecisions"),
         new(typeof(ResolveApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "resolveApprovalStep"),
+        new(typeof(ListApprovalDelegationsEndpoint), "GET", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDelegations"),
+        new(typeof(CreateApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "createApprovalDelegation"),
+        new(typeof(RevokeApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations/{delegationId}/revoke", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "revokeApprovalDelegation"),
     ];
 
     public static ApprovalEndpointContract Get<TEndpoint>()

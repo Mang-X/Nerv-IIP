@@ -25,16 +25,113 @@ public sealed class MaintenanceEndpointContractTests
     {
         var contracts = MaintenanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(8, contracts.Length);
+        Assert.Equal(11, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/complete" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "completeMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceWorkOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "createMaintenancePlan");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenancePlans");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/inspections" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "recordMaintenanceInspection");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/inspections" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenanceInspections");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/spare-parts" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceSpareParts");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/spare-parts" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceSparePart");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/assets/{deviceAssetId}/availability-windows" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "getMaintenanceAssetAvailabilityWindows");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/availability-windows" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "queryMaintenanceAvailabilityWindows");
         Assert.All(contracts, x => Assert.Equal(InternalServiceAuthorizationPolicy.Name, x.AuthorizationPolicy));
+    }
+
+    [Fact]
+    public async Task Maintenance_work_order_and_plan_lists_return_skip_take_and_total()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-001", "normal", "operator-001"));
+        dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-002", "high", "operator-001"));
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-001", "PM-001", "P7D", new DateOnly(2026, 6, 1), "maintenance"));
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-002", "PM-002", "P7D", new DateOnly(2026, 6, 1), "maintenance"));
+        await dbContext.SaveChangesAsync();
+
+        var workOrders = await new ListMaintenanceWorkOrdersQueryHandler(dbContext).Handle(
+            new ListMaintenanceWorkOrdersQuery("org-001", "env-dev", 1, 1),
+            CancellationToken.None);
+        var plans = await new ListMaintenancePlansQueryHandler(dbContext).Handle(
+            new ListMaintenancePlansQuery("org-001", "env-dev", 1, 1),
+            CancellationToken.None);
+
+        Assert.Equal(1, workOrders.Skip);
+        Assert.Equal(1, workOrders.Take);
+        Assert.Equal(2, workOrders.Total);
+        Assert.Single(workOrders.Items);
+        Assert.Equal(1, plans.Skip);
+        Assert.Equal(1, plans.Take);
+        Assert.Equal(2, plans.Total);
+        Assert.Single(plans.Items);
+    }
+
+    [Fact]
+    public async Task Maintenance_inspection_list_returns_paged_inspection_facts()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-INSPECT", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        dbContext.MaintenancePlans.Add(plan);
+        dbContext.MaintenanceInspections.Add(MaintenanceInspection.RecordForPlan("org-001", "env-dev", plan.Id, "inspector-001", "passed", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero)));
+        dbContext.MaintenanceInspections.Add(MaintenanceInspection.RecordForPlan("org-001", "env-dev", plan.Id, "inspector-002", "failed", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero)));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListMaintenanceInspectionsQueryHandler(dbContext).Handle(
+            new ListMaintenanceInspectionsQuery("org-001", "env-dev", 0, 1),
+            CancellationToken.None);
+
+        Assert.Equal(0, result.Skip);
+        Assert.Equal(1, result.Take);
+        Assert.Equal(2, result.Total);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("inspector-002", item.Inspector);
+        Assert.Equal("failed", item.Result);
+        Assert.Equal(plan.Id, item.PlanId);
+    }
+
+    [Fact]
+    public async Task Maintenance_spare_part_create_and_list_use_work_order_scope()
+    {
+        await using var dbContext = CreateDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "high", "operator-001");
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync();
+
+        var sparePartId = await new CreateMaintenanceSparePartCommandHandler(dbContext).Handle(
+            new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "EA"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListMaintenanceSparePartsQueryHandler(dbContext).Handle(
+            new ListMaintenanceSparePartsQuery("org-001", "env-dev", 0, 10),
+            CancellationToken.None);
+
+        Assert.Equal(1, result.Total);
+        var item = Assert.Single(result.Items);
+        Assert.Equal(sparePartId, item.SparePartLineId);
+        Assert.Equal(workOrder.Id, item.WorkOrderId);
+        Assert.Equal("SPARE-001", item.SkuCode);
+        Assert.Equal(2m, item.Quantity);
+        Assert.Equal("EA", item.UomCode);
+        Assert.Equal("DEV-CNC-01", item.DeviceAssetId);
+    }
+
+    [Fact]
+    public async Task Maintenance_spare_part_create_rejects_completed_work_order_with_known_exception()
+    {
+        await using var dbContext = CreateDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "high", "operator-001");
+        workOrder.Complete("restored", "mechanical", 15, []);
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new CreateMaintenanceSparePartCommandHandler(dbContext).Handle(
+                new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "EA"),
+                CancellationToken.None));
+
+        Assert.Equal("Completed maintenance work orders are immutable.", exception.Message);
     }
 
     [Fact]

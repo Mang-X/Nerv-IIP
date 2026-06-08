@@ -69,6 +69,58 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
+    public async Task List_files_forwards_filters_and_requires_read_permission()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(
+            HttpMethod.Get,
+            "/api/console/v1/files?filePurpose=notification-attachment&uploaderId=user-001&createdFromUtc=2026-06-01T00%3A00%3A00Z&createdToUtc=2026-06-08T00%3A00%3A00Z&status=available&skip=10&take=20");
+        AddTenantHeaders(request);
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var body = await ReadResponseDataAsync<FileListResponse>(response);
+        Assert.Equal(1, body.Total);
+        Assert.Equal("file-001", Assert.Single(body.Items).FileId);
+        Assert.NotNull(files.LastListRequest);
+        Assert.Equal("org-001", files.LastListRequest.OrganizationId);
+        Assert.Equal("env-dev", files.LastListRequest.EnvironmentId);
+        Assert.Equal("notification-attachment", files.LastListRequest.FilePurpose);
+        Assert.Equal("user-001", files.LastListRequest.UploaderId);
+        Assert.Equal(DateTimeOffset.Parse("2026-06-01T00:00:00Z"), files.LastListRequest.CreatedFromUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-06-08T00:00:00Z"), files.LastListRequest.CreatedToUtc);
+        Assert.Equal("available", files.LastListRequest.Status);
+        Assert.Equal(10, files.LastListRequest.Skip);
+        Assert.Equal(20, files.LastListRequest.Take);
+        Assert.Equal(GatewayPermissions.FilesRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal("file", auth.LastRequirement.ResourceType);
+    }
+
+    [Fact]
+    public async Task List_files_requires_explicit_tenant_headers()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files");
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<object>>();
+        Assert.NotNull(envelope);
+        Assert.False(envelope.Success);
+        Assert.Equal("X-Organization-Id and X-Environment-Id headers are required.", envelope.Message);
+        Assert.Null(files.LastListRequest);
+        Assert.Null(auth.LastRequirement);
+    }
+
+    [Fact]
     public async Task Create_download_grant_forwards_file_id_and_requires_download_grant_permission()
     {
         var files = new FakeGatewayFileStorageClient();
@@ -85,6 +137,41 @@ public sealed class GatewayConsoleFileStorageTests
         Assert.Equal("/api/console/v1/files/download-grants/download-grant-001/content", body.Download.Url);
         Assert.Equal("file-001", files.LastDownloadGrantFileId);
         Assert.Equal(GatewayPermissions.FilesDownloadGrantsCreate, auth.LastRequirement!.PermissionCode);
+    }
+
+    [Fact]
+    public async Task File_storage_http_client_lists_files_with_filters_and_internal_token()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new FileListResponse(
+                1,
+                [FileMetadata()]))
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+
+        var response = await files.ListFilesAsync(
+            new ListFilesRequest(
+                "org-001",
+                "env-dev",
+                "notification-attachment",
+                "user-001",
+                DateTimeOffset.Parse("2026-06-01T00:00:00Z"),
+                DateTimeOffset.Parse("2026-06-08T00:00:00Z"),
+                "available",
+                10,
+                20),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal(
+            "/api/files/v1/files?organizationId=org-001&environmentId=env-dev&filePurpose=notification-attachment&uploaderId=user-001&createdFromUtc=2026-06-01T00%3A00%3A00.0000000%2B00%3A00&createdToUtc=2026-06-08T00%3A00%3A00.0000000%2B00%3A00&status=available&skip=10&take=20",
+            request.RequestUri.PathAndQuery);
+        Assert.Equal("Bearer", request.Authorization!.Scheme);
+        Assert.Equal("internal-test-token", request.Authorization.Parameter);
     }
 
     [Fact]
@@ -320,6 +407,12 @@ public sealed class GatewayConsoleFileStorageTests
         return request;
     }
 
+    private static void AddTenantHeaders(HttpRequestMessage request)
+    {
+        request.Headers.Add("X-Organization-Id", "org-001");
+        request.Headers.Add("X-Environment-Id", "env-dev");
+    }
+
     private static CreateUploadSessionRequest CreateUploadSessionRequest() =>
         new(
             "org-001",
@@ -336,6 +429,7 @@ public sealed class GatewayConsoleFileStorageTests
         public CreateUploadSessionRequest? LastCreateRequest { get; private set; }
         public string? LastCompleteUploadSessionId { get; private set; }
         public string? LastMetadataFileId { get; private set; }
+        public ListFilesRequest? LastListRequest { get; private set; }
         public string? LastDownloadGrantFileId { get; private set; }
         public string? LastTusHeadUploadSessionId { get; private set; }
         public string? LastTusPatchUploadSessionId { get; private set; }
@@ -372,6 +466,13 @@ public sealed class GatewayConsoleFileStorageTests
             ThrowIfConfigured();
             LastMetadataFileId = fileId;
             return Task.FromResult(FileMetadata());
+        }
+
+        public Task<FileListResponse> ListFilesAsync(ListFilesRequest request, CancellationToken cancellationToken)
+        {
+            ThrowIfConfigured();
+            LastListRequest = request;
+            return Task.FromResult(new FileListResponse(1, [FileMetadata()]));
         }
 
         public Task<DownloadGrantResponse> CreateDownloadGrantAsync(

@@ -18,6 +18,7 @@ using Newtonsoft.Json;
 using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.MasterData.Web.Application.Seed;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Localization;
@@ -133,6 +134,7 @@ try
         masterDataConnectionString,
         builder.Environment.IsDevelopment());
     builder.Services.AddScoped<MasterDataNumberingService>();
+    builder.Services.AddScoped<MasterDataSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();
@@ -201,6 +203,16 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    var seedEnabled = builder.Configuration.GetValue<bool>("MasterData:Seed:Enabled") || autoMigrate;
+    if (seedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var seed = scope.ServiceProvider.GetRequiredService<MasterDataSeedService>();
+        await seed.SeedAsync(
+            builder.Configuration["MasterData:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["MasterData:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     app.UseNervIipRequestLocalization();

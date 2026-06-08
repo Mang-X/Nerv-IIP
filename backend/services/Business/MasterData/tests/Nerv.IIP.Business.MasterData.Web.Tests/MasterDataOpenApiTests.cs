@@ -78,7 +78,14 @@ public sealed class MasterDataOpenApiTests
     private static string GetOperationId(JsonDocument document, string route, string method)
     {
         var paths = document.RootElement.GetProperty("paths");
-        Assert.True(paths.TryGetProperty(route, out var path), $"OpenAPI path '{route}' was not found.");
+        if (!paths.TryGetProperty(route, out var path))
+        {
+            route = route
+                .Replace("{ResourceType}", "{resourceType}", StringComparison.Ordinal)
+                .Replace("{Code}", "{code}", StringComparison.Ordinal);
+        }
+
+        Assert.True(paths.TryGetProperty(route, out path), $"OpenAPI path '{route}' was not found.");
         Assert.True(path.TryGetProperty(method, out var operation), $"OpenAPI operation '{method} {route}' was not found.");
         return operation.GetProperty("operationId").GetString()!;
     }

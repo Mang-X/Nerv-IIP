@@ -46,6 +46,21 @@ public class UnitOfMeasure : Entity<UnitOfMeasureId>, IAggregateRoot
         return new UnitOfMeasure(organizationId, environmentId, code, name, dimensionType, precision, roundingMode);
     }
 
+    public void Update(string name, string dimensionType, int precision, string roundingMode)
+    {
+        if (precision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(precision), "Precision cannot be negative.");
+        }
+
+        EnsureEnabled();
+        Name = Required(name);
+        DimensionType = Required(dimensionType);
+        Precision = precision;
+        RoundingMode = Required(roundingMode);
+        Touch();
+    }
+
     public void Disable(string reason)
     {
         var validReason = Required(reason);
@@ -53,6 +68,25 @@ public class UnitOfMeasure : Entity<UnitOfMeasureId>, IAggregateRoot
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(UnitOfMeasure), OrganizationId, EnvironmentId, Code, validReason));
+        this.AddDomainEvent(new UnitOfMeasureChangedDomainEvent(OrganizationId, EnvironmentId, Code));
+    }
+
+    public void Enable(string reason)
+    {
+        _ = Required(reason);
+        if (!Disabled)
+        {
+            return;
+        }
+
+        Disabled = false;
+        Touch();
+    }
+
+    private void Touch()
+    {
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(UnitOfMeasure), OrganizationId, EnvironmentId, Code));
         this.AddDomainEvent(new UnitOfMeasureChangedDomainEvent(OrganizationId, EnvironmentId, Code));
     }
 

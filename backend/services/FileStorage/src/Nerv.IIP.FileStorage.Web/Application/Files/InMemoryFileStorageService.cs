@@ -24,6 +24,10 @@ public interface IFileStorageService
         string fileId,
         CancellationToken cancellationToken);
 
+    Task<FileStorageResult<FileListResponse>> ListFilesAsync(
+        ListFilesRequest request,
+        CancellationToken cancellationToken);
+
     Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
         string fileId,
         CreateDownloadGrantRequest request,
@@ -192,6 +196,46 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         return Task.FromResult(result);
     }
 
+    public Task<FileStorageResult<FileListResponse>> ListFilesAsync(
+        ListFilesRequest request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(request.OrganizationId) || string.IsNullOrWhiteSpace(request.EnvironmentId))
+        {
+            return Task.FromResult(FileStorageResult<FileListResponse>.BadRequest("OrganizationId and EnvironmentId are required."));
+        }
+
+        var skip = NormalizeSkip(request.Skip);
+        var take = NormalizeTake(request.Take);
+        var query = files.Values
+            .Where(file =>
+                string.Equals(file.OrganizationId, request.OrganizationId, StringComparison.Ordinal) &&
+                string.Equals(file.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal));
+        query = ApplyFileFilters(
+            query,
+            request.FilePurpose,
+            request.UploaderId,
+            request.CreatedFromUtc,
+            request.CreatedToUtc,
+            request.Status);
+
+        var ordered = query
+            .OrderByDescending(file => file.CompletedAtUtc)
+            .ThenBy(file => file.FileId, StringComparer.Ordinal)
+            .ToArray();
+        var response = new FileListResponse(
+            ordered.Length,
+            ordered
+                .Skip(skip)
+                .Take(take)
+                .Select(file => file.ToResponse())
+                .ToArray());
+
+        return Task.FromResult(FileStorageResult<FileListResponse>.Ok(response));
+    }
+
     public Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
         string fileId,
         CreateDownloadGrantRequest request,
@@ -293,6 +337,46 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     {
         return $"{organizationId}/{fileId}";
     }
+
+    internal static IEnumerable<FileMetadata> ApplyFileFilters(
+        IEnumerable<FileMetadata> query,
+        string? filePurpose,
+        string? uploaderId,
+        DateTimeOffset? createdFromUtc,
+        DateTimeOffset? createdToUtc,
+        string? status)
+    {
+        if (!string.IsNullOrWhiteSpace(filePurpose))
+        {
+            query = query.Where(file => string.Equals(file.FilePurpose, filePurpose, StringComparison.Ordinal));
+        }
+
+        if (!string.IsNullOrWhiteSpace(uploaderId))
+        {
+            query = query.Where(file => string.Equals(file.Owner.OwnerId, uploaderId, StringComparison.Ordinal));
+        }
+
+        if (createdFromUtc is not null)
+        {
+            query = query.Where(file => file.CreatedAtUtc >= createdFromUtc.Value);
+        }
+
+        if (createdToUtc is not null)
+        {
+            query = query.Where(file => file.CreatedAtUtc <= createdToUtc.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            query = query.Where(file => string.Equals(file.Status, status, StringComparison.Ordinal));
+        }
+
+        return query;
+    }
+
+    internal static int NormalizeSkip(int? skip) => skip is > 0 ? skip.Value : 0;
+
+    internal static int NormalizeTake(int? take) => take is > 0 ? Math.Min(take.Value, 200) : 50;
 }
 
 internal sealed record DownloadGrantIndexEntry(string FileId, DateTimeOffset ExpiresAtUtc);

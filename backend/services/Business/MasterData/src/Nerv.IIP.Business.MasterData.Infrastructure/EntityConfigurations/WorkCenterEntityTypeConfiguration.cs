@@ -18,6 +18,7 @@ public sealed class WorkCenterEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.ResourceType).HasColumnName("resource_type").IsRequired().HasMaxLength(100).HasComment("Resource type such as work-center, process-unit, labor-cell or equipment-group.");
         builder.Property(x => x.PlantCode).HasColumnName("plant_code").IsRequired().HasMaxLength(100).HasComment("Plant code where the work center belongs.");
         builder.Property(x => x.LineCode).HasColumnName("line_code").IsRequired().HasMaxLength(100).HasComment("Production line code where the work center belongs.");
+        builder.Property(x => x.WorkshopCode).HasColumnName("workshop_code").HasMaxLength(100).HasComment("Optional workshop code that groups the work center under a site.");
         builder.Property(x => x.DefaultCalendarCode).HasColumnName("default_calendar_code").IsRequired().HasMaxLength(100).HasComment("Default work calendar code used for planning capacity.");
         builder.Property(x => x.CapacityUnit).HasColumnName("capacity_unit").IsRequired().HasMaxLength(50).HasComment("Unit for nominal resource capacity, for example minute, liter or kilogram.");
         builder.Property(x => x.FiniteCapacity).HasColumnName("finite_capacity").IsRequired().HasComment("Flag that indicates planning should treat the work center as finite capacity.");
@@ -26,5 +27,6 @@ public sealed class WorkCenterEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the work center was last updated.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Code }).IsUnique();
         builder.HasIndex(x => x.Disabled);
+        builder.HasIndex(x => new { x.WorkshopCode, x.Disabled });
     }
 }

@@ -6,7 +6,13 @@ public sealed record ListApprovalTemplatesQuery(
     string? OrganizationId,
     string? EnvironmentId,
     string? DocumentType,
-    bool? IsActive) : IQuery<IReadOnlyCollection<ApprovalTemplateResponse>>;
+    bool? IsActive,
+    int Skip,
+    int Take) : IQuery<ApprovalTemplateListResponse>;
+
+public sealed record ApprovalTemplateListResponse(
+    IReadOnlyCollection<ApprovalTemplateResponse> Items,
+    int Total);
 
 public sealed record ApprovalTemplateResponse(
     string TemplateId,
@@ -27,9 +33,9 @@ public sealed record ApprovalTemplateStepResponse(
     int? DueInHours);
 
 public sealed class ListApprovalTemplatesQueryHandler(ApplicationDbContext dbContext)
-    : IQueryHandler<ListApprovalTemplatesQuery, IReadOnlyCollection<ApprovalTemplateResponse>>
+    : IQueryHandler<ListApprovalTemplatesQuery, ApprovalTemplateListResponse>
 {
-    public async Task<IReadOnlyCollection<ApprovalTemplateResponse>> Handle(ListApprovalTemplatesQuery request, CancellationToken cancellationToken)
+    public async Task<ApprovalTemplateListResponse> Handle(ListApprovalTemplatesQuery request, CancellationToken cancellationToken)
     {
         var query = dbContext.ApprovalTemplates.AsNoTracking().Include(x => x.Steps).AsQueryable();
         if (!string.IsNullOrWhiteSpace(request.OrganizationId))
@@ -52,12 +58,15 @@ public sealed class ListApprovalTemplatesQueryHandler(ApplicationDbContext dbCon
             query = query.Where(x => x.IsActive == request.IsActive.Value);
         }
 
+        var total = await query.CountAsync(cancellationToken);
         var templates = await query
             .OrderBy(x => x.OrganizationId)
             .ThenBy(x => x.EnvironmentId)
             .ThenBy(x => x.TemplateCode)
+            .Skip(request.Skip)
+            .Take(request.Take)
             .ToListAsync(cancellationToken);
-        return templates.Select(x => new ApprovalTemplateResponse(
+        var items = templates.Select(x => new ApprovalTemplateResponse(
             x.Id.ToString(),
             x.OrganizationId,
             x.EnvironmentId,
@@ -78,5 +87,6 @@ public sealed class ListApprovalTemplatesQueryHandler(ApplicationDbContext dbCon
                     step.DueInHours))
                 .ToArray()))
             .ToArray();
+        return new ApprovalTemplateListResponse(items, total);
     }
 }

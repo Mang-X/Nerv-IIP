@@ -51,7 +51,7 @@ public sealed record CompleteMaintenanceWorkOrderRequest(
     int DowntimeMinutes,
     IReadOnlyCollection<MaintenanceSparePartInput> SpareParts);
 
-public sealed record ListMaintenanceWorkOrdersRequest(string? OrganizationId, string? EnvironmentId);
+public sealed record ListMaintenanceWorkOrdersRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
 
 public sealed record CreateMaintenancePlanRequest(
     string OrganizationId,
@@ -66,7 +66,7 @@ public sealed record CreateMaintenancePlanRequest(
 
 public sealed record CreateMaintenancePlanResponse(MaintenancePlanId PlanId);
 
-public sealed record ListMaintenancePlansRequest(string? OrganizationId, string? EnvironmentId);
+public sealed record ListMaintenancePlansRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
 
 public sealed record GetMaintenanceAssetAvailabilityWindowsRequest(
     string DeviceAssetId,
@@ -96,6 +96,20 @@ public sealed record RecordMaintenanceInspectionRequest(
 
 public sealed record RecordMaintenanceInspectionResponse(MaintenanceInspectionId InspectionId);
 
+public sealed record ListMaintenanceInspectionsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
+
+public sealed record ListMaintenanceSparePartsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
+
+public sealed record CreateMaintenanceSparePartRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    MaintenanceWorkOrderId WorkOrderId,
+    string SkuCode,
+    decimal Quantity,
+    string? UomCode);
+
+public sealed record CreateMaintenanceSparePartResponse(SparePartLineId SparePartLineId);
+
 public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
     : MaintenanceEndpoint<CreateMaintenanceWorkOrderRequest, ResponseData<CreateMaintenanceWorkOrderResponse>>
 {
@@ -121,13 +135,13 @@ public sealed class CompleteMaintenanceWorkOrderEndpoint(ISender sender)
 }
 
 public sealed class ListMaintenanceWorkOrdersEndpoint(ISender sender)
-    : MaintenanceEndpoint<ListMaintenanceWorkOrdersRequest, ResponseData<IReadOnlyCollection<MaintenanceWorkOrderListItem>>>
+    : MaintenanceEndpoint<ListMaintenanceWorkOrdersRequest, ResponseData<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>>
 {
     public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<ListMaintenanceWorkOrdersEndpoint>());
 
     public override async Task HandleAsync(ListMaintenanceWorkOrdersRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListMaintenanceWorkOrdersQuery(req.OrganizationId, req.EnvironmentId), ct);
+        var result = await sender.Send(new ListMaintenanceWorkOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -145,13 +159,13 @@ public sealed class CreateMaintenancePlanEndpoint(ISender sender)
 }
 
 public sealed class ListMaintenancePlansEndpoint(ISender sender)
-    : MaintenanceEndpoint<ListMaintenancePlansRequest, ResponseData<IReadOnlyCollection<MaintenancePlanListItem>>>
+    : MaintenanceEndpoint<ListMaintenancePlansRequest, ResponseData<PagedMaintenanceListResponse<MaintenancePlanListItem>>>
 {
     public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<ListMaintenancePlansEndpoint>());
 
     public override async Task HandleAsync(ListMaintenancePlansRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListMaintenancePlansQuery(req.OrganizationId, req.EnvironmentId), ct);
+        var result = await sender.Send(new ListMaintenancePlansQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -207,6 +221,42 @@ public sealed class RecordMaintenanceInspectionEndpoint(ISender sender)
     }
 }
 
+public sealed class ListMaintenanceInspectionsEndpoint(ISender sender)
+    : MaintenanceEndpoint<ListMaintenanceInspectionsRequest, ResponseData<PagedMaintenanceListResponse<MaintenanceInspectionListItem>>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<ListMaintenanceInspectionsEndpoint>());
+
+    public override async Task HandleAsync(ListMaintenanceInspectionsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListMaintenanceInspectionsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListMaintenanceSparePartsEndpoint(ISender sender)
+    : MaintenanceEndpoint<ListMaintenanceSparePartsRequest, ResponseData<PagedMaintenanceListResponse<MaintenanceSparePartListItem>>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<ListMaintenanceSparePartsEndpoint>());
+
+    public override async Task HandleAsync(ListMaintenanceSparePartsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListMaintenanceSparePartsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateMaintenanceSparePartEndpoint(ISender sender)
+    : MaintenanceEndpoint<CreateMaintenanceSparePartRequest, ResponseData<CreateMaintenanceSparePartResponse>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<CreateMaintenanceSparePartEndpoint>());
+
+    public override async Task HandleAsync(CreateMaintenanceSparePartRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new CreateMaintenanceSparePartCommand(req.OrganizationId, req.EnvironmentId, req.WorkOrderId, req.SkuCode, req.Quantity, req.UomCode), ct);
+        await Send.OkAsync(new CreateMaintenanceSparePartResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record MaintenanceEndpointContract(Type EndpointType, string HttpMethod, string Route, string PermissionCode, string AuthorizationPolicy, string OperationId);
 
 public static class MaintenanceEndpointContracts
@@ -219,6 +269,9 @@ public static class MaintenanceEndpointContracts
         new(typeof(CreateMaintenancePlanEndpoint), "POST", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createMaintenancePlan"),
         new(typeof(ListMaintenancePlansEndpoint), "GET", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenancePlans"),
         new(typeof(RecordMaintenanceInspectionEndpoint), "POST", "/api/business/v1/maintenance/inspections", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "recordMaintenanceInspection"),
+        new(typeof(ListMaintenanceInspectionsEndpoint), "GET", "/api/business/v1/maintenance/inspections", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceInspections"),
+        new(typeof(ListMaintenanceSparePartsEndpoint), "GET", "/api/business/v1/maintenance/spare-parts", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceSpareParts"),
+        new(typeof(CreateMaintenanceSparePartEndpoint), "POST", "/api/business/v1/maintenance/spare-parts", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "createMaintenanceSparePart"),
         new(typeof(GetMaintenanceAssetAvailabilityWindowsEndpoint), "GET", "/api/business/v1/maintenance/assets/{deviceAssetId}/availability-windows", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "getMaintenanceAssetAvailabilityWindows"),
         new(typeof(QueryMaintenanceAvailabilityWindowsEndpoint), "GET", "/api/business/v1/maintenance/availability-windows", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryMaintenanceAvailabilityWindows"),
     ];

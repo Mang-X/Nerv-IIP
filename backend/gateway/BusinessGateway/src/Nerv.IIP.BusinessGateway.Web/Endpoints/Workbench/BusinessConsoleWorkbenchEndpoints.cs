@@ -53,7 +53,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         await AddApprovalAsync(req, bearerToken, take, sourceStatuses, todos, ct);
         await AddNotificationAsync(req, bearerToken, take, sourceStatuses, messages, todos, ct);
         await AddQualityAsync(req, bearerToken, MaxTake, sourceStatuses, kpis, ct);
-        await AddIndustrialTelemetryAsync(req, bearerToken, sourceStatuses, alerts, ct);
+        await AddIndustrialTelemetryAsync(req, bearerToken, take, sourceStatuses, alerts, ct);
         await AddMesAsync(req, bearerToken, MaxTake, sourceStatuses, kpis, ct);
 
         var response = new BusinessConsoleWorkbenchSummaryResponse(
@@ -241,6 +241,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
     private async Task AddIndustrialTelemetryAsync(
         BusinessConsoleWorkbenchSummaryRequest request,
         string bearerToken,
+        int take,
         Dictionary<string, BusinessConsoleWorkbenchSourceStatus> sourceStatuses,
         List<BusinessConsoleWorkbenchAlertItem> alerts,
         CancellationToken cancellationToken)
@@ -261,7 +262,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         {
             var response = await industrialTelemetry.ListActiveAlarmsAsync(
                 tokenProvider.BearerToken,
-                new BusinessConsoleEquipmentContextRequest(request.OrganizationId, request.EnvironmentId),
+                new BusinessConsoleEquipmentAlarmListRequest(request.OrganizationId, request.EnvironmentId, null, "raised", Take: take),
                 cancellationToken);
             alerts.AddRange(response.Items.Select(item => new BusinessConsoleWorkbenchAlertItem(
                 item.AlarmEventId,

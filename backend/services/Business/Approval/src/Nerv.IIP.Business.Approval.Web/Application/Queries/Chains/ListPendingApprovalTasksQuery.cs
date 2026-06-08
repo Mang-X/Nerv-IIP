@@ -8,7 +8,13 @@ public sealed record ListPendingApprovalTasksQuery(
     string OrganizationId,
     string EnvironmentId,
     string ActorType,
-    string ActorRef) : IQuery<IReadOnlyCollection<PendingApprovalTaskResponse>>;
+    string ActorRef,
+    int Skip,
+    int Take) : IQuery<PendingApprovalTaskListResponse>;
+
+public sealed record PendingApprovalTaskListResponse(
+    IReadOnlyCollection<PendingApprovalTaskResponse> Items,
+    int Total);
 
 public sealed record PendingApprovalTaskResponse(
     string ChainId,
@@ -29,13 +35,15 @@ public sealed class ListPendingApprovalTasksQueryValidator : AbstractValidator<L
         RuleFor(x => x.EnvironmentId).RequiredApprovalCode(100);
         RuleFor(x => x.ActorType).RequiredApprovalCode(50);
         RuleFor(x => x.ActorRef).RequiredApprovalCode(150);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 
 public sealed class ListPendingApprovalTasksQueryHandler(ApplicationDbContext dbContext)
-    : IQueryHandler<ListPendingApprovalTasksQuery, IReadOnlyCollection<PendingApprovalTaskResponse>>
+    : IQueryHandler<ListPendingApprovalTasksQuery, PendingApprovalTaskListResponse>
 {
-    public async Task<IReadOnlyCollection<PendingApprovalTaskResponse>> Handle(ListPendingApprovalTasksQuery request, CancellationToken cancellationToken)
+    public async Task<PendingApprovalTaskListResponse> Handle(ListPendingApprovalTasksQuery request, CancellationToken cancellationToken)
     {
         var actorType = request.ActorType.Trim().ToLowerInvariant();
         var chains = await dbContext.ApprovalChains
@@ -49,7 +57,7 @@ public sealed class ListPendingApprovalTasksQueryHandler(ApplicationDbContext db
                     && step.ApproverType == actorType
                     && step.ApproverRef == request.ActorRef))
             .ToListAsync(cancellationToken);
-        return chains
+        var items = chains
             .SelectMany(chain => chain.Steps
                 .Where(step => step.Status == ApprovalStepStatuses.Pending
                     && step.ApproverType == actorType
@@ -68,5 +76,8 @@ public sealed class ListPendingApprovalTasksQueryHandler(ApplicationDbContext db
             .OrderBy(x => x.DueAtUtc)
             .ThenBy(x => x.ChainId)
             .ToArray();
+        return new PendingApprovalTaskListResponse(
+            items.Skip(request.Skip).Take(request.Take).ToArray(),
+            items.Length);
     }
 }

@@ -203,6 +203,8 @@ public sealed class BusinessConsoleTelemetryTagListRequestValidator : Validator<
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 
@@ -214,6 +216,8 @@ public sealed class BusinessConsoleTelemetryAlarmListRequestValidator : Validato
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
         RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 
@@ -224,6 +228,8 @@ public sealed class BusinessConsoleTelemetryAlarmRuleListRequestValidator : Vali
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
 }
 

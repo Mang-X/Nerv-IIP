@@ -8,6 +8,15 @@ using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Files;
 
+public sealed record ConsoleListFilesRequest(
+    string? FilePurpose,
+    string? UploaderId,
+    DateTimeOffset? CreatedFromUtc,
+    DateTimeOffset? CreatedToUtc,
+    string? Status,
+    int? Skip = null,
+    int? Take = null);
+
 [Tags("Console Files")]
 [HttpPost("/api/console/v1/files/upload-sessions")]
 [GatewayOperationId("createConsoleFileUploadSession")]
@@ -46,6 +55,68 @@ public sealed class CompleteConsoleFileUploadSessionEndpoint(
         CompleteUploadSessionRequest request,
         CancellationToken cancellationToken) =>
         files.CompleteUploadSessionAsync(Route<string>("uploadSessionId")!, request, cancellationToken);
+}
+
+[Tags("Console Files")]
+[HttpGet("/api/console/v1/files")]
+[GatewayOperationId("listConsoleFiles")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class ListConsoleFilesEndpoint(
+    IGatewayAuthorizationClient auth,
+    IGatewayFileStorageClient files)
+    : Endpoint<ConsoleListFilesRequest, ResponseData<FileListResponse>>
+{
+    public override async Task HandleAsync(ConsoleListFilesRequest req, CancellationToken ct)
+    {
+        var organizationId = HttpContext.Request.Headers["X-Organization-Id"].ToString();
+        var environmentId = HttpContext.Request.Headers["X-Environment-Id"].ToString();
+        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                HttpContext,
+                StatusCodes.Status400BadRequest,
+                "X-Organization-Id and X-Environment-Id headers are required.",
+                ct);
+            return;
+        }
+
+        var requirement = new GatewayPermissionRequirement(
+            GatewayPermissions.FilesRead,
+            organizationId,
+            environmentId,
+            "file",
+            null);
+        var principal = await GatewayAuthorization.RequirePermissionAsync(HttpContext, auth, requirement, ct);
+        if (principal is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await files.ListFilesAsync(
+                new ListFilesRequest(
+                    organizationId,
+                    environmentId,
+                    req.FilePurpose,
+                    req.UploaderId,
+                    req.CreatedFromUtc,
+                    req.CreatedToUtc,
+                    req.Status,
+                    req.Skip,
+                    req.Take),
+                ct);
+            await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status200OK, response, ct);
+        }
+        catch (GatewayAuthException ex)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                HttpContext,
+                (int)ex.StatusCode,
+                ex.Reason,
+                ct);
+        }
+    }
 }
 
 [Tags("Console Files")]

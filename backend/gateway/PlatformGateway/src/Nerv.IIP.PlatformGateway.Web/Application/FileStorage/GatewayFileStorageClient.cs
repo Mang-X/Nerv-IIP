@@ -23,6 +23,10 @@ public interface IGatewayFileStorageClient
         string fileId,
         CancellationToken cancellationToken);
 
+    Task<FileListResponse> ListFilesAsync(
+        ListFilesRequest request,
+        CancellationToken cancellationToken);
+
     Task<DownloadGrantResponse> CreateDownloadGrantAsync(
         string fileId,
         CreateDownloadGrantRequest request,
@@ -97,6 +101,15 @@ public sealed class HttpGatewayFileStorageClient(
             () => null,
             HttpMethod.Get,
             $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}",
+            cancellationToken);
+
+    public Task<FileListResponse> ListFilesAsync(
+        ListFilesRequest request,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<FileListResponse>(
+            () => null,
+            HttpMethod.Get,
+            "/api/files/v1/files" + BuildListQuery(request),
             cancellationToken);
 
     public async Task<DownloadGrantResponse> CreateDownloadGrantAsync(
@@ -340,6 +353,32 @@ public sealed class HttpGatewayFileStorageClient(
         var firstSeparator = trimmed.IndexOfAny(['/', '?', '#']);
         var firstColon = trimmed.IndexOf(':');
         return firstColon > 0 && (firstSeparator < 0 || firstColon < firstSeparator);
+    }
+
+    private static string BuildListQuery(ListFilesRequest request)
+    {
+        var values = new List<string>();
+        Add(values, "organizationId", request.OrganizationId);
+        Add(values, "environmentId", request.EnvironmentId);
+        Add(values, "filePurpose", request.FilePurpose);
+        Add(values, "uploaderId", request.UploaderId);
+        Add(values, "createdFromUtc", request.CreatedFromUtc?.ToString("O"));
+        Add(values, "createdToUtc", request.CreatedToUtc?.ToString("O"));
+        Add(values, "status", request.Status);
+        Add(values, "skip", request.Skip?.ToString());
+        Add(values, "take", request.Take?.ToString());
+
+        return values.Count == 0 ? string.Empty : "?" + string.Join("&", values);
+    }
+
+    private static void Add(List<string> values, string name, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        values.Add($"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(value)}");
     }
 
     private static void CopyTusRequestHeaders(HttpRequest? sourceRequest, HttpRequestMessage targetRequest)

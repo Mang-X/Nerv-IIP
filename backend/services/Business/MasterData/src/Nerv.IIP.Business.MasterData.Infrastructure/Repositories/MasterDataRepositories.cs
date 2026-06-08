@@ -9,10 +9,12 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using NetCorePal.Extensions.Repository;
 using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
@@ -98,6 +100,10 @@ public sealed class UomConversionRepository(ApplicationDbContext context)
 public interface IBusinessPartnerRepository : IRepository<BusinessPartner, BusinessPartnerId>
 {
     Task<bool> ExistsAsync(string organizationId, string environmentId, string partnerType, string code, CancellationToken cancellationToken = default);
+
+    Task<bool> ExistsCodeAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default);
+
+    Task<bool> ExistsTaxIdAsync(string organizationId, string environmentId, string taxId, CancellationToken cancellationToken = default);
 }
 
 public sealed class BusinessPartnerRepository(ApplicationDbContext context)
@@ -105,11 +111,24 @@ public sealed class BusinessPartnerRepository(ApplicationDbContext context)
 {
     public async Task<bool> ExistsAsync(string organizationId, string environmentId, string partnerType, string code, CancellationToken cancellationToken = default)
     {
+        return await ExistsCodeAsync(organizationId, environmentId, code, cancellationToken);
+    }
+
+    public async Task<bool> ExistsCodeAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default)
+    {
         return await DbContext.BusinessPartners.AnyAsync(x =>
             x.OrganizationId == organizationId &&
             x.EnvironmentId == environmentId &&
-            x.PartnerType == partnerType &&
             x.Code == code,
+            cancellationToken);
+    }
+
+    public async Task<bool> ExistsTaxIdAsync(string organizationId, string environmentId, string taxId, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.BusinessPartners.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.TaxId == taxId,
             cancellationToken);
     }
 }
@@ -146,6 +165,26 @@ public sealed class TeamRepository(ApplicationDbContext context)
             x.OrganizationId == organizationId &&
             x.EnvironmentId == environmentId &&
             x.Code == code,
+            cancellationToken);
+    }
+}
+
+public interface ITeamMemberRepository : IRepository<TeamMember, TeamMemberId>
+{
+    Task<bool> ExistsActiveAsync(string organizationId, string environmentId, string teamCode, string userId, CancellationToken cancellationToken = default);
+}
+
+public sealed class TeamMemberRepository(ApplicationDbContext context)
+    : RepositoryBase<TeamMember, TeamMemberId, ApplicationDbContext>(context), ITeamMemberRepository
+{
+    public async Task<bool> ExistsActiveAsync(string organizationId, string environmentId, string teamCode, string userId, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.TeamMembers.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.TeamCode == teamCode &&
+            x.UserId == userId &&
+            !x.Disabled,
             cancellationToken);
     }
 }
@@ -187,6 +226,24 @@ public sealed class SiteRepository(ApplicationDbContext context)
     public async Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default)
     {
         return await DbContext.Sites.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.Code == code,
+            cancellationToken);
+    }
+}
+
+public interface IWorkshopRepository : IRepository<Workshop, WorkshopId>
+{
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default);
+}
+
+public sealed class WorkshopRepository(ApplicationDbContext context)
+    : RepositoryBase<Workshop, WorkshopId, ApplicationDbContext>(context), IWorkshopRepository
+{
+    public async Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Workshops.AnyAsync(x =>
             x.OrganizationId == organizationId &&
             x.EnvironmentId == environmentId &&
             x.Code == code,
@@ -287,6 +344,8 @@ public sealed class DeviceAssetRepository(ApplicationDbContext context)
 public interface IReferenceDataCodeRepository : IRepository<ReferenceDataCode, ReferenceDataCodeId>
 {
     Task<bool> ExistsAsync(string organizationId, string environmentId, string codeSet, string code, CancellationToken cancellationToken = default);
+
+    Task<bool> ExistsActiveAsync(string organizationId, string environmentId, string codeSet, string code, CancellationToken cancellationToken = default);
 }
 
 public sealed class ReferenceDataCodeRepository(ApplicationDbContext context)
@@ -299,6 +358,17 @@ public sealed class ReferenceDataCodeRepository(ApplicationDbContext context)
             x.EnvironmentId == environmentId &&
             x.CodeSet == codeSet &&
             x.Code == code,
+            cancellationToken);
+    }
+
+    public async Task<bool> ExistsActiveAsync(string organizationId, string environmentId, string codeSet, string code, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.ReferenceDataCodes.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.CodeSet == codeSet &&
+            x.Code == code &&
+            !x.Disabled,
             cancellationToken);
     }
 }

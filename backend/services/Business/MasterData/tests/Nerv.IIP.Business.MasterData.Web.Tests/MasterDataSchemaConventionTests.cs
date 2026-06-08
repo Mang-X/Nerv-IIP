@@ -12,10 +12,12 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Numbering;
 using Nerv.IIP.Testing.EntityFramework;
@@ -54,10 +56,12 @@ public sealed class MasterDataSchemaConventionTests
             typeof(BusinessPartner),
             typeof(Department),
             typeof(Team),
+            typeof(TeamMember),
             typeof(PersonnelSkill),
             typeof(UnitOfMeasure),
             typeof(UomConversion),
             typeof(Site),
+            typeof(Workshop),
             typeof(ProductionLine),
             typeof(Shift),
             typeof(ReferenceDataCode),
@@ -76,6 +80,25 @@ public sealed class MasterDataSchemaConventionTests
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, MasterDataFacts.ServiceName, MasterDataFacts.Schema));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void Team_member_unique_index_matches_active_membership_lookup()
+    {
+        using var fixture = CreateFixture();
+        var entityType = fixture.DbContext.Model.FindEntityType(typeof(TeamMember));
+        Assert.NotNull(entityType);
+
+        var index = Assert.Single(entityType.GetIndexes(), candidate =>
+            candidate.IsUnique &&
+            candidate.Properties.Select(property => property.Name)
+                .SequenceEqual(["OrganizationId", "EnvironmentId", "TeamCode", "UserId"]));
+
+        Assert.Equal("disabled = false", index.GetFilter());
+        Assert.DoesNotContain(entityType.GetIndexes(), candidate =>
+            candidate.IsUnique &&
+            candidate.Properties.Select(property => property.Name)
+                .SequenceEqual(["OrganizationId", "EnvironmentId", "TeamCode", "UserId", "EffectiveFrom"]));
     }
 
     private static SchemaFixture CreateFixture()

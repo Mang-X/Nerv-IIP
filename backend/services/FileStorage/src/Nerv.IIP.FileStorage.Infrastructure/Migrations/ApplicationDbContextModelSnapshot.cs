@@ -192,6 +192,8 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                     b.HasIndex("ObjectKey")
                         .IsUnique();
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CompletedAtUtc");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "OwnerService", "OwnerType", "OwnerId");
 
                     b.ToTable("stored_files", "filestorage", t =>
