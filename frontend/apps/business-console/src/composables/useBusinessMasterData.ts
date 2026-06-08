@@ -1,12 +1,20 @@
 import {
+  createBusinessConsoleDepartmentMutationOptions,
+  createBusinessConsoleProductionLineMutationOptions,
+  createBusinessConsoleShiftMutationOptions,
+  createBusinessConsoleSiteMutationOptions,
   createBusinessConsoleSkuMutationOptions,
+  createBusinessConsoleTeamMutationOptions,
+  createBusinessConsoleWorkCalendarMutationOptions,
+  createBusinessConsoleWorkCenterMutationOptions,
   listBusinessConsoleMasterDataResourcesQueryOptions,
   listBusinessConsoleSkusQueryOptions,
+  registerBusinessConsoleDeviceAssetMutationOptions,
   type BusinessConsoleCreateSkuRequest,
   type BusinessConsoleResourceItem,
   type BusinessConsoleResourceListEnvelope,
 } from '@nerv-iip/api-client'
-import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
+import { useMutation, useQuery, useQueryCache, type UseMutationOptions, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 
 const DEFAULT_TAKE = 100
@@ -187,5 +195,65 @@ export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroup
       queries.reduce((total, query) => total + resourceTotal(query.data.value), 0),
     ),
     refreshGroups: () => Promise.all(queries.map((query) => query.refetch())),
+  }
+}
+
+// 各工厂/组织资源的「新建」mutation options（barrel 已接出，generated 提供）。
+const RESOURCE_CREATE_OPTIONS = {
+  'site': createBusinessConsoleSiteMutationOptions,
+  'production-line': createBusinessConsoleProductionLineMutationOptions,
+  'work-center': createBusinessConsoleWorkCenterMutationOptions,
+  'device-asset': registerBusinessConsoleDeviceAssetMutationOptions,
+  'shift': createBusinessConsoleShiftMutationOptions,
+  'work-calendar': createBusinessConsoleWorkCalendarMutationOptions,
+  'team': createBusinessConsoleTeamMutationOptions,
+  'department': createBusinessConsoleDepartmentMutationOptions,
+} as const
+
+export type MasterDataResourceType = keyof typeof RESOURCE_CREATE_OPTIONS
+
+/**
+ * 单类基础数据资源的「列表 + 新建」。列表走通用 resources 端点（仅 5 字段，见
+ * docs/architecture/master-data-module-product-design.md §0/§7），新建走各自 create 端点。
+ * 编辑/停用待后端 #344；本 Phase 1 只做查 + 增。
+ */
+export function useMasterDataResource<TBody>(resourceType: MasterDataResourceType) {
+  const filters = defaultResourceFilters(resourceType)
+  const queryCache = useQueryCache()
+
+  const listQuery = useQuery(() =>
+    listBusinessConsoleMasterDataResourcesQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        resourceType: filters.resourceType,
+        ...optionalQuery('includeDisabled', filters.includeDisabled),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
+
+  // 各实体 mutation options 仅 body 泛型不同，统一经本工厂收敛，故此处收窄类型。
+  const createMutation = useMutation({
+    ...RESOURCE_CREATE_OPTIONS[resourceType](),
+    onSuccess() {
+      void queryCache
+        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleMasterDataResources') })
+        .catch(ignoreBackgroundError)
+    },
+  } as unknown as UseMutationOptions)
+
+  return {
+    filters,
+    items: computed<BusinessConsoleResourceItem[]>(() => resourceItems(listQuery.data.value)),
+    total: computed(() => resourceTotal(listQuery.data.value)),
+    error: listQuery.error,
+    pending: listQuery.isLoading,
+    refresh: listQuery.refetch,
+    create: (body: TBody) =>
+      (createMutation.mutateAsync as unknown as (vars: { body: TBody }) => Promise<unknown>)({ body }),
+    createError: createMutation.error,
+    createPending: createMutation.isLoading,
   }
 }
