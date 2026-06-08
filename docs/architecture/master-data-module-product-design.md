@@ -45,10 +45,11 @@
 ### 2.1 物理建模层级（空间/资源维度）
 
 ```
-Site 工厂/厂区            一个物理生产基地；库存/组织/报表的顶层边界
- └─ ProductionLine 产线   一条物料/工艺流（SMT 线、总装线）；排产主承载单元
-     └─ WorkCenter 工作中心/车间   一组能力等价、可互换的产能（排产的产能桶/调度对象）
-         └─ DeviceAsset 设备       具体一台机器；OEE/点检/防错追溯的采集点
+Site 工厂/厂区                  一个物理生产基地；库存/组织/报表的顶层边界
+ └─ Workshop 车间（组织/区域层，待 #348）  组织/区域/权限/看板分组单元；不承载排产
+     └─ ProductionLine 产线     一条物料/工艺流（SMT 线、总装线）；排产主承载单元
+         └─ WorkCenter 工作中心  一组能力等价、可互换的产能（排产/报工/产能/成本/工序执行的核心资源单元）
+             └─ DeviceAsset 设备 具体一台机器；OEE/点检/防错追溯的采集点
 ```
 
 | 层级 | 制造业语义 | 在 MES/排程中的角色 | 维护方 |
@@ -60,7 +61,11 @@ Site 工厂/厂区            一个物理生产基地；库存/组织/报表的
 
 **层级靠字符串 code 关联**（非数据库外键）：`production-line.siteCode→site`；`work-center.plantCode→site`、`lineCode→production-line`；`device.lineCode→production-line`、`workCenterCode→work-center`。
 
-**术语澄清（中文工厂语境）**：口语「车间」(Workshop) 是空间+管理单元；ERP/MES 的「工作中心」(Work Center) 是排产概念，一个车间常含多个工作中心。本平台**不新建独立「车间」实体**，用 `WorkCenter` 承载，可用字典 `work-center-type`（车间/工段/工作中心/工位组）区分粒度。
+**术语澄清（中文工厂语境，2026-06-08 修订）**：「车间」(Workshop) 与「工作中心」(Work Center) 是**两个不同层级**，不可混为一谈——
+- **工作中心(WorkCenter)** = 排产/报工/产能/成本/工序执行的**核心资源单元**（与 SAP/Oracle/D365 一致；我们后端已如此建模：带 `CapacityMinutesPerDay/DefaultCalendarCode/FiniteCapacity`，MES 工序任务挂 `workCenterId`）。**保留「工作中心」术语，不改名、不重构。**
+- **车间(Workshop)** = **组织/区域/管理层**（权限范围、看板分组、组织归属），一个车间常含多个产线/工作中心，**不承载工序排产**。
+- 现状后端**无 Workshop 实体**（层级缺这一层），已提 **#348** 新增；前端 Phase 1 保留「工作中心」、在「工厂与产线」页**预留「车间」Tab**（占位待 #348）。
+- ⚠️ 此前草案曾建议「把工作中心改名叫车间/不新建车间实体」——**已废弃**：那会污染工艺路线/排产/OEE/成本等下游语义。
 
 ### 2.2 组织维度（人/时间）
 
@@ -265,6 +270,12 @@ DataTablePagination（服务端 total）
 - **[#345]** MasterData 列表回传领域字段（typed list）:partnerType、siteCode、lineCode、plantCode、workCenterCode、category、materialType、capacity 等。（缺口 4）
 - **[#346]** ReferenceData 字典可用化:按 CodeSet 查询 + list 回 CodeSet + 生产种子（§5.1/5.2/5.3）+ SKU `category/...Code` 字典存在性校验。（缺口 5/6/7）
 - **[#347]** BusinessPartner `partnerType` 演进为多角色（同一主体兼客户+供应商）+ 税号唯一去重。（缺口 8，P2）
+- **[#348]** 组织建模补强:① 新增「车间(Workshop)」组织层（工厂→车间→产线/工作中心，产线/工作中心加 `workshopCode`）;② 班组(Team)成员(工人/IAM 用户)关联 + business-console 取 IAM 用户列表 facade（供人员技能矩阵与班组选人）。
+
+### 7.4.1 术语与层级修订（2026-06-08）
+- **保留「工作中心」**为核心排产资源单元（不改名、不重构）;**车间(Workshop)** 是独立组织/区域层（待 #348）。
+- 组织页含**人员技能矩阵**（PersonnelSkill：工人=IAM 用户 + 技能 + 等级 + 有效期），页名宜为「组织与人员」。
+- 前端 Phase 1:保留工作中心、「工厂与产线」页预留「车间」Tab（占位待 #348）、补人员技能矩阵、各页加 工厂→车间→产线→工作中心→设备 层级提示。
 
 ### 7.5 业务规则（落地铁律）
 - **引用完整性**：产线 siteCode 必填且指向启用工厂；工作中心 plantCode 必填、lineCode 选填且需属于同工厂；设备 lineCode/workCenterCode 至少一项且需存在；保存做跨级一致性校验。
