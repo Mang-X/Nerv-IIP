@@ -1,4 +1,6 @@
 using MediatR;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.FileProviders;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
@@ -56,4 +58,14 @@ internal sealed class NoopMediator : IMediator
         _ = cancellationToken;
         throw new NotSupportedException("Test mediator cannot create streams.");
     }
+}
+
+internal sealed class TestWebHostEnvironment : IWebHostEnvironment
+{
+    public string ApplicationName { get; set; } = "Nerv.IIP.Iam.Web.Tests";
+    public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    public string ContentRootPath { get; set; } = string.Empty;
+    public string EnvironmentName { get; set; } = "Development";
+    public string WebRootPath { get; set; } = string.Empty;
+    public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
 }

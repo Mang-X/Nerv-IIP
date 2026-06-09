@@ -5,6 +5,7 @@ using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -22,7 +23,7 @@ public sealed class FileStoragePostgreSqlServiceTests
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
         Assert.NotNull(result.Value);
-        AssertVersion7GuidSuffix(result.Value.FileId, "file_");
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(result.Value.FileId, "file_"));
         var record = await dbContext.UploadSessions.SingleAsync();
         Assert.Equal(result.Value.UploadSessionId, record.UploadSessionId);
         Assert.Equal(result.Value.FileId, record.FileId);
@@ -309,7 +310,7 @@ public sealed class FileStoragePostgreSqlServiceTests
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
         Assert.NotNull(result.Value);
-        AssertVersion7GuidSuffix(result.Value.FileId, "file_");
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(result.Value.FileId, "file_"));
     }
 
     [Fact]
@@ -409,11 +410,4 @@ public sealed class FileStoragePostgreSqlServiceTests
         Assert.DoesNotContain("object_key", json, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void AssertVersion7GuidSuffix(string id, string prefix)
-    {
-        Assert.StartsWith(prefix, id, StringComparison.Ordinal);
-        var suffix = id[prefix.Length..];
-        Assert.True(Guid.TryParseExact(suffix, "N", out _));
-        Assert.Equal('7', suffix[12]);
-    }
 }

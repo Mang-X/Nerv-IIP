@@ -1,13 +1,12 @@
 using System.Globalization;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
@@ -81,7 +80,7 @@ public sealed class IamRepositoryTests
 
         var response = await authService.LoginAsync("session-v7", "Password123!", null, null, CancellationToken.None);
 
-        AssertVersion7GuidSuffix(response.SessionId, "session-");
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(response.SessionId, "session-"));
     }
 
     private static ApplicationDbContext CreateDbContext()
@@ -94,21 +93,4 @@ public sealed class IamRepositoryTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private static void AssertVersion7GuidSuffix(string id, string prefix)
-    {
-        Assert.StartsWith(prefix, id, StringComparison.Ordinal);
-        var suffix = id[prefix.Length..];
-        Assert.True(Guid.TryParseExact(suffix, "N", out _));
-        Assert.Equal('7', suffix[12]);
-    }
-
-    private sealed class TestWebHostEnvironment : IWebHostEnvironment
-    {
-        public string ApplicationName { get; set; } = "Nerv.IIP.Iam.Web.Tests";
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-        public string ContentRootPath { get; set; } = string.Empty;
-        public string EnvironmentName { get; set; } = "Development";
-        public string WebRootPath { get; set; } = string.Empty;
-        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
-    }
 }

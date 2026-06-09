@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Testing;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
 
@@ -61,8 +62,8 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
         Assert.NotEqual(first, second);
         Assert.StartsWith("op-", first, StringComparison.Ordinal);
         Assert.StartsWith("op-", second, StringComparison.Ordinal);
-        AssertVersion7GuidSuffix(first, "op-");
-        AssertVersion7GuidSuffix(second, "op-");
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(first, "op-"));
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(second, "op-"));
     }
 
     [Fact]
@@ -79,9 +80,9 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
         var auditRecordId = await taskRepository.NextAuditRecordIdAsync();
         var templateId = await templateRepository.NextTemplateIdAsync();
 
-        AssertVersion7GuidSuffix(attemptId.Id, "attempt-");
-        AssertVersion7GuidSuffix(auditRecordId.Id, "audit-");
-        AssertVersion7GuidSuffix(templateId.Id, "opt-");
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(attemptId.Id, "attempt-"));
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(auditRecordId.Id, "audit-"));
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(templateId.Id, "opt-"));
     }
 
     private static IReadOnlyDictionary<string, string?> PreserveEnvironment(params string[] names)
@@ -97,11 +98,4 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
         }
     }
 
-    private static void AssertVersion7GuidSuffix(string id, string prefix)
-    {
-        Assert.StartsWith(prefix, id, StringComparison.Ordinal);
-        var suffix = id[prefix.Length..];
-        Assert.True(Guid.TryParseExact(suffix, "N", out _));
-        Assert.Equal('7', suffix[12]);
-    }
 }
