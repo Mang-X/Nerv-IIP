@@ -30,6 +30,7 @@ import {
   SelectValue,
   Spinner,
   StatusBadge,
+  toast,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -81,7 +82,6 @@ const pageSize = ref('10')
 
 const createOpen = shallowRef(false)
 const createShowErrors = ref(false)
-const createSuccess = shallowRef('')
 // 编辑态：null=新建，否则=正在编辑的码值编码（codeSet/code 是身份，编辑态只读）。
 const editingCode = shallowRef<string | null>(null)
 const editLoading = shallowRef(false)
@@ -202,7 +202,7 @@ async function submitCode() {
   }
   if (editingCode.value) {
     await codeActions.update(editingCode.value, { name: createForm.name.trim() })
-    createSuccess.value = `字典条目「${createForm.name.trim()}」已更新。`
+    toast.success(`字典条目「${createForm.name.trim()}」已更新。`)
   }
   else {
     const body: BusinessConsoleCreateReferenceDataCodeRequest = {
@@ -213,7 +213,7 @@ async function submitCode() {
       name: createForm.name.trim(),
     }
     await createCode(body)
-    createSuccess.value = `字典条目「${body.name}」已创建。`
+    toast.success(`字典条目「${body.name}」已创建。`)
     selectedCodeSet.value = body.codeSet
   }
   resetCreateForm()
@@ -327,7 +327,6 @@ function isNonEmpty(value: string) {
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
         <p v-else-if="actionErrorMessage" class="text-sm text-destructive" role="alert">{{ actionErrorMessage }}</p>
-        <p v-else-if="createSuccess" class="text-sm text-success" role="status">{{ createSuccess }}</p>
 
         <DataTable
           v-model:sort="sort"

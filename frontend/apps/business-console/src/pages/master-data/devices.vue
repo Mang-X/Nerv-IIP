@@ -39,6 +39,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { formatDateTime } from '@/utils/format'
 
 definePage({ meta: { requiresAuth: true, title: '设备台账' } })
 
@@ -82,8 +83,10 @@ const createForm = reactive({
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '设备编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '设备名称', accessor: (r) => r.displayName ?? '无' },
+  { key: 'lineCode', header: '所属产线', width: 'w-32', accessor: (r) => r.lineCode ?? '无' },
+  { key: 'workCenterCode', header: '所属工作中心', width: 'w-36', accessor: (r) => r.workCenterCode ?? '无' },
   { key: 'active', header: '状态', width: 'w-24' },
-  { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
+  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 

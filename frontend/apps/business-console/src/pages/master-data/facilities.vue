@@ -44,6 +44,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { formatDateTime } from '@/utils/format'
 
 definePage({ meta: { requiresAuth: true, title: '工厂与产线' } })
 
@@ -64,19 +65,44 @@ const workshopActions = useMasterDataResourceActions('workshop')
 const lineActions = useMasterDataResourceActions('production-line')
 const wcActions = useMasterDataResourceActions('work-center')
 
+// 工厂表：无更多 typed 字段，仅做时间格式统一。
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'active', header: '状态', width: 'w-24' },
-  { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
+  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
+// 车间表：已有「所属工厂」；该实体列表项未含 snapshotVersion，故无版本列可改。
 const workshopColumns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'siteCode', header: '所属工厂', width: 'w-32' },
   { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
+]
+
+// 产线表：补「所属工厂 / 所属车间」（归属编码直接显示）。
+const lineColumns: DataTableColumn<BusinessConsoleResourceItem>[] = [
+  { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
+  { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
+  { key: 'siteCode', header: '所属工厂', width: 'w-32', accessor: (r) => r.siteCode ?? '无' },
+  { key: 'workshopCode', header: '所属车间', width: 'w-32', accessor: (r) => r.workshopCode ?? '无' },
+  { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
+]
+
+// 工作中心表：补「所属工厂 / 所属产线 / 日产能（分钟）」。
+const wcColumns: DataTableColumn<BusinessConsoleResourceItem>[] = [
+  { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
+  { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
+  { key: 'plantCode', header: '所属工厂', width: 'w-32', accessor: (r) => r.plantCode ?? '无' },
+  { key: 'lineCode', header: '所属产线', width: 'w-32', accessor: (r) => r.lineCode ?? '无' },
+  { key: 'capacityMinutesPerDay', header: '日产能(分钟)', width: 'w-28', accessor: (r) => r.capacityMinutesPerDay != null ? String(r.capacityMinutesPerDay) : '无' },
+  { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
@@ -643,7 +669,7 @@ function refreshAll() {
         </Toolbar>
         <p v-if="lineListError" class="text-sm text-destructive" role="alert">{{ lineListError }}</p>
         <DataTable
-          :columns="columns"
+          :columns="lineColumns"
           :rows="lineRows"
           :row-key="rowKey"
           :loading="lines.pending.value"
@@ -829,7 +855,7 @@ function refreshAll() {
         </Toolbar>
         <p v-if="wcListError" class="text-sm text-destructive" role="alert">{{ wcListError }}</p>
         <DataTable
-          :columns="columns"
+          :columns="wcColumns"
           :rows="wcRows"
           :row-key="rowKey"
           :loading="workCenters.pending.value"

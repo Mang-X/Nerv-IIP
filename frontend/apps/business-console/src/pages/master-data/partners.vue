@@ -32,10 +32,12 @@ import {
   SelectValue,
   Spinner,
   StatusBadge,
+  toast,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { formatDateTime } from '@/utils/format'
 
 definePage({ meta: { requiresAuth: true, title: '业务伙伴' } })
 
@@ -54,7 +56,6 @@ const partnerActions = useMasterDataResourceActions('business-partner')
 
 const createOpen = shallowRef(false)
 const createShowErrors = ref(false)
-const createSuccess = shallowRef('')
 // 编辑态：null=新建，否则=正在编辑的伙伴编码（编码不可改）。
 const editingCode = shallowRef<string | null>(null)
 const editLoading = shallowRef(false)
@@ -139,7 +140,9 @@ const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'roles', header: '角色', width: 'w-40' },
+  { key: 'taxId', header: '税号', width: 'w-44', accessor: (r) => r.taxId ?? '无' },
   { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
@@ -223,7 +226,7 @@ async function submitPartner() {
       partnerRoles: roles,
       taxId: taxId || null,
     })
-    createSuccess.value = `业务伙伴「${createForm.name.trim()}」已更新。`
+    toast.success(`业务伙伴「${createForm.name.trim()}」已更新。`)
   }
   else {
     const body: BusinessConsoleCreateBusinessPartnerRequest = {
@@ -236,7 +239,7 @@ async function submitPartner() {
       ...(taxId ? { taxId } : {}),
     }
     await createPartner(body)
-    createSuccess.value = `业务伙伴「${body.name}」已创建。`
+    toast.success(`业务伙伴「${body.name}」已创建。`)
   }
   resetCreateForm()
   editingCode.value = null
@@ -357,7 +360,6 @@ function isNonEmpty(value: string) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
     <p v-else-if="partnerActionErrorMessage" class="text-sm text-destructive" role="alert">{{ partnerActionErrorMessage }}</p>
-    <p v-else-if="createSuccess" class="text-sm text-success" role="status">{{ createSuccess }}</p>
 
     <DataTable
       v-model:sort="sort"

@@ -31,10 +31,12 @@ import {
   SelectValue,
   Spinner,
   StatusBadge,
+  toast,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { formatDateTime } from '@/utils/format'
 import {
   BARCODE_RULE_OPTIONS,
   BATCH_TRACKING_OPTIONS,
@@ -68,7 +70,6 @@ const createShowErrors = ref(false)
 // 编辑态：null=新建，否则=正在编辑的物料编码。
 const editingCode = shallowRef<string | null>(null)
 const editLoading = shallowRef(false)
-const createSuccess = shallowRef('')
 
 const keyword = ref('')
 const includeDisabled = ref(false)
@@ -158,9 +159,11 @@ const canCreateSku = computed(() =>
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '物料编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '物料名称', accessor: (r) => r.displayName ?? '无' },
-  { key: 'resourceType', header: '类型', width: 'w-24' },
+  { key: 'category', header: '产品分类', width: 'w-28', accessor: (r) => labelOf(PRODUCT_CATEGORY_OPTIONS, r.category) || '无' },
+  { key: 'materialType', header: '物料类型', width: 'w-28', accessor: (r) => labelOf(MATERIAL_TYPE_OPTIONS, r.materialType) || '无' },
+  { key: 'baseUomCode', header: '基本单位', width: 'w-24', accessor: (r) => labelOf(UOM_OPTIONS, r.baseUomCode) || '无' },
   { key: 'active', header: '状态', width: 'w-24' },
-  { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
+  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
@@ -224,7 +227,7 @@ async function submitSku() {
   try {
     if (editingCode.value) {
       await skuActions.update(editingCode.value, skuFieldPatch())
-      createSuccess.value = `物料「${createForm.name.trim()}」已更新。`
+      toast.success(`物料「${createForm.name.trim()}」已更新。`)
     }
     else {
       const body: BusinessConsoleCreateSkuRequest = {
@@ -240,7 +243,7 @@ async function submitSku() {
         { resourceType: 'sku', code: createdCode, displayName: body.name, active: true, snapshotVersion: '本次录入' },
         ...localSkus.value,
       ]
-      createSuccess.value = `物料「${body.name}」已创建${createdCode ? `，编号 ${createdCode}` : ''}。`
+      toast.success(`物料「${body.name}」已创建${createdCode ? `，编号 ${createdCode}` : ''}。`)
     }
     resetCreateForm()
     editingCode.value = null
@@ -475,7 +478,6 @@ function isNonEmpty(value: string) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
     <p v-else-if="skuActionErrorMessage" class="text-sm text-destructive" role="alert">{{ skuActionErrorMessage }}</p>
-    <p v-else-if="createSuccess" class="text-sm text-success" role="status">{{ createSuccess }}</p>
 
     <DataTable
       v-model:sort="sort"
@@ -486,14 +488,11 @@ function isNonEmpty(value: string) {
       :loading="skusPending"
       empty-message="未找到物料。可清空筛选或新建物料。"
     >
-      <template #cell-resourceType="{ value }">
-        {{ value === 'sku' ? '物料' : value }}
-      </template>
       <template #cell-active="{ row }">
         <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
       </template>
-      <template #cell-snapshotVersion="{ value }">
-        <span class="tabular-nums">{{ value }}</span>
+      <template #cell-snapshotVersion="{ row }">
+        <span class="tabular-nums text-muted-foreground">{{ formatDateTime(row.snapshotVersion) }}</span>
       </template>
       <template #cell-actions="{ row }">
         <MasterDataRowActions :row="row" entity-label="物料" :detail-fields="skuDetailFields(row)" :actions="skuActions" @edit="openEdit" />
