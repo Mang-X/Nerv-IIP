@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -85,6 +86,24 @@ public sealed class WmsEndpointContractTests
         });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Wms_registers_persistent_integration_event_dead_letter_store()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+
+        using var scope = factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+
+        Assert.Equal(
+            "Nerv.IIP.Messaging.CAP.PersistentIntegrationEventDeadLetterStore`1[[Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext, Nerv.IIP.Business.Wms.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",
+            store.GetType().FullName);
     }
 
     [Fact]

@@ -212,6 +212,37 @@ public sealed class CompleteCountExecutionCommandHandler(ApplicationDbContext db
     }
 }
 
+public sealed record MarkInventoryMovementRequestPostedCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string MovementType,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    string IdempotencyKey,
+    string InventoryMovementId) : ICommand;
+
+public sealed class MarkInventoryMovementRequestPostedCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<MarkInventoryMovementRequestPostedCommand>
+{
+    public async Task Handle(MarkInventoryMovementRequestPostedCommand request, CancellationToken cancellationToken)
+    {
+        var movementRequest = await dbContext.InventoryMovementRequests.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.MovementType == request.MovementType
+                && x.SourceDocumentId == request.SourceDocumentId
+                && x.SourceDocumentLineId == request.SourceDocumentLineId
+                && x.IdempotencyKey == request.IdempotencyKey,
+            cancellationToken);
+        if (movementRequest is null)
+        {
+            return;
+        }
+
+        movementRequest.MarkPosted(request.InventoryMovementId);
+    }
+}
+
 public sealed record DispatchWcsTaskCommand(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson) : ICommand<WcsTaskId>;
 
 public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext)

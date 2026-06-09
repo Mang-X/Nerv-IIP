@@ -1,6 +1,8 @@
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
+using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
@@ -12,38 +14,44 @@ public sealed class WmsStockMovementPostedConsumerTests
     [Fact]
     public async Task Stock_movement_posted_consumer_marks_matching_wms_request_posted()
     {
-        await using var dbContext = CreateContext();
+        var databaseName = $"wms-stock-movement-posted-{Guid.NewGuid():N}";
+        await using var dbContext = CreateContext(databaseName);
         var request = PendingRequest();
         dbContext.InventoryMovementRequests.Add(request);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new StockMovementPostedIntegrationEventHandlerForMarkWmsRequestPosted(
-            dbContext,
+            new CommandExecutingSender(databaseName),
             new InMemoryIntegrationEventDeadLetterStore());
         var integrationEvent = CreatePostedEvent("inventory-movement-001");
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
 
-        Assert.Equal(InventoryMovementRequestStatus.Posted, request.Status);
-        Assert.Equal("inventory-movement-001", request.InventoryMovementId);
-        Assert.NotNull(request.PostedAtUtc);
+        await using var assertionContext = CreateContext(databaseName);
+        var persistedRequest = await assertionContext.InventoryMovementRequests.SingleAsync(CancellationToken.None);
+        Assert.Equal(InventoryMovementRequestStatus.Posted, persistedRequest.Status);
+        Assert.Equal("inventory-movement-001", persistedRequest.InventoryMovementId);
+        Assert.NotNull(persistedRequest.PostedAtUtc);
     }
 
     [Fact]
     public async Task Stock_movement_posted_consumer_ignores_non_wms_sources()
     {
-        await using var dbContext = CreateContext();
+        var databaseName = $"wms-stock-movement-posted-{Guid.NewGuid():N}";
+        await using var dbContext = CreateContext(databaseName);
         var request = PendingRequest();
         dbContext.InventoryMovementRequests.Add(request);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new StockMovementPostedIntegrationEventHandlerForMarkWmsRequestPosted(
-            dbContext,
+            new CommandExecutingSender(databaseName),
             new InMemoryIntegrationEventDeadLetterStore());
 
         await handler.HandleAsync(CreatePostedEvent("inventory-movement-erp", sourceService: "erp"), CancellationToken.None);
 
-        Assert.Equal(InventoryMovementRequestStatus.Pending, request.Status);
-        Assert.Null(request.InventoryMovementId);
+        await using var assertionContext = CreateContext(databaseName);
+        var persistedRequest = await assertionContext.InventoryMovementRequests.SingleAsync(CancellationToken.None);
+        Assert.Equal(InventoryMovementRequestStatus.Pending, persistedRequest.Status);
+        Assert.Null(persistedRequest.InventoryMovementId);
     }
 
     private static InventoryMovementRequest PendingRequest()
@@ -103,11 +111,48 @@ public sealed class WmsStockMovementPostedConsumerTests
                 DateTimeOffset.UtcNow));
     }
 
-    private static ApplicationDbContext CreateContext()
+    private static ApplicationDbContext CreateContext(string databaseName)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase($"wms-stock-movement-posted-{Guid.NewGuid():N}")
+            .UseInMemoryDatabase(databaseName)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class CommandExecutingSender(string databaseName) : ISender
+    {
+        public async Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            if (request is MarkInventoryMovementRequestPostedCommand command)
+            {
+                await using var dbContext = CreateContext(databaseName);
+                await new MarkInventoryMovementRequestPostedCommandHandler(dbContext).Handle(command, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+
+            throw new NotSupportedException($"Request type is not supported by this test sender: {request?.GetType().FullName}");
+        }
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender only supports command requests without responses.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender only supports typed command requests.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender does not support streams.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender does not support streams.");
+        }
     }
 }

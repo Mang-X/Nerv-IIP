@@ -1,6 +1,5 @@
 using DotNetCore.CAP;
-using Microsoft.EntityFrameworkCore;
-using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
+using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -9,7 +8,7 @@ namespace Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent", ConsumerName)]
 public sealed class StockMovementPostedIntegrationEventHandlerForMarkWmsRequestPosted(
-    ApplicationDbContext dbContext,
+    ISender sender,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<StockMovementPostedIntegrationEvent>, ICapSubscribe
 {
@@ -41,17 +40,15 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkWmsRequestP
             return;
         }
 
-        var request = await dbContext.InventoryMovementRequests.SingleOrDefaultAsync(
-            x => x.OrganizationId == integrationEvent.OrganizationId
-                && x.EnvironmentId == integrationEvent.EnvironmentId
-                && x.SourceDocumentId == integrationEvent.Payload.SourceDocumentId
-                && x.IdempotencyKey == integrationEvent.Payload.IdempotencyKey,
+        await sender.Send(
+            new MarkInventoryMovementRequestPostedCommand(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                integrationEvent.Payload.MovementType,
+                integrationEvent.Payload.SourceDocumentId,
+                integrationEvent.Payload.SourceDocumentLineId,
+                integrationEvent.Payload.IdempotencyKey,
+                integrationEvent.Payload.InventoryMovementId),
             cancellationToken);
-        if (request is null)
-        {
-            return;
-        }
-
-        request.MarkPosted(integrationEvent.Payload.InventoryMovementId);
     }
 }
