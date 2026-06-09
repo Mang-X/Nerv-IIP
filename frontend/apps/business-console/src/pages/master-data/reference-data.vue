@@ -82,6 +82,9 @@ const pageSize = ref('10')
 const createOpen = shallowRef(false)
 const createShowErrors = ref(false)
 const createSuccess = shallowRef('')
+// 编辑态：null=新建，否则=正在编辑的码值编码（codeSet/code 是身份，编辑态只读）。
+const editingCode = shallowRef<string | null>(null)
+const editLoading = shallowRef(false)
 
 const selectedLabel = computed(() => codeSetLabel(selectedCodeSet.value))
 const activeCount = computed(() => codes.value.filter((r) => r.active !== false).length)
@@ -165,22 +168,56 @@ function codeDetailFields(row: BusinessConsoleResourceItem) {
 function resetCreateForm() {
   Object.assign(createForm, { ...CREATE_FORM_DEFAULTS, codeSet: selectedCodeSet.value })
 }
+function openCreate() {
+  editingCode.value = null
+  resetCreateForm()
+  createShowErrors.value = false
+  createForm.organizationId = filters.organizationId
+  createForm.environmentId = filters.environmentId
+  createForm.codeSet = selectedCodeSet.value
+  createOpen.value = true
+}
+async function openEdit(row: BusinessConsoleResourceItem) {
+  if (!row.code) return
+  editingCode.value = row.code
+  createShowErrors.value = false
+  editLoading.value = true
+  createOpen.value = true
+  try {
+    const d = await codeActions.fetchDetail(row.code)
+    Object.assign(createForm, {
+      codeSet: row.codeSet ?? selectedCodeSet.value,
+      code: row.code,
+      name: d?.name ?? row.displayName ?? '',
+    })
+  }
+  finally {
+    editLoading.value = false
+  }
+}
 async function submitCode() {
   if (!canCreateCode.value) {
     createShowErrors.value = true
     return
   }
-  const body: BusinessConsoleCreateReferenceDataCodeRequest = {
-    organizationId: createForm.organizationId.trim(),
-    environmentId: createForm.environmentId.trim(),
-    codeSet: createForm.codeSet.trim(),
-    code: createForm.code.trim(),
-    name: createForm.name.trim(),
+  if (editingCode.value) {
+    await codeActions.update(editingCode.value, { name: createForm.name.trim() })
+    createSuccess.value = `字典条目「${createForm.name.trim()}」已更新。`
   }
-  await createCode(body)
-  createSuccess.value = `字典条目「${body.name}」已创建。`
-  selectedCodeSet.value = body.codeSet
+  else {
+    const body: BusinessConsoleCreateReferenceDataCodeRequest = {
+      organizationId: createForm.organizationId.trim(),
+      environmentId: createForm.environmentId.trim(),
+      codeSet: createForm.codeSet.trim(),
+      code: createForm.code.trim(),
+      name: createForm.name.trim(),
+    }
+    await createCode(body)
+    createSuccess.value = `字典条目「${body.name}」已创建。`
+    selectedCodeSet.value = body.codeSet
+  }
   resetCreateForm()
+  editingCode.value = null
   createShowErrors.value = false
   createOpen.value = false
 }
@@ -209,22 +246,22 @@ function isNonEmpty(value: string) {
         </Button>
         <Dialog v-model:open="createOpen" @update:open="syncFormOnOpen">
           <DialogTrigger as-child>
-            <Button size="sm" type="button">
+            <Button size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建字典条目
             </Button>
           </DialogTrigger>
           <DialogContent class="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>新建字典条目</DialogTitle>
-              <DialogDescription>选择所属字典，填写编码与名称。带 * 为必填项。</DialogDescription>
+              <DialogTitle>{{ editingCode ? '编辑字典条目' : '新建字典条目' }}</DialogTitle>
+              <DialogDescription>{{ editingCode ? '修改字典条目名称（所属字典与编码不可修改）。带 * 为必填项。' : '选择所属字典，填写编码与名称。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitCode">
               <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
 
               <Field>
                 <FieldLabel for="ref-code-set">所属字典 <span class="text-destructive">*</span></FieldLabel>
-                <Select v-model="createForm.codeSet">
+                <Select v-model="createForm.codeSet" :disabled="!!editingCode">
                   <SelectTrigger id="ref-code-set"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem v-for="s in CODE_SETS" :key="s.codeSet" :value="s.codeSet">{{ s.label }}</SelectItem>
@@ -236,7 +273,7 @@ function isNonEmpty(value: string) {
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
                   <FieldLabel for="ref-code">编码 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="ref-code" v-model="createForm.code" autocomplete="off" aria-required="true" required />
+                  <Input id="ref-code" v-model="createForm.code" autocomplete="off" aria-required="true" :disabled="!!editingCode" required />
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                   <FieldLabel for="ref-name">名称 <span class="text-destructive">*</span></FieldLabel>
@@ -246,9 +283,9 @@ function isNonEmpty(value: string) {
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createCodePending">
-                  <Spinner v-if="createCodePending" aria-hidden="true" />
-                  保存条目
+                <Button type="submit" :disabled="createCodePending || codeActions.updatePending.value || editLoading">
+                  <Spinner v-if="createCodePending || codeActions.updatePending.value" aria-hidden="true" />
+                  {{ editingCode ? '保存修改' : '保存条目' }}
                 </Button>
               </DialogFooter>
             </form>
@@ -304,7 +341,7 @@ function isNonEmpty(value: string) {
             <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="字典条目" :detail-fields="codeDetailFields(row)" :actions="codeActions" />
+            <MasterDataRowActions :row="row" entity-label="字典条目" :detail-fields="codeDetailFields(row)" :actions="codeActions" @edit="openEdit" />
           </template>
         </DataTable>
 

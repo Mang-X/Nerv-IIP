@@ -43,7 +43,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '工厂与产线' } })
 
@@ -134,6 +134,9 @@ const sitePage = ref(1)
 const sitePageSize = ref('10')
 const siteOpen = ref(false)
 const siteShowErrors = ref(false)
+// 编辑态：null=新建，否则=正在编辑的编码（编码不可改）。
+const siteEditingCode = shallowRef<string | null>(null)
+const siteEditLoading = shallowRef(false)
 const siteForm = reactive({ code: '', name: '', timezone: DEFAULT_TIMEZONE })
 const siteRows = computed(() => filterRows(sites.items.value, siteKeyword.value))
 const canCreateSite = computed(() => [siteForm.code, siteForm.name, siteForm.timezone].every(isNonEmpty))
@@ -147,20 +150,57 @@ watch([sitePage, sitePageSize], () => {
   sites.filters.take = Number(sitePageSize.value) || 10
 }, { immediate: true })
 
+function resetSiteForm() {
+  Object.assign(siteForm, { code: '', name: '', timezone: DEFAULT_TIMEZONE })
+}
+function openCreateSite() {
+  siteEditingCode.value = null
+  resetSiteForm()
+  siteShowErrors.value = false
+  siteOpen.value = true
+}
+async function openEditSite(row: BusinessConsoleResourceItem) {
+  if (!row.code) return
+  siteEditingCode.value = row.code
+  siteShowErrors.value = false
+  siteEditLoading.value = true
+  siteOpen.value = true
+  try {
+    const d = await siteActions.fetchDetail(row.code)
+    Object.assign(siteForm, {
+      code: row.code,
+      name: d?.name ?? row.displayName ?? '',
+      timezone: d?.timezone || DEFAULT_TIMEZONE,
+    })
+  }
+  finally {
+    siteEditLoading.value = false
+  }
+}
 async function submitSite() {
   if (!canCreateSite.value) {
     siteShowErrors.value = true
     return
   }
-  await sites.create({
-    organizationId: sites.filters.organizationId,
-    environmentId: sites.filters.environmentId,
-    code: siteForm.code.trim(),
-    name: siteForm.name.trim(),
-    timezone: siteForm.timezone.trim(),
-  })
-  toast.success(`工厂「${siteForm.name.trim()}」已创建。`)
-  Object.assign(siteForm, { code: '', name: '', timezone: DEFAULT_TIMEZONE })
+  if (siteEditingCode.value) {
+    await siteActions.update(siteEditingCode.value, {
+      name: siteForm.name.trim(),
+      timezone: siteForm.timezone.trim(),
+    })
+    toast.success(`工厂「${siteForm.name.trim()}」已更新。`)
+  }
+  else {
+    await sites.create({
+      organizationId: sites.filters.organizationId,
+      environmentId: sites.filters.environmentId,
+      code: siteForm.code.trim(),
+      name: siteForm.name.trim(),
+      timezone: siteForm.timezone.trim(),
+    })
+    toast.success(`工厂「${siteForm.name.trim()}」已创建。`)
+  }
+  resetSiteForm()
+  siteEditingCode.value = null
   siteShowErrors.value = false
   siteOpen.value = false
 }
@@ -171,6 +211,8 @@ const workshopPage = ref(1)
 const workshopPageSize = ref('10')
 const workshopOpen = ref(false)
 const workshopShowErrors = ref(false)
+const workshopEditingCode = shallowRef<string | null>(null)
+const workshopEditLoading = shallowRef(false)
 const workshopForm = reactive({ code: '', name: '', siteCode: '', managerUserId: '', description: '' })
 const workshopRows = computed(() => filterRows(workshops.workshops.value, workshopKeyword.value))
 const canCreateWorkshop = computed(() => [workshopForm.code, workshopForm.name, workshopForm.siteCode].every(isNonEmpty))
@@ -184,6 +226,36 @@ watch([workshopPage, workshopPageSize], () => {
   workshops.filters.take = Number(workshopPageSize.value) || 10
 }, { immediate: true })
 
+function resetWorkshopForm() {
+  Object.assign(workshopForm, { code: '', name: '', siteCode: '', managerUserId: '', description: '' })
+}
+function openCreateWorkshop() {
+  workshopEditingCode.value = null
+  resetWorkshopForm()
+  workshopShowErrors.value = false
+  workshopOpen.value = true
+}
+async function openEditWorkshop(row: BusinessConsoleResourceItem) {
+  if (!row.code) return
+  workshopEditingCode.value = row.code
+  workshopShowErrors.value = false
+  workshopEditLoading.value = true
+  workshopOpen.value = true
+  try {
+    const d = await workshopActions.fetchDetail(row.code)
+    // 详情未返回 managerUserId/description（列表/详情形状均无），编辑时留空由用户按需重填。
+    Object.assign(workshopForm, {
+      code: row.code,
+      name: d?.name ?? row.displayName ?? '',
+      siteCode: d?.siteCode ?? row.siteCode ?? '',
+      managerUserId: '',
+      description: '',
+    })
+  }
+  finally {
+    workshopEditLoading.value = false
+  }
+}
 async function submitWorkshop() {
   if (!canCreateWorkshop.value) {
     workshopShowErrors.value = true
@@ -191,17 +263,29 @@ async function submitWorkshop() {
   }
   const manager = workshopForm.managerUserId.trim()
   const note = workshopForm.description.trim()
-  await workshops.createWorkshop({
-    organizationId: workshops.filters.organizationId,
-    environmentId: workshops.filters.environmentId,
-    code: workshopForm.code.trim(),
-    name: workshopForm.name.trim(),
-    siteCode: workshopForm.siteCode.trim(),
-    ...(manager ? { managerUserId: manager } : {}),
-    ...(note ? { description: note } : {}),
-  })
-  toast.success(`车间「${workshopForm.name.trim()}」已创建。`)
-  Object.assign(workshopForm, { code: '', name: '', siteCode: '', managerUserId: '', description: '' })
+  if (workshopEditingCode.value) {
+    await workshopActions.update(workshopEditingCode.value, {
+      name: workshopForm.name.trim(),
+      siteCode: workshopForm.siteCode.trim(),
+      managerUserId: manager || null,
+      description: note || null,
+    })
+    toast.success(`车间「${workshopForm.name.trim()}」已更新。`)
+  }
+  else {
+    await workshops.createWorkshop({
+      organizationId: workshops.filters.organizationId,
+      environmentId: workshops.filters.environmentId,
+      code: workshopForm.code.trim(),
+      name: workshopForm.name.trim(),
+      siteCode: workshopForm.siteCode.trim(),
+      ...(manager ? { managerUserId: manager } : {}),
+      ...(note ? { description: note } : {}),
+    })
+    toast.success(`车间「${workshopForm.name.trim()}」已创建。`)
+  }
+  resetWorkshopForm()
+  workshopEditingCode.value = null
   workshopShowErrors.value = false
   workshopOpen.value = false
 }
@@ -212,6 +296,8 @@ const linePage = ref(1)
 const linePageSize = ref('10')
 const lineOpen = ref(false)
 const lineShowErrors = ref(false)
+const lineEditingCode = shallowRef<string | null>(null)
+const lineEditLoading = shallowRef(false)
 const lineForm = reactive({ code: '', name: '', siteCode: '', workshopCode: '' })
 const lineRows = computed(() => filterRows(lines.items.value, lineKeyword.value))
 const canCreateLine = computed(() => [lineForm.code, lineForm.name, lineForm.siteCode].every(isNonEmpty))
@@ -225,22 +311,61 @@ watch([linePage, linePageSize], () => {
   lines.filters.take = Number(linePageSize.value) || 10
 }, { immediate: true })
 
+function resetLineForm() {
+  Object.assign(lineForm, { code: '', name: '', siteCode: '', workshopCode: '' })
+}
+function openCreateLine() {
+  lineEditingCode.value = null
+  resetLineForm()
+  lineShowErrors.value = false
+  lineOpen.value = true
+}
+async function openEditLine(row: BusinessConsoleResourceItem) {
+  if (!row.code) return
+  lineEditingCode.value = row.code
+  lineShowErrors.value = false
+  lineEditLoading.value = true
+  lineOpen.value = true
+  try {
+    const d = await lineActions.fetchDetail(row.code)
+    Object.assign(lineForm, {
+      code: row.code,
+      name: d?.name ?? row.displayName ?? '',
+      siteCode: d?.siteCode ?? row.siteCode ?? '',
+      workshopCode: row.workshopCode ?? '',
+    })
+  }
+  finally {
+    lineEditLoading.value = false
+  }
+}
 async function submitLine() {
   if (!canCreateLine.value) {
     lineShowErrors.value = true
     return
   }
   const workshopCode = lineForm.workshopCode.trim()
-  await lines.create({
-    organizationId: lines.filters.organizationId,
-    environmentId: lines.filters.environmentId,
-    code: lineForm.code.trim(),
-    name: lineForm.name.trim(),
-    siteCode: lineForm.siteCode.trim(),
-    ...(workshopCode ? { workshopCode } : {}),
-  })
-  toast.success(`产线「${lineForm.name.trim()}」已创建。`)
-  Object.assign(lineForm, { code: '', name: '', siteCode: '', workshopCode: '' })
+  if (lineEditingCode.value) {
+    await lineActions.update(lineEditingCode.value, {
+      name: lineForm.name.trim(),
+      siteCode: lineForm.siteCode.trim(),
+      workshopCode: workshopCode || null,
+    })
+    toast.success(`产线「${lineForm.name.trim()}」已更新。`)
+  }
+  else {
+    await lines.create({
+      organizationId: lines.filters.organizationId,
+      environmentId: lines.filters.environmentId,
+      code: lineForm.code.trim(),
+      name: lineForm.name.trim(),
+      siteCode: lineForm.siteCode.trim(),
+      ...(workshopCode ? { workshopCode } : {}),
+    })
+    toast.success(`产线「${lineForm.name.trim()}」已创建。`)
+  }
+  resetLineForm()
+  lineEditingCode.value = null
   lineShowErrors.value = false
   lineOpen.value = false
 }
@@ -251,6 +376,8 @@ const wcPage = ref(1)
 const wcPageSize = ref('10')
 const wcOpen = ref(false)
 const wcShowErrors = ref(false)
+const wcEditingCode = shallowRef<string | null>(null)
+const wcEditLoading = shallowRef(false)
 const wcForm = reactive({ code: '', name: '', plantCode: '', lineCode: '', workshopCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
 const wcRows = computed(() => filterRows(workCenters.items.value, wcKeyword.value))
 const canCreateWorkCenter = computed(() =>
@@ -267,28 +394,75 @@ watch([wcPage, wcPageSize], () => {
   workCenters.filters.take = Number(wcPageSize.value) || 10
 }, { immediate: true })
 
+function resetWcForm() {
+  Object.assign(wcForm, { code: '', name: '', plantCode: '', lineCode: '', workshopCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
+}
+function openCreateWorkCenter() {
+  wcEditingCode.value = null
+  resetWcForm()
+  wcShowErrors.value = false
+  wcOpen.value = true
+}
+async function openEditWorkCenter(row: BusinessConsoleResourceItem) {
+  if (!row.code) return
+  wcEditingCode.value = row.code
+  wcShowErrors.value = false
+  wcEditLoading.value = true
+  wcOpen.value = true
+  try {
+    const d = await wcActions.fetchDetail(row.code)
+    Object.assign(wcForm, {
+      code: row.code,
+      name: d?.name ?? row.displayName ?? '',
+      plantCode: d?.plantCode ?? row.plantCode ?? '',
+      lineCode: d?.lineCode ?? row.lineCode ?? '',
+      workshopCode: row.workshopCode ?? '',
+      defaultCalendarCode: d?.defaultCalendarCode ?? '',
+      capacityMinutesPerDay: String(d?.capacityMinutesPerDay ?? row.capacityMinutesPerDay ?? WORK_CENTER_DEFAULTS.capacityMinutesPerDay),
+    })
+  }
+  finally {
+    wcEditLoading.value = false
+  }
+}
 async function submitWorkCenter() {
   if (!canCreateWorkCenter.value) {
     wcShowErrors.value = true
     return
   }
   const workshopCode = wcForm.workshopCode.trim()
-  await workCenters.create({
-    organizationId: workCenters.filters.organizationId,
-    environmentId: workCenters.filters.environmentId,
-    code: wcForm.code.trim(),
-    name: wcForm.name.trim(),
-    plantCode: wcForm.plantCode.trim(),
-    lineCode: wcForm.lineCode.trim(),
-    defaultCalendarCode: wcForm.defaultCalendarCode.trim(),
-    capacityMinutesPerDay: Number(wcForm.capacityMinutesPerDay) || WORK_CENTER_DEFAULTS.capacityMinutesPerDay,
-    resourceType: WORK_CENTER_DEFAULTS.resourceType,
-    capacityUnit: WORK_CENTER_DEFAULTS.capacityUnit,
-    finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
-    ...(workshopCode ? { workshopCode } : {}),
-  })
-  toast.success(`工作中心「${wcForm.name.trim()}」已创建。`)
-  Object.assign(wcForm, { code: '', name: '', plantCode: '', lineCode: '', workshopCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
+  if (wcEditingCode.value) {
+    await wcActions.update(wcEditingCode.value, {
+      name: wcForm.name.trim(),
+      plantCode: wcForm.plantCode.trim(),
+      lineCode: wcForm.lineCode.trim(),
+      defaultCalendarCode: wcForm.defaultCalendarCode.trim(),
+      capacityMinutesPerDay: Number(wcForm.capacityMinutesPerDay) || WORK_CENTER_DEFAULTS.capacityMinutesPerDay,
+      capacityUnit: WORK_CENTER_DEFAULTS.capacityUnit,
+      finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
+      workshopCode: workshopCode || null,
+    })
+    toast.success(`工作中心「${wcForm.name.trim()}」已更新。`)
+  }
+  else {
+    await workCenters.create({
+      organizationId: workCenters.filters.organizationId,
+      environmentId: workCenters.filters.environmentId,
+      code: wcForm.code.trim(),
+      name: wcForm.name.trim(),
+      plantCode: wcForm.plantCode.trim(),
+      lineCode: wcForm.lineCode.trim(),
+      defaultCalendarCode: wcForm.defaultCalendarCode.trim(),
+      capacityMinutesPerDay: Number(wcForm.capacityMinutesPerDay) || WORK_CENTER_DEFAULTS.capacityMinutesPerDay,
+      resourceType: WORK_CENTER_DEFAULTS.resourceType,
+      capacityUnit: WORK_CENTER_DEFAULTS.capacityUnit,
+      finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
+      ...(workshopCode ? { workshopCode } : {}),
+    })
+    toast.success(`工作中心「${wcForm.name.trim()}」已创建。`)
+  }
+  resetWcForm()
+  wcEditingCode.value = null
   wcShowErrors.value = false
   wcOpen.value = false
 }
@@ -343,22 +517,22 @@ function refreshAll() {
           <template #actions>
             <Dialog v-model:open="siteOpen">
               <DialogTrigger as-child>
-                <Button size="sm" type="button">
+                <Button size="sm" type="button" @click="openCreateSite">
                   <PlusIcon aria-hidden="true" />
                   新建工厂
                 </Button>
               </DialogTrigger>
               <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>新建工厂</DialogTitle>
-                  <DialogDescription>登记一个生产站点。带 * 为必填项。</DialogDescription>
+                  <DialogTitle>{{ siteEditingCode ? '编辑工厂' : '新建工厂' }}</DialogTitle>
+                  <DialogDescription>{{ siteEditingCode ? '修改工厂档案（编码不可修改）。带 * 为必填项。' : '登记一个生产站点。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitSite">
                   <p v-if="siteCreateError" class="text-sm text-destructive" role="alert">{{ siteCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="siteShowErrors && !isNonEmpty(siteForm.code)">
                       <FieldLabel for="site-code">工厂编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="site-code" v-model="siteForm.code" autocomplete="off" required />
+                      <Input id="site-code" v-model="siteForm.code" autocomplete="off" :disabled="!!siteEditingCode" required />
                     </Field>
                     <Field :data-invalid="siteShowErrors && !isNonEmpty(siteForm.name)">
                       <FieldLabel for="site-name">工厂名称 <span class="text-destructive">*</span></FieldLabel>
@@ -372,9 +546,9 @@ function refreshAll() {
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="siteOpen = false">取消</Button>
-                    <Button type="submit" :disabled="sites.createPending.value">
-                      <Spinner v-if="sites.createPending.value" aria-hidden="true" />
-                      保存工厂
+                    <Button type="submit" :disabled="sites.createPending.value || siteActions.updatePending.value || siteEditLoading">
+                      <Spinner v-if="sites.createPending.value || siteActions.updatePending.value" aria-hidden="true" />
+                      {{ siteEditingCode ? '保存修改' : '保存工厂' }}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -395,7 +569,7 @@ function refreshAll() {
             <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="工厂" :detail-fields="siteDetailFields(row)" :actions="siteActions" />
+            <MasterDataRowActions :row="row" entity-label="工厂" :detail-fields="siteDetailFields(row)" :actions="siteActions" @edit="openEditSite" />
           </template>
         </DataTable>
         <DataTablePagination v-model:page="sitePage" v-model:page-size="sitePageSize" :total-items="sites.total.value" />
@@ -407,22 +581,22 @@ function refreshAll() {
           <template #actions>
             <Dialog v-model:open="lineOpen">
               <DialogTrigger as-child>
-                <Button size="sm" type="button">
+                <Button size="sm" type="button" @click="openCreateLine">
                   <PlusIcon aria-hidden="true" />
                   新建产线
                 </Button>
               </DialogTrigger>
               <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>新建产线</DialogTitle>
-                  <DialogDescription>在所属工厂下登记一条产线。带 * 为必填项。</DialogDescription>
+                  <DialogTitle>{{ lineEditingCode ? '编辑产线' : '新建产线' }}</DialogTitle>
+                  <DialogDescription>{{ lineEditingCode ? '修改产线档案（编码不可修改）。带 * 为必填项。' : '在所属工厂下登记一条产线。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitLine">
                   <p v-if="lineCreateError" class="text-sm text-destructive" role="alert">{{ lineCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="lineShowErrors && !isNonEmpty(lineForm.code)">
                       <FieldLabel for="line-code">产线编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="line-code" v-model="lineForm.code" autocomplete="off" required />
+                      <Input id="line-code" v-model="lineForm.code" autocomplete="off" :disabled="!!lineEditingCode" required />
                     </Field>
                     <Field :data-invalid="lineShowErrors && !isNonEmpty(lineForm.name)">
                       <FieldLabel for="line-name">产线名称 <span class="text-destructive">*</span></FieldLabel>
@@ -455,9 +629,9 @@ function refreshAll() {
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="lineOpen = false">取消</Button>
-                    <Button type="submit" :disabled="lines.createPending.value">
-                      <Spinner v-if="lines.createPending.value" aria-hidden="true" />
-                      保存产线
+                    <Button type="submit" :disabled="lines.createPending.value || lineActions.updatePending.value || lineEditLoading">
+                      <Spinner v-if="lines.createPending.value || lineActions.updatePending.value" aria-hidden="true" />
+                      {{ lineEditingCode ? '保存修改' : '保存产线' }}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -477,7 +651,7 @@ function refreshAll() {
             <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="产线" :detail-fields="lineDetailFields(row)" :actions="lineActions" />
+            <MasterDataRowActions :row="row" entity-label="产线" :detail-fields="lineDetailFields(row)" :actions="lineActions" @edit="openEditLine" />
           </template>
         </DataTable>
         <DataTablePagination v-model:page="linePage" v-model:page-size="linePageSize" :total-items="lines.total.value" />
@@ -489,22 +663,22 @@ function refreshAll() {
           <template #actions>
             <Dialog v-model:open="workshopOpen">
               <DialogTrigger as-child>
-                <Button size="sm" type="button">
+                <Button size="sm" type="button" @click="openCreateWorkshop">
                   <PlusIcon aria-hidden="true" />
                   新建车间
                 </Button>
               </DialogTrigger>
               <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>新建车间</DialogTitle>
-                  <DialogDescription>在所属工厂下登记一个车间。带 * 为必填项。</DialogDescription>
+                  <DialogTitle>{{ workshopEditingCode ? '编辑车间' : '新建车间' }}</DialogTitle>
+                  <DialogDescription>{{ workshopEditingCode ? '修改车间档案（编码不可修改）。带 * 为必填项。' : '在所属工厂下登记一个车间。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitWorkshop">
                   <p v-if="workshopCreateError" class="text-sm text-destructive" role="alert">{{ workshopCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="workshopShowErrors && !isNonEmpty(workshopForm.code)">
                       <FieldLabel for="workshop-code">车间编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="workshop-code" v-model="workshopForm.code" autocomplete="off" required />
+                      <Input id="workshop-code" v-model="workshopForm.code" autocomplete="off" :disabled="!!workshopEditingCode" required />
                     </Field>
                     <Field :data-invalid="workshopShowErrors && !isNonEmpty(workshopForm.name)">
                       <FieldLabel for="workshop-name">车间名称 <span class="text-destructive">*</span></FieldLabel>
@@ -534,9 +708,9 @@ function refreshAll() {
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="workshopOpen = false">取消</Button>
-                    <Button type="submit" :disabled="workshops.createWorkshopPending.value">
-                      <Spinner v-if="workshops.createWorkshopPending.value" aria-hidden="true" />
-                      保存车间
+                    <Button type="submit" :disabled="workshops.createWorkshopPending.value || workshopActions.updatePending.value || workshopEditLoading">
+                      <Spinner v-if="workshops.createWorkshopPending.value || workshopActions.updatePending.value" aria-hidden="true" />
+                      {{ workshopEditingCode ? '保存修改' : '保存车间' }}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -559,7 +733,7 @@ function refreshAll() {
             <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="车间" :detail-fields="workshopDetailFields(row)" :actions="workshopActions" />
+            <MasterDataRowActions :row="row" entity-label="车间" :detail-fields="workshopDetailFields(row)" :actions="workshopActions" @edit="openEditWorkshop" />
           </template>
         </DataTable>
         <DataTablePagination v-model:page="workshopPage" v-model:page-size="workshopPageSize" :total-items="workshops.workshopsTotal.value" />
@@ -571,22 +745,22 @@ function refreshAll() {
           <template #actions>
             <Dialog v-model:open="wcOpen">
               <DialogTrigger as-child>
-                <Button size="sm" type="button">
+                <Button size="sm" type="button" @click="openCreateWorkCenter">
                   <PlusIcon aria-hidden="true" />
                   新建工作中心
                 </Button>
               </DialogTrigger>
               <DialogContent class="sm:max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>新建工作中心</DialogTitle>
-                  <DialogDescription>在工厂与产线下登记一个产能资源。带 * 为必填项。</DialogDescription>
+                  <DialogTitle>{{ wcEditingCode ? '编辑工作中心' : '新建工作中心' }}</DialogTitle>
+                  <DialogDescription>{{ wcEditingCode ? '修改工作中心档案（编码不可修改）。带 * 为必填项。' : '在工厂与产线下登记一个产能资源。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitWorkCenter">
                   <p v-if="wcCreateError" class="text-sm text-destructive" role="alert">{{ wcCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.code)">
                       <FieldLabel for="wc-code">工作中心编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="wc-code" v-model="wcForm.code" autocomplete="off" required />
+                      <Input id="wc-code" v-model="wcForm.code" autocomplete="off" :disabled="!!wcEditingCode" required />
                     </Field>
                     <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.name)">
                       <FieldLabel for="wc-name">工作中心名称 <span class="text-destructive">*</span></FieldLabel>
@@ -639,9 +813,9 @@ function refreshAll() {
                   </FieldGroup>
                   <DialogFooter>
                     <Button type="button" variant="outline" @click="wcOpen = false">取消</Button>
-                    <Button type="submit" :disabled="workCenters.createPending.value">
-                      <Spinner v-if="workCenters.createPending.value" aria-hidden="true" />
-                      保存工作中心
+                    <Button type="submit" :disabled="workCenters.createPending.value || wcActions.updatePending.value || wcEditLoading">
+                      <Spinner v-if="workCenters.createPending.value || wcActions.updatePending.value" aria-hidden="true" />
+                      {{ wcEditingCode ? '保存修改' : '保存工作中心' }}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -661,7 +835,7 @@ function refreshAll() {
             <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="工作中心" :detail-fields="workCenterDetailFields(row)" :actions="wcActions" />
+            <MasterDataRowActions :row="row" entity-label="工作中心" :detail-fields="workCenterDetailFields(row)" :actions="wcActions" @edit="openEditWorkCenter" />
           </template>
         </DataTable>
         <DataTablePagination v-model:page="wcPage" v-model:page-size="wcPageSize" :total-items="workCenters.total.value" />

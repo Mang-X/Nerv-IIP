@@ -43,11 +43,17 @@ function stubWorkshops() {
   }
 }
 
+const actionStub = vi.hoisted(() => ({
+  update: vi.fn(),
+  fetchDetail: vi.fn().mockResolvedValue({ name: '宁波工厂', timezone: 'Asia/Shanghai' }),
+}))
+
 function stubActions() {
   return {
-    update: vi.fn(),
+    update: actionStub.update,
     disable: vi.fn(),
     enable: vi.fn(),
+    fetchDetail: actionStub.fetchDetail,
     updatePending: shallowRef(false),
     disablePending: shallowRef(false),
     enablePending: shallowRef(false),
@@ -67,6 +73,13 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 }))
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
+
+// 把 RowActions 的下拉（reka-ui，懒挂载到 body）换成同步渲染插槽的轻量桩，
+// 让「编辑」菜单项可直接点击，从而断言行操作触发 @edit 后对话框进入编辑态。
+const rowActionStubs = {
+  RowActions: { template: '<div><slot /></div>' },
+  DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+}
 
 describe('master-data facilities page', () => {
   it('renders the title, four tabs, sample rows and create buttons', async () => {
@@ -107,5 +120,24 @@ describe('master-data facilities page', () => {
 
     const triggers = wrapper.findAll('button').filter((b) => b.attributes('aria-label')?.includes('操作'))
     expect(triggers.length).toBeGreaterThan(0)
+  })
+
+  it('opens the site dialog in edit mode (full-field) when a row 编辑 is triggered', async () => {
+    actionStub.fetchDetail.mockClear()
+    const wrapper = mount(FacilitiesPage, { global: { stubs: { ...layoutStub, ...rowActionStubs } } })
+    await flushPromises()
+
+    const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
+    expect(editItem).toBeTruthy()
+    await editItem!.trigger('click')
+    await flushPromises()
+
+    // 详情被拉取用于全字段回填。
+    expect(actionStub.fetchDetail).toHaveBeenCalledWith('PLANT-A')
+    // 对话框进入编辑态：标题含「编辑」，编码只读。
+    const body = document.body.textContent ?? ''
+    expect(body).toContain('编辑工厂')
+    const codeInput = document.getElementById('site-code') as HTMLInputElement | null
+    expect(codeInput?.disabled).toBe(true)
   })
 })
