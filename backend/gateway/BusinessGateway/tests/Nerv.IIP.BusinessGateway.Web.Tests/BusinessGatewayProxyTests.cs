@@ -2500,6 +2500,78 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(downstreamMessage, ex.Message);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(500)]
+    [InlineData(30000)]
+    [InlineData("BUSINESS_VALIDATION_FAILED")]
+    public async Task Master_data_http_client_maps_success_false_business_envelope_to_bad_request(object? downstreamCode)
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = false,
+            message = "SKU field 'category' references inactive or missing reference data 'product-category:electronic'.",
+            code = downstreamCode,
+            errorData = Array.Empty<object>(),
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.CreateSkuAsync(
+            "internal-token-001",
+            Issue355CreateSkuRequest(),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_sanitizes_unsafe_success_false_business_message()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = false,
+            message = "<html>secret stack trace</html>",
+            code = 400,
+            errorData = Array.Empty<object>(),
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.CreateSkuAsync(
+            "internal-token-001",
+            Issue355CreateSkuRequest(),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+        Assert.Equal("downstream-request-failed", ex.Message);
+        Assert.DoesNotContain("secret stack trace", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<html>", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_does_not_expose_5xx_downstream_envelope_messages()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.InternalServerError, new
+        {
+            success = false,
+            message = "SQL failed at C:/internal/schema.sql",
+            code = 500,
+            errorData = Array.Empty<object>(),
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.CreateSkuAsync(
+            "internal-token-001",
+            Issue355CreateSkuRequest(),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, ex.StatusCode);
+        Assert.Equal("downstream-request-failed", ex.Message);
+        Assert.DoesNotContain("schema.sql", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task Master_data_http_client_does_not_expose_plain_text_downstream_error_bodies()
     {
@@ -2549,6 +2621,24 @@ public sealed class BusinessGatewayProxyTests
 
     private static object ValidMasterDataCreateBody(string path) =>
         BusinessConsoleTestRequestBodies.ValidMasterDataCreateBody(path);
+
+    private static BusinessConsoleCreateSkuRequest Issue355CreateSkuRequest() =>
+        new(
+            "org-001",
+            "env-dev",
+            null,
+            "Diagnostic SKU",
+            "PCS",
+            "electronic",
+            "finished-goods",
+            "none",
+            "none",
+            "none",
+            "ambient",
+            "code128",
+            true,
+            [],
+            "diag-001");
 
     private static object TelemetryResponseFor(HttpRequestMessage request)
     {

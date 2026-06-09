@@ -960,13 +960,43 @@ public sealed class BusinessServiceProxyException : Exception
         Exception? innerException = null) =>
         new(
             statusCode,
-            IsSafeDownstreamMessage(downstreamMessage)
+            IsStrictSafeDownstreamMessage(downstreamMessage)
                 ? downstreamMessage!
                 : DownstreamRequestFailedMessage,
             innerException,
             messageIsSafe: true);
 
-    private static bool IsSafeDownstreamMessage(string? downstreamMessage)
+    public static BusinessServiceProxyException FromDownstreamBusinessMessage(
+        string? downstreamMessage,
+        Exception? innerException = null) =>
+        new(
+            HttpStatusCode.BadRequest,
+            IsSafeDownstreamBusinessMessage(downstreamMessage)
+                ? downstreamMessage!
+                : DownstreamRequestFailedMessage,
+            innerException,
+            messageIsSafe: true);
+
+    private static bool IsStrictSafeDownstreamMessage(string? downstreamMessage)
+    {
+        if (string.IsNullOrWhiteSpace(downstreamMessage) || downstreamMessage.Length > 128)
+        {
+            return false;
+        }
+
+        var first = downstreamMessage[0];
+        if (!IsAsciiLetter(first) && !char.IsAsciiDigit(first))
+        {
+            return false;
+        }
+
+        return downstreamMessage.All(static value =>
+            IsAsciiLetter(value) ||
+            char.IsAsciiDigit(value) ||
+            value is '-' or '_' or '.');
+    }
+
+    private static bool IsSafeDownstreamBusinessMessage(string? downstreamMessage)
     {
         if (string.IsNullOrWhiteSpace(downstreamMessage) || downstreamMessage.Length > 500)
         {
@@ -983,6 +1013,8 @@ public sealed class BusinessServiceProxyException : Exception
             !char.IsControl(value) &&
             value is not '<' and not '>' and not '{' and not '}');
     }
+
+    private static bool IsAsciiLetter(char value) => value is >= 'a' and <= 'z' or >= 'A' and <= 'Z';
 }
 
 public abstract class BusinessServiceHttpClient(HttpClient httpClient)
@@ -1049,13 +1081,13 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
+        // Business services use the platform response envelope. A 2xx response
+        // with success=false is a business validation failure, not a parse error.
         if (root.ValueKind == JsonValueKind.Object &&
             root.TryGetProperty("success", out var success) &&
             success.ValueKind == JsonValueKind.False)
         {
-            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                DownstreamEnvelopeStatusCode(root),
-                DownstreamEnvelopeMessage(root));
+            throw BusinessServiceProxyException.FromDownstreamBusinessMessage(DownstreamEnvelopeMessage(root));
         }
 
         var payload = root.TryGetProperty("data", out var data)
@@ -1069,19 +1101,6 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         return payload.Deserialize<TResponse>(jsonOptions)
             ?? throw new InvalidOperationException("Platform API returned an empty response data payload.");
-    }
-
-    private static HttpStatusCode DownstreamEnvelopeStatusCode(JsonElement root)
-    {
-        if (root.TryGetProperty("code", out var code) &&
-            code.ValueKind == JsonValueKind.Number &&
-            code.TryGetInt32(out var statusCode) &&
-            statusCode is >= 400 and <= 599)
-        {
-            return (HttpStatusCode)statusCode;
-        }
-
-        return HttpStatusCode.BadRequest;
     }
 
     private static string? DownstreamEnvelopeMessage(JsonElement root) =>
