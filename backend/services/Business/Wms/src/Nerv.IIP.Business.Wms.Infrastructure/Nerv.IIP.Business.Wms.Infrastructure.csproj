@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\common\Messaging\Nerv.IIP.Messaging.CAP.EntityFrameworkCore\Nerv.IIP.Messaging.CAP.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Business.Wms.Domain\Nerv.IIP.Business.Wms.Domain.csproj" />
   </ItemGroup>
 

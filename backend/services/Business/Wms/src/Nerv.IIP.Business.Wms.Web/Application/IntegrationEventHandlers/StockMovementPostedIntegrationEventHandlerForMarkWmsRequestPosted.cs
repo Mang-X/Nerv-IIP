@@ -1,0 +1,54 @@
+using DotNetCore.CAP;
+using Nerv.IIP.Business.Wms.Web.Application.Commands;
+using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.DistributedTransactions;
+
+namespace Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent", ConsumerName)]
+public sealed class StockMovementPostedIntegrationEventHandlerForMarkWmsRequestPosted(
+    ISender sender,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<StockMovementPostedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-wms.stock-movement-posted";
+
+    private readonly IntegrationEventConsumerGuard<StockMovementPostedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            InventoryIntegrationEventTypes.StockMovementPosted,
+            InventoryIntegrationEventVersions.V1));
+
+    public async Task HandleAsync(StockMovementPostedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe("Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(StockMovementPostedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(StockMovementPostedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(integrationEvent.Payload.SourceService, "wms", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await sender.Send(
+            new MarkInventoryMovementRequestPostedCommand(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                integrationEvent.Payload.MovementType,
+                integrationEvent.Payload.SourceDocumentId,
+                integrationEvent.Payload.SourceDocumentLineId,
+                integrationEvent.Payload.IdempotencyKey,
+                integrationEvent.Payload.InventoryMovementId),
+            cancellationToken);
+    }
+}
