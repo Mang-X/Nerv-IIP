@@ -107,4 +107,27 @@ describe('master-data reference-data page', () => {
     const triggers = wrapper.findAll('button').filter((b) => b.attributes('aria-label')?.includes('操作'))
     expect(triggers.length).toBeGreaterThan(0)
   })
+
+  it('blocks create on empty required fields with a summary alert and no create call', async () => {
+    stub.createCode.mockClear()
+    const wrapper = mount(ReferenceDataPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    // 默认 material-type 为系统枚举不可新增，先切到可维护分组（仓储条件）再开新建对话框。
+    const storageTab = wrapper.find('nav[aria-label="字典分组"]').findAll('button').find((b) => b.text().includes('仓储条件'))!
+    await storageTab.trigger('click')
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建字典条目'))!.trigger('click')
+    await flushPromises()
+
+    // 对话框 teleport 到 body；编码/名称留空 → 提交触发汇总提示。
+    const form = document.body.querySelector('form')
+    expect(form).toBeTruthy()
+    form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('请完整填写带 * 的必填项')
+    expect(stub.createCode).not.toHaveBeenCalled()
+  })
 })

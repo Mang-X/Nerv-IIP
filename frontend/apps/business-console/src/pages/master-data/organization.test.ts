@@ -8,6 +8,11 @@ const stub = vi.hoisted(() => ({
   create: vi.fn(),
 }))
 
+const actionStub = vi.hoisted(() => ({
+  update: vi.fn(),
+  fetchDetail: vi.fn().mockResolvedValue({ name: '总装部' }),
+}))
+
 function stubResource(resourceType: string) {
   const labelByType: Record<string, { code: string, name: string }> = {
     'department': { code: 'DEPT-A', name: '总装部' },
@@ -46,9 +51,10 @@ function stubReadonlyResource(resourceType: string) {
 
 function stubActions() {
   return {
-    update: vi.fn(),
+    update: actionStub.update,
     disable: vi.fn(),
     enable: vi.fn(),
+    fetchDetail: actionStub.fetchDetail,
     updatePending: shallowRef(false),
     disablePending: shallowRef(false),
     enablePending: shallowRef(false),
@@ -110,6 +116,12 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 
+// 把 RowActions 的下拉换成同步渲染插槽的轻量桩，让「编辑」菜单项可直接点击。
+const rowActionStubs = {
+  RowActions: { template: '<div><slot /></div>' },
+  DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+}
+
 describe('master-data organization page', () => {
   it('renders the title, five tabs, sample row and create button', async () => {
     const wrapper = mount(OrganizationPage, { global: { stubs: layoutStub } })
@@ -152,6 +164,45 @@ describe('master-data organization page', () => {
     const registerButton = wrapper.findAll('button').find((b) => b.text().includes('登记技能'))
     expect(registerButton).toBeDefined()
     expect(registerButton!.attributes('disabled')).toBeUndefined()
+  })
+
+  it('opens the department dialog in edit mode (full-field) when a department row 编辑 is triggered', async () => {
+    actionStub.fetchDetail.mockClear()
+    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...rowActionStubs } } })
+    await flushPromises()
+
+    // 默认即「部门」Tab，行内 RowActions 已就地渲染「编辑」。
+    const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
+    expect(editItem).toBeTruthy()
+    await editItem!.trigger('click')
+    await flushPromises()
+
+    // 部门详情被拉取用于回填。
+    expect(actionStub.fetchDetail).toHaveBeenCalledWith('DEPT-A')
+    // 对话框进入编辑态：标题含「编辑部门」，部门编码只读。
+    const body = document.body.textContent ?? ''
+    expect(body).toContain('编辑部门')
+    const codeInput = document.getElementById('dept-code') as HTMLInputElement | null
+    expect(codeInput?.disabled).toBe(true)
+  })
+
+  it('blocks department create on empty required fields with a summary alert and no create call', async () => {
+    stub.create.mockClear()
+    const wrapper = mount(OrganizationPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    // 打开「新建部门」（重置后 code/name 为空 → 非法）。
+    await wrapper.findAll('button').find((b) => b.text().includes('新建部门'))!.trigger('click')
+    await flushPromises()
+
+    // 部门对话框 teleport 到 body，从 body 取就地表单触发提交。
+    const form = document.body.querySelector('form')
+    expect(form).toBeTruthy()
+    form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('请完整填写带 * 的必填项')
+    expect(stub.create).not.toHaveBeenCalled()
   })
 })
 
