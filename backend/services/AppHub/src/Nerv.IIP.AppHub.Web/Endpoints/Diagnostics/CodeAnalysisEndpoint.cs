@@ -2,12 +2,13 @@ using FastEndpoints;
 using AppHubApplication = Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate.Application;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.AppHub.Infrastructure;
+using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.CodeAnalysis;
 
 namespace Nerv.IIP.AppHub.Web.Endpoints.Diagnostics;
 
 [HttpGet("/code-analysis")]
-[AllowAnonymous]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class CodeAnalysisEndpoint : EndpointWithoutRequest
 {
     private const int VisualizationCanvasWidth = 1000;

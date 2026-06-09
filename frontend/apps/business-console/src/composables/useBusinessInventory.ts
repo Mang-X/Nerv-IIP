@@ -12,6 +12,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { bindBusinessContext, type BusinessContextFields } from './businessContextBinding'
 
 export interface InventoryAvailabilityFilters {
   organizationId: string
@@ -27,28 +28,25 @@ export interface InventoryAvailabilityFilters {
   ownerId?: string
 }
 
-export interface InventoryActionContext {
-  organizationId: string
-  environmentId: string
-}
+export interface InventoryActionContext extends BusinessContextFields {}
 
 function defaultActionContext(): InventoryActionContext {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-  })
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
+  }))
 }
 
 function defaultAvailabilityFilters(): InventoryAvailabilityFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-    skuCode: 'SKU-001',
-    uomCode: 'EA',
-    siteCode: 'S1',
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
+    skuCode: '',
+    uomCode: '',
+    siteCode: '',
     qualityStatus: 'available',
     ownerType: 'owned',
-  })
+  }))
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -69,6 +67,16 @@ function toAvailabilityQuery(filters: InventoryAvailabilityFilters) {
     ...optionalQuery('ownerType', filters.ownerType),
     ...optionalQuery('ownerId', filters.ownerId),
   }
+}
+
+function hasRequiredAvailabilityScope(filters: InventoryAvailabilityFilters) {
+  return (
+    filters.organizationId.trim().length > 0 &&
+    filters.environmentId.trim().length > 0 &&
+    filters.skuCode.trim().length > 0 &&
+    filters.uomCode.trim().length > 0 &&
+    filters.siteCode.trim().length > 0
+  )
 }
 
 function unwrapAvailability(
@@ -95,12 +103,14 @@ function ignoreBackgroundError(_error: unknown) {}
 
 export function useInventoryAvailability() {
   const filters = defaultAvailabilityFilters()
+  const availabilityEnabled = computed(() => hasRequiredAvailabilityScope(filters))
 
-  const availabilityQuery = useQuery(() =>
-    getBusinessConsoleInventoryAvailabilityQueryOptions({
+  const availabilityQuery = useQuery(() => ({
+    ...getBusinessConsoleInventoryAvailabilityQueryOptions({
       query: toAvailabilityQuery(filters),
     }),
-  )
+    enabled: availabilityEnabled.value,
+  }))
 
   const availability = computed(() => unwrapAvailability(availabilityQuery.data.value))
 
@@ -112,7 +122,7 @@ export function useInventoryAvailability() {
     ),
     availabilityPending: availabilityQuery.isLoading,
     filters,
-    refreshAvailability: availabilityQuery.refetch,
+    refreshAvailability: () => availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
   }
 }
 
