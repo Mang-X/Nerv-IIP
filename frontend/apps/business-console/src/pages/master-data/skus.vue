@@ -376,9 +376,15 @@ function isNonEmpty(value: string) {
                   </Select>
                   <FieldDescription>库存与核算的最小计量单位。</FieldDescription>
                 </Field>
-                <Field orientation="horizontal" class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2">
-                  <FieldLabel for="sku-quality" class="mb-0">投产前需质检</FieldLabel>
-                  <Checkbox id="sku-quality" v-model:checked="createForm.qualityRequired" />
+                <Field class="self-start">
+                  <FieldLabel>质检要求</FieldLabel>
+                  <label
+                    for="sku-quality"
+                    class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
+                  >
+                    <span>投产前需质检</span>
+                    <Checkbox id="sku-quality" v-model:checked="createForm.qualityRequired" />
+                  </label>
                 </Field>
                 <Field>
                   <FieldLabel>批次追踪 <span class="text-destructive">*</span></FieldLabel>
