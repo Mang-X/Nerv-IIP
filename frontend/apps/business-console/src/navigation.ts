@@ -47,8 +47,10 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       items: [
         { title: '物料与产品', to: { path: '/master-data/skus' } },
         { title: '客户与供应商', to: { path: '/master-data/partners' } },
-        { title: '工厂资源', to: { path: '/master-data/resources' } },
-        { title: '字典', to: { path: '/master-data/reference-data' } },
+        { title: '工厂与产线', to: { path: '/master-data/facilities' } },
+        { title: '设备台账', to: { path: '/master-data/devices' } },
+        { title: '数据字典', to: { path: '/master-data/reference-data' } },
+        { title: '组织与人员', to: { path: '/master-data/organization' } },
       ],
     },
   ],

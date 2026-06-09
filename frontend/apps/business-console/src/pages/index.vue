@@ -21,7 +21,8 @@ const actionGroups = [
     title: '基础与工程',
     items: [
       { path: '/master-data/skus', label: '维护物料与产品', summary: '补齐成品、半成品、原材料和包材。' },
-      { path: '/master-data/resources', label: '维护工厂资源', summary: '查看工厂、产线、工作中心、设备和班次。' },
+      { path: '/master-data/facilities', label: '维护工厂与产线', summary: '建档工厂、产线和工作中心。' },
+      { path: '/master-data/devices', label: '维护设备台账', summary: '登记产线与工作中心下的设备资产。' },
       { path: '/engineering', label: '查看发布版本', summary: '核对生产版本、路线和物料清单。' },
     ],
   },

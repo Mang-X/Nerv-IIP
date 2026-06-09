@@ -354,6 +354,7 @@ At minimum:
 
 - `backend/services/<Svc>/AGENTS.md` — Service-specific build/test notes, schema owner, EF migration hints.
 - `frontend/apps/console/AGENTS.md` — Console-specific routing, composables, token conventions.
+- `frontend/apps/business-console/AGENTS.md` — 业务前端：产品/业务/UX 三大支柱、文档及时性、权限拆分同步、工厂对接可配置性。
 - `scripts/AGENTS.md` — Additional script governance rules if needed.
 - Use `AGENTS.override.md` for temporary overrides; rename or remove to restore base guidance.
 
