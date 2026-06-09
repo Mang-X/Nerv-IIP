@@ -326,6 +326,7 @@ function isNonEmpty(value: string) {
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitSku">
               <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
+              <p v-if="createShowErrors && !canCreateSku" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <p class="text-sm font-medium text-foreground">基础信息</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
@@ -343,7 +344,7 @@ function isNonEmpty(value: string) {
                   <FieldLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="sku-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !inOptions(PRODUCT_CATEGORY_OPTIONS, createForm.category)">
                   <FieldLabel for="sku-category">产品分类 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.category">
                     <SelectTrigger id="sku-category"><SelectValue placeholder="请选择分类" /></SelectTrigger>
@@ -353,7 +354,7 @@ function isNonEmpty(value: string) {
                   </Select>
                   <FieldDescription>来自数据字典 · 产品分类。缺少分类？去数据字典维护。</FieldDescription>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !inOptions(MATERIAL_TYPE_OPTIONS, createForm.materialType)">
                   <FieldLabel>物料类型 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.materialType">
                     <SelectTrigger aria-label="物料类型"><SelectValue /></SelectTrigger>
@@ -366,7 +367,7 @@ function isNonEmpty(value: string) {
 
               <p class="text-sm font-medium text-foreground">单位与追踪</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field>
+                <Field :data-invalid="createShowErrors && !inOptions(UOM_OPTIONS, createForm.baseUomCode)">
                   <FieldLabel for="sku-uom">基本单位 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.baseUomCode">
                     <SelectTrigger id="sku-uom"><SelectValue /></SelectTrigger>
@@ -386,7 +387,7 @@ function isNonEmpty(value: string) {
                     <Checkbox id="sku-quality" v-model:checked="createForm.qualityRequired" />
                   </label>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !inOptions(BATCH_TRACKING_OPTIONS, createForm.batchTrackingPolicy)">
                   <FieldLabel>批次追踪 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.batchTrackingPolicy">
                     <SelectTrigger aria-label="批次追踪"><SelectValue /></SelectTrigger>
@@ -395,7 +396,7 @@ function isNonEmpty(value: string) {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !inOptions(SERIAL_TRACKING_OPTIONS, createForm.serialTrackingPolicy)">
                   <FieldLabel>序列号追踪 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.serialTrackingPolicy">
                     <SelectTrigger aria-label="序列号追踪"><SelectValue /></SelectTrigger>
@@ -408,7 +409,7 @@ function isNonEmpty(value: string) {
 
               <p class="text-sm font-medium text-foreground">存储与条码</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field>
+                <Field :data-invalid="createShowErrors && !inOptions(SHELF_LIFE_OPTIONS, createForm.shelfLifePolicyCode)">
                   <FieldLabel for="sku-shelf">保质期管理 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.shelfLifePolicyCode">
                     <SelectTrigger id="sku-shelf"><SelectValue /></SelectTrigger>
@@ -417,7 +418,7 @@ function isNonEmpty(value: string) {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !inOptions(STORAGE_CONDITION_OPTIONS, createForm.storageConditionCode)">
                   <FieldLabel for="sku-storage">存储条件 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.storageConditionCode">
                     <SelectTrigger id="sku-storage"><SelectValue /></SelectTrigger>
@@ -426,7 +427,7 @@ function isNonEmpty(value: string) {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !inOptions(BARCODE_RULE_OPTIONS, createForm.defaultBarcodeRuleCode)">
                   <FieldLabel for="sku-barcode">默认条码规则 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.defaultBarcodeRuleCode">
                     <SelectTrigger id="sku-barcode"><SelectValue /></SelectTrigger>
