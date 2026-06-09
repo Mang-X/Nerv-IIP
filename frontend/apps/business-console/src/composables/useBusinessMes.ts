@@ -79,9 +79,9 @@ import {
   type BusinessConsoleRecordProductionReportRequest,
   type BusinessConsoleRunScheduleRequest,
 } from '@nerv-iip/api-client'
-import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
+import { bindBusinessContext, hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -161,10 +161,7 @@ export interface MesWorkOrderContext {
   workOrderId: string
 }
 
-export interface MesContextFilters {
-  organizationId: string
-  environmentId: string
-}
+export interface MesContextFilters extends BusinessContextFields {}
 
 export interface MesTraceabilityFilters extends MesContextFilters {
   workOrderId: string
@@ -215,21 +212,6 @@ function defaultTraceabilityFilters(): MesTraceabilityFilters {
   }))
 }
 
-function bindBusinessContext<T extends MesContextFilters>(filters: T): T {
-  const context = useBusinessContextStore()
-
-  watch(
-    () => [context.organizationId, context.environmentId] as const,
-    ([organizationId, environmentId]) => {
-      filters.organizationId = organizationId
-      filters.environmentId = environmentId
-    },
-    { flush: 'sync', immediate: true },
-  )
-
-  return filters
-}
-
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
   return value === undefined || value === '' ? {} : { [key]: value }
 }
@@ -239,10 +221,6 @@ function toContextQuery(filters: MesContextFilters | MesWorkOrderContext) {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
   }
-}
-
-function hasBusinessContext(filters: MesContextFilters) {
-  return filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0
 }
 
 function isNonEmpty(value: string | undefined) {

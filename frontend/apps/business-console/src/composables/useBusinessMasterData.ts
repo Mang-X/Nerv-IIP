@@ -35,16 +35,18 @@ import {
   type BusinessConsoleWorkerDirectoryEnvelope,
   type BusinessConsoleWorkerDirectoryItem,
 } from '@nerv-iip/api-client'
-import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseMutationOptions, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, toValue, watch, type MaybeRefOrGetter } from 'vue'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+  withBusinessContextEnabled,
+  type BusinessContextFields,
+} from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
-export interface BusinessContextFilters {
-  organizationId: string
-  environmentId: string
-}
+export interface BusinessContextFilters extends BusinessContextFields {}
 
 export interface MasterDataListFilters extends BusinessContextFilters {
   includeDisabled?: boolean
@@ -61,21 +63,6 @@ export interface BusinessMasterDataGroupDefinition {
   key: string
   title: string
   resourceType?: string
-}
-
-function bindBusinessContext<T extends BusinessContextFilters>(filters: T): T {
-  const context = useBusinessContextStore()
-
-  watch(
-    () => [context.organizationId, context.environmentId] as const,
-    ([organizationId, environmentId]) => {
-      filters.organizationId = organizationId
-      filters.environmentId = environmentId
-    },
-    { flush: 'sync', immediate: true },
-  )
-
-  return filters
 }
 
 function defaultContext(): BusinessContextFilters {
@@ -107,20 +94,6 @@ function defaultResourceFilters(resourceType: string, codeSet?: string): MasterD
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
   return value === undefined ? {} : { [key]: value }
-}
-
-function hasBusinessContext(filters: BusinessContextFilters) {
-  return filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0
-}
-
-function withBusinessContextEnabled<TOptions extends object>(
-  options: TOptions,
-  filters: BusinessContextFilters,
-) {
-  return {
-    ...options,
-    enabled: hasBusinessContext(filters),
-  }
 }
 
 function resourceItems(envelope: BusinessConsoleResourceListEnvelope | undefined) {

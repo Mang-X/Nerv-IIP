@@ -10,15 +10,13 @@ import {
   type BusinessConsoleQualityItem,
   type BusinessConsoleQualityListEnvelope,
 } from '@nerv-iip/api-client'
-import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive } from 'vue'
+import { bindBusinessContext, hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
-export interface QualityListFilters {
-  organizationId: string
-  environmentId: string
+export interface QualityListFilters extends BusinessContextFields {
   status?: string
   keyword?: string
   skip: number
@@ -26,25 +24,13 @@ export interface QualityListFilters {
 }
 
 function defaultFilters(initial: Partial<QualityListFilters> = {}): QualityListFilters {
-  const context = useBusinessContextStore()
-  const filters = reactive({
+  return bindBusinessContext(reactive({
     organizationId: '',
     environmentId: '',
     skip: 0,
     take: DEFAULT_TAKE,
     ...initial,
-  })
-
-  watch(
-    () => [context.organizationId, context.environmentId] as const,
-    ([organizationId, environmentId]) => {
-      filters.organizationId = organizationId
-      filters.environmentId = environmentId
-    },
-    { flush: 'sync', immediate: true },
-  )
-
-  return filters
+  }))
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -60,10 +46,6 @@ function toListQuery(filters: QualityListFilters) {
     skip: filters.skip,
     take: filters.take,
   }
-}
-
-function hasBusinessContext(filters: QualityListFilters) {
-  return filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0
 }
 
 function listItems(envelope: BusinessConsoleQualityListEnvelope | undefined) {

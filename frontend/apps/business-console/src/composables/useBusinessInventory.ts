@@ -10,9 +10,9 @@ import {
   type BusinessConsoleInventoryAvailabilityResponse,
   type BusinessConsolePostStockMovementRequest,
 } from '@nerv-iip/api-client'
-import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive } from 'vue'
+import { bindBusinessContext, type BusinessContextFields } from './businessContextBinding'
 
 export interface InventoryAvailabilityFilters {
   organizationId: string
@@ -28,25 +28,7 @@ export interface InventoryAvailabilityFilters {
   ownerId?: string
 }
 
-export interface InventoryActionContext {
-  organizationId: string
-  environmentId: string
-}
-
-function bindBusinessContext<T extends InventoryActionContext>(filters: T): T {
-  const context = useBusinessContextStore()
-
-  watch(
-    () => [context.organizationId, context.environmentId] as const,
-    ([organizationId, environmentId]) => {
-      filters.organizationId = organizationId
-      filters.environmentId = environmentId
-    },
-    { flush: 'sync', immediate: true },
-  )
-
-  return filters
-}
+export interface InventoryActionContext extends BusinessContextFields {}
 
 function defaultActionContext(): InventoryActionContext {
   return bindBusinessContext(reactive({
