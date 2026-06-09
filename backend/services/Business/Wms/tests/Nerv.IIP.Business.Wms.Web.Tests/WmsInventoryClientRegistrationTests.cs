@@ -9,6 +9,8 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Http;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.ServiceAuth;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -92,9 +94,66 @@ public sealed class WmsInventoryClientRegistrationTests
         stopwatch.Stop();
 
         Assert.NotNull(exception);
-        Assert.Equal("TimeoutRejectedException", exception.GetType().Name);
+        Assert.IsType<TimeoutRejectedException>(exception);
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1), $"Elapsed: {stopwatch.Elapsed}");
         Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task Registered_http_inventory_movement_client_counts_timeouts_toward_circuit_breaker()
+    {
+        var handler = new SlowInventoryHttpMessageHandler(TimeSpan.FromSeconds(2));
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Inventory:BaseUrl"] = "http://inventory.local",
+                ["Inventory:HttpClient:TimeoutSeconds"] = "0.2",
+                ["Inventory:HttpClient:CircuitBreaker:FailureRatio"] = "1",
+                ["Inventory:HttpClient:CircuitBreaker:MinimumThroughput"] = "2",
+                ["Inventory:HttpClient:CircuitBreaker:SamplingDurationSeconds"] = "5",
+                ["Inventory:HttpClient:CircuitBreaker:BreakDurationSeconds"] = "1",
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new PrimaryHandlerFilter(handler));
+        services.AddWmsInventoryMovementClient(configuration, new TestWebHostEnvironment("Production"));
+        await using var provider = services.BuildServiceProvider();
+        var client = provider.GetRequiredService<IInventoryMovementClient>();
+
+        await Assert.ThrowsAsync<TimeoutRejectedException>(() =>
+            client.PostMovementAsync(NewMovementRequest(quantity: 1m), CancellationToken.None));
+        await Assert.ThrowsAsync<TimeoutRejectedException>(() =>
+            client.PostMovementAsync(NewMovementRequest(quantity: 1m), CancellationToken.None));
+
+        await Assert.ThrowsAsync<BrokenCircuitException>(() =>
+            client.PostMovementAsync(NewMovementRequest(quantity: 1m), CancellationToken.None));
+
+        Assert.Equal(2, handler.Calls);
+    }
+
+    [Theory]
+    [InlineData("Inventory:HttpClient:CircuitBreaker:MinimumThroughput", "1", "greater than or equal to 2")]
+    [InlineData("Inventory:HttpClient:CircuitBreaker:SamplingDurationSeconds", "0.1", "greater than or equal to 0.5 seconds")]
+    [InlineData("Inventory:HttpClient:CircuitBreaker:BreakDurationSeconds", "0.1", "greater than or equal to 0.5 seconds")]
+    public void Inventory_resilience_registration_rejects_invalid_circuit_breaker_configuration(
+        string key,
+        string value,
+        string expectedMessage)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Inventory:BaseUrl"] = "http://inventory.local",
+                [key] = value,
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddWmsInventoryMovementClient(configuration, new TestWebHostEnvironment("Production")));
+
+        Assert.Contains(key, exception.Message, StringComparison.Ordinal);
+        Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
