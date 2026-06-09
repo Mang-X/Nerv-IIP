@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 
@@ -10,7 +11,9 @@ public sealed class InventoryIntegrationEventTests
     public void Stock_movement_posted_event_uses_stable_adr0011_envelope_shape()
     {
         var converter = new StockMovementPostedIntegrationEventConverter(new StubInventoryIntegrationEventContextAccessor());
-        var domainEvent = new StockMovementPostedDomainEvent(DomainMovementFactory.Inbound(12.5m));
+        var movement = DomainMovementFactory.Inbound(12.5m);
+        AssignId(movement, new StockMovementId(Guid.CreateVersion7()));
+        var domainEvent = new StockMovementPostedDomainEvent(movement);
 
         var integrationEvent = converter.Convert(domainEvent);
         var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -21,6 +24,7 @@ public sealed class InventoryIntegrationEventTests
         Assert.Equal("org-001", integrationEvent.OrganizationId);
         Assert.Equal("env-dev", integrationEvent.EnvironmentId);
         Assert.Equal("inventory:stock-movement-posted:org-001:env-dev:wms:DOC-001:idem-in-001", integrationEvent.IdempotencyKey);
+        Assert.Equal(movement.Id.ToString(), integrationEvent.Payload.InventoryMovementId);
         Assert.Equal("SKU-FG-1000", integrationEvent.Payload.SkuCode);
         Assert.Contains("\"eventType\":\"inventory.StockMovementPosted\"", json, StringComparison.Ordinal);
     }
@@ -66,5 +70,14 @@ public sealed class InventoryIntegrationEventTests
                 "cause-test-001",
                 "system:business-inventory");
         }
+    }
+
+    private static void AssignId(StockMovement movement, StockMovementId id)
+    {
+        var setter = typeof(StockMovement)
+            .GetProperty(nameof(StockMovement.Id))?
+            .GetSetMethod(nonPublic: true)
+            ?? throw new InvalidOperationException("StockMovement.Id setter was not found.");
+        setter.Invoke(movement, [id]);
     }
 }

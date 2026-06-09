@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
@@ -40,7 +41,7 @@ public sealed record ListInboundOrdersRequest(string? OrganizationId, string? En
 public sealed record CreatePutawayTaskRequest(InboundOrderId InboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity);
 public sealed record CreateWarehouseTaskResponse(WarehouseTaskId WarehouseTaskId);
 public sealed record CompleteInboundOrderRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
-public sealed record CompleteMovementResponse(string InventoryMovementId);
+public sealed record CompleteMovementResponse(InventoryMovementRequestId RequestId, string? InventoryMovementId);
 public sealed record CreateOutboundOrderRequest(string OrganizationId, string EnvironmentId, string OutboundOrderNo, string SourceDocumentType, string SourceDocumentId, string SiteCode, IReadOnlyCollection<WmsOutboundLineInput> Lines);
 public sealed record CreateOutboundOrderResponse(OutboundOrderId OutboundOrderId);
 public sealed record ListOutboundOrdersRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
@@ -100,7 +101,7 @@ public sealed class CompleteInboundOrderEndpoint(ISender sender) : WmsEndpoint<C
     public override async Task HandleAsync(CompleteInboundOrderRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CompleteInboundOrderCommand(req.InboundOrderId, req.IdempotencyKey), ct);
-        await Send.OkAsync(new CompleteMovementResponse(result.InventoryMovementId).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -140,7 +141,7 @@ public sealed class CompleteOutboundOrderEndpoint(ISender sender) : WmsEndpoint<
     public override async Task HandleAsync(CompleteOutboundOrderRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CompleteOutboundOrderCommand(req.OutboundOrderId, req.PackReviewNo, req.Passed, req.IdempotencyKey), ct);
-        await Send.OkAsync(new CompleteMovementResponse(result.InventoryMovementId).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -160,7 +161,7 @@ public sealed class CompleteCountExecutionEndpoint(ISender sender) : WmsEndpoint
     public override async Task HandleAsync(CompleteCountExecutionRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CompleteCountExecutionCommand(req.CountExecutionId, req.CountedQuantity, req.IdempotencyKey), ct);
-        await Send.OkAsync(new CompleteMovementResponse(result.InventoryMovementId).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }
 

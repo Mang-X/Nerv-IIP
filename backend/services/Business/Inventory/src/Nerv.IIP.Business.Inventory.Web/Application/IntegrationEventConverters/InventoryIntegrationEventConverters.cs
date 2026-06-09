@@ -1,5 +1,5 @@
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
-using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 
@@ -11,6 +11,8 @@ public sealed class StockMovementPostedIntegrationEventConverter(IInventoryInteg
         var movement = domainEvent.StockMovement;
         var occurredAtUtc = DateTimeOffset.UtcNow;
         var context = contextAccessor.GetContext();
+        var movementId = movement.Id
+            ?? throw new InvalidOperationException("Stock movement id must be assigned before publishing StockMovementPostedIntegrationEvent.");
         return new StockMovementPostedIntegrationEvent(
             EventIds.New(),
             InventoryIntegrationEventTypes.StockMovementPosted,
@@ -24,10 +26,12 @@ public sealed class StockMovementPostedIntegrationEventConverter(IInventoryInteg
             context.Actor,
             EventIds.Idempotency("stock-movement-posted", movement.OrganizationId, movement.EnvironmentId, movement.SourceService, movement.SourceDocumentId, movement.IdempotencyKey),
             new StockMovementPostedPayload(
+                movementId.ToString(),
                 movement.MovementType,
                 movement.SourceService,
                 movement.SourceDocumentId,
                 movement.SourceDocumentLineId,
+                movement.IdempotencyKey,
                 movement.SkuCode,
                 movement.UomCode,
                 movement.SiteCode,

@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggre
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
+using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Business.Wms.Infrastructure;
@@ -27,6 +28,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         ArgumentNullException.ThrowIfNull(modelBuilder);
         modelBuilder.HasDefaultSchema(WmsFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureIntegrationEventDeadLetters();
         base.OnModelCreating(modelBuilder);
     }
 
