@@ -273,7 +273,7 @@ function isNonEmpty(value: string) {
           </DialogTrigger>
           <DialogContent class="sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{{ editingCode ? '编辑业务伙伴' : '新建业务伙伴' }}</DialogTitle>
+              <DialogTitle>{{ editingCode ? `编辑业务伙伴 · ${editingCode}` : '新建业务伙伴' }}</DialogTitle>
               <DialogDescription>{{ editingCode ? '修改伙伴档案（编码不可修改）。一个伙伴可兼具多个角色。带 * 为必填项。' : '客户、供应商、承运商统一建档。一个伙伴可兼具多个角色。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitPartner">

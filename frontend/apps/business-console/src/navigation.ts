@@ -1,14 +1,19 @@
 import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
 import {
   ActivityIcon,
+  BookMarkedIcon,
   BoxesIcon,
+  Building2Icon,
   CalendarRangeIcon,
   ClipboardCheckIcon,
+  CpuIcon,
   FactoryIcon,
   GitBranchIcon,
   LayoutDashboardIcon,
+  PackageIcon,
   PackageSearchIcon,
   ReceiptTextIcon,
+  UsersRoundIcon,
   WarehouseIcon,
 } from 'lucide-vue-next'
 
@@ -45,12 +50,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
   'master-data': [
     {
       items: [
-        { title: '物料与产品', to: { path: '/master-data/skus' } },
-        { title: '客户与供应商', to: { path: '/master-data/partners' } },
-        { title: '工厂与产线', to: { path: '/master-data/facilities' } },
-        { title: '设备台账', to: { path: '/master-data/devices' } },
-        { title: '数据字典', to: { path: '/master-data/reference-data' } },
-        { title: '组织与人员', to: { path: '/master-data/organization' } },
+        { title: '物料与产品', icon: PackageIcon, to: { path: '/master-data/skus' } },
+        { title: '客户与供应商', icon: Building2Icon, to: { path: '/master-data/partners' } },
+        { title: '工厂与产线', icon: FactoryIcon, to: { path: '/master-data/facilities' } },
+        { title: '设备台账', icon: CpuIcon, to: { path: '/master-data/devices' } },
+        { title: '数据字典', icon: BookMarkedIcon, to: { path: '/master-data/reference-data' } },
+        { title: '组织与人员', icon: UsersRoundIcon, to: { path: '/master-data/organization' } },
       ],
     },
   ],

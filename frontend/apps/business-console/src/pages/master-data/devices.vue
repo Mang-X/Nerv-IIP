@@ -232,7 +232,7 @@ async function submitDevice() {
           </DialogTrigger>
           <DialogContent class="sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{{ editingCode ? '编辑设备' : '新建设备' }}</DialogTitle>
+              <DialogTitle>{{ editingCode ? `编辑设备 · ${editingCode}` : '新建设备' }}</DialogTitle>
               <DialogDescription>{{ editingCode ? '修改设备档案（编码不可修改）。带 * 为必填项。' : '为产线与工作中心登记一台设备资产。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitDevice">
@@ -290,8 +290,8 @@ async function submitDevice() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3 sm:col-span-2">
-                  <FieldLabel for="dev-maintainable">纳入维护计划</FieldLabel>
+                <Field orientation="horizontal" class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2">
+                  <FieldLabel for="dev-maintainable" class="mb-0">纳入维护计划</FieldLabel>
                   <Checkbox id="dev-maintainable" v-model:checked="createForm.maintainable" />
                 </Field>
               </FieldGroup>

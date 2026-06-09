@@ -319,7 +319,7 @@ function isNonEmpty(value: string) {
           </DialogTrigger>
           <DialogContent class="sm:max-w-3xl">
             <DialogHeader>
-              <DialogTitle>{{ editingCode ? '编辑物料' : '新建物料' }}</DialogTitle>
+              <DialogTitle>{{ editingCode ? `编辑物料 · ${editingCode}` : '新建物料' }}</DialogTitle>
               <DialogDescription>
                 {{ editingCode ? '修改物料档案（编码不可修改）。带 * 为必填项。' : '为采购、生产、库存和销售建立统一的物料档案。带 * 为必填项。' }}
               </DialogDescription>
@@ -331,8 +331,13 @@ function isNonEmpty(value: string) {
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field>
                   <FieldLabel>物料编号</FieldLabel>
-                  <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">保存后由系统分配</div>
-                  <FieldDescription>无需手填，系统自动编号。</FieldDescription>
+                  <div
+                    class="rounded-md border bg-muted/40 px-3 py-2 text-sm"
+                    :class="editingCode ? 'font-medium text-foreground' : 'text-muted-foreground'"
+                  >
+                    {{ editingCode || '保存后由系统分配' }}
+                  </div>
+                  <FieldDescription>{{ editingCode ? '编码由系统分配，不可修改。' : '无需手填，系统自动编号。' }}</FieldDescription>
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                   <FieldLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldLabel>
@@ -371,8 +376,8 @@ function isNonEmpty(value: string) {
                   </Select>
                   <FieldDescription>库存与核算的最小计量单位。</FieldDescription>
                 </Field>
-                <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
-                  <FieldLabel for="sku-quality">投产前需质检</FieldLabel>
+                <Field orientation="horizontal" class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2">
+                  <FieldLabel for="sku-quality" class="mb-0">投产前需质检</FieldLabel>
                   <Checkbox id="sku-quality" v-model:checked="createForm.qualityRequired" />
                 </Field>
                 <Field>

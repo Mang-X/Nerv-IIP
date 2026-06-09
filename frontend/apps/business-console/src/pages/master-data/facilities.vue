@@ -524,7 +524,7 @@ function refreshAll() {
               </DialogTrigger>
               <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>{{ siteEditingCode ? '编辑工厂' : '新建工厂' }}</DialogTitle>
+                  <DialogTitle>{{ siteEditingCode ? `编辑工厂 · ${siteEditingCode}` : '新建工厂' }}</DialogTitle>
                   <DialogDescription>{{ siteEditingCode ? '修改工厂档案（编码不可修改）。带 * 为必填项。' : '登记一个生产站点。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitSite">
@@ -588,7 +588,7 @@ function refreshAll() {
               </DialogTrigger>
               <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>{{ lineEditingCode ? '编辑产线' : '新建产线' }}</DialogTitle>
+                  <DialogTitle>{{ lineEditingCode ? `编辑产线 · ${lineEditingCode}` : '新建产线' }}</DialogTitle>
                   <DialogDescription>{{ lineEditingCode ? '修改产线档案（编码不可修改）。带 * 为必填项。' : '在所属工厂下登记一条产线。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitLine">
@@ -670,7 +670,7 @@ function refreshAll() {
               </DialogTrigger>
               <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>{{ workshopEditingCode ? '编辑车间' : '新建车间' }}</DialogTitle>
+                  <DialogTitle>{{ workshopEditingCode ? `编辑车间 · ${workshopEditingCode}` : '新建车间' }}</DialogTitle>
                   <DialogDescription>{{ workshopEditingCode ? '修改车间档案（编码不可修改）。带 * 为必填项。' : '在所属工厂下登记一个车间。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitWorkshop">
@@ -752,7 +752,7 @@ function refreshAll() {
               </DialogTrigger>
               <DialogContent class="sm:max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>{{ wcEditingCode ? '编辑工作中心' : '新建工作中心' }}</DialogTitle>
+                  <DialogTitle>{{ wcEditingCode ? `编辑工作中心 · ${wcEditingCode}` : '新建工作中心' }}</DialogTitle>
                   <DialogDescription>{{ wcEditingCode ? '修改工作中心档案（编码不可修改）。带 * 为必填项。' : '在工厂与产线下登记一个产能资源。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitWorkCenter">

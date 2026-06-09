@@ -500,7 +500,7 @@ async function submitSkill() {
               </DialogTrigger>
               <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>{{ deptEditingCode ? '编辑部门' : '新建部门' }}</DialogTitle>
+                  <DialogTitle>{{ deptEditingCode ? `编辑部门 · ${deptEditingCode}` : '新建部门' }}</DialogTitle>
                   <DialogDescription>{{ deptEditingCode ? '修改部门名称（编码不可修改）。带 * 为必填项。' : '登记一个组织部门，可选挂靠上级部门。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitDept">
@@ -559,7 +559,7 @@ async function submitSkill() {
               </DialogTrigger>
               <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>{{ teamEditingCode ? '编辑班组' : '新建班组' }}</DialogTitle>
+                  <DialogTitle>{{ teamEditingCode ? `编辑班组 · ${teamEditingCode}` : '新建班组' }}</DialogTitle>
                   <DialogDescription>{{ teamEditingCode ? '修改班组名称（编码不可修改）。带 * 为必填项。' : '将班组挂靠到部门与班次。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitTeam">
@@ -638,7 +638,7 @@ async function submitSkill() {
               </DialogTrigger>
               <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>{{ shiftEditingCode ? '编辑班次' : '新建班次' }}</DialogTitle>
+                  <DialogTitle>{{ shiftEditingCode ? `编辑班次 · ${shiftEditingCode}` : '新建班次' }}</DialogTitle>
                   <DialogDescription>{{ shiftEditingCode ? '修改班次名称（编码不可修改）。带 * 为必填项。' : '定义一个排班时段及计薪时长。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitShift">
@@ -697,7 +697,7 @@ async function submitSkill() {
               </DialogTrigger>
               <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>{{ calEditingCode ? '编辑工作日历' : '新建工作日历' }}</DialogTitle>
+                  <DialogTitle>{{ calEditingCode ? `编辑工作日历 · ${calEditingCode}` : '新建工作日历' }}</DialogTitle>
                   <DialogDescription>{{ calEditingCode ? '修改日历名称（编码不可修改）。带 * 为必填项。' : '登记一个工作日历，供工作中心与排程引用。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitCal">

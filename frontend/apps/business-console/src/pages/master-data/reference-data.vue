@@ -253,7 +253,7 @@ function isNonEmpty(value: string) {
           </DialogTrigger>
           <DialogContent class="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>{{ editingCode ? '编辑字典条目' : '新建字典条目' }}</DialogTitle>
+              <DialogTitle>{{ editingCode ? `编辑字典条目 · ${editingCode}` : '新建字典条目' }}</DialogTitle>
               <DialogDescription>{{ editingCode ? '修改字典条目名称（所属字典与编码不可修改）。带 * 为必填项。' : '选择所属字典，填写编码与名称。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitCode">
