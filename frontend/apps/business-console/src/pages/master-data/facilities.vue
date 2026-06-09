@@ -39,12 +39,12 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-  toast,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: '工厂与产线' } })
 
@@ -106,14 +106,6 @@ const wcColumns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
-const facilityActionError = computed(() =>
-  formatError(
-    siteActions.actionError.value
-    ?? workshopActions.actionError.value
-    ?? lineActions.actionError.value
-    ?? wcActions.actionError.value,
-  ),
-)
 function siteDetailFields(row: BusinessConsoleResourceItem) {
   return [
     { label: '工厂编码', value: row.code ?? '' },
@@ -166,7 +158,6 @@ const siteEditLoading = shallowRef(false)
 const siteForm = reactive({ code: '', name: '', timezone: DEFAULT_TIMEZONE })
 const siteRows = computed(() => filterRows(sites.items.value, siteKeyword.value))
 const canCreateSite = computed(() => [siteForm.code, siteForm.name, siteForm.timezone].every(isNonEmpty))
-const siteCreateError = computed(() => formatError(sites.createError.value))
 const siteListError = computed(() => formatError(sites.error.value))
 
 watch(siteOpen, (open) => { if (open) siteShowErrors.value = false })
@@ -208,27 +199,32 @@ async function submitSite() {
     siteShowErrors.value = true
     return
   }
-  if (siteEditingCode.value) {
-    await siteActions.update(siteEditingCode.value, {
-      name: siteForm.name.trim(),
-      timezone: siteForm.timezone.trim(),
-    })
-    toast.success(`工厂「${siteForm.name.trim()}」已更新。`)
+  try {
+    if (siteEditingCode.value) {
+      await siteActions.update(siteEditingCode.value, {
+        name: siteForm.name.trim(),
+        timezone: siteForm.timezone.trim(),
+      })
+      notifySuccess(`工厂「${siteForm.name.trim()}」已更新。`)
+    }
+    else {
+      await sites.create({
+        organizationId: sites.filters.organizationId,
+        environmentId: sites.filters.environmentId,
+        code: siteForm.code.trim(),
+        name: siteForm.name.trim(),
+        timezone: siteForm.timezone.trim(),
+      })
+      notifySuccess(`工厂「${siteForm.name.trim()}」已创建。`)
+    }
+    resetSiteForm()
+    siteEditingCode.value = null
+    siteShowErrors.value = false
+    siteOpen.value = false
   }
-  else {
-    await sites.create({
-      organizationId: sites.filters.organizationId,
-      environmentId: sites.filters.environmentId,
-      code: siteForm.code.trim(),
-      name: siteForm.name.trim(),
-      timezone: siteForm.timezone.trim(),
-    })
-    toast.success(`工厂「${siteForm.name.trim()}」已创建。`)
+  catch (error) {
+    notifyError(error)
   }
-  resetSiteForm()
-  siteEditingCode.value = null
-  siteShowErrors.value = false
-  siteOpen.value = false
 }
 
 // ---- 车间 ----
@@ -242,7 +238,6 @@ const workshopEditLoading = shallowRef(false)
 const workshopForm = reactive({ code: '', name: '', siteCode: '', managerUserId: '', description: '' })
 const workshopRows = computed(() => filterRows(workshops.workshops.value, workshopKeyword.value))
 const canCreateWorkshop = computed(() => [workshopForm.code, workshopForm.name, workshopForm.siteCode].every(isNonEmpty))
-const workshopCreateError = computed(() => formatError(workshops.createWorkshopError.value))
 const workshopListError = computed(() => formatError(workshops.workshopsError.value))
 
 watch(workshopOpen, (open) => { if (open) workshopShowErrors.value = false })
@@ -289,31 +284,36 @@ async function submitWorkshop() {
   }
   const manager = workshopForm.managerUserId.trim()
   const note = workshopForm.description.trim()
-  if (workshopEditingCode.value) {
-    await workshopActions.update(workshopEditingCode.value, {
-      name: workshopForm.name.trim(),
-      siteCode: workshopForm.siteCode.trim(),
-      managerUserId: manager || null,
-      description: note || null,
-    })
-    toast.success(`车间「${workshopForm.name.trim()}」已更新。`)
+  try {
+    if (workshopEditingCode.value) {
+      await workshopActions.update(workshopEditingCode.value, {
+        name: workshopForm.name.trim(),
+        siteCode: workshopForm.siteCode.trim(),
+        managerUserId: manager || null,
+        description: note || null,
+      })
+      notifySuccess(`车间「${workshopForm.name.trim()}」已更新。`)
+    }
+    else {
+      await workshops.createWorkshop({
+        organizationId: workshops.filters.organizationId,
+        environmentId: workshops.filters.environmentId,
+        code: workshopForm.code.trim(),
+        name: workshopForm.name.trim(),
+        siteCode: workshopForm.siteCode.trim(),
+        ...(manager ? { managerUserId: manager } : {}),
+        ...(note ? { description: note } : {}),
+      })
+      notifySuccess(`车间「${workshopForm.name.trim()}」已创建。`)
+    }
+    resetWorkshopForm()
+    workshopEditingCode.value = null
+    workshopShowErrors.value = false
+    workshopOpen.value = false
   }
-  else {
-    await workshops.createWorkshop({
-      organizationId: workshops.filters.organizationId,
-      environmentId: workshops.filters.environmentId,
-      code: workshopForm.code.trim(),
-      name: workshopForm.name.trim(),
-      siteCode: workshopForm.siteCode.trim(),
-      ...(manager ? { managerUserId: manager } : {}),
-      ...(note ? { description: note } : {}),
-    })
-    toast.success(`车间「${workshopForm.name.trim()}」已创建。`)
+  catch (error) {
+    notifyError(error)
   }
-  resetWorkshopForm()
-  workshopEditingCode.value = null
-  workshopShowErrors.value = false
-  workshopOpen.value = false
 }
 
 // ---- 产线 ----
@@ -327,7 +327,6 @@ const lineEditLoading = shallowRef(false)
 const lineForm = reactive({ code: '', name: '', siteCode: '', workshopCode: '' })
 const lineRows = computed(() => filterRows(lines.items.value, lineKeyword.value))
 const canCreateLine = computed(() => [lineForm.code, lineForm.name, lineForm.siteCode].every(isNonEmpty))
-const lineCreateError = computed(() => formatError(lines.createError.value))
 const lineListError = computed(() => formatError(lines.error.value))
 
 watch(lineOpen, (open) => { if (open) lineShowErrors.value = false })
@@ -371,29 +370,34 @@ async function submitLine() {
     return
   }
   const workshopCode = lineForm.workshopCode.trim()
-  if (lineEditingCode.value) {
-    await lineActions.update(lineEditingCode.value, {
-      name: lineForm.name.trim(),
-      siteCode: lineForm.siteCode.trim(),
-      workshopCode: workshopCode || null,
-    })
-    toast.success(`产线「${lineForm.name.trim()}」已更新。`)
+  try {
+    if (lineEditingCode.value) {
+      await lineActions.update(lineEditingCode.value, {
+        name: lineForm.name.trim(),
+        siteCode: lineForm.siteCode.trim(),
+        workshopCode: workshopCode || null,
+      })
+      notifySuccess(`产线「${lineForm.name.trim()}」已更新。`)
+    }
+    else {
+      await lines.create({
+        organizationId: lines.filters.organizationId,
+        environmentId: lines.filters.environmentId,
+        code: lineForm.code.trim(),
+        name: lineForm.name.trim(),
+        siteCode: lineForm.siteCode.trim(),
+        ...(workshopCode ? { workshopCode } : {}),
+      })
+      notifySuccess(`产线「${lineForm.name.trim()}」已创建。`)
+    }
+    resetLineForm()
+    lineEditingCode.value = null
+    lineShowErrors.value = false
+    lineOpen.value = false
   }
-  else {
-    await lines.create({
-      organizationId: lines.filters.organizationId,
-      environmentId: lines.filters.environmentId,
-      code: lineForm.code.trim(),
-      name: lineForm.name.trim(),
-      siteCode: lineForm.siteCode.trim(),
-      ...(workshopCode ? { workshopCode } : {}),
-    })
-    toast.success(`产线「${lineForm.name.trim()}」已创建。`)
+  catch (error) {
+    notifyError(error)
   }
-  resetLineForm()
-  lineEditingCode.value = null
-  lineShowErrors.value = false
-  lineOpen.value = false
 }
 
 // ---- 工作中心 ----
@@ -410,7 +414,6 @@ const canCreateWorkCenter = computed(() =>
   [wcForm.code, wcForm.name, wcForm.plantCode, wcForm.lineCode, wcForm.defaultCalendarCode].every(isNonEmpty)
   && (Number(wcForm.capacityMinutesPerDay) || 0) > 0,
 )
-const wcCreateError = computed(() => formatError(workCenters.createError.value))
 const wcListError = computed(() => formatError(workCenters.error.value))
 
 watch(wcOpen, (open) => { if (open) wcShowErrors.value = false })
@@ -457,40 +460,45 @@ async function submitWorkCenter() {
     return
   }
   const workshopCode = wcForm.workshopCode.trim()
-  if (wcEditingCode.value) {
-    await wcActions.update(wcEditingCode.value, {
-      name: wcForm.name.trim(),
-      plantCode: wcForm.plantCode.trim(),
-      lineCode: wcForm.lineCode.trim(),
-      defaultCalendarCode: wcForm.defaultCalendarCode.trim(),
-      capacityMinutesPerDay: Number(wcForm.capacityMinutesPerDay) || WORK_CENTER_DEFAULTS.capacityMinutesPerDay,
-      capacityUnit: WORK_CENTER_DEFAULTS.capacityUnit,
-      finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
-      workshopCode: workshopCode || null,
-    })
-    toast.success(`工作中心「${wcForm.name.trim()}」已更新。`)
+  try {
+    if (wcEditingCode.value) {
+      await wcActions.update(wcEditingCode.value, {
+        name: wcForm.name.trim(),
+        plantCode: wcForm.plantCode.trim(),
+        lineCode: wcForm.lineCode.trim(),
+        defaultCalendarCode: wcForm.defaultCalendarCode.trim(),
+        capacityMinutesPerDay: Number(wcForm.capacityMinutesPerDay) || WORK_CENTER_DEFAULTS.capacityMinutesPerDay,
+        capacityUnit: WORK_CENTER_DEFAULTS.capacityUnit,
+        finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
+        workshopCode: workshopCode || null,
+      })
+      notifySuccess(`工作中心「${wcForm.name.trim()}」已更新。`)
+    }
+    else {
+      await workCenters.create({
+        organizationId: workCenters.filters.organizationId,
+        environmentId: workCenters.filters.environmentId,
+        code: wcForm.code.trim(),
+        name: wcForm.name.trim(),
+        plantCode: wcForm.plantCode.trim(),
+        lineCode: wcForm.lineCode.trim(),
+        defaultCalendarCode: wcForm.defaultCalendarCode.trim(),
+        capacityMinutesPerDay: Number(wcForm.capacityMinutesPerDay) || WORK_CENTER_DEFAULTS.capacityMinutesPerDay,
+        resourceType: WORK_CENTER_DEFAULTS.resourceType,
+        capacityUnit: WORK_CENTER_DEFAULTS.capacityUnit,
+        finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
+        ...(workshopCode ? { workshopCode } : {}),
+      })
+      notifySuccess(`工作中心「${wcForm.name.trim()}」已创建。`)
+    }
+    resetWcForm()
+    wcEditingCode.value = null
+    wcShowErrors.value = false
+    wcOpen.value = false
   }
-  else {
-    await workCenters.create({
-      organizationId: workCenters.filters.organizationId,
-      environmentId: workCenters.filters.environmentId,
-      code: wcForm.code.trim(),
-      name: wcForm.name.trim(),
-      plantCode: wcForm.plantCode.trim(),
-      lineCode: wcForm.lineCode.trim(),
-      defaultCalendarCode: wcForm.defaultCalendarCode.trim(),
-      capacityMinutesPerDay: Number(wcForm.capacityMinutesPerDay) || WORK_CENTER_DEFAULTS.capacityMinutesPerDay,
-      resourceType: WORK_CENTER_DEFAULTS.resourceType,
-      capacityUnit: WORK_CENTER_DEFAULTS.capacityUnit,
-      finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
-      ...(workshopCode ? { workshopCode } : {}),
-    })
-    toast.success(`工作中心「${wcForm.name.trim()}」已创建。`)
+  catch (error) {
+    notifyError(error)
   }
-  resetWcForm()
-  wcEditingCode.value = null
-  wcShowErrors.value = false
-  wcOpen.value = false
 }
 
 function filterRows(items: BusinessConsoleResourceItem[], keyword: string) {
@@ -554,7 +562,6 @@ function refreshAll() {
                   <DialogDescription>{{ siteEditingCode ? '修改工厂档案（编码不可修改）。带 * 为必填项。' : '登记一个生产站点。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitSite">
-                  <p v-if="siteCreateError" class="text-sm text-destructive" role="alert">{{ siteCreateError }}</p>
                   <p v-if="siteShowErrors && !canCreateSite" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="siteShowErrors && !isNonEmpty(siteForm.code)">
@@ -584,7 +591,6 @@ function refreshAll() {
           </template>
         </Toolbar>
         <p v-if="siteListError" class="text-sm text-destructive" role="alert">{{ siteListError }}</p>
-        <p v-else-if="facilityActionError" class="text-sm text-destructive" role="alert">{{ facilityActionError }}</p>
         <DataTable
           :columns="columns"
           :rows="siteRows"
@@ -619,7 +625,6 @@ function refreshAll() {
                   <DialogDescription>{{ lineEditingCode ? '修改产线档案（编码不可修改）。带 * 为必填项。' : '在所属工厂下登记一条产线。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitLine">
-                  <p v-if="lineCreateError" class="text-sm text-destructive" role="alert">{{ lineCreateError }}</p>
                   <p v-if="lineShowErrors && !canCreateLine" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="lineShowErrors && !isNonEmpty(lineForm.code)">
@@ -702,7 +707,6 @@ function refreshAll() {
                   <DialogDescription>{{ workshopEditingCode ? '修改车间档案（编码不可修改）。带 * 为必填项。' : '在所属工厂下登记一个车间。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitWorkshop">
-                  <p v-if="workshopCreateError" class="text-sm text-destructive" role="alert">{{ workshopCreateError }}</p>
                   <p v-if="workshopShowErrors && !canCreateWorkshop" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="workshopShowErrors && !isNonEmpty(workshopForm.code)">
@@ -785,7 +789,6 @@ function refreshAll() {
                   <DialogDescription>{{ wcEditingCode ? '修改工作中心档案（编码不可修改）。带 * 为必填项。' : '在工厂与产线下登记一个产能资源。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitWorkCenter">
-                  <p v-if="wcCreateError" class="text-sm text-destructive" role="alert">{{ wcCreateError }}</p>
                   <p v-if="wcShowErrors && !canCreateWorkCenter" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.code)">

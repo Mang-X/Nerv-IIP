@@ -30,11 +30,11 @@ import {
   SelectValue,
   Spinner,
   StatusBadge,
-  toast,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: '数据字典' } })
 
@@ -67,7 +67,6 @@ const {
   codesPending,
   codesTotal,
   createCode,
-  createCodeError,
   createCodePending,
   filters,
   refreshCodes,
@@ -109,8 +108,6 @@ const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => sortedRows.value)
 
 const listErrorMessage = computed(() => formatError(codesError.value))
-const createErrorMessage = computed(() => formatError(createCodeError.value))
-const actionErrorMessage = computed(() => formatError(codeActions.actionError.value))
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
@@ -200,26 +197,31 @@ async function submitCode() {
     createShowErrors.value = true
     return
   }
-  if (editingCode.value) {
-    await codeActions.update(editingCode.value, { name: createForm.name.trim() })
-    toast.success(`字典条目「${createForm.name.trim()}」已更新。`)
-  }
-  else {
-    const body: BusinessConsoleCreateReferenceDataCodeRequest = {
-      organizationId: createForm.organizationId.trim(),
-      environmentId: createForm.environmentId.trim(),
-      codeSet: createForm.codeSet.trim(),
-      code: createForm.code.trim(),
-      name: createForm.name.trim(),
+  try {
+    if (editingCode.value) {
+      await codeActions.update(editingCode.value, { name: createForm.name.trim() })
+      notifySuccess(`字典条目「${createForm.name.trim()}」已更新。`)
     }
-    await createCode(body)
-    toast.success(`字典条目「${body.name}」已创建。`)
-    selectedCodeSet.value = body.codeSet
+    else {
+      const body: BusinessConsoleCreateReferenceDataCodeRequest = {
+        organizationId: createForm.organizationId.trim(),
+        environmentId: createForm.environmentId.trim(),
+        codeSet: createForm.codeSet.trim(),
+        code: createForm.code.trim(),
+        name: createForm.name.trim(),
+      }
+      await createCode(body)
+      notifySuccess(`字典条目「${body.name}」已创建。`)
+      selectedCodeSet.value = body.codeSet
+    }
+    resetCreateForm()
+    editingCode.value = null
+    createShowErrors.value = false
+    createOpen.value = false
   }
-  resetCreateForm()
-  editingCode.value = null
-  createShowErrors.value = false
-  createOpen.value = false
+  catch (error) {
+    notifyError(error)
+  }
 }
 function syncFormOnOpen(open: boolean) {
   if (!open) return
@@ -257,7 +259,6 @@ function isNonEmpty(value: string) {
               <DialogDescription>{{ editingCode ? '修改字典条目名称（所属字典与编码不可修改）。带 * 为必填项。' : '选择所属字典，填写编码与名称。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitCode">
-              <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
               <p v-if="createShowErrors && !canCreateCode" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.codeSet)">
@@ -326,7 +327,6 @@ function isNonEmpty(value: string) {
         <Toolbar v-model:search="keyword" :search-placeholder="`在「${selectedLabel}」内筛选编码、名称`" />
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
-        <p v-else-if="actionErrorMessage" class="text-sm text-destructive" role="alert">{{ actionErrorMessage }}</p>
 
         <DataTable
           v-model:sort="sort"

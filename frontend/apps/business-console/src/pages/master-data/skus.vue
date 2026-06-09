@@ -31,12 +31,12 @@ import {
   SelectValue,
   Spinner,
   StatusBadge,
-  toast,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   BARCODE_RULE_OPTIONS,
   BATCH_TRACKING_OPTIONS,
@@ -52,7 +52,6 @@ definePage({ meta: { requiresAuth: true, title: '物料与产品' } })
 
 const {
   createSku,
-  createSkuError,
   createSkuPending,
   filters,
   refreshSkus,
@@ -137,9 +136,7 @@ const totalItems = computed(() => skusTotal.value + pendingLocalSkus.value.lengt
 
 const activeCount = computed(() => listRows.value.filter((s) => s.active !== false).length)
 const disabledCount = computed(() => listRows.value.filter((s) => s.active === false).length)
-const createErrorMessage = computed(() => formatError(createSkuError.value))
 const listErrorMessage = computed(() => formatError(skusError.value))
-const skuActionErrorMessage = computed(() => formatError(skuActions.actionError.value))
 // 字典化字段必须取自对应选项集（防止默认值/旧值漂移后提交字典里不存在的码值）。
 function inOptions(options: readonly { value: string }[], value: string) {
   return options.some((option) => option.value === value)
@@ -227,7 +224,7 @@ async function submitSku() {
   try {
     if (editingCode.value) {
       await skuActions.update(editingCode.value, skuFieldPatch())
-      toast.success(`物料「${createForm.name.trim()}」已更新。`)
+      notifySuccess(`物料「${createForm.name.trim()}」已更新。`)
     }
     else {
       const body: BusinessConsoleCreateSkuRequest = {
@@ -243,15 +240,15 @@ async function submitSku() {
         { resourceType: 'sku', code: createdCode, displayName: body.name, active: true, snapshotVersion: '本次录入' },
         ...localSkus.value,
       ]
-      toast.success(`物料「${body.name}」已创建${createdCode ? `，编号 ${createdCode}` : ''}。`)
+      notifySuccess(`物料「${body.name}」已创建${createdCode ? `，编号 ${createdCode}` : ''}。`)
     }
     resetCreateForm()
     editingCode.value = null
     createShowErrors.value = false
     createOpen.value = false
   }
-  catch {
-    // 失败信息由页面错误区/创建错误区呈现。
+  catch (error) {
+    notifyError(error)
   }
 }
 function openCreate() {
@@ -328,7 +325,6 @@ function isNonEmpty(value: string) {
               </DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitSku">
-              <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
               <p v-if="createShowErrors && !canCreateSku" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <p class="text-sm font-medium text-foreground">基础信息</p>
@@ -477,7 +473,6 @@ function isNonEmpty(value: string) {
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
-    <p v-else-if="skuActionErrorMessage" class="text-sm text-destructive" role="alert">{{ skuActionErrorMessage }}</p>
 
     <DataTable
       v-model:sort="sort"

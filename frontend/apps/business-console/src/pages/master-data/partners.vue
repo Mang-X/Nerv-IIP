@@ -32,18 +32,17 @@ import {
   SelectValue,
   Spinner,
   StatusBadge,
-  toast,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: '业务伙伴' } })
 
 const {
   createPartner,
-  createPartnerError,
   createPartnerPending,
   filters,
   partners,
@@ -108,8 +107,6 @@ const pagedRows = computed(() => sortedRows.value)
 const customerCount = computed(() => partners.value.filter((r) => partnerRoles(r).includes('customer')).length)
 const supplierCount = computed(() => partners.value.filter((r) => partnerRoles(r).includes('supplier')).length)
 const listErrorMessage = computed(() => formatError(partnersError.value))
-const createErrorMessage = computed(() => formatError(createPartnerError.value))
-const partnerActionErrorMessage = computed(() => formatError(partnerActions.actionError.value))
 
 const PARTNER_FORM_DEFAULTS = {
   code: '',
@@ -219,32 +216,37 @@ async function submitPartner() {
   }
   const roles = selectedExtraRoles()
   const taxId = createForm.taxId.trim()
-  if (editingCode.value) {
-    await partnerActions.update(editingCode.value, {
-      name: createForm.name.trim(),
-      partnerType: createForm.partnerType.trim(),
-      partnerRoles: roles,
-      taxId: taxId || null,
-    })
-    toast.success(`业务伙伴「${createForm.name.trim()}」已更新。`)
-  }
-  else {
-    const body: BusinessConsoleCreateBusinessPartnerRequest = {
-      organizationId: createForm.organizationId.trim(),
-      environmentId: createForm.environmentId.trim(),
-      code: createForm.code.trim(),
-      name: createForm.name.trim(),
-      partnerType: createForm.partnerType.trim(),
-      ...(roles.length ? { partnerRoles: roles } : {}),
-      ...(taxId ? { taxId } : {}),
+  try {
+    if (editingCode.value) {
+      await partnerActions.update(editingCode.value, {
+        name: createForm.name.trim(),
+        partnerType: createForm.partnerType.trim(),
+        partnerRoles: roles,
+        taxId: taxId || null,
+      })
+      notifySuccess(`业务伙伴「${createForm.name.trim()}」已更新。`)
     }
-    await createPartner(body)
-    toast.success(`业务伙伴「${body.name}」已创建。`)
+    else {
+      const body: BusinessConsoleCreateBusinessPartnerRequest = {
+        organizationId: createForm.organizationId.trim(),
+        environmentId: createForm.environmentId.trim(),
+        code: createForm.code.trim(),
+        name: createForm.name.trim(),
+        partnerType: createForm.partnerType.trim(),
+        ...(roles.length ? { partnerRoles: roles } : {}),
+        ...(taxId ? { taxId } : {}),
+      }
+      await createPartner(body)
+      notifySuccess(`业务伙伴「${body.name}」已创建。`)
+    }
+    resetCreateForm()
+    editingCode.value = null
+    createShowErrors.value = false
+    createOpen.value = false
   }
-  resetCreateForm()
-  editingCode.value = null
-  createShowErrors.value = false
-  createOpen.value = false
+  catch (error) {
+    notifyError(error)
+  }
 }
 function syncContextFromFilters(open: boolean) {
   if (open) createShowErrors.value = false
@@ -280,7 +282,6 @@ function isNonEmpty(value: string) {
               <DialogDescription>{{ editingCode ? '修改伙伴档案（编码不可修改）。一个伙伴可兼具多个角色。带 * 为必填项。' : '客户、供应商、承运商统一建档。一个伙伴可兼具多个角色。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitPartner">
-              <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
               <p v-if="createShowErrors && !canCreatePartner" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
@@ -359,7 +360,6 @@ function isNonEmpty(value: string) {
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
-    <p v-else-if="partnerActionErrorMessage" class="text-sm text-destructive" role="alert">{{ partnerActionErrorMessage }}</p>
 
     <DataTable
       v-model:sort="sort"

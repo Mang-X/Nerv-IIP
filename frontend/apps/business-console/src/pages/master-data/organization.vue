@@ -42,12 +42,12 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-  toast,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, UsersIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: '组织与人员' } })
 
@@ -70,12 +70,6 @@ const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
-const orgActionError = computed(() =>
-  formatError(
-    deptActions.actionError.value ?? teamActions.actionError.value
-    ?? shiftActions.actionError.value ?? calActions.actionError.value,
-  ),
-)
 function baseDetailFields(row: BusinessConsoleResourceItem, codeLabel: string, nameLabel: string) {
   return [
     { label: codeLabel, value: row.code ?? '' },
@@ -118,7 +112,6 @@ const deptEditLoading = shallowRef(false)
 const deptForm = reactive({ code: '', name: '', parentDepartmentCode: '' })
 const deptRows = computed(() => filterRows(departments.items.value, deptKeyword.value))
 const canCreateDept = computed(() => [deptForm.code, deptForm.name].every(isNonEmpty))
-const deptCreateError = computed(() => formatError(departments.createError.value))
 const deptListError = computed(() => formatError(departments.error.value))
 watch(deptOpen, (open) => { if (open) deptShowErrors.value = false })
 watch([deptKeyword, deptPageSize], () => { deptPage.value = 1 })
@@ -159,27 +152,32 @@ async function submitDept() {
     deptShowErrors.value = true
     return
   }
-  if (deptEditingCode.value) {
-    // 通用 update 端点仅支持 name（上级部门等结构字段不在更新契约内）。
-    await deptActions.update(deptEditingCode.value, {
-      name: deptForm.name.trim(),
-    })
-    toast.success(`部门「${deptForm.name.trim()}」已更新。`)
+  try {
+    if (deptEditingCode.value) {
+      // 通用 update 端点仅支持 name（上级部门等结构字段不在更新契约内）。
+      await deptActions.update(deptEditingCode.value, {
+        name: deptForm.name.trim(),
+      })
+      notifySuccess(`部门「${deptForm.name.trim()}」已更新。`)
+    }
+    else {
+      await departments.create({
+        organizationId: departments.filters.organizationId,
+        environmentId: departments.filters.environmentId,
+        code: deptForm.code.trim(),
+        name: deptForm.name.trim(),
+        parentDepartmentCode: deptForm.parentDepartmentCode.trim() || null,
+      })
+      notifySuccess(`部门「${deptForm.name.trim()}」已创建。`)
+    }
+    resetDeptForm()
+    deptEditingCode.value = null
+    deptShowErrors.value = false
+    deptOpen.value = false
   }
-  else {
-    await departments.create({
-      organizationId: departments.filters.organizationId,
-      environmentId: departments.filters.environmentId,
-      code: deptForm.code.trim(),
-      name: deptForm.name.trim(),
-      parentDepartmentCode: deptForm.parentDepartmentCode.trim() || null,
-    })
-    toast.success(`部门「${deptForm.name.trim()}」已创建。`)
+  catch (error) {
+    notifyError(error)
   }
-  resetDeptForm()
-  deptEditingCode.value = null
-  deptShowErrors.value = false
-  deptOpen.value = false
 }
 
 // ---- 班组 ----
@@ -195,7 +193,6 @@ const teamRows = computed(() => filterRows(teams.items.value, teamKeyword.value)
 const canCreateTeam = computed(() => [teamForm.code, teamForm.name, teamForm.departmentCode, teamForm.shiftCode].every(isNonEmpty))
 // 编辑态仅校验名称（部门/班次归属不在更新契约内），新建态校验全部必填。
 const teamFormValid = computed(() => (teamEditingCode.value ? isNonEmpty(teamForm.name) : canCreateTeam.value))
-const teamCreateError = computed(() => formatError(teams.createError.value))
 const teamListError = computed(() => formatError(teams.error.value))
 watch(teamOpen, (open) => { if (open) teamShowErrors.value = false })
 watch([teamKeyword, teamPageSize], () => { teamPage.value = 1 })
@@ -234,30 +231,40 @@ async function submitTeam() {
       teamShowErrors.value = true
       return
     }
-    await teamActions.update(teamEditingCode.value, { name: teamForm.name.trim() })
-    toast.success(`班组「${teamForm.name.trim()}」已更新。`)
-    resetTeamForm()
-    teamEditingCode.value = null
-    teamShowErrors.value = false
-    teamOpen.value = false
+    try {
+      await teamActions.update(teamEditingCode.value, { name: teamForm.name.trim() })
+      notifySuccess(`班组「${teamForm.name.trim()}」已更新。`)
+      resetTeamForm()
+      teamEditingCode.value = null
+      teamShowErrors.value = false
+      teamOpen.value = false
+    }
+    catch (error) {
+      notifyError(error)
+    }
     return
   }
   if (!canCreateTeam.value) {
     teamShowErrors.value = true
     return
   }
-  await teams.create({
-    organizationId: teams.filters.organizationId,
-    environmentId: teams.filters.environmentId,
-    code: teamForm.code.trim(),
-    name: teamForm.name.trim(),
-    departmentCode: teamForm.departmentCode.trim(),
-    shiftCode: teamForm.shiftCode.trim(),
-  })
-  toast.success(`班组「${teamForm.name.trim()}」已创建。`)
-  resetTeamForm()
-  teamShowErrors.value = false
-  teamOpen.value = false
+  try {
+    await teams.create({
+      organizationId: teams.filters.organizationId,
+      environmentId: teams.filters.environmentId,
+      code: teamForm.code.trim(),
+      name: teamForm.name.trim(),
+      departmentCode: teamForm.departmentCode.trim(),
+      shiftCode: teamForm.shiftCode.trim(),
+    })
+    notifySuccess(`班组「${teamForm.name.trim()}」已创建。`)
+    resetTeamForm()
+    teamShowErrors.value = false
+    teamOpen.value = false
+  }
+  catch (error) {
+    notifyError(error)
+  }
 }
 
 // ---- 班组成员维护（弹窗，按行打开）----
@@ -282,7 +289,6 @@ const shiftRows = computed(() => filterRows(shifts.items.value, shiftKeyword.val
 const canCreateShift = computed(() => [shiftForm.code, shiftForm.name].every(isNonEmpty) && (Number(shiftForm.paidMinutes) || 0) > 0)
 // 编辑态仅校验名称（时段/计薪不在更新契约内），新建态校验全部必填。
 const shiftFormValid = computed(() => (shiftEditingCode.value ? isNonEmpty(shiftForm.name) : canCreateShift.value))
-const shiftCreateError = computed(() => formatError(shifts.createError.value))
 const shiftListError = computed(() => formatError(shifts.error.value))
 watch(shiftOpen, (open) => { if (open) shiftShowErrors.value = false })
 watch([shiftKeyword, shiftPageSize], () => { shiftPage.value = 1 })
@@ -321,31 +327,41 @@ async function submitShift() {
       shiftShowErrors.value = true
       return
     }
-    await shiftActions.update(shiftEditingCode.value, { name: shiftForm.name.trim() })
-    toast.success(`班次「${shiftForm.name.trim()}」已更新。`)
-    resetShiftForm()
-    shiftEditingCode.value = null
-    shiftShowErrors.value = false
-    shiftOpen.value = false
+    try {
+      await shiftActions.update(shiftEditingCode.value, { name: shiftForm.name.trim() })
+      notifySuccess(`班次「${shiftForm.name.trim()}」已更新。`)
+      resetShiftForm()
+      shiftEditingCode.value = null
+      shiftShowErrors.value = false
+      shiftOpen.value = false
+    }
+    catch (error) {
+      notifyError(error)
+    }
     return
   }
   if (!canCreateShift.value) {
     shiftShowErrors.value = true
     return
   }
-  await shifts.create({
-    organizationId: shifts.filters.organizationId,
-    environmentId: shifts.filters.environmentId,
-    code: shiftForm.code.trim(),
-    name: shiftForm.name.trim(),
-    startsAt: shiftForm.startsAt.trim() || undefined,
-    endsAt: shiftForm.endsAt.trim() || undefined,
-    paidMinutes: Number(shiftForm.paidMinutes) || 480,
-  })
-  toast.success(`班次「${shiftForm.name.trim()}」已创建。`)
-  resetShiftForm()
-  shiftShowErrors.value = false
-  shiftOpen.value = false
+  try {
+    await shifts.create({
+      organizationId: shifts.filters.organizationId,
+      environmentId: shifts.filters.environmentId,
+      code: shiftForm.code.trim(),
+      name: shiftForm.name.trim(),
+      startsAt: shiftForm.startsAt.trim() || undefined,
+      endsAt: shiftForm.endsAt.trim() || undefined,
+      paidMinutes: Number(shiftForm.paidMinutes) || 480,
+    })
+    notifySuccess(`班次「${shiftForm.name.trim()}」已创建。`)
+    resetShiftForm()
+    shiftShowErrors.value = false
+    shiftOpen.value = false
+  }
+  catch (error) {
+    notifyError(error)
+  }
 }
 
 // ---- 工作日历 ----
@@ -359,7 +375,6 @@ const calEditLoading = shallowRef(false)
 const calForm = reactive({ code: '', name: '' })
 const calRows = computed(() => filterRows(calendars.items.value, calKeyword.value))
 const canCreateCal = computed(() => [calForm.code, calForm.name].every(isNonEmpty))
-const calCreateError = computed(() => formatError(calendars.createError.value))
 const calListError = computed(() => formatError(calendars.error.value))
 watch(calOpen, (open) => { if (open) calShowErrors.value = false })
 watch([calKeyword, calPageSize], () => { calPage.value = 1 })
@@ -396,23 +411,28 @@ async function submitCal() {
     calShowErrors.value = true
     return
   }
-  if (calEditingCode.value) {
-    await calActions.update(calEditingCode.value, { name: calForm.name.trim() })
-    toast.success(`工作日历「${calForm.name.trim()}」已更新。`)
+  try {
+    if (calEditingCode.value) {
+      await calActions.update(calEditingCode.value, { name: calForm.name.trim() })
+      notifySuccess(`工作日历「${calForm.name.trim()}」已更新。`)
+    }
+    else {
+      await calendars.create({
+        organizationId: calendars.filters.organizationId,
+        environmentId: calendars.filters.environmentId,
+        code: calForm.code.trim(),
+        name: calForm.name.trim(),
+      })
+      notifySuccess(`工作日历「${calForm.name.trim()}」已创建。`)
+    }
+    resetCalForm()
+    calEditingCode.value = null
+    calShowErrors.value = false
+    calOpen.value = false
   }
-  else {
-    await calendars.create({
-      organizationId: calendars.filters.organizationId,
-      environmentId: calendars.filters.environmentId,
-      code: calForm.code.trim(),
-      name: calForm.name.trim(),
-    })
-    toast.success(`工作日历「${calForm.name.trim()}」已创建。`)
+  catch (error) {
+    notifyError(error)
   }
-  resetCalForm()
-  calEditingCode.value = null
-  calShowErrors.value = false
-  calOpen.value = false
 }
 
 // ---- 人员技能（列表只读 + 登记可写）----
@@ -440,7 +460,6 @@ const skillForm = reactive({ userId: '', skillCode: '', level: '', effectiveFrom
 const canAssignSkill = computed(() =>
   isNonEmpty(skillForm.userId) && isNonEmpty(skillForm.skillCode) && isNonEmpty(skillForm.level),
 )
-const skillAssignError = computed(() => formatError(skillAssignment.assignError.value))
 watch(skillOpen, (open) => {
   if (open) {
     skillShowErrors.value = false
@@ -452,15 +471,20 @@ async function submitSkill() {
     skillShowErrors.value = true
     return
   }
-  await skillAssignment.assign({
-    userId: skillForm.userId,
-    skillCode: skillForm.skillCode.trim(),
-    level: skillForm.level,
-    effectiveFrom: skillForm.effectiveFrom.trim() || undefined,
-  })
-  toast.success('已登记人员技能。')
-  skillShowErrors.value = false
-  skillOpen.value = false
+  try {
+    await skillAssignment.assign({
+      userId: skillForm.userId,
+      skillCode: skillForm.skillCode.trim(),
+      level: skillForm.level,
+      effectiveFrom: skillForm.effectiveFrom.trim() || undefined,
+    })
+    notifySuccess('已登记人员技能。')
+    skillShowErrors.value = false
+    skillOpen.value = false
+  }
+  catch (error) {
+    notifyError(error)
+  }
 }
 </script>
 
@@ -509,7 +533,6 @@ async function submitSkill() {
                   <DialogDescription>{{ deptEditingCode ? '修改部门名称（编码不可修改）。带 * 为必填项。' : '登记一个组织部门，可选挂靠上级部门。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitDept">
-                  <p v-if="deptCreateError" class="text-sm text-destructive" role="alert">{{ deptCreateError }}</p>
                   <p v-if="deptShowErrors && !canCreateDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.code)">
@@ -545,7 +568,6 @@ async function submitSkill() {
           </template>
         </Toolbar>
         <p v-if="deptListError" class="text-sm text-destructive" role="alert">{{ deptListError }}</p>
-        <p v-else-if="orgActionError" class="text-sm text-destructive" role="alert">{{ orgActionError }}</p>
         <DataTable :columns="columns" :rows="deptRows" :row-key="rowKey" :loading="departments.pending.value" empty-message="暂无部门。可清空筛选或新建部门。">
           <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
           <template #cell-actions="{ row }">
@@ -569,7 +591,6 @@ async function submitSkill() {
                   <DialogDescription>{{ teamEditingCode ? '修改班组名称（编码不可修改）。带 * 为必填项。' : '将班组挂靠到部门与班次。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitTeam">
-                  <p v-if="teamCreateError" class="text-sm text-destructive" role="alert">{{ teamCreateError }}</p>
                   <p v-if="teamShowErrors && !teamFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.code)">
@@ -649,7 +670,6 @@ async function submitSkill() {
                   <DialogDescription>{{ shiftEditingCode ? '修改班次名称（编码不可修改）。带 * 为必填项。' : '定义一个排班时段及计薪时长。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitShift">
-                  <p v-if="shiftCreateError" class="text-sm text-destructive" role="alert">{{ shiftCreateError }}</p>
                   <p v-if="shiftShowErrors && !shiftFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.code)">
@@ -709,7 +729,6 @@ async function submitSkill() {
                   <DialogDescription>{{ calEditingCode ? '修改日历名称（编码不可修改）。带 * 为必填项。' : '登记一个工作日历，供工作中心与排程引用。带 * 为必填项。' }}</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitCal">
-                  <p v-if="calCreateError" class="text-sm text-destructive" role="alert">{{ calCreateError }}</p>
                   <p v-if="calShowErrors && !canCreateCal" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="calShowErrors && !isNonEmpty(calForm.code)">
@@ -756,7 +775,6 @@ async function submitSkill() {
                   <DialogDescription>为某位工人登记一项技能与等级，可选填生效日期。带 * 为必填项。</DialogDescription>
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitSkill">
-                  <p v-if="skillAssignError" class="text-sm text-destructive" role="alert">{{ skillAssignError }}</p>
                   <p v-if="skillShowErrors && !canAssignSkill" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field class="sm:col-span-2" :data-invalid="skillShowErrors && !isNonEmpty(skillForm.userId)">

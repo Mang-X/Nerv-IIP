@@ -34,12 +34,12 @@ import {
   SelectValue,
   Spinner,
   StatusBadge,
-  toast,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: '设备台账' } })
 
@@ -99,8 +99,6 @@ function deviceDetailFields(row: BusinessConsoleResourceItem) {
   ]
 }
 
-const deviceActionErrorMessage = computed(() => formatError(deviceActions.actionError.value))
-
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return devices.items.value
@@ -112,7 +110,6 @@ const canCreateDevice = computed(() =>
   [createForm.code, createForm.model, createForm.manufacturer, createForm.serialNo,
     createForm.assetClassCode, createForm.lineCode, createForm.workCenterCode, createForm.criticality].every(isNonEmpty),
 )
-const createErrorMessage = computed(() => formatError(devices.createError.value))
 const listErrorMessage = computed(() => formatError(devices.error.value))
 
 watch(createOpen, (open) => { if (open) createShowErrors.value = false })
@@ -177,44 +174,49 @@ async function submitDevice() {
     createShowErrors.value = true
     return
   }
-  if (editingCode.value) {
-    await deviceActions.update(editingCode.value, {
-      name: createForm.model.trim(),
-      model: createForm.model.trim(),
-      manufacturer: createForm.manufacturer.trim(),
-      serialNo: createForm.serialNo.trim(),
-      assetClassCode: createForm.assetClassCode.trim(),
-      lineCode: createForm.lineCode.trim(),
-      workCenterCode: createForm.workCenterCode.trim(),
-      capacityUomCode: DEVICE_DEFAULTS.capacityUomCode,
-      criticality: createForm.criticality,
-      maintainable: createForm.maintainable,
-      telemetryEnabled: DEVICE_DEFAULTS.telemetryEnabled,
-    })
-    toast.success(`设备「${createForm.model.trim()}」已更新。`)
+  try {
+    if (editingCode.value) {
+      await deviceActions.update(editingCode.value, {
+        name: createForm.model.trim(),
+        model: createForm.model.trim(),
+        manufacturer: createForm.manufacturer.trim(),
+        serialNo: createForm.serialNo.trim(),
+        assetClassCode: createForm.assetClassCode.trim(),
+        lineCode: createForm.lineCode.trim(),
+        workCenterCode: createForm.workCenterCode.trim(),
+        capacityUomCode: DEVICE_DEFAULTS.capacityUomCode,
+        criticality: createForm.criticality,
+        maintainable: createForm.maintainable,
+        telemetryEnabled: DEVICE_DEFAULTS.telemetryEnabled,
+      })
+      notifySuccess(`设备「${createForm.model.trim()}」已更新。`)
+    }
+    else {
+      await devices.create({
+        organizationId: devices.filters.organizationId,
+        environmentId: devices.filters.environmentId,
+        code: createForm.code.trim(),
+        model: createForm.model.trim(),
+        manufacturer: createForm.manufacturer.trim(),
+        serialNo: createForm.serialNo.trim(),
+        assetClassCode: createForm.assetClassCode.trim(),
+        lineCode: createForm.lineCode.trim(),
+        workCenterCode: createForm.workCenterCode.trim(),
+        capacityUomCode: DEVICE_DEFAULTS.capacityUomCode,
+        criticality: createForm.criticality,
+        maintainable: createForm.maintainable,
+        telemetryEnabled: DEVICE_DEFAULTS.telemetryEnabled,
+      })
+      notifySuccess(`设备「${createForm.model.trim()}」已登记。`)
+    }
+    resetCreateForm()
+    editingCode.value = null
+    createShowErrors.value = false
+    createOpen.value = false
   }
-  else {
-    await devices.create({
-      organizationId: devices.filters.organizationId,
-      environmentId: devices.filters.environmentId,
-      code: createForm.code.trim(),
-      model: createForm.model.trim(),
-      manufacturer: createForm.manufacturer.trim(),
-      serialNo: createForm.serialNo.trim(),
-      assetClassCode: createForm.assetClassCode.trim(),
-      lineCode: createForm.lineCode.trim(),
-      workCenterCode: createForm.workCenterCode.trim(),
-      capacityUomCode: DEVICE_DEFAULTS.capacityUomCode,
-      criticality: createForm.criticality,
-      maintainable: createForm.maintainable,
-      telemetryEnabled: DEVICE_DEFAULTS.telemetryEnabled,
-    })
-    toast.success(`设备「${createForm.model.trim()}」已登记。`)
+  catch (error) {
+    notifyError(error)
   }
-  resetCreateForm()
-  editingCode.value = null
-  createShowErrors.value = false
-  createOpen.value = false
 }
 </script>
 
@@ -239,7 +241,6 @@ async function submitDevice() {
               <DialogDescription>{{ editingCode ? '修改设备档案（编码不可修改）。带 * 为必填项。' : '为产线与工作中心登记一台设备资产。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitDevice">
-              <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
               <p v-if="createShowErrors && !canCreateDevice" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
@@ -323,7 +324,6 @@ async function submitDevice() {
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选设备编码、名称" />
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
-    <p v-else-if="deviceActionErrorMessage" class="text-sm text-destructive" role="alert">{{ deviceActionErrorMessage }}</p>
 
     <DataTable
       :columns="columns"
