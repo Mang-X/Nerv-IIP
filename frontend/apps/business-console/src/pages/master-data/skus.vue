@@ -87,7 +87,7 @@ const SKU_FORM_DEFAULTS = {
   serialTrackingPolicy: 'none',
   shelfLifePolicyCode: 'none',
   storageConditionCode: 'ambient',
-  defaultBarcodeRuleCode: 'code128-internal',
+  defaultBarcodeRuleCode: 'code128',
   qualityRequired: true,
   complianceTags: '',
 }
@@ -136,10 +136,20 @@ const disabledCount = computed(() => listRows.value.filter((s) => s.active === f
 const createErrorMessage = computed(() => formatError(createSkuError.value))
 const listErrorMessage = computed(() => formatError(skusError.value))
 const skuActionErrorMessage = computed(() => formatError(skuActions.actionError.value))
+// 字典化字段必须取自对应选项集（防止默认值/旧值漂移后提交字典里不存在的码值）。
+function inOptions(options: readonly { value: string }[], value: string) {
+  return options.some((option) => option.value === value)
+}
 const canCreateSku = computed(() =>
-  [createForm.name, createForm.baseUomCode, createForm.category, createForm.materialType,
-    createForm.batchTrackingPolicy, createForm.serialTrackingPolicy, createForm.shelfLifePolicyCode,
-    createForm.storageConditionCode, createForm.defaultBarcodeRuleCode].every(isNonEmpty),
+  isNonEmpty(createForm.name)
+  && inOptions(UOM_OPTIONS, createForm.baseUomCode)
+  && inOptions(PRODUCT_CATEGORY_OPTIONS, createForm.category)
+  && inOptions(MATERIAL_TYPE_OPTIONS, createForm.materialType)
+  && inOptions(BATCH_TRACKING_OPTIONS, createForm.batchTrackingPolicy)
+  && inOptions(SERIAL_TRACKING_OPTIONS, createForm.serialTrackingPolicy)
+  && inOptions(SHELF_LIFE_OPTIONS, createForm.shelfLifePolicyCode)
+  && inOptions(STORAGE_CONDITION_OPTIONS, createForm.storageConditionCode)
+  && inOptions(BARCODE_RULE_OPTIONS, createForm.defaultBarcodeRuleCode),
 )
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [

@@ -40,8 +40,9 @@ const options = computed(() =>
       const suffixParts = [employeeNo, department].filter(Boolean)
       const suffix = suffixParts.length > 0 ? `（${suffixParts.join(' · ')}）` : ''
       return {
+        // displayName 缺失时降级为「未命名工人」，绝不把内部 userId 当展示名暴露。
         value: worker.userId as string,
-        label: `${worker.displayName ?? worker.userId}${suffix}`,
+        label: `${worker.displayName || '未命名工人'}${suffix}`,
       }
     }),
 )
