@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ManagedNodeAggregate;
+using Nerv.IIP.AppHub.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using NetCorePal.Extensions.Repository.EntityFrameworkCore;
@@ -21,6 +22,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<InstanceStateHistory> InstanceStateHistory => Set<InstanceStateHistory>();
     public DbSet<InstanceStatusChange> InstanceStatusChanges => Set<InstanceStatusChange>();
     public DbSet<RegistrationIdempotency> RegistrationIdempotency => Set<RegistrationIdempotency>();
+    public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
     public DbSet<PublishedMessage> PublishedMessages => Set<PublishedMessage>();
     public DbSet<ReceivedMessage> ReceivedMessages => Set<ReceivedMessage>();
     public DbSet<CapLock> CapLocks => Set<CapLock>();

@@ -16,7 +16,8 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     {
         await using var dbContext = CreateDbContext();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(new CommandOnlySender(dbContext), deadLetterStore);
+        var sender = new CommandOnlySender(dbContext);
+        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
         var alarm = CreateAlarmRaisedEvent();
 
         await handler.HandleAsync(alarm, CancellationToken.None);
@@ -26,6 +27,8 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         Assert.Single(workOrders);
         Assert.Equal("alarm-001", workOrders[0].SourceAlarmId);
         Assert.True(workOrders[0].AssetUnavailable);
+        Assert.Equal(1, sender.CreateWorkOrderCommandCount);
+        Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
         Assert.Empty(await deadLetterStore.ListAsync(OpenWorkOrderWhenAlarmRaisedHandler.ConsumerName, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
     }
 
@@ -34,7 +37,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     {
         await using var dbContext = CreateDbContext();
         var deadLetterStore = new MaintenanceIntegrationEventDeadLetterStore(dbContext);
-        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(new CommandOnlySender(dbContext), deadLetterStore);
+        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(new CommandOnlySender(dbContext), dbContext, deadLetterStore);
 
         await handler.HandleAsync(CreateAlarmRaisedEvent(eventVersion: 2), CancellationToken.None);
 
@@ -78,10 +81,13 @@ public sealed class MaintenanceIntegrationEventHandlerTests
 
     private sealed class CommandOnlySender(ApplicationDbContext dbContext) : ISender
     {
+        public int CreateWorkOrderCommandCount { get; private set; }
+
         public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
             if (request is CreateMaintenanceWorkOrderCommand command)
             {
+                CreateWorkOrderCommandCount++;
                 var handler = new CreateMaintenanceWorkOrderCommandHandler(dbContext);
                 var id = await handler.Handle(command, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);

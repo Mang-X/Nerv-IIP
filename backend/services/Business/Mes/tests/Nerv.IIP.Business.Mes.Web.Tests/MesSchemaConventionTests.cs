@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Numbering;
 using Nerv.IIP.Testing.EntityFramework;
 
@@ -51,6 +52,7 @@ public sealed class MesSchemaConventionTests
             typeof(ShiftHandover),
             typeof(NumberingCounter),
             typeof(NumberingIdempotencyKey),
+            typeof(ProcessedIntegrationEvent),
         };
 
         var failures = new List<string>();
@@ -68,8 +70,30 @@ public sealed class MesSchemaConventionTests
         failures.AddRange(ForeignKeysAreConfigured(fixture.DbContext));
         failures.AddRange(IndexNamesAreExplicit(fixture.DbContext, businessEntities));
         failures.AddRange(MaterialConsumptionHasIdempotencyIndex(fixture.DbContext));
+        failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)
+    {
+        var entity = model.FindEntityType(typeof(ProcessedIntegrationEvent));
+        if (entity is null)
+        {
+            return [$"{MesFacts.ServiceName}: missing processed integration event entity metadata."];
+        }
+
+        var hasUniqueIndex = entity.GetIndexes().Any(index =>
+            index.IsUnique &&
+            index.GetDatabaseName() == "ux_processed_integration_events_consumer_event_id" &&
+            index.Properties.Select(property => property.Name).SequenceEqual([
+                nameof(ProcessedIntegrationEvent.ConsumerName),
+                nameof(ProcessedIntegrationEvent.EventId),
+            ]));
+
+        return hasUniqueIndex
+            ? []
+            : [$"{MesFacts.ServiceName}: processed integration event inbox requires a unique consumer/event id index."];
     }
 
     private static IReadOnlyCollection<string> ForeignKeysAreConfigured(ApplicationDbContext dbContext)

@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspection
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
+using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
@@ -36,6 +37,7 @@ public sealed class MaintenanceSchemaConventionTests
             typeof(MaintenancePlan),
             typeof(MaintenanceInspection),
             typeof(DowntimeReason),
+            typeof(ProcessedIntegrationEvent),
         };
         var failures = new List<string>();
 
@@ -43,9 +45,31 @@ public sealed class MaintenanceSchemaConventionTests
         failures.AddRange(SchemaConventionAssertions.BusinessTablesHaveComments(fixture.DbContext, MaintenanceFacts.ServiceName, businessEntities));
         failures.AddRange(SchemaConventionAssertions.BusinessColumnsHaveComments(fixture.DbContext, MaintenanceFacts.ServiceName, businessEntities));
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, MaintenanceFacts.ServiceName, MaintenanceFacts.Schema));
+        failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
         failures.AddRange(NoExternalOwnershipColumns(fixture.DbContext));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)
+    {
+        var entity = model.FindEntityType(typeof(ProcessedIntegrationEvent));
+        if (entity is null)
+        {
+            return [$"{MaintenanceFacts.ServiceName}: missing processed integration event entity metadata."];
+        }
+
+        var hasUniqueIndex = entity.GetIndexes().Any(index =>
+            index.IsUnique &&
+            index.GetDatabaseName() == "ux_processed_integration_events_consumer_event_id" &&
+            index.Properties.Select(property => property.Name).SequenceEqual([
+                nameof(ProcessedIntegrationEvent.ConsumerName),
+                nameof(ProcessedIntegrationEvent.EventId),
+            ]));
+
+        return hasUniqueIndex
+            ? []
+            : [$"{MaintenanceFacts.ServiceName}: processed integration event inbox requires a unique consumer/event id index."];
     }
 
     [Fact]
