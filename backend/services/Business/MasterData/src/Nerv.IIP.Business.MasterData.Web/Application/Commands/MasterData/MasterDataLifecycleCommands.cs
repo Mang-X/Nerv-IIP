@@ -8,7 +8,9 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
+using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
+using Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
@@ -67,7 +69,7 @@ public sealed record SetMasterDataResourceEnabledCommand(
     string? CodeSet = null,
     string Reason = "") : ICommand<MasterDataResourceDetail>;
 
-public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext dbContext)
+public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext dbContext, IReferenceDataCodeRepository referenceDataRepository)
     : ICommandHandler<UpdateMasterDataResourceCommand, MasterDataResourceDetail>
 {
     public async Task<MasterDataResourceDetail> Handle(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken)
@@ -77,6 +79,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         {
             case "sku":
                 var sku = await FindSkuAsync(request, cancellationToken);
+                await ValidateSkuControlledReferenceDataAsync(request, cancellationToken);
                 sku.UpdateIndustrial(
                     request.Name ?? sku.Name,
                     request.BaseUomCode ?? sku.BaseUomCode,
@@ -163,6 +166,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 return Detail(device);
             case "reference-data":
                 var referenceData = await FindReferenceDataCodeAsync(request, cancellationToken);
+                EnsureReferenceDataIsMutable(referenceData);
                 referenceData.Update(request.Name ?? referenceData.Name);
                 return Detail(referenceData);
             default:
@@ -213,6 +217,44 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 x.Code == request.Code,
                 cancellationToken)
         ?? throw NotFound(request.ResourceType, request.Code);
+    }
+
+    private async Task ValidateSkuControlledReferenceDataAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken)
+    {
+        // SKU update does not expose compliance tag changes yet, so only editable dictionary-backed fields are validated here.
+        foreach (var reference in MasterDataDictionaryRules.GetUpdateSkuReferences(
+            request.Category,
+            request.MaterialType,
+            request.BatchTrackingPolicy,
+            request.SerialTrackingPolicy,
+            request.ShelfLifePolicyCode,
+            request.StorageConditionCode,
+            request.DefaultBarcodeRuleCode))
+        {
+            if (string.IsNullOrWhiteSpace(reference.Code))
+            {
+                throw new KnownException($"SKU field '{reference.Field}' must reference an active '{reference.CodeSet}' code.");
+            }
+
+            var exists = await referenceDataRepository.ExistsActiveAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                reference.CodeSet,
+                reference.Code.Trim(),
+                cancellationToken);
+            if (!exists)
+            {
+                throw new KnownException($"SKU field '{reference.Field}' references inactive or missing reference data '{reference.CodeSet}:{reference.Code}'.");
+            }
+        }
+    }
+
+    internal static void EnsureReferenceDataIsMutable(ReferenceDataCode referenceData)
+    {
+        if (MasterDataDictionaryRules.IsSystemManagedReferenceData(referenceData.CodeSet, referenceData.Code))
+        {
+            throw new KnownException($"system-managed reference data '{referenceData.CodeSet}:{referenceData.Code}' cannot be updated.");
+        }
     }
 
     internal static KnownException NotFound(string resourceType, string code) =>

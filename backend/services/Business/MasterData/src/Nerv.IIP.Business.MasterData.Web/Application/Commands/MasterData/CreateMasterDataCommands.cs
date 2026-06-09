@@ -13,6 +13,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
+using Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
@@ -37,15 +38,6 @@ public sealed record CreateSkuCommand(
 
 public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, MasterDataResourceResult>
 {
-    private static readonly (string CodeSet, Func<CreateSkuCommand, (string Code, string Field)> Accessor)[] ControlledFields =
-    [
-        ("product-category", request => (request.Category, nameof(request.Category))),
-        ("material-type", request => (request.MaterialType, nameof(request.MaterialType))),
-        ("shelf-life-policy", request => (request.ShelfLifePolicyCode, nameof(request.ShelfLifePolicyCode))),
-        ("storage-condition", request => (request.StorageConditionCode, nameof(request.StorageConditionCode))),
-        ("barcode-rule", request => (request.DefaultBarcodeRuleCode, nameof(request.DefaultBarcodeRuleCode)))
-    ];
-
     private readonly ISkuRepository _repository;
     private readonly IReferenceDataCodeRepository? _referenceDataRepository;
     private readonly MasterDataNumberingService _numberingService;
@@ -124,23 +116,30 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
             return;
         }
 
-        foreach (var (codeSet, accessor) in ControlledFields)
+        foreach (var reference in MasterDataDictionaryRules.GetCreateSkuReferences(
+            request.Category,
+            request.MaterialType,
+            request.BatchTrackingPolicy,
+            request.SerialTrackingPolicy,
+            request.ShelfLifePolicyCode,
+            request.StorageConditionCode,
+            request.DefaultBarcodeRuleCode,
+            request.ComplianceTags))
         {
-            var (code, field) = accessor(request);
-            if (string.IsNullOrWhiteSpace(code))
+            if (string.IsNullOrWhiteSpace(reference.Code))
             {
-                throw new KnownException($"SKU field '{field}' must reference an active '{codeSet}' code.");
+                throw new KnownException($"SKU field '{reference.Field}' must reference an active '{reference.CodeSet}' code.");
             }
 
             var exists = await _referenceDataRepository.ExistsActiveAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
-                codeSet,
-                code.Trim(),
+                reference.CodeSet,
+                reference.Code.Trim(),
                 cancellationToken);
             if (!exists)
             {
-                throw new KnownException($"SKU field '{field}' references inactive or missing reference data '{codeSet}:{code}'.");
+                throw new KnownException($"SKU field '{reference.Field}' references inactive or missing reference data '{reference.CodeSet}:{reference.Code}'.");
             }
         }
     }
@@ -592,6 +591,17 @@ public sealed class CreateReferenceDataCodeCommandHandler(IReferenceDataCodeRepo
 {
     public async Task<MasterDataResourceResult> Handle(CreateReferenceDataCodeCommand request, CancellationToken cancellationToken)
     {
+        if (!MasterDataDictionaryRules.IsStandardCodeSet(request.CodeSet))
+        {
+            throw new KnownException($"Reference data code set '{request.CodeSet}' is not reserved by the master-data dictionary rules.");
+        }
+
+        if (MasterDataDictionaryRules.IsSystemEnumCodeSet(request.CodeSet) &&
+            !MasterDataDictionaryRules.IsSystemManagedReferenceData(request.CodeSet, request.Code))
+        {
+            throw new KnownException($"Reference data code '{request.CodeSet}:{request.Code}' is not allowed in a system enum reference data code set.");
+        }
+
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, request.CodeSet, request.Code, cancellationToken))
         {
             throw new KnownException($"Reference data code '{request.CodeSet}:{request.Code}' already exists.");

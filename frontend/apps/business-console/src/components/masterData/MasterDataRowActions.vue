@@ -27,7 +27,7 @@ import {
   toast,
 } from '@nerv-iip/ui'
 import { CircleSlashIcon, EyeIcon, PencilIcon, PlayIcon } from 'lucide-vue-next'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 export interface DetailField {
   label: string
@@ -41,6 +41,8 @@ const props = defineProps<{
   entityLabel: string
   /** 详情弹窗展示的字段（业务中文 label + 取自行的值）。 */
   detailFields: DetailField[]
+  /** 名称是否可编辑；系统维护的字典条目只允许查看和停启用。 */
+  canEditName?: boolean
   /** 来自 useMasterDataResourceActions 的动作集合。 */
   actions: {
     update: (code: string, patch: { name: string }) => Promise<unknown>
@@ -51,6 +53,8 @@ const props = defineProps<{
     enablePending: { value: boolean }
   }
 }>()
+
+const canEditName = computed(() => props.canEditName !== false)
 
 const detailOpen = ref(false)
 const editOpen = ref(false)
@@ -106,7 +110,7 @@ async function confirmToggle() {
       <EyeIcon aria-hidden="true" />
       查看详情
     </DropdownMenuItem>
-    <DropdownMenuItem :disabled="!row.code" @click="editOpen = true">
+    <DropdownMenuItem :disabled="!row.code || !canEditName" @click="editOpen = true">
       <PencilIcon aria-hidden="true" />
       编辑名称
     </DropdownMenuItem>
@@ -145,7 +149,7 @@ async function confirmToggle() {
     <DialogContent class="sm:max-w-lg">
       <DialogHeader>
         <DialogTitle>编辑{{ entityLabel }}名称</DialogTitle>
-        <DialogDescription>当前支持修改名称，其它字段编辑后续开放。</DialogDescription>
+        <DialogDescription>{{ canEditName ? '当前支持修改名称，其它字段编辑后续开放。' : '该名称由平台维护。' }}</DialogDescription>
       </DialogHeader>
       <form class="grid gap-4" @submit.prevent="submitName">
         <Field>

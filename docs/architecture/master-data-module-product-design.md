@@ -117,7 +117,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 | 业务伙伴 | BusinessPartner | 查（角色筛选）、**新建（显式选角色）** | 列表回角色、编辑/停用 |
 | 工厂与产线 | Site/Line/WorkCenter | 各 Tab 查 + **新建**（产线选所属工厂、工作中心选工厂+产线） | 层级归属可视化、编辑/停用 |
 | 设备台账 | DeviceAsset | 查、**新建**（选所属产线/工作中心） | 按产线过滤、编辑/停用 |
-| 数据字典 | ReferenceDataCode | CodeSet 主从浏览、**新增码值/CodeSet** | 按 CodeSet 查询、编辑、种子 |
+| 数据字典 | ReferenceDataCode | 保留 CodeSet 主从浏览、按治理新增码值 | 按 CodeSet 查询、编辑、种子 |
 | 组织与日历 | Dept/Team/Shift/Calendar/Skill | 各 Tab 查 + **新建** | 编辑/停用 |
 
 ---
