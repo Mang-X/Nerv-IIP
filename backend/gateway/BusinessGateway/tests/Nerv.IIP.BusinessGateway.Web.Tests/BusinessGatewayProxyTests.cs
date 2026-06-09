@@ -2550,7 +2550,30 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Master_data_http_client_does_not_expose_5xx_downstream_envelope_messages()
+    public async Task Master_data_http_client_sanitizes_success_false_business_message_with_internal_path()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = false,
+            message = "Error in C:/app/schema.sql line 42",
+            code = 400,
+            errorData = Array.Empty<object>(),
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.CreateSkuAsync(
+            "internal-token-001",
+            Issue355CreateSkuRequest(),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+        Assert.Equal("downstream-request-failed", ex.Message);
+        Assert.DoesNotContain("schema.sql", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_sanitizes_downstream_5xx_http_error_messages()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.InternalServerError, new
         {

@@ -1011,7 +1011,7 @@ public sealed class BusinessServiceProxyException : Exception
 
         return downstreamMessage.All(static value =>
             !char.IsControl(value) &&
-            value is not '<' and not '>' and not '{' and not '}');
+            value is not '<' and not '>' and not '{' and not '}' and not '/' and not '\\');
     }
 
     private static bool IsAsciiLetter(char value) => value is >= 'a' and <= 'z' or >= 'A' and <= 'Z';
