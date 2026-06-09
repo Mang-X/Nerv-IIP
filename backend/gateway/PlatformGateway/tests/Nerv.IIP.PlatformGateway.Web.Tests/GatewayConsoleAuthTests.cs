@@ -11,6 +11,7 @@ namespace Nerv.IIP.PlatformGateway.Web.Tests;
 
 public sealed class GatewayConsoleAuthTests
 {
+    private static readonly string GatewayAccessToken = GatewayTestTokens.ValidAccessToken();
     private static readonly ConsolePrincipalResponse Principal = new(
         "user-admin",
         "user",
@@ -34,7 +35,7 @@ public sealed class GatewayConsoleAuthTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(new ConsoleLoginRequest("admin", "secret"), iam.LastLoginRequest);
-        Assert.Equal("access-token", body!.AccessToken);
+        Assert.Equal(GatewayAccessToken, body!.AccessToken);
         Assert.Equal("refresh-token", body.RefreshToken);
         Assert.Equal("session-001", body.SessionId);
         AssertPrincipal(Principal, body.Principal);
@@ -70,7 +71,7 @@ public sealed class GatewayConsoleAuthTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(new ConsoleRefreshRequest("refresh-token"), iam.LastRefreshRequest);
-        Assert.Equal("access-token", body!.AccessToken);
+        Assert.Equal(GatewayAccessToken, body!.AccessToken);
         AssertPrincipal(Principal, body.Principal);
     }
 
@@ -279,7 +280,7 @@ public sealed class GatewayConsoleAuthTests
                 {
                     Content = JsonContent.Create(Envelope(new
                     {
-                        accessToken = "new-access-token",
+                        accessToken = GatewayAccessToken,
                         refreshToken = "new-refresh-token",
                         sessionId = "session-001",
                         expiresAtUtc = DateTimeOffset.Parse("2026-05-18T08:00:00Z")
@@ -310,7 +311,7 @@ public sealed class GatewayConsoleAuthTests
 
         var response = await iam.LoginAsync(new ConsoleLoginRequest("admin", "secret"), CancellationToken.None);
 
-        Assert.Equal("new-access-token", response.AccessToken);
+        Assert.Equal(GatewayAccessToken, response.AccessToken);
         Assert.Equal("new-refresh-token", response.RefreshToken);
         AssertPrincipal(Principal, response.Principal);
         Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
@@ -319,7 +320,7 @@ public sealed class GatewayConsoleAuthTests
         Assert.Equal(HttpMethod.Get, handler.Requests[1].Method);
         Assert.Equal("/api/iam/v1/me", handler.Requests[1].RequestUri!.AbsolutePath);
         Assert.Equal("Bearer", handler.Requests[1].Authorization!.Scheme);
-        Assert.Equal("new-access-token", handler.Requests[1].Authorization!.Parameter);
+        Assert.Equal(GatewayAccessToken, handler.Requests[1].Authorization!.Parameter);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(FakeGatewayIamAuthClient iam) =>
@@ -388,7 +389,7 @@ public sealed class GatewayConsoleAuthTests
         }
 
         private static ConsoleAuthResponse Session() => new(
-            "access-token",
+            GatewayAccessToken,
             "refresh-token",
             "session-001",
             DateTimeOffset.UtcNow.AddMinutes(15),

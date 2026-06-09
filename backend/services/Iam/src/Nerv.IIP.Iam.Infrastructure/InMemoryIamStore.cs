@@ -6,6 +6,7 @@ namespace Nerv.IIP.Iam.Infrastructure;
 
 public sealed class InMemoryIamStore
 {
+    private readonly IInMemoryIamAccessTokenIssuer _accessTokenIssuer;
     private readonly object _gate = new();
     private readonly List<OrganizationFact> _organizations = [];
     private readonly List<IamEnvironmentFact> _environments = [];
@@ -17,8 +18,13 @@ public sealed class InMemoryIamStore
     private readonly List<ExternalClientFact> _externalClients = [];
     private readonly List<AuthorizationGrantFact> _authorizationGrants = [];
 
-    public InMemoryIamStore()
+    public InMemoryIamStore() : this(new UnconfiguredInMemoryIamAccessTokenIssuer())
     {
+    }
+
+    public InMemoryIamStore(IInMemoryIamAccessTokenIssuer accessTokenIssuer)
+    {
+        _accessTokenIssuer = accessTokenIssuer;
         Seed();
     }
 
@@ -90,38 +96,6 @@ public sealed class InMemoryIamStore
         lock (_gate)
         {
             RevokeSession(sessionId);
-        }
-    }
-
-    public UserFact ValidateAccessToken(string token)
-    {
-        lock (_gate)
-        {
-            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(token)).Split('|');
-            if (parts.Length != 4)
-            {
-                throw new UnauthorizedAccessException("Invalid access token.");
-            }
-
-            if (!long.TryParse(parts[3], out var expiresAtUnixTimeSeconds))
-            {
-                throw new UnauthorizedAccessException("Invalid access token.");
-            }
-
-            if (DateTimeOffset.FromUnixTimeSeconds(expiresAtUnixTimeSeconds) <= DateTimeOffset.UtcNow)
-            {
-                throw new UnauthorizedAccessException("Access token expired.");
-            }
-
-            var session = _sessions.SingleOrDefault(x => x.SessionId == parts[0] && x.RevokedAtUtc is null)
-                ?? throw new UnauthorizedAccessException("Session revoked.");
-            var user = _users.Single(x => x.UserId == session.UserId);
-            if (!user.Enabled || user.SecurityStamp != parts[1] || user.PermissionVersion.ToString() != parts[2])
-            {
-                throw new UnauthorizedAccessException("Stale access token.");
-            }
-
-            return user;
         }
     }
 
@@ -459,7 +433,6 @@ public sealed class InMemoryIamStore
         var sessionId = Guid.NewGuid().ToString("n");
         var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         var now = DateTimeOffset.UtcNow;
-        var expiresAtUtc = now.AddMinutes(15);
         var session = new UserSessionFact(
             sessionId,
             user.UserId,
@@ -477,13 +450,20 @@ public sealed class InMemoryIamStore
             .OrderBy(x => x.OrganizationId, StringComparer.Ordinal)
             .ThenBy(x => x.EnvironmentId, StringComparer.Ordinal)
             .FirstOrDefault(x => x.UserId == user.UserId);
-        var accessToken = Convert.ToBase64String(Encoding.UTF8.GetBytes(
-            $"{sessionId}|{user.SecurityStamp}|{user.PermissionVersion}|{expiresAtUtc.ToUnixTimeSeconds()}"));
+        var accessToken = _accessTokenIssuer.CreateAccessToken(new InMemoryIamAccessTokenIssue(
+            user.UserId,
+            sessionId,
+            user.SecurityStamp,
+            user.PermissionVersion,
+            user.LoginName,
+            user.Email,
+            membership?.OrganizationId,
+            membership?.EnvironmentId));
         return new AuthResult(
             accessToken,
             refreshToken,
             sessionId,
-            expiresAtUtc,
+            _accessTokenIssuer.GetAccessTokenExpiresAtUtc(now),
             user.UserId,
             user.SecurityStamp,
             user.PermissionVersion,
@@ -505,7 +485,6 @@ public sealed class InMemoryIamStore
         var sessionId = Guid.NewGuid().ToString("n");
         var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         var now = DateTimeOffset.UtcNow;
-        var expiresAtUtc = now.AddMinutes(15);
         if (!string.IsNullOrWhiteSpace(externalProvider)
             && !string.IsNullOrWhiteSpace(externalSubject))
         {
@@ -525,13 +504,20 @@ public sealed class InMemoryIamStore
             externalSubject,
             mfaVerifiedAtUtc);
         _sessions.Add(session);
-        var accessToken = Convert.ToBase64String(Encoding.UTF8.GetBytes(
-            $"{sessionId}|{user.SecurityStamp}|{user.PermissionVersion}|{expiresAtUtc.ToUnixTimeSeconds()}"));
+        var accessToken = _accessTokenIssuer.CreateAccessToken(new InMemoryIamAccessTokenIssue(
+            user.UserId,
+            sessionId,
+            user.SecurityStamp,
+            user.PermissionVersion,
+            user.LoginName,
+            user.Email,
+            organizationId,
+            environmentId));
         return new AuthResult(
             accessToken,
             refreshToken,
             sessionId,
-            expiresAtUtc,
+            _accessTokenIssuer.GetAccessTokenExpiresAtUtc(now),
             user.UserId,
             user.SecurityStamp,
             user.PermissionVersion,

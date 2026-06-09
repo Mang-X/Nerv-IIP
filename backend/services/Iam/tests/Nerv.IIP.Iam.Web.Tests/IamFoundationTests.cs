@@ -5,6 +5,7 @@ using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Nerv.IIP.Iam.Infrastructure;
 
@@ -12,10 +13,12 @@ namespace Nerv.IIP.Iam.Web.Tests;
 
 public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Program>>
 {
+    private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
 
     public IamFoundationTests(WebApplicationFactory<Program> factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -93,6 +96,40 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         var me = await _client.GetAsync("/api/iam/v1/me");
 
         me.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public void In_memory_store_login_and_refresh_issue_gateway_compatible_jwt_access_tokens()
+    {
+        var store = _factory
+            .Services
+            .GetRequiredService<InMemoryIamStore>();
+        var tokenHandler = new JwtSecurityTokenHandler { MapInboundClaims = false };
+
+        var login = store.Login("admin", "Admin123!");
+        var loginPrincipal = tokenHandler.ValidateToken(
+            login.AccessToken,
+            CreateGatewayTokenValidationParameters(),
+            out var loginSecurityToken);
+        var loginJwt = Assert.IsType<JwtSecurityToken>(loginSecurityToken);
+
+        Assert.Equal("nerv-iip-iam", loginJwt.Issuer);
+        Assert.Equal("user-admin", loginPrincipal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value);
+        Assert.Equal(login.SessionId, loginPrincipal.FindFirst("sessionId")?.Value);
+        Assert.Equal("org-001", loginPrincipal.FindFirst("organizationId")?.Value);
+        Assert.Equal("env-dev", loginPrincipal.FindFirst("environmentId")?.Value);
+
+        var refresh = store.Refresh(login.RefreshToken);
+        var refreshPrincipal = tokenHandler.ValidateToken(
+            refresh.AccessToken,
+            CreateGatewayTokenValidationParameters(),
+            out var refreshSecurityToken);
+        var refreshJwt = Assert.IsType<JwtSecurityToken>(refreshSecurityToken);
+
+        Assert.Equal("nerv-iip-iam", refreshJwt.Issuer);
+        Assert.Equal("user-admin", refreshPrincipal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value);
+        Assert.Equal(refresh.SessionId, refreshPrincipal.FindFirst("sessionId")?.Value);
+        Assert.NotEqual(login.RefreshToken, refresh.RefreshToken);
     }
 
     [Fact]
@@ -449,18 +486,13 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
-    public void In_memory_access_token_validation_rejects_expired_token_payload()
+    public void In_memory_store_without_configured_token_issuer_fails_closed()
     {
         var store = new InMemoryIamStore();
-        var auth = store.Login("admin", "Admin123!");
-        var user = Assert.Single(store.Users);
-        var expiredAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds();
-        var expiredToken = Convert.ToBase64String(Encoding.UTF8.GetBytes(
-            $"{auth.SessionId}|{user.SecurityStamp}|{user.PermissionVersion}|{expiredAtUtc}"));
 
-        var exception = Assert.Throws<UnauthorizedAccessException>(() => store.ValidateAccessToken(expiredToken));
+        var exception = Assert.Throws<InvalidOperationException>(() => store.Login("admin", "Admin123!"));
 
-        Assert.Contains("expired", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("token service", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
