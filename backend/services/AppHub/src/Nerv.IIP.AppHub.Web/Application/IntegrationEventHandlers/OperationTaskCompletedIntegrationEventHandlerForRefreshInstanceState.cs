@@ -2,6 +2,7 @@ using DotNetCore.CAP;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.AppHub.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Contracts.IntegrationEvents;
@@ -17,7 +18,8 @@ namespace Nerv.IIP.AppHub.Web.Application.IntegrationEventHandlers;
 public sealed class OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(
     ISender sender,
     IServiceProvider services,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ILogger<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState> logger)
     : IIntegrationEventHandler<OperationTaskCompletedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "apphub.refresh-instance-state";
@@ -44,8 +46,13 @@ public sealed class OperationTaskCompletedIntegrationEventHandlerForRefreshInsta
     private async Task HandleValidEventAsync(OperationTaskCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var dbContext = services.GetService<ApplicationDbContext>();
-        if (dbContext is not null &&
-            !await AppHubProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        if (dbContext is null)
+        {
+            logger.LogWarning(
+                "Skipping AppHub consumer inbox idempotency for {ConsumerName} because ApplicationDbContext is not registered.",
+                ConsumerName);
+        }
+        else if (!await AppHubProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
             return;
         }
@@ -58,7 +65,8 @@ public sealed class OperationTaskCompletedIntegrationEventHandlerForRefreshInsta
 public sealed class OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(
     ISender sender,
     IServiceProvider services,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ILogger<OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState> logger)
     : IIntegrationEventHandler<OperationTaskFailedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "apphub.refresh-instance-state";
@@ -85,8 +93,13 @@ public sealed class OperationTaskFailedIntegrationEventHandlerForRefreshInstance
     private async Task HandleValidEventAsync(OperationTaskFailedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var dbContext = services.GetService<ApplicationDbContext>();
-        if (dbContext is not null &&
-            !await AppHubProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        if (dbContext is null)
+        {
+            logger.LogWarning(
+                "Skipping AppHub consumer inbox idempotency for {ConsumerName} because ApplicationDbContext is not registered.",
+                ConsumerName);
+        }
+        else if (!await AppHubProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
             return;
         }

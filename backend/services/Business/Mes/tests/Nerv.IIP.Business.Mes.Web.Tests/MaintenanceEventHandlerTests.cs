@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
@@ -49,22 +50,38 @@ public sealed class MaintenanceEventHandlerTests
         store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
         store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
-        await using var dbContext = CreateDbContext();
-
-        var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
-            store,
-            new RuleScheduler(),
-            new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
-            dbContext,
-            new InMemoryIntegrationEventDeadLetterStore());
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"mes-unavailable-{Guid.CreateVersion7():N}", databaseRoot);
         var integrationEvent = CreateUnavailableEvent(now);
 
-        await handler.HandleAsync(integrationEvent, CancellationToken.None);
-        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
+                store,
+                new RuleScheduler(),
+                new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
+                store,
+                new RuleScheduler(),
+                new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
 
         Assert.Single(store.Unavailabilities);
         Assert.Single(store.ScheduleResults);
-        Assert.Single(dbContext.ProcessedIntegrationEvents.Local);
+        await using var assertionDbContext = CreateDbContext(options);
+        Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
     [Fact]
@@ -95,23 +112,39 @@ public sealed class MaintenanceEventHandlerTests
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         store.AddUnavailability(new WorkCenterUnavailability("WC-A", now, null, "breakdown", "ASSET-CNC-01"));
-        await using var dbContext = CreateDbContext();
-
-        var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
-            store,
-            new RuleScheduler(),
-            new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
-            dbContext,
-            new InMemoryIntegrationEventDeadLetterStore());
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"mes-restored-{Guid.CreateVersion7():N}", databaseRoot);
         var integrationEvent = CreateRestoredEvent(now.AddHours(2));
 
-        await handler.HandleAsync(integrationEvent, CancellationToken.None);
-        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
+                store,
+                new RuleScheduler(),
+                new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
+                store,
+                new RuleScheduler(),
+                new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
 
         var window = Assert.Single(store.Unavailabilities);
         Assert.Equal(now.AddHours(2), window.ToUtc);
         Assert.Single(store.ScheduleResults);
-        Assert.Single(dbContext.ProcessedIntegrationEvents.Local);
+        await using var assertionDbContext = CreateDbContext(options);
+        Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
     [Fact]
@@ -211,10 +244,22 @@ public sealed class MaintenanceEventHandlerTests
 
     private static ApplicationDbContext CreateDbContext()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase($"mes-{Guid.CreateVersion7():N}")
-            .Options;
+        var options = CreateDbContextOptions($"mes-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot());
+        return CreateDbContext(options);
+    }
+
+    private static ApplicationDbContext CreateDbContext(DbContextOptions<ApplicationDbContext> options)
+    {
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static DbContextOptions<ApplicationDbContext> CreateDbContextOptions(
+        string databaseName,
+        InMemoryDatabaseRoot databaseRoot)
+    {
+        return new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot)
+            .Options;
     }
 
     private sealed class NoopMediator : IMediator

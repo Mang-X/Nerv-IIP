@@ -1,7 +1,9 @@
 using MediatR;
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Infrastructure;
@@ -184,7 +186,11 @@ public sealed class AppHubIntegrationEventTests
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         await using var dbContext = CreateDbContext();
         using var services = CreateServiceProvider(dbContext);
-        var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(sender, services, deadLetterStore);
+        var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(
+            sender,
+            services,
+            deadLetterStore,
+            new RecordingLogger<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>());
 
         await handler.HandleAsync(CreateCompletedEvent(eventVersion: 2), CancellationToken.None);
 
@@ -202,17 +208,38 @@ public sealed class AppHubIntegrationEventTests
     {
         var sender = new RecordingSender();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
-        await using var dbContext = CreateDbContext();
-        using var services = CreateServiceProvider(dbContext);
-        var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(sender, services, deadLetterStore);
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"apphub-completed-{Guid.CreateVersion7():N}", databaseRoot);
         var integrationEvent = CreateCompletedEvent(eventVersion: 1);
 
-        await handler.HandleAsync(integrationEvent, CancellationToken.None);
-        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await using (var dbContext = CreateDbContext(options))
+        {
+            using var services = CreateServiceProvider(dbContext);
+            var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(
+                sender,
+                services,
+                deadLetterStore,
+                new RecordingLogger<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            using var services = CreateServiceProvider(dbContext);
+            var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(
+                sender,
+                services,
+                deadLetterStore,
+                new RecordingLogger<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
 
         Assert.Single(sender.RequestTypes);
         Assert.Equal(typeof(RefreshInstanceStateAfterOperationCommand), sender.RequestTypes.Single());
-        Assert.Single(dbContext.ProcessedIntegrationEvents.Local);
+        await using var assertionDbContext = CreateDbContext(options);
+        Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
     [Fact]
@@ -220,17 +247,38 @@ public sealed class AppHubIntegrationEventTests
     {
         var sender = new RecordingSender();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
-        await using var dbContext = CreateDbContext();
-        using var services = CreateServiceProvider(dbContext);
-        var handler = new OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(sender, services, deadLetterStore);
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"apphub-failed-{Guid.CreateVersion7():N}", databaseRoot);
         var integrationEvent = CreateFailedEvent(eventVersion: 1);
 
-        await handler.HandleAsync(integrationEvent, CancellationToken.None);
-        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await using (var dbContext = CreateDbContext(options))
+        {
+            using var services = CreateServiceProvider(dbContext);
+            var handler = new OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(
+                sender,
+                services,
+                deadLetterStore,
+                new RecordingLogger<OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState>());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            using var services = CreateServiceProvider(dbContext);
+            var handler = new OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(
+                sender,
+                services,
+                deadLetterStore,
+                new RecordingLogger<OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState>());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
 
         Assert.Single(sender.RequestTypes);
         Assert.Equal(typeof(RefreshInstanceStateAfterFailedOperationCommand), sender.RequestTypes.Single());
-        Assert.Single(dbContext.ProcessedIntegrationEvents.Local);
+        await using var assertionDbContext = CreateDbContext(options);
+        Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
     [Fact]
@@ -240,7 +288,11 @@ public sealed class AppHubIntegrationEventTests
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         await using var dbContext = CreateDbContext();
         using var services = CreateServiceProvider(dbContext);
-        var handler = new OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(sender, services, deadLetterStore);
+        var handler = new OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(
+            sender,
+            services,
+            deadLetterStore,
+            new RecordingLogger<OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState>());
 
         await handler.HandleAsync(CreateFailedEvent(eventVersion: 2), CancellationToken.None);
 
@@ -251,6 +303,28 @@ public sealed class AppHubIntegrationEventTests
             CancellationToken.None));
         Assert.Equal("unsupported-version", deadLetter.FailureCode);
         Assert.Equal(2, deadLetter.EventVersion);
+    }
+
+    [Fact]
+    public async Task Operation_completed_consumer_logs_warning_when_db_context_is_unavailable()
+    {
+        var sender = new RecordingSender();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var logger = new RecordingLogger<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>();
+        var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(
+            sender,
+            services,
+            deadLetterStore,
+            logger);
+
+        await handler.HandleAsync(CreateCompletedEvent(eventVersion: 1), CancellationToken.None);
+
+        Assert.Single(sender.RequestTypes);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning &&
+                entry.Message.Contains("ApplicationDbContext is not registered", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -333,10 +407,22 @@ public sealed class AppHubIntegrationEventTests
 
     private static ApplicationDbContext CreateDbContext()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase($"apphub-{Guid.CreateVersion7():N}")
-            .Options;
+        var options = CreateDbContextOptions($"apphub-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot());
+        return CreateDbContext(options);
+    }
+
+    private static ApplicationDbContext CreateDbContext(DbContextOptions<ApplicationDbContext> options)
+    {
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static DbContextOptions<ApplicationDbContext> CreateDbContextOptions(
+        string databaseName,
+        InMemoryDatabaseRoot databaseRoot)
+    {
+        return new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot)
+            .Options;
     }
 
     private static ServiceProvider CreateServiceProvider(ApplicationDbContext dbContext)
@@ -377,6 +463,36 @@ public sealed class AppHubIntegrationEventTests
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException("Streams are not used by these tests.");
+        }
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            _ = state;
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            _ = logLevel;
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            _ = eventId;
+            _ = exception;
+            Entries.Add((logLevel, formatter(state, exception)));
         }
     }
 
