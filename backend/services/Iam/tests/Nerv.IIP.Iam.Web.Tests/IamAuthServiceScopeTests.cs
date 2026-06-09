@@ -1,9 +1,7 @@
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
@@ -194,7 +192,7 @@ public sealed class IamAuthServiceScopeTests
     private static IamTokenService CreateTokenService()
     {
         var configuration = new ConfigurationBuilder().Build();
-        return new IamTokenService(configuration, new DevelopmentEnvironment());
+        return new IamTokenService(configuration, new TestWebHostEnvironment());
     }
 
     private static PostgreSqlIamAuthService CreateAuthService(
@@ -221,16 +219,6 @@ public sealed class IamAuthServiceScopeTests
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers.Authorization = $"Bearer {accessToken}";
         return httpContext;
-    }
-
-    private sealed class DevelopmentEnvironment : IWebHostEnvironment
-    {
-        public string EnvironmentName { get; set; } = "Development";
-        public string ApplicationName { get; set; } = "Nerv.IIP.Iam.Web.Tests";
-        public string WebRootPath { get; set; } = string.Empty;
-        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
-        public string ContentRootPath { get; set; } = string.Empty;
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     private sealed class ScopedMembershipRepository(UserId userId) : IMembershipRepository

@@ -1,9 +1,12 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
@@ -45,6 +48,41 @@ public sealed class IamRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task PostgreSql_auth_service_creates_version7_user_session_id()
+    {
+        await using var db = CreateDbContext();
+        var passwordService = new IamPasswordService();
+        var user = new User(
+            new UserId("user-session-v7"),
+            "session-v7",
+            "session-v7@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var tokenService = new IamTokenService(
+            new ConfigurationBuilder().Build(),
+            new TestWebHostEnvironment());
+        var authService = new PostgreSqlIamAuthService(
+            new UserRepository(db),
+            new UserSessionRepository(db),
+            new MembershipRepository(db),
+            new ConnectorHostCredentialRepository(db),
+            new ExternalClientRepository(db),
+            passwordService,
+            tokenService,
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore());
+
+        var response = await authService.LoginAsync("session-v7", "Password123!", null, null, CancellationToken.None);
+
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(response.SessionId, "session-"));
+    }
+
     private static ApplicationDbContext CreateDbContext()
     {
         // This test covers parameter-side invariant normalization. PostgreSQL index usage is
@@ -54,4 +92,5 @@ public sealed class IamRepositoryTests
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }
+
 }

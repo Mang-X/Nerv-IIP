@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Testing;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
 
@@ -61,8 +62,27 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
         Assert.NotEqual(first, second);
         Assert.StartsWith("op-", first, StringComparison.Ordinal);
         Assert.StartsWith("op-", second, StringComparison.Ordinal);
-        Assert.True(Guid.TryParseExact(first["op-".Length..], "N", out _));
-        Assert.True(Guid.TryParseExact(second["op-".Length..], "N", out _));
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(first, "op-"));
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(second, "op-"));
+    }
+
+    [Fact]
+    public async Task Operation_persistent_child_ids_use_version7_guid_suffixes()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        using var context = new ApplicationDbContext(options, mediator: null!);
+        var taskRepository = new OperationTaskRepository(context);
+        var templateRepository = new OperationTemplateRepository(context);
+
+        var attemptId = await taskRepository.NextAttemptIdAsync();
+        var auditRecordId = await taskRepository.NextAuditRecordIdAsync();
+        var templateId = await templateRepository.NextTemplateIdAsync();
+
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(attemptId.Id, "attempt-"));
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(auditRecordId.Id, "audit-"));
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(templateId.Id, "opt-"));
     }
 
     private static IReadOnlyDictionary<string, string?> PreserveEnvironment(params string[] names)
@@ -77,4 +97,5 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
             Environment.SetEnvironmentVariable(name, value);
         }
     }
+
 }
