@@ -41,7 +41,7 @@ builder.Services
     .ValidateOnStart();
 builder.Services.AddSingleton<IMfaChallengeStore, InMemoryMfaChallengeStore>();
 builder.Services.AddScoped<IamPasswordService>();
-builder.Services.AddScoped<IamTokenService>();
+builder.Services.AddSingleton<IamTokenService>();
 if (usesPostgreSql)
 {
     builder.Services.AddScoped<IIamAuthService, PostgreSqlIamAuthService>();
@@ -52,6 +52,7 @@ if (usesPostgreSql)
 }
 else
 {
+    builder.Services.AddSingleton<IInMemoryIamAccessTokenIssuer, InMemoryIamAccessTokenIssuer>();
     builder.Services.AddScoped<IIamAuthService, InMemoryIamAuthService>();
     builder.Services.AddScoped<IIamPermissionAuthorizer, InMemoryIamPermissionAuthorizer>();
     builder.Services.AddScoped<IIamUserApplicationService, InMemoryIamUserApplicationService>();

@@ -28,7 +28,7 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
     private const string DefaultIssuer = "nerv-iip-iam";
     private const string DefaultAudience = "nerv-iip-api";
 
-    public string CreateAccessToken(User user, UserSession session)
+    public string CreateAccessToken(User user, UserSession session, DateTimeOffset? issuedAtUtc = null)
     {
         return CreateAccessToken(
             user.Id.Id,
@@ -36,14 +36,16 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
             user.SecurityStamp,
             user.PermissionVersion,
             user.LoginName,
-            user.Email);
+            user.Email,
+            issuedAtUtc: issuedAtUtc);
     }
 
     public string CreateAccessToken(
         User user,
         UserSession session,
         string organizationId,
-        string environmentId)
+        string environmentId,
+        DateTimeOffset? issuedAtUtc = null)
     {
         return CreateAccessToken(
             user.Id.Id,
@@ -53,7 +55,8 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
             user.LoginName,
             user.Email,
             organizationId,
-            environmentId);
+            environmentId,
+            issuedAtUtc);
     }
 
     public string CreateAccessToken(
@@ -64,9 +67,10 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
         string? loginName = null,
         string? email = null,
         string? organizationId = null,
-        string? environmentId = null)
+        string? environmentId = null,
+        DateTimeOffset? issuedAtUtc = null)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = issuedAtUtc ?? DateTimeOffset.UtcNow;
         var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId),
