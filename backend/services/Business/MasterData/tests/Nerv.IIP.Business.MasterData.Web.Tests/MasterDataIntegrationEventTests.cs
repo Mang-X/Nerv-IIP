@@ -62,14 +62,14 @@ public sealed class MasterDataIntegrationEventTests
     public void Reference_data_event_uses_code_set_in_payload_and_idempotency_key()
     {
         var converter = new ReferenceDataCodeChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
-        var domainEvent = new ReferenceDataCodeChangedDomainEvent("org-001", "env-dev", "material-form", "powder");
+        var domainEvent = new ReferenceDataCodeChangedDomainEvent("org-001", "env-dev", "quality-reason", "scratch");
 
         var integrationEvent = converter.Convert(domainEvent);
 
         Assert.Equal("masterData.ReferenceDataCodeChanged", integrationEvent.EventType);
-        Assert.Equal("material-form", integrationEvent.Payload.CodeSet);
-        Assert.Equal("powder", integrationEvent.Payload.Code);
-        Assert.Equal("masterdata:reference-data-code-changed:org-001:env-dev:material-form:powder", integrationEvent.IdempotencyKey);
+        Assert.Equal("quality-reason", integrationEvent.Payload.CodeSet);
+        Assert.Equal("scratch", integrationEvent.Payload.Code);
+        Assert.Equal("masterdata:reference-data-code-changed:org-001:env-dev:quality-reason:scratch", integrationEvent.IdempotencyKey);
     }
 
     private sealed class StubMasterDataIntegrationEventContextAccessor(

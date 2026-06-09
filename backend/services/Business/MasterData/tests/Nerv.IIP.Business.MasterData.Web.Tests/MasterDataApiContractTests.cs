@@ -148,7 +148,7 @@ public sealed class MasterDataApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "material-form", "powder", "Powder"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "quality-reason", "scratch", "Scratch"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new ResolveMasterDataReferencesQueryHandler(dbContext);
@@ -157,8 +157,8 @@ public sealed class MasterDataApiContractTests
                 "org-001",
                 "env-dev",
                 [
-                    new MasterDataReferenceRequest("reference-data", "powder", "material-form"),
-                    new MasterDataReferenceRequest("reference-data:material-form", "powder")
+                    new MasterDataReferenceRequest("reference-data", "scratch", "quality-reason"),
+                    new MasterDataReferenceRequest("reference-data:quality-reason", "scratch")
                 ]),
             CancellationToken.None);
 
@@ -166,7 +166,7 @@ public sealed class MasterDataApiContractTests
         {
             Assert.True(reference.Exists);
             Assert.True(reference.Active);
-            Assert.Equal("Powder", reference.DisplayName);
+            Assert.Equal("Scratch", reference.DisplayName);
         });
     }
 
@@ -176,7 +176,7 @@ public sealed class MasterDataApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "material-form", "powder", "Powder"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "quality-reason", "scratch", "Scratch"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new ListMasterDataResourcesQueryHandler(dbContext);
@@ -186,8 +186,8 @@ public sealed class MasterDataApiContractTests
 
         var resource = Assert.Single(response.Resources);
         Assert.Equal("reference-data", resource.ResourceType);
-        Assert.Equal("material-form:powder", resource.Code);
-        Assert.Equal("Powder", resource.DisplayName);
+        Assert.Equal("quality-reason:scratch", resource.Code);
+        Assert.Equal("Scratch", resource.DisplayName);
         Assert.True(resource.Active);
     }
 
@@ -203,11 +203,11 @@ public sealed class MasterDataApiContractTests
             "RM-001",
             "Raw Material",
             "kg",
+            "chemical",
             "raw-material",
-            "powder",
-            "lot-required",
             "none",
-            "180d",
+            "none",
+            "none",
             "ambient",
             "ean13",
             true,
@@ -217,15 +217,15 @@ public sealed class MasterDataApiContractTests
         dbContext.ProductionLines.Add(Domain.AggregatesModel.ProductionLineAggregate.ProductionLine.Create("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001"));
         dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.CreateResource("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "PLANT-001", "LINE-001", "WS-001", "CAL-001", "minute", true));
         dbContext.DeviceAssets.Add(Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.RegisterCapability("org-001", "env-dev", "DEV-001", "Mixer", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>()));
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "material-type", "powder", "Powder"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "material-type", "raw-material", "Raw Material"));
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "storage-condition", "ambient", "Ambient"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new ListMasterDataResourcesQueryHandler(dbContext);
 
         var sku = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "sku"), CancellationToken.None)).Resources);
-        Assert.Equal("raw-material", sku.Category);
-        Assert.Equal("powder", sku.MaterialType);
+        Assert.Equal("chemical", sku.Category);
+        Assert.Equal("raw-material", sku.MaterialType);
 
         var partner = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "business-partner"), CancellationToken.None)).Resources);
         Assert.Equal("supplier", partner.PartnerType);
@@ -253,7 +253,7 @@ public sealed class MasterDataApiContractTests
 
         var referenceData = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "reference-data", CodeSet: "material-type"), CancellationToken.None)).Resources);
         Assert.Equal("material-type", referenceData.CodeSet);
-        Assert.Equal("powder", referenceData.Code);
+        Assert.Equal("raw-material", referenceData.Code);
     }
 
     [Fact]
@@ -301,18 +301,19 @@ public sealed class MasterDataApiContractTests
             "RM-001",
             "Raw Material",
             "kg",
+            "chemical",
             "raw-material",
-            "powder",
-            "lot-required",
             "none",
-            "180d",
+            "none",
+            "none",
             "ambient",
             "ean13",
             true,
             []));
+        SeedSkuControlledReferenceData(dbContext);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var update = await new UpdateMasterDataResourceCommandHandler(dbContext).Handle(
+        var update = await new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext)).Handle(
             new UpdateMasterDataResourceCommand(
                 "org-001",
                 "env-dev",
@@ -320,13 +321,13 @@ public sealed class MasterDataApiContractTests
                 "RM-001",
                 Name: "Updated Raw Material",
                 BaseUomCode: "g",
-                Category: "raw-material",
-                MaterialType: "granule"),
+                Category: "chemical",
+                MaterialType: "semi-finished"),
             CancellationToken.None);
 
         Assert.Equal("RM-001", update.Code);
         Assert.Equal("Updated Raw Material", update.DisplayName);
-        Assert.Equal("granule", update.MaterialType);
+        Assert.Equal("semi-finished", update.MaterialType);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var disabled = await new SetMasterDataResourceEnabledCommandHandler(dbContext).Handle(
@@ -364,7 +365,7 @@ public sealed class MasterDataApiContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var detailHandler = new GetMasterDataResourceDetailQueryHandler(dbContext);
-        var updateHandler = new UpdateMasterDataResourceCommandHandler(dbContext);
+        var updateHandler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
         var enabledHandler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
 
         await Assert.ThrowsAsync<KnownException>(() => detailHandler.Handle(
@@ -391,9 +392,9 @@ public sealed class MasterDataApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-001", "Sku 1", "pcs", "finished-good"));
-        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-002", "Sku 2", "pcs", "finished-good"));
-        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-003", "Sku 3", "pcs", "finished-good"));
+        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-001", "Sku 1", "pcs", "electronic"));
+        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-002", "Sku 2", "pcs", "electronic"));
+        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-003", "Sku 3", "pcs", "electronic"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListMasterDataResourcesQueryHandler(dbContext).Handle(
@@ -414,7 +415,7 @@ public sealed class MasterDataApiContractTests
         var created = new[]
         {
             await new CreateSkuCommandHandler(new SkuRepository(dbContext)).Handle(
-                new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Finished Good", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, ["gmp"]),
+                new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Finished Good", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, ["rohs"]),
                 CancellationToken.None),
             await new CreateUnitOfMeasureCommandHandler(new UnitOfMeasureRepository(dbContext)).Handle(
                 new CreateUnitOfMeasureCommand("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"),
@@ -459,7 +460,7 @@ public sealed class MasterDataApiContractTests
                 new RegisterDeviceAssetCommand("org-001", "env-dev", "EQ-001", "Mixer 500", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>()),
                 CancellationToken.None),
             await new CreateReferenceDataCodeCommandHandler(new ReferenceDataCodeRepository(dbContext)).Handle(
-                new CreateReferenceDataCodeCommand("org-001", "env-dev", "material-form", "powder", "Powder"),
+                new CreateReferenceDataCodeCommand("org-001", "env-dev", "quality-reason", "scratch", "Scratch"),
                 CancellationToken.None),
         };
 
@@ -468,7 +469,7 @@ public sealed class MasterDataApiContractTests
         Assert.Contains(created, x => x.ResourceType == "uom-conversion" && x.Code == "kg->g");
         Assert.Contains(created, x => x.ResourceType == "workshop" && x.Code == "WS-001");
         Assert.Contains(created, x => x.ResourceType == "team-member" && x.Code == "T-001:user-001");
-        Assert.Contains(created, x => x.ResourceType == "reference-data-code" && x.Code == "powder");
+        Assert.Contains(created, x => x.ResourceType == "reference-data-code" && x.Code == "scratch");
         Assert.Equal(16, dbContext.ChangeTracker.Entries().Count(entry => entry.State == EntityState.Added));
     }
 
@@ -515,21 +516,21 @@ public sealed class MasterDataApiContractTests
             "SKU-001",
             "Finished Good",
             "kg",
-            "finished-good",
-            "material",
-            "lot",
+            "electronic",
+            "finished-goods",
             "none",
-            "180d",
+            "none",
+            "none",
             "ambient",
             "ean13",
             true,
-            ["gmp"]));
+            ["rohs"]));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Duplicate", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, []),
+            new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Duplicate", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, []),
             CancellationToken.None));
         Assert.Contains("already exists", exception.Message, StringComparison.Ordinal);
     }
@@ -545,15 +546,15 @@ public sealed class MasterDataApiContractTests
             new ReferenceDataCodeRepository(dbContext));
 
         var missing = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Finished Good", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, []),
+            new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Finished Good", "kg", "missing-category", "finished-goods", "none", "none", "none", "ambient", "ean13", true, []),
             CancellationToken.None));
-        Assert.Contains("product-category:finished-good", missing.Message, StringComparison.Ordinal);
+        Assert.Contains("product-category:missing-category", missing.Message, StringComparison.Ordinal);
 
         SeedSkuControlledReferenceData(dbContext);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var created = await handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Finished Good", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, []),
+            new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Finished Good", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, []),
             CancellationToken.None);
 
         Assert.Equal("sku", created.ResourceType);
@@ -575,11 +576,11 @@ public sealed class MasterDataApiContractTests
             x.OrganizationId == "org-001" &&
             x.EnvironmentId == "env-dev" &&
             x.CodeSet == "product-category" &&
-            x.Code == "finished-good" &&
+            x.Code == "electronic" &&
             !x.Disabled));
         Assert.True(await dbContext.ReferenceDataCodes.AnyAsync(x =>
             x.CodeSet == "barcode-rule" &&
-            x.Code == "ean13" &&
+            x.Code == "gs1-128" &&
             !x.Disabled));
         Assert.Single(dbContext.UnitsOfMeasure.Where(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev" && x.Code == "kg"));
         Assert.Single(dbContext.UomConversions.Where(x => x.FromUomCode == "kg" && x.ToUomCode == "g"));
@@ -600,7 +601,7 @@ public sealed class MasterDataApiContractTests
                 var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
                 var result = await handler.Handle(
-                    new CreateSkuCommand("org-001", "env-dev", null, $"Finished Good {index}", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], $"sku-create-{index}"),
+                    new CreateSkuCommand("org-001", "env-dev", null, $"Finished Good {index}", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], $"sku-create-{index}"),
                     CancellationToken.None);
                 await dbContext.SaveChangesAsync(CancellationToken.None);
                 return result.Code;
@@ -620,7 +621,7 @@ public sealed class MasterDataApiContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var numbering = new MasterDataNumberingService();
         var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
-        var command = new CreateSkuCommand("org-001", "env-dev", null, "Finished Good", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-001");
+        var command = new CreateSkuCommand("org-001", "env-dev", null, "Finished Good", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-001");
 
         var first = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -638,7 +639,7 @@ public sealed class MasterDataApiContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateNumberingService(scope));
-        var command = new CreateSkuCommand("org-001", "env-dev", null, "Original Name", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-display-name");
+        var command = new CreateSkuCommand("org-001", "env-dev", null, "Original Name", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-display-name");
 
         var first = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -662,12 +663,12 @@ public sealed class MasterDataApiContractTests
         var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
 
         await handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", null, "Original Name", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-name"),
+            new CreateSkuCommand("org-001", "env-dev", null, "Original Name", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-name"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", null, "Changed Name", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-idempotent-name"),
+            new CreateSkuCommand("org-001", "env-dev", null, "Changed Name", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-name"),
             CancellationToken.None));
 
         Assert.Contains("different sku create payload", exception.Message, StringComparison.Ordinal);
@@ -682,7 +683,7 @@ public sealed class MasterDataApiContractTests
             var seedContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var seedHandler = new CreateSkuCommandHandler(new SkuRepository(seedContext), CreateNumberingService(seedScope));
             await seedHandler.Handle(
-                new CreateSkuCommand("org-001", "env-dev", null, "Seed SKU", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-db-seed"),
+                new CreateSkuCommand("org-001", "env-dev", null, "Seed SKU", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-db-seed"),
                 CancellationToken.None);
             await seedContext.SaveChangesAsync(CancellationToken.None);
         }
@@ -694,7 +695,7 @@ public sealed class MasterDataApiContractTests
                 var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateNumberingService(scope));
                 var result = await handler.Handle(
-                    new CreateSkuCommand("org-001", "env-dev", null, $"Parallel SKU {index}", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], $"sku-db-parallel-{index}"),
+                    new CreateSkuCommand("org-001", "env-dev", null, $"Parallel SKU {index}", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], $"sku-db-parallel-{index}"),
                     CancellationToken.None);
                 await dbContext.SaveChangesAsync(CancellationToken.None);
                 return result.Code;
@@ -716,7 +717,7 @@ public sealed class MasterDataApiContractTests
         var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateNumberingService(scope));
 
         await handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", null, "Deferred Numbering", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-deferred-numbering"),
+            new CreateSkuCommand("org-001", "env-dev", null, "Deferred Numbering", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-deferred-numbering"),
             CancellationToken.None);
 
         using var observerScope = provider.CreateScope();
@@ -735,7 +736,7 @@ public sealed class MasterDataApiContractTests
         var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateNumberingService(scope));
 
         var result = await handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", null, "Persisted Numbering", "kg", "finished-good", "material", "lot", "none", "180d", "ambient", "ean13", true, [], "sku-persisted-numbering"),
+            new CreateSkuCommand("org-001", "env-dev", null, "Persisted Numbering", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-persisted-numbering"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -768,11 +769,18 @@ public sealed class MasterDataApiContractTests
     private static void SeedSkuControlledReferenceData(ApplicationDbContext dbContext)
     {
         dbContext.ReferenceDataCodes.AddRange(
-            ReferenceDataCode.Create("org-001", "env-dev", "product-category", "finished-good", "Finished Good"),
-            ReferenceDataCode.Create("org-001", "env-dev", "material-type", "material", "Material"),
-            ReferenceDataCode.Create("org-001", "env-dev", "shelf-life-policy", "180d", "180 Days"),
+            ReferenceDataCode.Create("org-001", "env-dev", "product-category", "chemical", "Chemical"),
+            ReferenceDataCode.Create("org-001", "env-dev", "product-category", "electronic", "Electronic"),
+            ReferenceDataCode.Create("org-001", "env-dev", "material-type", "raw-material", "Raw Material"),
+            ReferenceDataCode.Create("org-001", "env-dev", "material-type", "semi-finished", "Semi-Finished"),
+            ReferenceDataCode.Create("org-001", "env-dev", "material-type", "finished-goods", "Finished Goods"),
+            ReferenceDataCode.Create("org-001", "env-dev", "batch-tracking-policy", "none", "No Batch Tracking"),
+            ReferenceDataCode.Create("org-001", "env-dev", "batch-tracking-policy", "mandatory", "Mandatory Batch"),
+            ReferenceDataCode.Create("org-001", "env-dev", "serial-tracking-policy", "none", "No Serial Tracking"),
+            ReferenceDataCode.Create("org-001", "env-dev", "shelf-life-policy", "none", "No Shelf Life"),
             ReferenceDataCode.Create("org-001", "env-dev", "storage-condition", "ambient", "Ambient"),
-            ReferenceDataCode.Create("org-001", "env-dev", "barcode-rule", "ean13", "EAN-13"));
+            ReferenceDataCode.Create("org-001", "env-dev", "barcode-rule", "ean13", "EAN-13"),
+            ReferenceDataCode.Create("org-001", "env-dev", "compliance-tag", "rohs", "RoHS"));
     }
 
     private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)

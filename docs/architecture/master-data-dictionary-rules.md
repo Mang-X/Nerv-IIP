@@ -80,17 +80,16 @@ SKU 创建/更新时,以下字段的取值**必须存在于对应 CodeSet 且为
 ## 5. 前后端对齐约定
 
 - **本文件 = 设计真相**;**后端种子 `MasterDataSeedService` = 运行真相**;二者**必须一致**(任一方改动需同步本文件并对齐另一方)。
-- **前端常量 `masterDataReference.ts` = Phase 1 兜底**:在后端字典种子未就绪/未接"实时拉字典"前,物料等表单下拉用本常量;其码值必须与本文件一致。
-- **Phase 2 联动**:后端种子对齐本文件后,物料表单下拉改为实时 `?codeSet=` 拉取(`数据字典`页维护 → 表单即时可选),前端常量降级为离线兜底。
+- **前端常量 `masterDataReference.ts` = 离线兜底**:物料表单优先实时 `?codeSet=` 拉取,后端字典暂不可用时才用本常量;其码值必须与本文件一致。
+- **Phase 2 联动**:物料表单已实时 `?codeSet=` 拉取(`数据字典`页维护 → 表单即时可选),前端常量降级为离线兜底。
 - 三处的 code 值集合必须等同(Name 可按语言差异,code 必须一致)。
 
-## 6. 落地状态（2026-06-09，运行时核实）
+## 6. 落地状态（2026-06-09）
 
-- ✅ 前端:`数据字典`页(CodeSet 主从可维护)+ 物料表单下拉用常量(本文件 §2 值)。前端常量 `storage-condition`/`barcode-rule` 已对齐本文件。
-- ⚠️ **后端种子只种了一部分、且物料相关组为空**(运行时实测 org-001/env-dev):`partner-type`=3、`uom-dimension`=4、`shelf-life-policy`=3、`batch/serial-tracking-policy`=2;但 **`product-category` / `material-type` / `storage-condition` / `barcode-rule` 启用码值为 0**(页面点进去是空)。→ 物料表单的产品分类等**只能取前端常量**,与字典页不一致(用户会"在字典页找不到表单里的分类")。
-- 🐞 **新建字典码值返回 `active:false`**(应默认启用):经 `POST .../master-data/reference-data` 建的码值不可用/不显示——需后端修「创建即启用」。
-- ⛔ **SKU 创建走网关返回 502 `downstream-invalid-response`**(下游 200 却被网关吞、未落库):见 #355。
-- 待办归口:**#352**(种齐+对齐物料相关 CodeSet)、**create-active bug**、**#355**(网关 SKU facade)。三者修完后做 Phase 2:物料表单切「实时 `?codeSet=` 拉取」,前端常量降级为离线兜底。
+- ✅ 前端:`数据字典`页(CodeSet 主从可维护),物料表单优先通过 `?codeSet=` 实时拉取产品分类、物料类型、追踪策略、存储条件、条码规则和合规标签;`masterDataReference.ts` 保留为离线兜底。
+- ✅ 后端种子 `MasterDataSeedService` 已通过 #352 对齐本文件:补齐 §2 权威码值,修正 `product-category`/`material-type` 旧错配,并对历史误种码值执行软停用而非物理删除。
+- ✅ SKU 创建/更新会按 §3 校验受控字段必须引用启用 ReferenceData;系统枚举 CodeSet 禁止运行时新增非标准码或改写标准码名称,平台预置/工厂自定义 CodeSet 仍可按治理规则新增码值。
+- ⛔ **遗留**:SKU 创建走网关仍返回 502 `downstream-invalid-response`(下游 200 却被网关 facade 吞、未落库)——见 #355,与字典无关,但会阻断物料创建联调。
 
 ## 附:相关文件
 - 后端种子:`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataSeedService.cs`
