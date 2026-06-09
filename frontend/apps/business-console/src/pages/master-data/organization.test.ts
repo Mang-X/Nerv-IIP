@@ -5,7 +5,9 @@ import { computed, reactive, shallowRef } from 'vue'
 import OrganizationPage from './organization.vue'
 
 const stub = vi.hoisted(() => ({
-  create: vi.fn(),
+  create: vi.fn().mockResolvedValue({ data: { code: 'DEPT-NEW' } }),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
 }))
 
 const actionStub = vi.hoisted(() => ({
@@ -111,7 +113,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
   ...(await orig<typeof import('@nerv-iip/ui')>()),
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: stub.toastSuccess, error: stub.toastError },
 }))
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
@@ -120,6 +122,36 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
   DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+}
+// 对话框就地渲染（不 teleport），便于断言/填写表单内容。
+const dialogStubs = {
+  Dialog: { template: '<div><slot /></div>' },
+  DialogTrigger: { template: '<div><slot /></div>' },
+  DialogContent: { template: '<div><slot /></div>' },
+  DialogHeader: { template: '<div><slot /></div>' },
+  DialogFooter: { template: '<div><slot /></div>' },
+  DialogTitle: { template: '<h2><slot /></h2>' },
+  DialogDescription: { template: '<p><slot /></p>' },
+}
+// 把 reka-ui Select 换成原生 <select>，让测试能 setValue。
+const formSelectStubs = {
+  Select: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+  },
+  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectValue: { template: '<span />' },
+  SelectContent: { template: '<slot />' },
+  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+}
+
+// 切到某个 Tab（reka-ui：focus + mousedown 激活）。
+async function switchTab(wrapper: ReturnType<typeof mount>, label: string) {
+  const tab = wrapper.findAll('[role="tab"]').find((t) => t.text().includes(label))!
+  await tab.trigger('focus')
+  await tab.trigger('mousedown')
+  await flushPromises()
 }
 
 describe('master-data organization page', () => {
@@ -202,6 +234,156 @@ describe('master-data organization page', () => {
     await flushPromises()
 
     expect(document.body.textContent).toContain('请完整填写带 * 的必填项')
+    expect(stub.create).not.toHaveBeenCalled()
+  })
+
+  it('部门主表单：填全必填后提交调用 create 并弹成功 toast', async () => {
+    stub.create.mockClear()
+    stub.toastSuccess.mockClear()
+    stub.toastError.mockClear()
+    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建部门'))!.trigger('click')
+    await flushPromises()
+    await wrapper.find('#dept-code').setValue('DEPT-NEW')
+    await wrapper.find('#dept-name').setValue('焊接部')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.create).toHaveBeenCalledTimes(1)
+    const body = stub.create.mock.calls[0]![0] as { code: string, name: string }
+    expect(body.code).toBe('DEPT-NEW')
+    expect(body.name).toBe('焊接部')
+    expect(stub.toastSuccess).toHaveBeenCalled()
+    expect(stub.toastError).not.toHaveBeenCalled()
+  })
+
+  it('部门主表单：提交失败弹错误 toast（人话）且不重置', async () => {
+    stub.create.mockClear()
+    stub.toastSuccess.mockClear()
+    stub.toastError.mockClear()
+    stub.create.mockRejectedValueOnce(new Error('downstream-invalid-response'))
+    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建部门'))!.trigger('click')
+    await flushPromises()
+    await wrapper.find('#dept-code').setValue('DEPT-NEW')
+    await wrapper.find('#dept-name').setValue('焊接部')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.create).toHaveBeenCalledTimes(1)
+    expect(stub.toastError).toHaveBeenCalledWith('服务暂时不可用，请稍后重试。')
+    expect(stub.toastSuccess).not.toHaveBeenCalled()
+    expect((wrapper.find('#dept-name').element as HTMLInputElement).value).toBe('焊接部')
+  })
+
+  it('班组子表单：行「编辑」拉详情、对话框进入编辑态、编码只读', async () => {
+    actionStub.fetchDetail.mockClear()
+    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...rowActionStubs } } })
+    await flushPromises()
+    await switchTab(wrapper, '班组')
+
+    const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
+    expect(editItem).toBeTruthy()
+    await editItem!.trigger('click')
+    await flushPromises()
+
+    expect(actionStub.fetchDetail).toHaveBeenCalledWith('TEAM-A')
+    const body = document.body.textContent ?? ''
+    expect(body).toContain('编辑班组')
+    const codeInput = document.getElementById('team-code') as HTMLInputElement | null
+    expect(codeInput?.disabled).toBe(true)
+  })
+
+  it('班组子表单：必填留空提交出现汇总提示且不发 create', async () => {
+    stub.create.mockClear()
+    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+    await flushPromises()
+    await switchTab(wrapper, '班组')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建班组'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('#team-code').exists()).toBe(true)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('请完整填写带 * 的必填项')
+    expect(stub.create).not.toHaveBeenCalled()
+  })
+
+  it('班次子表单：行「编辑」拉详情、对话框进入编辑态、编码只读', async () => {
+    actionStub.fetchDetail.mockClear()
+    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...rowActionStubs } } })
+    await flushPromises()
+    await switchTab(wrapper, '班次')
+
+    const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
+    expect(editItem).toBeTruthy()
+    await editItem!.trigger('click')
+    await flushPromises()
+
+    expect(actionStub.fetchDetail).toHaveBeenCalledWith('SHIFT-A')
+    const body = document.body.textContent ?? ''
+    expect(body).toContain('编辑班次')
+    const codeInput = document.getElementById('shift-code') as HTMLInputElement | null
+    expect(codeInput?.disabled).toBe(true)
+  })
+
+  it('班次子表单：必填留空提交出现汇总提示且不发 create', async () => {
+    stub.create.mockClear()
+    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+    await flushPromises()
+    await switchTab(wrapper, '班次')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建班次'))!.trigger('click')
+    await flushPromises()
+    // 班次新建态默认时段/计薪合法，但编码/名称为空 → 非法。
+    expect(wrapper.find('#shift-code').exists()).toBe(true)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('请完整填写带 * 的必填项')
+    expect(stub.create).not.toHaveBeenCalled()
+  })
+
+  it('工作日历子表单：行「编辑」拉详情、对话框进入编辑态、编码只读', async () => {
+    actionStub.fetchDetail.mockClear()
+    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...rowActionStubs } } })
+    await flushPromises()
+    await switchTab(wrapper, '工作日历')
+
+    const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
+    expect(editItem).toBeTruthy()
+    await editItem!.trigger('click')
+    await flushPromises()
+
+    expect(actionStub.fetchDetail).toHaveBeenCalledWith('CAL-A')
+    const body = document.body.textContent ?? ''
+    expect(body).toContain('编辑工作日历')
+    const codeInput = document.getElementById('cal-code') as HTMLInputElement | null
+    expect(codeInput?.disabled).toBe(true)
+  })
+
+  it('工作日历子表单：必填留空提交出现汇总提示且不发 create', async () => {
+    stub.create.mockClear()
+    const wrapper = mount(OrganizationPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
+    await flushPromises()
+    await switchTab(wrapper, '工作日历')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建工作日历'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('#cal-code').exists()).toBe(true)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('请完整填写带 * 的必填项')
     expect(stub.create).not.toHaveBeenCalled()
   })
 })

@@ -5,7 +5,9 @@ import { computed, reactive, shallowRef } from 'vue'
 import PartnersPage from './partners.vue'
 
 const stub = vi.hoisted(() => ({
-  createPartner: vi.fn(),
+  createPartner: vi.fn().mockResolvedValue({ data: { code: 'P-NEW' } }),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
 }))
 
 const actionStub = vi.hoisted(() => ({
@@ -58,7 +60,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
   ...(await orig<typeof import('@nerv-iip/ui')>()),
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: stub.toastSuccess, error: stub.toastError },
 }))
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
@@ -67,6 +69,37 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
   DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+}
+// 对话框就地渲染（不 teleport），便于填写表单。
+const dialogStubs = {
+  Dialog: { template: '<div><slot /></div>' },
+  DialogTrigger: { template: '<div><slot /></div>' },
+  DialogContent: { template: '<div><slot /></div>' },
+  DialogHeader: { template: '<div><slot /></div>' },
+  DialogFooter: { template: '<div><slot /></div>' },
+  DialogTitle: { template: '<h2><slot /></h2>' },
+  DialogDescription: { template: '<p><slot /></p>' },
+}
+// 把 reka-ui Select 换成原生 <select>，让测试能 setValue。
+const selectStubs = {
+  Select: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+  },
+  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectValue: { template: '<span />' },
+  SelectContent: { template: '<slot />' },
+  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+}
+
+// 打开「新建伙伴」并填好默认空的必填项（编码、名称；主角色默认 customer 合法）。
+async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
+  await wrapper.findAll('button').find((b) => b.text().includes('新建伙伴'))!.trigger('click')
+  await flushPromises()
+  await wrapper.find('#partner-code').setValue('P-NEW')
+  await wrapper.find('#partner-name').setValue('新伙伴公司')
+  await flushPromises()
 }
 
 describe('master-data partners page', () => {
@@ -147,5 +180,44 @@ describe('master-data partners page', () => {
 
     expect(document.body.textContent).toContain('请完整填写带 * 的必填项')
     expect(stub.createPartner).not.toHaveBeenCalled()
+  })
+
+  it('填全必填后提交：调用 createPartner（含主角色）并弹成功 toast', async () => {
+    stub.createPartner.mockClear()
+    stub.toastSuccess.mockClear()
+    stub.toastError.mockClear()
+    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createPartner).toHaveBeenCalledTimes(1)
+    const body = stub.createPartner.mock.calls[0]![0] as { code: string, name: string, partnerType: string }
+    expect(body.code).toBe('P-NEW')
+    expect(body.name).toBe('新伙伴公司')
+    expect(body.partnerType).toBe('customer')
+    expect(stub.toastSuccess).toHaveBeenCalled()
+    expect(stub.toastError).not.toHaveBeenCalled()
+  })
+
+  it('提交失败：弹错误 toast（人话）且不重置表单', async () => {
+    stub.createPartner.mockClear()
+    stub.toastSuccess.mockClear()
+    stub.toastError.mockClear()
+    stub.createPartner.mockRejectedValueOnce(new Error('downstream-invalid-response'))
+    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createPartner).toHaveBeenCalledTimes(1)
+    expect(stub.toastError).toHaveBeenCalledWith('服务暂时不可用，请稍后重试。')
+    expect(stub.toastSuccess).not.toHaveBeenCalled()
+    // 表单未被重置：名称保留。
+    expect((wrapper.find('#partner-name').element as HTMLInputElement).value).toBe('新伙伴公司')
   })
 })
