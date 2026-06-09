@@ -192,6 +192,8 @@ const teamEditLoading = shallowRef(false)
 const teamForm = reactive({ code: '', name: '', departmentCode: '', shiftCode: '' })
 const teamRows = computed(() => filterRows(teams.items.value, teamKeyword.value))
 const canCreateTeam = computed(() => [teamForm.code, teamForm.name, teamForm.departmentCode, teamForm.shiftCode].every(isNonEmpty))
+// 编辑态仅校验名称（部门/班次归属不在更新契约内），新建态校验全部必填。
+const teamFormValid = computed(() => (teamEditingCode.value ? isNonEmpty(teamForm.name) : canCreateTeam.value))
 const teamCreateError = computed(() => formatError(teams.createError.value))
 const teamListError = computed(() => formatError(teams.error.value))
 watch(teamOpen, (open) => { if (open) teamShowErrors.value = false })
@@ -277,6 +279,8 @@ const shiftEditLoading = shallowRef(false)
 const shiftForm = reactive({ code: '', name: '', startsAt: '08:00', endsAt: '16:00', paidMinutes: '480' })
 const shiftRows = computed(() => filterRows(shifts.items.value, shiftKeyword.value))
 const canCreateShift = computed(() => [shiftForm.code, shiftForm.name].every(isNonEmpty) && (Number(shiftForm.paidMinutes) || 0) > 0)
+// 编辑态仅校验名称（时段/计薪不在更新契约内），新建态校验全部必填。
+const shiftFormValid = computed(() => (shiftEditingCode.value ? isNonEmpty(shiftForm.name) : canCreateShift.value))
 const shiftCreateError = computed(() => formatError(shifts.createError.value))
 const shiftListError = computed(() => formatError(shifts.error.value))
 watch(shiftOpen, (open) => { if (open) shiftShowErrors.value = false })
@@ -505,6 +509,7 @@ async function submitSkill() {
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitDept">
                   <p v-if="deptCreateError" class="text-sm text-destructive" role="alert">{{ deptCreateError }}</p>
+                  <p v-if="deptShowErrors && !canCreateDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.code)">
                       <FieldLabel for="dept-code">部门编码 <span class="text-destructive">*</span></FieldLabel>
@@ -564,6 +569,7 @@ async function submitSkill() {
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitTeam">
                   <p v-if="teamCreateError" class="text-sm text-destructive" role="alert">{{ teamCreateError }}</p>
+                  <p v-if="teamShowErrors && !teamFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.code)">
                       <FieldLabel for="team-code">班组编码 <span class="text-destructive">*</span></FieldLabel>
@@ -573,7 +579,7 @@ async function submitSkill() {
                       <FieldLabel for="team-name">班组名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="team-name" v-model="teamForm.name" autocomplete="off" required />
                     </Field>
-                    <Field>
+                    <Field :data-invalid="teamShowErrors && !teamEditingCode && !isNonEmpty(teamForm.departmentCode)">
                       <FieldLabel for="team-dept">所属部门 <span class="text-destructive">*</span></FieldLabel>
                       <Select v-model="teamForm.departmentCode" :disabled="!!teamEditingCode">
                         <SelectTrigger id="team-dept"><SelectValue placeholder="请选择部门" /></SelectTrigger>
@@ -584,7 +590,7 @@ async function submitSkill() {
                         </SelectContent>
                       </Select>
                     </Field>
-                    <Field>
+                    <Field :data-invalid="teamShowErrors && !teamEditingCode && !isNonEmpty(teamForm.shiftCode)">
                       <FieldLabel for="team-shift">所属班次 <span class="text-destructive">*</span></FieldLabel>
                       <Select v-model="teamForm.shiftCode" :disabled="!!teamEditingCode">
                         <SelectTrigger id="team-shift"><SelectValue placeholder="请选择班次" /></SelectTrigger>
@@ -643,6 +649,7 @@ async function submitSkill() {
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitShift">
                   <p v-if="shiftCreateError" class="text-sm text-destructive" role="alert">{{ shiftCreateError }}</p>
+                  <p v-if="shiftShowErrors && !shiftFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.code)">
                       <FieldLabel for="shift-code">班次编码 <span class="text-destructive">*</span></FieldLabel>
@@ -660,7 +667,7 @@ async function submitSkill() {
                       <FieldLabel for="shift-end">结束时间</FieldLabel>
                       <Input id="shift-end" v-model="shiftForm.endsAt" type="time" :disabled="!!shiftEditingCode" />
                     </Field>
-                    <Field>
+                    <Field :data-invalid="shiftShowErrors && !shiftEditingCode && !((Number(shiftForm.paidMinutes) || 0) > 0)">
                       <FieldLabel for="shift-paid">计薪时长（分钟） <span class="text-destructive">*</span></FieldLabel>
                       <Input id="shift-paid" v-model="shiftForm.paidMinutes" type="number" min="1" inputmode="numeric" :disabled="!!shiftEditingCode" />
                       <FieldDescription>扣除休息后的有效计薪分钟数，默认 480（8 小时）。</FieldDescription>
@@ -702,6 +709,7 @@ async function submitSkill() {
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitCal">
                   <p v-if="calCreateError" class="text-sm text-destructive" role="alert">{{ calCreateError }}</p>
+                  <p v-if="calShowErrors && !canCreateCal" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="calShowErrors && !isNonEmpty(calForm.code)">
                       <FieldLabel for="cal-code">日历编码 <span class="text-destructive">*</span></FieldLabel>
@@ -748,6 +756,7 @@ async function submitSkill() {
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitSkill">
                   <p v-if="skillAssignError" class="text-sm text-destructive" role="alert">{{ skillAssignError }}</p>
+                  <p v-if="skillShowErrors && !canAssignSkill" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field class="sm:col-span-2" :data-invalid="skillShowErrors && !isNonEmpty(skillForm.userId)">
                       <FieldLabel for="skill-worker">工人 <span class="text-destructive">*</span></FieldLabel>

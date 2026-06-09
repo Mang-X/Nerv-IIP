@@ -529,6 +529,7 @@ function refreshAll() {
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitSite">
                   <p v-if="siteCreateError" class="text-sm text-destructive" role="alert">{{ siteCreateError }}</p>
+                  <p v-if="siteShowErrors && !canCreateSite" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="siteShowErrors && !isNonEmpty(siteForm.code)">
                       <FieldLabel for="site-code">工厂编码 <span class="text-destructive">*</span></FieldLabel>
@@ -593,6 +594,7 @@ function refreshAll() {
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitLine">
                   <p v-if="lineCreateError" class="text-sm text-destructive" role="alert">{{ lineCreateError }}</p>
+                  <p v-if="lineShowErrors && !canCreateLine" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="lineShowErrors && !isNonEmpty(lineForm.code)">
                       <FieldLabel for="line-code">产线编码 <span class="text-destructive">*</span></FieldLabel>
@@ -602,7 +604,7 @@ function refreshAll() {
                       <FieldLabel for="line-name">产线名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="line-name" v-model="lineForm.name" autocomplete="off" required />
                     </Field>
-                    <Field>
+                    <Field :data-invalid="lineShowErrors && !isNonEmpty(lineForm.siteCode)">
                       <FieldLabel for="line-site">所属工厂 <span class="text-destructive">*</span></FieldLabel>
                       <Select v-model="lineForm.siteCode">
                         <SelectTrigger id="line-site"><SelectValue placeholder="请选择工厂" /></SelectTrigger>
@@ -675,6 +677,7 @@ function refreshAll() {
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitWorkshop">
                   <p v-if="workshopCreateError" class="text-sm text-destructive" role="alert">{{ workshopCreateError }}</p>
+                  <p v-if="workshopShowErrors && !canCreateWorkshop" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="workshopShowErrors && !isNonEmpty(workshopForm.code)">
                       <FieldLabel for="workshop-code">车间编码 <span class="text-destructive">*</span></FieldLabel>
@@ -684,7 +687,7 @@ function refreshAll() {
                       <FieldLabel for="workshop-name">车间名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="workshop-name" v-model="workshopForm.name" autocomplete="off" required />
                     </Field>
-                    <Field>
+                    <Field :data-invalid="workshopShowErrors && !isNonEmpty(workshopForm.siteCode)">
                       <FieldLabel for="workshop-site">所属工厂 <span class="text-destructive">*</span></FieldLabel>
                       <Select v-model="workshopForm.siteCode">
                         <SelectTrigger id="workshop-site"><SelectValue placeholder="请选择工厂" /></SelectTrigger>
@@ -757,6 +760,7 @@ function refreshAll() {
                 </DialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitWorkCenter">
                   <p v-if="wcCreateError" class="text-sm text-destructive" role="alert">{{ wcCreateError }}</p>
+                  <p v-if="wcShowErrors && !canCreateWorkCenter" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
                     <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.code)">
                       <FieldLabel for="wc-code">工作中心编码 <span class="text-destructive">*</span></FieldLabel>
@@ -766,7 +770,7 @@ function refreshAll() {
                       <FieldLabel for="wc-name">工作中心名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="wc-name" v-model="wcForm.name" autocomplete="off" required />
                     </Field>
-                    <Field>
+                    <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.plantCode)">
                       <FieldLabel for="wc-plant">所属工厂 <span class="text-destructive">*</span></FieldLabel>
                       <Select v-model="wcForm.plantCode">
                         <SelectTrigger id="wc-plant"><SelectValue placeholder="请选择工厂" /></SelectTrigger>
@@ -777,7 +781,7 @@ function refreshAll() {
                         </SelectContent>
                       </Select>
                     </Field>
-                    <Field>
+                    <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.lineCode)">
                       <FieldLabel for="wc-line">所属产线 <span class="text-destructive">*</span></FieldLabel>
                       <Select v-model="wcForm.lineCode">
                         <SelectTrigger id="wc-line"><SelectValue placeholder="请选择产线" /></SelectTrigger>
@@ -805,7 +809,7 @@ function refreshAll() {
                       <Input id="wc-cal" v-model="wcForm.defaultCalendarCode" autocomplete="off" required />
                       <FieldDescription>填写「组织与人员」页中已建工作日历的编码。</FieldDescription>
                     </Field>
-                    <Field>
+                    <Field :data-invalid="wcShowErrors && !((Number(wcForm.capacityMinutesPerDay) || 0) > 0)">
                       <FieldLabel for="wc-cap">日产能（分钟） <span class="text-destructive">*</span></FieldLabel>
                       <Input id="wc-cap" v-model="wcForm.capacityMinutesPerDay" type="number" min="1" inputmode="numeric" />
                       <FieldDescription>单日可用产能分钟数，默认 480（8 小时）。</FieldDescription>

@@ -258,8 +258,9 @@ function isNonEmpty(value: string) {
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitCode">
               <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
+              <p v-if="createShowErrors && !canCreateCode" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
-              <Field>
+              <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.codeSet)">
                 <FieldLabel for="ref-code-set">所属字典 <span class="text-destructive">*</span></FieldLabel>
                 <Select v-model="createForm.codeSet" :disabled="!!editingCode">
                   <SelectTrigger id="ref-code-set"><SelectValue /></SelectTrigger>

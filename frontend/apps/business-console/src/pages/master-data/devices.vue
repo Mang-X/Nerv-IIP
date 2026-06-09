@@ -237,6 +237,7 @@ async function submitDevice() {
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitDevice">
               <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
+              <p v-if="createShowErrors && !canCreateDevice" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
                   <FieldLabel for="dev-code">设备编码 <span class="text-destructive">*</span></FieldLabel>
@@ -259,7 +260,7 @@ async function submitDevice() {
                   <Input id="dev-class" v-model="createForm.assetClassCode" autocomplete="off" required />
                   <FieldDescription>填写「数据字典」中维护的设备类别编码。</FieldDescription>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.criticality)">
                   <FieldLabel for="dev-criticality">关键度 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.criticality">
                     <SelectTrigger id="dev-criticality"><SelectValue /></SelectTrigger>
@@ -268,7 +269,7 @@ async function submitDevice() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.lineCode)">
                   <FieldLabel for="dev-line">所属产线 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.lineCode">
                     <SelectTrigger id="dev-line"><SelectValue placeholder="请选择产线" /></SelectTrigger>
@@ -279,7 +280,7 @@ async function submitDevice() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.workCenterCode)">
                   <FieldLabel for="dev-wc">所属工作中心 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.workCenterCode">
                     <SelectTrigger id="dev-wc"><SelectValue placeholder="请选择工作中心" /></SelectTrigger>

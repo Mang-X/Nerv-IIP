@@ -278,6 +278,7 @@ function isNonEmpty(value: string) {
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitPartner">
               <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
+              <p v-if="createShowErrors && !canCreatePartner" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
@@ -288,7 +289,7 @@ function isNonEmpty(value: string) {
                   <FieldLabel for="partner-name">名称 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="partner-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.partnerType)">
                   <FieldLabel for="partner-type">主角色 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.partnerType">
                     <SelectTrigger id="partner-type"><SelectValue /></SelectTrigger>
