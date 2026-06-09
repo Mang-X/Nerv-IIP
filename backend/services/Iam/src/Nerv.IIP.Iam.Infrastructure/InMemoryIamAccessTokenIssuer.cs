@@ -12,6 +12,7 @@ public sealed record InMemoryIamAccessTokenIssue(
     string SessionId,
     string SecurityStamp,
     int PermissionVersion,
+    DateTimeOffset IssuedAtUtc,
     string? LoginName,
     string? Email,
     string? OrganizationId,

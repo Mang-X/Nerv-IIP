@@ -423,12 +423,13 @@ public sealed class PostgreSqlIamAuthService(
         var membership = await membershipRepository.GetFirstByUserIdAsync(user.Id, cancellationToken);
         var issuedAtUtc = DateTimeOffset.UtcNow;
         var accessToken = membership is null
-            ? tokenService.CreateAccessToken(user, session)
+            ? tokenService.CreateAccessToken(user, session, issuedAtUtc)
             : tokenService.CreateAccessToken(
                 user,
                 session,
                 membership.OrganizationId.Id,
-                membership.EnvironmentId.Id);
+                membership.EnvironmentId.Id,
+                issuedAtUtc);
         var expiresAtUtc = tokenService.GetAccessTokenExpiresAtUtc(issuedAtUtc);
         return new AuthResponse(accessToken, refreshToken, session.Id.Id, expiresAtUtc);
     }

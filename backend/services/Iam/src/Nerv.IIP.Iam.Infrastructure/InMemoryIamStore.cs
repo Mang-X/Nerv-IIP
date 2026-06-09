@@ -24,7 +24,7 @@ public sealed class InMemoryIamStore
 
     public InMemoryIamStore(IInMemoryIamAccessTokenIssuer accessTokenIssuer)
     {
-        _accessTokenIssuer = accessTokenIssuer;
+        _accessTokenIssuer = accessTokenIssuer ?? throw new ArgumentNullException(nameof(accessTokenIssuer));
         Seed();
     }
 
@@ -455,6 +455,7 @@ public sealed class InMemoryIamStore
             sessionId,
             user.SecurityStamp,
             user.PermissionVersion,
+            now,
             user.LoginName,
             user.Email,
             membership?.OrganizationId,
@@ -509,6 +510,7 @@ public sealed class InMemoryIamStore
             sessionId,
             user.SecurityStamp,
             user.PermissionVersion,
+            now,
             user.LoginName,
             user.Email,
             organizationId,

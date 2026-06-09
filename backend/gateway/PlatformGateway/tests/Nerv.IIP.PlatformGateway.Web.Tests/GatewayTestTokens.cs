@@ -8,10 +8,16 @@ namespace Nerv.IIP.PlatformGateway.Web.Tests;
 internal static class GatewayTestTokens
 {
     private const string SigningKey = "nerv-iip-iam-development-signing-key-local-only-0001";
+    private static readonly DateTimeOffset DefaultIssuedAtUtc = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset DefaultExpiresAtUtc = new(2036, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    public static string ValidAccessToken(int permissionVersion = 7)
+    public static string ValidAccessToken(
+        int permissionVersion = 7,
+        DateTimeOffset? issuedAtUtc = null,
+        DateTimeOffset? expiresAtUtc = null)
     {
-        var now = DateTimeOffset.UtcNow;
+        var issuedAt = issuedAtUtc ?? DefaultIssuedAtUtc;
+        var expiresAt = expiresAtUtc ?? DefaultExpiresAtUtc;
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, "user-admin"),
@@ -23,15 +29,15 @@ internal static class GatewayTestTokens
             new("environmentId", "env-dev"),
             new("securityStamp", "security-stamp-001"),
             new("permissionVersion", permissionVersion.ToString()),
-            new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
+            new(JwtRegisteredClaimNames.Iat, issuedAt.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
         };
 
         var token = new JwtSecurityToken(
             issuer: "nerv-iip-iam",
             audience: "nerv-iip-api",
             claims: claims,
-            notBefore: now.AddMinutes(-1).UtcDateTime,
-            expires: now.AddMinutes(15).UtcDateTime,
+            notBefore: issuedAt.UtcDateTime,
+            expires: expiresAt.UtcDateTime,
             signingCredentials: new SigningCredentials(
                 new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey)),
                 SecurityAlgorithms.HmacSha256));

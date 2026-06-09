@@ -14,7 +14,8 @@ public sealed class InMemoryIamAccessTokenIssuer(IamTokenService tokenService) :
             issue.LoginName,
             issue.Email,
             issue.OrganizationId,
-            issue.EnvironmentId);
+            issue.EnvironmentId,
+            issue.IssuedAtUtc);
     }
 
     public DateTimeOffset GetAccessTokenExpiresAtUtc(DateTimeOffset issuedAtUtc)

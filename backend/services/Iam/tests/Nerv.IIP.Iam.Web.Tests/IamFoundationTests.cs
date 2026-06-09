@@ -118,6 +118,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Equal(login.SessionId, loginPrincipal.FindFirst("sessionId")?.Value);
         Assert.Equal("org-001", loginPrincipal.FindFirst("organizationId")?.Value);
         Assert.Equal("env-dev", loginPrincipal.FindFirst("environmentId")?.Value);
+        AssertAccessTokenExpiresAt(loginPrincipal, login.ExpiresAtUtc);
 
         var refresh = store.Refresh(login.RefreshToken);
         var refreshPrincipal = tokenHandler.ValidateToken(
@@ -129,6 +130,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Equal("nerv-iip-iam", refreshJwt.Issuer);
         Assert.Equal("user-admin", refreshPrincipal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value);
         Assert.Equal(refresh.SessionId, refreshPrincipal.FindFirst("sessionId")?.Value);
+        AssertAccessTokenExpiresAt(refreshPrincipal, refresh.ExpiresAtUtc);
         Assert.NotEqual(login.RefreshToken, refresh.RefreshToken);
     }
 
@@ -488,6 +490,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     [Fact]
     public void In_memory_store_without_configured_token_issuer_fails_closed()
     {
+        Assert.Throws<ArgumentNullException>(() => new InMemoryIamStore(null!));
         var store = new InMemoryIamStore();
 
         var exception = Assert.Throws<InvalidOperationException>(() => store.Login("admin", "Admin123!"));
@@ -574,6 +577,13 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         ValidateLifetime = true,
         ClockSkew = TimeSpan.FromMinutes(1)
     };
+
+    private static void AssertAccessTokenExpiresAt(System.Security.Claims.ClaimsPrincipal principal, DateTimeOffset expiresAtUtc)
+    {
+        var expiresAtClaim = principal.FindFirst(JwtRegisteredClaimNames.Exp);
+        Assert.NotNull(expiresAtClaim);
+        Assert.Equal(expiresAtUtc.ToUnixTimeSeconds(), long.Parse(expiresAtClaim.Value));
+    }
 
     private async Task CreateUserAsync(string loginName, string email)
     {
