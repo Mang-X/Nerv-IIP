@@ -7,7 +7,7 @@
  */
 
 export interface RefOption {
-  /** 提交给后端的码值（自由字符串，后端当前不校验）。 */
+  /** 提交给后端的码值。 */
   value: string
   /** 展示给用户的中文名。 */
   label: string
@@ -23,7 +23,7 @@ export const PRODUCT_CATEGORY_OPTIONS: RefOption[] = [
   { value: 'assembly', label: '组装件' },
 ]
 
-/** 物料类型（CodeSet: material-type，平台预置，决定单据可用性）。 */
+/** 物料类型（CodeSet: material-type，系统枚举，决定单据可用性）。 */
 export const MATERIAL_TYPE_OPTIONS: RefOption[] = [
   { value: 'finished-goods', label: '成品' },
   { value: 'semi-finished', label: '半成品' },
@@ -74,6 +74,14 @@ export const BARCODE_RULE_OPTIONS: RefOption[] = [
   { value: 'gs1-128', label: 'GS1-128' },
   { value: 'qr', label: '二维码' },
   { value: 'customer-spec', label: '客户指定' },
+]
+
+/** 合规标签（CodeSet: compliance-tag，平台预置+工厂可维护）。 */
+export const COMPLIANCE_TAG_OPTIONS: RefOption[] = [
+  { value: 'rohs', label: 'RoHS' },
+  { value: 'reach', label: 'REACH' },
+  { value: 'msd', label: '湿敏元件' },
+  { value: 'ul', label: 'UL 认证' },
 ]
 
 /** 计量单位（CodeSet: uom，§5.2 种子的常用子集）。 */

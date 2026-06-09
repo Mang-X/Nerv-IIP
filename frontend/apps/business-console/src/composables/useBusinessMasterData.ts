@@ -28,6 +28,7 @@ import {
   type BusinessConsoleCreateWorkshopRequest,
   type BusinessConsoleResourceItem,
   type BusinessConsoleResourceListEnvelope,
+  type BusinessConsoleSetMasterDataResourceEnabledRequest,
   type BusinessConsoleTeamMemberItem,
   type BusinessConsoleTeamMemberListEnvelope,
   type BusinessConsoleUpdateMasterDataResourceRequest,
@@ -51,6 +52,7 @@ export interface MasterDataListFilters extends BusinessContextFilters {
 }
 
 export interface MasterDataResourceFilters extends MasterDataListFilters {
+  codeSet?: string
   resourceType: string
 }
 
@@ -75,9 +77,10 @@ function defaultListFilters(): MasterDataListFilters {
   })
 }
 
-function defaultResourceFilters(resourceType: string): MasterDataResourceFilters {
+function defaultResourceFilters(resourceType: string, codeSet?: string): MasterDataResourceFilters {
   return reactive({
     ...defaultContext(),
+    ...optionalQuery('codeSet', codeSet),
     resourceType,
     skip: 0,
     take: DEFAULT_TAKE,
@@ -291,8 +294,8 @@ export function useReferenceDataCodes() {
   }
 }
 
-export function useBusinessMasterDataResources(resourceType: string) {
-  const filters = defaultResourceFilters(resourceType)
+export function useBusinessMasterDataResources(resourceType: string, options: { codeSet?: string } = {}) {
+  const filters = defaultResourceFilters(resourceType, options.codeSet)
 
   const resourcesQuery = useQuery(() =>
     listBusinessConsoleMasterDataResourcesQueryOptions({
@@ -300,6 +303,7 @@ export function useBusinessMasterDataResources(resourceType: string) {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
         resourceType: filters.resourceType,
+        ...optionalQuery('codeSet', filters.codeSet),
         ...optionalQuery('includeDisabled', filters.includeDisabled),
         skip: filters.skip,
         take: filters.take,
@@ -437,8 +441,8 @@ export function useMasterDataResourceActions(resourceType: string) {
 
   return {
     update: (code: string, patch: Partial<BusinessConsoleUpdateMasterDataResourceRequest>) => callPathBody(updateMutation, code, patch),
-    disable: (code: string) => callPathBody(disableMutation, code, {}),
-    enable: (code: string) => callPathBody(enableMutation, code, {}),
+    disable: (code: string, patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {}) => callPathBody(disableMutation, code, patch),
+    enable: (code: string, patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {}) => callPathBody(enableMutation, code, patch),
     updatePending: updateMutation.isLoading,
     disablePending: disableMutation.isLoading,
     enablePending: enableMutation.isLoading,

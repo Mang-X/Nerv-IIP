@@ -61,6 +61,7 @@ describe('master-data reference-data page', () => {
     const nav = wrapper.find('nav[aria-label="字典分组"]')
     expect(nav.exists()).toBe(true)
     expect(nav.text()).toContain('物料类型')
+    expect(nav.text()).toContain('技能等级')
     expect(nav.text()).toContain('仓储条件')
   })
 
@@ -83,8 +84,20 @@ describe('master-data reference-data page', () => {
     expect(button.attributes('aria-pressed')).toBe('true')
   })
 
-  it('opens the create dialog with a CodeSet select', async () => {
+  it('keeps system-maintained CodeSets read-only for creation', async () => {
     const wrapper = mount(ReferenceDataPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const createButton = wrapper.findAll('button').find((b) => b.text().includes('新建字典条目'))!
+    expect(createButton.attributes('disabled')).toBeDefined()
+  })
+
+  it('opens the create dialog for maintainable CodeSets', async () => {
+    const wrapper = mount(ReferenceDataPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const button = wrapper.find('nav[aria-label="字典分组"]').findAll('button').find((b) => b.text().includes('仓储条件'))!
+    await button.trigger('click')
     await flushPromises()
 
     await wrapper.findAll('button').find((b) => b.text().includes('新建字典条目'))!.trigger('click')

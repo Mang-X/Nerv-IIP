@@ -10,36 +10,6 @@ namespace Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 {
-    private static readonly ReferenceDataSeed[] ReferenceData =
-    [
-        new("material-type", "material", "Material"),
-        new("material-type", "service", "Service"),
-        new("product-category", "finished-good", "Finished Good"),
-        new("product-category", "raw-material", "Raw Material"),
-        new("product-category", "packaging", "Packaging"),
-        new("product-category", "spare-part", "Spare Part"),
-        new("uom-dimension", "mass", "Mass"),
-        new("uom-dimension", "quantity", "Quantity"),
-        new("uom-dimension", "volume", "Volume"),
-        new("uom-dimension", "time", "Time"),
-        new("batch-tracking-policy", "none", "No Batch Tracking"),
-        new("batch-tracking-policy", "lot", "Lot Tracking"),
-        new("serial-tracking-policy", "none", "No Serial Tracking"),
-        new("serial-tracking-policy", "serial", "Serial Tracking"),
-        new("shelf-life-policy", "none", "No Shelf Life Control"),
-        new("shelf-life-policy", "180d", "180 Days"),
-        new("shelf-life-policy", "365d", "365 Days"),
-        new("storage-condition", "ambient", "Ambient"),
-        new("storage-condition", "refrigerated", "Refrigerated"),
-        new("storage-condition", "frozen", "Frozen"),
-        new("barcode-rule", "ean13", "EAN-13"),
-        new("barcode-rule", "code128", "Code 128"),
-        new("barcode-rule", "qr", "QR Code"),
-        new("partner-type", "supplier", "Supplier"),
-        new("partner-type", "customer", "Customer"),
-        new("partner-type", "carrier", "Carrier")
-    ];
-
     private static readonly UomSeed[] Units =
     [
         new("kg", "Kilogram", "mass", 3, "half-up"),
@@ -57,7 +27,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 
     public async Task SeedAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
     {
-        foreach (var item in ReferenceData)
+        foreach (var item in MasterDataDictionaryRules.StandardReferenceData)
         {
             if (!await dbContext.ReferenceDataCodes.AnyAsync(x =>
                     x.OrganizationId == organizationId &&
@@ -73,6 +43,20 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
                     item.Code,
                     item.Name));
             }
+        }
+
+        var obsoleteCodeSets = MasterDataDictionaryRules.ObsoleteSeedCodes.Keys.ToArray();
+        var obsoleteReferenceData = await dbContext.ReferenceDataCodes
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                obsoleteCodeSets.Contains(x.CodeSet) &&
+                !x.Disabled)
+            .ToArrayAsync(cancellationToken);
+        foreach (var item in obsoleteReferenceData.Where(item =>
+            MasterDataDictionaryRules.ObsoleteSeedCodes[item.CodeSet].Contains(item.Code)))
+        {
+            item.Disable("disabled by master-data dictionary rules seed");
         }
 
         foreach (var item in Units)
@@ -150,8 +134,6 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
-
-    private sealed record ReferenceDataSeed(string CodeSet, string Code, string Name);
 
     private sealed record UomSeed(string Code, string Name, string DimensionType, int Precision, string RoundingMode);
 

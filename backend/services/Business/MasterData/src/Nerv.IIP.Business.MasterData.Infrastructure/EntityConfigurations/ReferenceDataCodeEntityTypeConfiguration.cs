@@ -12,7 +12,7 @@ public sealed class ReferenceDataCodeEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Reference data code aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the reference data code.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id where the reference data code is valid.");
-        builder.Property(x => x.CodeSet).HasColumnName("code_set").IsRequired().HasMaxLength(100).HasComment("Reference code set name such as material-form, asset-class or storage-condition.");
+        builder.Property(x => x.CodeSet).HasColumnName("code_set").IsRequired().HasMaxLength(100).HasComment("Reserved reference code set name such as material-type, storage-condition, quality-reason or compliance-tag.");
         builder.Property(x => x.Code).HasColumnName("code").IsRequired().HasMaxLength(100).HasComment("Business unique code inside the code set.");
         builder.Property(x => x.Name).HasColumnName("name").IsRequired().HasMaxLength(200).HasComment("Reference data code display name.");
         builder.Property(x => x.Disabled).HasColumnName("disabled").IsRequired().HasComment("Disabled flag that hides the reference code from active use.");
