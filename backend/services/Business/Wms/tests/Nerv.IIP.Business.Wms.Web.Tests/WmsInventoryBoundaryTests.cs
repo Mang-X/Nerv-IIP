@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
@@ -35,6 +36,35 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("inbound", fake.Requests[0].MovementType);
         Assert.Equal("idem-in-001", fake.Requests[0].IdempotencyKey);
         Assert.Equal("SKU-FG-1000", fake.Requests[0].SkuCode);
+    }
+
+    [Fact]
+    public async Task Complete_inbound_marks_inventory_movement_request_failed_when_inventory_post_fails()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-001",
+            "purchase-receipt",
+            "PO-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var failure = new TimeoutException("Inventory posting timed out.");
+        var fake = new FailingInventoryMovementClient(failure);
+
+        var exception = await Assert.ThrowsAsync<TimeoutException>(() =>
+            new CompleteInboundOrderCommandHandler(dbContext, fake).Handle(
+                new CompleteInboundOrderCommand(inbound.Id, "idem-in-001"),
+                CancellationToken.None));
+
+        Assert.Same(failure, exception);
+        var movementRequest = Assert.Single(dbContext.InventoryMovementRequests.Local);
+        Assert.Equal(InventoryMovementRequestStatus.Failed, movementRequest.Status);
+        Assert.Equal(nameof(TimeoutException), movementRequest.FailureCode);
+        Assert.Equal("Inventory posting timed out.", movementRequest.FailureMessage);
     }
 
     [Fact]
@@ -90,5 +120,13 @@ public sealed class WmsInventoryBoundaryTests
             .UseInMemoryDatabase($"wms-boundary-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class FailingInventoryMovementClient(Exception exception) : IInventoryMovementClient
+    {
+        public Task<PostInventoryMovementResult> PostMovementAsync(PostInventoryMovementRequest request, CancellationToken cancellationToken)
+        {
+            return Task.FromException<PostInventoryMovementResult>(exception);
+        }
     }
 }

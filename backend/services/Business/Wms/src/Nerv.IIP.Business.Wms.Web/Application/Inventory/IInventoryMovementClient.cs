@@ -84,7 +84,7 @@ public static class WmsInventoryMovementClientServiceCollectionExtensions
         services.AddHttpClient<IInventoryMovementClient, HttpInventoryMovementClient>(client =>
         {
             client.BaseAddress = baseUrl;
-        });
+        }).AddWmsInventoryPostingResilience(configuration);
         return services;
     }
 
