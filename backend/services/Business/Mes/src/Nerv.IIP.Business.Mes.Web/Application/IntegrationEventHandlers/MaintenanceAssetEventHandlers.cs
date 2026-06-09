@@ -1,10 +1,15 @@
 using DotNetCore.CAP;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 
@@ -20,6 +25,7 @@ public sealed class AssetUnavailableIntegrationEventHandlerForReschedule(
     IMesPlanningStore store,
     RuleScheduler scheduler,
     MesRescheduleOptions options,
+    ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<AssetUnavailableIntegrationEvent>, ICapSubscribe
 {
@@ -47,6 +53,11 @@ public sealed class AssetUnavailableIntegrationEventHandlerForReschedule(
     private async Task HandleValidEventAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
+        if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
         var payload = integrationEvent.Payload;
         var workCenterId = await store.ResolveWorkCenterIdAsync(
             integrationEvent.OrganizationId,
@@ -77,6 +88,7 @@ public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
     IMesPlanningStore store,
     RuleScheduler scheduler,
     MesRescheduleOptions options,
+    ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<AssetRestoredIntegrationEvent>, ICapSubscribe
 {
@@ -104,6 +116,11 @@ public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
     private async Task HandleValidEventAsync(AssetRestoredIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
+        if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
         var payload = integrationEvent.Payload;
         await store.CloseUnavailabilityAsync(
             integrationEvent.OrganizationId,
@@ -119,5 +136,52 @@ public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
                 await store.GetUnavailabilitiesAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken));
             await store.AddScheduleResultAsync(RescheduleTrigger.AssetRestored, integrationEvent.OccurredAtUtc, plan, cancellationToken: cancellationToken);
         }
+    }
+}
+
+internal static class MesProcessedIntegrationEventInbox
+{
+    public static async Task<bool> TryRecordAsync(
+        ApplicationDbContext dbContext,
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        var eventId = Required(integrationEvent.EventId, "Integration event id is required.");
+        var eventType = Required(integrationEvent.EventType, "Integration event type is required.");
+        var sourceService = Required(integrationEvent.SourceService, "Integration event source service is required.");
+        var dedupeKey = Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
+
+        if (dbContext.ProcessedIntegrationEvents.Local.Any(x => x.ConsumerName == consumerName && x.EventId == eventId))
+        {
+            return false;
+        }
+
+        if (await dbContext.ProcessedIntegrationEvents.AnyAsync(
+            x => x.ConsumerName == consumerName && x.EventId == eventId,
+            cancellationToken))
+        {
+            return false;
+        }
+
+        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
+            consumerName,
+            eventId,
+            eventType,
+            integrationEvent.EventVersion,
+            sourceService,
+            dedupeKey,
+            DateTimeOffset.UtcNow));
+        return true;
+    }
+
+    private static string Required(string? value, string message)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new KnownException(message);
+        }
+
+        return value;
     }
 }

@@ -1,5 +1,6 @@
 using MediatR;
 using DotNetCore.CAP;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
@@ -10,6 +11,7 @@ using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.AppHub.Web.Application.Commands;
 
 namespace Nerv.IIP.AppHub.Web.Tests;
 
@@ -180,7 +182,9 @@ public sealed class AppHubIntegrationEventTests
     {
         var sender = new RecordingSender();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(sender, deadLetterStore);
+        await using var dbContext = CreateDbContext();
+        using var services = CreateServiceProvider(dbContext);
+        var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(sender, services, deadLetterStore);
 
         await handler.HandleAsync(CreateCompletedEvent(eventVersion: 2), CancellationToken.None);
 
@@ -194,11 +198,49 @@ public sealed class AppHubIntegrationEventTests
     }
 
     [Fact]
+    public async Task Operation_completed_consumer_skips_duplicate_event_before_sending_command()
+    {
+        var sender = new RecordingSender();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        await using var dbContext = CreateDbContext();
+        using var services = CreateServiceProvider(dbContext);
+        var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(sender, services, deadLetterStore);
+        var integrationEvent = CreateCompletedEvent(eventVersion: 1);
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        Assert.Single(sender.RequestTypes);
+        Assert.Equal(typeof(RefreshInstanceStateAfterOperationCommand), sender.RequestTypes.Single());
+        Assert.Single(dbContext.ProcessedIntegrationEvents.Local);
+    }
+
+    [Fact]
+    public async Task Operation_failed_consumer_skips_duplicate_event_before_sending_command()
+    {
+        var sender = new RecordingSender();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        await using var dbContext = CreateDbContext();
+        using var services = CreateServiceProvider(dbContext);
+        var handler = new OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(sender, services, deadLetterStore);
+        var integrationEvent = CreateFailedEvent(eventVersion: 1);
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        Assert.Single(sender.RequestTypes);
+        Assert.Equal(typeof(RefreshInstanceStateAfterFailedOperationCommand), sender.RequestTypes.Single());
+        Assert.Single(dbContext.ProcessedIntegrationEvents.Local);
+    }
+
+    [Fact]
     public async Task Operation_failed_consumer_dead_letters_unsupported_version_without_sending_command()
     {
         var sender = new RecordingSender();
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = new OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(sender, deadLetterStore);
+        await using var dbContext = CreateDbContext();
+        using var services = CreateServiceProvider(dbContext);
+        var handler = new OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState(sender, services, deadLetterStore);
 
         await handler.HandleAsync(CreateFailedEvent(eventVersion: 2), CancellationToken.None);
 
@@ -289,6 +331,21 @@ public sealed class AppHubIntegrationEventTests
                 "docker-daemon-unavailable"));
     }
 
+    private static ApplicationDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"apphub-{Guid.CreateVersion7():N}")
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static ServiceProvider CreateServiceProvider(ApplicationDbContext dbContext)
+    {
+        return new ServiceCollection()
+            .AddSingleton(dbContext)
+            .BuildServiceProvider();
+    }
+
     private sealed class RecordingSender : ISender
     {
         public List<Type> RequestTypes { get; } = [];
@@ -320,6 +377,50 @@ public sealed class AppHubIntegrationEventTests
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException("Streams are not used by these tests.");
+        }
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot send requests.");
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot send requests.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot send requests.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot stream requests.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot stream requests.");
         }
     }
 

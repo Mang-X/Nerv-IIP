@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc.Testing;
+using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
@@ -21,11 +23,13 @@ public sealed class MaintenanceEventHandlerTests
         store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
         store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        await using var dbContext = CreateDbContext();
 
         var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
             store,
             new RuleScheduler(),
             new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+            dbContext,
             new InMemoryIntegrationEventDeadLetterStore());
 
         await handler.HandleAsync(CreateUnavailableEvent(now), CancellationToken.None);
@@ -35,6 +39,32 @@ public sealed class MaintenanceEventHandlerTests
         Assert.Null(window.ToUtc);
         Assert.Equal("breakdown", window.Reason);
         Assert.Equal(RescheduleTrigger.AssetUnavailable, Assert.Single(store.ScheduleResults).Trigger);
+    }
+
+    [Fact]
+    public async Task AssetUnavailableHandler_SkipsDuplicateEventBeforeRecordingWindowOrRescheduling()
+    {
+        var store = new InMemoryMesPlanningStore();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
+        store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
+        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        await using var dbContext = CreateDbContext();
+
+        var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
+            store,
+            new RuleScheduler(),
+            new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+        var integrationEvent = CreateUnavailableEvent(now);
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        Assert.Single(store.Unavailabilities);
+        Assert.Single(store.ScheduleResults);
+        Assert.Single(dbContext.ProcessedIntegrationEvents.Local);
     }
 
     [Fact]
@@ -49,6 +79,7 @@ public sealed class MaintenanceEventHandlerTests
             store,
             new RuleScheduler(),
             new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
+            CreateDbContext(),
             new InMemoryIntegrationEventDeadLetterStore());
 
         await handler.HandleAsync(CreateRestoredEvent(now.AddHours(2)), CancellationToken.None);
@@ -56,6 +87,31 @@ public sealed class MaintenanceEventHandlerTests
         var window = Assert.Single(store.Unavailabilities);
         Assert.Equal(now.AddHours(2), window.ToUtc);
         Assert.Equal(RescheduleTrigger.AssetRestored, Assert.Single(store.ScheduleResults).Trigger);
+    }
+
+    [Fact]
+    public async Task AssetRestoredHandler_SkipsDuplicateEventBeforeClosingWindowOrRescheduling()
+    {
+        var store = new InMemoryMesPlanningStore();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        store.AddUnavailability(new WorkCenterUnavailability("WC-A", now, null, "breakdown", "ASSET-CNC-01"));
+        await using var dbContext = CreateDbContext();
+
+        var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
+            store,
+            new RuleScheduler(),
+            new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+        var integrationEvent = CreateRestoredEvent(now.AddHours(2));
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var window = Assert.Single(store.Unavailabilities);
+        Assert.Equal(now.AddHours(2), window.ToUtc);
+        Assert.Single(store.ScheduleResults);
+        Assert.Single(dbContext.ProcessedIntegrationEvents.Local);
     }
 
     [Fact]
@@ -67,6 +123,7 @@ public sealed class MaintenanceEventHandlerTests
             store,
             new RuleScheduler(),
             new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+            CreateDbContext(),
             deadLetterStore);
 
         await handler.HandleAsync(CreateUnavailableEvent(DateTimeOffset.Parse("2026-05-22T08:00:00Z"), eventVersion: 2), CancellationToken.None);
@@ -92,6 +149,7 @@ public sealed class MaintenanceEventHandlerTests
             store,
             new RuleScheduler(),
             new MesRescheduleOptions { AutoRescheduleOnAssetRestored = true },
+            CreateDbContext(),
             deadLetterStore);
 
         await handler.HandleAsync(CreateRestoredEvent(now.AddHours(2), eventVersion: 2), CancellationToken.None);
@@ -149,6 +207,58 @@ public sealed class MaintenanceEventHandlerTests
             "maintenance",
             "maintenance.AssetRestored:ASSET-CNC-01:20260522100000",
             new AssetRestoredPayload("ASSET-CNC-01", restoredAtUtc));
+    }
+
+    private static ApplicationDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-{Guid.CreateVersion7():N}")
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot send requests.");
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot send requests.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot send requests.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot stream requests.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Noop mediator cannot stream requests.");
+        }
     }
 
     private sealed class MesPostgreSqlWebApplicationFactory : WebApplicationFactory<Program>

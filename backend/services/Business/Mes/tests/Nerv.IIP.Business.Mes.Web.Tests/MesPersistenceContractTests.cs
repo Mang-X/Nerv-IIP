@@ -117,6 +117,7 @@ public sealed class MesPersistenceContractTests
                 scope.ServiceProvider.GetRequiredService<IMesPlanningStore>(),
                 scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
                 new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
                 new InMemoryIntegrationEventDeadLetterStore());
 
             await handler.HandleAsync(CreateUnavailableEvent(now), CancellationToken.None);
@@ -172,6 +173,7 @@ public sealed class MesPersistenceContractTests
             store,
             scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
             new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = false },
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore());
         await handler.HandleAsync(CreateUnavailableEvent(now, organizationId: "org-b"), CancellationToken.None);
 

@@ -1,4 +1,6 @@
 using MediatR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -6,6 +8,7 @@ using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ManagedNodeAggregate;
 using Nerv.IIP.AppHub.Infrastructure;
+using Nerv.IIP.AppHub.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Testing.EntityFramework;
 using AppHubApplication = Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate.Application;
 
@@ -27,6 +30,7 @@ public sealed class AppHubSchemaConventionTests
             typeof(InstanceStateHistory),
             typeof(InstanceStatusChange),
             typeof(RegistrationIdempotency),
+            typeof(ProcessedIntegrationEvent),
         };
 
         var jsonColumns = new[]
@@ -40,8 +44,30 @@ public sealed class AppHubSchemaConventionTests
         failures.AddRange(SchemaConventionAssertions.BusinessColumnsHaveComments(fixture.DbContext, "AppHub", businessEntities));
         failures.AddRange(SchemaConventionAssertions.JsonColumnsHaveCompatibilityComments(fixture.DbContext, "AppHub", jsonColumns));
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, "AppHub", "apphub"));
+        failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)
+    {
+        var entity = model.FindEntityType(typeof(ProcessedIntegrationEvent));
+        if (entity is null)
+        {
+            return ["AppHub: missing processed integration event entity metadata."];
+        }
+
+        var hasUniqueIndex = entity.GetIndexes().Any(index =>
+            index.IsUnique &&
+            index.GetDatabaseName() == "ux_processed_integration_events_consumer_event_id" &&
+            index.Properties.Select(property => property.Name).SequenceEqual([
+                nameof(ProcessedIntegrationEvent.ConsumerName),
+                nameof(ProcessedIntegrationEvent.EventId),
+            ]));
+
+        return hasUniqueIndex
+            ? []
+            : ["AppHub: processed integration event inbox requires a unique consumer/event id index."];
     }
 
     private static SchemaFixture CreateFixture()
