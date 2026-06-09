@@ -14,6 +14,7 @@ import {
   createBusinessConsoleWorkshopMutationOptions,
   disableBusinessConsoleMasterDataResourceMutationOptions,
   enableBusinessConsoleMasterDataResourceMutationOptions,
+  getBusinessConsoleMasterDataResourceDetail,
   listBusinessConsoleMasterDataResourcesQueryOptions,
   listBusinessConsoleSkusQueryOptions,
   listBusinessConsoleTeamMembersQueryOptions,
@@ -26,6 +27,7 @@ import {
   type BusinessConsoleCreateReferenceDataCodeRequest,
   type BusinessConsoleCreateSkuRequest,
   type BusinessConsoleCreateWorkshopRequest,
+  type BusinessConsoleMasterDataResourceDetail,
   type BusinessConsoleResourceItem,
   type BusinessConsoleResourceListEnvelope,
   type BusinessConsoleTeamMemberItem,
@@ -435,10 +437,21 @@ export function useMasterDataResourceActions(resourceType: string) {
   const callPathBody = (m: typeof updateMutation, code: string, extra: Record<string, unknown>) =>
     (m.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ path: { resourceType, code }, body: withCtx(extra) })
 
+  // 编辑前拉全字段详情用于回填(列表项只含部分 typed 字段)。
+  async function fetchDetail(code: string): Promise<BusinessConsoleMasterDataResourceDetail | undefined> {
+    const res = await getBusinessConsoleMasterDataResourceDetail({
+      path: { resourceType, code },
+      query: { organizationId: ctx.organizationId, environmentId: ctx.environmentId },
+    })
+    const envelope = (res as { data?: { success?: boolean; data?: BusinessConsoleMasterDataResourceDetail | null } }).data
+    return envelope?.success ? envelope.data ?? undefined : undefined
+  }
+
   return {
     update: (code: string, patch: Partial<BusinessConsoleUpdateMasterDataResourceRequest>) => callPathBody(updateMutation, code, patch),
     disable: (code: string) => callPathBody(disableMutation, code, {}),
     enable: (code: string) => callPathBody(enableMutation, code, {}),
+    fetchDetail,
     updatePending: updateMutation.isLoading,
     disablePending: disableMutation.isLoading,
     enablePending: enableMutation.isLoading,

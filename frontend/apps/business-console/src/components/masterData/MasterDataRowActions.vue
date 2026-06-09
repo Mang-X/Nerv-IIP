@@ -17,17 +17,12 @@ import {
   DialogHeader,
   DialogTitle,
   DropdownMenuItem,
-  Field,
-  FieldDescription,
-  FieldLabel,
-  Input,
   RowActions,
-  Spinner,
   StatusBadge,
   toast,
 } from '@nerv-iip/ui'
 import { CircleSlashIcon, EyeIcon, PencilIcon, PlayIcon } from 'lucide-vue-next'
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 
 export interface DetailField {
   label: string
@@ -41,42 +36,23 @@ const props = defineProps<{
   entityLabel: string
   /** 详情弹窗展示的字段（业务中文 label + 取自行的值）。 */
   detailFields: DetailField[]
-  /** 来自 useMasterDataResourceActions 的动作集合。 */
+  /** 来自 useMasterDataResourceActions 的动作集合（停用/启用；编辑由页面自带表单处理）。 */
   actions: {
-    update: (code: string, patch: { name: string }) => Promise<unknown>
     disable: (code: string) => Promise<unknown>
     enable: (code: string) => Promise<unknown>
-    updatePending: { value: boolean }
     disablePending: { value: boolean }
     enablePending: { value: boolean }
   }
 }>()
 
-const detailOpen = ref(false)
-const editOpen = ref(false)
-const toggleOpen = ref(false)
-const editName = ref('')
+// 「编辑」交由页面打开各自的全字段表单（带回填），故此处只发事件，不在组件内编辑。
+const emit = defineEmits<{ edit: [row: BusinessConsoleResourceItem] }>()
 
-watch(editOpen, (open) => {
-  if (open) editName.value = props.row.displayName ?? ''
-})
+const detailOpen = ref(false)
+const toggleOpen = ref(false)
 
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : '请求失败，请稍后重试。'
-}
-
-async function submitName() {
-  const code = props.row.code
-  const name = editName.value.trim()
-  if (!code || !name) return
-  try {
-    await props.actions.update(code, { name })
-    toast.success('已更新')
-    editOpen.value = false
-  }
-  catch (error) {
-    toast.error(formatError(error))
-  }
 }
 
 async function confirmToggle() {
@@ -106,9 +82,9 @@ async function confirmToggle() {
       <EyeIcon aria-hidden="true" />
       查看详情
     </DropdownMenuItem>
-    <DropdownMenuItem :disabled="!row.code" @click="editOpen = true">
+    <DropdownMenuItem :disabled="!row.code" @click="emit('edit', row)">
       <PencilIcon aria-hidden="true" />
-      编辑名称
+      编辑
     </DropdownMenuItem>
     <DropdownMenuItem :disabled="!row.code" @click="toggleOpen = true">
       <CircleSlashIcon v-if="row.active !== false" aria-hidden="true" />
@@ -137,30 +113,6 @@ async function confirmToggle() {
       <DialogFooter>
         <Button type="button" variant="outline" @click="detailOpen = false">关闭</Button>
       </DialogFooter>
-    </DialogContent>
-  </Dialog>
-
-  <!-- 编辑名称 -->
-  <Dialog v-model:open="editOpen">
-    <DialogContent class="sm:max-w-lg">
-      <DialogHeader>
-        <DialogTitle>编辑{{ entityLabel }}名称</DialogTitle>
-        <DialogDescription>当前支持修改名称，其它字段编辑后续开放。</DialogDescription>
-      </DialogHeader>
-      <form class="grid gap-4" @submit.prevent="submitName">
-        <Field>
-          <FieldLabel for="edit-name">名称</FieldLabel>
-          <Input id="edit-name" v-model="editName" autocomplete="off" required />
-          <FieldDescription>编码不可修改。</FieldDescription>
-        </Field>
-        <DialogFooter>
-          <Button type="button" variant="outline" @click="editOpen = false">取消</Button>
-          <Button type="submit" :disabled="actions.updatePending.value || !editName.trim()">
-            <Spinner v-if="actions.updatePending.value" aria-hidden="true" />
-            保存
-          </Button>
-        </DialogFooter>
-      </form>
     </DialogContent>
   </Dialog>
 

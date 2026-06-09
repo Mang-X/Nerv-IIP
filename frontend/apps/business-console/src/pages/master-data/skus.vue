@@ -65,6 +65,9 @@ const skuActions = useMasterDataResourceActions('sku')
 const localSkus = shallowRef<BusinessConsoleResourceItem[]>([])
 const createOpen = shallowRef(false)
 const createShowErrors = ref(false)
+// 编辑态：null=新建，否则=正在编辑的物料编码。
+const editingCode = shallowRef<string | null>(null)
+const editLoading = shallowRef(false)
 const createSuccess = shallowRef('')
 
 const keyword = ref('')
@@ -198,14 +201,9 @@ function splitTags(value: string) {
 function resetCreateForm() {
   Object.assign(createForm, { ...SKU_FORM_DEFAULTS, idempotencyKey: newSkuIdempotencyKey() })
 }
-async function submitSku() {
-  if (!canCreateSku.value) {
-    createShowErrors.value = true
-    return
-  }
-  const body: BusinessConsoleCreateSkuRequest = {
-    organizationId: createForm.organizationId.trim(),
-    environmentId: createForm.environmentId.trim(),
+// 物料字段（编辑/新建共用），编辑时随 update 一并提交（编码不可改）。
+function skuFieldPatch() {
+  return {
     name: createForm.name.trim(),
     baseUomCode: createForm.baseUomCode.trim(),
     category: createForm.category.trim(),
@@ -216,19 +214,77 @@ async function submitSku() {
     storageConditionCode: createForm.storageConditionCode.trim(),
     defaultBarcodeRuleCode: createForm.defaultBarcodeRuleCode.trim(),
     qualityRequired: createForm.qualityRequired,
-    complianceTags: splitTags(createForm.complianceTags),
-    idempotencyKey: createForm.idempotencyKey,
   }
-  const response = await createSku(body)
-  const createdCode = response?.data?.code ?? ''
-  localSkus.value = [
-    { resourceType: 'sku', code: createdCode, displayName: body.name, active: true, snapshotVersion: '本次录入' },
-    ...localSkus.value,
-  ]
-  createSuccess.value = `物料「${body.name}」已创建${createdCode ? `，编号 ${createdCode}` : ''}。`
+}
+async function submitSku() {
+  if (!canCreateSku.value) {
+    createShowErrors.value = true
+    return
+  }
+  try {
+    if (editingCode.value) {
+      await skuActions.update(editingCode.value, skuFieldPatch())
+      createSuccess.value = `物料「${createForm.name.trim()}」已更新。`
+    }
+    else {
+      const body: BusinessConsoleCreateSkuRequest = {
+        organizationId: createForm.organizationId.trim(),
+        environmentId: createForm.environmentId.trim(),
+        ...skuFieldPatch(),
+        complianceTags: splitTags(createForm.complianceTags),
+        idempotencyKey: createForm.idempotencyKey,
+      }
+      const response = await createSku(body)
+      const createdCode = response?.data?.code ?? ''
+      localSkus.value = [
+        { resourceType: 'sku', code: createdCode, displayName: body.name, active: true, snapshotVersion: '本次录入' },
+        ...localSkus.value,
+      ]
+      createSuccess.value = `物料「${body.name}」已创建${createdCode ? `，编号 ${createdCode}` : ''}。`
+    }
+    resetCreateForm()
+    editingCode.value = null
+    createShowErrors.value = false
+    createOpen.value = false
+  }
+  catch {
+    // 失败信息由页面错误区/创建错误区呈现。
+  }
+}
+function openCreate() {
+  editingCode.value = null
   resetCreateForm()
   createShowErrors.value = false
-  createOpen.value = false
+  createForm.organizationId = filters.organizationId
+  createForm.environmentId = filters.environmentId
+  createOpen.value = true
+}
+// 编辑：拉全字段详情回填后打开同一对话框（编码不可改）。
+async function openEdit(row: BusinessConsoleResourceItem) {
+  if (!row.code) return
+  editingCode.value = row.code
+  createShowErrors.value = false
+  editLoading.value = true
+  createOpen.value = true
+  try {
+    const d = await skuActions.fetchDetail(row.code)
+    Object.assign(createForm, {
+      name: d?.name ?? row.displayName ?? '',
+      baseUomCode: d?.baseUomCode || 'PCS',
+      category: d?.category ?? '',
+      materialType: d?.materialType ?? SKU_FORM_DEFAULTS.materialType,
+      batchTrackingPolicy: d?.batchTrackingPolicy ?? SKU_FORM_DEFAULTS.batchTrackingPolicy,
+      serialTrackingPolicy: d?.serialTrackingPolicy ?? SKU_FORM_DEFAULTS.serialTrackingPolicy,
+      shelfLifePolicyCode: d?.shelfLifePolicyCode ?? SKU_FORM_DEFAULTS.shelfLifePolicyCode,
+      storageConditionCode: d?.storageConditionCode ?? SKU_FORM_DEFAULTS.storageConditionCode,
+      defaultBarcodeRuleCode: d?.defaultBarcodeRuleCode ?? SKU_FORM_DEFAULTS.defaultBarcodeRuleCode,
+      qualityRequired: d?.qualityRequired ?? true,
+      complianceTags: '',
+    })
+  }
+  finally {
+    editLoading.value = false
+  }
 }
 function newSkuIdempotencyKey() {
   return `sku-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -256,15 +312,17 @@ function isNonEmpty(value: string) {
         </Button>
         <Dialog v-model:open="createOpen" @update:open="syncContextFromFilters">
           <DialogTrigger as-child>
-            <Button size="sm" type="button">
+            <Button size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建物料
             </Button>
           </DialogTrigger>
           <DialogContent class="sm:max-w-3xl">
             <DialogHeader>
-              <DialogTitle>新建物料</DialogTitle>
-              <DialogDescription>为采购、生产、库存和销售建立统一的物料档案。带 * 为必填项。</DialogDescription>
+              <DialogTitle>{{ editingCode ? '编辑物料' : '新建物料' }}</DialogTitle>
+              <DialogDescription>
+                {{ editingCode ? '修改物料档案（编码不可修改）。带 * 为必填项。' : '为采购、生产、库存和销售建立统一的物料档案。带 * 为必填项。' }}
+              </DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitSku">
               <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
@@ -374,9 +432,9 @@ function isNonEmpty(value: string) {
               </FieldGroup>
               <DialogFooter>
                 <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createSkuPending">
-                  <Spinner v-if="createSkuPending" aria-hidden="true" />
-                  保存物料
+                <Button type="submit" :disabled="createSkuPending || skuActions.updatePending.value || editLoading">
+                  <Spinner v-if="createSkuPending || skuActions.updatePending.value" aria-hidden="true" />
+                  {{ editingCode ? '保存修改' : '保存物料' }}
                 </Button>
               </DialogFooter>
             </form>
@@ -426,7 +484,7 @@ function isNonEmpty(value: string) {
         <span class="tabular-nums">{{ value }}</span>
       </template>
       <template #cell-actions="{ row }">
-        <MasterDataRowActions :row="row" entity-label="物料" :detail-fields="skuDetailFields(row)" :actions="skuActions" />
+        <MasterDataRowActions :row="row" entity-label="物料" :detail-fields="skuDetailFields(row)" :actions="skuActions" @edit="openEdit" />
       </template>
     </DataTable>
 
