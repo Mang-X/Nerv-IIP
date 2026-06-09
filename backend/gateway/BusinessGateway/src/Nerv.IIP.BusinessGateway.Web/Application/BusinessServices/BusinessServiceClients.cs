@@ -6,7 +6,6 @@ using System.Text.Json;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
-using Nerv.IIP.Sdk.Core;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -969,24 +968,21 @@ public sealed class BusinessServiceProxyException : Exception
 
     private static bool IsSafeDownstreamMessage(string? downstreamMessage)
     {
-        if (string.IsNullOrWhiteSpace(downstreamMessage) || downstreamMessage.Length > 128)
+        if (string.IsNullOrWhiteSpace(downstreamMessage) || downstreamMessage.Length > 500)
         {
             return false;
         }
 
         var first = downstreamMessage[0];
-        if (!IsAsciiLetter(first) && !char.IsAsciiDigit(first))
+        if (char.IsWhiteSpace(first))
         {
             return false;
         }
 
         return downstreamMessage.All(static value =>
-            IsAsciiLetter(value) ||
-            char.IsAsciiDigit(value) ||
-            value is '-' or '_' or '.');
+            !char.IsControl(value) &&
+            value is not '<' and not '>' and not '{' and not '}');
     }
-
-    private static bool IsAsciiLetter(char value) => value is >= 'a' and <= 'z' or >= 'A' and <= 'Z';
 }
 
 public abstract class BusinessServiceHttpClient(HttpClient httpClient)
@@ -1020,9 +1016,7 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         try
         {
-            return jsonOptions is null
-                ? await PlatformApiClient.ReadResponseDataAsync<TResponse>(response, cancellationToken)
-                : await ReadResponseDataAsync<TResponse>(response, jsonOptions, cancellationToken);
+            return await ReadResponseDataAsync<TResponse>(response, jsonOptions ?? JsonOptions, cancellationToken);
         }
         catch (JsonException ex)
         {
@@ -1054,9 +1048,19 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         }
 
         using var document = JsonDocument.Parse(json);
-        var payload = document.RootElement.TryGetProperty("data", out var data)
+        var root = document.RootElement;
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("success", out var success) &&
+            success.ValueKind == JsonValueKind.False)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                DownstreamEnvelopeStatusCode(root),
+                DownstreamEnvelopeMessage(root));
+        }
+
+        var payload = root.TryGetProperty("data", out var data)
             ? data
-            : document.RootElement;
+            : root;
 
         if (payload.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
         {
@@ -1066,6 +1070,24 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         return payload.Deserialize<TResponse>(jsonOptions)
             ?? throw new InvalidOperationException("Platform API returned an empty response data payload.");
     }
+
+    private static HttpStatusCode DownstreamEnvelopeStatusCode(JsonElement root)
+    {
+        if (root.TryGetProperty("code", out var code) &&
+            code.ValueKind == JsonValueKind.Number &&
+            code.TryGetInt32(out var statusCode) &&
+            statusCode is >= 400 and <= 599)
+        {
+            return (HttpStatusCode)statusCode;
+        }
+
+        return HttpStatusCode.BadRequest;
+    }
+
+    private static string? DownstreamEnvelopeMessage(JsonElement root) =>
+        root.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String
+            ? message.GetString()
+            : null;
 
     private static async Task<string?> ReadDownstreamEnvelopeMessageAsync(
         HttpResponseMessage response,

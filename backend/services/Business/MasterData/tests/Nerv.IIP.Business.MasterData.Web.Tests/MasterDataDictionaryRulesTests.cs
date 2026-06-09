@@ -86,6 +86,40 @@ public sealed class MasterDataDictionaryRulesTests
     }
 
     [Fact]
+    public async Task Seeded_dictionary_accepts_issue_355_create_sku_payload()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new MasterDataSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
+        var handler = new CreateSkuCommandHandler(
+            new SkuRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext));
+
+        var result = await handler.Handle(
+            new CreateSkuCommand(
+                "org-001",
+                "env-dev",
+                "SKU-DIAG-001",
+                "Diagnostic SKU",
+                "PCS",
+                "electronic",
+                "finished-goods",
+                "none",
+                "none",
+                "none",
+                "ambient",
+                "code128",
+                true,
+                [],
+                "diag-001"),
+            CancellationToken.None);
+
+        Assert.Equal("sku", result.ResourceType);
+        Assert.Equal("SKU-DIAG-001", result.Code);
+    }
+
+    [Fact]
     public async Task Update_sku_command_validates_controlled_dictionary_fields()
     {
         await using var provider = CreateInMemoryProvider();

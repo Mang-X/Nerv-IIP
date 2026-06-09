@@ -2463,6 +2463,44 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Master_data_http_client_treats_success_false_envelope_as_downstream_business_error()
+    {
+        const string downstreamMessage = "SKU field 'category' references inactive or missing reference data 'product-category:electronic'.";
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = false,
+            message = downstreamMessage,
+            code = 400,
+            errorData = Array.Empty<object>(),
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.CreateSkuAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateSkuRequest(
+                "org-001",
+                "env-dev",
+                null,
+                "Diagnostic SKU",
+                "PCS",
+                "electronic",
+                "finished-goods",
+                "none",
+                "none",
+                "none",
+                "ambient",
+                "code128",
+                true,
+                [],
+                "diag-001"),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+        Assert.Equal(downstreamMessage, ex.Message);
+    }
+
+    [Fact]
     public async Task Master_data_http_client_does_not_expose_plain_text_downstream_error_bodies()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
