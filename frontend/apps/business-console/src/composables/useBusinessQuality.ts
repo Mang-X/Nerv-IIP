@@ -12,12 +12,11 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { bindBusinessContext, hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
-export interface QualityListFilters {
-  organizationId: string
-  environmentId: string
+export interface QualityListFilters extends BusinessContextFields {
   status?: string
   keyword?: string
   skip: number
@@ -25,13 +24,13 @@ export interface QualityListFilters {
 }
 
 function defaultFilters(initial: Partial<QualityListFilters> = {}): QualityListFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
     skip: 0,
     take: DEFAULT_TAKE,
     ...initial,
-  })
+  }))
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -80,11 +79,12 @@ function ignoreBackgroundError(_error: unknown) {}
 export function useQualityInspectionPlans(initialFilters: Partial<QualityListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
 
-  const plansQuery = useQuery(() =>
-    listBusinessConsoleQualityInspectionPlansQueryOptions({
+  const plansQuery = useQuery(() => ({
+    ...listBusinessConsoleQualityInspectionPlansQueryOptions({
       query: toListQuery(filters),
     }),
-  )
+    enabled: hasBusinessContext(filters),
+  }))
 
   const createRecordMutation = useMutation(
     createBusinessConsoleQualityInspectionRecordMutationOptions(),
@@ -108,11 +108,12 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
   const filters = defaultFilters(initialFilters)
   const queryCache = useQueryCache()
 
-  const ncrsQuery = useQuery(() =>
-    listBusinessConsoleQualityNcrsQueryOptions({
+  const ncrsQuery = useQuery(() => ({
+    ...listBusinessConsoleQualityNcrsQueryOptions({
       query: toListQuery(filters),
     }),
-  )
+    enabled: hasBusinessContext(filters),
+  }))
 
   const submitDispositionMutation = useMutation({
     ...submitBusinessConsoleQualityNcrDispositionMutationOptions(),
