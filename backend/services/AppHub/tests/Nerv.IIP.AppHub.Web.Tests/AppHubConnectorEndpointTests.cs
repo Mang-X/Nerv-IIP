@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -9,6 +10,31 @@ namespace Nerv.IIP.AppHub.Web.Tests;
 
 public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
+    private const string InternalServiceBearerToken = "local-internal-service-token";
+
+    [Fact]
+    public async Task Instance_query_endpoints_require_internal_service_authorization()
+    {
+        var client = factory.CreateClient();
+        var query = new InstanceListQuery("org-unauthorized", "env-dev", 1, 20, "instanceName", "asc", null);
+
+        using var list = await client.PostAsJsonAsync("/internal/apphub/v1/instances/query", query);
+        using var detail = await client.GetAsync("/internal/apphub/v1/instances/instance-missing?organizationId=org-unauthorized&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, list.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, detail.StatusCode);
+    }
+
+    [Fact]
+    public async Task Health_endpoint_remains_anonymous()
+    {
+        var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/health");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     [Fact]
     public async Task Connector_ingestion_requires_local_connector_credential()
     {
@@ -39,6 +65,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         using var snapshot = await client.PostAsJsonAsync("/api/connectors/v1/state-snapshots", CreateSnapshot(scenario));
         Assert.Equal(HttpStatusCode.NoContent, snapshot.StatusCode);
 
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
         var query = new InstanceListQuery(scenario.OrganizationId, scenario.EnvironmentId, 1, 20, "instanceName", "asc", null);
         using var list = await client.PostAsJsonAsync("/internal/apphub/v1/instances/query", query);
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 import {
   closeBusinessConsoleQualityNcrMutationOptions,
@@ -8,10 +9,12 @@ import {
   listBusinessConsoleQualityNcrsQueryOptions,
   submitBusinessConsoleQualityNcrDispositionMutationOptions,
 } from '@nerv-iip/api-client'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQualityInspectionPlans, useQualityNcrs } from './useBusinessQuality'
 
 const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
+  queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
 }))
 
@@ -58,6 +61,7 @@ vi.mock('@pinia/colada', () => ({
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    coladaState.queryFactoriesById.set(id, optionsFactory)
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
@@ -73,8 +77,10 @@ vi.mock('@pinia/colada', () => ({
 
 describe('business quality composables', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.invalidateQueries.mockClear()
+    coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
   })
 
@@ -124,6 +130,28 @@ describe('business quality composables', () => {
 
     expect(inspectionPlans.value).toEqual([])
     expect(ncrs.value).toEqual([])
+  })
+
+  it('uses the latest business context store values for quality list queries', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-qa-a', environmentId: 'env-qa-a' })
+
+    const { filters } = useQualityInspectionPlans({ keyword: 'plan' })
+    filters.status = 'active'
+
+    context.patchContext({ organizationId: 'org-qa-b', environmentId: 'env-qa-b' })
+    coladaState.queryFactoriesById.get('listBusinessConsoleQualityInspectionPlans')?.()
+
+    expect(listBusinessConsoleQualityInspectionPlansQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-qa-b',
+        environmentId: 'env-qa-b',
+        status: 'active',
+        keyword: 'plan',
+        skip: 0,
+        take: 100,
+      },
+    })
   })
 
   it('passes keyword filters to inspection plan and NCR list queries', () => {
