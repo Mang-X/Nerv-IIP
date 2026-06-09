@@ -84,6 +84,28 @@ const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
   DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
+// 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
+const selectStubs = {
+  Select: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+  },
+  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectValue: { template: '<span />' },
+  SelectContent: { template: '<slot />' },
+  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+}
+
+async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
+  await wrapper.findAll('button').find((b) => b.text().includes('新建物料'))!.trigger('click')
+  await flushPromises()
+  await wrapper.find('#sku-name').setValue('测试物料')
+  // 仅产品分类默认空（其它字段默认值均合法），设为合法码值即可通过校验。
+  const categorySelect = wrapper.findAll('select').find((s) => s.findAll('option').some((o) => o.text().includes('电子料')))
+  await categorySelect!.setValue('electronic')
+  await flushPromises()
+}
 
 beforeEach(() => {
   stub.createSku.mockClear()
@@ -153,5 +175,38 @@ describe('master-data skus page', () => {
 
     expect(wrapper.text()).toContain('请完整填写带 * 的必填项')
     expect(stub.createSku).not.toHaveBeenCalled()
+  })
+
+  it('填全必填后提交：调用 createSku 并弹成功 toast', async () => {
+    const wrapper = mount(SkusPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createSku).toHaveBeenCalledTimes(1)
+    const body = stub.createSku.mock.calls[0]![0] as { name: string, category: string }
+    expect(body.name).toBe('测试物料')
+    expect(body.category).toBe('electronic')
+    expect(stub.toastSuccess).toHaveBeenCalled()
+    expect(stub.toastError).not.toHaveBeenCalled()
+  })
+
+  it('提交失败：弹错误 toast（人话）且不重置/不关闭表单', async () => {
+    stub.createSku.mockRejectedValueOnce(new Error('downstream-invalid-response'))
+    const wrapper = mount(SkusPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createSku).toHaveBeenCalledTimes(1)
+    // 失败走 toast.error 的人话映射，不暴露技术串
+    expect(stub.toastError).toHaveBeenCalledWith('服务暂时不可用，请稍后重试。')
+    expect(stub.toastSuccess).not.toHaveBeenCalled()
+    // 表单未被重置（仍可重试）：名称保留
+    expect((wrapper.find('#sku-name').element as HTMLInputElement).value).toBe('测试物料')
   })
 })
