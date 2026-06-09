@@ -8,6 +8,8 @@ public enum InventoryMovementRequestStatus
 {
     Pending = 0,
     Posted = 1,
+    // Reserved for a future Inventory posting-failed integration event. Current failures stay Pending
+    // and are diagnosed through CAP retry plus the service-local persistent DLQ.
     Failed = 2,
 }
 
@@ -140,6 +142,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         PostedAtUtc = DateTime.UtcNow;
     }
 
+    // Future posting-failed consumers should enter through this method; the current async posting flow
+    // leaves requests Pending when Inventory handling fails and relies on CAP retry/DLQ/replay.
     public void MarkFailed(string failureCode, string failureMessage)
     {
         FailureCode = WmsText.Required(failureCode, nameof(failureCode));
