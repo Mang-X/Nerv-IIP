@@ -87,6 +87,11 @@ describe('master-data reference-data page', () => {
     const wrapper = mount(ReferenceDataPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
+    // 默认 CodeSet material-type 为系统枚举（不可新增），先切到可维护分组再开新建对话框。
+    const storageTab = wrapper.find('nav[aria-label="字典分组"]').findAll('button').find((b) => b.text().includes('仓储条件'))!
+    await storageTab.trigger('click')
+    await flushPromises()
+
     await wrapper.findAll('button').find((b) => b.text().includes('新建字典条目'))!.trigger('click')
     await flushPromises()
 

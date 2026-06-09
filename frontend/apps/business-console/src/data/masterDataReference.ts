@@ -76,6 +76,14 @@ export const BARCODE_RULE_OPTIONS: RefOption[] = [
   { value: 'customer-spec', label: '客户指定' },
 ]
 
+/** 合规标签（CodeSet: compliance-tag，平台预置+工厂可维护）。 */
+export const COMPLIANCE_TAG_OPTIONS: RefOption[] = [
+  { value: 'rohs', label: 'RoHS' },
+  { value: 'reach', label: 'REACH' },
+  { value: 'msd', label: '湿敏元件' },
+  { value: 'ul', label: 'UL 认证' },
+]
+
 /** 计量单位（CodeSet: uom，§5.2 种子的常用子集）。 */
 export const UOM_OPTIONS: RefOption[] = [
   { value: 'PCS', label: '个/件' },

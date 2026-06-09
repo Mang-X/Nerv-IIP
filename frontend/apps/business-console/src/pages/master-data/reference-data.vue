@@ -40,25 +40,29 @@ definePage({ meta: { requiresAuth: true, title: '数据字典' } })
 
 // 平台预置的受控值分组（CodeSet → 中文名，对齐产品文档 §5.1）。Phase 1 作左侧固定主列表，
 // Phase 2 后端字典就绪后可改为动态拉取，UI 不变。
+// kind 决定可维护性：system-enum=系统枚举（只读，不可新增）；platform-preset=平台预置（可新增）；
+// factory-custom=工厂自定义（可新增）。对齐数据字典规则 §2 的治理分级。
 interface CodeSetMeta {
   codeSet: string
   label: string
+  kind: 'system-enum' | 'platform-preset' | 'factory-custom'
 }
 const CODE_SETS: CodeSetMeta[] = [
-  { codeSet: 'material-type', label: '物料类型' },
-  { codeSet: 'product-category', label: '产品/物料分类' },
-  { codeSet: 'uom-dimension', label: '计量量纲' },
-  { codeSet: 'batch-tracking-policy', label: '批次策略' },
-  { codeSet: 'serial-tracking-policy', label: '序列策略' },
-  { codeSet: 'shelf-life-policy', label: '保质期策略' },
-  { codeSet: 'storage-condition', label: '仓储条件' },
-  { codeSet: 'barcode-rule', label: '条码规则' },
-  { codeSet: 'partner-type', label: '伙伴角色' },
-  { codeSet: 'quality-reason', label: '质量原因' },
-  { codeSet: 'compliance-tag', label: '合规标签' },
-  { codeSet: 'device-status', label: '设备状态' },
-  { codeSet: 'line-type', label: '产线类型' },
-  { codeSet: 'work-center-type', label: '工作中心粒度' },
+  { codeSet: 'material-type', label: '物料类型', kind: 'system-enum' },
+  { codeSet: 'product-category', label: '产品/物料分类', kind: 'platform-preset' },
+  { codeSet: 'uom-dimension', label: '计量量纲', kind: 'system-enum' },
+  { codeSet: 'batch-tracking-policy', label: '批次策略', kind: 'system-enum' },
+  { codeSet: 'serial-tracking-policy', label: '序列策略', kind: 'system-enum' },
+  { codeSet: 'shelf-life-policy', label: '保质期策略', kind: 'system-enum' },
+  { codeSet: 'storage-condition', label: '仓储条件', kind: 'platform-preset' },
+  { codeSet: 'barcode-rule', label: '条码规则', kind: 'platform-preset' },
+  { codeSet: 'partner-type', label: '伙伴角色', kind: 'system-enum' },
+  { codeSet: 'skill-level', label: '技能等级', kind: 'system-enum' },
+  { codeSet: 'quality-reason', label: '质量原因', kind: 'factory-custom' },
+  { codeSet: 'compliance-tag', label: '合规标签', kind: 'platform-preset' },
+  { codeSet: 'device-status', label: '设备状态', kind: 'system-enum' },
+  { codeSet: 'line-type', label: '产线类型', kind: 'system-enum' },
+  { codeSet: 'work-center-type', label: '工作中心粒度', kind: 'system-enum' },
 ]
 
 const {
@@ -85,7 +89,10 @@ const createShowErrors = ref(false)
 const editingCode = shallowRef<string | null>(null)
 const editLoading = shallowRef(false)
 
+const selectedCodeSetMeta = computed(() => CODE_SETS.find((s) => s.codeSet === selectedCodeSet.value) ?? CODE_SETS[0]!)
 const selectedLabel = computed(() => codeSetLabel(selectedCodeSet.value))
+// 系统枚举由平台维护，不可新增条目；平台预置 / 工厂自定义可新增。
+const selectedCodeSetCanAdd = computed(() => selectedCodeSetMeta.value.kind !== 'system-enum')
 const activeCount = computed(() => codes.value.filter((r) => r.active !== false).length)
 
 const listRows = computed(() => {
@@ -127,7 +134,7 @@ const createForm = reactive({
   ...CREATE_FORM_DEFAULTS,
 })
 const canCreateCode = computed(() =>
-  [createForm.codeSet, createForm.code, createForm.name].every(isNonEmpty),
+  selectedCodeSetCanAdd.value && [createForm.codeSet, createForm.code, createForm.name].every(isNonEmpty),
 )
 
 // 选中 CodeSet 即服务端过滤（真分页：codeSet + skip/take 都交给后端）。
@@ -248,7 +255,7 @@ function isNonEmpty(value: string) {
         </Button>
         <Dialog v-model:open="createOpen" @update:open="syncFormOnOpen">
           <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+            <Button size="sm" type="button" :disabled="!selectedCodeSetCanAdd" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建字典条目
             </Button>
@@ -266,7 +273,14 @@ function isNonEmpty(value: string) {
                 <Select v-model="createForm.codeSet" :disabled="!!editingCode">
                   <SelectTrigger id="ref-code-set"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem v-for="s in CODE_SETS" :key="s.codeSet" :value="s.codeSet">{{ s.label }}</SelectItem>
+                    <SelectItem
+                      v-for="s in CODE_SETS"
+                      :key="s.codeSet"
+                      :value="s.codeSet"
+                      :disabled="s.kind === 'system-enum'"
+                    >
+                      {{ s.label }}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <FieldDescription>该条目归属的字典分组。</FieldDescription>
@@ -285,7 +299,7 @@ function isNonEmpty(value: string) {
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createCodePending || codeActions.updatePending.value || editLoading">
+                <Button type="submit" :disabled="createCodePending || codeActions.updatePending.value || editLoading || (!editingCode && !canCreateCode)">
                   <Spinner v-if="createCodePending || codeActions.updatePending.value" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '保存条目' }}
                 </Button>
@@ -303,7 +317,7 @@ function isNonEmpty(value: string) {
     </SectionCards>
 
     <p class="text-sm text-muted-foreground">
-      字典是平台受控值来源；物料等表单的分类、单位、存储条件等下拉取自这里（完整联动随初始数据接入）。
+      字典是平台受控值来源；物料等表单的分类、单位、存储条件等下拉实时取自这里。系统枚举由平台维护，平台预置与工厂自定义可新增条目。
     </p>
 
     <div class="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
@@ -335,7 +349,7 @@ function isNonEmpty(value: string) {
           :row-key="rowKey"
           :client-sort="false"
           :loading="codesPending"
-          :empty-message="`「${selectedLabel}」暂无条目。可新建字典条目。`"
+          :empty-message="selectedCodeSetCanAdd ? `「${selectedLabel}」暂无条目。可新建字典条目。` : `「${selectedLabel}」暂无条目。该分组由平台维护。`"
         >
           <template #cell-active="{ row }">
             <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />

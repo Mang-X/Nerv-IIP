@@ -30,6 +30,7 @@ import {
   type BusinessConsoleMasterDataResourceDetail,
   type BusinessConsoleResourceItem,
   type BusinessConsoleResourceListEnvelope,
+  type BusinessConsoleSetMasterDataResourceEnabledRequest,
   type BusinessConsoleTeamMemberItem,
   type BusinessConsoleTeamMemberListEnvelope,
   type BusinessConsoleUpdateMasterDataResourceRequest,
@@ -53,6 +54,7 @@ export interface MasterDataListFilters extends BusinessContextFilters {
 }
 
 export interface MasterDataResourceFilters extends MasterDataListFilters {
+  codeSet?: string
   resourceType: string
 }
 
@@ -77,9 +79,10 @@ function defaultListFilters(): MasterDataListFilters {
   })
 }
 
-function defaultResourceFilters(resourceType: string): MasterDataResourceFilters {
+function defaultResourceFilters(resourceType: string, codeSet?: string): MasterDataResourceFilters {
   return reactive({
     ...defaultContext(),
+    ...optionalQuery('codeSet', codeSet),
     resourceType,
     skip: 0,
     take: DEFAULT_TAKE,
@@ -252,9 +255,7 @@ export function useBusinessWorkshops() {
  * 新增走 reference-data 专属端点（需 codeSet/code/name + org/env）。
  */
 export function useReferenceDataCodes() {
-  const filters = reactive<MasterDataResourceFilters & { codeSet?: string }>({
-    ...defaultResourceFilters('reference-data'),
-  })
+  const filters = defaultResourceFilters('reference-data')
   const queryCache = useQueryCache()
 
   const codesQuery = useQuery(() =>
@@ -293,8 +294,8 @@ export function useReferenceDataCodes() {
   }
 }
 
-export function useBusinessMasterDataResources(resourceType: string) {
-  const filters = defaultResourceFilters(resourceType)
+export function useBusinessMasterDataResources(resourceType: string, options: { codeSet?: string } = {}) {
+  const filters = defaultResourceFilters(resourceType, options.codeSet)
 
   const resourcesQuery = useQuery(() =>
     listBusinessConsoleMasterDataResourcesQueryOptions({
@@ -302,6 +303,7 @@ export function useBusinessMasterDataResources(resourceType: string) {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
         resourceType: filters.resourceType,
+        ...optionalQuery('codeSet', filters.codeSet),
         ...optionalQuery('includeDisabled', filters.includeDisabled),
         skip: filters.skip,
         take: filters.take,
@@ -449,8 +451,8 @@ export function useMasterDataResourceActions(resourceType: string) {
 
   return {
     update: (code: string, patch: Partial<BusinessConsoleUpdateMasterDataResourceRequest>) => callPathBody(updateMutation, code, patch),
-    disable: (code: string) => callPathBody(disableMutation, code, {}),
-    enable: (code: string) => callPathBody(enableMutation, code, {}),
+    disable: (code: string, patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {}) => callPathBody(disableMutation, code, patch),
+    enable: (code: string, patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {}) => callPathBody(enableMutation, code, patch),
     fetchDetail,
     updatePending: updateMutation.isLoading,
     disablePending: disableMutation.isLoading,

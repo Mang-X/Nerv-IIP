@@ -2,7 +2,11 @@
 import type { BusinessConsoleCreateSkuRequest, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
-import { useBusinessSkus, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
+import {
+  useBusinessMasterDataResources,
+  useBusinessSkus,
+  useMasterDataResourceActions,
+} from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -40,12 +44,14 @@ import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   BARCODE_RULE_OPTIONS,
   BATCH_TRACKING_OPTIONS,
+  COMPLIANCE_TAG_OPTIONS,
   MATERIAL_TYPE_OPTIONS,
   PRODUCT_CATEGORY_OPTIONS,
   SERIAL_TRACKING_OPTIONS,
   SHELF_LIFE_OPTIONS,
   STORAGE_CONDITION_OPTIONS,
   UOM_OPTIONS,
+  type RefOption,
 } from '@/data/masterDataReference'
 
 definePage({ meta: { requiresAuth: true, title: '物料与产品' } })
@@ -61,6 +67,25 @@ const {
   skusTotal,
 } = useBusinessSkus()
 const skuActions = useMasterDataResourceActions('sku')
+
+// 字典化下拉「实时拉取 + 常量兜底」：每个 codeSet 一个 resources 查询，服务端按 codeSet 过滤；
+// 后端某些 codeSet 可能仍空，届时由对应常量兜底，保证表单始终可用、可选。
+const { resources: productCategoryResources, resourcesPending: productCategoryPending }
+  = useBusinessMasterDataResources('reference-data', { codeSet: 'product-category' })
+const { resources: materialTypeResources, resourcesPending: materialTypePending }
+  = useBusinessMasterDataResources('reference-data', { codeSet: 'material-type' })
+const { resources: batchPolicyResources, resourcesPending: batchPolicyPending }
+  = useBusinessMasterDataResources('reference-data', { codeSet: 'batch-tracking-policy' })
+const { resources: serialPolicyResources, resourcesPending: serialPolicyPending }
+  = useBusinessMasterDataResources('reference-data', { codeSet: 'serial-tracking-policy' })
+const { resources: shelfLifePolicyResources, resourcesPending: shelfLifePolicyPending }
+  = useBusinessMasterDataResources('reference-data', { codeSet: 'shelf-life-policy' })
+const { resources: storageConditionResources, resourcesPending: storageConditionPending }
+  = useBusinessMasterDataResources('reference-data', { codeSet: 'storage-condition' })
+const { resources: barcodeRuleResources, resourcesPending: barcodeRulePending }
+  = useBusinessMasterDataResources('reference-data', { codeSet: 'barcode-rule' })
+const { resources: complianceTagResources, resourcesPending: complianceTagPending }
+  = useBusinessMasterDataResources('reference-data', { codeSet: 'compliance-tag' })
 
 // Optimistic rows for items the user created in this session (real entries, never placeholders).
 const localSkus = shallowRef<BusinessConsoleResourceItem[]>([])
@@ -80,8 +105,27 @@ watch(includeDisabled, (value) => {
   filters.includeDisabled = value
 })
 
+interface CreateSkuForm {
+  organizationId: string
+  environmentId: string
+  name: string
+  baseUomCode: string
+  category: string
+  materialType: string
+  batchTrackingPolicy: string
+  serialTrackingPolicy: string
+  shelfLifePolicyCode: string
+  storageConditionCode: string
+  defaultBarcodeRuleCode: string
+  qualityRequired: boolean
+  complianceTags: string[]
+  idempotencyKey: string
+}
+
+type CreateSkuFormDefaults = Omit<CreateSkuForm, 'organizationId' | 'environmentId' | 'idempotencyKey'>
+
 // 默认值取平台中性值（非样板业务词）；产品分类留空，强制用户主动选择。
-const SKU_FORM_DEFAULTS = {
+const SKU_FORM_DEFAULTS: CreateSkuFormDefaults = {
   name: '',
   baseUomCode: 'PCS',
   category: '',
@@ -92,14 +136,57 @@ const SKU_FORM_DEFAULTS = {
   storageConditionCode: 'ambient',
   defaultBarcodeRuleCode: 'code128',
   qualityRequired: true,
-  complianceTags: '',
+  complianceTags: [],
 }
-const createForm = reactive({
+const createForm = reactive<CreateSkuForm>({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
   ...SKU_FORM_DEFAULTS,
+  complianceTags: [...SKU_FORM_DEFAULTS.complianceTags],
   idempotencyKey: newSkuIdempotencyKey(),
 })
+
+// 字典选项「实时优先、常量兜底」：实时启用项（active!==false 且 code 非空）有则用之，否则回退常量。
+function referenceOptions(resources: BusinessConsoleResourceItem[], fallback: readonly RefOption[]) {
+  const liveOptions = resources
+    .filter((resource) => resource.active !== false && isNonEmpty(resource.code ?? ''))
+    .map((resource) => ({
+      label: resource.displayName ?? resource.code ?? '',
+      value: resource.code ?? '',
+    }))
+
+  return liveOptions.length > 0 ? liveOptions : [...fallback]
+}
+
+const productCategoryOptions = computed(() => referenceOptions(productCategoryResources.value, PRODUCT_CATEGORY_OPTIONS))
+const materialTypeOptions = computed(() => referenceOptions(materialTypeResources.value, MATERIAL_TYPE_OPTIONS))
+const batchPolicyOptions = computed(() => referenceOptions(batchPolicyResources.value, BATCH_TRACKING_OPTIONS))
+const serialPolicyOptions = computed(() => referenceOptions(serialPolicyResources.value, SERIAL_TRACKING_OPTIONS))
+const shelfLifePolicyOptions = computed(() => referenceOptions(shelfLifePolicyResources.value, SHELF_LIFE_OPTIONS))
+const storageConditionOptions = computed(() => referenceOptions(storageConditionResources.value, STORAGE_CONDITION_OPTIONS))
+const barcodeRuleOptions = computed(() => referenceOptions(barcodeRuleResources.value, BARCODE_RULE_OPTIONS))
+const complianceTagOptions = computed(() => referenceOptions(complianceTagResources.value, COMPLIANCE_TAG_OPTIONS))
+const dictionaryPending = computed(() =>
+  productCategoryPending.value
+  || materialTypePending.value
+  || batchPolicyPending.value
+  || serialPolicyPending.value
+  || shelfLifePolicyPending.value
+  || storageConditionPending.value
+  || barcodeRulePending.value
+  || complianceTagPending.value,
+)
+const hasRequiredDictionaryOptions = computed(() =>
+  [
+    productCategoryOptions.value,
+    materialTypeOptions.value,
+    batchPolicyOptions.value,
+    serialPolicyOptions.value,
+    shelfLifePolicyOptions.value,
+    storageConditionOptions.value,
+    barcodeRuleOptions.value,
+  ].every((options) => options.length > 0),
+)
 
 // Show an optimistic row only until the (invalidated) query refetches it from the
 // server — otherwise the created SKU would appear twice with a colliding rowKey.
@@ -137,27 +224,29 @@ const totalItems = computed(() => skusTotal.value + pendingLocalSkus.value.lengt
 const activeCount = computed(() => listRows.value.filter((s) => s.active !== false).length)
 const disabledCount = computed(() => listRows.value.filter((s) => s.active === false).length)
 const listErrorMessage = computed(() => formatError(skusError.value))
-// 字典化字段必须取自对应选项集（防止默认值/旧值漂移后提交字典里不存在的码值）。
 function inOptions(options: readonly { value: string }[], value: string) {
   return options.some((option) => option.value === value)
 }
+// 字典化字段必须取自对应「实时选项」（实时为空时由 referenceOptions 已回退常量），防止默认值/旧值漂移后提交字典里不存在的码值。
 const canCreateSku = computed(() =>
-  isNonEmpty(createForm.name)
+  !dictionaryPending.value
+  && hasRequiredDictionaryOptions.value
+  && isNonEmpty(createForm.name)
   && inOptions(UOM_OPTIONS, createForm.baseUomCode)
-  && inOptions(PRODUCT_CATEGORY_OPTIONS, createForm.category)
-  && inOptions(MATERIAL_TYPE_OPTIONS, createForm.materialType)
-  && inOptions(BATCH_TRACKING_OPTIONS, createForm.batchTrackingPolicy)
-  && inOptions(SERIAL_TRACKING_OPTIONS, createForm.serialTrackingPolicy)
-  && inOptions(SHELF_LIFE_OPTIONS, createForm.shelfLifePolicyCode)
-  && inOptions(STORAGE_CONDITION_OPTIONS, createForm.storageConditionCode)
-  && inOptions(BARCODE_RULE_OPTIONS, createForm.defaultBarcodeRuleCode),
+  && inOptions(productCategoryOptions.value, createForm.category)
+  && inOptions(materialTypeOptions.value, createForm.materialType)
+  && inOptions(batchPolicyOptions.value, createForm.batchTrackingPolicy)
+  && inOptions(serialPolicyOptions.value, createForm.serialTrackingPolicy)
+  && inOptions(shelfLifePolicyOptions.value, createForm.shelfLifePolicyCode)
+  && inOptions(storageConditionOptions.value, createForm.storageConditionCode)
+  && inOptions(barcodeRuleOptions.value, createForm.defaultBarcodeRuleCode),
 )
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '物料编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '物料名称', accessor: (r) => r.displayName ?? '无' },
-  { key: 'category', header: '产品分类', width: 'w-28', accessor: (r) => labelOf(PRODUCT_CATEGORY_OPTIONS, r.category) || '无' },
-  { key: 'materialType', header: '物料类型', width: 'w-28', accessor: (r) => labelOf(MATERIAL_TYPE_OPTIONS, r.materialType) || '无' },
+  { key: 'category', header: '产品分类', width: 'w-28', accessor: (r) => labelOf(productCategoryOptions.value, r.category) || '无' },
+  { key: 'materialType', header: '物料类型', width: 'w-28', accessor: (r) => labelOf(materialTypeOptions.value, r.materialType) || '无' },
   { key: 'baseUomCode', header: '基本单位', width: 'w-24', accessor: (r) => labelOf(UOM_OPTIONS, r.baseUomCode) || '无' },
   { key: 'active', header: '状态', width: 'w-24' },
   { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
@@ -172,8 +261,8 @@ function skuDetailFields(row: BusinessConsoleResourceItem) {
   return [
     { label: '物料编码', value: row.code ?? '' },
     { label: '物料名称', value: row.displayName ?? '' },
-    { label: '产品分类', value: labelOf(PRODUCT_CATEGORY_OPTIONS, row.category) },
-    { label: '物料类型', value: labelOf(MATERIAL_TYPE_OPTIONS, row.materialType) },
+    { label: '产品分类', value: labelOf(productCategoryOptions.value, row.category) },
+    { label: '物料类型', value: labelOf(materialTypeOptions.value, row.materialType) },
     { label: '基本单位', value: labelOf(UOM_OPTIONS, row.baseUomCode) },
   ]
 }
@@ -194,12 +283,21 @@ function resetFilters() {
 function rowKey(item: BusinessConsoleResourceItem) {
   return `${item.resourceType ?? 'sku'}:${item.code || item.displayName || ''}`
 }
-function splitTags(value: string) {
-  const tags = value.split(',').map((tag) => tag.trim()).filter(Boolean)
-  return tags.length ? tags : undefined
+function setComplianceTag(code: string, checked: boolean) {
+  if (checked && !createForm.complianceTags.includes(code)) {
+    createForm.complianceTags.push(code)
+    return
+  }
+  if (!checked) {
+    createForm.complianceTags = createForm.complianceTags.filter((tag) => tag !== code)
+  }
 }
 function resetCreateForm() {
-  Object.assign(createForm, { ...SKU_FORM_DEFAULTS, idempotencyKey: newSkuIdempotencyKey() })
+  Object.assign(createForm, {
+    ...SKU_FORM_DEFAULTS,
+    complianceTags: [...SKU_FORM_DEFAULTS.complianceTags],
+    idempotencyKey: newSkuIdempotencyKey(),
+  })
 }
 // 物料字段（编辑/新建共用），编辑时随 update 一并提交（编码不可改）。
 function skuFieldPatch() {
@@ -231,7 +329,7 @@ async function submitSku() {
         organizationId: createForm.organizationId.trim(),
         environmentId: createForm.environmentId.trim(),
         ...skuFieldPatch(),
-        complianceTags: splitTags(createForm.complianceTags),
+        complianceTags: createForm.complianceTags.length ? createForm.complianceTags : undefined,
         idempotencyKey: createForm.idempotencyKey,
       }
       const response = await createSku(body)
@@ -279,7 +377,7 @@ async function openEdit(row: BusinessConsoleResourceItem) {
       storageConditionCode: d?.storageConditionCode ?? SKU_FORM_DEFAULTS.storageConditionCode,
       defaultBarcodeRuleCode: d?.defaultBarcodeRuleCode ?? SKU_FORM_DEFAULTS.defaultBarcodeRuleCode,
       qualityRequired: d?.qualityRequired ?? true,
-      complianceTags: '',
+      complianceTags: [],
     })
   }
   finally {
@@ -343,22 +441,22 @@ function isNonEmpty(value: string) {
                   <FieldLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="sku-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
                 </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(PRODUCT_CATEGORY_OPTIONS, createForm.category)">
+                <Field :data-invalid="createShowErrors && !inOptions(productCategoryOptions, createForm.category)">
                   <FieldLabel for="sku-category">产品分类 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.category">
                     <SelectTrigger id="sku-category"><SelectValue placeholder="请选择分类" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="o in PRODUCT_CATEGORY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                      <SelectItem v-for="option in productCategoryOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FieldDescription>平台预置的产品分类（数据字典种齐并启用后改为实时拉取、可自助维护）。</FieldDescription>
+                  <FieldDescription>来自数据字典 · 产品分类。缺少分类？去数据字典维护。</FieldDescription>
                 </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(MATERIAL_TYPE_OPTIONS, createForm.materialType)">
+                <Field :data-invalid="createShowErrors && !inOptions(materialTypeOptions, createForm.materialType)">
                   <FieldLabel>物料类型 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.materialType">
                     <SelectTrigger aria-label="物料类型"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="o in MATERIAL_TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                      <SelectItem v-for="option in materialTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
@@ -371,7 +469,7 @@ function isNonEmpty(value: string) {
                   <Select v-model="createForm.baseUomCode">
                     <SelectTrigger id="sku-uom"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="o in UOM_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                      <SelectItem v-for="option in UOM_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
                     </SelectContent>
                   </Select>
                   <FieldDescription>库存与核算的最小计量单位。</FieldDescription>
@@ -386,21 +484,21 @@ function isNonEmpty(value: string) {
                     <Checkbox id="sku-quality" v-model:checked="createForm.qualityRequired" />
                   </label>
                 </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(BATCH_TRACKING_OPTIONS, createForm.batchTrackingPolicy)">
+                <Field :data-invalid="createShowErrors && !inOptions(batchPolicyOptions, createForm.batchTrackingPolicy)">
                   <FieldLabel>批次追踪 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.batchTrackingPolicy">
                     <SelectTrigger aria-label="批次追踪"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="o in BATCH_TRACKING_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                      <SelectItem v-for="option in batchPolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(SERIAL_TRACKING_OPTIONS, createForm.serialTrackingPolicy)">
+                <Field :data-invalid="createShowErrors && !inOptions(serialPolicyOptions, createForm.serialTrackingPolicy)">
                   <FieldLabel>序列号追踪 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.serialTrackingPolicy">
                     <SelectTrigger aria-label="序列号追踪"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="o in SERIAL_TRACKING_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                      <SelectItem v-for="option in serialPolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
@@ -408,43 +506,51 @@ function isNonEmpty(value: string) {
 
               <p class="text-sm font-medium text-foreground">存储与条码</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="createShowErrors && !inOptions(SHELF_LIFE_OPTIONS, createForm.shelfLifePolicyCode)">
+                <Field :data-invalid="createShowErrors && !inOptions(shelfLifePolicyOptions, createForm.shelfLifePolicyCode)">
                   <FieldLabel for="sku-shelf">保质期管理 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.shelfLifePolicyCode">
                     <SelectTrigger id="sku-shelf"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="o in SHELF_LIFE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                      <SelectItem v-for="option in shelfLifePolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(STORAGE_CONDITION_OPTIONS, createForm.storageConditionCode)">
+                <Field :data-invalid="createShowErrors && !inOptions(storageConditionOptions, createForm.storageConditionCode)">
                   <FieldLabel for="sku-storage">存储条件 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.storageConditionCode">
                     <SelectTrigger id="sku-storage"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="o in STORAGE_CONDITION_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                      <SelectItem v-for="option in storageConditionOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(BARCODE_RULE_OPTIONS, createForm.defaultBarcodeRuleCode)">
+                <Field :data-invalid="createShowErrors && !inOptions(barcodeRuleOptions, createForm.defaultBarcodeRuleCode)">
                   <FieldLabel for="sku-barcode">默认条码规则 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.defaultBarcodeRuleCode">
                     <SelectTrigger id="sku-barcode"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="o in BARCODE_RULE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                      <SelectItem v-for="option in barcodeRuleOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field>
-                  <FieldLabel for="sku-tags">质量/合规标签</FieldLabel>
-                  <Input id="sku-tags" v-model="createForm.complianceTags" placeholder="如 RoHS、IATF16949" />
-                  <FieldDescription>多个标签用逗号分隔，可留空。</FieldDescription>
+                <Field class="sm:col-span-2">
+                  <FieldLabel>质量/合规标签</FieldLabel>
+                  <div class="grid gap-2 rounded-md border p-3 sm:grid-cols-3">
+                    <label v-for="option in complianceTagOptions" :key="option.value" class="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        :checked="createForm.complianceTags.includes(option.value)"
+                        @update:checked="setComplianceTag(option.value, $event === true)"
+                      />
+                      {{ option.label }}
+                    </label>
+                  </div>
+                  <FieldDescription>来自数据字典 · 合规标签，可多选、可留空。</FieldDescription>
                 </Field>
               </FieldGroup>
               <DialogFooter>
                 <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createSkuPending || skuActions.updatePending.value || editLoading">
-                  <Spinner v-if="createSkuPending || skuActions.updatePending.value" aria-hidden="true" />
+                <Button type="submit" :disabled="createSkuPending || skuActions.updatePending.value || editLoading || dictionaryPending || !canCreateSku">
+                  <Spinner v-if="createSkuPending || skuActions.updatePending.value || dictionaryPending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '保存物料' }}
                 </Button>
               </DialogFooter>
