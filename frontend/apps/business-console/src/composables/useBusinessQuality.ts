@@ -10,8 +10,9 @@ import {
   type BusinessConsoleQualityItem,
   type BusinessConsoleQualityListEnvelope,
 } from '@nerv-iip/api-client'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
 const DEFAULT_TAKE = 100
 
@@ -25,13 +26,25 @@ export interface QualityListFilters {
 }
 
 function defaultFilters(initial: Partial<QualityListFilters> = {}): QualityListFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
+  const context = useBusinessContextStore()
+  const filters = reactive({
+    organizationId: '',
+    environmentId: '',
     skip: 0,
     take: DEFAULT_TAKE,
     ...initial,
   })
+
+  watch(
+    () => [context.organizationId, context.environmentId] as const,
+    ([organizationId, environmentId]) => {
+      filters.organizationId = organizationId
+      filters.environmentId = environmentId
+    },
+    { flush: 'sync', immediate: true },
+  )
+
+  return filters
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -47,6 +60,10 @@ function toListQuery(filters: QualityListFilters) {
     skip: filters.skip,
     take: filters.take,
   }
+}
+
+function hasBusinessContext(filters: QualityListFilters) {
+  return filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0
 }
 
 function listItems(envelope: BusinessConsoleQualityListEnvelope | undefined) {
@@ -80,11 +97,12 @@ function ignoreBackgroundError(_error: unknown) {}
 export function useQualityInspectionPlans(initialFilters: Partial<QualityListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
 
-  const plansQuery = useQuery(() =>
-    listBusinessConsoleQualityInspectionPlansQueryOptions({
+  const plansQuery = useQuery(() => ({
+    ...listBusinessConsoleQualityInspectionPlansQueryOptions({
       query: toListQuery(filters),
     }),
-  )
+    enabled: hasBusinessContext(filters),
+  }))
 
   const createRecordMutation = useMutation(
     createBusinessConsoleQualityInspectionRecordMutationOptions(),
@@ -108,11 +126,12 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
   const filters = defaultFilters(initialFilters)
   const queryCache = useQueryCache()
 
-  const ncrsQuery = useQuery(() =>
-    listBusinessConsoleQualityNcrsQueryOptions({
+  const ncrsQuery = useQuery(() => ({
+    ...listBusinessConsoleQualityNcrsQueryOptions({
       query: toListQuery(filters),
     }),
-  )
+    enabled: hasBusinessContext(filters),
+  }))
 
   const submitDispositionMutation = useMutation({
     ...submitBusinessConsoleQualityNcrDispositionMutationOptions(),

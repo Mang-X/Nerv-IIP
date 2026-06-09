@@ -79,8 +79,9 @@ import {
   type BusinessConsoleRecordProductionReportRequest,
   type BusinessConsoleRunScheduleRequest,
 } from '@nerv-iip/api-client'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 
 const DEFAULT_TAKE = 100
 
@@ -173,45 +174,60 @@ export interface MesTraceabilityFilters extends MesContextFilters {
 }
 
 function defaultFilters(): MesListFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 }
 
 function defaultContext(): MesContextFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-  })
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
+  }))
 }
 
 function defaultFoundationFilters(): MesFoundationReadinessFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-  })
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
+  }))
 }
 
 function defaultWorkOrderContext(): MesWorkOrderContext {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-    workOrderId: 'WO-001',
-  })
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
+    workOrderId: '',
+  }))
 }
 
 function defaultTraceabilityFilters(): MesTraceabilityFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-    workOrderId: 'WO-001',
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
+    workOrderId: '',
     batchOrSerial: '',
     materialLotId: '',
     mode: 'work-order',
-  })
+  }))
+}
+
+function bindBusinessContext<T extends MesContextFilters>(filters: T): T {
+  const context = useBusinessContextStore()
+
+  watch(
+    () => [context.organizationId, context.environmentId] as const,
+    ([organizationId, environmentId]) => {
+      filters.organizationId = organizationId
+      filters.environmentId = environmentId
+    },
+    { flush: 'sync', immediate: true },
+  )
+
+  return filters
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -223,6 +239,14 @@ function toContextQuery(filters: MesContextFilters | MesWorkOrderContext) {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
   }
+}
+
+function hasBusinessContext(filters: MesContextFilters) {
+  return filters.organizationId.trim().length > 0 && filters.environmentId.trim().length > 0
+}
+
+function isNonEmpty(value: string | undefined) {
+  return value !== undefined && value.trim().length > 0
 }
 
 function toFoundationQuery(filters: MesFoundationReadinessFilters) {
@@ -445,19 +469,23 @@ export function useMesProductionPlans() {
   }
 }
 
-export function useMesProductionPlanReadiness(productionPlanId = 'PLAN-001') {
-  const filters = reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
+export function useMesProductionPlanReadiness(productionPlanId = '') {
+  const filters = bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
     productionPlanId,
-  })
+  }))
+  const readinessEnabled = computed(() =>
+    hasBusinessContext(filters) && isNonEmpty(filters.productionPlanId),
+  )
 
-  const readinessQuery = useQuery(() =>
-    getBusinessConsoleMesProductionPlanReadinessQueryOptions({
+  const readinessQuery = useQuery(() => ({
+    ...getBusinessConsoleMesProductionPlanReadinessQueryOptions({
       path: { productionPlanId: filters.productionPlanId },
       query: toContextQuery(filters),
     }),
-  )
+    enabled: readinessEnabled.value,
+  }))
 
   return {
     filters,
@@ -526,20 +554,23 @@ export function useMesOverview() {
 
 export function useMesWorkOrderDetail() {
   const filters = defaultWorkOrderContext()
+  const detailEnabled = computed(() => hasBusinessContext(filters) && isNonEmpty(filters.workOrderId))
 
-  const detailQuery = useQuery(() =>
-    getBusinessConsoleMesWorkOrderDetailQueryOptions({
+  const detailQuery = useQuery(() => ({
+    ...getBusinessConsoleMesWorkOrderDetailQueryOptions({
       path: { workOrderId: filters.workOrderId },
       query: toContextQuery(filters),
     }),
-  )
+    enabled: detailEnabled.value,
+  }))
 
-  const materialQuery = useQuery(() =>
-    getBusinessConsoleMesMaterialReadinessQueryOptions({
+  const materialQuery = useQuery(() => ({
+    ...getBusinessConsoleMesMaterialReadinessQueryOptions({
       path: { workOrderId: filters.workOrderId },
       query: toContextQuery(filters),
     }),
-  )
+    enabled: detailEnabled.value,
+  }))
 
   return {
     detail: computed<BusinessConsoleMesWorkOrderDetailResponse | undefined>(() =>
@@ -558,8 +589,8 @@ export function useMesWorkOrderDetail() {
     ),
     materialReadinessError: materialQuery.error,
     materialReadinessPending: materialQuery.isLoading,
-    refreshDetail: detailQuery.refetch,
-    refreshMaterialReadiness: materialQuery.refetch,
+    refreshDetail: () => detailEnabled.value ? detailQuery.refetch() : Promise.resolve(),
+    refreshMaterialReadiness: () => detailEnabled.value ? materialQuery.refetch() : Promise.resolve(),
   }
 }
 
@@ -891,24 +922,36 @@ export function useMesShiftHandovers() {
 
 export function useMesTraceability() {
   const filters = defaultTraceabilityFilters()
-  const workOrderQuery = useQuery(() =>
-    getBusinessConsoleMesWorkOrderTraceabilityQueryOptions({
-      path: { workOrderId: filters.workOrderId || 'WO-001' },
+  const workOrderEnabled = computed(() =>
+    hasBusinessContext(filters) && filters.mode === 'work-order' && isNonEmpty(filters.workOrderId),
+  )
+  const batchEnabled = computed(() =>
+    hasBusinessContext(filters) && filters.mode === 'batch' && isNonEmpty(filters.batchOrSerial),
+  )
+  const materialLotEnabled = computed(() =>
+    hasBusinessContext(filters) && filters.mode === 'material-lot' && isNonEmpty(filters.materialLotId),
+  )
+  const workOrderQuery = useQuery(() => ({
+    ...getBusinessConsoleMesWorkOrderTraceabilityQueryOptions({
+      path: { workOrderId: filters.workOrderId },
       query: toContextQuery(filters),
     }),
-  )
-  const batchQuery = useQuery(() =>
-    getBusinessConsoleMesBatchTraceabilityQueryOptions({
-      path: { batchOrSerial: filters.batchOrSerial || 'BATCH-001' },
+    enabled: workOrderEnabled.value,
+  }))
+  const batchQuery = useQuery(() => ({
+    ...getBusinessConsoleMesBatchTraceabilityQueryOptions({
+      path: { batchOrSerial: filters.batchOrSerial },
       query: toContextQuery(filters),
     }),
-  )
-  const materialLotQuery = useQuery(() =>
-    getBusinessConsoleMesMaterialLotTraceabilityQueryOptions({
-      path: { materialLotId: filters.materialLotId || 'LOT-001' },
+    enabled: batchEnabled.value,
+  }))
+  const materialLotQuery = useQuery(() => ({
+    ...getBusinessConsoleMesMaterialLotTraceabilityQueryOptions({
+      path: { materialLotId: filters.materialLotId },
       query: toContextQuery(filters),
     }),
-  )
+    enabled: materialLotEnabled.value,
+  }))
 
   const activeEnvelope = computed(() => {
     if (filters.mode === 'batch') return batchQuery.data.value
@@ -919,9 +962,13 @@ export function useMesTraceability() {
   return {
     filters,
     refreshTraceability: () => {
-      if (filters.mode === 'batch') return batchQuery.refetch()
-      if (filters.mode === 'material-lot') return materialLotQuery.refetch()
-      return workOrderQuery.refetch()
+      if (filters.mode === 'batch') {
+        return batchEnabled.value ? batchQuery.refetch() : Promise.resolve()
+      }
+      if (filters.mode === 'material-lot') {
+        return materialLotEnabled.value ? materialLotQuery.refetch() : Promise.resolve()
+      }
+      return workOrderEnabled.value ? workOrderQuery.refetch() : Promise.resolve()
     },
     traceability: computed<BusinessConsoleMesTraceabilityResponse | undefined>(() =>
       unwrapData<BusinessConsoleMesTraceabilityResponse, BusinessConsoleMesTraceabilityEnvelope>(

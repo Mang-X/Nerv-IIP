@@ -10,8 +10,9 @@ import {
   type BusinessConsoleInventoryAvailabilityResponse,
   type BusinessConsolePostStockMovementRequest,
 } from '@nerv-iip/api-client'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
 export interface InventoryAvailabilityFilters {
   organizationId: string
@@ -32,23 +33,38 @@ export interface InventoryActionContext {
   environmentId: string
 }
 
+function bindBusinessContext<T extends InventoryActionContext>(filters: T): T {
+  const context = useBusinessContextStore()
+
+  watch(
+    () => [context.organizationId, context.environmentId] as const,
+    ([organizationId, environmentId]) => {
+      filters.organizationId = organizationId
+      filters.environmentId = environmentId
+    },
+    { flush: 'sync', immediate: true },
+  )
+
+  return filters
+}
+
 function defaultActionContext(): InventoryActionContext {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-  })
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
+  }))
 }
 
 function defaultAvailabilityFilters(): InventoryAvailabilityFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-    skuCode: 'SKU-001',
-    uomCode: 'EA',
-    siteCode: 'S1',
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
+    skuCode: '',
+    uomCode: '',
+    siteCode: '',
     qualityStatus: 'available',
     ownerType: 'owned',
-  })
+  }))
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -69,6 +85,16 @@ function toAvailabilityQuery(filters: InventoryAvailabilityFilters) {
     ...optionalQuery('ownerType', filters.ownerType),
     ...optionalQuery('ownerId', filters.ownerId),
   }
+}
+
+function hasRequiredAvailabilityScope(filters: InventoryAvailabilityFilters) {
+  return (
+    filters.organizationId.trim().length > 0 &&
+    filters.environmentId.trim().length > 0 &&
+    filters.skuCode.trim().length > 0 &&
+    filters.uomCode.trim().length > 0 &&
+    filters.siteCode.trim().length > 0
+  )
 }
 
 function unwrapAvailability(
@@ -95,12 +121,14 @@ function ignoreBackgroundError(_error: unknown) {}
 
 export function useInventoryAvailability() {
   const filters = defaultAvailabilityFilters()
+  const availabilityEnabled = computed(() => hasRequiredAvailabilityScope(filters))
 
-  const availabilityQuery = useQuery(() =>
-    getBusinessConsoleInventoryAvailabilityQueryOptions({
+  const availabilityQuery = useQuery(() => ({
+    ...getBusinessConsoleInventoryAvailabilityQueryOptions({
       query: toAvailabilityQuery(filters),
     }),
-  )
+    enabled: availabilityEnabled.value,
+  }))
 
   const availability = computed(() => unwrapAvailability(availabilityQuery.data.value))
 
@@ -112,7 +140,7 @@ export function useInventoryAvailability() {
     ),
     availabilityPending: availabilityQuery.isLoading,
     filters,
-    refreshAvailability: availabilityQuery.refetch,
+    refreshAvailability: () => availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
   }
 }
 
