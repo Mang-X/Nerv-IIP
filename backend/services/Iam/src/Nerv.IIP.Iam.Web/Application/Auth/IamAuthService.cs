@@ -406,7 +406,7 @@ public sealed class PostgreSqlIamAuthService(
         }
 
         var session = new UserSession(
-            new UserSessionId($"session-{Guid.NewGuid():N}"),
+            new UserSessionId($"session-{Guid.CreateVersion7():N}"),
             user.Id,
             tokenService.HashSecret(refreshToken),
             now,

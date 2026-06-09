@@ -61,8 +61,27 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
         Assert.NotEqual(first, second);
         Assert.StartsWith("op-", first, StringComparison.Ordinal);
         Assert.StartsWith("op-", second, StringComparison.Ordinal);
-        Assert.True(Guid.TryParseExact(first["op-".Length..], "N", out _));
-        Assert.True(Guid.TryParseExact(second["op-".Length..], "N", out _));
+        AssertVersion7GuidSuffix(first, "op-");
+        AssertVersion7GuidSuffix(second, "op-");
+    }
+
+    [Fact]
+    public async Task Operation_persistent_child_ids_use_version7_guid_suffixes()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        using var context = new ApplicationDbContext(options, mediator: null!);
+        var taskRepository = new OperationTaskRepository(context);
+        var templateRepository = new OperationTemplateRepository(context);
+
+        var attemptId = await taskRepository.NextAttemptIdAsync();
+        var auditRecordId = await taskRepository.NextAuditRecordIdAsync();
+        var templateId = await templateRepository.NextTemplateIdAsync();
+
+        AssertVersion7GuidSuffix(attemptId.Id, "attempt-");
+        AssertVersion7GuidSuffix(auditRecordId.Id, "audit-");
+        AssertVersion7GuidSuffix(templateId.Id, "opt-");
     }
 
     private static IReadOnlyDictionary<string, string?> PreserveEnvironment(params string[] names)
@@ -76,5 +95,13 @@ public sealed class OpsServiceReadinessTests(WebApplicationFactory<Program> fact
         {
             Environment.SetEnvironmentVariable(name, value);
         }
+    }
+
+    private static void AssertVersion7GuidSuffix(string id, string prefix)
+    {
+        Assert.StartsWith(prefix, id, StringComparison.Ordinal);
+        var suffix = id[prefix.Length..];
+        Assert.True(Guid.TryParseExact(suffix, "N", out _));
+        Assert.Equal('7', suffix[12]);
     }
 }

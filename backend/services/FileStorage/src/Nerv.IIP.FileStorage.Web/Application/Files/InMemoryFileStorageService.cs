@@ -330,7 +330,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
 
     private static string NewId(string prefix)
     {
-        return $"{prefix}_{Guid.NewGuid():N}";
+        return $"{prefix}_{Guid.CreateVersion7():N}";
     }
 
     private static string BuildObjectKey(string organizationId, string fileId)

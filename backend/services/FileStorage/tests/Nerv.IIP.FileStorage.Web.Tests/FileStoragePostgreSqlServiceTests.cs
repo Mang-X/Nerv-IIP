@@ -22,6 +22,7 @@ public sealed class FileStoragePostgreSqlServiceTests
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
         Assert.NotNull(result.Value);
+        AssertVersion7GuidSuffix(result.Value.FileId, "file_");
         var record = await dbContext.UploadSessions.SingleAsync();
         Assert.Equal(result.Value.UploadSessionId, record.UploadSessionId);
         Assert.Equal(result.Value.FileId, record.FileId);
@@ -300,6 +301,18 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
+    public async Task InMemoryCreateUploadSession_UsesVersion7FileId()
+    {
+        var service = new InMemoryFileStorageService();
+
+        var result = await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        Assert.NotNull(result.Value);
+        AssertVersion7GuidSuffix(result.Value.FileId, "file_");
+    }
+
+    [Fact]
     public async Task TryGetUploadSessionIdForDownloadGrant_ExpiredGrant_ReturnsFalse()
     {
         await using var dbContext = CreateDbContext();
@@ -394,5 +407,13 @@ public sealed class FileStoragePostgreSqlServiceTests
         var json = JsonSerializer.Serialize(response, WebJsonOptions);
         Assert.DoesNotContain("objectKey", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("object_key", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void AssertVersion7GuidSuffix(string id, string prefix)
+    {
+        Assert.StartsWith(prefix, id, StringComparison.Ordinal);
+        var suffix = id[prefix.Length..];
+        Assert.True(Guid.TryParseExact(suffix, "N", out _));
+        Assert.Equal('7', suffix[12]);
     }
 }
