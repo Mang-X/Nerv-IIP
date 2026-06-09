@@ -351,7 +351,7 @@ function isNonEmpty(value: string) {
                       <SelectItem v-for="o in PRODUCT_CATEGORY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FieldDescription>来自数据字典 · 产品分类。缺少分类？去数据字典维护。</FieldDescription>
+                  <FieldDescription>平台预置的产品分类（数据字典种齐并启用后改为实时拉取、可自助维护）。</FieldDescription>
                 </Field>
                 <Field :data-invalid="createShowErrors && !inOptions(MATERIAL_TYPE_OPTIONS, createForm.materialType)">
                   <FieldLabel>物料类型 <span class="text-destructive">*</span></FieldLabel>
