@@ -45,7 +45,8 @@ const workerLabelByUserId = computed(() => {
   for (const worker of workers.value) {
     if (!worker.userId) continue
     const suffix = worker.employeeNo ? `（${worker.employeeNo}）` : ''
-    map.set(worker.userId, `${worker.displayName ?? worker.userId}${suffix}`)
+    // displayName 缺失时降级为「未命名工人」，绝不把内部 userId 当展示名暴露（与 WorkerSelect 口径一致）。
+    map.set(worker.userId, `${worker.displayName || '未命名工人'}${suffix}`)
   }
   return map
 })
