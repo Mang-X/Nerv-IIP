@@ -437,6 +437,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Business.Schedulin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Business.Scheduling.Web.Tests", "services\Business\Scheduling\tests\Nerv.IIP.Business.Scheduling.Web.Tests\Nerv.IIP.Business.Scheduling.Web.Tests.csproj", "{FD7C2DBD-D126-4438-B520-5D70B5DDA7BC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Contracts.Inventory", "common\Contracts\Nerv.IIP.Contracts.Inventory\Nerv.IIP.Contracts.Inventory.csproj", "{99CD2FD0-3792-4558-885F-20BA40A0CBB1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -2163,6 +2165,18 @@ Global
 		{FD7C2DBD-D126-4438-B520-5D70B5DDA7BC}.Release|x64.Build.0 = Release|Any CPU
 		{FD7C2DBD-D126-4438-B520-5D70B5DDA7BC}.Release|x86.ActiveCfg = Release|Any CPU
 		{FD7C2DBD-D126-4438-B520-5D70B5DDA7BC}.Release|x86.Build.0 = Release|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Debug|x64.Build.0 = Debug|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Debug|x86.Build.0 = Debug|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Release|x64.ActiveCfg = Release|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Release|x64.Build.0 = Release|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Release|x86.ActiveCfg = Release|Any CPU
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -2381,5 +2395,6 @@ Global
 		{BF58F8C9-EA77-15F8-82FD-B875D73E3FE4} = {628840C6-5DC4-356B-0FEF-BC9F33E58C66}
 		{5FB8E6FC-0EF8-4459-A79E-18E9E2647158} = {BF58F8C9-EA77-15F8-82FD-B875D73E3FE4}
 		{FD7C2DBD-D126-4438-B520-5D70B5DDA7BC} = {BF58F8C9-EA77-15F8-82FD-B875D73E3FE4}
+		{99CD2FD0-3792-4558-885F-20BA40A0CBB1} = {56787BCC-1D17-4674-3EC8-20108B77A4E0}
 	EndGlobalSection
 EndGlobal

@@ -5,7 +5,6 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggre
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
-using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Commands;
 
@@ -92,9 +91,9 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
 
 public sealed record CompleteInboundOrderCommand(InboundOrderId InboundOrderId, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
-public sealed record CompleteWmsMovementResult(InventoryMovementRequestId RequestId, string InventoryMovementId);
+public sealed record CompleteWmsMovementResult(InventoryMovementRequestId RequestId, string? InventoryMovementId);
 
-public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbContext, IInventoryMovementClient inventoryClient)
+public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CompleteInboundOrderCommand, CompleteWmsMovementResult>
 {
     public async Task<CompleteWmsMovementResult> Handle(CompleteInboundOrderCommand request, CancellationToken cancellationToken)
@@ -103,23 +102,7 @@ public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbCo
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
         var movementRequest = inbound.Complete(request.IdempotencyKey);
         dbContext.InventoryMovementRequests.Add(movementRequest);
-        var posted = await PostMovementAsync(inventoryClient, movementRequest, cancellationToken);
-        return new CompleteWmsMovementResult(movementRequest.Id, posted.InventoryMovementId);
-    }
-
-    internal static async Task<PostInventoryMovementResult> PostMovementAsync(IInventoryMovementClient inventoryClient, InventoryMovementRequest movementRequest, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var posted = await inventoryClient.PostMovementAsync(movementRequest.ToInventoryPostRequest(), cancellationToken);
-            movementRequest.MarkPosted(posted.InventoryMovementId);
-            return posted;
-        }
-        catch (Exception ex)
-        {
-            movementRequest.MarkFailed(ex.GetType().Name, ex.Message);
-            throw;
-        }
+        return new CompleteWmsMovementResult(movementRequest.Id, null);
     }
 }
 
@@ -168,7 +151,7 @@ public sealed class CreatePickingTaskCommandHandler(ApplicationDbContext dbConte
 
 public sealed record CompleteOutboundOrderCommand(OutboundOrderId OutboundOrderId, string PackReviewNo, bool Passed, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
-public sealed class CompleteOutboundOrderCommandHandler(ApplicationDbContext dbContext, IInventoryMovementClient inventoryClient)
+public sealed class CompleteOutboundOrderCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CompleteOutboundOrderCommand, CompleteWmsMovementResult>
 {
     public async Task<CompleteWmsMovementResult> Handle(CompleteOutboundOrderCommand request, CancellationToken cancellationToken)
@@ -177,8 +160,7 @@ public sealed class CompleteOutboundOrderCommandHandler(ApplicationDbContext dbC
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
         var movementRequest = outbound.CompletePackReview(request.PackReviewNo, request.Passed, request.IdempotencyKey);
         dbContext.InventoryMovementRequests.Add(movementRequest);
-        var posted = await CompleteInboundOrderCommandHandler.PostMovementAsync(inventoryClient, movementRequest, cancellationToken);
-        return new CompleteWmsMovementResult(movementRequest.Id, posted.InventoryMovementId);
+        return new CompleteWmsMovementResult(movementRequest.Id, null);
     }
 }
 
@@ -198,7 +180,7 @@ public sealed class CreateCountExecutionCommandHandler(ApplicationDbContext dbCo
 
 public sealed record CompleteCountExecutionCommand(CountExecutionId CountExecutionId, decimal CountedQuantity, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
-public sealed class CompleteCountExecutionCommandHandler(ApplicationDbContext dbContext, IInventoryMovementClient inventoryClient)
+public sealed class CompleteCountExecutionCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CompleteCountExecutionCommand, CompleteWmsMovementResult>
 {
     public async Task<CompleteWmsMovementResult> Handle(CompleteCountExecutionCommand request, CancellationToken cancellationToken)
@@ -226,8 +208,7 @@ public sealed class CompleteCountExecutionCommandHandler(ApplicationDbContext db
             null,
             varianceQuantity);
         dbContext.InventoryMovementRequests.Add(movementRequest);
-        var posted = await CompleteInboundOrderCommandHandler.PostMovementAsync(inventoryClient, movementRequest, cancellationToken);
-        return new CompleteWmsMovementResult(movementRequest.Id, posted.InventoryMovementId);
+        return new CompleteWmsMovementResult(movementRequest.Id, null);
     }
 }
 

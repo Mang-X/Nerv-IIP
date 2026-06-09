@@ -1,3 +1,5 @@
+using Nerv.IIP.Business.Wms.Domain.DomainEvents;
+
 namespace Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 
 public partial record InventoryMovementRequestId : IGuidStronglyTypedId;
@@ -51,6 +53,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         Quantity = WmsText.NonZero(quantity, nameof(quantity));
         Status = InventoryMovementRequestStatus.Pending;
         CreatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new InventoryMovementRequestCreatedDomainEvent(this));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -119,7 +122,18 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
 
     public void MarkPosted(string inventoryMovementId)
     {
-        InventoryMovementId = WmsText.Required(inventoryMovementId, nameof(inventoryMovementId));
+        var requiredMovementId = WmsText.Required(inventoryMovementId, nameof(inventoryMovementId));
+        if (Status == InventoryMovementRequestStatus.Posted)
+        {
+            if (InventoryMovementId == requiredMovementId)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("Inventory movement request was already posted with a different Inventory movement id.");
+        }
+
+        InventoryMovementId = requiredMovementId;
         Status = InventoryMovementRequestStatus.Posted;
         FailureCode = null;
         FailureMessage = null;

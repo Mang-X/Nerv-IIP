@@ -1,7 +1,6 @@
 using MediatR;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
-using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -36,17 +35,6 @@ internal sealed class NoopMediator : IMediator
     public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException("Test mediator cannot stream requests.");
-    }
-}
-
-internal sealed class RecordingInventoryMovementClient : IInventoryMovementClient
-{
-    public List<PostInventoryMovementRequest> Requests { get; } = [];
-
-    public Task<PostInventoryMovementResult> PostMovementAsync(PostInventoryMovementRequest request, CancellationToken cancellationToken)
-    {
-        Requests.Add(request);
-        return Task.FromResult(new PostInventoryMovementResult($"posted-{request.MovementType}-{request.IdempotencyKey}"));
     }
 }
 

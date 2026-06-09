@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Security.Claims;
-using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 

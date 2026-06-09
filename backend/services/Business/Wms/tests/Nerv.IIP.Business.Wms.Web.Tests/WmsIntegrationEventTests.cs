@@ -1,9 +1,11 @@
 using System.Text.Json;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
@@ -47,5 +49,45 @@ public sealed class WmsIntegrationEventTests
         Assert.Equal(WmsIntegrationEventTypes.WcsTaskCompleted, completedEvent.EventType);
         Assert.Equal("org-001", completedEvent.OrganizationId);
         Assert.Equal("env-dev", completedEvent.EnvironmentId);
+    }
+
+    [Theory]
+    [InlineData("inbound", 5, 5)]
+    [InlineData("outbound", 4, -4)]
+    [InlineData("count-adjustment", -2.5, -2.5)]
+    public void Inventory_movement_requested_event_maps_wms_request_payload_and_signed_quantity(
+        string movementType,
+        decimal requestQuantity,
+        decimal expectedEventQuantity)
+    {
+        var request = InventoryMovementRequest.Create(
+            "org-001",
+            "env-dev",
+            movementType,
+            $"DOC-{movementType}",
+            "LINE-001",
+            $"idem-{movementType}",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            requestQuantity);
+
+        var integrationEvent = new InventoryMovementRequestCreatedIntegrationEventConverter()
+            .Convert(new InventoryMovementRequestCreatedDomainEvent(request));
+
+        Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
+        Assert.False(string.IsNullOrWhiteSpace(integrationEvent.CausationId));
+        Assert.Equal(integrationEvent.IdempotencyKey, integrationEvent.CausationId);
+        Assert.Equal(InventoryIntegrationEventSources.BusinessWms, integrationEvent.SourceService);
+        Assert.Equal("wms", integrationEvent.Payload.SourceService);
+        Assert.Equal($"DOC-{movementType}", integrationEvent.Payload.SourceDocumentId);
+        Assert.Equal($"idem-{movementType}", integrationEvent.Payload.IdempotencyKey);
+        Assert.Equal(expectedEventQuantity, integrationEvent.Payload.Quantity);
     }
 }

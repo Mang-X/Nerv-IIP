@@ -392,7 +392,7 @@
       </article>
       <article class="section-card lane">
         <h3>#77 P0 已收口</h3>
-        <p><code>backend/tests/Nerv.IIP.Business.Acceptance.Tests</code> 和 <code>scripts/verify-business-full-chain-acceptance.ps1</code> 已覆盖七条链路 acceptance evidence；WMS 另有 service-local live HTTP TestServer proof 验证 WCS 失败、重试和完成查询。</p>
+        <p><code>backend/tests/Nerv.IIP.Business.Acceptance.Tests</code> 和 <code>scripts/verify-business-full-chain-acceptance.ps1</code> 已覆盖七条链路 acceptance evidence；WMS public-surface/event contract tests 覆盖 WMS 完成、Inventory 异步过账请求和 WCS 失败、重试、完成查询。</p>
       </article>
       <article class="section-card lane amber">
         <h3>基础能力要贴着业务补</h3>
@@ -452,7 +452,7 @@
         <tr><td>DemandPlanning</td><td>需求源、MPS/MRP、pegging、计划采购/工单建议</td><td><span class="status done">已实现</span></td><td>建议 accept 后对 ERP/MES downstream reference 已纳入 #77 P0 evidence</td></tr>
         <tr><td>BarcodeLabel</td><td>条码规则、标签模板、打印批次、扫码记录</td><td><span class="status done">已实现</span></td><td>接入 WMS/MES/质检场景的 scan proof</td></tr>
         <tr><td>Approval</td><td>审批模板、审批链、审批步骤与审批结果事件</td><td><span class="status done">已实现</span></td><td>和高风险动作、业务单据审批区分边界</td></tr>
-        <tr><td>WMS</td><td>入库、出库、仓库任务、盘点执行、WCS adapter 边界</td><td><span class="status done">已实现</span></td><td>WCS 可观测事实已有 live HTTP TestServer proof</td></tr>
+        <tr><td>WMS</td><td>入库、出库、仓库任务、盘点执行、WCS adapter 边界</td><td><span class="status done">已实现</span></td><td>Inventory posting 已改为公共集成事件异步闭环；WCS 可观测事实由 public-surface tests 覆盖</td></tr>
         <tr><td>IndustrialTelemetry</td><td>Tag、设备状态快照、报警、采集汇总</td><td><span class="status done">已实现</span></td><td>保持控制命令与凭据在外部边界</td></tr>
         <tr><td>Maintenance</td><td>维修工单、保养计划、点检、停机原因、备件行</td><td><span class="status done">已实现</span></td><td>报警触发开单幂等、资产不可用/恢复事件验收</td></tr>
         <tr><td>ERP</td><td>采购、销售、应收应付、凭证、成本候选</td><td><span class="status done">已实现</span></td><td>完整总账月结、税务/银行/发布 bundle 后置</td></tr>
@@ -469,7 +469,7 @@
         </tr>
       </thead>
       <tbody>
-        <tr><td>#77 Full-chain acceptance</td><td><span class="status done">P0 收口</span></td><td>默认 governed verify 覆盖 WMS live HTTP TestServer proof、MES/ERP public surfaces 和七条链路 acceptance evidence；已完成关闭。</td></tr>
+        <tr><td>#77 Full-chain acceptance</td><td><span class="status done">P0 收口</span></td><td>默认 governed verify 覆盖 WMS public-surface/event contracts、MES/ERP public surfaces 和七条链路 acceptance evidence；已完成关闭。</td></tr>
         <tr><td>#188-#207 MES operational foundation reset</td><td><span class="status gap">P0 主线</span></td><td>围绕减振器制造场景补自动编号、主数据、工程资料、MRP、采购供应、齐套领料、MES 生命周期、质量设备 readiness、PC 工作流、APS lite 和设备 IIoT 联动。</td></tr>
         <tr><td>#206 APS 调度内核</td><td><span class="status gap">P0 新边界</span></td><td>后端排程契约、有限产能启发式内核、资源负载和冲突解释；#78 甘特图只消费输出，不承担算法。</td></tr>
         <tr><td>#207 设备 IIoT 联动</td><td><span class="status gap">P0 新边界</span></td><td>设备状态、报警、停机、维护窗口进入 APS 可用性和 MES readiness；不控制 PLC/DCS/SCADA。</td></tr>

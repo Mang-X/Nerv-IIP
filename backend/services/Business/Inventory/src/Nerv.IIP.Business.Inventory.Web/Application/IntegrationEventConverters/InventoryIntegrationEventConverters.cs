@@ -1,5 +1,5 @@
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
-using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 
@@ -24,10 +24,12 @@ public sealed class StockMovementPostedIntegrationEventConverter(IInventoryInteg
             context.Actor,
             EventIds.Idempotency("stock-movement-posted", movement.OrganizationId, movement.EnvironmentId, movement.SourceService, movement.SourceDocumentId, movement.IdempotencyKey),
             new StockMovementPostedPayload(
+                movement.Id is null ? string.Empty : movement.Id.ToString(),
                 movement.MovementType,
                 movement.SourceService,
                 movement.SourceDocumentId,
                 movement.SourceDocumentLineId,
+                movement.IdempotencyKey,
                 movement.SkuCode,
                 movement.UomCode,
                 movement.SiteCode,
