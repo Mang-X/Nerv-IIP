@@ -220,6 +220,37 @@ importers:
         specifier: npm:@voidzero-dev/vite-plus-test@0.1.21
         version: '@voidzero-dev/vite-plus-test@0.1.21(@types/node@25.8.0)(@voidzero-dev/vite-plus-core@0.1.21(@types/node@25.8.0)(jiti@2.7.0)(stylus@0.57.0)(typescript@6.0.3)(yaml@2.9.0))(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(stylus@0.57.0)(typescript@6.0.3)(yaml@2.9.0)'
 
+  packages/ui-mobile:
+    dependencies:
+      '@nerv-iip/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@vueuse/core':
+        specifier: ^14.3.0
+        version: 14.3.0(vue@3.5.34(typescript@6.0.3))
+      lucide-vue-next:
+        specifier: 1.0.0
+        version: 1.0.0(vue@3.5.34(typescript@6.0.3))
+      reka-ui:
+        specifier: ^2.9.7
+        version: 2.9.7(vue@3.5.34(typescript@6.0.3))
+      vue:
+        specifier: 3.5.34
+        version: 3.5.34(typescript@6.0.3)
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: 6.0.7
+        version: 6.0.7(@voidzero-dev/vite-plus-core@0.1.21(@types/node@25.8.0)(jiti@2.7.0)(stylus@0.57.0)(typescript@6.0.3)(yaml@2.9.0))(vue@3.5.34(typescript@6.0.3))
+      '@vue/test-utils':
+        specifier: 2.4.10
+        version: 2.4.10(@vue/compiler-dom@3.5.34)(@vue/server-renderer@3.5.34(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3))
+      jsdom:
+        specifier: 29.1.1
+        version: 29.1.1(@noble/hashes@1.8.0)
+      vitest:
+        specifier: npm:@voidzero-dev/vite-plus-test@0.1.21
+        version: '@voidzero-dev/vite-plus-test@0.1.21(@types/node@25.8.0)(@voidzero-dev/vite-plus-core@0.1.21(@types/node@25.8.0)(jiti@2.7.0)(stylus@0.57.0)(typescript@6.0.3)(yaml@2.9.0))(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(stylus@0.57.0)(typescript@6.0.3)(yaml@2.9.0)'
+
 packages:
 
   '@asamuzakjp/css-color@5.1.11':
