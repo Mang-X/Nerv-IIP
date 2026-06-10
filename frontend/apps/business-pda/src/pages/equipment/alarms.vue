@@ -49,7 +49,7 @@ function alarmSubtitle(item: { severity?: string, raisedAtUtc?: string }) {
   return parts.join(' · ')
 }
 
-// 去报修：把设备 + 来源报警事件 ID 作为上下文带入报修页（report.vue 消费 query 预填）。
+// 去报修：把设备 + 来源报警事件 ID 作为上下文带入报修页（repair.vue 消费 query 预填）。
 function goRepair(item: { deviceAssetId?: string, alarmEventId?: string }) {
   void router.push({
     path: '/equipment/repair',

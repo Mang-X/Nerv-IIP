@@ -10,8 +10,6 @@ import { computed, reactive } from 'vue'
 const DEFAULT_TAKE = 100
 
 export interface EquipmentAlarmFilters {
-  organizationId: string
-  environmentId: string
   skip: number
   take: number
   deviceAssetId?: string
@@ -43,8 +41,6 @@ function listTotal(envelope: { success?: boolean, data?: { total?: number } | nu
 export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlarmFilters> = {}) {
   const auth = useAuthStore()
   const filters = reactive<EquipmentAlarmFilters>({
-    organizationId: auth.principal?.organizationId ?? '',
-    environmentId: auth.principal?.environmentId ?? '',
     skip: 0,
     take: DEFAULT_TAKE,
     ...initialFilters,

@@ -146,7 +146,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 > PDA v1 任务地图与组件/UX 标准见 `docs/architecture/mobile-pda-module-product-design.md` 与 `docs/superpowers/specs/2026-06-09-mobile-pda-design.md`。实现轨为独立 app `frontend/apps/business-pda`，不复用 PC 菜单树。
 >
-> **设备运维 PDA（Plan 4，2026-06-10 校验）：** 设备运维 报修/点检/报警查看 已建 (Plan 4)（facade 就绪、无后端阻塞）。`@nerv-iip/business-core` 已点亮设备字典（`equipment.repair`/`equipment.inspect`/`equipment.alarms` routeReady=true，应用墙入口可跳）、落地设备 StepFlow（`repairOrderFlow`/`inspectionFlow`）与设备标签（severity/state/priority/工单状态/点检结果中文，镜像 PC `useBusinessEquipment`）；PDA 作业页与数据 composable 为后续任务增量。报警→报修保持上下文穿透（带 `deviceAssetId` + `sourceAlarmId`）。
+> **设备运维 PDA（Plan 4，2026-06-10 校验）：** 设备运维 报修/点检/报警查看 已建 (Plan 4)（facade 就绪、无后端阻塞）。`@nerv-iip/business-core` 已点亮设备字典（`equipment.repair`/`equipment.inspect`/`equipment.alarms` routeReady=true，应用墙入口可跳）、落地设备 StepFlow（`repairOrderFlow`/`inspectionFlow`）与设备标签（severity/state/priority/工单状态/点检结果中文，镜像 PC `useBusinessEquipment`）；PDA 作业页 报修(故障报修)/点检/报警查看 三页 + 数据 composable（`useBusinessMaintenance`/`useBusinessEquipmentAlarms`）+ StepFlow/标签接线 + e2e 均已建 (Plan 4)。报警→报修保持上下文穿透（带 `deviceAssetId` + `sourceAlarmId`）。
 
 ### 角色导航样例
 
