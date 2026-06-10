@@ -1,6 +1,4 @@
-export interface StepFlowContext {
-  [key: string]: unknown
-}
+export type StepFlowContext = object
 
 export interface StepFlowStep<TCtx> {
   id: string
