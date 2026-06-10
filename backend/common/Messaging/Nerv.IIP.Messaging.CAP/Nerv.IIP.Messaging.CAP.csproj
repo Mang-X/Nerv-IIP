@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <PackageReference Include="DotNetCore.CAP.RabbitMQ" />
+    <PackageReference Include="DotNetCore.CAP.RedisStreams" />
     <PackageReference Include="Savorboard.CAP.InMemoryMessageQueue" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
   </ItemGroup>

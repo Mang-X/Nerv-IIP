@@ -12,6 +12,7 @@ services:
 
   redis:
     image: redis:8
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     ports:
       - "6379:6379"
     volumes:
