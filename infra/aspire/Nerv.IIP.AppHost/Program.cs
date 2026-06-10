@@ -15,7 +15,9 @@ var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-s
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
 var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
 var useOtelCollector = builder.Configuration.GetValue("Observability:UseCollector", false);
+var useVictoriaLogs = builder.Configuration.GetValue("Observability:VictoriaLogs:Enabled", true);
 var aspireDashboardOtlpHttpEndpoint = builder.Configuration["Observability:AspireDashboardOtlpHttpEndpoint"] ?? "http://host.docker.internal:18890";
+var victoriaLogsRetentionPeriod = builder.Configuration["Observability:VictoriaLogs:RetentionPeriod"] ?? "30d";
 var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
 if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 {
@@ -55,6 +57,14 @@ var minio = builder.AddContainer("minio", "pgsty/minio", "RELEASE.2026-04-17T00-
     .WithHttpEndpoint(port: 9000, targetPort: 9000, name: "api")
     .WithHttpEndpoint(port: 9001, targetPort: 9001, name: "console")
     .WithVolume("nerv-iip-minio", "/data");
+Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ContainerResource>? victoriaLogs = null;
+if (useVictoriaLogs)
+{
+    victoriaLogs = builder.AddContainer("victoria-logs", "victoriametrics/victoria-logs", "v1.50.0")
+        .WithArgs("-storageDataPath=/victoria-logs-data", $"-retentionPeriod={victoriaLogsRetentionPeriod}")
+        .WithHttpEndpoint(port: 9428, targetPort: 9428, name: "http")
+        .WithVolume("nerv-iip-victoria-logs", "/victoria-logs-data");
+}
 Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ContainerResource>? otelCollector = null;
 if (useOtelCollector)
 {
@@ -399,6 +409,17 @@ var gateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPr
     .WaitFor(businessErp)
     .WaitFor(businessScheduling)
     .WaitFor(redis);
+if (victoriaLogs is not null)
+{
+    gateway = gateway
+        .WithEnvironment("VictoriaLogs__BaseUrl", victoriaLogs.GetEndpoint("http"))
+        .WaitFor(victoriaLogs);
+}
+else
+{
+    gateway = gateway
+        .WithEnvironment("VictoriaLogs__Enabled", "false");
+}
 
 var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")))
     .WithHttpEndpoint(port: 5119, name: "http")
@@ -482,6 +503,14 @@ Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel
 Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithNervIipTelemetry(
     Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> project)
 {
+    if (victoriaLogs is not null)
+    {
+        project = project
+            .WithEnvironment("OpenTelemetry__Logs__Endpoint", victoriaLogs.GetEndpoint("http"))
+            .WithEnvironment("OpenTelemetry__Logs__Path", "/insert/opentelemetry/v1/logs")
+            .WaitFor(victoriaLogs);
+    }
+
     if (otelCollector is null)
     {
         return project;

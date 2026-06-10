@@ -47,6 +47,7 @@ public static class GatewayPermissions
     public const string IamUsersRead = "iam.users.read";
     public const string OpsTasksCreate = "ops.tasks.create";
     public const string OpsTasksRead = "ops.tasks.read";
+    public const string ObservabilityLogsRead = "observability.logs.read";
     public const string NotificationIntentsSubmit = "notifications.intents.submit";
     public const string NotificationMessagesMarkRead = "notifications.messages.mark-read";
     public const string NotificationMessagesRead = "notifications.messages.read";

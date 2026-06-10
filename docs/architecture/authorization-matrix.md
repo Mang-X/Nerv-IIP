@@ -76,6 +76,7 @@ Endpoint 只声明需要的权限码与上下文；业务不变式仍由 Domain 
 | `ops.tasks.read` | Ops | `user` / `connector-host` / `external-client` / `internal-service` | environment + resource | 已 seed；Gateway 已 enforcement | 查看运维任务。 |
 | `ops.results.write` | Ops | `connector-host` | environment + resource + capability | 已 seed | Connector Host 回传动作结果。 |
 | `ops.audit.read` | Ops | `user` / `internal-service` | organization / environment + resource | 已 seed | 查看审计记录。 |
+| `observability.logs.read` | Observability | `user` / `internal-service` | organization / environment + resource | 已 seed；Gateway Console facade 已 enforcement | 查询集中平台日志；Gateway 不暴露 VictoriaLogs URL 或 LogsQL。 |
 
 ## Console IAM Admin Facade 权限映射
 
@@ -94,6 +95,14 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 | `GET /api/console/v1/iam/permissions` | `listConsoleIamPermissions` | `iam.roles.read` |
 | `GET /api/console/v1/iam/sessions` | `listConsoleIamSessions` | `iam.sessions.read` |
 | `POST /api/console/v1/iam/sessions/{sessionId}/revoke` | `revokeConsoleIamSession` | `iam.sessions.revoke` |
+
+## Console Observability Facade 权限映射
+
+PlatformGateway 的 Console Observability facade 在查询 VictoriaLogs 前，会用当前 bearer token 调 IAM current-principal/authorization path 校验组织、环境和权限码。浏览器只访问 Gateway，不直连 VictoriaLogs、Collector 或 Aspire Dashboard。
+
+| Console facade route | operationId | 权限码 |
+| --- | --- | --- |
+| `POST /api/console/v1/logs/query` | `queryConsoleLogs` | `observability.logs.read` |
 
 ## 待落地服务权限命名
 
@@ -130,7 +139,6 @@ PlatformGateway 的 Console IAM Admin facade 在转发 IAM 管理请求前，会
 
 | 权限码 | 建议 principalType | 建议 scope | 说明 |
 | --- | --- | --- | --- |
-| `observability.logs.query` | `user` / `external-client` / `internal-service` | environment + resource | 查询日志 chunk、日志条目索引和关联上下文；Gateway 不暴露底层查询语言。 |
 | `observability.diagnostics.read` | `user` / `internal-service` | environment + resource | 查看诊断包、日志包和归档元数据。 |
 | `observability.retention.manage` | `user` / `internal-service` | organization / environment | 管理日志 retention、清理任务和归档策略。 |
 

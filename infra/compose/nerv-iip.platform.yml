@@ -27,6 +27,7 @@ x-dotnet-service: &dotnet-service
     ConnectionStrings__Redis: redis:6379
     InternalService__BearerToken: ${NERV_IIP_INTERNAL_SERVICE_BEARER_TOKEN:?set NERV_IIP_INTERNAL_SERVICE_BEARER_TOKEN}
     OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://victoria-logs:9428/insert/opentelemetry/v1/logs
     OpenTelemetry__Protocol: HttpProtobuf
   healthcheck:
     test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
@@ -313,6 +314,7 @@ services:
       Ops__BaseUrl: http://ops:8080
       Notification__BaseUrl: http://notification:8080
       ProductEngineering__BaseUrl: http://business-product-engineering:8080
+      VictoriaLogs__BaseUrl: http://victoria-logs:9428
       Security__Cors__AllowedOrigins: ${NERV_IIP_CORS_ALLOWED_ORIGINS:?set NERV_IIP_CORS_ALLOWED_ORIGINS}
     ports:
       - "${NERV_IIP_GATEWAY_PORT:-5100}:8080"

@@ -28,6 +28,7 @@ public static class IamPermissionCatalog
         ["ops.tasks.read"] = "Read operation tasks.",
         ["ops.results.write"] = "Write operation results.",
         ["ops.audit.read"] = "Read operation audit records.",
+        ["observability.logs.read"] = "Query centralized platform logs.",
         ["notifications.intents.submit"] = "Submit notification intents.",
         ["notifications.messages.read"] = "Read notification messages.",
         ["notifications.messages.mark-read"] = "Mark notification messages as read.",
