@@ -52,7 +52,7 @@ dotnet new netcorepal-web -n Nerv.IIP.Ops -o backend/services/Ops --Framework ne
 
 1. 创建前先运行 `dotnet new netcorepal-web --help`，确认本机模板支持的参数名。
 2. 当前项目目标框架固定显式传 `net10.0`，除非 ADR 更新。
-3. `--Database PostgreSQL` 与 `--MessageQueue RabbitMQ` 必须显式传入，避免落到模板默认 MySQL 或其他消息队列；运行时仍必须通过 `Messaging:Provider` 决定 InMemory 或 RabbitMQ，不把模板消息队列参数理解为默认 broker 硬依赖。
+3. `--Database PostgreSQL` 与 `--MessageQueue RabbitMQ` 必须显式传入，避免落到模板默认 MySQL 或其他消息队列；运行时仍必须通过 `Messaging:Provider` 决定 InMemory、RabbitMQ 或 Redis，不把模板消息队列参数理解为默认 broker 硬依赖。
 4. `--UseAdmin false` 必须显式传入，避免把模板内置 Admin、RBAC 或前端后台与 Nerv-IIP 自有 IAM、console 规划混在一起。
 5. `--IncludeCopilotInstructions false` 保持协作指引由仓库根统一维护，不让每个服务生成一份局部指令。
 6. `--UseAspire false` 是每个平台领域服务的默认值，含义是不让每个服务各自生成局部 AppHost；平台统一 Aspire AppHost 由 ADR 0008 冻结，后续落点在 `infra/aspire`。
@@ -189,7 +189,7 @@ Endpoint：
 2. 集成事件使用 `record`，不携带聚合对象引用，不暴露敏感字段。
 3. 领域事件到集成事件通过 `IIntegrationEventConverter<TDomainEvent, TIntegrationEvent>` 转换。
 4. netcorepal 会通过生成器为 converter 生成发布处理器；新代码不要默认手写 `IIntegrationEventPublisher` 发布逻辑。
-5. IntegrationEvent 与命令数据修改通过 CAP outbox 保存在同一事务中；事务提交后由 CAP 按 `Messaging:Provider` 发布到 InMemory 进程内队列或 RabbitMQ broker。
+5. IntegrationEvent 与命令数据修改通过 CAP outbox 保存在同一事务中；事务提交后由 CAP 按 `Messaging:Provider` 发布到 InMemory 进程内队列、RabbitMQ broker 或 Redis Streams。
 6. IntegrationEventHandler 与触发它的原命令不在同一事务中，必须按最终一致性和可重试语义设计。
 7. 集成事件处理器应具备幂等性，至少能处理 CAP 重试或重复投递。
 8. 不是每个 DomainEvent 都需要转换成 IntegrationEvent；只有跨服务传播、跨进程审计或异步投影需要外发时才转换。
@@ -244,7 +244,7 @@ DbContext：
 2. Repositories 通过 `AddRepositories(...)` 注册。
 3. UnitOfWork 通过 `AddUnitOfWork<ApplicationDbContext>()` 注册。
 4. MediatR 注册命令、查询、验证、命令锁和 UnitOfWork 行为。
-5. CAP 使用 netcorepal storage 绑定当前 `ApplicationDbContext`，并通过 `backend/common/Messaging/Nerv.IIP.Messaging.CAP` 按 `Messaging:Provider` 选择默认 InMemory message queue 或显式 RabbitMQ。
+5. CAP 使用 netcorepal storage 绑定当前 `ApplicationDbContext`，并通过 `backend/common/Messaging/Nerv.IIP.Messaging.CAP` 按 `Messaging:Provider` 选择默认 InMemory message queue、显式 RabbitMQ 或 Redis Streams。
 6. FastEndpoints、KnownException 处理中间件、ResponseData、OpenAPI 生成正常启用。
 7. OpenTelemetry 接入 ASP.NET Core、HTTP、CAP 和 netcorepal instrumentation。
 8. `ILogger<T>` 作为业务代码唯一日志入口；Program/Host 层可以接入 Serilog provider、OpenTelemetry sink 和 Console sink。
@@ -272,7 +272,7 @@ DbContext：
 Web 集成测试：
 
 1. 使用模板生成的 `MyWebApplicationFactory` 或等价测试工厂。
-2. 使用 Testcontainers 或本地开发编排启动当前 profile 所需依赖；默认 profile 为 PostgreSQL、`Messaging:Provider=InMemory` 和 Redis，只有显式 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ。
+2. 使用 Testcontainers 或本地开发编排启动当前 profile 所需依赖；默认 Development profile 为 PostgreSQL、`Messaging:Provider=InMemory` 和 Redis，显式 `Messaging:Provider=Redis` 时要求 Redis 持久化，只有显式 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ。
 3. Endpoint 测试覆盖请求、响应、KnownException、权限上下文和幂等行为。
 
 事件测试：
