@@ -17,5 +17,3 @@ export const consoleAuthApi = createConsoleAuthApi({
     refreshFallback: 'Unable to refresh the session.',
   },
 })
-
-export const { getConsoleMe, loginConsole, logoutConsole, refreshConsole } = consoleAuthApi

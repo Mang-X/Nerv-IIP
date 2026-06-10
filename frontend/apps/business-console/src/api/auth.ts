@@ -17,5 +17,3 @@ export const consoleAuthApi = createConsoleAuthApi({
     refreshFallback: '无法刷新会话。',
   },
 })
-
-export const { getConsoleMe, loginConsole, logoutConsole, refreshConsole } = consoleAuthApi
