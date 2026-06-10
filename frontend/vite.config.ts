@@ -46,6 +46,7 @@ export default defineConfig({
       '@nerv-iip/app-shell': fileURLToPath(
         new URL('./packages/app-shell/src/index.ts', import.meta.url),
       ),
+      '@nerv-iip/auth': fileURLToPath(new URL('./packages/auth/src/index.ts', import.meta.url)),
       '@nerv-iip/ui': fileURLToPath(new URL('./packages/ui/src/index.ts', import.meta.url)),
     },
   },
@@ -116,6 +117,7 @@ export default defineConfig({
           'apps/business-console/typed-router.d.ts',
           'packages/api-client/src/**',
           'packages/app-shell/src/**',
+          'packages/auth/src/**',
           'packages/ui/src/**',
           'tsconfig.base.json',
         ],
