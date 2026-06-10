@@ -85,43 +85,48 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 
 ## 3. 目标信息架构（IA）
 
-### 3.1 当前 → 目标
+> **修订 v2（2026-06-10）：废弃"用平铺 Tab 切层级/塞杂物抽屉"。** 经成熟系统对标（SAP / Oracle EBS / D365 / 主流 MES）+ PM/业务/UX 三视角重审,确立**让页型匹配关系本质**:层级关系上**树**、归属关系**列表-详情挂父**、多对多用**矩阵**、二级受控值用**主从**、单主体多角色用**主体+角色叠加**。原 §3 的「工厂与产线/组织与日历用页内 Tab 切多实体」**违反 AGENTS §1.5-A.2,作废**。配套 UX 模板:`frontend/DESIGN/patterns/pages/master-data-templates.md`。
 
-| 当前（4 页，混乱） | 目标（7 页，职责清晰） |
-|---|---|
-| 物料与产品 `/skus`（建+读） | **物料与产品** `/skus`（基本单位实时取 `unit-of-measure` 实体） |
-| 客户与供应商 `/partners`（只读、猜角色） | **业务伙伴** `/partners`（角色筛选 + 角色列 + 新建带角色） |
-| 工厂资源 `/resources`（8 类压一张只读表） | **工厂与产线** `/facilities`（Tabs：工厂｜产线｜工作中心） + **设备台账** `/devices` |
-| 字典 `/reference-data`（只读扁平） | **数据字典** `/reference-data`（CodeSet 主从，可新增） |
-| —（计量单位写死前端常量子集） | **计量单位** `/units`（独立维护页：建/改/停用，量纲+精度+取整） |
-| —（班次/日历/班组/技能埋在 resources） | **组织与日历** `/organization`（Tabs：部门｜班组｜班次｜工作日历｜人员技能） |
-
-### 3.2 导航树
+### 3.1 修订后导航树（9 页 / 3 分组，侧栏带分组标签）
 
 ```
 基础数据 (master-data)
-├── 物料与产品    /master-data/skus           [Sku]
-├── 业务伙伴      /master-data/partners       [BusinessPartner]   角色筛选 + 角色列
-├── 工厂与产线    /master-data/facilities     [Site/Line/WorkCenter]  Tabs: 工厂｜产线｜工作中心
-├── 设备台账      /master-data/devices        [DeviceAsset]
-├── 数据字典      /master-data/reference-data [ReferenceDataCode] CodeSet 主从
-├── 计量单位      /master-data/units          [UnitOfMeasure]     建/改/停用,SKU 实时取数
-└── 组织与日历    /master-data/organization   [Dept/Team/Shift/Calendar/Skill]  Tabs
+【主对象】
+├── 物料与产品    /master-data/skus           [Sku]            列表-重详情(分组表单)
+├── 业务伙伴      /master-data/partners       [BusinessPartner] 单主体+多角色(对标 S/4 BP)
+├── 工厂结构      /master-data/facilities     [Site/Workshop/Line/WorkCenter] 左树+右详情+就地建子级
+└── 设备台账      /master-data/devices        [DeviceAsset]    平表(检索维度多,工厂结构树第5层下钻出口)
+【组织与排班】
+├── 组织与班组    /master-data/organization   [Department 树 + Team 列表-详情(成员主从)]
+├── 排班与日历    /master-data/scheduling     [Shift 设置表 + WorkCalendar 月历]
+└── 人员技能      /master-data/skills         [PersonnelSkill 矩阵(工人×技能)]
+【受控数据】
+├── 计量单位      /master-data/units          [UnitOfMeasure + UomConversion 主从]
+└── 数据字典      /master-data/reference-data [ReferenceDataCode CodeSet 主从]（最佳示范页，不动）
 ```
 
-> **取舍**：工厂/产线/工作中心是同一层级链，放同一页用页内 Tabs（同一心智里维护工厂结构）；设备数量级大、检索维度多、归属常变，单独成页；班次/日历/班组/技能与产能层级无关，迁到「组织与日历」。**页内 Tabs 不进菜单树**（符合导航约束）。
+> **取舍**：① 工厂结构是 4 层父子链 → 左树右详情,选中父级就地建子级（归属自动带入，消除手填 siteCode/lineCode 的心智断裂）；设备量大、归属常变 → 仍独立成页，树里给下钻出口。② 原「组织与日历」5-Tab 杂物抽屉拆 3 页——部门(树)+班组、班次+日历(设置表/月历)、技能(矩阵)**三种载体不同,合页逼用户切三种心智**,宁可 3 个纯粹轻页。③ Tab 只用于"同对象多视图/真平级"，**永不进菜单树**。
 
-### 3.3 各页职责（操作：查/增/改/停用）
+### 3.2 各页载体 / 改动量 / 关键交互
 
-| 页面 | 实体 | Phase 1 可做 | 受阻于后端 |
+| 页面 | 载体 | 改动量 | 关键交互 |
 |---|---|---|---|
-| 物料与产品 | Sku | 查、**新建**（重做表单，§6.2）、只读详情抽屉 | 编辑/停用/详情字段 |
-| 业务伙伴 | BusinessPartner | 查（角色筛选）、**新建（显式选角色）** | 列表回角色、编辑/停用 |
-| 工厂与产线 | Site/Line/WorkCenter | 各 Tab 查 + **新建**（产线选所属工厂、工作中心选工厂+产线） | 层级归属可视化、编辑/停用 |
-| 设备台账 | DeviceAsset | 查、**新建**（选所属产线/工作中心） | 按产线过滤、编辑/停用 |
-| 数据字典 | ReferenceDataCode | 保留 CodeSet 主从浏览、按治理新增码值 | 按 CodeSet 查询、编辑、种子 |
-| 计量单位 | UnitOfMeasure | 查、**新建**（量纲/精度/取整）、改名/停用/启用/详情；SKU 基本单位实时取此实体 | 单位换算维护页（Phase 2） |
-| 组织与日历 | Dept/Team/Shift/Calendar/Skill | 各 Tab 查 + **新建** | 编辑/停用 |
+| 物料与产品 | 列表-重详情 | 微调(加分类/类型列+筛选) | 分组折叠表单、基本单位实时取 UoM 实体 |
+| 业务伙伴 | 列表 + 角色叠加 | 基本保留(删过时"按编码推断"文案) | 角色筛选/列、多选角色新建 |
+| **工厂结构** | **左树+右详情** | **大改(Tab→树)** | 选中父级「+新建子级」预填归属、面包屑、树搜索、设备下钻出口 |
+| 设备台账 | 平表 | 保留(加来自树的 `?lineCode=` 预过滤) | 按产线/工作中心/状态筛选 |
+| **组织与班组** | 部门树 + 班组列表-详情 | **中改** | 部门树(按 parentCode 拼)、班组挂部门、成员主从 |
+| **排班与日历** | 班次设置表 + 日历月历 | **新页(从组织拆)** | 月历可视化(标工作日/节假日)；**依赖后端日历明细** |
+| **人员技能** | 矩阵 | **新页(从组织拆)** | 工人×技能格子(等级/有效期)；**依赖后端聚合数据** |
+| 计量单位 | 设置表 + 换算主从 | 保留(补 UomConversion) | 单位列表 + 1A=NB 换算配对 |
+| 数据字典 | CodeSet 主从 | **不动(示范页)** | 左 CodeSet 右码值、治理分级 |
+
+### 3.3 落地可行性 + 重构顺序
+
+**字段已具备、前端可拼、不等后端**:工厂结构树（siteCode/workshopCode/plantCode/lineCode 全回传 #345）、部门树（parentDepartmentCode）。
+**真数据缺口、Phase 1 不能假做**（保留现平表 + 标注"建设中"，**不做假月历/假矩阵**）:① 日历月历需后端**工作日/节假日明细**；② 技能矩阵需后端**按工人聚合的 typed 技能明细**；③ `update` 仅支持改名 → 树"改挂上级"/班组改挂部门做不到（**不许偷偷只改名**，§1.5-A.4）；④ 列表端点无父级/分类/keyword 过滤、有分页上限 → 拼全树用 `take` 兜底并标注。已汇总 **#370**（列表端点扩过滤+全量 / update 补结构字段 / 日历明细 / 技能聚合 / UoM 换算）。
+
+**重构顺序**:**① 工厂结构树**（最典型层级载体、不依赖后端、复用价值最高）→ 作为**树型示范页** → **② 数据字典**（已是主从示范，仅确认）→ **③ 组织与班组**（复用树范式+主从）→ **④ 排班/技能**（待 #370 解锁数据后；先建页壳+保留平表+标注）。
 
 ---
 
