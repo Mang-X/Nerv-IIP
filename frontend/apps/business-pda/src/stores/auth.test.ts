@@ -1,118 +1,91 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-
-vi.mock('@/api/auth', () => ({
-  loginConsole: vi.fn(async () => ({
-    accessToken: 'tok-1',
-    refreshToken: 'r-1',
-    sessionId: 's-1',
-    expiresAtUtc: new Date(Date.now() + 600_000).toISOString(),
-    principal: { loginName: 'op01' },
-  })),
-  logoutConsole: vi.fn(async () => {}),
-  refreshConsole: vi.fn(),
-  getConsoleMe: vi.fn(),
-}))
-
-import { refreshConsole } from '@/api/auth'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from './auth'
+
+const api = vi.hoisted(() => {
+  const consoleAuthApi = {
+    getConsoleMe: vi.fn(),
+    loginConsole: vi.fn(),
+    logoutConsole: vi.fn(),
+    refreshConsole: vi.fn(),
+  }
+  return {
+    ...consoleAuthApi,
+    consoleAuthApi,
+  }
+})
+
+vi.mock('@/api/auth', () => api)
+
+const principal = {
+  principalId: 'principal-1',
+  principalType: 'User',
+  loginName: 'operator01',
+  email: 'operator01@example.test',
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  permissionVersion: 1,
+}
+
+const session = {
+  accessToken: 'access-token',
+  refreshToken: 'refresh-token',
+  sessionId: 'session-1',
+  expiresAtUtc: '2099-01-01T00:00:00.000Z',
+  principal,
+}
 
 const STORAGE_KEY = 'nerv-iip.business-pda.auth'
 
 describe('pda auth store', () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
+    vi.useRealTimers()
     localStorage.clear()
-    vi.mocked(refreshConsole).mockReset()
+    setActivePinia(createPinia())
+    vi.resetAllMocks()
   })
 
-  it('is unauthenticated initially', () => {
-    expect(useAuthStore().isAuthenticated).toBe(false)
-  })
-
-  it('authenticates and exposes the access token after login', async () => {
+  it('stores the session under the business-pda storage key only', async () => {
+    api.loginConsole.mockResolvedValue(session)
     const auth = useAuthStore()
-    await auth.login('op01', 'pw')
+
+    await auth.login('operator01', 'pw')
+
     expect(auth.isAuthenticated).toBe(true)
-    expect(auth.accessToken).toBe('tok-1')
-    expect(auth.displayName).toBe('op01')
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, unknown>
+    expect(stored).toMatchObject({
+      principal,
+      refreshToken: 'refresh-token',
+      sessionId: 'session-1',
+    })
+    expect(stored).not.toHaveProperty('accessToken')
   })
 
-  it('clears the session on logout', async () => {
+  it('restores a saved refresh token from business-pda storage', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ refreshToken: 'refresh-token', sessionId: 'session-1', principal }),
+    )
+    api.refreshConsole.mockResolvedValue(session)
     const auth = useAuthStore()
-    await auth.login('op01', 'pw')
+
+    await auth.restoreSession()
+
+    expect(api.refreshConsole).toHaveBeenCalledWith({ refreshToken: 'refresh-token' })
+    expect(auth.restoreStatus).toBe('restored')
+    expect(auth.isAuthenticated).toBe(true)
+  })
+
+  it('clears local state without waiting for logout request', async () => {
+    api.loginConsole.mockResolvedValue(session)
+    api.logoutConsole.mockReturnValue(new Promise(() => undefined))
+    const auth = useAuthStore()
+    await auth.login('operator01', 'pw')
+
     await auth.logout()
-    expect(auth.isAuthenticated).toBe(false)
-    expect(auth.accessToken).toBeUndefined()
-  })
 
-  it('restores a valid stored session via refresh', async () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ refreshToken: 'r-old', sessionId: 's-old' }),
-    )
-    vi.mocked(refreshConsole).mockResolvedValue({
-      accessToken: 'tok-2',
-      refreshToken: 'r-2',
-      sessionId: 's-2',
-      principal: { loginName: 'op01' },
-    })
-
-    const auth = useAuthStore()
-    await auth.restoreSession()
-
-    expect(refreshConsole).toHaveBeenCalledWith({ refreshToken: 'r-old' })
-    expect(auth.restoreStatus).toBe('restored')
-    expect(auth.accessToken).toBe('tok-2')
-    expect(auth.isAuthenticated).toBe(true)
-  })
-
-  it('clears the session when refresh fails during restore', async () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ refreshToken: 'r-old', sessionId: 's-old' }),
-    )
-    vi.mocked(refreshConsole).mockRejectedValue(new Error('refresh failed'))
-
-    const auth = useAuthStore()
-    await auth.restoreSession()
-
-    expect(auth.restoreStatus).toBe('failed')
-    expect(auth.accessToken).toBeUndefined()
+    expect(api.logoutConsole).toHaveBeenCalledWith('access-token', { sessionId: 'session-1' })
     expect(auth.isAuthenticated).toBe(false)
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
-  })
-
-  it('does not call refresh when the stored blob lacks a refresh token', async () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sessionId: 's-old' }))
-
-    const auth = useAuthStore()
-    await auth.restoreSession()
-
-    expect(refreshConsole).not.toHaveBeenCalled()
-    expect(auth.restoreStatus).toBe('failed')
-    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
-  })
-
-  it('guards restoreSession against concurrent re-entry', async () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ refreshToken: 'r-old', sessionId: 's-old' }),
-    )
-    vi.mocked(refreshConsole).mockResolvedValue({
-      accessToken: 'tok-2',
-      refreshToken: 'r-2',
-      sessionId: 's-2',
-      principal: { loginName: 'op01' },
-    })
-
-    const auth = useAuthStore()
-    const first = auth.restoreSession()
-    // Second call while the first is in flight must short-circuit.
-    await auth.restoreSession()
-    await first
-
-    expect(refreshConsole).toHaveBeenCalledTimes(1)
-    expect(auth.restoreStatus).toBe('restored')
   })
 })

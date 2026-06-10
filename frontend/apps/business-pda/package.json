@@ -20,6 +20,7 @@
     "@capacitor/keyboard": "8.0.3",
     "@capacitor/status-bar": "8.0.2",
     "@nerv-iip/api-client": "workspace:*",
+    "@nerv-iip/auth": "workspace:*",
     "@nerv-iip/business-core": "workspace:*",
     "@nerv-iip/ui": "workspace:*",
     "@nerv-iip/ui-mobile": "workspace:*",
