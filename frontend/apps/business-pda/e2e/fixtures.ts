@@ -40,7 +40,9 @@ export async function routeConsoleApi(route: Route) {
   if (pathname === '/api/console/v1/auth/logout') {
     return fulfillJson(route, envelope({}))
   }
-  return fulfillJson(route, envelope({}))
+  // Don't fake-succeed unmatched paths — fall back so a future un-mocked endpoint
+  // surfaces loudly instead of being silently swallowed (aligns with console e2e).
+  return route.fallback()
 }
 
 /** Mock any business-console gateway call the home may make (none required for the foundation home). */
@@ -73,29 +75,46 @@ export async function expectNoHorizontalOverflow(page: Page) {
 /**
  * Every enabled interactive control must meet the 44px touch-target floor.
  *
- * The measured hit area is the control's own box OR—when the control delegates
- * its tap surface to a wrapper (e.g. ScanBar's input fills a `min-h-touch` row)—
- * the nearest ancestor that already provides a >=44px-tall hit area. We climb at
- * most a few levels so a bare small control is still caught.
+ * Query set covers real-world interactive shapes — including `<div role="button">`
+ * (e.g. ListRow) and `role="link"`, which are the forms most likely to render too
+ * small. Disabled controls (native `:disabled` or `aria-disabled="true"`) are excluded.
+ *
+ * Pass rule — deliberately strict so a large layout container can't mask a genuinely
+ * small control:
+ *  - The control's OWN box meets the floor (>=44 in both dimensions) → pass.
+ *  - ONLY for a bare `<input>` declared full-width (CSS `width:100%`, i.e. a flex
+ *    full-row input) whose parent row is >=44px tall does the row supply the tap
+ *    surface (e.g. ScanBar, where the input shares a 48px `min-h-touch` row with a
+ *    decorative icon). The width-intent check is read from the declared style, not the
+ *    rendered box, so an icon/padding sibling can't fail it — yet a small `role=button`
+ *    tucked inside a tall wrapper is NOT excused.
+ *  - Everything else (including role=button / div) is judged by its own box.
  */
 export async function expectTouchTargets(page: Page) {
   const tooSmall = await page.evaluate(() => {
     const FLOOR = 44
-    const els = [...document.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input')]
+    const els = [
+      ...document.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input, [role="button"]:not([aria-disabled="true"]), [role="link"]',
+      ),
+    ]
     return els
       .map((el) => {
-        // Effective hit area: self, or the nearest ancestor (<=3 levels up) whose box
-        // already meets the floor in both dimensions (e.g. ScanBar's `min-h-touch` row).
-        let node: HTMLElement | null = el
-        let hit = el.getBoundingClientRect()
-        for (let depth = 0; node && depth < 3; depth++, node = node.parentElement) {
-          const r = node.getBoundingClientRect()
-          if (r.width >= FLOOR && r.height >= FLOOR) {
-            hit = r
-            break
+        const own = el.getBoundingClientRect()
+        let effW = own.width
+        let effH = own.height
+        // Legal full-row input: a full-width (`width:100%`) <input> whose >=44px-tall
+        // parent row carries the tap surface. Restricted to <input> + declared
+        // full-width intent so it cannot excuse a small control inside a tall wrapper.
+        if (el.tagName === 'INPUT' && el.parentElement) {
+          const row = el.parentElement.getBoundingClientRect()
+          const declaredFullWidth = getComputedStyle(el).width === '100%' || el.classList.contains('w-full')
+          if (row.height >= FLOOR && own.width > 0 && declaredFullWidth) {
+            effW = Math.max(own.width, row.width)
+            effH = row.height
           }
         }
-        return { tag: el.tagName, w: hit.width, h: hit.height }
+        return { tag: el.tagName, role: el.getAttribute('role'), w: effW, h: effH }
       })
       .filter((m) => m.w > 0 && m.h > 0 && (m.w < FLOOR || m.h < FLOOR))
   })

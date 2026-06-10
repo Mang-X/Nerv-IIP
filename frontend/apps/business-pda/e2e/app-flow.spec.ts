@@ -22,6 +22,27 @@ test('logs in and lands on the workbench home', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible()
 })
 
+test('failed login shows an error and stays on the login route', async ({ page }) => {
+  // Override just the login endpoint with a 401; later-registered routes win in Playwright.
+  await page.route('**/api/console/v1/auth/login', (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: false, message: null, data: null }),
+    }),
+  )
+
+  await page.goto('/login')
+  await page.getByLabel('账号').fill('operator01')
+  await page.getByLabel('密码').fill('wrong-password')
+  await page.getByRole('button', { name: '登录' }).click()
+
+  // Error surfaces, the router did NOT navigate away, and the login form is still shown.
+  await expect(page.getByText('账号密码错误或会话已过期。')).toBeVisible()
+  await expect(page).toHaveURL('/login')
+  await expect(page.getByRole('button', { name: '登录' })).toBeVisible()
+})
+
 test('home shows scan bar, my-tasks empty state and a disabled app wall', async ({ page }) => {
   await seedStoredSession(page)
   await page.goto('/')

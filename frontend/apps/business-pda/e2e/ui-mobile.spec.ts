@@ -22,6 +22,16 @@ test('ScanBar emits the scanned value (keyboard-wedge: type + Enter)', async ({ 
   await expect(page.getByTestId('scan-result')).toHaveText('SKU-12345')
 })
 
+test('ScanBar reclaims focus after blur (keyboard-wedge stays armed)', async ({ page }) => {
+  await page.goto(GALLERY)
+  const input = page.locator('input[placeholder="扫描条码"]')
+  await input.click()
+  await expect(input).toBeFocused()
+  // Blur by clicking a non-input region; ScanBar's default `active` should refocus.
+  await page.getByRole('heading', { name: 'UI Mobile 组件库' }).click()
+  await expect(input).toBeFocused()
+})
+
 test('ListRow select fires only for the interactive row', async ({ page }) => {
   await page.goto(GALLERY)
   await expect(page.getByTestId('list-clicked')).toHaveText('idle')
