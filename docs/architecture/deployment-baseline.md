@@ -73,7 +73,7 @@ Nerv-IIP/
 
 ## Aspire AppHost 范围
 
-当前平台级 AppHost 已覆盖 PlatformGateway、BusinessGateway、AppHub、IAM、Ops、FileStorage、Notification、BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BusinessBarcodeLabel、BusinessApproval、BusinessWMS、BusinessIndustrialTelemetry、BusinessMaintenance、BusinessERP、Connector Host、Console、BusinessConsole、PostgreSQL、Redis、MinIO、可选 OpenTelemetry Collector 和 Aspire Dashboard；RabbitMQ 作为 `Messaging:Provider=RabbitMQ` 时启用的可选资源。本地开发默认由 Aspire AppHost 注入 Dashboard OTLP endpoint，不再默认把服务 telemetry 改指到自建 Collector；只有显式设置 `Observability:UseCollector=true` 时，才启用 AppHost 内的 Collector 资源用于 Collector/Compose-like 测试。后续 AppHost 应继续覆盖：
+当前平台级 AppHost 已覆盖 PlatformGateway、BusinessGateway、AppHub、IAM、Ops、FileStorage、Notification、BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BusinessBarcodeLabel、BusinessApproval、BusinessWMS、BusinessIndustrialTelemetry、BusinessMaintenance、BusinessERP、Connector Host、Console、BusinessConsole、PostgreSQL、Redis、MinIO、VictoriaLogs、可选 OpenTelemetry Collector 和 Aspire Dashboard；RabbitMQ 作为 `Messaging:Provider=RabbitMQ` 时启用的可选资源。本地开发默认由 Aspire AppHost 注入 OTLP endpoint，其中 logs 指向 VictoriaLogs，traces/metrics 继续用于 Dashboard/OTLP 诊断；只有显式设置 `Observability:UseCollector=true` 时，才启用 AppHost 内的 Collector 资源用于 Collector/Compose-like 测试。后续 AppHost 应继续覆盖：
 
 1. Knowledge、AI Integration 和 Qdrant。
 2. 后续新增业务服务、domain extension 或客户 profile 需要的受控依赖资源。
@@ -83,15 +83,16 @@ Nerv-IIP/
 
 ## 日志持久化
 
-1. 服务运行日志默认通过 Console 和 OpenTelemetry/OTLP 输出。本地 `.\nerv.ps1 dev` 由 Aspire AppHost 把服务 telemetry 直接连接到 AppHost Dashboard，保证 Structured logs、Traces 和 Metrics 页面可用于开发诊断。
-2. Docker Compose、安装包和显式 Collector 测试路径由 OpenTelemetry Collector 统一接收并转发 telemetry；Collector 可以把 OTLP/HTTP 数据转发到 standalone Aspire Dashboard 作为短期可视化入口。
-3. PoC、私有化和生产部署必须在部署 profile 中选择日志后端、索引策略、保留周期和清理任务；这些选择不影响业务代码。
+1. 服务运行日志默认通过 Console 和 OpenTelemetry/OTLP 输出。本地 `.\nerv.ps1 dev` 由 Aspire AppHost 把 logs 连接到 VictoriaLogs，并保留 Dashboard/OTLP 作为 traces、metrics 和短期诊断路径。
+2. Docker Compose、安装包和显式 Collector 测试路径由 OpenTelemetry Collector 统一接收并转发 telemetry；Collector 可以把 logs 转发到 VictoriaLogs，把 OTLP/HTTP 数据转发到 standalone Aspire Dashboard 作为短期可视化入口。
+3. PoC、私有化和生产部署必须在部署 profile 中选择日志后端、索引策略、保留周期和清理任务；当前内置 logs-only 后端为 VictoriaLogs。
 4. 日志不得写入业务 PostgreSQL schema，也不得复用 Ops `AuditRecord` 表。审计事实、业务事实和诊断日志保持独立存储与独立 retention。
 5. 运维日志包、诊断包、导出包和长期归档附件通过 File Storage 保存到 MinIO 或等价对象存储，只在业务表中保留 `fileId`/`FileReference`。
-6. 无观测后端时的最低兜底是滚动 JSONL 文件：按大小和日期滚动，限制保留文件数或保留天数，仅用于短期现场诊断。
-7. 若需要本地或 PoC 可视化排障，优先提供 `aspire-dashboard` 部署 profile：通过微软官方容器镜像接收 OTLP 并展示结构化日志、trace 和 metric；该 profile 只面向开发、联调、PoC 和短期诊断。不要把本地 AppHost 的 `OTEL_EXPORTER_OTLP_ENDPOINT` 手工覆盖到 Collector，除非正在测试 Collector 转发链路。
-8. OpenTelemetry Collector 可以启用本地 `file_storage` 持久化队列，用于后端短时不可用时的发送缓冲；它不是日志查询库，也不替代日志后端。
-9. InfluxDB 不作为默认日志后端；SQLite 只允许作为开发诊断或 agent/collector 内部队列实现细节，不用于多服务日志检索、告警或生产保留。
+6. VictoriaLogs 容器镜像固定为 `victoriametrics/victoria-logs:v1.50.0`，持久卷为 `nerv-iip-victoria-logs`，本地 retention 默认 `30d` 并通过 `-retentionPeriod` 显式传入；官方默认值 `7d` 不能替代部署 profile 的显式保留策略。
+7. 无观测后端时的最低兜底是滚动 JSONL 文件：按大小和日期滚动，限制保留文件数或保留天数，仅用于短期现场诊断。
+8. 若需要本地或 PoC 可视化排障，优先提供 `aspire-dashboard` 部署 profile：通过微软官方容器镜像接收 OTLP 并展示结构化日志、trace 和 metric；该 profile 只面向开发、联调、PoC 和短期诊断。不要把本地 AppHost 的 `OTEL_EXPORTER_OTLP_ENDPOINT` 手工覆盖到 Collector，除非正在测试 Collector 转发链路。
+9. OpenTelemetry Collector 可以启用本地 `file_storage` 持久化队列，用于后端短时不可用时的发送缓冲；它不是日志查询库，也不替代日志后端。
+10. InfluxDB 不作为默认日志后端；SQLite 只允许作为开发诊断或 agent/collector 内部队列实现细节，不用于多服务日志检索、告警或生产保留。
 
 ## 内置日志持久化方案
 
@@ -102,16 +103,18 @@ Nerv-IIP 默认提供一个不依赖第三方日志平台的内置持久化 prof
 | 层 | 默认存储 | 存什么 | 不存什么 |
 | --- | --- | --- | --- |
 | 日志正文 | 本机滚动 JSONL、File Storage `.jsonl.gz` chunk | 完整结构化日志行、可下载诊断包 | 不放入业务 PostgreSQL schema |
+| 集中日志后端 | VictoriaLogs | OTLP logs ingestion、LogsQL query、retention | logs-only，不承担 metrics/traces 后端 |
 | 查询索引 | PostgreSQL 独立 `observability` schema，或等价独立元数据存储 | chunk 目录、时间范围、服务、实例、`operationTaskId`、`correlationId`、`traceId`、level、`fileId`、过期时间 | 不保存完整原始日志正文 |
 | 页面查询 | PlatformGateway | 受控过滤、分页、脱敏、按索引定位 chunk 并扫描返回 | 不暴露 File Storage object key 或内部表结构 |
 
 1. 热日志：每个服务宿主通过 Serilog File sink 写滚动 JSONL 文件，目录按 `service.name`、部署环境、实例或节点分区；滚动策略按日期和大小双限制，保留天数、单文件大小和总占用上限由部署 profile 配置。
 2. 采集可靠性：OpenTelemetry Collector 可启用 `file_storage` 作为发送队列，降低短时后端不可用造成的丢失；它只保障转发，不作为查询存储。
 3. 归档 worker：关闭后的滚动日志文件由 Log Archive Worker 压缩为 `.jsonl.gz` chunk，计算 `sha256`、时间范围、行数、level 范围和标签摘要后上传到 File Storage。File Storage 的 provider 可以是 MinIO、客户对象存储或脚本安装下的本地文件目录。
-4. 查询索引：平台维护独立 `observability` schema 或等价独立元数据存储，只保存 `LogChunk`、可选 `LogEntryIndex`、`fileId`、时间范围、服务、实例、`operationTaskId`、`correlationId`、`traceId`、level、保留到期时间等索引字段。原始日志正文不写入 AppHub、Ops、Iam、FileStorage 等业务 schema。
-5. 控制台查询：PlatformGateway 先查索引定位 chunk，再通过 File Storage 读取压缩日志块，在受限时间窗口内扫描并返回平台中立 DTO。近实时查看可先读取热日志或 Aspire Dashboard 短期 telemetry；历史查看走归档 chunk。
-6. 清理策略：日志保留由 profile 定义，清理任务必须同时删除 File Storage 对象和 `observability` 索引记录。审计记录、业务事务数据和诊断日志可以拥有不同 retention。
-7. 替换策略：客户已有日志平台时，可以新增 Gateway adapter 直接查询客户平台；内置归档仍可作为兜底或关闭。前端契约不随后端选择变化。
+4. 集中后端：当前通过 VictoriaLogs 保存可检索日志正文，PlatformGateway 通过 `VictoriaLogs:BaseUrl` 调用 LogsQL query API，服务侧通过 `OpenTelemetry:Logs:Endpoint` + `OpenTelemetry:Logs:Path` 写入 OTLP logs。
+5. 查询索引：平台维护独立 `observability` schema 或等价独立元数据存储时，只保存 `LogChunk`、可选 `LogEntryIndex`、`fileId`、时间范围、服务、实例、`operationTaskId`、`correlationId`、`traceId`、level、保留到期时间等索引字段。原始日志正文不写入 AppHub、Ops、Iam、FileStorage 等业务 schema。
+6. 控制台查询：PlatformGateway 通过 VictoriaLogs adapter 或后续索引/chunk adapter，在受限时间窗口内扫描并返回平台中立 DTO。近实时查看可先读取 VictoriaLogs 或热日志；历史归档可走归档 chunk。
+7. 清理策略：日志保留由 profile 定义，VictoriaLogs、File Storage 对象和 `observability` 索引记录必须分别声明保留与清理策略。审计记录、业务事务数据和诊断日志可以拥有不同 retention。
+8. 替换策略：客户已有日志平台时，可以新增 Gateway adapter 直接查询客户平台；内置 VictoriaLogs 或归档仍可作为兜底或关闭。前端契约不随后端选择变化。
 
 最小索引模型：
 
@@ -126,14 +129,16 @@ Nerv-IIP 默认提供一个不依赖第三方日志平台的内置持久化 prof
 3. `LogChunk` 默认按 `fromUtc` 或 `archivedAtUtc` 做月分区或日分区；常用索引包括 `(serviceName, fromUtc, toUtc)`、`(instanceKey, fromUtc)`、`(operationTaskId, fromUtc)`、`(correlationId, fromUtc)`、`(traceId, fromUtc)`。大批量按时间追加时，可补 BRIN 索引降低索引体积。
 4. 为兼容后续 GaussDB、DMDB 等 database profile，`LogChunk` 首版只使用普通列、时间范围、字符串和数字字段；JSONB、GIN、trigram、全文检索等 PostgreSQL 专有能力只能作为 PostgreSQL profile 的可选优化，不进入跨数据库最小模型。
 5. SQLite 只允许作为无中心数据库的单机诊断索引或临时导入工具，不作为多服务部署、生产保留和控制台共享查询的默认索引数据库。
-6. Elastic、OpenSearch、ClickHouse 等可以作为外部日志平台或增强索引后端，通过 PlatformGateway adapter 接入；启用这些后端时，可以关闭或弱化内置 `observability` 索引，但前端契约不变。
-7. Redis 不作为日志索引数据库；它可以用于短期缓存查询结果或游标状态，但不能承担持久化索引和 retention 清理事实。
+6. VictoriaLogs 是当前内置 logs-only 存储与查询后端；PostgreSQL `observability` schema 仍只作为元数据/索引候选，不保存日志正文。
+7. Elastic、OpenSearch、ClickHouse 等可以作为外部日志平台或增强索引后端，通过 PlatformGateway adapter 接入；启用这些后端时，可以关闭或弱化内置 `observability` 索引或 VictoriaLogs 查询路径，但前端契约不变。
+8. Redis 不作为日志索引数据库；它可以用于短期缓存查询结果或游标状态，但不能承担持久化索引和 retention 清理事实。
 
 ## 观测后端资源分层
 
-1. `collector-only` 是默认第四阶段 profile：只保证日志、trace、metric 能被 OpenTelemetry Collector 接收和转发，资源要求低，主要受采集量、批处理、重试队列和是否启用 `file_storage` 影响；它不提供日志查询 UI。
-2. `aspire-dashboard` 是默认推荐的本地观测 UI profile：它同时符合微软官方、自部署、开源免费和社区活跃等优先特征，可通过 Aspire CLI 或 `mcr.microsoft.com/dotnet/aspire-dashboard` 容器运行，接收 OTLP/gRPC 和 OTLP/HTTP。
-3. `aspire-dashboard` 只用于开发、联调、PoC 和短期诊断；其 telemetry 存储是内存态，超过限制会丢弃，进程重启后不保留，因此不能承诺生产级日志持久化、长期检索或审计保留。
+1. `victorialogs` 是当前内置 logs-only profile：提供 OTLP logs ingestion、LogsQL query 和本地持久卷；它不接收 metrics/traces，不替代 Aspire Dashboard 的短期 trace/metric 诊断。
+2. `collector-only` 是第四阶段 profile：只保证日志、trace、metric 能被 OpenTelemetry Collector 接收和转发，资源要求低，主要受采集量、批处理、重试队列和是否启用 `file_storage` 影响；它不提供日志查询 UI。
+3. `aspire-dashboard` 是默认推荐的本地观测 UI profile：它同时符合微软官方、自部署、开源免费和社区活跃等优先特征，可通过 Aspire CLI 或 `mcr.microsoft.com/dotnet/aspire-dashboard` 容器运行，接收 OTLP/gRPC 和 OTLP/HTTP。
+4. `aspire-dashboard` 只用于开发、联调、PoC 和短期诊断；其 telemetry 存储是内存态，超过限制会丢弃，进程重启后不保留，因此不能承诺生产级日志持久化、长期检索或审计保留。
 4. Grafana、Loki、Elasticsearch、Seq、ClickHouse 等第三方观测后端不作为 Nerv-IIP 默认选型；客户已有平台可以通过 Gateway adapter 接入，但不能成为产品前端或第四阶段交付的硬依赖。
 5. 微软官方、可自部署、开源免费、稳定活跃是观测后端选型优先级，不是所有候选都必须同时满足的准入门槛。候选方案缺失其中任一特征时，必须在后续 ADR 中说明取舍原因、替代路径和退出成本。
 6. 当前冻结内置归档 profile 作为默认持久化方案，不冻结第三方生产级日志后端。若后续需要专业全文检索、复杂聚合或超大规模日志分析，应在选型 ADR 中明确部署方式、授权模型、保留策略和迁移路径。
@@ -142,8 +147,8 @@ Nerv-IIP 默认提供一个不依赖第三方日志平台的内置持久化 prof
 
 | 部署目标 | 默认观测入口 | 日志 UI | 持久化边界 |
 | --- | --- | --- | --- |
-| Aspire AppHost | AppHost 负责连接服务、基础设施和 Dashboard OTLP endpoint；Collector 只在 `Observability:UseCollector=true` 时启用 | 使用 AppHost/Aspire Dashboard 进行开发、联调和 PoC 诊断；可用 `aspire otel logs` / `aspire otel traces` 做 CLI 校验 | Dashboard 为内存态短期视图；长期日志走滚动 JSONL、Log Archive Worker、File Storage chunk 和 `observability` 索引 |
-| Docker Compose | Compose 或 overlay 启动 OpenTelemetry Collector；可选启动 `aspire-dashboard` 与 Log Archive Worker 容器 | `aspire-dashboard` 作为可选 service，不作为 Compose 必选项；Collector 可通过 `NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT` 转发到 Dashboard OTLP/HTTP | volumes 必须覆盖滚动日志目录和 Collector `file_storage` 目录；归档 chunk 上传 File Storage，Dashboard 不承担长期保留 |
+| Aspire AppHost | AppHost 负责连接服务、基础设施、VictoriaLogs 和 Dashboard OTLP endpoint；Collector 只在 `Observability:UseCollector=true` 时启用 | 使用 VictoriaLogs LogsQL 查询集中日志，使用 AppHost/Aspire Dashboard 进行开发、联调和 PoC 诊断；可用 `aspire otel logs` / `aspire otel traces` 做 CLI 校验 | VictoriaLogs 持久卷保存集中日志；Dashboard 为内存态短期视图；归档仍走滚动 JSONL、Log Archive Worker、File Storage chunk 和 `observability` 索引 |
+| Docker Compose | Compose 或 overlay 启动 VictoriaLogs 与 OpenTelemetry Collector；可选启动 `aspire-dashboard` 与 Log Archive Worker 容器 | `aspire-dashboard` 作为可选 service，不作为 Compose 必选项；Collector 可通过 `NERV_IIP_VICTORIA_LOGS_OTLP_HTTP_ENDPOINT` 转发 logs 到 VictoriaLogs，并通过 `NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT` 转发到 Dashboard OTLP/HTTP | volumes 必须覆盖 VictoriaLogs 数据、滚动日志目录和 Collector `file_storage` 目录；归档 chunk 上传 File Storage，Dashboard 不承担长期保留 |
 | 安装包/脚本 | Windows Service/systemd 通过环境变量或配置文件声明 OTLP endpoint 和滚动日志目录 | 脚本可选择启动 standalone Aspire Dashboard、连接已有 Collector，或只保留滚动文件诊断 | 无容器环境必须至少具备滚动 JSONL 文件；需要集中保留时安装 Log Archive Worker 或计划任务上传 File Storage |
 
 1. 三种部署目标都必须使用同一套日志字段、OTLP 配置键和滚动文件策略，不能因为入口不同而产生不同日志语义。
@@ -154,7 +159,7 @@ Nerv-IIP 默认提供一个不依赖第三方日志平台的内置持久化 prof
 
 1. 控制台前端不得直接访问 Aspire Dashboard、第三方观测后端或客户侧日志平台，也不得在浏览器中暴露后端地址、凭据、租户 header 或查询语言。
 2. PlatformGateway 负责把业务上下文转换为日志查询上下文：用户、组织、环境、应用实例、操作任务、correlationId、traceId、时间窗口、level 和关键字都必须经过鉴权与范围收敛。
-3. Gateway 后续提供 `/api/console/v1/logs/query` 作为通用查询入口，并可以提供 `/api/console/v1/instances/{instanceKey}/logs`、`/api/console/v1/operation-tasks/{operationTaskId}/logs` 等页面级便捷入口。
+3. Gateway 当前提供 `POST /api/console/v1/logs/query` 作为通用查询入口，并可以后续提供 `/api/console/v1/instances/{instanceKey}/logs`、`/api/console/v1/operation-tasks/{operationTaskId}/logs` 等页面级便捷入口。
 4. 日志查询响应使用平台中立 DTO，不泄漏后端查询语言、内部 API、tenant header 或具体存储字段。建议字段为 `timestamp`、`level`、`service`、`instanceKey`、`operationTaskId`、`correlationId`、`traceId`、`message`、`labels`、`fields`、`nextCursor` 和 `partial`。
 5. Gateway 必须限制默认时间窗口、最大时间窗口、返回条数、分页游标、并发和查询频率；对敏感字段做脱敏，不允许把 token、password、secret、connection string 等内容原样返回给前端。
 6. 控制台第一版日志查看以历史查询为主：实例详情页和操作任务详情页显示日志面板，支持时间范围、level、服务、关键字、correlationId/traceId 过滤。默认查询内置归档索引和 File Storage chunk；实时 tail 可以作为后续 SSE 或 WebSocket 能力，不进入第四阶段默认验收。
@@ -166,7 +171,7 @@ Nerv-IIP 默认提供一个不依赖第三方日志平台的内置持久化 prof
 3. 生成的 Compose 产物进入交付前必须校验 volumes、restart policy、资源限制、健康检查、镜像 tag、secret 注入和端口暴露。
 4. 不在 Compose 文件中写入真实密钥、客户域名或不可公开的环境信息。
 5. 若需要按客户环境定制，优先使用 overlay、`.env`、参数文件或安装脚本生成，不复制出长期维护的平行 Compose。
-6. Compose profile 至少应区分 `collector-only`、`aspire-dashboard` 和 `log-archive`：前者只启动 Collector 和滚动文件目录，`aspire-dashboard` 额外启动 Dashboard 容器并配置 OTLP 端口映射，`log-archive` 启动归档 worker 并挂载日志目录与 File Storage 配置。
+6. Compose profile 至少应区分 `victorialogs`、`collector-only`、`aspire-dashboard` 和 `log-archive`：`victorialogs` 启动集中日志后端与持久卷，`collector-only` 启动 Collector 和滚动文件目录，`aspire-dashboard` 额外启动 Dashboard 容器并配置 OTLP 端口映射，`log-archive` 启动归档 worker 并挂载日志目录与 File Storage 配置。
 7. 当前 legacy Compose overlay 使用 `infra/compose/nerv-iip.dependencies.yml` + `infra/compose/nerv-iip.platform.yml` 组合验证；生产配置从 `infra/compose/nerv-iip.production.env.example` 复制后填入现场密钥，不在仓库保存真实值。该 overlay 不再作为新增服务的首选部署目标；新增部署能力应先进入 AppHost，再由 Aspire 生成 Compose。
 8. JavaScript/Vite 资源必须显式声明发布形态。Platform Console 当前使用 `PublishAsStaticWebsite("/api", PlatformGateway)`；Business Console 仍需补齐 `/api/console` 与 `/api/business-console` 的双后端生产路由后，才能把 Aspire Compose publish 视为完整 Business Console 部署。
 

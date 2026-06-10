@@ -155,6 +155,13 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("WithHttpEndpoint(port: 5106", programText);
         Assert.Contains("Notification__BaseUrl", programText);
         Assert.Contains("AddContainer(\"minio\"", programText);
+        Assert.Contains("AddContainer(\"victoria-logs\"", programText);
+        Assert.Contains("victoriametrics/victoria-logs", programText);
+        Assert.Contains("v1.50.0", programText);
+        Assert.Contains("nerv-iip-victoria-logs", programText);
+        Assert.Contains("OpenTelemetry__Logs__Endpoint", programText);
+        Assert.Contains("OpenTelemetry__Logs__Path", programText);
+        Assert.Contains("VictoriaLogs__BaseUrl", programText);
         Assert.Contains("AddContainer(\"otel-collector\"", programText);
         Assert.Contains("otel-collector.dev.yaml", programText);
         Assert.Contains("OTEL_EXPORTER_OTLP_ENDPOINT", programText);
@@ -167,8 +174,14 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("Aspire.Hosting.JavaScript", projectText);
 
         Assert.True(File.Exists(collectorConfig), "OpenTelemetry Collector dev config must be present.");
+        var collectorText = File.ReadAllText(collectorConfig);
+        Assert.Contains("otlphttp/victorialogs", collectorText);
+        Assert.Contains("logs_endpoint: ${env:NERV_IIP_VICTORIA_LOGS_OTLP_HTTP_ENDPOINT}", collectorText);
         Assert.Contains("--config=/etc/otelcol/config.yaml", composeText);
         Assert.Contains("./otel/otel-collector.dev.yaml:/etc/otelcol/config.yaml:ro", composeText);
+        Assert.Contains("victoria-logs:", composeText);
+        Assert.Contains("victoriametrics/victoria-logs:v1.50.0", composeText);
+        Assert.Contains("nerv-iip-victoria-logs:/victoria-logs-data", composeText);
     }
 
     [Fact]
