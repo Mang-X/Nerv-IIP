@@ -19,7 +19,7 @@ x-dotnet-service: &dotnet-service
     DOTNET_ENVIRONMENT: ${DOTNET_ENVIRONMENT:-Production}
     Persistence__Provider: PostgreSQL
     Persistence__AutoMigrate: ${NERV_IIP_AUTO_MIGRATE:-false}
-    Messaging__Provider: ${NERV_IIP_MESSAGING_PROVIDER:-InMemory}
+    Messaging__Provider: ${NERV_IIP_MESSAGING_PROVIDER:-Redis}
     RabbitMQ__HostName: rabbitmq
     RabbitMQ__Port: 5672
     RabbitMQ__UserName: ${NERV_IIP_RABBITMQ_USER:-guest}
