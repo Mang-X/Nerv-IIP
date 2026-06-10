@@ -881,3 +881,42 @@ export type BusinessConsoleRoutingListEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRoutingListResponse
 export type BusinessConsoleRunMrpEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRunMrpResponse
+
+// --- Scheduling / APS lite (#206) -----------------------------------------
+// 手工接出 #206 BusinessScheduling facade 的 SDK 与契约类型(generated 勿手改)。
+export {
+  previewBusinessConsoleSchedulingPlan,
+  listBusinessConsoleSchedulingPlans,
+  createBusinessConsoleSchedulingPlan,
+  getBusinessConsoleSchedulingPlan,
+  getBusinessConsoleSchedulingPlanGantt,
+  releaseBusinessConsoleSchedulingPlan,
+} from './generated/business-console/sdk.gen'
+
+import type {
+  NervIipContractsSchedulingSchedulePlanContract,
+  NervIipContractsSchedulingSchedulePlanStatusContract,
+  NervIipContractsSchedulingScheduleAssignmentContract,
+  NervIipContractsSchedulingScheduleResourceLoadContract,
+  NervIipContractsSchedulingScheduleConflictContract,
+  NervIipContractsSchedulingScheduleConflictReasonCodeContract,
+  NervIipContractsSchedulingScheduleConflictSeverityContract,
+  NervIipContractsSchedulingUnscheduledOperationContract,
+  NervIipContractsSchedulingScheduleChangeContract,
+  NervIipContractsSchedulingScheduleChangeTypeContract,
+  NervIipContractsSchedulingGanttScheduleItemContract,
+} from './generated/business-console/types.gen'
+
+export type SchedulePlanContract = NervIipContractsSchedulingSchedulePlanContract
+export type SchedulePlanStatusContract = NervIipContractsSchedulingSchedulePlanStatusContract
+export type ScheduleAssignmentContract = NervIipContractsSchedulingScheduleAssignmentContract
+export type ScheduleResourceLoadContract = NervIipContractsSchedulingScheduleResourceLoadContract
+export type ScheduleConflictContract = NervIipContractsSchedulingScheduleConflictContract
+export type ScheduleConflictReasonCodeContract =
+  NervIipContractsSchedulingScheduleConflictReasonCodeContract
+export type ScheduleConflictSeverityContract =
+  NervIipContractsSchedulingScheduleConflictSeverityContract
+export type UnscheduledOperationContract = NervIipContractsSchedulingUnscheduledOperationContract
+export type ScheduleChangeContract = NervIipContractsSchedulingScheduleChangeContract
+export type ScheduleChangeTypeContract = NervIipContractsSchedulingScheduleChangeTypeContract
+export type GanttScheduleItemContract = NervIipContractsSchedulingGanttScheduleItemContract
