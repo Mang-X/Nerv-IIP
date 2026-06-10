@@ -62,6 +62,28 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
   await expect(result.getByText('报工成功')).toBeVisible()
 })
 
+test('领料：列表渲染领料申请行（不退化为空态）', async ({ page }) => {
+  await page.goto('/mes/issue')
+
+  await expect(page.getByRole('heading', { name: '领料' })).toBeVisible()
+
+  // 领料申请行：title = 工单 · 物料，不外显原始 requestId。
+  await expect(page.getByText('WO-1 · 物料 MAT-1')).toBeVisible()
+  await expect(page.getByText('WO-1 · 物料 MAT-2')).toBeVisible()
+  await expect(page.getByText('暂无领料申请')).toHaveCount(0)
+})
+
+test('完工入库：列表渲染入库申请行（不退化为空态）', async ({ page }) => {
+  await page.goto('/mes/receipt')
+
+  await expect(page.getByRole('heading', { name: '完工入库' })).toBeVisible()
+
+  // 入库申请行：title = 工单 · 物料(SKU)，不外显原始 receiptRequestId。
+  await expect(page.getByText('WO-1 · 物料 SKU-1')).toBeVisible()
+  await expect(page.getByText('WO-1 · 物料 SKU-2')).toBeVisible()
+  await expect(page.getByText('暂无完工入库申请')).toHaveCount(0)
+})
+
 test('首页 → 工序执行：点击应用墙入口跳转到 /mes/operation', async ({ page }) => {
   await page.goto('/')
 

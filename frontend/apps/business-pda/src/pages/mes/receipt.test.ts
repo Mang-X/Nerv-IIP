@@ -46,11 +46,18 @@ const workOrders = [
   { workOrderId: 'WO-2026-0002', skuId: 'SKU-B', quantity: 50, status: 'Released' },
 ]
 
+// 可变的列表加载态，让用例切换 loading/error 与正常态。
+const receiptsPending = ref(false)
+const receiptsError = ref<unknown>(null)
+const receiptRows = ref(receipts)
+
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesReceipts: () => ({
     filters: receiptFilters,
-    receipts: computed(() => receipts),
-    total: computed(() => receipts.length),
+    receipts: computed(() => receiptRows.value),
+    total: computed(() => receiptRows.value.length),
+    pending: receiptsPending,
+    error: receiptsError,
     refresh: refreshReceipts,
     createReceipt,
   }),
@@ -73,6 +80,9 @@ describe('PDA MES finished-goods receipt page', () => {
     push.mockClear()
     receiptFilters.keyword = undefined
     workOrderFilters.keyword = undefined
+    receiptsPending.value = false
+    receiptsError.value = null
+    receiptRows.value = receipts
   })
 
   it('renders the receipt list with readable Chinese status and work order numbers', () => {
@@ -84,6 +94,19 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(wrapper.text()).toContain('已入库')
     expect(wrapper.text()).not.toContain('Requested')
     expect(wrapper.text()).not.toContain('Received')
+  })
+
+  it('shows the list error (not the empty state) when the receipts query fails', async () => {
+    receiptRows.value = []
+    receiptsError.value = new Error('加载失败：网络异常')
+    const wrapper = mount(ReceiptPage)
+    await flushPromises()
+
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.exists()).toBe(true)
+    expect(alert.text()).toContain('加载失败：网络异常')
+    // 错误态不应退化为「暂无完工入库申请」空态
+    expect(wrapper.text()).not.toContain('暂无完工入库申请')
   })
 
   it('scanning sets the receipt keyword filter', async () => {

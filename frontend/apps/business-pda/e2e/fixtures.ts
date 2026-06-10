@@ -77,6 +77,52 @@ export const mesWorkOrders = [
 ]
 
 /**
+ * Material-issue request rows — shape mirrors `BusinessConsoleMesMaterialIssueRequestRow`
+ * so `/mes/issue` renders real titles/subtitles instead of the empty state.
+ */
+export const mesMaterialIssueRequests = [
+  {
+    requestId: 'ISS-1',
+    workOrderId: 'WO-1',
+    materialId: 'MAT-1',
+    requestedQuantity: 100,
+    receivedQuantity: 0,
+    status: 'Requested',
+  },
+  {
+    requestId: 'ISS-2',
+    workOrderId: 'WO-1',
+    materialId: 'MAT-2',
+    requestedQuantity: 50,
+    receivedQuantity: 50,
+    status: 'Received',
+  },
+]
+
+/**
+ * Finished-goods receipt request rows — shape mirrors `BusinessConsoleMesReceiptRequestRow`
+ * so `/mes/receipt` renders real titles/subtitles instead of the empty state.
+ */
+export const mesReceiptRequests = [
+  {
+    receiptRequestId: 'RCPT-1',
+    requestNo: 'FGR-2026-0001',
+    workOrderId: 'WO-1',
+    skuId: 'SKU-1',
+    quantity: 100,
+    receiptStatus: 'Requested',
+  },
+  {
+    receiptRequestId: 'RCPT-2',
+    requestNo: 'FGR-2026-0002',
+    workOrderId: 'WO-1',
+    skuId: 'SKU-2',
+    quantity: 50,
+    receiptStatus: 'Received',
+  },
+]
+
+/**
  * Mock the business-console gateway. MES list/action/create endpoints the
  * operation + report flows hit get realistic envelopes; everything else keeps
  * returning the default empty envelope.
@@ -99,6 +145,13 @@ export async function routeBusinessConsoleApi(route: Route) {
   if (pathname === `${base}/production-reports`) {
     if (method === 'POST') return fulfillJson(route, envelope({}))
     return fulfillJson(route, envelope({ items: [], total: 0 }))
+  }
+  if (pathname === `${base}/material-issue-requests`) {
+    return fulfillJson(route, envelope({ items: mesMaterialIssueRequests, total: mesMaterialIssueRequests.length }))
+  }
+  if (pathname === `${base}/finished-goods-receipt-requests`) {
+    if (method === 'POST') return fulfillJson(route, envelope({}))
+    return fulfillJson(route, envelope({ items: mesReceiptRequests, total: mesReceiptRequests.length }))
   }
 
   // Keep other paths returning the existing default envelope.

@@ -318,6 +318,8 @@ export function useMesMaterialIssue() {
       ),
     ),
     total: computed(() => envelopeTotal(requestsQuery.data.value)),
+    pending: requestsQuery.isLoading,
+    error: requestsQuery.error,
     refresh: requestsQuery.refetch,
     createIssue: (workOrderId: string, body: CreateIssueInput) =>
       createMutation.mutateAsync({
@@ -363,6 +365,8 @@ export function useMesReceipts() {
       ),
     ),
     total: computed(() => envelopeTotal(receiptsQuery.data.value)),
+    pending: receiptsQuery.isLoading,
+    error: receiptsQuery.error,
     refresh: receiptsQuery.refetch,
     createReceipt: (input: CreateReceiptInput) =>
       createMutation.mutateAsync({

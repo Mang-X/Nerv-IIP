@@ -25,6 +25,8 @@ const {
   filters,
   receipts,
   total,
+  pending,
+  error,
   createReceipt,
 } = useMesReceipts()
 
@@ -85,6 +87,13 @@ function workOrderSubtitle(wo: WorkOrder) {
   if (wo.quantity !== undefined) parts.push(`计划 ${wo.quantity}`)
   return parts.join(' · ')
 }
+
+// --- 列表加载错误 ---
+const errorMessage = computed(() => {
+  const e = error.value
+  if (!e) return ''
+  return e instanceof Error ? e.message : '加载完工入库申请失败，请下拉刷新或重试。'
+})
 
 // --- 流程上下文（finishedGoodsReceiptFlow 驱动当前步/进度）---
 const ctx = reactive<ReceiptCtx>({
@@ -290,8 +299,10 @@ function onScanWorkOrder(value: string) {
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 条完工入库申请</p>
 
+      <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
       <div
-        v-if="receipts.length === 0"
+        v-if="!pending && !error && receipts.length === 0"
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
         暂无完工入库申请

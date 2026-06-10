@@ -46,13 +46,18 @@ const workOrders = [
   { workOrderId: 'WO-2026-0002', skuId: 'SKU-B', quantity: 50, status: 'Released' },
 ]
 
+// 可变的列表加载态，让用例切换 loading/error 与正常态。
+const issuePending = ref(false)
+const issueError = ref<unknown>(null)
+const issueRequests = ref(requests)
+
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesMaterialIssue: () => ({
     filters: issueFilters,
-    requests: computed(() => requests),
-    total: computed(() => requests.length),
-    pending: ref(false),
-    error: ref(null),
+    requests: computed(() => issueRequests.value),
+    total: computed(() => issueRequests.value.length),
+    pending: issuePending,
+    error: issueError,
     refresh: refreshRequests,
     createIssue,
     confirmLineSideReceipt,
@@ -78,6 +83,9 @@ describe('PDA MES material issue page', () => {
     push.mockClear()
     issueFilters.keyword = undefined
     workOrderFilters.keyword = undefined
+    issuePending.value = false
+    issueError.value = null
+    issueRequests.value = requests
   })
 
   it('lists material issue requests with readable info', () => {
@@ -89,6 +97,19 @@ describe('PDA MES material issue page', () => {
     expect(wrapper.text()).toContain('MAT-A')
     // 不暴露原始 requestId 作为标签
     expect(wrapper.text()).not.toContain('REQ-1')
+  })
+
+  it('shows the list error (not the empty state) when the requests query fails', async () => {
+    issueRequests.value = []
+    issueError.value = new Error('加载失败：网络异常')
+    const wrapper = mount(IssuePage)
+    await flushPromises()
+
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.exists()).toBe(true)
+    expect(alert.text()).toContain('加载失败：网络异常')
+    // 错误态不应退化为「暂无领料申请」空态
+    expect(wrapper.text()).not.toContain('暂无领料申请')
   })
 
   it('scanning sets the issue keyword filter', async () => {
