@@ -68,6 +68,19 @@ const wcActions = useMasterDataResourceActions('work-center')
 for (const r of [sites, lines, workCenters]) r.filters.take = TREE_TAKE
 workshops.filters.take = TREE_TAKE
 
+// 工作日历列表（仅供"默认工作日历"在详情面板解析编码→名称）。
+const calendars = useMasterDataResource<Record<string, unknown>>('work-calendar')
+calendars.filters.take = TREE_TAKE
+
+// 归属 / 日历 编码 → 名称解析（详情面板显示名称而非裸编码；列表加载后 computed 实时更新）。
+const siteNameByCode = computed(() => new Map(sites.items.value.map((s) => [s.code ?? '', s.displayName ?? s.code ?? ''])))
+const workshopNameByCode = computed(() => new Map(workshops.workshops.value.map((w) => [w.code ?? '', w.displayName ?? w.code ?? ''])))
+const lineNameByCode = computed(() => new Map(lines.items.value.map((l) => [l.code ?? '', l.displayName ?? l.code ?? ''])))
+const calendarNameByCode = computed(() => new Map(calendars.items.value.map((c) => [c.code ?? '', c.displayName ?? c.code ?? ''])))
+function nameOf(map: Map<string, string>, code: string): string {
+  return code ? (map.get(code) ?? code) : ''
+}
+
 // 节点类型与其在层级中的角色。
 type NodeType = 'site' | 'workshop' | 'production-line' | 'work-center'
 interface TreeNode {
@@ -333,23 +346,23 @@ const detailFields = computed(() => {
       return [
         { label: '车间编码', value: node.code },
         { label: '车间名称', value: node.displayName },
-        { label: '所属工厂', value: pick('siteCode') },
+        { label: '所属工厂', value: nameOf(siteNameByCode.value, pick('siteCode')) },
       ]
     case 'production-line':
       return [
         { label: '产线编码', value: node.code },
         { label: '产线名称', value: node.displayName },
-        { label: '所属工厂', value: pick('siteCode') },
-        { label: '所属车间', value: pick('workshopCode') },
+        { label: '所属工厂', value: nameOf(siteNameByCode.value, pick('siteCode')) },
+        { label: '所属车间', value: nameOf(workshopNameByCode.value, pick('workshopCode')) },
         { label: '更新时间', value: formatDateTime(item.snapshotVersion) },
       ]
     case 'work-center':
       return [
         { label: '工作中心编码', value: node.code },
         { label: '工作中心名称', value: node.displayName },
-        { label: '所属工厂', value: pick('plantCode') },
-        { label: '所属产线', value: pick('lineCode') },
-        { label: '默认工作日历', value: pick('defaultCalendarCode') },
+        { label: '所属工厂', value: nameOf(siteNameByCode.value, pick('plantCode')) },
+        { label: '所属产线', value: nameOf(lineNameByCode.value, pick('lineCode')) },
+        { label: '默认工作日历', value: nameOf(calendarNameByCode.value, pick('defaultCalendarCode')) },
         { label: '日产能（分钟）', value: pick('capacityMinutesPerDay') },
         { label: '更新时间', value: formatDateTime(item.snapshotVersion) },
       ]
