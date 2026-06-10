@@ -2,12 +2,18 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from './auth'
 
-const api = vi.hoisted(() => ({
-  getConsoleMe: vi.fn(),
-  loginConsole: vi.fn(),
-  logoutConsole: vi.fn(),
-  refreshConsole: vi.fn(),
-}))
+const api = vi.hoisted(() => {
+  const consoleAuthApi = {
+    getConsoleMe: vi.fn(),
+    loginConsole: vi.fn(),
+    logoutConsole: vi.fn(),
+    refreshConsole: vi.fn(),
+  }
+  return {
+    ...consoleAuthApi,
+    consoleAuthApi,
+  }
+})
 
 vi.mock('@/api/auth', () => api)
 

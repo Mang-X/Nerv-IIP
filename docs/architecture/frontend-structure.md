@@ -29,11 +29,11 @@ frontend/
     shared-types/
 ```
 
-第三迭代只创建控制台纵切必需包：`api-client`、`ui`、`app-shell`。`layer-base`、`layer-platform`、`auth`、`shared-types` 是已冻结的长期边界，等第二个应用或跨包复用真正出现时再创建，避免首批脚手架提前空转。
+第三迭代只创建控制台纵切必需包：`api-client`、`ui`、`app-shell`。`layer-base`、`layer-platform`、`shared-types` 是已冻结的长期边界，等第二个应用或跨包复用真正出现时再创建，避免首批脚手架提前空转。`auth` 已在 Console 与 Business Console 出现真实登录复用压力后创建为共享包，承载 Gateway auth DTO mapping、storage adapter、refresh orchestration、logout/session revoke 组合、unauthorized handler 和 app-agnostic route helper；各 app 必须显式注入 storage key、Pinia store id、API client、登录路径和文案。
 
 Business Console MVP 是第二个真实应用入口：`frontend/apps/business-console` 使用 Vite Plus + Vue 3 建立独立 app shell，承载 #166 到 #169 的 MasterData、Inventory、Quality 和 MES 业务页面，并已补入 ProductEngineering、DemandPlanning 和 MES PC 工作台相关路由。它消费 BusinessGateway 的 `/api/business-console/v1/**` facade，不直接调用业务服务 URL，也不把业务 CRUD 页面放回主平台 `frontend/apps/console`。完整导航地图、能力目录、角色导航、分期和“后端存在但前端不得提前暴露”的规则见 `docs/architecture/frontend-navigation-map.md`。Business Console 的可见导航不得机械映射后端服务列表；实现时必须按 RBAC、角色任务、feature flag、近期/星标、全局搜索和上下文穿透组织入口。PC 端长期采用顶部-侧边 T 型导航，但当前 `@nerv-iip/app-shell` 只有侧边栏 `navItems` 契约；落地前必须先扩展 app-shell 公共 API 和测试，不得在业务页面局部硬拼顶部域导航。
 
-Console Auth + shadcn-vue Baseline 当前采用“app 内 auth”方案：`frontend/apps/console/src/stores/auth.ts` 管理会话状态，`src/api/auth.ts` 包装 Gateway Auth facade，路由守卫位于 app 内。完整 `frontend/packages/auth` 独立包方案留作后续参考；当 Console 之外出现第二个应用、插件宿主或跨包登录复用时再抽取，边界应包含 Gateway auth DTO mapping、storage adapter、refresh orchestration、logout/session revoke 组合、unauthorized handler 和 app-agnostic route helper，不直接耦合某个页面或 app shell。
+Console Auth + shadcn-vue Baseline 当前采用共享 `frontend/packages/auth` 方案：app 内 `src/stores/auth.ts` 只配置 storage key、Pinia store id、文案和注入后的 auth API；`src/api/auth.ts` 只包装 Gateway Auth facade 的稳定 `@nerv-iip/api-client` 导出；路由守卫、redirect sanitizer、unauthorized redirect、refresh orchestration 和 logout/session revoke 组合由 `@nerv-iip/auth` 提供。共享包不直接耦合某个页面或 app shell。
 
 第五阶段曾暂缓前端功能实施，避免后端 SDK、迁移发布和部署验证被控制台 UI 牵引。Phase 8 已把 Console Design System 基线推进到 Calm Control Plane 蓝色主题：`frontend/apps/console/src/assets/main.css` 中的 shadcn semantic tokens 负责蓝色主动作、focus ring、sidebar selected state 和 chart orientation；旧 `--legacy-color-*` 只作为兼容 token 保留。新的页面、组件皮肤、组件库迁移或 token 体系必须沿用 docs/architecture/frontend-design-system-planning.md 的 Selected Baseline。
 
@@ -175,7 +175,7 @@ Console 登录闭环通过 PlatformGateway Console Auth facade 调用 IAM。`sto
 
 ### Business Console
 
-Business Console 登录、刷新、退出和 `/me` 可以先复用 PlatformGateway Console Auth facade 的契约，业务数据页只消费 BusinessGateway 生成客户端。首版允许 app-local auth 代码与主平台 console 保持结构一致；当两个应用的会话恢复、刷新编排、退出处理和 unauthorized handler 出现真实复用压力时，再抽取 `frontend/packages/auth`。
+Business Console 登录、刷新、退出和 `/me` 复用 PlatformGateway Console Auth facade 的契约，业务数据页只消费 BusinessGateway 生成客户端。Business Console 与 Console 共用 `@nerv-iip/auth` 的会话恢复、刷新编排、退出处理和 unauthorized handler；Business Console 只注入自身 storage key、Pinia store id、中文文案和登录路径。
 
 业务页面按领域目录组织。下表只描述当前代码中的 route/facade 事实；长期能力目录、角色导航、分期和升级门禁以 `docs/architecture/frontend-navigation-map.md` 为准。
 
