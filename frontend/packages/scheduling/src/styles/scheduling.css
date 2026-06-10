@@ -33,52 +33,141 @@
   opacity: 0.8;
 }
 
-/* --- DHTMLX scope: 关键视觉绑到 token --- */
-.nerv-gantt-dhx .gantt_task_line,
-.nerv-gantt-dhx .gantt_task_line.gantt_bar_task {
-  background: var(--brand);
-  border-color: color-mix(in oklch, var(--brand), black 12%);
-  border-radius: var(--radius-md, 0.375rem);
+/* --- DHTMLX scope: 关键视觉绑到设计 token(用 !important 压过 DHTMLX 默认皮肤/内联色)--- */
+.nerv-gantt-dhx,
+.nerv-gantt-dhx .gantt_container,
+.nerv-gantt-dhx .gantt_grid,
+.nerv-gantt-dhx .gantt_data_area,
+.nerv-gantt-dhx .gantt_grid_scale,
+.nerv-gantt-dhx .gantt_task_scale,
+.nerv-gantt-dhx .gantt_task {
+  background-color: var(--card) !important;
+  color: var(--foreground);
+  border-color: var(--border) !important;
+}
+
+/* 工序条:品牌色实心 + 顶部微高光渐变 + 柔阴影,圆角胶囊 */
+.nerv-gantt-dhx .gantt_task_line {
+  background-color: var(--brand) !important;
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.14), rgb(0 0 0 / 0.08)) !important;
+  border: 1px solid color-mix(in oklch, var(--brand), black 18%) !important;
+  border-radius: 7px !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25), inset 0 1px 0 rgb(255 255 255 / 0.12);
+}
+.nerv-gantt-dhx .gantt_task_content {
+  color: #fff;
+  font-weight: 500;
 }
 .nerv-gantt-dhx .gantt_task_progress {
-  background: color-mix(in oklch, var(--brand), black 22%);
+  background-color: color-mix(in oklch, var(--brand), black 30%) !important;
+  border-radius: 7px 0 0 7px;
 }
-.nerv-gantt-dhx .gantt_task_line.gantt_project {
-  background: var(--muted);
-  border-color: var(--border);
+
+/* 工单/资源分组条:中性、纤细 */
+.nerv-gantt-dhx .gantt_task_line.gantt_project,
+.nerv-gantt-dhx .gantt_task_line.nerv-order {
+  background-color: color-mix(in oklch, var(--muted-foreground), transparent 55%) !important;
+  background-image: none !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px !important;
+  box-shadow: none;
+  opacity: 0.9;
 }
-.nerv-gantt-dhx .gantt_task_line.gantt_selected,
-.nerv-gantt-dhx .gantt_task_line.nerv-selected {
-  box-shadow: 0 0 0 2px var(--brand), 0 0 8px color-mix(in oklch, var(--brand), transparent 40%);
+
+/* 选中:品牌环 + 辉光 */
+.nerv-gantt-dhx .gantt_task_line.nerv-selected,
+.nerv-gantt-dhx .gantt_task_line.gantt_selected {
+  box-shadow: 0 0 0 2px var(--brand), 0 0 12px color-mix(in oklch, var(--brand), transparent 35%) !important;
+  z-index: 1;
 }
+/* 冲突:危险色描边 + 淡红投影 */
 .nerv-gantt-dhx .gantt_task_line.nerv-conflict {
+  background-color: color-mix(in oklch, var(--brand), var(--destructive) 35%) !important;
   outline: 2px solid var(--destructive);
   outline-offset: 0;
 }
+/* 锁定:左侧实色把手 */
+.nerv-gantt-dhx .gantt_task_line.nerv-locked::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--foreground);
+  opacity: 0.5;
+  border-radius: 7px 0 0 7px;
+}
+
+/* 依赖连线 + 箭头:品牌色、略粗 */
+.nerv-gantt-dhx .gantt_task_link .gantt_line_wrapper div {
+  background-color: color-mix(in oklch, var(--brand), var(--foreground) 10%) !important;
+}
+.nerv-gantt-dhx .gantt_link_arrow_right,
+.nerv-gantt-dhx .gantt_link_arrow_left {
+  border-left-color: color-mix(in oklch, var(--brand), var(--foreground) 10%);
+  border-right-color: color-mix(in oklch, var(--brand), var(--foreground) 10%);
+}
+
+/* 左侧网格:表头、单元格、悬浮、选中行 */
 .nerv-gantt-dhx .gantt_grid_scale,
-.nerv-gantt-dhx .gantt_task_scale,
-.nerv-gantt-dhx .gantt_scale_line {
+.nerv-gantt-dhx .gantt_grid_head_cell {
   color: var(--muted-foreground);
-  border-color: var(--border);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border) !important;
+}
+.nerv-gantt-dhx .gantt_grid_data .gantt_cell,
+.nerv-gantt-dhx .gantt_scale_cell {
+  color: var(--foreground);
+  border-color: var(--border) !important;
+}
+.nerv-gantt-dhx .gantt_grid_data .gantt_row:hover,
+.nerv-gantt-dhx .gantt_grid_data .gantt_row.gantt_selected,
+.nerv-gantt-dhx .gantt_task_row.gantt_selected {
+  background-color: color-mix(in oklch, var(--accent), transparent 0%) !important;
 }
 .nerv-gantt-dhx .gantt_grid_data .gantt_row,
 .nerv-gantt-dhx .gantt_task_row {
-  border-color: var(--border);
+  border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 40%) !important;
 }
-.nerv-gantt-dhx .gantt_task_row.odd,
-.nerv-gantt-dhx .gantt_row.odd {
-  background: color-mix(in oklch, var(--muted), transparent 50%);
+.nerv-gantt-dhx .gantt_row.nerv-row-conflict,
+.nerv-gantt-dhx .gantt_task_row.nerv-row-conflict {
+  box-shadow: inset 3px 0 0 var(--destructive);
 }
-.nerv-gantt-dhx .gantt_marker {
-  background: var(--brand);
-  opacity: 0.85;
+
+/* 时间网格竖线 */
+.nerv-gantt-dhx .gantt_task_cell,
+.nerv-gantt-dhx .gantt_scale_cell {
+  border-right: 1px solid color-mix(in oklch, var(--border), transparent 55%) !important;
 }
-.nerv-gantt-dhx .gantt_grid,
-.nerv-gantt-dhx .gantt_data_area,
-.nerv-gantt-dhx .gantt_container {
-  background: var(--card);
-  color: var(--foreground);
-  border-color: var(--border);
+
+/* 今天线 */
+.nerv-gantt-dhx .gantt_marker.nerv-today-marker {
+  background-color: var(--brand) !important;
+  opacity: 0.9;
+  width: 2px;
+}
+.nerv-gantt-dhx .gantt_marker.nerv-today-marker .gantt_marker_content {
+  background-color: var(--brand) !important;
+  color: #fff;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* tooltip */
+.gantt_tooltip {
+  background-color: var(--card) !important;
+  color: var(--foreground) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25) !important;
+  font-family: var(--font-sans) !important;
+  font-size: 0.8125rem !important;
+  padding: 8px 10px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nerv-gantt-native .nerv-gantt-bar {
+    transition: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

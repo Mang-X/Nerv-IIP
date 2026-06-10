@@ -13,10 +13,22 @@ const dhxInstalled = existsSync(
 const dhxVendor = fileURLToPath(
   new URL('../../packages/scheduling/vendor/dhtmlx/dhtmlxgantt.es.js', import.meta.url),
 )
+const dhxCssVendor = fileURLToPath(
+  new URL('../../packages/scheduling/vendor/dhtmlx/dhtmlxgantt.css', import.meta.url),
+)
 const dhxStub = fileURLToPath(
   new URL('../../packages/scheduling/src/engine/dhtmlx/stub.ts', import.meta.url),
 )
-const dhxAlias = dhxInstalled ? {} : { '@dhx/trial-gantt': existsSync(dhxVendor) ? dhxVendor : dhxStub }
+const dhxCssStub = fileURLToPath(
+  new URL('../../packages/scheduling/src/engine/dhtmlx/empty.css', import.meta.url),
+)
+const dhxAlias = dhxInstalled
+  ? {}
+  : {
+      // 更具体的 css 子路径必须排在前面:Vite 字符串 alias 是前缀匹配,否则会被 '@dhx/trial-gantt' 劫持。
+      '@dhx/trial-gantt/codebase/dhtmlxgantt.css': existsSync(dhxCssVendor) ? dhxCssVendor : dhxCssStub,
+      '@dhx/trial-gantt': existsSync(dhxVendor) ? dhxVendor : dhxStub,
+    }
 
 export default defineConfig({
   plugins: [

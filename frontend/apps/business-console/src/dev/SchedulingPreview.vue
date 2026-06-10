@@ -16,14 +16,14 @@ const readOnly = ref(false)
       <header class="flex flex-wrap items-center gap-3">
         <div class="mr-auto">
           <h1 class="text-2xl font-semibold tracking-tight">排产工作台 · 组件预览</h1>
-          <p class="text-sm text-muted-foreground">@nerv-iip/scheduling · 样例数据 · 默认 NativeEngine 渲染</p>
+          <p class="text-sm text-muted-foreground">@nerv-iip/scheduling · 样例数据 · DHTMLX 试用引擎渲染</p>
         </div>
         <Button size="sm" variant="outline" @click="toggle()">{{ isDark ? '切到亮色' : '切到暗色' }}</Button>
         <Button size="sm" variant="outline" @click="readOnly = !readOnly">{{ readOnly ? '允许编辑' : '设为只读' }}</Button>
       </header>
 
       <div class="h-[calc(100vh-9rem)] min-h-[520px]">
-        <SchedulingWorkbench :model="model" :read-only="readOnly" engine-kind="native" />
+        <SchedulingWorkbench :model="model" :read-only="readOnly" engine-kind="auto" />
       </div>
     </div>
   </div>

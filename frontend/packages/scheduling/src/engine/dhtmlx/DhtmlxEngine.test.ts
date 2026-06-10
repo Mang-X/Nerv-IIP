@@ -41,12 +41,16 @@ function makeFakeGantt() {
       state.parsed = { data: [], links: [] }
     },
     getTask: (id: string | number) => state.parsed.data.find((t) => t.id === String(id)),
+    isTaskExists: (id: string | number) => state.parsed.data.some((t) => t.id === String(id)),
     selectTask: (id: string | number) => {
       state.selected = String(id)
     },
     render: () => {
       state.rendered++
     },
+    setSizes: () => {},
+    addMarker: (_m: Record<string, unknown>) => 'marker-1',
+    deleteMarker: (_id: string) => {},
     destructor: () => {
       state.destroyed = true
     },
