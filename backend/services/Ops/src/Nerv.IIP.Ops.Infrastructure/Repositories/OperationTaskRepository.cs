@@ -78,11 +78,11 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
 
     public Task<OperationAttemptId> NextAttemptIdAsync(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(new OperationAttemptId($"attempt-{Guid.NewGuid():N}"));
+        return Task.FromResult(new OperationAttemptId($"attempt-{Guid.CreateVersion7():N}"));
     }
 
     public Task<AuditRecordId> NextAuditRecordIdAsync(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(new AuditRecordId($"audit-{Guid.NewGuid():N}"));
+        return Task.FromResult(new AuditRecordId($"audit-{Guid.CreateVersion7():N}"));
     }
 }

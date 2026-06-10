@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 import {
   confirmBusinessConsoleInventoryCountAdjustmentMutationOptions,
@@ -7,6 +8,7 @@ import {
   getBusinessConsoleInventoryAvailabilityQueryOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
 } from '@nerv-iip/api-client'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   useInventoryAvailability,
   useInventoryCounts,
@@ -15,6 +17,7 @@ import {
 
 const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
+  queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
 }))
 
@@ -57,6 +60,7 @@ vi.mock('@pinia/colada', () => ({
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    coladaState.queryFactoriesById.set(id, optionsFactory)
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
@@ -72,8 +76,10 @@ vi.mock('@pinia/colada', () => ({
 
 describe('business inventory composables', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.invalidateQueries.mockClear()
+    coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
   })
 
@@ -93,9 +99,9 @@ describe('business inventory composables', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        skuCode: 'SKU-001',
-        uomCode: 'EA',
-        siteCode: 'S1',
+        skuCode: '',
+        uomCode: '',
+        siteCode: '',
         qualityStatus: 'available',
         ownerType: 'owned',
       },
@@ -113,6 +119,42 @@ describe('business inventory composables', () => {
 
     expect(availability.value).toBeUndefined()
     expect(availabilityLines.value).toEqual([])
+  })
+
+  it('uses the latest business context store values for availability queries', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-inv-a', environmentId: 'env-inv-a' })
+
+    const { filters } = useInventoryAvailability()
+    filters.skuCode = 'SKU-CTX'
+    filters.uomCode = 'EA'
+    filters.siteCode = 'S2'
+
+    context.patchContext({ organizationId: 'org-inv-b', environmentId: 'env-inv-b' })
+    coladaState.queryFactoriesById.get('getBusinessConsoleInventoryAvailability')?.()
+
+    expect(getBusinessConsoleInventoryAvailabilityQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-inv-b',
+        environmentId: 'env-inv-b',
+        skuCode: 'SKU-CTX',
+        uomCode: 'EA',
+        siteCode: 'S2',
+        qualityStatus: 'available',
+        ownerType: 'owned',
+      },
+    })
+  })
+
+  it('suppresses availability requests until required scope is selected', () => {
+    const { filters } = useInventoryAvailability()
+
+    expect(filters.skuCode).toBe('')
+    expect(filters.siteCode).toBe('')
+
+    const options = coladaState.queryFactoriesById.get('getBusinessConsoleInventoryAvailability')?.()
+
+    expect(options).toMatchObject({ enabled: false })
   })
 
   it('submits inventory movements with the provided body', async () => {

@@ -1,7 +1,36 @@
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters;
+
+public sealed class InventoryMovementRequestCreatedIntegrationEventConverter
+    : IIntegrationEventConverter<InventoryMovementRequestCreatedDomainEvent, InventoryMovementRequestedIntegrationEvent>
+{
+    public InventoryMovementRequestedIntegrationEvent Convert(InventoryMovementRequestCreatedDomainEvent domainEvent)
+    {
+        var request = domainEvent.InventoryMovementRequest;
+        var occurredAtUtc = DateTimeOffset.UtcNow;
+        var idempotencyKey = EventIds.Idempotency("inventory-movement-requested", request.OrganizationId, request.EnvironmentId, request.SourceDocumentId, request.IdempotencyKey);
+        var causationId = request.Id is null
+            ? idempotencyKey
+            : request.Id.ToString();
+        return new InventoryMovementRequestedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            InventoryIntegrationEventTypes.InventoryMovementRequested,
+            InventoryIntegrationEventVersions.V1,
+            occurredAtUtc,
+            InventoryIntegrationEventSources.BusinessWms,
+            idempotencyKey,
+            causationId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "system:wms",
+            idempotencyKey,
+            request.ToInventoryMovementRequestedPayload(occurredAtUtc));
+    }
+}
 
 public sealed class InboundOrderCompletedIntegrationEventConverter
     : IIntegrationEventConverter<InboundOrderCompletedDomainEvent, WmsIntegrationEvent>
@@ -118,4 +147,39 @@ internal static class WmsIntegrationEventFactory
             idempotencyKey,
             payload);
     }
+}
+
+internal static class InventoryMovementRequestEventMapping
+{
+    public static InventoryMovementRequestedPayload ToInventoryMovementRequestedPayload(
+        this InventoryMovementRequest request,
+        DateTimeOffset requestedAtUtc)
+    {
+        var quantity = request.MovementType is "outbound"
+            ? -Math.Abs(request.Quantity)
+            : request.Quantity;
+
+        return new InventoryMovementRequestedPayload(
+            request.MovementType,
+            "wms",
+            request.SourceDocumentId,
+            request.SourceDocumentLineId,
+            request.IdempotencyKey,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.LocationCode,
+            request.LotNo,
+            request.SerialNo,
+            request.QualityStatus,
+            request.OwnerType,
+            request.OwnerId,
+            quantity,
+            requestedAtUtc);
+    }
+}
+
+internal static class EventIds
+{
+    public static string Idempotency(params string[] parts) => $"wms:{string.Join(':', parts)}";
 }

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 import {
   createBusinessConsoleSkuMutationOptions,
   listBusinessConsoleMasterDataResourcesQueryOptions,
   listBusinessConsoleSkusQueryOptions,
 } from '@nerv-iip/api-client'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   useBusinessMasterDataGroups,
   useBusinessMasterDataResources,
@@ -14,6 +16,7 @@ import {
 
 const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
+  queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
 }))
 
@@ -62,6 +65,7 @@ vi.mock('@pinia/colada', () => ({
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    coladaState.queryFactoriesById.set(id, optionsFactory)
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
@@ -77,8 +81,10 @@ vi.mock('@pinia/colada', () => ({
 
 describe('business master data composables', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.invalidateQueries.mockClear()
+    coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
   })
 
@@ -127,6 +133,30 @@ describe('business master data composables', () => {
     const { skus } = useBusinessSkus()
 
     expect(skus.value).toEqual([])
+  })
+
+  it('uses the latest business context store values for SKU queries', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-ctx-a', environmentId: 'env-ctx-a' })
+
+    const { filters } = useBusinessSkus()
+
+    expect(filters).toMatchObject({
+      organizationId: 'org-ctx-a',
+      environmentId: 'env-ctx-a',
+    })
+
+    context.patchContext({ organizationId: 'org-ctx-b', environmentId: 'env-ctx-b' })
+    coladaState.queryFactoriesById.get('listBusinessConsoleSkus')?.()
+
+    expect(listBusinessConsoleSkusQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-ctx-b',
+        environmentId: 'env-ctx-b',
+        skip: 0,
+        take: 100,
+      },
+    })
   })
 
   it('creates SKUs and invalidates the SKU list query', async () => {

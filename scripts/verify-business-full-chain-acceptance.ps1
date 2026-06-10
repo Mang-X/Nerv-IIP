@@ -2,7 +2,7 @@
 #   Category: verify
 #   SideEffects:
 #     - Restores the #77 business full-chain acceptance and supporting WMS/MES/ERP web test projects unless -SkipRestore is set
-#     - Runs the WMS service-local live HTTP TestServer acceptance proof plus MES/ERP public-surface support tests and the #77 business full-chain acceptance suite
+#     - Runs WMS public-surface/event contract support tests plus MES/ERP public-surface support tests and the #77 business full-chain acceptance suite
 #     - Does not start Docker, PostgreSQL, RabbitMQ, external WCS hardware, or long-running service processes
 #   Writes:
 #     - bin/ and obj/ build outputs under verified .NET projects
@@ -77,4 +77,4 @@ $testArguments = @(
 
 Invoke-DotNet -Name "business-full-chain-acceptance-test" -WorkingDirectory $root -Arguments $testArguments
 
-Write-Host "Business full-chain acceptance #77 verified: WMS live HTTP TestServer proof, MES/ERP public surfaces, and seven-chain acceptance evidence are covered by the governed suite."
+Write-Host "Business full-chain acceptance #77 verified: WMS public-surface/event contracts, MES/ERP public surfaces, and seven-chain acceptance evidence are covered by the governed suite."

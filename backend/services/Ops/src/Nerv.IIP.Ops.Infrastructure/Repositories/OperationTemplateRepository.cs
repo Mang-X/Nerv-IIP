@@ -22,6 +22,6 @@ public sealed class OperationTemplateRepository(ApplicationDbContext context)
 
     public Task<OperationTemplateId> NextTemplateIdAsync(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(new OperationTemplateId($"opt-{Guid.NewGuid():N}"));
+        return Task.FromResult(new OperationTemplateId($"opt-{Guid.CreateVersion7():N}"));
     }
 }

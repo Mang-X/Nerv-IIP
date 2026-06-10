@@ -150,6 +150,7 @@ Source:
 | `stock_movements` | business | 追加式库存移动事实，记录来源服务、来源单据、幂等键和有符号数量。 | `id` 为 Guid v7 强类型 ID；`source_service + source_document_id + idempotency_key` 保护外部调用幂等；`quantity` 为正负移动量。 | 幂等唯一索引防重复入账；SKU/site/location 索引用于追踪库存历史。 | 创建后不可变；余额变化通过 ledger 更新体现。 |
 | `stock_count_tasks` | business | 库存盘点任务事实，记录盘点范围、期望 ledger version、盘点数量、差异和状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + count_task_code` 是业务唯一键。 | 状态与库存维度索引支持待盘点任务查询。 | 创建后进入盘点生命周期；确认后产生调整事实。 |
 | `stock_count_adjustments` | business | 盘点差异确认事实，记录盘点任务、幂等键、差异数量和生成的库存移动 ID。 | `id` 为 Guid v7 强类型 ID；`idempotency_key` 保护确认幂等；`movement_id` 指向库存移动业务 ID。 | 盘点任务和库存维度索引用于差异追踪。 | 确认后作为审计事实保留，不直接覆盖历史移动。 |
+| `integration_event_dead_letters` | system | Inventory 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实。 | `consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 | PostgreSQL profile 下由共享 persistent DLQ store 写入；operator replay 后标记 `Replayed`，不删除原始拒绝事实。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于消费幂等、分组扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | 主键用于 CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -177,6 +178,7 @@ Source:
 8. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260530115744_AddMesDispatchAssignmentFacts.cs`
 9. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260603090745_AddMesDemandPlanningSourcePlanReference.cs`
 10. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260605064424_AddMesQualityAndShiftHandoverFacts.cs`
+11. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260609061105_AddMesConsumerInboxIdempotency.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -197,6 +199,7 @@ Source:
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于消费幂等、分组扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | 主键用于 CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
+| `processed_integration_events` | system | MES 业务 inbox，记录设备可用性事件消费者已经执行业务副作用的事件。 | `consumer_name + event_id` 是唯一消费边界；`source_service + event_type + processed_at_utc` 支撑消费诊断。 | 唯一索引用于 RabbitMQ/CAP 重投和并发消费兜底。 | 随消费者成功处理写入；不建立跨 schema 外键，不删除原始事件事实。 |
 | `integration_event_dead_letters` | system | MES 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实。 | `consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 | PostgreSQL profile 下由共享 persistent DLQ store 写入；operator replay 后标记 `Replayed`，不删除原始拒绝事实。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 BusinessMES 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `mes` schema；业务代码不直接读写。 |
 
@@ -303,7 +306,8 @@ Source:
 | `warehouse_tasks` | business | 上架和拣货任务事实，记录任务类型、库位、数量和状态。 | `id` 为 Guid v7 强类型 ID；记录 warehouse task id、任务类型和关联单据。 | 任务 id 唯一索引防重复；状态索引用于任务队列。 | 任务被完成或取消后保留执行历史。 |
 | `count_executions` | business | WMS 盘点执行和差异输出事实。 | `id` 为 Guid v7 强类型 ID；记录 count execution id、库位/SKU/差异数量。 | execution id 唯一索引防重复；状态/仓库索引用于盘点列表。 | 完成后产生差异事实，后续由 Inventory 盘点调整边界承接。 |
 | `wcs_tasks` | business | WCS adapter 任务映射、状态和外部任务诊断。 | `id` 为 Guid v7 强类型 ID；随 warehouse task 记录 `organization_id`、`environment_id`，并记录 warehouse task id、external task id、状态和失败原因。 | external task id 索引用于外部设备回调；`organization_id + environment_id + external_task_id` 支持租户内诊断查询；状态索引用于自动化队列。 | 由 dispatch/complete/fail 推进，保留自动化执行诊断；WCS 事件必须携带真实租户上下文。 |
-| `inventory_movement_requests` | business | WMS 向 Inventory 请求库存移动的本地元数据。 | `id` 为 Guid v7 强类型 ID；记录业务来源、幂等键、movement type 和 posting 状态。 | 幂等键索引用于防重复 posting；状态索引用于补偿扫描。 | 默认通过 HTTP client posting 到 Inventory，测试环境可用 noop/fake client 替换。 |
+| `inventory_movement_requests` | business | WMS 向 Inventory 请求库存移动的本地 pending/posted 元数据。 | `id` 为 Guid v7 强类型 ID；记录业务来源、幂等键、movement type、posting 状态和 Inventory movement id。 | 幂等键索引用于防重复 request；状态索引用于补偿扫描；posted 事件按组织、环境、movement type、来源单据、来源行和幂等键匹配本地 request。 | 由 WMS completion 在本地事务内创建 pending request，并通过公共 `Nerv.IIP.Contracts.Inventory` movement-requested / stock-movement-posted 集成事件异步闭环；Inventory 消费失败时 request 保持 Pending，由 CAP retry 与 persistent DLQ/replay 处理。 |
+| `integration_event_dead_letters` | system | WMS 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实。 | `consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 | PostgreSQL profile 下由共享 persistent DLQ store 写入；operator replay 后标记 `Replayed`，不删除原始拒绝事实。 |
 | `CAPLock` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPPublishedMessage` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPReceivedMessage` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -385,6 +389,8 @@ Source:
 3. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260523112317_InitialMaintenanceSchema.cs`
 4. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260525050928_AddMaintenanceIntegrationEventDeadLetters.cs`
 5. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260601032417_AddMaintenancePlanRuntimeWindow.cs`
+6. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260601083444_AddMaintenanceRuntimeWindowQueryIndex.cs`
+7. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260609061021_AddMaintenanceConsumerInboxIdempotency.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -393,6 +399,7 @@ Source:
 | `maintenance_plans` | business | 预防性维护计划、保养周期和可选 runtime availability 维护窗口事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + plan_code` 是业务唯一键；`interval`、`starts_on`、`owner`、`window_start_utc` 和 `window_end_utc` 描述计划与维护窗口。 | 计划编码唯一索引用于防重复；设备与窗口字段支撑 availability 查询。 | 创建后作为计划事实保留；窗口边界必须成对提供并按 UTC 保存；后续版本化/暂停策略由后续切片补齐。 |
 | `maintenance_inspections` | business | 点检记录，可关联维护计划或维修工单。 | `id` 为 Guid v7 强类型 ID；`maintenance_plan_id`、`maintenance_work_order_id` 是业务引用；`inspector`、`result` 和 `inspected_at_utc` 保存执行事实。 | 计划/工单引用支持追溯点检记录。 | 点检写入后不可覆盖历史，只通过新记录表达新检查。 |
 | `downtime_reasons` | business | 维护域拥有的停机原因代码表。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + reason_code` 是业务唯一键。 | 原因码唯一索引防重复。 | 作为归因基础数据保留；删除/失效策略后续补齐。 |
+| `processed_integration_events` | system | Maintenance 业务 inbox，记录报警自动开单消费者已经执行业务副作用的事件。 | `consumer_name + event_id` 是唯一消费边界；`source_service + event_type + processed_at_utc` 支撑消费诊断。 | 唯一索引用于 RabbitMQ/CAP 重投和并发消费兜底。 | 随消费者成功处理写入；不建立跨 schema 外键，不删除原始事件事实。 |
 | `integration_event_dead_letters` | system | Maintenance 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid v7；`consumer_name`、`event_id`、`event_type`、`event_version`、`status` 和 `event_json` 保留拒绝事实。 | `consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 | 由 Maintenance 消费 guard 写入；operator replay 后标记 `Replayed`，不删除原始拒绝事实。 |
 | `CAPLock` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPPublishedMessage` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -440,6 +447,7 @@ Source:
 3. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260517055301_InitialCreate.cs`
 4. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260517074353_SchemaGovernanceMetadata.cs`
 5. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260526022515_AddAppHubIntegrationEventDeadLetters.cs`
+6. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260609060902_AddAppHubConsumerInboxIdempotency.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
@@ -454,6 +462,7 @@ Source:
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；用于消费幂等和重试。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`；用于 CAP 内部协调。 |
+| `processed_integration_events` | system | AppHub 业务 inbox，记录 Ops operation task 完成/失败刷新消费者已经处理的事件。 | `consumer_name + event_id` 唯一；`source_service + event_type + processed_at_utc` 支持消费诊断。 |
 | `integration_event_dead_letters` | system | AppHub 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实；`consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 AppHub 已应用迁移。 | 必须位于 `apphub` schema；业务代码不直接读写。 |
 

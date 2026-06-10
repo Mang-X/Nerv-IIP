@@ -254,16 +254,7 @@ public sealed class InMemoryIamAuthService(
 
     private AuthResponse ToResponse(AuthResult result)
     {
-        var accessToken = tokenService.CreateAccessToken(
-            result.UserId,
-            result.SessionId,
-            result.SecurityStamp,
-            result.PermissionVersion,
-            result.LoginName,
-            result.Email,
-            result.OrganizationId,
-            result.EnvironmentId);
-        return new AuthResponse(accessToken, result.RefreshToken, result.SessionId, result.ExpiresAtUtc);
+        return new AuthResponse(result.AccessToken, result.RefreshToken, result.SessionId, result.ExpiresAtUtc);
     }
 
     private OidcProviderOptions GetEnabledProvider(string provider)

@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 import {
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
+  getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
+  getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
+  getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   listBusinessConsoleMesCapacityImpactsQueryOptions,
   listBusinessConsoleMesDispatchTasksQueryOptions,
@@ -35,9 +39,11 @@ import {
   useMesQualityContext,
   useMesSchedules,
   useMesShiftHandovers,
+  useMesTraceability,
   useMesWipSummary,
   useMesWorkOrders,
 } from './useBusinessMes'
+import { useBusinessContextStore } from '@/stores/businessContext'
 
 const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
@@ -264,6 +270,7 @@ vi.mock('@pinia/colada', () => ({
 
 describe('business MES composables', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.invalidateQueries.mockClear()
     coladaState.queryFactoriesById.clear()
@@ -331,6 +338,27 @@ describe('business MES composables', () => {
     const { workOrders } = useMesWorkOrders()
 
     expect(workOrders.value).toEqual([])
+  })
+
+  it('uses the latest business context store values for MES list queries', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-mes-a', environmentId: 'env-mes-a' })
+
+    const workOrders = useMesWorkOrders()
+    workOrders.filters.keyword = 'filter'
+
+    context.patchContext({ organizationId: 'org-mes-b', environmentId: 'env-mes-b' })
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesWorkOrders')?.()
+
+    expect(listBusinessConsoleMesWorkOrdersQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-mes-b',
+        environmentId: 'env-mes-b',
+        keyword: 'filter',
+        skip: 0,
+        take: 100,
+      },
+    })
   })
 
   it('submits rush work orders and production reports', async () => {
@@ -624,5 +652,31 @@ describe('business MES composables', () => {
         trigger: 'manual',
       },
     })
+  })
+
+  it('suppresses traceability queries when their required scope is empty', () => {
+    const traceability = useMesTraceability()
+
+    const workOrderOptions = coladaState.queryFactoriesById
+      .get('getBusinessConsoleMesWorkOrderTraceability')?.()
+    traceability.filters.mode = 'batch'
+    const batchOptions = coladaState.queryFactoriesById
+      .get('getBusinessConsoleMesBatchTraceability')?.()
+    traceability.filters.mode = 'material-lot'
+    const materialLotOptions = coladaState.queryFactoriesById
+      .get('getBusinessConsoleMesMaterialLotTraceability')?.()
+
+    expect(workOrderOptions).toMatchObject({ enabled: false })
+    expect(batchOptions).toMatchObject({ enabled: false })
+    expect(materialLotOptions).toMatchObject({ enabled: false })
+    expect(getBusinessConsoleMesWorkOrderTraceabilityQueryOptions).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: { workOrderId: 'WO-001' } }),
+    )
+    expect(getBusinessConsoleMesBatchTraceabilityQueryOptions).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: { batchOrSerial: 'BATCH-001' } }),
+    )
+    expect(getBusinessConsoleMesMaterialLotTraceabilityQueryOptions).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: { materialLotId: 'LOT-001' } }),
+    )
   })
 })

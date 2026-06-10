@@ -5,6 +5,7 @@ using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -22,6 +23,7 @@ public sealed class FileStoragePostgreSqlServiceTests
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
         Assert.NotNull(result.Value);
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(result.Value.FileId, "file_"));
         var record = await dbContext.UploadSessions.SingleAsync();
         Assert.Equal(result.Value.UploadSessionId, record.UploadSessionId);
         Assert.Equal(result.Value.FileId, record.FileId);
@@ -300,6 +302,18 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
+    public async Task InMemoryCreateUploadSession_UsesVersion7FileId()
+    {
+        var service = new InMemoryFileStorageService();
+
+        var result = await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
+        Assert.NotNull(result.Value);
+        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(result.Value.FileId, "file_"));
+    }
+
+    [Fact]
     public async Task TryGetUploadSessionIdForDownloadGrant_ExpiredGrant_ReturnsFalse()
     {
         await using var dbContext = CreateDbContext();
@@ -395,4 +409,5 @@ public sealed class FileStoragePostgreSqlServiceTests
         Assert.DoesNotContain("objectKey", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("object_key", json, StringComparison.OrdinalIgnoreCase);
     }
+
 }

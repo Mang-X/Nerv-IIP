@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggrega
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
+using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Business.Maintenance.Infrastructure;
@@ -16,6 +17,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<MaintenancePlan> MaintenancePlans => Set<MaintenancePlan>();
     public DbSet<MaintenanceInspection> MaintenanceInspections => Set<MaintenanceInspection>();
     public DbSet<DowntimeReason> DowntimeReasons => Set<DowntimeReason>();
+    public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
     public DbSet<IntegrationEventDeadLetter> IntegrationEventDeadLetters => Set<IntegrationEventDeadLetter>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

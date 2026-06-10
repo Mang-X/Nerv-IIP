@@ -1,43 +1,47 @@
-using System.Security.Cryptography;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text;
-using System.Text.Json;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
 
 internal static class GatewayTestTokens
 {
     private const string SigningKey = "nerv-iip-iam-development-signing-key-local-only-0001";
+    private static readonly DateTimeOffset DefaultIssuedAtUtc = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset DefaultExpiresAtUtc = new(2036, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    public static string ValidAccessToken(int permissionVersion = 7)
+    public static string ValidAccessToken(
+        int permissionVersion = 7,
+        DateTimeOffset? issuedAtUtc = null,
+        DateTimeOffset? expiresAtUtc = null)
     {
-        var now = DateTimeOffset.UtcNow;
-        var header = Base64UrlEncode("""{"alg":"HS256","typ":"JWT"}"""u8.ToArray());
-        var payload = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
+        var issuedAt = issuedAtUtc ?? DefaultIssuedAtUtc;
+        var expiresAt = expiresAtUtc ?? DefaultExpiresAtUtc;
+        var claims = new List<Claim>
         {
-            ["iss"] = "nerv-iip-iam",
-            ["aud"] = "nerv-iip-api",
-            ["sub"] = "user-admin",
-            ["sessionId"] = "session-001",
-            ["principalType"] = "user",
-            ["loginName"] = "admin",
-            ["email"] = "admin@nerv.local",
-            ["organizationId"] = "org-001",
-            ["environmentId"] = "env-dev",
-            ["securityStamp"] = "security-stamp-001",
-            ["permissionVersion"] = permissionVersion,
-            ["iat"] = now.ToUnixTimeSeconds(),
-            ["nbf"] = now.AddMinutes(-1).ToUnixTimeSeconds(),
-            ["exp"] = now.AddMinutes(15).ToUnixTimeSeconds()
-        }));
-        var tokenWithoutSignature = $"{header}.{payload}";
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(SigningKey));
-        var signature = Base64UrlEncode(hmac.ComputeHash(Encoding.ASCII.GetBytes(tokenWithoutSignature)));
-        return $"{tokenWithoutSignature}.{signature}";
-    }
+            new(JwtRegisteredClaimNames.Sub, "user-admin"),
+            new("sessionId", "session-001"),
+            new("principalType", "user"),
+            new("loginName", "admin"),
+            new("email", "admin@nerv.local"),
+            new("organizationId", "org-001"),
+            new("environmentId", "env-dev"),
+            new("securityStamp", "security-stamp-001"),
+            new("permissionVersion", permissionVersion.ToString()),
+            new(JwtRegisteredClaimNames.Iat, issuedAt.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
+        };
 
-    private static string Base64UrlEncode(byte[] bytes) =>
-        Convert.ToBase64String(bytes)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
+        var token = new JwtSecurityToken(
+            issuer: "nerv-iip-iam",
+            audience: "nerv-iip-api",
+            claims: claims,
+            notBefore: issuedAt.UtcDateTime,
+            expires: expiresAt.UtcDateTime,
+            signingCredentials: new SigningCredentials(
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey)),
+                SecurityAlgorithms.HmacSha256));
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
 }

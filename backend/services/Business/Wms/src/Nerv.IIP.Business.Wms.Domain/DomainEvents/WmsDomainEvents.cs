@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
@@ -10,6 +11,8 @@ public sealed record InboundOrderCompletedDomainEvent(InboundOrder InboundOrder)
 public sealed record OutboundOrderCompletedDomainEvent(OutboundOrder OutboundOrder) : IDomainEvent;
 
 public sealed record CountExecutionCompletedDomainEvent(CountExecution CountExecution) : IDomainEvent;
+
+public sealed record InventoryMovementRequestCreatedDomainEvent(InventoryMovementRequest InventoryMovementRequest) : IDomainEvent;
 
 public sealed record WcsTaskDispatchedDomainEvent(WcsTask WcsTask) : IDomainEvent;
 

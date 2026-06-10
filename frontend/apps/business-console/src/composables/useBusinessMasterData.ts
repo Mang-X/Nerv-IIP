@@ -39,13 +39,16 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseMutationOptions, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+  withBusinessContextEnabled,
+  type BusinessContextFields,
+} from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
-export interface BusinessContextFilters {
-  organizationId: string
-  environmentId: string
-}
+export interface BusinessContextFilters extends BusinessContextFields {}
 
 export interface MasterDataListFilters extends BusinessContextFilters {
   includeDisabled?: boolean
@@ -65,28 +68,30 @@ export interface BusinessMasterDataGroupDefinition {
 }
 
 function defaultContext(): BusinessContextFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-  })
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
+  }))
 }
 
 function defaultListFilters(): MasterDataListFilters {
-  return reactive({
-    ...defaultContext(),
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 }
 
 function defaultResourceFilters(resourceType: string, codeSet?: string): MasterDataResourceFilters {
-  return reactive({
-    ...defaultContext(),
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
     ...optionalQuery('codeSet', codeSet),
     resourceType,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -126,7 +131,7 @@ export function useBusinessSkus() {
   const queryCache = useQueryCache()
 
   const skusQuery = useQuery(() =>
-    listBusinessConsoleSkusQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleSkusQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -134,7 +139,7 @@ export function useBusinessSkus() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   const createSkuMutation = useMutation({
@@ -169,7 +174,7 @@ export function useBusinessPartners() {
   const queryCache = useQueryCache()
 
   const partnersQuery = useQuery(() =>
-    listBusinessConsoleMasterDataResourcesQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -178,7 +183,7 @@ export function useBusinessPartners() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   const createPartnerMutation = useMutation({
@@ -215,7 +220,7 @@ export function useBusinessWorkshops() {
   const queryCache = useQueryCache()
 
   const workshopsQuery = useQuery(() =>
-    listBusinessConsoleWorkshopsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWorkshopsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -223,7 +228,7 @@ export function useBusinessWorkshops() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   const createWorkshopMutation = useMutation({
@@ -259,7 +264,7 @@ export function useReferenceDataCodes() {
   const queryCache = useQueryCache()
 
   const codesQuery = useQuery(() =>
-    listBusinessConsoleMasterDataResourcesQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -269,7 +274,7 @@ export function useReferenceDataCodes() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   const createCodeMutation = useMutation({
@@ -298,7 +303,7 @@ export function useBusinessMasterDataResources(resourceType: string, options: { 
   const filters = defaultResourceFilters(resourceType, options.codeSet)
 
   const resourcesQuery = useQuery(() =>
-    listBusinessConsoleMasterDataResourcesQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -308,7 +313,7 @@ export function useBusinessMasterDataResources(resourceType: string, options: { 
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   return {
@@ -327,7 +332,7 @@ export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroup
   const filters = defaultListFilters()
   const queries = definitions.map((definition) =>
     useQuery(() =>
-      listBusinessConsoleMasterDataResourcesQueryOptions({
+      withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
         query: {
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
@@ -336,7 +341,7 @@ export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroup
           skip: filters.skip,
           take: filters.take,
         },
-      }),
+      }), filters),
     ),
   )
 
@@ -383,7 +388,7 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
   const queryCache = useQueryCache()
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleMasterDataResourcesQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -392,7 +397,7 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   // 各实体 mutation options 仅 body 泛型不同，统一经本工厂收敛，故此处收窄类型。
@@ -488,15 +493,16 @@ function workerTotal(envelope: BusinessConsoleWorkerDirectoryEnvelope | undefine
  * 非 skip/take），支持服务端 keyword 检索。仅暴露姓名 / 工号 / 部门给 UI，userId 内部使用。
  */
 export function useBusinessWorkers() {
-  const filters = reactive<WorkerDirectoryFilters>({
-    ...defaultContext(),
+  const filters = bindBusinessContext(reactive<WorkerDirectoryFilters>({
+    organizationId: '',
+    environmentId: '',
     keyword: undefined,
     pageIndex: 0,
     pageSize: DEFAULT_TAKE,
-  })
+  }))
 
   const workersQuery = useQuery(() =>
-    listBusinessConsoleWorkersQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWorkersQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -504,7 +510,7 @@ export function useBusinessWorkers() {
         pageIndex: filters.pageIndex,
         pageSize: filters.pageSize,
       },
-    }),
+    }), filters),
   )
 
   return {
@@ -552,7 +558,7 @@ export function useTeamMembers(teamCode: MaybeRefOrGetter<string | undefined>) {
         path: { teamCode: code ?? '' },
         query: { organizationId: ctx.organizationId, environmentId: ctx.environmentId },
       }),
-      enabled: Boolean(code),
+      enabled: Boolean(code) && hasBusinessContext(ctx),
     }
   })
 
