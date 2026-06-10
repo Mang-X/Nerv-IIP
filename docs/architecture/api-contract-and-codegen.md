@@ -335,6 +335,7 @@ frontend/packages/api-client/
 5. console 与 business-console 应用、共享 composables 通过稳定入口消费新的 sdk/query/mutation。
 6. 变更涉及 breaking change 时，必须同步更新对应页面、组合函数和文档。
 7. OpenAPI 导出和 api-client 写入属于 `generate` 类脚本副作用，必须按 docs/architecture/script-automation-governance.md 声明写入路径、日志、服务启动和清理策略；纯 `verify` 脚本不得隐式写生成产物。
+8. CI 使用 `scripts/verify-openapi-client-drift.ps1` 作为契约漂移门禁：重新导出 PlatformGateway 与 BusinessGateway OpenAPI 快照，运行 `pnpm -C frontend generate:api`，再对 `frontend/packages/api-client/openapi/*.v1.json` 和 `frontend/packages/api-client/src/generated/**` 执行 git status/diff 检查；若提交的快照或生成客户端不同步，PR 必须失败并显示差异。
 
 BusinessGateway console API 引入后，生成链路增加 `business-gateway-console.v1.json` 作为第二个 OpenAPI 输入；BusinessGateway mobile API 引入后，再增加 `business-gateway-mobile.v1.json`。这些输入仍由同一个 `frontend/packages/api-client` 包输出，但 generated 目录和稳定导出入口必须与 PlatformGateway Console 隔离。
 
