@@ -415,6 +415,11 @@ if (victoriaLogs is not null)
         .WithEnvironment("VictoriaLogs__BaseUrl", victoriaLogs.GetEndpoint("http"))
         .WaitFor(victoriaLogs);
 }
+else
+{
+    gateway = gateway
+        .WithEnvironment("VictoriaLogs__Enabled", "false");
+}
 
 var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")))
     .WithHttpEndpoint(port: 5119, name: "http")
@@ -501,7 +506,6 @@ Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel
     if (victoriaLogs is not null)
     {
         project = project
-            .WithEnvironment("OpenTelemetry__Protocol", "HttpProtobuf")
             .WithEnvironment("OpenTelemetry__Logs__Endpoint", victoriaLogs.GetEndpoint("http"))
             .WithEnvironment("OpenTelemetry__Logs__Path", "/insert/opentelemetry/v1/logs")
             .WaitFor(victoriaLogs);

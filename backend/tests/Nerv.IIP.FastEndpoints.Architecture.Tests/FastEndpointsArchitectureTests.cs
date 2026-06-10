@@ -162,6 +162,11 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("OpenTelemetry__Logs__Endpoint", programText);
         Assert.Contains("OpenTelemetry__Logs__Path", programText);
         Assert.Contains("VictoriaLogs__BaseUrl", programText);
+        Assert.Contains("VictoriaLogs__Enabled", programText);
+        var normalizedProgramText = programText.Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            ".WithEnvironment(\"OpenTelemetry__Protocol\", \"HttpProtobuf\")\n            .WithEnvironment(\"OpenTelemetry__Logs__Endpoint\"",
+            normalizedProgramText);
         Assert.Contains("AddContainer(\"otel-collector\"", programText);
         Assert.Contains("otel-collector.dev.yaml", programText);
         Assert.Contains("OTEL_EXPORTER_OTLP_ENDPOINT", programText);

@@ -71,15 +71,42 @@ public sealed class GatewayConsoleLogsTests
         Assert.Null(logs.LastRequest);
     }
 
+    [Fact]
+    public async Task Console_logs_query_returns_not_implemented_when_victorialogs_is_disabled()
+    {
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        var logs = new FakeVictoriaLogsClient();
+        await using var factory = CreateFactory(auth, logs, victoriaLogsEnabled: false);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/console/v1/logs/query", new
+        {
+            from = "2026-06-10T01:00:00Z",
+            to = "2026-06-10T02:00:00Z"
+        });
+
+        Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
+        Assert.Null(logs.LastRequest);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         FakeGatewayAuthorizationClient auth,
-        FakeVictoriaLogsClient logs) =>
+        FakeVictoriaLogsClient logs,
+        bool victoriaLogsEnabled = true) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IGatewayAuthorizationClient>();
             services.AddSingleton<IGatewayAuthorizationClient>(auth);
             services.RemoveAll<IVictoriaLogsClient>();
             services.AddSingleton<IVictoriaLogsClient>(logs);
+            services.RemoveAll<VictoriaLogsOptions>();
+            services.AddSingleton(new VictoriaLogsOptions(
+                victoriaLogsEnabled,
+                new Uri("http://victoria-logs:9428"),
+                "30d",
+                "/victoria-logs-data",
+                new Dictionary<string, string>()));
         }));
 
     private sealed class FakeVictoriaLogsClient : IVictoriaLogsClient

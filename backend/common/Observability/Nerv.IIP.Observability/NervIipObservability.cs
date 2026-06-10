@@ -74,10 +74,18 @@ public static class NervIipObservabilityRegistration
     {
         var options = VictoriaLogsOptions.FromConfiguration(configuration, "platform-gateway");
         services.AddSingleton(options);
-        services.AddHttpClient<IVictoriaLogsClient, VictoriaLogsClient>(client =>
+        if (options.Enabled)
         {
-            client.BaseAddress = options.BaseUrl;
-        });
+            services.AddHttpClient<IVictoriaLogsClient, VictoriaLogsClient>(client =>
+            {
+                client.BaseAddress = options.BaseUrl;
+            });
+        }
+        else
+        {
+            services.AddSingleton<IVictoriaLogsClient, DisabledVictoriaLogsClient>();
+        }
+
         return services;
     }
 
@@ -163,7 +171,7 @@ public static class NervIipObservabilityRegistration
             loggerConfiguration.WriteTo.OpenTelemetry(options =>
             {
                 options.Endpoint = resolvedLogsEndpoint.ToString();
-                options.Protocol = ReadSerilogOtlpProtocol(configuration, otlpEndpoint);
+                options.Protocol = ReadSerilogOtlpProtocol(configuration, resolvedLogsEndpoint.ToString());
                 options.ResourceAttributes = new Dictionary<string, object>
                 {
                     ["service.name"] = serviceName
@@ -336,6 +344,7 @@ public static class NervIipObservabilityRegistration
 public sealed record NervIipObservabilityOptions(string ServiceName);
 
 public sealed record VictoriaLogsOptions(
+    bool Enabled,
     Uri BaseUrl,
     string RetentionPeriod,
     string StorageDataPath,
@@ -353,6 +362,7 @@ public sealed record VictoriaLogsOptions(
         }
 
         return new VictoriaLogsOptions(
+            ReadBoolean(configuration, "VictoriaLogs:Enabled", "Observability:VictoriaLogs:Enabled", defaultValue: true),
             new Uri(baseUrl, UriKind.Absolute),
             string.IsNullOrWhiteSpace(configuration["VictoriaLogs:RetentionPeriod"]) ? "30d" : configuration["VictoriaLogs:RetentionPeriod"]!,
             string.IsNullOrWhiteSpace(configuration["VictoriaLogs:StorageDataPath"]) ? "/victoria-logs-data" : configuration["VictoriaLogs:StorageDataPath"]!,
@@ -368,6 +378,14 @@ public sealed record VictoriaLogsOptions(
         $"-storageDataPath={StorageDataPath}",
         $"-retentionPeriod={RetentionPeriod}"
     ];
+
+    private static bool ReadBoolean(IConfiguration configuration, string firstKey, string secondKey, bool defaultValue)
+    {
+        var configuredValue = !string.IsNullOrWhiteSpace(configuration[firstKey])
+            ? configuration[firstKey]
+            : configuration[secondKey];
+        return bool.TryParse(configuredValue, out var parsed) ? parsed : defaultValue;
+    }
 }
 
 public sealed record VictoriaLogsQueryFilter(
@@ -421,7 +439,6 @@ public static class VictoriaLogsQueryBuilder
 
         var queryParts = predicates.Count == 0 ? new List<string> { "*" } : predicates;
         queryParts.Add("| fields _time, level, service, _msg, message, instanceKey, operationTaskId, correlationId, traceId, severity_text, \"service.name\", trace_id");
-        queryParts.Add("| sort by (_time desc)");
 
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -460,7 +477,7 @@ public static class VictoriaLogsQueryBuilder
     }
 
     private static string FormatField(string field) =>
-        field.All(character => char.IsLetterOrDigit(character) || character is '_' or '.')
+        field.All(character => char.IsLetterOrDigit(character) || character is '_')
             ? field
             : Quote(field);
 
@@ -510,14 +527,14 @@ internal sealed class VictoriaLogsClient(HttpClient httpClient, VictoriaLogsOpti
             timestamp,
             level,
             service,
-            Redact(message),
+            RedactValue(message),
             Get(fields, "instanceKey"),
             Get(fields, "operationTaskId"),
             Get(fields, "correlationId"),
             FirstNonEmpty(Get(fields, "traceId"), Get(fields, "trace_id")),
             "victoriaLogs",
             new Dictionary<string, string>(StringComparer.Ordinal),
-            fields.ToDictionary(pair => pair.Key, pair => Redact(pair.Value), StringComparer.Ordinal));
+            fields.ToDictionary(pair => pair.Key, pair => RedactFieldValue(pair.Key, pair.Value), StringComparer.Ordinal));
     }
 
     private static string Get(IReadOnlyDictionary<string, string> fields, string key) =>
@@ -526,18 +543,36 @@ internal sealed class VictoriaLogsClient(HttpClient httpClient, VictoriaLogsOpti
     private static string FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
 
-    private static string Redact(string value)
+    private static string RedactFieldValue(string key, string value)
+    {
+        return ContainsSensitiveToken(key) || ContainsSensitiveToken(value)
+            ? "[redacted]"
+            : value;
+    }
+
+    private static string RedactValue(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             return value;
         }
 
-        var sensitiveTokens = new[] { "password", "secret", "token", "connection string", "connectionstring" };
-        return sensitiveTokens.Any(token => value.Contains(token, StringComparison.OrdinalIgnoreCase))
+        return ContainsSensitiveToken(value)
             ? "[redacted]"
             : value;
     }
+
+    private static bool ContainsSensitiveToken(string value)
+    {
+        var sensitiveTokens = new[] { "password", "secret", "token", "connection string", "connectionstring", "credential", "apikey", "api_key" };
+        return sensitiveTokens.Any(token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
+    }
+}
+
+internal sealed class DisabledVictoriaLogsClient : IVictoriaLogsClient
+{
+    public Task<VictoriaLogsQueryResponse> QueryAsync(VictoriaLogsQueryRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(new VictoriaLogsQueryResponse([], null, true, "disabled"));
 }
 
 internal enum NervIipOpenTelemetrySignal

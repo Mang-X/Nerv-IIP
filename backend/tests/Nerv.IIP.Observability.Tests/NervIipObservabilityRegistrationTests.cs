@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Observability;
+using System.Net;
 using OpenTelemetry.Exporter;
 using Serilog.Sinks.OpenTelemetry;
 
@@ -114,6 +115,7 @@ public sealed class NervIipObservabilityRegistrationTests
 
         var options = VictoriaLogsOptions.FromConfiguration(configuration, "platform-gateway");
 
+        Assert.True(options.Enabled);
         Assert.Equal(new Uri("http://victoria-logs:9428/insert/opentelemetry/v1/logs"), options.OtlpLogsEndpoint);
         Assert.Equal(new Uri("http://victoria-logs:9428/select/logsql/query"), options.QueryEndpoint);
         Assert.Equal("30d", options.RetentionPeriod);
@@ -145,17 +147,16 @@ public sealed class NervIipObservabilityRegistrationTests
         Assert.Equal("50", form["limit"]);
         Assert.Equal("0", form["offset"]);
         Assert.Contains("service:=\"platform-gateway\"", form["query"]);
+        Assert.Contains("\"service.name\":=\"platform-gateway\"", form["query"]);
         Assert.Contains("correlationId:=\"corr-001\\\" | delete\"", form["query"]);
         Assert.Contains("traceId:=\"trace-001\"", form["query"]);
         Assert.Contains("level:=\"Error\"", form["query"]);
         Assert.Contains("\"timeout while calling IAM\"", form["query"]);
         Assert.Contains("fields _time, level, service, _msg", form["query"]);
 
-        var projectText = File.ReadAllText(FindObservabilityProjectPath());
-        var sourceText = File.ReadAllText(FindObservabilitySourcePath());
-        Assert.DoesNotContain("EntityFrameworkCore", projectText);
-        Assert.DoesNotContain("Npgsql", projectText);
-        Assert.DoesNotContain("DbContext", sourceText);
+        var referencedAssemblies = typeof(VictoriaLogsOptions).Assembly.GetReferencedAssemblies().Select(assembly => assembly.Name).ToArray();
+        Assert.DoesNotContain("Microsoft.EntityFrameworkCore", referencedAssemblies);
+        Assert.DoesNotContain("Npgsql", referencedAssemblies);
     }
 
     [Fact]
@@ -171,6 +172,41 @@ public sealed class NervIipObservabilityRegistrationTests
         var form = VictoriaLogsQueryBuilder.BuildForm(request);
 
         Assert.StartsWith("* | fields", form["query"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task VictoriaLogs_client_should_redact_sensitive_fields_by_key_or_value()
+    {
+        var responseBody = """
+            {"_time":"2026-06-10T01:10:00Z","service":"platform-gateway","level":"info","message":"login","password":"hunter2","accessToken":"eyJhbGciOi","plain":"contains secret text"}
+            """;
+        using var httpClient = new HttpClient(new StaticResponseHandler(responseBody))
+        {
+            BaseAddress = new Uri("http://victoria-logs:9428")
+        };
+        var client = new VictoriaLogsClient(
+            httpClient,
+            VictoriaLogsOptions.FromConfiguration(
+                CreateConfiguration(new Dictionary<string, string?>
+                {
+                    ["VictoriaLogs:BaseUrl"] = "http://victoria-logs:9428"
+                }),
+                "platform-gateway"));
+
+        var response = await client.QueryAsync(
+            new VictoriaLogsQueryRequest(
+                DateTimeOffset.Parse("2026-06-10T01:00:00Z"),
+                DateTimeOffset.Parse("2026-06-10T02:00:00Z"),
+                10,
+                0,
+                new VictoriaLogsQueryFilter(null, null, null, null, null)),
+            CancellationToken.None);
+
+        var entry = Assert.Single(response.Items);
+        Assert.Equal("[redacted]", entry.Fields["password"]);
+        Assert.Equal("[redacted]", entry.Fields["accessToken"]);
+        Assert.Equal("[redacted]", entry.Fields["plain"]);
+        Assert.Equal("login", entry.Message);
     }
 
     [Fact]
@@ -216,6 +252,23 @@ public sealed class NervIipObservabilityRegistrationTests
     }
 
     [Fact]
+    public void ReadSerilogOtlpProtocol_ShouldInferHttpProtobufFromResolvedVictoriaLogsEndpoint()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["OpenTelemetry:Logs:Path"] = "/insert/opentelemetry/v1/logs"
+        });
+        var resolvedEndpoint = NervIipObservabilityRegistration.ResolveOpenTelemetryOtlpEndpoint(
+            configuration,
+            "http://victoria-logs:9428",
+            NervIipOpenTelemetrySignal.Logs);
+
+        var protocol = NervIipObservabilityRegistration.ReadSerilogOtlpProtocol(configuration, resolvedEndpoint.ToString());
+
+        Assert.Equal(OtlpProtocol.HttpProtobuf, protocol);
+    }
+
+    [Fact]
     public void ReadOpenTelemetryOtlpProtocol_ShouldPreferOtelProtocolEnvironmentVariable()
     {
         var previousValue = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_PROTOCOL");
@@ -250,31 +303,12 @@ public sealed class NervIipObservabilityRegistrationTests
             .Build();
     }
 
-    private static string FindObservabilityProjectPath()
+    private sealed class StaticResponseHandler(string responseBody) : HttpMessageHandler
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(
-                directory.FullName,
-                "backend",
-                "common",
-                "Observability",
-                "Nerv.IIP.Observability",
-                "Nerv.IIP.Observability.csproj");
-            if (File.Exists(candidate))
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new FileNotFoundException("Could not find Nerv.IIP.Observability.csproj.");
-    }
-
-    private static string FindObservabilitySourcePath()
-    {
-        return Path.Combine(Path.GetDirectoryName(FindObservabilityProjectPath())!, "NervIipObservability.cs");
+                Content = new StringContent(responseBody)
+            });
     }
 }

@@ -13,6 +13,7 @@ namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Logs;
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class QueryConsoleLogsEndpoint(
     IVictoriaLogsClient logs,
+    VictoriaLogsOptions logsOptions,
     IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth)
     : Endpoint<ConsoleLogQueryRequest, ResponseData<ConsoleLogQueryResponse>>
@@ -29,6 +30,16 @@ public sealed class QueryConsoleLogsEndpoint(
             ct);
         if (authorized is null)
         {
+            return;
+        }
+
+        if (!logsOptions.Enabled)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                HttpContext,
+                StatusCodes.Status501NotImplemented,
+                "VictoriaLogs log query is disabled.",
+                ct);
             return;
         }
 
