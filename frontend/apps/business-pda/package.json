@@ -7,6 +7,7 @@
     "dev": "vp dev --host 127.0.0.1 --port 5126",
     "build": "vue-tsc --noEmit -p tsconfig.json && vp build .",
     "test": "vp test run src",
+    "e2e": "playwright test",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "cap:sync": "vp build . && cap sync android",
     "cap:open": "cap open android",
@@ -28,5 +29,8 @@
     "pinia": "3.0.4",
     "vue": "3.5.34",
     "vue-router": "5.0.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
   }
 }
