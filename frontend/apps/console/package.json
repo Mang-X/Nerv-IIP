@@ -13,6 +13,7 @@
   "dependencies": {
     "@nerv-iip/api-client": "workspace:*",
     "@nerv-iip/app-shell": "workspace:*",
+    "@nerv-iip/auth": "workspace:*",
     "@nerv-iip/ui": "workspace:*",
     "@pinia/colada": "1.3.0",
     "@pinia/colada-plugin-auto-refetch": "0.2.6",
