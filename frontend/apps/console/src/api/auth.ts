@@ -1,74 +1,19 @@
-import {
-  getConsolePrincipal,
-  loginConsoleUser,
-  logoutConsoleSession,
-  refreshConsoleSession,
-  type ConsoleAuthEnvelope,
-  type ConsoleAuthResponse,
-  type ConsolePrincipalEnvelope,
-  type ConsoleLoginRequest,
-  type ConsoleLogoutRequest,
-  type ConsolePrincipalResponse,
-  type ConsoleRefreshRequest,
-} from '@nerv-iip/api-client'
+import * as apiClient from '@nerv-iip/api-client'
+import { createConsoleAuthApi } from '@nerv-iip/auth'
 
-export class ConsoleAuthError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message)
-  }
-}
+export { ConsoleAuthError } from '@nerv-iip/auth'
 
-function assertData<T>(
-  result: { data?: { data?: T | null; success?: boolean; message?: string | null }; error?: unknown; response?: Response },
-  fallback: string,
-): T {
-  if (result.data?.success && result.data.data) {
-    return result.data.data
-  }
-
-  const status = result.response?.status
-  throw new ConsoleAuthError(
-    status === 401 ? 'Invalid credentials or expired session.' : fallback,
-    status,
-  )
-}
-
-export async function loginConsole(request: ConsoleLoginRequest): Promise<ConsoleAuthResponse> {
-  return assertData(
-    await loginConsoleUser({ body: request }) as { data?: ConsoleAuthEnvelope; response?: Response },
-    'Unable to connect to the authentication service.',
-  )
-}
-
-export async function refreshConsole(request: ConsoleRefreshRequest): Promise<ConsoleAuthResponse> {
-  return assertData(
-    await refreshConsoleSession({ body: request }) as { data?: ConsoleAuthEnvelope; response?: Response },
-    'Unable to refresh the session.',
-  )
-}
-
-export async function logoutConsole(
-  accessToken: string,
-  request: ConsoleLogoutRequest,
-): Promise<void> {
-  await logoutConsoleSession({
-    body: request,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
-}
-
-export async function getConsoleMe(accessToken: string): Promise<ConsolePrincipalResponse> {
-  return assertData(
-    await getConsolePrincipal({
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }) as { data?: ConsolePrincipalEnvelope; response?: Response },
-    'Unable to load the current principal.',
-  )
-}
+export const consoleAuthApi = createConsoleAuthApi({
+  client: {
+    getConsolePrincipal: (options) => apiClient.getConsolePrincipal(options),
+    loginConsoleUser: (options) => apiClient.loginConsoleUser(options),
+    logoutConsoleSession: (options) => apiClient.logoutConsoleSession(options),
+    refreshConsoleSession: (options) => apiClient.refreshConsoleSession(options),
+  },
+  messages: {
+    invalidCredentialsOrExpiredSession: 'Invalid credentials or expired session.',
+    loginFallback: 'Unable to connect to the authentication service.',
+    principalFallback: 'Unable to load the current principal.',
+    refreshFallback: 'Unable to refresh the session.',
+  },
+})

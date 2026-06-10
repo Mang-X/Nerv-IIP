@@ -35,11 +35,20 @@ services:
     volumes:
       - nerv-iip-minio:/data
 
+  victoria-logs:
+    image: victoriametrics/victoria-logs:v1.50.0
+    command: ["-storageDataPath=/victoria-logs-data", "-retentionPeriod=${NERV_IIP_VICTORIA_LOGS_RETENTION:-30d}"]
+    ports:
+      - "${NERV_IIP_VICTORIA_LOGS_PORT:-9428}:9428"
+    volumes:
+      - nerv-iip-victoria-logs:/victoria-logs-data
+
   otel-collector:
     image: otel/opentelemetry-collector:0.116.1
     command: ["--config=/etc/otelcol/config.yaml"]
     environment:
       NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT: ${NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT:-http://host.docker.internal:18890}
+      NERV_IIP_VICTORIA_LOGS_OTLP_HTTP_ENDPOINT: ${NERV_IIP_VICTORIA_LOGS_OTLP_HTTP_ENDPOINT:-http://victoria-logs:9428/insert/opentelemetry/v1/logs}
     ports:
       - "4317:4317"
       - "4318:4318"
@@ -50,3 +59,4 @@ volumes:
   nerv-iip-postgres-18:
   nerv-iip-redis:
   nerv-iip-minio:
+  nerv-iip-victoria-logs:

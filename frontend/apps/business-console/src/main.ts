@@ -1,11 +1,11 @@
 import { PiniaColada } from '@pinia/colada'
 import { PiniaColadaAutoRefetch } from '@pinia/colada-plugin-auto-refetch'
 import { configureApiClient } from '@nerv-iip/api-client'
+import { configureAuthenticatedApiClient } from '@nerv-iip/auth'
 import { initTheme } from '@nerv-iip/ui'
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 import App from './App.vue'
-import { handleUnauthorized } from './api/unauthorized'
 import './assets/main.css'
 import { getCurrentLocale, i18n } from './i18n'
 import { router } from './router'
@@ -20,11 +20,12 @@ const pinia = createPinia()
 app.use(pinia)
 
 const auth = useAuthStore()
-auth.setSessionExpiredHandler(() => handleUnauthorized(auth, router))
-configureApiClient({
-  accessTokenProvider: () => auth.accessToken,
+configureAuthenticatedApiClient({
+  auth,
+  configureApiClient,
   localeProvider: () => getCurrentLocale(),
-  onUnauthorized: () => handleUnauthorized(auth, router),
+  loginPath: '/login',
+  router,
 })
 
 app.use(PiniaColada, {
