@@ -33,6 +33,7 @@ export function friendlyErrorMessage(error: unknown, fallback = '操作失败，
   if (/\b401\b|unauthor/i.test(raw)) return '登录已过期，请重新登录。'
   if (/\b403\b|forbidden|permission/i.test(raw)) return '没有权限执行此操作。'
   if (/\b409\b|conflict|already exists|duplicat/i.test(raw)) return '编码或名称已存在，请更换后重试。'
+  if (/system-managed|cannot be updated/i.test(raw)) return '该项由系统管理（平台固化），不可修改。'
   // 后端返回的可读中文业务校验信息（短文本）直接透传。
   if (/[一-龥]/.test(raw) && raw.length <= 60) return raw
   return fallback

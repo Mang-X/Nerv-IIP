@@ -31,6 +31,11 @@ describe('friendlyErrorMessage', () => {
     expect(friendlyErrorMessage('409 conflict: already exists')).toBe('编码或名称已存在，请更换后重试。')
   })
 
+  it('系统管理项不可改 → 人话', () => {
+    expect(friendlyErrorMessage(new Error("system-managed reference data 'uom-dimension:time' cannot be updated.")))
+      .toBe('该项由系统管理（平台固化），不可修改。')
+  })
+
   it('后端可读中文业务校验信息直接透传（短文本）', () => {
     expect(friendlyErrorMessage(new Error('该编码已被占用'))).toBe('该编码已被占用')
   })
