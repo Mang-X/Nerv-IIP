@@ -3,7 +3,7 @@ import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
-import { useBusinessMasterDataResources, useBusinessWorkers, useMasterDataResourceActions, usePersonnelSkillAssignment } from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources, useMasterDataResourceActions, usePersonnelSkillAssignment } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -22,8 +22,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -44,9 +42,6 @@ definePage({ meta: { requiresAuth: true, title: '人员技能' } })
 const skills = useBusinessMasterDataResources('personnel-skill')
 const skillAssignment = usePersonnelSkillAssignment()
 const skillActions = useMasterDataResourceActions('personnel-skill')
-// 工人目录用于「在岗工人数」概览（与登记技能的工人选择器同源）。
-const workers = useBusinessWorkers()
-const workersTotal = computed(() => workers.workersTotal.value)
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
@@ -147,11 +142,6 @@ async function submitSkill() {
     <p class="text-sm text-muted-foreground">
       为工人登记技能与等级，用于派工上岗资格校验。工人来自系统用户，选择时按姓名 / 工号检索。
     </p>
-
-    <SectionCards :columns="2">
-      <SectionCard description="技能项数" :value="skills.resourcesTotal.value" hint="可登记的技能字典项" />
-      <SectionCard description="在岗工人数" :value="workersTotal" hint="可被登记技能的系统用户" />
-    </SectionCards>
 
     <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-border bg-muted/30 px-3 py-2">
       <p class="text-sm text-muted-foreground">技能矩阵视图（工人 × 技能，等级 / 有效期一屏可读）</p>

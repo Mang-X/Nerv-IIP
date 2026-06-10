@@ -28,8 +28,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -144,7 +142,6 @@ const listRows = computed(() => {
     [row.code, row.displayName].some((value) => (value ?? '').toLowerCase().includes(kw)),
   )
 })
-const activeCount = computed(() => uoms.value.filter((u) => u.active !== false).length)
 const canCreateUom = computed(() =>
   isNonEmpty(createForm.code)
   && isNonEmpty(createForm.name)
@@ -328,11 +325,6 @@ async function submitUom() {
     </PageHeader>
 
     <p class="text-sm text-muted-foreground">计量单位是物料基本单位与单位换算的取值来源；物料表单的「基本单位」实时取自这里。</p>
-
-    <SectionCards :columns="2">
-      <SectionCard description="单位总数" :value="uomsTotal" hint="后端分页总数" />
-      <SectionCard description="本页启用" :value="activeCount" hint="可用于物料与换算" />
-    </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称" />
 

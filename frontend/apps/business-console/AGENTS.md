@@ -39,6 +39,7 @@
 5. **主题 / 设计 token**：颜色用 token（`--primary` 等）**跟随主题切换**（中性也是一种主题）；**不写死颜色**；**不堆"AI 味"装饰**（无意义的竖条/光晕/渐变/标记——曾踩坑：菜单左竖条被指"AI 标志"）。
 6. **说人话**：UI 不暴露工程语言（operationId / code / resourceType / `#`号）；码值显示中文（英文种子用常量**兜底覆盖**，见 `masterDataReference.ts` 的 `mergeReferenceOptions`）。
 7. **数据真相**：系统编号 vs 人工编码如实呈现（编辑态显示真实编号，不写"保存后分配"）；不做假分页 / 假数据。
+8. **KPI / SectionCards 非默认**：不要每页机械套概览卡。**按页判断**这页是否真需要少量能驱动决策 / 暴露问题的业务指标（维护台一般不需要——总量已在 PageHeader count）；要放就**说人话、用总量**（不是本分页页内数），**不堆机械元数据**（曾踩坑：'后端分页总数' / '树的根' / '本页启用·停用' / '当前分组条目'）。判定见 `frontend/DESIGN/patterns/pages/master-data-templates.md` §0「SectionCards 判定」。
 
 ## 2. 文档及时性（不是事后补，是改动的一部分）
 改业务模块时**同步更新**文档；文档落后于代码 = 未完成：
@@ -63,7 +64,7 @@ src/components/                  应用级组件（非 @nerv-iip/ui 原版）
 
 ## 4. 区块与数据约定
 - 复用 `@nerv-iip/ui` 区块组件（PageHeader/DataTable/Toolbar… 定义见 §3）；**禁止改 shadcn 原版组件**（要定制就复制重建为应用级组件）。
-- 列表统一 `PageHeader + SectionCards + Toolbar + DataTable + DataTablePagination`；分页用 `usePagedList`。页内 Tabs 属布局、**不进菜单树**。
+- 列表骨架 `PageHeader + Toolbar + DataTable + DataTablePagination`（**SectionCards 可选、非默认**，见 §1.5-B 第 8 条）；分页用 `usePagedList`。页内 Tabs 属布局、**不进菜单树**。
 - **不做假分页、不做假数据**：后端无分页/无端点就如实处理（整列表渲染 或 入口禁用+说明），并发 issue，不糊弄。
 - **UI 不暴露工程语言**：operationId / sourceSystem / code / policy / resourceType / demo / seed / mock / GitHub issue 号 等不进业务界面（`goldStandardPages.contract.test.ts` 会拦 demo/seed/mock/样例 等并校验必备区块）。
 - 业务取值优先**字典/常量驱动**，少硬编码（§6）。

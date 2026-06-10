@@ -25,8 +25,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   Spinner,
   StatusBadge,
   Tabs,
@@ -253,11 +251,6 @@ async function submitCal() {
     <p class="text-sm text-muted-foreground">
       班次定义作息时段与计薪时长；工作日历定义工作日 / 休息日，驱动工作中心可用产能。
     </p>
-
-    <SectionCards :columns="2">
-      <SectionCard description="班次数" :value="shifts.total.value" hint="排班时段" />
-      <SectionCard description="工作日历数" :value="calendars.total.value" hint="可用工作日" />
-    </SectionCards>
 
     <Tabs default-value="shift">
       <TabsList>

@@ -21,8 +21,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -93,7 +91,6 @@ const selectedCodeSetMeta = computed(() => CODE_SETS.find((s) => s.codeSet === s
 const selectedLabel = computed(() => codeSetLabel(selectedCodeSet.value))
 // 系统枚举由平台维护，不可新增条目；平台预置 / 工厂自定义可新增。
 const selectedCodeSetCanAdd = computed(() => selectedCodeSetMeta.value.kind !== 'system-enum')
-const activeCount = computed(() => codes.value.filter((r) => r.active !== false).length)
 
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -314,12 +311,6 @@ function isNonEmpty(value: string) {
         </Dialog>
       </template>
     </PageHeader>
-
-    <SectionCards :columns="3">
-      <SectionCard description="字典分组" :value="CODE_SETS.length" hint="平台预置的受控值分组" />
-      <SectionCard description="当前分组条目" :value="codesTotal" hint="选中字典的码值数量" />
-      <SectionCard description="本页启用" :value="activeCount" hint="当前页可用于新建与计划的码值" />
-    </SectionCards>
 
     <p class="text-sm text-muted-foreground">
       字典是平台受控值来源；物料等表单的分类、单位、存储条件等下拉实时取自这里。系统枚举由平台维护，平台预置与工厂自定义可新增条目。

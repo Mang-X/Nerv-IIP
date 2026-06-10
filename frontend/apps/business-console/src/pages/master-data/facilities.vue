@@ -666,10 +666,10 @@ function childLabelOf(type: string): string | undefined {
     <p class="text-sm text-muted-foreground">层级：工厂 → 车间 → 产线 → 工作中心 → 设备。点击左侧节点查看详情，选中父级可就地新建下级。</p>
 
     <SectionCards :columns="4">
-      <SectionCard description="工厂数" :value="sites.total.value" hint="生产站点（树的根）" />
-      <SectionCard description="车间数" :value="workshops.workshopsTotal.value" hint="工厂下组织层" />
-      <SectionCard description="产线数" :value="lines.total.value" hint="所属各车间 / 工厂" />
-      <SectionCard description="工作中心数" :value="workCenters.total.value" hint="产线下产能资源" />
+      <SectionCard description="工厂数" :value="sites.total.value" hint="生产基地" />
+      <SectionCard description="车间数" :value="workshops.workshopsTotal.value" hint="组织 / 区域分组" />
+      <SectionCard description="产线数" :value="lines.total.value" hint="按车间 / 工厂归属" />
+      <SectionCard description="工作中心数" :value="workCenters.total.value" hint="排产与报工的产能单元" />
     </SectionCards>
 
     <div class="grid gap-4 md:grid-cols-[320px_minmax(0,1fr)]">

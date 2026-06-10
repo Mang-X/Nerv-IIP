@@ -25,8 +25,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -320,12 +318,6 @@ async function submitDevice() {
     </PageHeader>
 
     <p class="text-sm text-muted-foreground">层级：工厂 → 车间 → 产线 → 工作中心 → 设备（设备归属产线与工作中心）</p>
-
-    <SectionCards :columns="3">
-      <SectionCard description="设备数" :value="devices.total.value" hint="后端分页总数" />
-      <SectionCard description="关联产线" :value="lines.total.value" hint="可挂载设备的产线" />
-      <SectionCard description="关联工作中心" :value="workCenters.total.value" hint="可挂载设备的工作中心" />
-    </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选设备编码、名称" />
 

@@ -464,7 +464,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
     </p>
 
     <SectionCards :columns="2">
-      <SectionCard description="部门数" :value="departments.total.value" hint="组织结构（树的根）" />
+      <SectionCard description="部门数" :value="departments.total.value" hint="组织 / 职能分组" />
       <SectionCard description="班组数" :value="teams.total.value" hint="挂靠部门与班次" />
     </SectionCards>
 

@@ -36,7 +36,11 @@ const GOLD_STANDARD_PAGES = [
   'wms/wcs.vue',
 ]
 
-const REQUIRED_BLOCKS = ['PageHeader', 'DataTable', 'DataTablePagination', 'SectionCard']
+// SectionCards is NOT required: KPI cards are decided per page (business-meaningful,
+// decision-driving metrics only — never mechanical pagination/tree metadata). Many
+// maintenance pages legitimately have none. See master-data-templates.md §0/§2 and
+// business-console AGENTS.md §1.5-B.
+const REQUIRED_BLOCKS = ['PageHeader', 'DataTable', 'DataTablePagination']
 const LEGACY_BLOCKS = [
   'BusinessPageHeader',
   'BusinessContextBar',

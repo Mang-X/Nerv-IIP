@@ -22,12 +22,24 @@
 BusinessLayout
   PageHeader        面包屑即标题 + count + #actions（[刷新] [+ 新建…]）
   [层级/口径提示]    text-sm text-muted-foreground 一行（如「工厂 → 车间 → 产线 → 工作中心 → 设备」）
-  SectionCards      2~4 张概览卡（总数/启用/停用…，tabular-nums + hint 标口径）
+  [SectionCards]    可选、非默认（见下「SectionCards 判定」）——只放少量能驱动决策的业务指标
   Toolbar           v-model:search（live）+ #filters（Select）+ #actions（+ 新建）
   [列表加载失败条]   inline text-destructive role="alert"，紧邻表格；不是 toast
   DataTable         columns + #cell-<key> slots；:loading 骨架、empty-message、点列排序
   DataTablePagination  服务端 total
 ```
+
+> **SectionCards 不是标准骨架必备项**。`PageHeader / DataTable / DataTablePagination` 才是必备（契约 `goldStandardPages.contract.test.ts` 只强制这三个）。SectionCards **按页判断**——下面「SectionCards 判定」逐页拍板。
+
+### SectionCards 判定（何时该有卡 / 何时不该有）
+
+**默认不放。** 只有当这页存在**少量、能驱动决策或暴露问题的业务指标**时才加，并只加真正有用的那几个（不同页不同、可没有）。
+
+- **该有**：指标能让用户一眼判断要不要行动 / 暴露异常（如临期·过期数、待处理量、结构规模一览）。例：`facilities.vue` 的 工厂/车间/产线/工作中心 数（树页的结构规模一览）。
+- **不该有**：
+  - **维护台（CRUD 列表）一般不需要**——总量已在 `PageHeader` 的 count，再堆一张「总数卡」是冗余。
+  - **机械元数据当指标**：`本页启用 / 本页停用 / 本页 X`（分页页局部、会误导）、`关联产线`（不是本实体的指标）、`当前分组条目` 等，**一律不放**。
+- **文案铁律（必须说人话）**：description 用业务语言、value **用总量**（不是当前分页页内数）；hint 写业务口径或留空。**禁止出现** `后端分页总数 / 树的根 / 本页 X / 当前分页` 等机械框架词。
 
 **全域统一约定（七条横切，下文不再重复）**
 
@@ -93,13 +105,13 @@ PageHeader（面包屑 + 节点总数 + [刷新] [+ 新建根节点]）
 ### 标准骨架
 
 ```
-PageHeader + SectionCards + Toolbar + DataTable + DataTablePagination
+PageHeader + [SectionCards 可选] + Toolbar + DataTable + DataTablePagination
 ```
-（完全等同 §0 通用基底；这是「黄金标准列表」的直接落地。）
+（等同 §0 通用基底；这是「黄金标准列表」的直接落地。**SectionCards 非默认**，按 §0「SectionCards 判定」拍板——多数维护台不需要。）
 
 ### 统一约定
 - 列序固定（§0 第 1 条）：编码 ｜ 名称 ｜ typed 列 ｜ 状态 ｜ 更新时间 ｜ 操作。
-- SectionCards：总数 / 启用 / 停用（或域内有意义的 2~4 个口径），每张带 hint 标注口径。
+- **SectionCards 非默认**：维护台一般不放（总量已在 PageHeader count）；仅当有能驱动决策 / 暴露问题的少量业务指标才加，并按 §0「SectionCards 判定」选卡。**禁止** `本页启用 / 本页停用 / 后端分页总数 / 树的根 / 当前分页` 等机械元数据；value 用总量，hint 说人话或留空。
 - Toolbar：搜索（如后端无 keyword，占位「在当前页内筛选 {字段}」+ hint「全量搜索即将上线」）；`#filters` 放状态/分类 Select。
 - 分页 `total` 始终用**服务端 total**（不是当前页长度）；分页用 `usePagedList` / 各域 composable。
 

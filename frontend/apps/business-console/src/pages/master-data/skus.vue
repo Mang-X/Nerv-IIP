@@ -27,8 +27,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -219,8 +217,6 @@ const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => sortedRows.value)
 const totalItems = computed(() => skusTotal.value + pendingLocalSkus.value.length)
 
-const activeCount = computed(() => listRows.value.filter((s) => s.active !== false).length)
-const disabledCount = computed(() => listRows.value.filter((s) => s.active === false).length)
 const listErrorMessage = computed(() => formatError(skusError.value))
 function inOptions(options: readonly { value: string }[], value: string) {
   return options.some((option) => option.value === value)
@@ -557,12 +553,6 @@ function isNonEmpty(value: string) {
         </Dialog>
       </template>
     </PageHeader>
-
-    <SectionCards :columns="3">
-      <SectionCard description="物料总数" :value="totalItems" hint="后端分页总数" />
-      <SectionCard description="本页启用" :value="activeCount" hint="可用于计划、采购、生产" />
-      <SectionCard description="本页停用" :value="disabledCount" hint="已归档或停用" />
-    </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选物料编码、名称">
       <template #filters>

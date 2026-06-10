@@ -23,8 +23,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -104,8 +102,6 @@ const sortedRows = computed(() => {
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => sortedRows.value)
 
-const customerCount = computed(() => partners.value.filter((r) => partnerRoles(r).includes('customer')).length)
-const supplierCount = computed(() => partners.value.filter((r) => partnerRoles(r).includes('supplier')).length)
 const listErrorMessage = computed(() => formatError(partnersError.value))
 
 const PARTNER_FORM_DEFAULTS = {
@@ -337,12 +333,6 @@ function isNonEmpty(value: string) {
         </Dialog>
       </template>
     </PageHeader>
-
-    <SectionCards :columns="3">
-      <SectionCard description="伙伴总数" :value="partnersTotal" hint="客户、供应商、承运商档案" />
-      <SectionCard description="本页客户" :value="customerCount" hint="支撑销售需求与发货" />
-      <SectionCard description="本页供应商" :value="supplierCount" hint="支撑采购与收货检验" />
-    </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称、角色">
       <template #filters>
