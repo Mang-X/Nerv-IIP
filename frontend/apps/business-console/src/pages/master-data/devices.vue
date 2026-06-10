@@ -338,6 +338,8 @@ async function submitDevice() {
       :loading="devices.pending.value"
       empty-message="暂无设备。可清空筛选或新建设备。"
     >
+      <template #cell-lineCode="{ row }">{{ lineName(row.lineCode) }}</template>
+      <template #cell-workCenterCode="{ row }">{{ wcName(row.workCenterCode) }}</template>
       <template #cell-active="{ row }">
         <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
       </template>
