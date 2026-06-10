@@ -5,11 +5,16 @@ export {
   ACCENT_STORAGE_KEY,
   COLOR_MODE_STORAGE_KEY,
   DEFAULT_ACCENT,
+  DEFAULT_THEME,
   initTheme,
+  NEUTRAL_THEME,
+  THEME_PRESETS,
+  THEME_STORAGE_KEY,
   useColorMode,
+  useTheme,
   useThemeAccent,
 } from './composables/useTheme'
-export type { ColorMode } from './composables/useTheme'
+export type { ColorMode, ThemeName, ThemePreset } from './composables/useTheme'
 
 // FE-2 custom block component library (distinct from原版 primitives above).
 export * from './components/blocks'
