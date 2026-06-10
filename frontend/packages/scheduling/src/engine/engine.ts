@@ -1,5 +1,7 @@
 import type { ScheduleModel, TimeScale } from '../model/types'
 
+export type { TimeScale } from '../model/types'
+
 // 「换引擎」的唯一接缝。DHTMLX 适配器与自研适配器都实现此 headless 接口,
 // 并必须共同通过 conformance.ts 的契约测试。组件层只依赖此接口,不依赖具体引擎。
 
