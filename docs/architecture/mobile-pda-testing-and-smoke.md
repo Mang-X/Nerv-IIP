@@ -65,6 +65,20 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
 - Capacitor APK 内 WebView 行为、真机手势/滚动惯性/横竖屏切换。
 - 像素级视觉快照（仓库无基线，PDA 设计稿未定稿——留作后续）。
 
+## Capacitor/APK 网关基址与可复现构建
+
+> 真机冒烟前提是先有一个**能连上网关**的 APK。详细部署口径见
+> `docs/architecture/mobile-pda-deployment.md`，要点：
+>
+> - **网关基址**：Web/dev 留空 `VITE_NERV_IIP_API_BASE_URL`（相对 `/api/...` + vite dev proxy）；
+>   **Capacitor/APK 构建必须**把它设为绝对的 BusinessGateway/PlatformGateway 基址，因为
+>   APK 内 WebView **没有 dev proxy**。模板见 `frontend/apps/business-pda/.env.example`。
+> - **可复现构建**：`android/` 有意 gitignore，由 `cap add android` 确定性再生；仓库基线是
+>   **配置 + 脚本 + 锁定的 `@capacitor/*` 版本**。干净环境步骤（需 JDK 17 + Android SDK/`ANDROID_HOME`）：
+>   `pnpm -C frontend install` → 在 `apps/business-pda`：`pnpm exec cap add android` →
+>   `pnpm run cap:sync` → `cd android && ./gradlew assembleDebug`（Unix）/
+>   `.\gradlew.bat assembleDebug`（Windows，平台相关手动步骤）。
+
 ## 4. 真机手动冒烟清单（每次发版前在目标 PDA 上勾验）
 
 1. 安装 APK 启动，登录成功，首页三段（顶栏/内容/底栏）无遮挡，刘海/手势条不压内容。

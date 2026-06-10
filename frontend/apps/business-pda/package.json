@@ -10,16 +10,15 @@
     "e2e": "playwright test",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "cap:sync": "vp build . && cap sync android",
-    "cap:open": "cap open android",
-    "cap:apk": "vp build . && cap sync android && cd android && ./gradlew assembleDebug"
+    "cap:open": "cap open android"
   },
   "dependencies": {
-    "@capacitor/android": "^8.4.0",
-    "@capacitor/app": "^8.1.0",
-    "@capacitor/cli": "^8.4.0",
-    "@capacitor/core": "^8.4.0",
-    "@capacitor/keyboard": "^8.0.3",
-    "@capacitor/status-bar": "^8.0.2",
+    "@capacitor/android": "8.4.0",
+    "@capacitor/app": "8.1.0",
+    "@capacitor/cli": "8.4.0",
+    "@capacitor/core": "8.4.0",
+    "@capacitor/keyboard": "8.0.3",
+    "@capacitor/status-bar": "8.0.2",
     "@nerv-iip/api-client": "workspace:*",
     "@nerv-iip/business-core": "workspace:*",
     "@nerv-iip/ui": "workspace:*",
