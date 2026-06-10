@@ -6,7 +6,7 @@
 
 <template>
   <div class="mt-1 flex items-center gap-2 border-b border-border/60 pb-2">
-    <span class="h-4 w-0.5 shrink-0 rounded-full bg-brand" aria-hidden="true" />
+    <span class="h-4 w-0.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
     <span class="text-base font-semibold tracking-wide text-foreground"><slot /></span>
   </div>
 </template>
