@@ -1,4 +1,19 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src", "typed-router.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.vue", "typed-router.d.ts"],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "../..",
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@/*": ["src/*"],
+      "@nerv-iip/api-client": ["../../packages/api-client/src/index.ts"],
+      "@nerv-iip/ui": ["../../packages/ui/src/index.ts"],
+      "@nerv-iip/ui-mobile": ["../../packages/ui-mobile/src/index.ts"],
+      "@nerv-iip/business-core": ["../../packages/business-core/src/index.ts"]
+    }
+  },
+  "vueCompilerOptions": {
+    "plugins": ["vue-router/volar/sfc-route-blocks", "vue-router/volar/sfc-typed-router"]
+  }
 }

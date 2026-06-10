@@ -18,3 +18,4 @@ frontend/**/coverage/
 frontend/.vite/
 frontend/apps/console/typed-router.d.ts
 frontend/apps/business-console/typed-router.d.ts
+frontend/apps/business-pda/typed-router.d.ts
