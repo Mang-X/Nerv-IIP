@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
@@ -104,6 +105,201 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
             .Select(x => new OutboundOrderListItem(x.Id, x.OutboundOrderNo, x.Status.ToString(), x.CreatedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new ListOutboundOrdersResponse(items, total);
+    }
+}
+
+public sealed record ListWarehouseTasksQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string TaskType,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? LocationCode = null,
+    string? OperatorUserId = null,
+    string? Keyword = null) : IQuery<ListWarehouseTasksResponse>;
+
+public sealed record ListWarehouseTasksResponse(IReadOnlyCollection<WarehouseTaskFact> Items, int Total);
+
+public sealed record WarehouseTaskFact(
+    WarehouseTaskId WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string TaskType,
+    string TaskNo,
+    string SourceOrderNo,
+    string SourceOrderLineNo,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string FromLocationCode,
+    string ToLocationCode,
+    decimal PlannedQuantity,
+    decimal ExecutedQuantity,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc);
+
+public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListWarehouseTasksQuery, ListWarehouseTasksResponse>
+{
+    public async Task<ListWarehouseTasksResponse> Handle(ListWarehouseTasksQuery request, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(request.OperatorUserId))
+        {
+            return new ListWarehouseTasksResponse([], 0);
+        }
+
+        if (!WmsListQueryFilters.TryParseStatus<WarehouseTaskType>(request.TaskType, out var taskType))
+        {
+            return new ListWarehouseTasksResponse([], 0);
+        }
+
+        var query = dbContext.WarehouseTasks
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.TaskType == taskType);
+
+        if (WmsListQueryFilters.TryParseStatus<WarehouseTaskStatus>(request.Status, out var status))
+        {
+            query = query.Where(x => x.Status == status);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            return new ListWarehouseTasksResponse([], 0);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.LocationCode))
+        {
+            query = query.Where(x => x.FromLocationCode == request.LocationCode || x.ToLocationCode == request.LocationCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
+            query = query.Where(x =>
+                x.TaskNo.ToUpper().Contains(keyword)
+                || x.SourceOrderNo.ToUpper().Contains(keyword)
+                || x.SkuCode.ToUpper().Contains(keyword));
+        }
+
+        var skip = Math.Max(0, request.Skip);
+        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.TaskNo)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new WarehouseTaskFact(
+                x.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.TaskType.ToString(),
+                x.TaskNo,
+                x.SourceOrderNo,
+                x.SourceOrderLineNo,
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.FromLocationCode,
+                x.ToLocationCode,
+                x.PlannedQuantity,
+                x.ExecutedQuantity,
+                x.Status.ToString(),
+                x.CreatedAtUtc,
+                x.CompletedAtUtc))
+            .ToArrayAsync(cancellationToken);
+        return new ListWarehouseTasksResponse(items, total);
+    }
+}
+
+public sealed record ListCountExecutionsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? LocationCode = null,
+    string? Keyword = null) : IQuery<ListCountExecutionsResponse>;
+
+public sealed record ListCountExecutionsResponse(IReadOnlyCollection<CountExecutionFact> Items, int Total);
+
+public sealed record CountExecutionFact(
+    CountExecutionId CountExecutionId,
+    string OrganizationId,
+    string EnvironmentId,
+    string CountNo,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    decimal ExpectedQuantity,
+    decimal? CountedQuantity,
+    decimal? VarianceQuantity,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc);
+
+public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListCountExecutionsQuery, ListCountExecutionsResponse>
+{
+    public async Task<ListCountExecutionsResponse> Handle(ListCountExecutionsQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.CountExecutions
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId);
+
+        if (WmsListQueryFilters.TryParseStatus<CountExecutionStatus>(request.Status, out var status))
+        {
+            query = query.Where(x => x.Status == status);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            return new ListCountExecutionsResponse([], 0);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.LocationCode))
+        {
+            query = query.Where(x => x.LocationCode == request.LocationCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
+            query = query.Where(x =>
+                x.CountNo.ToUpper().Contains(keyword)
+                || x.SkuCode.ToUpper().Contains(keyword)
+                || x.LocationCode.ToUpper().Contains(keyword));
+        }
+
+        var skip = Math.Max(0, request.Skip);
+        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.CountNo)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new CountExecutionFact(
+                x.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.CountNo,
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.LocationCode,
+                x.ExpectedQuantity,
+                x.CountedQuantity,
+                x.VarianceQuantity,
+                x.Status.ToString(),
+                x.CreatedAtUtc,
+                x.CompletedAtUtc))
+            .ToArrayAsync(cancellationToken);
+        return new ListCountExecutionsResponse(items, total);
     }
 }
 

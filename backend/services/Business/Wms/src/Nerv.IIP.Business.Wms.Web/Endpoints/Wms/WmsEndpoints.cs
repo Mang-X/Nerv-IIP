@@ -39,6 +39,15 @@ public sealed record CreateInboundOrderRequest(string OrganizationId, string Env
 public sealed record CreateInboundOrderResponse(InboundOrderId InboundOrderId);
 public sealed record ListInboundOrdersRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
 public sealed record CreatePutawayTaskRequest(InboundOrderId InboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity);
+public sealed record ListWarehouseTasksRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? LocationCode = null,
+    string? OperatorUserId = null,
+    string? Keyword = null);
 public sealed record CreateWarehouseTaskResponse(WarehouseTaskId WarehouseTaskId);
 public sealed record CompleteInboundOrderRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
 public sealed record CompleteMovementResponse(InventoryMovementRequestId RequestId, string? InventoryMovementId);
@@ -49,6 +58,14 @@ public sealed record CreatePickingTaskRequest(OutboundOrderId OutboundOrderId, s
 public sealed record CompleteOutboundOrderRequest(OutboundOrderId OutboundOrderId, string PackReviewNo, bool Passed, string IdempotencyKey);
 public sealed record CreateCountExecutionRequest(string OrganizationId, string EnvironmentId, string CountNo, string SkuCode, string UomCode, string SiteCode, string LocationCode, decimal ExpectedQuantity);
 public sealed record CreateCountExecutionResponse(CountExecutionId CountExecutionId);
+public sealed record ListCountExecutionsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? LocationCode = null,
+    string? Keyword = null);
 public sealed record CompleteCountExecutionRequest(CountExecutionId CountExecutionId, decimal CountedQuantity, string IdempotencyKey);
 public sealed record DispatchWcsTaskRequest(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson);
 public sealed record DispatchWcsTaskResponse(WcsTaskId WcsTaskId);
@@ -95,6 +112,16 @@ public sealed class CreatePutawayTaskEndpoint(ISender sender) : WmsEndpoint<Crea
     }
 }
 
+public sealed class ListPutawayTasksEndpoint(ISender sender) : WmsEndpoint<ListWarehouseTasksRequest, ResponseData<ListWarehouseTasksResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListPutawayTasksEndpoint>());
+    public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, "Putaway", req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class CompleteInboundOrderEndpoint(ISender sender) : WmsEndpoint<CompleteInboundOrderRequest, ResponseData<CompleteMovementResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteInboundOrderEndpoint>());
@@ -135,6 +162,16 @@ public sealed class CreatePickingTaskEndpoint(ISender sender) : WmsEndpoint<Crea
     }
 }
 
+public sealed class ListPickingTasksEndpoint(ISender sender) : WmsEndpoint<ListWarehouseTasksRequest, ResponseData<ListWarehouseTasksResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListPickingTasksEndpoint>());
+    public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, "Picking", req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class CompleteOutboundOrderEndpoint(ISender sender) : WmsEndpoint<CompleteOutboundOrderRequest, ResponseData<CompleteMovementResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteOutboundOrderEndpoint>());
@@ -152,6 +189,16 @@ public sealed class CreateCountExecutionEndpoint(ISender sender) : WmsEndpoint<C
     {
         var id = await sender.Send(new CreateCountExecutionCommand(req.OrganizationId, req.EnvironmentId, req.CountNo, req.SkuCode, req.UomCode, req.SiteCode, req.LocationCode, req.ExpectedQuantity), ct);
         await Send.OkAsync(new CreateCountExecutionResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListCountExecutionsEndpoint(ISender sender) : WmsEndpoint<ListCountExecutionsRequest, ResponseData<ListCountExecutionsResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListCountExecutionsEndpoint>());
+    public override async Task HandleAsync(ListCountExecutionsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListCountExecutionsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.Status, req.LocationCode, req.Keyword), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -214,12 +261,15 @@ public static class WmsEndpointContracts
         new(typeof(CreateInboundOrderEndpoint), "POST", "/api/business/v1/wms/inbound-orders", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "createWmsInboundOrder"),
         new(typeof(ListInboundOrdersEndpoint), "GET", "/api/business/v1/wms/inbound-orders", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsInboundOrders"),
         new(typeof(CreatePutawayTaskEndpoint), "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "createWmsPutawayTask"),
+        new(typeof(ListPutawayTasksEndpoint), "GET", "/api/business/v1/wms/putaway-tasks", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsPutawayTasks"),
         new(typeof(CompleteInboundOrderEndpoint), "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsInboundOrder"),
         new(typeof(CreateOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "createWmsOutboundOrder"),
         new(typeof(ListOutboundOrdersEndpoint), "GET", "/api/business/v1/wms/outbound-orders", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsOutboundOrders"),
         new(typeof(CreatePickingTaskEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "createWmsPickingTask"),
+        new(typeof(ListPickingTasksEndpoint), "GET", "/api/business/v1/wms/picking-tasks", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsPickingTasks"),
         new(typeof(CompleteOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsOutboundOrder"),
         new(typeof(CreateCountExecutionEndpoint), "POST", "/api/business/v1/wms/count-executions", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "createWmsCountExecution"),
+        new(typeof(ListCountExecutionsEndpoint), "GET", "/api/business/v1/wms/count-executions", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsCountExecutions"),
         new(typeof(CompleteCountExecutionEndpoint), "POST", "/api/business/v1/wms/count-executions/{countExecutionId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsCountExecution"),
         new(typeof(DispatchWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "dispatchWmsWcsTask"),
         new(typeof(CompleteWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "completeWmsWcsTask"),

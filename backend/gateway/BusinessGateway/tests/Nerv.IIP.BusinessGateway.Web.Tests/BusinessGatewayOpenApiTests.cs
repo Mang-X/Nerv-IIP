@@ -265,12 +265,15 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders", "get", "listBusinessConsoleWmsInboundOrders");
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders", "post", "createBusinessConsoleWmsInboundOrder");
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks", "post", "createBusinessConsoleWmsPutawayTask");
+        AssertOperationId(paths, "/api/business-console/v1/wms/putaway-tasks", "get", "listBusinessConsoleWmsPutawayTasks");
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/complete", "post", "completeBusinessConsoleWmsInboundOrder");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders", "get", "listBusinessConsoleWmsOutboundOrders");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders", "post", "createBusinessConsoleWmsOutboundOrder");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks", "post", "createBusinessConsoleWmsPickingTask");
+        AssertOperationId(paths, "/api/business-console/v1/wms/picking-tasks", "get", "listBusinessConsoleWmsPickingTasks");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/complete", "post", "completeBusinessConsoleWmsOutboundOrder");
         AssertOperationId(paths, "/api/business-console/v1/wms/count-executions", "post", "createBusinessConsoleWmsCountExecution");
+        AssertOperationId(paths, "/api/business-console/v1/wms/count-executions", "get", "listBusinessConsoleWmsCountExecutions");
         AssertOperationId(paths, "/api/business-console/v1/wms/count-executions/{countExecutionId}/complete", "post", "completeBusinessConsoleWmsCountExecution");
         AssertOperationId(paths, "/api/business-console/v1/wms/wcs-tasks", "get", "listBusinessConsoleWmsWcsTasks");
         AssertOperationId(paths, "/api/business-console/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", "post", "dispatchBusinessConsoleWmsWcsTask");

@@ -21,6 +21,7 @@ using InboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAg
 using InboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineDraft;
 using OutboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder;
 using OutboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrderLineDraft;
+using CountExecution = Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate.CountExecution;
 using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTask;
 using WarehouseTaskId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId;
 using WcsTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate.WcsTask;
@@ -34,16 +35,19 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(14, contracts.Length);
+        Assert.Equal(17, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsPutawayTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsPutawayTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "createWmsOutboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/outbound-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsOutboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "createWmsPickingTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/picking-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsPickingTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "completeWmsOutboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsCountExecution");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsCountExecutions");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions/{countExecutionId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsCountExecution");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "dispatchWmsWcsTask");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "completeWmsWcsTask");
@@ -273,6 +277,60 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
+    public async Task Warehouse_task_query_filters_type_status_location_keyword_before_offset_page_and_total_count()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WarehouseTasks.AddRange(
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-PAGE-001", "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 3m),
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-PAGE-002", "IN-002", "10", "SKU-001", "pcs", "SITE-01", "RECV-02", "BIN-A", 3m),
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-OTHER-001", "IN-003", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-B", 3m),
+            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-PAGE-001", "OUT-001", "10", "SKU-001", "pcs", "SITE-01", "BIN-A", "SHIP-01", 3m),
+            WarehouseTask.CreatePutaway("org-002", "env-dev", "PUT-PAGE-003", "IN-004", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 3m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
+            new ListWarehouseTasksQuery("org-001", "env-dev", "Putaway", 1, 1, "Open", "BIN-A", null, "page"),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("PUT-PAGE-001", item.TaskNo);
+        Assert.Equal("Putaway", item.TaskType);
+        Assert.Equal("Open", item.Status);
+        Assert.Equal("BIN-A", item.ToLocationCode);
+    }
+
+    [Fact]
+    public async Task Count_execution_query_filters_status_location_keyword_before_offset_page_and_total_count()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var completed = CountExecution.Create("org-001", "env-dev", "COUNT-PAGE-CLOSED", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m);
+        completed.Complete(2m);
+        dbContext.CountExecutions.AddRange(
+            CountExecution.Create("org-001", "env-dev", "COUNT-PAGE-001", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m),
+            CountExecution.Create("org-001", "env-dev", "COUNT-PAGE-002", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m),
+            CountExecution.Create("org-001", "env-dev", "COUNT-OTHER-001", "SKU-001", "pcs", "SITE-01", "BIN-B", 3m),
+            completed,
+            CountExecution.Create("org-002", "env-dev", "COUNT-PAGE-003", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListCountExecutionsQueryHandler(dbContext).Handle(
+            new ListCountExecutionsQuery("org-001", "env-dev", 1, 1, "Open", "BIN-A", "page"),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("COUNT-PAGE-001", item.CountNo);
+        Assert.Equal("Open", item.Status);
+        Assert.Equal("BIN-A", item.LocationCode);
+        Assert.Null(item.CountedQuantity);
+    }
+
+    [Fact]
     public async Task Wms_list_queries_reject_numeric_status_filters()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
@@ -297,6 +355,12 @@ public sealed class WmsEndpointContractTests
         var outboundResult = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
             new ListOutboundOrdersQuery("org-001", "env-dev", 0, 100, "0", null),
             CancellationToken.None);
+        var warehouseResult = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
+            new ListWarehouseTasksQuery("org-001", "env-dev", "Putaway", 0, 100, "2", null, null, null),
+            CancellationToken.None);
+        var countResult = await new ListCountExecutionsQueryHandler(dbContext).Handle(
+            new ListCountExecutionsQuery("org-001", "env-dev", 0, 100, "0", null, null),
+            CancellationToken.None);
         var wcsResult = await new ListWcsTasksQueryHandler(dbContext).Handle(
             new ListWcsTasksQuery("org-001", "env-dev", null, null, 0, 100, "2", null, null),
             CancellationToken.None);
@@ -305,6 +369,10 @@ public sealed class WmsEndpointContractTests
         Assert.Empty(inboundResult.Items);
         Assert.Equal(0, outboundResult.Total);
         Assert.Empty(outboundResult.Items);
+        Assert.Equal(0, warehouseResult.Total);
+        Assert.Empty(warehouseResult.Items);
+        Assert.Equal(0, countResult.Total);
+        Assert.Empty(countResult.Items);
         Assert.Equal(0, wcsResult.Total);
         Assert.Empty(wcsResult.Items);
     }

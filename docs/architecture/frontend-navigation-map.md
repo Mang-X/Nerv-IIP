@@ -59,7 +59,7 @@
 | Gateway | 已有 facade | 尚未有正式 facade/页面的重点能力与导航优先级 |
 | --- | --- | --- |
 | PlatformGateway | Console auth、AppHub 实例列表/详情、Ops restart 与任务详情、IAM 用户/角色/权限 catalog/会话、Notification 消息/任务、FileStorage 上传会话/元数据/download grant 管理 facade。 | P1：Ops 任务列表/审批页、服务健康聚合；P2：FileStorage 管理页、审计日志、DLQ 管理、ExternalClient；P3：SSO/OIDC/MFA、性能基线和渠道配置。 |
-| BusinessGateway | MasterData SKU/资源 lifecycle、typed list、workshop/team-member、BusinessPartner 多角色/taxId；Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、ERP Procurement 采购订单供应明细、Scheduling/APS lite、设备运行事实、MES PC 工作台、WMS 收货/出库/WCS 读面 facade、BarcodeLabel 规则/模板/打印批次/扫码记录分页 facade、BusinessApproval 模板/流程/记录/委托 facade、全局对象搜索后端 facade（MES 工单、SKU、当前报警；Inventory batch/lot 与设备列表搜索当前返回 unsupported）、IndustrialTelemetry tags/alarm-rules/alarms/history/OEE/runtime-availability facade、Maintenance 工单/计划/点检/备件/availability-windows facade。 | P1：当前 route-ready 页面硬化和工作台最低可用性；P2：前端 Cmd/K 面板、ERP 销售/财务、WMS 页面、BarcodeLabel、BusinessApproval、IndustrialTelemetry 正式页面、Maintenance 正式页面；P3：预测、CRM-lite、CAPA 和高级分析。 |
+| BusinessGateway | MasterData SKU/资源 lifecycle、typed list、workshop/team-member、BusinessPartner 多角色/taxId；Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、ERP Procurement 采购订单供应明细、Scheduling/APS lite、设备运行事实、MES PC 工作台、WMS 收货/出库/上架任务/拣货任务/盘点执行/WCS 读面 facade、BarcodeLabel 规则/模板/打印批次/扫码记录分页 facade、BusinessApproval 模板/流程/记录/委托 facade、全局对象搜索后端 facade（MES 工单、SKU、当前报警；Inventory batch/lot 与设备列表搜索当前返回 unsupported）、IndustrialTelemetry tags/alarm-rules/alarms/history/OEE/runtime-availability facade、Maintenance 工单/计划/点检/备件/availability-windows facade。 | P1：当前 route-ready 页面硬化和工作台最低可用性；P2：前端 Cmd/K 面板、ERP 销售/财务、WMS 页面、BarcodeLabel、BusinessApproval、IndustrialTelemetry 正式页面、Maintenance 正式页面；P3：预测、CRM-lite、CAPA 和高级分析。 |
 
 当前 `frontend/apps/business-console/src/pages/erp/index.vue` 已窄化为采购与供应页，通过 BusinessGateway ERP Procurement facade 消费采购订单、供应商编码、预计到货和部分收货状态；不能据此把 ERP 销售、财务或完整 ERP 前端标为已交付。
 
@@ -283,7 +283,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 高级排程（APS） | 排程设置、排程执行、排程甘特图、资源负载、冲突管理、排程版本、排程发布 | BusinessScheduling / APS lite 后端契约、内核和 BusinessGateway facade 已落地；#78 只做消费 APS 输出的甘特展示。不得把 APS 算法写入 MES 页面或前端甘特。 |
 | 制造执行（MES） | 生产驾驶舱、生产计划、工单与派工、工序执行、在制跟踪、齐套与物料、报工与完工、质量与不良、设备与停机、班次交接、追溯、产能影响、规则排程过渡页 | 当前 PC 工作台已覆盖主线；PDA/mobile 后置。工单详情等对象页通过列表进入。 |
 | 质量管理 | 检验计划、检验记录、NCR、质量分析、CAPA | 检验/NCR 已有；质量分析 P2，CAPA P3。 |
-| 仓储作业（WMS） | 仓库结构、收货、入库、出库、拣货、复核与发货、退货入库、盘点执行、库内调拨、WCS 任务监控、仓储分析 | WMS 后端已落地，BusinessGateway 已提供收货入库列表、出库列表和 WCS 任务读面 facade，并支持服务端分页与状态过滤。Business Console 已接入 `/wms` 收货入库、出库发货和 WCS 任务监控读面，OpenAPI 快照、api-client 生成与 curated barrel 已同步；后续仓储作业深化应继续内嵌 Inventory 可用量、批次、冻结和预留视图。 |
+| 仓储作业（WMS） | 仓库结构、收货、入库、出库、拣货、复核与发货、退货入库、盘点执行、库内调拨、WCS 任务监控、仓储分析 | WMS 后端已落地，BusinessGateway 已提供收货入库、出库、上架任务、拣货任务、盘点执行和 WCS 任务读面 facade，并支持服务端分页与状态过滤；#374 后上架/拣货/盘点 list 还支持库位过滤，操作员过滤参数存在但因 WMS 暂无 assigned operator 字段会返回空集。Business Console 已接入 `/wms` 收货入库、出库发货和 WCS 任务监控读面；后续仓储作业深化应继续内嵌 Inventory 可用量、批次、冻结和预留视图。 |
 | 库存台账/库存管理 | 库存可用量、库存台账、库存移动记录、批次、序列号、库存预留、库存冻结、库存调拨、盘点调整、库存分析 | 可用量、移动、盘点已落地；批次/序列号/预留/冻结/分析后置。库存事实仍归 Inventory，但用户作业入口可在 WMS/MES/ERP 页面内嵌使用。 |
 | 条码标签 | 条码规则、标签模板、打印管理、扫码记录 | BarcodeLabel 后端与 BusinessGateway 规则/模板/打印批次/扫码记录分页 facade 已落地；正式页面待建，业务扫码动作嵌入 MES/WMS/盘点流程。 |
 | 设备监控（IoT） | 标签管理、报警规则、报警列表、报警处理、设备状态、实时监控、历史数据、OEE 分析 | IndustrialTelemetry 后端已有 tag、报警规则、报警、设备时间线、P0 OEE 聚合和 runtime availability 服务读面；P0 OEE 的 availability 按状态持续时间计算，performance/quality 为估算占位，响应标志在 P0 期间保持 true（无状态数据窗口下数值为 0 但仍非真实测量值）。#207 已提供设备运行看板、设备详情和报警 route-ready 页面。BusinessGateway 已提供 tags、alarm-rules、alarms、device history、OEE、runtime availability 和 equipment alarms 分页 facade；正式 rule/OEE 页面仍待接入，设备接入配置、凭据和控制命令仍在外部/Connector 边界。 |
@@ -308,7 +308,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 经营管理（“更多”内） | 采购与供应 `/erp` |
 | 设备监控（“更多”内） | 设备运行看板 `/equipment`、设备报警 `/equipment/alarms` |
 
-> **仓储作业（FE-11 #286，2026-06-06 校验）：** 后端 WMS facade（#264）已接入 `@nerv-iip/api-client` 稳定导出。入库/出库/WCS 三个列表（**已随 #329/#331 落地服务端分页 `skip/take/total` + 状态/关键字过滤**，前端用 `usePagedList` + `DataTablePagination`，无假分页）+ 入库页内嵌 Inventory 可用量上下文。写操作已接入：完成入库（幂等键）、出库复核（packReviewNo/passed）、WCS 派发/标记失败/完成（行内操作 + 确认/表单）、新建入库单 / 新建出库单（动态行明细表单）。拣货/上架/盘点为 create-only 端点且**无对应 list facade**，建成后无法回看，已在 #329 追加「补 list 端点」诉求，待后端补齐再做页面，暂不提供半截入口。
+> **仓储作业（FE-11 #286，2026-06-10 校验）：** 后端 WMS facade（#264/#374）已接入 `@nerv-iip/api-client` 稳定导出。入库/出库/WCS 三个列表（**已随 #329/#331 落地服务端分页 `skip/take/total` + 状态/关键字过滤**，前端用 `usePagedList` + `DataTablePagination`，无假分页）+ 入库页内嵌 Inventory 可用量上下文。写操作已接入：完成入库（幂等键）、出库复核（packReviewNo/passed）、WCS 派发/标记失败/完成（行内操作 + 确认/表单）、新建入库单 / 新建出库单（动态行明细表单）。#374 已补上架任务、拣货任务和盘点执行 list facade；PDA/Business Console 页面接入前仍不得提供半截入口或空跳转。
 
 裁剪规则：`permittedBy` 对未声明 `requiredPermissions` 的域/项默认放行（当前为宽松默认，匹配现有 route-ready 行为）；挂接具体 permission code 后按角色裁剪。导航隐藏只是 UX，Gateway per-request enforcement 仍是权威。命令搜索（⌘/Ctrl+K）入口已在顶部占位，面板实装在 FE-13。
 
