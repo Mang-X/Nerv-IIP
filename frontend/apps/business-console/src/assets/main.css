@@ -11,10 +11,11 @@
 @import '../../../../packages/ui/src/styles/theme.css';
 
 /*
- * 落实主题色（动态强调色 `--brand`）：默认设计把多数高亮用中性 `--primary/--accent`，
- * 用户在主题选色器选的色（写入 `--brand`）几乎不可见。这里把"当前选中的左侧菜单项"
- * 高亮成主题色（品牌色背景淡染 + 左侧品牌色竖条），让选色真正有视觉反馈。
- * 仅 business-console 应用层覆盖，不动 @nerv-iip/ui 原版组件与共享 token。
+ * 落实主题色（动态强调色 `--brand`）：当前选中的左侧菜单项用主题色高亮
+ * （淡染背景 + 左侧主题色竖条）。`--brand` 由主题选色器实时写入 <html>，随选色实时变。
+ * 注：按钮/勾选框等"主交互组件"仍是中性色——平台设计系统刻意把 `--primary` 烤成中性灰/黑
+ * （neutral primary，构建期内联，运行时/应用层覆盖均无效），要让它们跟随主题色需在
+ * `@nerv-iip/ui` 设计系统层把 `--primary` 指向 `--brand` 并改契约（影响两个 app），见下次处理。
  */
 [data-slot='sidebar-menu-item'] a[data-active='true'] {
   background-color: color-mix(in oklab, var(--brand) 16%, transparent);
