@@ -63,6 +63,41 @@ public sealed class CapMessagingConfigurationTests
     }
 
     [Fact]
+    public void UseConfiguredTransport_RedisProvider_RegistersRedisStreamsTransport()
+    {
+        var options = new CapOptions();
+
+        options.UseConfiguredTransport(CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Messaging:Provider"] = "Redis",
+            ["ConnectionStrings:Redis"] = "redis.local:6379",
+        }));
+
+        var extensionTypeNames = GetExtensionTypeNames(options);
+        Assert.Contains(extensionTypeNames, name => name.Contains("Redis", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(extensionTypeNames, name => name.Contains("RabbitMQ", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(extensionTypeNames, name => name.Contains("InMemory", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void UseConfiguredTransport_RedisProviderWithoutConnectionString_FailsFastWithDiagnosticKeys()
+    {
+        var options = new CapOptions();
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Messaging:Provider"] = "Redis",
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            options.UseConfiguredTransport(configuration));
+
+        Assert.Contains("Redis CAP transport requires a Redis connection string", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Messaging:Redis:ConnectionString", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("ConnectionStrings:Redis", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Caching:Redis", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UseConfiguredTransport_UnsupportedProvider_FailsFast()
     {
         var options = new CapOptions();

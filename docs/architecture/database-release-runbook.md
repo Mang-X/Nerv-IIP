@@ -27,7 +27,7 @@
 
 1. 确认 release id、git commit、服务版本、目标 environment、数据库 profile 和连接串来源。
 2. 确认目标数据库是预期库，不是开发默认库、共享验证库或误连客户生产库。
-3. 确认 PostgreSQL、Redis、对象存储和观测依赖版本满足当前 release 要求；仅当 release profile 设置 `Messaging:Provider=RabbitMQ` 时确认 RabbitMQ 版本和连通性。
+3. 确认 PostgreSQL、Redis、对象存储和观测依赖版本满足当前 release 要求；当 release profile 设置 `Messaging:Provider=Redis` 时确认 Redis 持久卷、RDB/AOF 持久化和备份策略；仅当 release profile 设置 `Messaging:Provider=RabbitMQ` 时确认 RabbitMQ 版本和连通性。
 4. 确认安装脚本不会直接拼 SQL 写业务表，也不会使用绕过 EF migrations history 的建表路径。
 5. 确认待执行服务清单和顺序。当前 AppHub/Ops/IAM 可独立迁移；后续 FileStorage、Notification、Knowledge、AI Integration、Observability 必须在各自 catalog 和迁移准备完成后加入顺序。
 6. 确认备份或快照已完成，并记录备份位置、时间、校验方式和恢复负责人。
@@ -219,12 +219,12 @@ CAP tables 是 system-owned，不是业务表：
 3. 排障时只能读取消息状态、重试次数、时间戳、异常摘要和锁 key 等诊断信息。
 4. 清理策略必须由 CAP 配置、服务 migrator 或受控运维任务执行，不用 ad hoc SQL 删除。
 5. CAP storage/outbox 必须纳入 database profile 验证；只验证 EF business tables 不算 profile 支持完成。
-6. CAP 锁异常时先确认是否有并发 migrator、异常退出服务实例或 messaging provider 连接故障；使用 `Messaging:Provider=RabbitMQ` 时再排查 RabbitMQ 连接，再决定是否需要人工介入。
+6. CAP 锁异常时先确认是否有并发 migrator、异常退出服务实例或 messaging provider 连接故障；使用 `Messaging:Provider=Redis` 时排查 Redis 连接、stream consumer group 和持久化状态，使用 `Messaging:Provider=RabbitMQ` 时排查 RabbitMQ 连接，再决定是否需要人工介入。
 
 ## 发布后验证
 
 1. 查询每个服务的 applied migrations，确认目标 migration 已应用。
-2. 启动服务并通过 health endpoint 验证数据库、Redis 和外部依赖；使用 `Messaging:Provider=RabbitMQ` 时同时验证 RabbitMQ。
+2. 启动服务并通过 health endpoint 验证数据库、Redis 和外部依赖；使用 `Messaging:Provider=Redis` 时验证服务重启后的 stream 消费恢复，使用 `Messaging:Provider=RabbitMQ` 时同时验证 RabbitMQ。
 3. 对 AppHub 执行最小 registration/heartbeat/state-snapshot smoke test。
 4. 对 Ops 执行最小 operation task create/pending/result smoke test。
 5. 对 IAM 执行默认管理员登录、refresh、logout、`/me` 和 Connector Host credential validation smoke test。
