@@ -35,6 +35,7 @@ public sealed class MasterDataApiContractTests
     [InlineData(typeof(AddTeamMemberEndpoint))]
     [InlineData(typeof(RemoveTeamMemberEndpoint))]
     [InlineData(typeof(AssignPersonnelSkillEndpoint))]
+    [InlineData(typeof(ListPersonnelSkillMatrixEndpoint))]
     [InlineData(typeof(CreateSiteEndpoint))]
     [InlineData(typeof(CreateProductionLineEndpoint))]
     [InlineData(typeof(CreateShiftEndpoint))]
@@ -86,7 +87,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(25, contracts.Count);
+        Assert.Equal(26, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -439,6 +440,132 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task MasterData_lifecycle_commands_manage_work_calendar_details_and_uom_conversion_crud()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "weight", 3, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "weight", 3, "half-up"));
+        dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create("org-001", "env-dev", "kg", "g", 1000m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)));
+        var calendar = Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendar.Create("org-001", "env-dev", "CAL-001", "Standard Calendar");
+        calendar.AddWorkingTime(DayOfWeek.Monday, new TimeOnly(8, 0), new TimeOnly(17, 0));
+        dbContext.WorkCalendars.Add(calendar);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var updateHandler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+
+        var calendarDetail = await updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "work-calendar",
+                "CAL-001",
+                Name: "Factory Calendar",
+                WorkingTimes:
+                [
+                    new WorkCalendarWorkingTimeDetail(DayOfWeek.Monday, new TimeOnly(8, 0), new TimeOnly(12, 0)),
+                    new WorkCalendarWorkingTimeDetail(DayOfWeek.Monday, new TimeOnly(13, 0), new TimeOnly(17, 0))
+                ],
+                Holidays: [new WorkCalendarHolidayDetail(new DateOnly(2026, 5, 1), "Labor Day")],
+                Exceptions: [new WorkCalendarExceptionDetail(new DateOnly(2026, 5, 2), true, new TimeOnly(9, 0), new TimeOnly(15, 0), "Make-up shift")]),
+            CancellationToken.None);
+
+        Assert.Equal("Factory Calendar", calendarDetail.DisplayName);
+        Assert.Equal(2, calendarDetail.WorkingTimes?.Count);
+        Assert.Single(calendarDetail.Holidays!);
+        Assert.Single(calendarDetail.Exceptions!);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var persistedCalendar = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "work-calendar", "CAL-001"),
+            CancellationToken.None);
+        Assert.Equal(2, persistedCalendar.WorkingTimes?.Count);
+        Assert.Equal(new DateOnly(2026, 5, 1), Assert.Single(persistedCalendar.Holidays!).Date);
+
+        var conversionDetail = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "uom-conversion", "kg->g", EffectiveFrom: new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.Equal(1000m, conversionDetail.Factor);
+        Assert.Equal(new DateOnly(2026, 1, 1), conversionDetail.EffectiveFrom);
+
+        var conversionUpdate = await updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "uom-conversion",
+                "kg->g",
+                Factor: 1000.5m,
+                Offset: 0.1m,
+                Precision: 4,
+                RoundingMode: "bankers",
+                EffectiveFrom: new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.Equal(1000.5m, conversionUpdate.Factor);
+        Assert.Equal(0.1m, conversionUpdate.Offset);
+        Assert.Equal(4, conversionUpdate.Precision);
+        Assert.Equal("bankers", conversionUpdate.RoundingMode);
+
+        var disabled = await new SetMasterDataResourceEnabledCommandHandler(dbContext).Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "uom-conversion", "kg->g", false, Reason: "superseded", EffectiveFrom: new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.False(disabled.Active);
+    }
+
+    [Fact]
+    public async Task Personnel_skill_matrix_query_groups_skills_by_worker_and_filters_by_skill()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.PersonnelSkills.Add(Domain.AggregatesModel.PersonnelSkillAggregate.PersonnelSkill.Assign("org-001", "env-dev", "worker-001", "WELD", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)));
+        dbContext.PersonnelSkills.Add(Domain.AggregatesModel.PersonnelSkillAggregate.PersonnelSkill.Assign("org-001", "env-dev", "worker-001", "QA", "junior", new DateOnly(2026, 2, 1), new DateOnly(2026, 12, 31)));
+        dbContext.PersonnelSkills.Add(Domain.AggregatesModel.PersonnelSkillAggregate.PersonnelSkill.Assign("org-001", "env-dev", "worker-002", "WELD", "junior", new DateOnly(2026, 3, 1), new DateOnly(2026, 12, 31)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListPersonnelSkillMatrixQueryHandler(dbContext);
+
+        var matrix = await handler.Handle(new ListPersonnelSkillMatrixQuery("org-001", "env-dev"), CancellationToken.None);
+        Assert.Equal(2, matrix.Rows.Count);
+        Assert.Equal(2, matrix.SkillCodes.Count);
+        Assert.Equal(2, matrix.Rows.Single(x => x.UserId == "worker-001").Skills.Count);
+
+        var weldOnly = await handler.Handle(new ListPersonnelSkillMatrixQuery("org-001", "env-dev", SkillCode: "WELD"), CancellationToken.None);
+        Assert.Equal(["WELD"], weldOnly.SkillCodes);
+        Assert.All(weldOnly.Rows, row => Assert.Single(row.Skills));
+        Assert.Equal(["worker-001", "worker-002"], weldOnly.Rows.Select(x => x.UserId).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public async Task Create_uom_conversion_requires_same_dimension_and_rejects_cycles()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "weight", 3, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "weight", 3, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "l", "Liter", "volume", 3, "half-up"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new CreateUomConversionCommandHandler(new UomConversionRepository(dbContext), dbContext);
+
+        var dimensionMismatch = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateUomConversionCommand("org-001", "env-dev", "kg", "l", 1m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
+            CancellationToken.None));
+        Assert.Contains("same dimension", dimensionMismatch.Message, StringComparison.OrdinalIgnoreCase);
+
+        await handler.Handle(
+            new CreateUomConversionCommand("org-001", "env-dev", "kg", "g", 1000m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var cycle = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateUomConversionCommand("org-001", "env-dev", "g", "kg", 0.001m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
+            CancellationToken.None));
+        Assert.Contains("cycle", cycle.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Reference_data_detail_update_and_enable_require_code_set()
     {
         await using var provider = CreateInMemoryProvider();
@@ -495,6 +622,9 @@ public sealed class MasterDataApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "mass", 3, "half-up"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var created = new[]
         {
@@ -502,9 +632,9 @@ public sealed class MasterDataApiContractTests
                 new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Finished Good", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, ["rohs"]),
                 CancellationToken.None),
             await new CreateUnitOfMeasureCommandHandler(new UnitOfMeasureRepository(dbContext)).Handle(
-                new CreateUnitOfMeasureCommand("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"),
+                new CreateUnitOfMeasureCommand("org-001", "env-dev", "lb", "Pound", "mass", 3, "half-up"),
                 CancellationToken.None),
-            await new CreateUomConversionCommandHandler(new UomConversionRepository(dbContext)).Handle(
+            await new CreateUomConversionCommandHandler(new UomConversionRepository(dbContext), dbContext).Handle(
                 new CreateUomConversionCommand("org-001", "env-dev", "kg", "g", 1000m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
                 CancellationToken.None),
             await new CreateBusinessPartnerCommandHandler(new BusinessPartnerRepository(dbContext)).Handle(

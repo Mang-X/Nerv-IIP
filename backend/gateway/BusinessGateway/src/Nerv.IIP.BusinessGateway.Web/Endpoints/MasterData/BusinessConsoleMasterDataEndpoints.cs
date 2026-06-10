@@ -896,6 +896,28 @@ public sealed class AssignBusinessConsolePersonnelSkillEndpoint(
 }
 
 [Tags("Business Console MasterData")]
+[HttpGet("/api/business-console/v1/master-data/personnel-skills/matrix")]
+[BusinessGatewayOperationId("listBusinessConsolePersonnelSkillMatrix")]
+public sealed class ListBusinessConsolePersonnelSkillMatrixEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsolePersonnelSkillMatrixRequest, BusinessConsolePersonnelSkillMatrixResponse>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesRead)
+{
+    protected override string OrganizationId(BusinessConsolePersonnelSkillMatrixRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsolePersonnelSkillMatrixRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsolePersonnelSkillMatrixResponse> ForwardAsync(
+        BusinessConsolePersonnelSkillMatrixRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.ListPersonnelSkillMatrixAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
 [HttpPost("/api/business-console/v1/master-data/reference-data")]
 [BusinessGatewayOperationId("createBusinessConsoleReferenceDataCode")]
 public sealed class CreateBusinessConsoleReferenceDataCodeEndpoint(

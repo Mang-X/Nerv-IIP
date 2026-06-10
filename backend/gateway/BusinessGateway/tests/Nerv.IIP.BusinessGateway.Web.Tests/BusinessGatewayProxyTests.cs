@@ -3210,6 +3210,7 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public BusinessConsoleAddTeamMemberRequest? LastAddTeamMemberRequest { get; private set; }
 
     public BusinessConsoleListTeamMembersRequest? LastListTeamMembersRequest { get; private set; }
+    public BusinessConsolePersonnelSkillMatrixRequest? LastPersonnelSkillMatrixRequest { get; private set; }
 
     public BusinessConsoleRemoveTeamMemberRequest? LastRemoveTeamMemberRequest { get; private set; }
 
@@ -3397,6 +3398,18 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         BusinessConsoleAssignPersonnelSkillRequest request,
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/personnel-skills", "personnel-skill", $"{request.UserId}:{request.SkillCode}", request.Level);
+
+    public Task<BusinessConsolePersonnelSkillMatrixResponse> ListPersonnelSkillMatrixAsync(
+        string internalBearerToken,
+        BusinessConsolePersonnelSkillMatrixRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPersonnelSkillMatrixRequest = request;
+        return Task.FromResult(new BusinessConsolePersonnelSkillMatrixResponse(
+            [request.SkillCode ?? "WELD"],
+            [new BusinessConsolePersonnelSkillMatrixRow(request.UserId ?? "worker-001", [new BusinessConsolePersonnelSkillMatrixCell(request.SkillCode ?? "WELD", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31))])]));
+    }
 
     public Task<BusinessConsoleResourceItem> CreateReferenceDataCodeAsync(
         string internalBearerToken,

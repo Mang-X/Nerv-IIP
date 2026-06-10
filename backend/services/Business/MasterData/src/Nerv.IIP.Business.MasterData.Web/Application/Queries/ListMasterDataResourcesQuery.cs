@@ -29,7 +29,13 @@ public sealed record MasterDataResourceItem(
     string? SkillCode = null,
     string? SkillLevel = null,
     DateOnly? EffectiveFrom = null,
-    DateOnly? EffectiveTo = null);
+    DateOnly? EffectiveTo = null,
+    string? FromUomCode = null,
+    string? ToUomCode = null,
+    decimal? Factor = null,
+    decimal? Offset = null,
+    int? Precision = null,
+    string? RoundingMode = null);
 
 public sealed record ListMasterDataResourcesResponse(
     IReadOnlyCollection<MasterDataResourceItem> Resources,
@@ -130,10 +136,44 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         return dbContext.UomConversions
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => keyword == null || x.FromUomCode.ToLower().Contains(keyword) || x.ToUomCode.ToLower().Contains(keyword))
             .OrderBy(x => x.FromUomCode)
             .ThenBy(x => x.ToUomCode)
-            .Select(x => Item(resourceType, $"{x.FromUomCode}->{x.ToUomCode}", $"{x.FromUomCode} to {x.ToUomCode}", true, x.UpdatedAtUtc));
+            .Select(x => Item(
+                resourceType,
+                $"{x.FromUomCode}->{x.ToUomCode}",
+                $"{x.FromUomCode} to {x.ToUomCode}",
+                !x.Disabled,
+                x.UpdatedAtUtc,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                x.Disabled ? "disabled" : "active",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                x.EffectiveFrom,
+                null,
+                x.FromUomCode,
+                x.ToUomCode,
+                x.Factor,
+                x.Offset,
+                x.Precision,
+                x.RoundingMode));
     }
 
     private IQueryable<MasterDataResourceItem> ListPartners(ListMasterDataResourcesQuery request, string resourceType)
@@ -324,7 +364,13 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         string? SkillCode = null,
         string? SkillLevel = null,
         DateOnly? EffectiveFrom = null,
-        DateOnly? EffectiveTo = null)
+        DateOnly? EffectiveTo = null,
+        string? FromUomCode = null,
+        string? ToUomCode = null,
+        decimal? Factor = null,
+        decimal? Offset = null,
+        int? Precision = null,
+        string? RoundingMode = null)
     {
         return new MasterDataResourceItem(
             resourceType,
@@ -353,7 +399,13 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             SkillCode,
             SkillLevel,
             EffectiveFrom,
-            EffectiveTo);
+            EffectiveTo,
+            FromUomCode,
+            ToUomCode,
+            Factor,
+            Offset,
+            Precision,
+            RoundingMode);
     }
 
     private static string? NormalizeKeyword(string? keyword)

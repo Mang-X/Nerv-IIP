@@ -4,6 +4,10 @@ using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
 
+public sealed record WorkCalendarWorkingTimeDetail(DayOfWeek DayOfWeek, TimeOnly StartsAt, TimeOnly EndsAt);
+public sealed record WorkCalendarHolidayDetail(DateOnly Date, string Name);
+public sealed record WorkCalendarExceptionDetail(DateOnly Date, bool IsWorkingDay, TimeOnly? StartsAt, TimeOnly? EndsAt, string? Reason);
+
 public sealed record MasterDataResourceDetail(
     string ResourceType,
     string Code,
@@ -62,14 +66,27 @@ public sealed record MasterDataResourceDetail(
     int? Precision = null,
     string? RoundingMode = null,
     string? TaxId = null,
-    string? Status = null);
+    string? Status = null,
+    IReadOnlyCollection<WorkCalendarWorkingTimeDetail>? WorkingTimes = null,
+    IReadOnlyCollection<WorkCalendarHolidayDetail>? Holidays = null,
+    IReadOnlyCollection<WorkCalendarExceptionDetail>? Exceptions = null,
+    string? FromUomCode = null,
+    string? ToUomCode = null,
+    decimal? Factor = null,
+    decimal? Offset = null,
+    DateOnly? EffectiveFrom = null,
+    DateOnly? EffectiveTo = null,
+    string? UserId = null,
+    string? SkillCode = null,
+    string? SkillLevel = null);
 
 public sealed record GetMasterDataResourceDetailQuery(
     string OrganizationId,
     string EnvironmentId,
     string ResourceType,
     string Code,
-    string? CodeSet = null) : IQuery<MasterDataResourceDetail>;
+    string? CodeSet = null,
+    DateOnly? EffectiveFrom = null) : IQuery<MasterDataResourceDetail>;
 
 public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMasterDataResourceDetailQuery, MasterDataResourceDetail>
@@ -84,6 +101,9 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
                 ?? throw NotFound(type, request.Code)),
             "unit-of-measure" => UpdateMasterDataResourceCommandHandler.Detail(
                 await dbContext.UnitsOfMeasure.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+                ?? throw NotFound(type, request.Code)),
+            "uom-conversion" => UpdateMasterDataResourceCommandHandler.Detail(
+                await FindUomConversionAsync(request, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
             "business-partner" => UpdateMasterDataResourceCommandHandler.Detail(
                 await dbContext.BusinessPartners.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
@@ -103,6 +123,12 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
             "shift" => UpdateMasterDataResourceCommandHandler.Detail(
                 await dbContext.Shifts.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
+            "work-calendar" => UpdateMasterDataResourceCommandHandler.Detail(
+                await dbContext.WorkCalendars.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+                ?? throw NotFound(type, request.Code)),
+            "personnel-skill" => UpdateMasterDataResourceCommandHandler.Detail(
+                await FindPersonnelSkillAsync(request, cancellationToken)
+                ?? throw NotFound(type, request.Code)),
             "production-line" => UpdateMasterDataResourceCommandHandler.Detail(
                 await dbContext.ProductionLines.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
@@ -117,6 +143,48 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
                 ?? throw NotFound(type, request.Code)),
             _ => throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'."),
         };
+    }
+
+    private async Task<Domain.AggregatesModel.UomConversionAggregate.UomConversion?> FindUomConversionAsync(
+        GetMasterDataResourceDetailQuery request,
+        CancellationToken cancellationToken)
+    {
+        var (fromUomCode, toUomCode) = ParseConversionCode(request.Code);
+        var query = dbContext.UomConversions.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.FromUomCode == fromUomCode &&
+                x.ToUomCode == toUomCode);
+        if (request.EffectiveFrom.HasValue)
+        {
+            query = query.Where(x => x.EffectiveFrom == request.EffectiveFrom.Value);
+        }
+
+        return await query
+            .OrderByDescending(x => x.EffectiveFrom)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<Domain.AggregatesModel.PersonnelSkillAggregate.PersonnelSkill?> FindPersonnelSkillAsync(
+        GetMasterDataResourceDetailQuery request,
+        CancellationToken cancellationToken)
+    {
+        var (userId, skillCode) = ParsePersonnelSkillCode(request.Code);
+        var query = dbContext.PersonnelSkills.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.UserId == userId &&
+                x.SkillCode == skillCode);
+        if (request.EffectiveFrom.HasValue)
+        {
+            query = query.Where(x => x.EffectiveFrom == request.EffectiveFrom.Value);
+        }
+
+        return await query
+            .OrderByDescending(x => x.EffectiveFrom)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private async Task<ReferenceDataCode?> FindReferenceDataCodeAsync(
@@ -152,6 +220,28 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
         }
 
         return codeSet.Trim();
+    }
+
+    internal static (string FromUomCode, string ToUomCode) ParseConversionCode(string code)
+    {
+        var parts = code.Split("->", StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+        {
+            throw new KnownException("UOM conversion code must use 'from->to' format.");
+        }
+
+        return (parts[0], parts[1]);
+    }
+
+    internal static (string UserId, string SkillCode) ParsePersonnelSkillCode(string code)
+    {
+        var parts = code.Split(':', StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+        {
+            throw new KnownException("Personnel skill code must use 'userId:skillCode' format.");
+        }
+
+        return (parts[0], parts[1]);
     }
 
     private static KnownException NotFound(string resourceType, string code) =>

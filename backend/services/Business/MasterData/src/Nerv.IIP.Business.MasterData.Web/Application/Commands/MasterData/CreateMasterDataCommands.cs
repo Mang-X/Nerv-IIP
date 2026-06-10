@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
@@ -206,11 +207,19 @@ public sealed record CreateUomConversionCommand(
     string RoundingMode,
     DateOnly EffectiveFrom) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateUomConversionCommandHandler(IUomConversionRepository repository)
+public sealed class CreateUomConversionCommandHandler(IUomConversionRepository repository, ApplicationDbContext dbContext)
     : ICommandHandler<CreateUomConversionCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateUomConversionCommand request, CancellationToken cancellationToken)
     {
+        await ValidateUomConversionGraphAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.FromUomCode,
+            request.ToUomCode,
+            null,
+            cancellationToken);
+
         if (await repository.ExistsAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -235,6 +244,87 @@ public sealed class CreateUomConversionCommandHandler(IUomConversionRepository r
         await repository.AddAsync(conversion, cancellationToken);
         return new MasterDataResourceResult("uom-conversion", $"{conversion.FromUomCode}->{conversion.ToUomCode}", $"{conversion.FromUomCode} to {conversion.ToUomCode}");
     }
+
+    internal async Task ValidateUomConversionGraphAsync(
+        string organizationId,
+        string environmentId,
+        string fromUomCode,
+        string toUomCode,
+        DateOnly? excludeEffectiveFrom,
+        CancellationToken cancellationToken)
+    {
+        var units = await dbContext.UnitsOfMeasure
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                (x.Code == fromUomCode || x.Code == toUomCode))
+            .Select(x => new { x.Code, x.DimensionType, x.Disabled })
+            .ToListAsync(cancellationToken);
+        var from = units.SingleOrDefault(x => x.Code == fromUomCode)
+            ?? throw new KnownException($"Unit of measure '{fromUomCode}' was not found.");
+        var to = units.SingleOrDefault(x => x.Code == toUomCode)
+            ?? throw new KnownException($"Unit of measure '{toUomCode}' was not found.");
+        if (from.Disabled || to.Disabled)
+        {
+            throw new KnownException("UOM conversion requires active units of measure.");
+        }
+
+        if (!string.Equals(from.DimensionType, to.DimensionType, StringComparison.Ordinal))
+        {
+            throw new KnownException("UOM conversion requires source and target units in the same dimension.");
+        }
+
+        var edges = await dbContext.UomConversions
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                !x.Disabled &&
+                !(x.FromUomCode == fromUomCode &&
+                  x.ToUomCode == toUomCode &&
+                  excludeEffectiveFrom.HasValue &&
+                  x.EffectiveFrom == excludeEffectiveFrom.Value))
+            .Select(x => new ConversionEdge(x.FromUomCode, x.ToUomCode))
+            .ToListAsync(cancellationToken);
+        if (HasPath(edges, toUomCode, fromUomCode))
+        {
+            throw new KnownException($"UOM conversion '{fromUomCode}->{toUomCode}' would create a conversion cycle.");
+        }
+    }
+
+    private static bool HasPath(IEnumerable<ConversionEdge> edges, string start, string target)
+    {
+        var adjacency = edges
+            .GroupBy(x => x.FromUomCode, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Select(edge => edge.ToUomCode).ToArray(), StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Queue<string>();
+        pending.Enqueue(start);
+        while (pending.Count > 0)
+        {
+            var current = pending.Dequeue();
+            if (!visited.Add(current))
+            {
+                continue;
+            }
+
+            if (string.Equals(current, target, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (adjacency.TryGetValue(current, out var next))
+            {
+                foreach (var code in next)
+                {
+                    pending.Enqueue(code);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private sealed record ConversionEdge(string FromUomCode, string ToUomCode);
 }
 
 public sealed record CreateBusinessPartnerCommand(
