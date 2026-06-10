@@ -25,11 +25,19 @@ SchedulingEngine 适配器接口   mount/setData/applyCommand/on/destroy(engine/
    npm config set @dhx:registry=https://npm.dhtmlx.com
    pnpm add @dhx/trial-gantt --filter @nerv-iip/scheduling
    ```
-2. 本地试用包:把 `gantt_trial/codebase/` 拷到 `frontend/packages/scheduling/vendor/dhtmlx/`(已 gitignore),
-   并在 business-console `vite.config.ts` 把 `@dhx/trial-gantt` 别名到该路径。
+2. 本地试用包(已验证):把 `gantt_trial/codebase/` 拷到 `frontend/packages/scheduling/vendor/dhtmlx/`(已 gitignore):
+   ```powershell
+   Copy-Item 'C:\…\gantt_trial\codebase\*' 'frontend\packages\scheduling\vendor\dhtmlx\' -Recurse -Force
+   ```
+   business-console `vite.config.ts` 检测到 vendor 后自动把 `@dhx/trial-gantt`(es.js)和
+   `@dhx/trial-gantt/codebase/dhtmlxgantt.css` 别名到 vendor;DHTMLX 布局/网格 CSS 在 `main.ts` 与
+   预览入口 side-effect 导入。**css 子路径 alias 必须排在 `@dhx/trial-gantt` 之前**(Vite 字符串 alias 是前缀匹配)。
 
-无论哪种,适配器都通过 `engine/dhtmlx/loader.ts` 动态加载;**缺失时优雅回落 NativeEngine**。
-business-console `vite.config.ts` 用条件 alias 让 `@dhx/trial-gantt` 始终可解析(真库或 stub),保证 `vite build` 在无许可时也不失败。
+无论哪种,适配器都通过 `engine/dhtmlx/loader.ts` 动态加载;`engine-kind="auto"` 在检测到 DHTMLX 时用之,
+否则**优雅回落 NativeEngine**(NativeEngine 仅作无许可/CI/性能基线兜底,不是默认产品渲染)。
+条件 alias 让 `@dhx/trial-gantt` 始终可解析(vendor 或 stub),保证无许可时 `vite build` 也不失败。
+
+> e2e/视觉 spec 默认断言 `data-engine="native"`(CI 无 vendor 时成立);本地接入 vendor 后预览/页面用真实 DHTMLX。
 
 ## 换成自研引擎
 
