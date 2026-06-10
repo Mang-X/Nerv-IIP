@@ -325,7 +325,7 @@ function isNonEmpty(value: string) {
       字典是平台受控值来源；物料等表单的分类、单位、存储条件等下拉实时取自这里。系统枚举由平台维护，平台预置与工厂自定义可新增条目。
     </p>
 
-    <div class="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
+    <div class="grid items-start gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
       <nav class="grid h-fit gap-1 rounded-lg border p-2" aria-label="字典分组">
         <Button
           v-for="s in CODE_SETS"
@@ -342,7 +342,7 @@ function isNonEmpty(value: string) {
         </Button>
       </nav>
 
-      <div class="grid gap-4">
+      <div class="grid min-h-[32rem] content-start gap-4">
         <Toolbar v-model:search="keyword" :search-placeholder="`在「${selectedLabel}」内筛选编码、名称`" />
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>

@@ -160,10 +160,9 @@ const treeListError = computed(() => {
   return e instanceof Error ? e.message : e ? '层级数据加载失败，请刷新重试。' : ''
 })
 
-// ---- 小厂压扁：单一工厂时隐藏根、直接展示其子级 ----
-const singleRoot = computed(() => (tree.value.length === 1 ? tree.value[0] : null))
-// 树的实际渲染森林：单工厂 → 展示其子级（隐藏根层）；多工厂 → 工厂作根。
-const forest = computed<TreeNode[]>(() => (singleRoot.value ? singleRoot.value.children : tree.value))
+// ---- 渲染森林：始终以工厂为根（含单一工厂——藏根会导致无法选中/编辑该工厂）。
+// 小厂的"少层"靠默认全展开 + 自动选中首个工厂实现（见下方 watch），不藏根。 ----
+const forest = computed<TreeNode[]>(() => tree.value)
 
 // ---- 树搜索 + 展开/折叠 ----
 const treeSearch = ref('')
@@ -267,6 +266,10 @@ const selectedNode = computed<TreeNode | null>(() => {
 function selectNode(node: TreeNode) {
   selectedKey.value = nodeKey(node)
 }
+// 数据就绪后默认选中首个工厂：右侧详情不空,单工厂也能直接选中/编辑该工厂。
+watch(forest, (roots) => {
+  if (!selectedKey.value && roots.length > 0) selectedKey.value = nodeKey(roots[0]!)
+}, { immediate: true })
 
 // 选中路径（用于面包屑：工厂 ▸ 车间 ▸ 产线 ▸ 工作中心）。
 const selectedPath = computed<TreeNode[]>(() => {
@@ -661,7 +664,6 @@ const childTypeOfSelected = computed(() => (selectedNode.value ? CHILD_OF[select
           <Button v-if="forest.length" size="sm" variant="ghost" type="button" class="h-7 px-2 text-xs" @click="expandAllToggle">
             {{ allExpanded ? '全部折叠' : '全部展开' }}
           </Button>
-          <span v-if="singleRoot" class="ml-auto text-xs text-muted-foreground">单工厂：{{ singleRoot.displayName }}</span>
         </div>
 
         <p v-if="treeListError" class="text-sm text-destructive" role="alert">{{ treeListError }}</p>

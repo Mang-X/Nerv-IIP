@@ -60,6 +60,12 @@ const lines = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('
 const workCenters = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('work-center')
 const deviceActions = useMasterDataResourceActions('device-asset')
 
+// 列表回传的是 lineCode/workCenterCode（编码）；解析成名称显示（取自产线/工作中心实体，找不到回退编码）。
+const lineNameByCode = computed(() => new Map(lines.items.value.map((r) => [r.code ?? '', r.displayName ?? r.code ?? ''])))
+const wcNameByCode = computed(() => new Map(workCenters.items.value.map((r) => [r.code ?? '', r.displayName ?? r.code ?? ''])))
+function lineName(code?: string | null) { return code ? (lineNameByCode.value.get(code) ?? code) : '无' }
+function wcName(code?: string | null) { return code ? (wcNameByCode.value.get(code) ?? code) : '无' }
+
 const keyword = ref('')
 const page = ref(1)
 const pageSize = ref('10')
@@ -83,8 +89,8 @@ const createForm = reactive({
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '设备编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '设备名称', accessor: (r) => r.displayName ?? '无' },
-  { key: 'lineCode', header: '所属产线', width: 'w-32', accessor: (r) => r.lineCode ?? '无' },
-  { key: 'workCenterCode', header: '所属工作中心', width: 'w-36', accessor: (r) => r.workCenterCode ?? '无' },
+  { key: 'lineCode', header: '所属产线', width: 'w-32', accessor: (r) => lineName(r.lineCode) },
+  { key: 'workCenterCode', header: '所属工作中心', width: 'w-36', accessor: (r) => wcName(r.workCenterCode) },
   { key: 'active', header: '状态', width: 'w-24' },
   { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
@@ -94,8 +100,8 @@ function deviceDetailFields(row: BusinessConsoleResourceItem) {
   return [
     { label: '设备编码', value: row.code ?? '' },
     { label: '设备名称', value: row.displayName ?? '' },
-    { label: '所属产线', value: row.lineCode ?? '' },
-    { label: '所属工作中心', value: row.workCenterCode ?? '' },
+    { label: '所属产线', value: lineName(row.lineCode) },
+    { label: '所属工作中心', value: wcName(row.workCenterCode) },
   ]
 }
 
