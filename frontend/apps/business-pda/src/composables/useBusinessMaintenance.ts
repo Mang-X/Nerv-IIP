@@ -150,6 +150,7 @@ export function useBusinessMaintenance() {
     ),
     inspectionsTotal: computed(() => listTotal(inspectionsQuery.data.value as ListEnvelope<MaintenanceInspectionItem>)),
     inspectionsPending: inspectionsQuery.isLoading,
+    inspectionsError: inspectionsQuery.error,
     refreshInspections: () => (scopeReady.value ? inspectionsQuery.refetch() : Promise.resolve()),
     inspectionFilters,
     recordInspection,
@@ -157,6 +158,7 @@ export function useBusinessMaintenance() {
 
     plans: computed(() => listItems(plansQuery.data.value as ListEnvelope<unknown>)),
     plansPending: plansQuery.isLoading,
+    plansError: plansQuery.error,
     refreshPlans: () => (scopeReady.value ? plansQuery.refetch() : Promise.resolve()),
     planFilters,
   }

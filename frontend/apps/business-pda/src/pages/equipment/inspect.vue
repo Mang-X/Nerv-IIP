@@ -7,7 +7,7 @@ import {
   type InspectCtx,
 } from '@nerv-iip/business-core'
 import { AppShellMobile, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref, type Ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 // 保养计划行（composable 的 plans 为 unknown[]，此处收窄为业务字段）。
@@ -40,20 +40,28 @@ const router = useRouter()
 const maintenance = useBusinessMaintenance()
 const {
   plansPending,
-  planFilters,
+  plansError,
   recordInspection,
   recordPending,
   inspectionsPending,
+  inspectionsError,
 } = maintenance
 
 // plans/inspections 收窄为业务行类型。
-const plans = computed<PlanRow[]>(() => maintenance.plans.value as PlanRow[])
+const allPlans = computed<PlanRow[]>(() => maintenance.plans.value as PlanRow[])
 const inspections = computed<InspectionRow[]>(() => maintenance.inspections.value as InspectionRow[])
 
-// 错误态可选暴露（composable 当前不一定提供，缺失则恒为 null）。
-const maybeErrors = maintenance as Partial<{ plansError: Ref<unknown>, inspectionsError: Ref<unknown> }>
-const plansError = computed(() => maybeErrors.plansError?.value ?? null)
-const inspectionsError = computed(() => maybeErrors.inspectionsError?.value ?? null)
+// 扫码/手输关键字 → 对已全量加载的 plans 做客户端过滤（plans 列表小，facade 无 keyword 查询参数）。
+const scanKeyword = ref('')
+const plans = computed<PlanRow[]>(() => {
+  const kw = scanKeyword.value.trim().toLowerCase()
+  if (!kw) return allPlans.value
+  return allPlans.value.filter((p) => {
+    const code = (p.planCode ?? '').toLowerCase()
+    const device = (p.deviceAssetId ?? '').toLowerCase()
+    return code.includes(kw) || device.includes(kw)
+  })
+})
 
 // 点检表单 = inspectionFlow 的上下文（selectPlan → enterResult → record）。
 const form = reactive<InspectCtx>({
@@ -75,8 +83,8 @@ const submitError = ref('')
 const scanActive = computed(() => phase.value === 'form')
 
 function onScan(value: string) {
-  // 扫设备/计划号 → 计划列表关键字过滤（filter 不含 keyword 时此为无副作用赋值）。
-  ;(planFilters as Record<string, unknown>).keyword = value
+  // 扫设备码/计划号 → 客户端过滤已加载的保养计划列表。
+  scanKeyword.value = value
 }
 
 function selectPlan(planId: string | undefined) {
@@ -224,10 +232,17 @@ function inspectionSubtitle(item: { result?: string, inspectedAtUtc?: string }) 
           </div>
 
           <div
-            v-else-if="plans.length === 0"
+            v-else-if="allPlans.length === 0"
             class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
           >
             暂无保养计划
+          </div>
+
+          <div
+            v-else-if="plans.length === 0"
+            class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
+          >
+            未找到匹配的保养计划
           </div>
 
           <div v-else class="overflow-hidden rounded-lg border border-border">

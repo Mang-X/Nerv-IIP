@@ -96,10 +96,38 @@ describe('PDA equipment inspect page', () => {
     inspections.value = original
   })
 
-  it('surfaces an inspections error banner', () => {
+  it('surfaces an inspections error banner instead of the empty state', () => {
+    const original = inspections.value
+    inspections.value = []
     inspectionsError.value = new Error('boom')
     const wrapper = mount(InspectPage)
     expect(wrapper.find('[data-testid="inspections-error"]').exists()).toBe(true)
+    // 错误态优先于空态：加载失败时不得误显示"暂无点检记录"。
+    expect(wrapper.text()).not.toContain('暂无点检记录')
+    inspections.value = original
+  })
+
+  it('surfaces a plans error banner instead of the empty state', () => {
+    const original = plans.value
+    plans.value = []
+    plansError.value = new Error('boom')
+    const wrapper = mount(InspectPage)
+    expect(wrapper.find('[data-testid="plans-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('暂无保养计划')
+    plans.value = original
+  })
+
+  it('filters plans client-side from a ScanBar scan (planCode / deviceAssetId)', async () => {
+    const wrapper = mount(InspectPage)
+    expect(wrapper.findAll('[data-testid="plan-option"]')).toHaveLength(2)
+
+    const scanInput = wrapper.find('input[placeholder*="扫描"]')
+    await scanInput.setValue('PLAN-B')
+    await scanInput.trigger('keydown.enter')
+
+    const options = wrapper.findAll('[data-testid="plan-option"]')
+    expect(options).toHaveLength(1)
+    expect(options[0].text()).toContain('PLAN-B')
   })
 
   it('starts the flow at select-plan: no result options until a plan is chosen', () => {
