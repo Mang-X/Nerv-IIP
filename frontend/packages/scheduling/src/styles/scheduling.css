@@ -1,0 +1,88 @@
+/* 排程组件视觉:所有颜色走设计系统 v2 token,无裸 hex / 裸 palette。
+   覆盖 NativeEngine(.nerv-gantt-native)与 DHTMLX(.nerv-gantt-dhx)两套渲染。 */
+
+.nerv-gantt {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  overflow: auto;
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 0.5rem);
+  box-shadow: var(--shadow-sm, 0 1px 2px 0 rgb(0 0 0 / 0.05));
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+}
+
+/* --- NativeEngine (SVG) --- */
+.nerv-gantt-native .nerv-gantt-svg {
+  display: block;
+}
+.nerv-gantt-native .nerv-gantt-node {
+  cursor: pointer;
+}
+.nerv-gantt-native .nerv-gantt-bar {
+  transition: filter 150ms ease-out, transform 150ms ease-out;
+}
+.nerv-gantt-native .nerv-gantt-node:hover .nerv-gantt-bar-op {
+  filter: brightness(1.08);
+}
+.nerv-gantt-native .nerv-gantt-now {
+  opacity: 0.8;
+}
+
+/* --- DHTMLX scope: 关键视觉绑到 token --- */
+.nerv-gantt-dhx .gantt_task_line,
+.nerv-gantt-dhx .gantt_task_line.gantt_bar_task {
+  background: var(--brand);
+  border-color: color-mix(in oklch, var(--brand), black 12%);
+  border-radius: var(--radius-md, 0.375rem);
+}
+.nerv-gantt-dhx .gantt_task_progress {
+  background: color-mix(in oklch, var(--brand), black 22%);
+}
+.nerv-gantt-dhx .gantt_task_line.gantt_project {
+  background: var(--muted);
+  border-color: var(--border);
+}
+.nerv-gantt-dhx .gantt_task_line.gantt_selected,
+.nerv-gantt-dhx .gantt_task_line.nerv-selected {
+  box-shadow: 0 0 0 2px var(--brand), 0 0 8px color-mix(in oklch, var(--brand), transparent 40%);
+}
+.nerv-gantt-dhx .gantt_task_line.nerv-conflict {
+  outline: 2px solid var(--destructive);
+  outline-offset: 0;
+}
+.nerv-gantt-dhx .gantt_grid_scale,
+.nerv-gantt-dhx .gantt_task_scale,
+.nerv-gantt-dhx .gantt_scale_line {
+  color: var(--muted-foreground);
+  border-color: var(--border);
+}
+.nerv-gantt-dhx .gantt_grid_data .gantt_row,
+.nerv-gantt-dhx .gantt_task_row {
+  border-color: var(--border);
+}
+.nerv-gantt-dhx .gantt_task_row.odd,
+.nerv-gantt-dhx .gantt_row.odd {
+  background: color-mix(in oklch, var(--muted), transparent 50%);
+}
+.nerv-gantt-dhx .gantt_marker {
+  background: var(--brand);
+  opacity: 0.85;
+}
+.nerv-gantt-dhx .gantt_grid,
+.nerv-gantt-dhx .gantt_data_area,
+.nerv-gantt-dhx .gantt_container {
+  background: var(--card);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nerv-gantt-native .nerv-gantt-bar {
+    transition: none;
+  }
+}
