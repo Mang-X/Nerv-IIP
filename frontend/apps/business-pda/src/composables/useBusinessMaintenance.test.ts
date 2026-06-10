@@ -13,39 +13,38 @@ const coladaState = vi.hoisted(() => ({
   },
 }))
 
-// Maintenance options/types are NOT re-exported from the curated
-// `@nerv-iip/api-client` barrel, so the composable consumes the generated
-// query/mutation options directly. Mock that exact module here.
-vi.mock(
-  '../../../../packages/api-client/src/generated/business-console/@pinia/colada.gen',
-  () => ({
-    listBusinessConsoleMaintenanceWorkOrdersQueryOptions: vi.fn(() => ({
-      key: [{ _id: 'listBusinessConsoleMaintenanceWorkOrders' }],
-      query: vi.fn(),
-    })),
-    createBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
-      mutation: vi.fn(),
-      _tag: 'createWorkOrder',
-    })),
-    listBusinessConsoleMaintenanceInspectionsQueryOptions: vi.fn(() => ({
-      key: [{ _id: 'listBusinessConsoleMaintenanceInspections' }],
-      query: vi.fn(),
-    })),
-    recordBusinessConsoleMaintenanceInspectionMutationOptions: vi.fn(() => ({
-      mutation: vi.fn(),
-      _tag: 'recordInspection',
-    })),
-    listBusinessConsoleMaintenancePlansQueryOptions: vi.fn(() => ({
-      key: [{ _id: 'listBusinessConsoleMaintenancePlans' }],
-      query: vi.fn(),
-    })),
-  }),
-)
+// The composable consumes the Maintenance facade through the curated
+// `@nerv-iip/api-client` barrel; mock it here. The auth-API functions are also
+// stubbed because `@/stores/auth` lazily references them (never called in these
+// tests — we only `$patch` the principal).
+vi.mock('@nerv-iip/api-client', () => ({
+  listBusinessConsoleMaintenanceWorkOrdersQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMaintenanceWorkOrders' }],
+    query: vi.fn(),
+  })),
+  createBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+    _tag: 'createWorkOrder',
+  })),
+  listBusinessConsoleMaintenanceInspectionsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMaintenanceInspections' }],
+    query: vi.fn(),
+  })),
+  recordBusinessConsoleMaintenanceInspectionMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+    _tag: 'recordInspection',
+  })),
+  listBusinessConsoleMaintenancePlansQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMaintenancePlans' }],
+    query: vi.fn(),
+  })),
+  getConsolePrincipal: vi.fn(),
+  loginConsoleUser: vi.fn(),
+  logoutConsoleSession: vi.fn(),
+  refreshConsoleSession: vi.fn(),
+}))
 
 vi.mock('@pinia/colada', () => ({
-  // Passthrough so the real generated api-client modules (pulled in transitively
-  // via `@/stores/auth`) can evaluate their `defineQueryOptions(...)` factories.
-  defineQueryOptions: vi.fn((factory: unknown) => factory),
   useQuery: vi.fn((optionsFactory) => {
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined

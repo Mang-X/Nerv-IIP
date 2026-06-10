@@ -1,22 +1,14 @@
-// NOTE: The Maintenance query/mutation options and request types are generated
-// in `@nerv-iip/api-client` but are NOT re-exported from the curated package
-// barrel (`packages/api-client/src/business-console.ts`). Task scope forbids
-// touching the api-client package, so this composable consumes the generated
-// modules directly. If/when the curated barrel starts re-exporting these, swap
-// these relative imports for `@nerv-iip/api-client`.
 import {
   createBusinessConsoleMaintenanceWorkOrderMutationOptions,
   listBusinessConsoleMaintenanceInspectionsQueryOptions,
   listBusinessConsoleMaintenancePlansQueryOptions,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
   recordBusinessConsoleMaintenanceInspectionMutationOptions,
-} from '../../../../packages/api-client/src/generated/business-console/@pinia/colada.gen'
-import type {
-  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderRequest as CreateMaintenanceWorkOrderRequest,
-  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionItem as MaintenanceInspectionItem,
-  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderItem as MaintenanceWorkOrderItem,
-  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordMaintenanceInspectionRequest as RecordMaintenanceInspectionRequest,
-} from '../../../../packages/api-client/src/generated/business-console/types.gen'
+  type BusinessConsoleCreateMaintenanceWorkOrderRequest as CreateMaintenanceWorkOrderRequest,
+  type BusinessConsoleMaintenanceInspectionItem as MaintenanceInspectionItem,
+  type BusinessConsoleMaintenanceWorkOrderItem as MaintenanceWorkOrderItem,
+  type BusinessConsoleRecordMaintenanceInspectionRequest as RecordMaintenanceInspectionRequest,
+} from '@nerv-iip/api-client'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
