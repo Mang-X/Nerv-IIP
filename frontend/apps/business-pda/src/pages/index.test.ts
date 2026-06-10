@@ -23,4 +23,11 @@ describe('PDA home', () => {
     const wrapper = mount(HomePage)
     expect(wrapper.text()).toContain('暂无分配给你的任务')
   })
+
+  it('disables not-yet-ready app-wall entries and does not navigate on click', async () => {
+    const wrapper = mount(HomePage)
+    const disabled = wrapper.get('button[disabled]')
+    await disabled.trigger('click')
+    expect(push).not.toHaveBeenCalled()
+  })
 })

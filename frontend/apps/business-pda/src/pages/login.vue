@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/auth'
+import { sanitizeRedirectPath } from '@nerv-iip/business-core'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -25,7 +26,7 @@ async function onSubmit() {
   submitting.value = true
   try {
     await auth.login(loginName.value, password.value)
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+    const redirect = sanitizeRedirectPath(route.query.redirect)
     await router.push(redirect)
   } catch (e) {
     error.value = e instanceof Error ? e.message : '登录失败'
@@ -46,6 +47,7 @@ async function onSubmit() {
       <input
         name="loginName"
         v-model="loginName"
+        aria-label="账号"
         placeholder="账号"
         autocomplete="username"
         autocapitalize="off"
@@ -55,6 +57,7 @@ async function onSubmit() {
       <input
         name="password"
         v-model="password"
+        aria-label="密码"
         type="password"
         placeholder="密码"
         autocomplete="current-password"

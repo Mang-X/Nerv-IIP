@@ -13,6 +13,7 @@ definePage({
 const router = useRouter()
 
 function onScan(value: string) {
+  // TODO(M2): /scan 路由随扫码解析端点落地
   router.push({ path: '/scan', query: { code: value } }).catch(() => {})
 }
 
