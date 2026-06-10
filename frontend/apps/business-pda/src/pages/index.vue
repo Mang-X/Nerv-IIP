@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { PDA_TASK_KINDS } from '@nerv-iip/business-core'
 import { AppShellMobile, ScanBar } from '@nerv-iip/ui-mobile'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -12,9 +13,12 @@ definePage({
 
 const router = useRouter()
 
+const lastScan = ref('')
+
 function onScan(value: string) {
-  // TODO(M2): /scan 路由随扫码解析端点落地
-  router.push({ path: '/scan', query: { code: value } }).catch(() => {})
+  // TODO(M5): 扫码直达（/scan 路由 + 扫码解析端点）落地后改为按解析结果导航。
+  // 现阶段 /scan 尚不存在，只做诚实的页内反馈，不做假跳转。
+  lastScan.value = value
 }
 
 function openTask(route: string, ready: boolean) {
@@ -33,6 +37,17 @@ function openTask(route: string, ready: boolean) {
 
     <div class="space-y-6 p-4">
       <ScanBar placeholder="扫描工单 / 库位 / 物料 / 设备" @scan="onScan" />
+
+      <p
+        v-if="lastScan"
+        data-testid="last-scan"
+        class="-mt-3 text-sm text-foreground"
+      >
+        已扫码：{{ lastScan }}
+        <span class="block text-xs text-muted-foreground">
+          扫码直达将在后续里程碑（M5）落地，当前仅回显扫码内容。
+        </span>
+      </p>
 
       <section>
         <h2 class="mb-2 text-sm font-medium text-muted-foreground">我的任务</h2>

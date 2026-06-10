@@ -30,4 +30,15 @@ describe('PDA home', () => {
     await disabled.trigger('click')
     expect(push).not.toHaveBeenCalled()
   })
+
+  it('echoes the scanned value in-page and does NOT navigate (scan-resolve is M5)', async () => {
+    const wrapper = mount(HomePage)
+    const input = wrapper.get('input[placeholder^="扫描"]')
+    await input.setValue('WO-2026-0001')
+    await input.trigger('keydown.enter')
+
+    // 诚实的页内反馈：回显扫码内容，不做假跳转到尚不存在的 /scan。
+    expect(wrapper.text()).toContain('已扫码：WO-2026-0001')
+    expect(push).not.toHaveBeenCalled()
+  })
 })
