@@ -233,4 +233,63 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.body.idempotencyKey).toBeTruthy()
     expect(payload.body.requestedAtUtc).toBeTruthy()
   })
+
+  it('ignores caller attempts to override injected scope/idempotency on recordReport', async () => {
+    const { recordReport } = useMesProductionReports()
+
+    await recordReport({
+      workOrderId: 'wo-1',
+      operationTaskId: 'ot-1',
+      goodQuantity: 1,
+      scrapQuantity: 0,
+      completesOperation: false,
+      organizationId: 'EVIL',
+      environmentId: 'EVIL',
+      idempotencyKey: 'evil',
+      reportedAtUtc: '1999-01-01T00:00:00.000Z',
+    } as never)
+
+    const mutateAsync = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')
+    const payload = mutateAsync!.mock.calls[0][0]
+    expect(payload.body.organizationId).toBe('org-001')
+    expect(payload.body.environmentId).toBe('env-dev')
+    expect(payload.body.idempotencyKey).not.toBe('evil')
+    expect(payload.body.idempotencyKey).toBeTruthy()
+    expect(payload.body.reportedAtUtc).not.toBe('1999-01-01T00:00:00.000Z')
+  })
+
+  it('ignores caller attempts to override injected scope/idempotency on createReceipt', async () => {
+    const { createReceipt } = useMesReceipts()
+
+    await createReceipt({
+      workOrderId: 'wo-5',
+      skuId: 'sku-1',
+      quantity: 12,
+      uomCode: 'EA',
+      organizationId: 'EVIL',
+      environmentId: 'EVIL',
+      idempotencyKey: 'evil',
+      requestedAtUtc: '1999-01-01T00:00:00.000Z',
+    } as never)
+
+    const mutateAsync = coladaState.mutateById.get('createBusinessConsoleMesFinishedGoodsReceiptRequest')
+    const payload = mutateAsync!.mock.calls[0][0]
+    expect(payload.body.organizationId).toBe('org-001')
+    expect(payload.body.environmentId).toBe('env-dev')
+    expect(payload.body.idempotencyKey).not.toBe('evil')
+    expect(payload.body.idempotencyKey).toBeTruthy()
+    expect(payload.body.requestedAtUtc).not.toBe('1999-01-01T00:00:00.000Z')
+  })
+
+  it('ignores caller attempts to override the injected idempotency key on createIssue', async () => {
+    const { createIssue } = useMesMaterialIssue()
+
+    await createIssue('wo-7', { materialId: 'mat-1', idempotencyKey: 'evil' } as never)
+
+    const mutateAsync = coladaState.mutateById.get('createBusinessConsoleMesMaterialIssueRequest')
+    const payload = mutateAsync!.mock.calls[0][0]
+    expect(payload.body.materialId).toBe('mat-1')
+    expect(payload.body.idempotencyKey).not.toBe('evil')
+    expect(payload.body.idempotencyKey).toBeTruthy()
+  })
 })

@@ -234,8 +234,7 @@ export function useMesOperationTasks() {
 }
 
 export type RecordReportInput =
-  Pick<BusinessConsoleRecordProductionReportRequest, 'workOrderId' | 'operationTaskId' | 'goodQuantity' | 'scrapQuantity' | 'completesOperation'>
-  & Partial<BusinessConsoleRecordProductionReportRequest>
+  Omit<BusinessConsoleRecordProductionReportRequest, 'organizationId' | 'environmentId' | 'idempotencyKey' | 'reportedAtUtc'>
 
 export function useMesProductionReports() {
   const filters = defaultFilters()
@@ -272,15 +271,19 @@ export function useMesProductionReports() {
     recordReport: (input: RecordReportInput) =>
       recordMutation.mutateAsync({
         body: {
+          ...input,
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
           reportedAtUtc: new Date().toISOString(),
           idempotencyKey: makeIdempotencyKey(),
-          ...input,
         } satisfies BusinessConsoleRecordProductionReportRequest,
       }),
   }
 }
+
+export type CreateIssueInput = Omit<BusinessConsoleMesCreateMaterialIssueRequest, 'idempotencyKey'>
+
+export type ConfirmLineSideReceiptInput = Omit<BusinessConsoleMesConfirmLineSideReceiptRequest, 'idempotencyKey'>
 
 export function useMesMaterialIssue() {
   const filters = defaultFilters()
@@ -316,24 +319,23 @@ export function useMesMaterialIssue() {
     ),
     total: computed(() => envelopeTotal(requestsQuery.data.value)),
     refresh: requestsQuery.refetch,
-    createIssue: (workOrderId: string, body: BusinessConsoleMesCreateMaterialIssueRequest) =>
+    createIssue: (workOrderId: string, body: CreateIssueInput) =>
       createMutation.mutateAsync({
         path: { workOrderId },
         query: scopeQuery(filters),
-        body: { idempotencyKey: makeIdempotencyKey(), ...body },
+        body: { ...body, idempotencyKey: makeIdempotencyKey() } satisfies BusinessConsoleMesCreateMaterialIssueRequest,
       }),
-    confirmLineSideReceipt: (requestId: string, body: BusinessConsoleMesConfirmLineSideReceiptRequest) =>
+    confirmLineSideReceipt: (requestId: string, body: ConfirmLineSideReceiptInput) =>
       confirmMutation.mutateAsync({
         path: { requestId },
         query: scopeQuery(filters),
-        body: { idempotencyKey: makeIdempotencyKey(), ...body },
+        body: { ...body, idempotencyKey: makeIdempotencyKey() } satisfies BusinessConsoleMesConfirmLineSideReceiptRequest,
       }),
   }
 }
 
 export type CreateReceiptInput =
-  Pick<BusinessConsoleMesCreateReceiptRequest, 'workOrderId' | 'skuId' | 'quantity' | 'uomCode'>
-  & Partial<BusinessConsoleMesCreateReceiptRequest>
+  Omit<BusinessConsoleMesCreateReceiptRequest, 'organizationId' | 'environmentId' | 'idempotencyKey' | 'requestedAtUtc'>
 
 export function useMesReceipts() {
   const filters = defaultFilters()
@@ -365,11 +367,11 @@ export function useMesReceipts() {
     createReceipt: (input: CreateReceiptInput) =>
       createMutation.mutateAsync({
         body: {
+          ...input,
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
           requestedAtUtc: new Date().toISOString(),
           idempotencyKey: makeIdempotencyKey(),
-          ...input,
         } satisfies BusinessConsoleMesCreateReceiptRequest,
       }),
   }
