@@ -1,0 +1,23 @@
+{
+  "name": "@nerv-iip/business-pda",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev --host 127.0.0.1 --port 5126",
+    "build": "vue-tsc --noEmit -p tsconfig.json && vp build .",
+    "test": "vp test run src",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nerv-iip/api-client": "workspace:*",
+    "@nerv-iip/business-core": "workspace:*",
+    "@nerv-iip/ui": "workspace:*",
+    "@nerv-iip/ui-mobile": "workspace:*",
+    "@pinia/colada": "1.3.0",
+    "lucide-vue-next": "1.0.0",
+    "pinia": "3.0.4",
+    "vue": "3.5.34",
+    "vue-router": "5.0.7"
+  }
+}
