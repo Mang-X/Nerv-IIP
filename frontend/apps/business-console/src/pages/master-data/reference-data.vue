@@ -136,6 +136,11 @@ const createForm = reactive({
 const canCreateCode = computed(() =>
   selectedCodeSetCanAdd.value && [createForm.codeSet, createForm.code, createForm.name].every(isNonEmpty),
 )
+// 提交校验区分新建/编辑：新建受 kind 守卫（系统枚举不可新增）；编辑只改名称，
+// 名称非空即可——系统枚举允许改名（治理规则：Name 可改，只是不能新增/改 code）。
+const canSubmitCode = computed(() =>
+  editingCode.value ? isNonEmpty(createForm.name) : canCreateCode.value,
+)
 
 // 选中 CodeSet 即服务端过滤（真分页：codeSet + skip/take 都交给后端）。
 watch(selectedCodeSet, (value) => {
@@ -200,7 +205,7 @@ async function openEdit(row: BusinessConsoleResourceItem) {
   }
 }
 async function submitCode() {
-  if (!canCreateCode.value) {
+  if (!canSubmitCode.value) {
     createShowErrors.value = true
     return
   }
@@ -266,7 +271,7 @@ function isNonEmpty(value: string) {
               <DialogDescription>{{ editingCode ? '修改字典条目名称（所属字典与编码不可修改）。带 * 为必填项。' : '选择所属字典，填写编码与名称。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitCode">
-              <p v-if="createShowErrors && !canCreateCode" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
+              <p v-if="createShowErrors && !canSubmitCode" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.codeSet)">
                 <FieldLabel for="ref-code-set">所属字典 <span class="text-destructive">*</span></FieldLabel>
@@ -299,7 +304,7 @@ function isNonEmpty(value: string) {
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createCodePending || codeActions.updatePending.value || editLoading || (!editingCode && !canCreateCode)">
+                <Button type="submit" :disabled="createCodePending || codeActions.updatePending.value || editLoading || !canSubmitCode">
                   <Spinner v-if="createCodePending || codeActions.updatePending.value" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '保存条目' }}
                 </Button>
