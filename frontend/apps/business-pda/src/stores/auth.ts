@@ -17,6 +17,7 @@ export const useAuthStore = defineStore('pda-auth', () => {
   const sessionId = shallowRef<string>()
   const principal = shallowRef<ConsolePrincipalResponse>()
   const restoreStatus = shallowRef<'idle' | 'restoring' | 'restored' | 'failed'>('idle')
+  // reserved for the future refresh-timer path; 401s flow through configureApiClient.onUnauthorized
   let sessionExpiredHandler: ((reason: string) => void) | undefined
 
   const isAuthenticated = computed(() => Boolean(accessToken.value && principal.value))
@@ -53,6 +54,7 @@ export const useAuthStore = defineStore('pda-auth', () => {
   }
 
   async function restoreSession() {
+    if (restoreStatus.value === 'restoring') return
     restoreStatus.value = 'restoring'
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
@@ -61,6 +63,11 @@ export const useAuthStore = defineStore('pda-auth', () => {
     }
     try {
       const stored = JSON.parse(raw) as StoredSession
+      if (!stored.refreshToken) {
+        clearSession('restore-failed')
+        restoreStatus.value = 'failed'
+        return
+      }
       const session = await refreshConsole({ refreshToken: stored.refreshToken })
       accessToken.value = session.accessToken ?? undefined
       refreshToken.value = session.refreshToken ?? undefined
