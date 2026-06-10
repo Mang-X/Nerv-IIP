@@ -63,7 +63,7 @@ SKU 创建/更新时,以下字段的取值**必须存在于对应 CodeSet 且为
 | `shelfLifePolicyCode` | `shelf-life-policy` | |
 | `storageConditionCode` | `storage-condition` | |
 | `defaultBarcodeRuleCode` | `barcode-rule` | |
-| `baseUomCode` 及各 *UomCode | （不走字典）引用 `UnitOfMeasure.Code` | 计量单位是独立实体,非 CodeSet |
+| `baseUomCode` 及各 *UomCode | （不走字典）引用 `UnitOfMeasure.Code` | 计量单位是独立实体,非 CodeSet;前端已实时取 `unit-of-measure` 实体(走通用 resources 列表,常量兜底),维护页见 `units.vue` |
 
 人员技能 `level` 字段校验 `skill-level`;业务伙伴 `partnerType`/`partnerRoles` 校验 `partner-type`。
 

@@ -86,6 +86,9 @@ const { resources: barcodeRuleResources, resourcesPending: barcodeRulePending }
   = useBusinessMasterDataResources('reference-data', { codeSet: 'barcode-rule' })
 const { resources: complianceTagResources, resourcesPending: complianceTagPending }
   = useBusinessMasterDataResources('reference-data', { codeSet: 'compliance-tag' })
+// 基本单位实时取真实 unit-of-measure 实体（非写死常量子集），实时为空回退 UOM_OPTIONS。
+const { resources: uomResources, resourcesPending: uomPending }
+  = useBusinessMasterDataResources('unit-of-measure')
 
 // Optimistic rows for items the user created in this session (real entries, never placeholders).
 const localSkus = shallowRef<BusinessConsoleResourceItem[]>([])
@@ -166,6 +169,7 @@ const shelfLifePolicyOptions = computed(() => referenceOptions(shelfLifePolicyRe
 const storageConditionOptions = computed(() => referenceOptions(storageConditionResources.value, STORAGE_CONDITION_OPTIONS))
 const barcodeRuleOptions = computed(() => referenceOptions(barcodeRuleResources.value, BARCODE_RULE_OPTIONS))
 const complianceTagOptions = computed(() => referenceOptions(complianceTagResources.value, COMPLIANCE_TAG_OPTIONS))
+const baseUomOptions = computed(() => referenceOptions(uomResources.value, UOM_OPTIONS))
 const dictionaryPending = computed(() =>
   productCategoryPending.value
   || materialTypePending.value
@@ -174,7 +178,8 @@ const dictionaryPending = computed(() =>
   || shelfLifePolicyPending.value
   || storageConditionPending.value
   || barcodeRulePending.value
-  || complianceTagPending.value,
+  || complianceTagPending.value
+  || uomPending.value,
 )
 const hasRequiredDictionaryOptions = computed(() =>
   [
@@ -185,6 +190,7 @@ const hasRequiredDictionaryOptions = computed(() =>
     shelfLifePolicyOptions.value,
     storageConditionOptions.value,
     barcodeRuleOptions.value,
+    baseUomOptions.value,
   ].every((options) => options.length > 0),
 )
 
@@ -232,7 +238,7 @@ const canCreateSku = computed(() =>
   !dictionaryPending.value
   && hasRequiredDictionaryOptions.value
   && isNonEmpty(createForm.name)
-  && inOptions(UOM_OPTIONS, createForm.baseUomCode)
+  && inOptions(baseUomOptions.value, createForm.baseUomCode)
   && inOptions(productCategoryOptions.value, createForm.category)
   && inOptions(materialTypeOptions.value, createForm.materialType)
   && inOptions(batchPolicyOptions.value, createForm.batchTrackingPolicy)
@@ -247,7 +253,7 @@ const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'displayName', header: '物料名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'category', header: '产品分类', width: 'w-28', accessor: (r) => labelOf(productCategoryOptions.value, r.category) || '无' },
   { key: 'materialType', header: '物料类型', width: 'w-28', accessor: (r) => labelOf(materialTypeOptions.value, r.materialType) || '无' },
-  { key: 'baseUomCode', header: '基本单位', width: 'w-24', accessor: (r) => labelOf(UOM_OPTIONS, r.baseUomCode) || '无' },
+  { key: 'baseUomCode', header: '基本单位', width: 'w-24', accessor: (r) => labelOf(baseUomOptions.value, r.baseUomCode) || '无' },
   { key: 'active', header: '状态', width: 'w-24' },
   { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
@@ -263,7 +269,7 @@ function skuDetailFields(row: BusinessConsoleResourceItem) {
     { label: '物料名称', value: row.displayName ?? '' },
     { label: '产品分类', value: labelOf(productCategoryOptions.value, row.category) },
     { label: '物料类型', value: labelOf(materialTypeOptions.value, row.materialType) },
-    { label: '基本单位', value: labelOf(UOM_OPTIONS, row.baseUomCode) },
+    { label: '基本单位', value: labelOf(baseUomOptions.value, row.baseUomCode) },
   ]
 }
 
@@ -464,15 +470,15 @@ function isNonEmpty(value: string) {
 
               <p class="text-sm font-medium text-foreground">单位与追踪</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="createShowErrors && !inOptions(UOM_OPTIONS, createForm.baseUomCode)">
+                <Field :data-invalid="createShowErrors && !inOptions(baseUomOptions, createForm.baseUomCode)">
                   <FieldLabel for="sku-uom">基本单位 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.baseUomCode">
-                    <SelectTrigger id="sku-uom"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="sku-uom"><SelectValue placeholder="请选择单位" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem v-for="option in UOM_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+                      <SelectItem v-for="option in baseUomOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FieldDescription>库存与核算的最小计量单位。</FieldDescription>
+                  <FieldDescription>库存与核算的最小计量单位，取自「计量单位」维护页。</FieldDescription>
                 </Field>
                 <Field class="self-start">
                   <FieldLabel>质检要求</FieldLabel>

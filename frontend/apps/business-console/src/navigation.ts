@@ -13,6 +13,7 @@ import {
   PackageIcon,
   PackageSearchIcon,
   ReceiptTextIcon,
+  RulerIcon,
   UsersRoundIcon,
   WarehouseIcon,
 } from 'lucide-vue-next'
@@ -55,6 +56,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
         { title: '工厂与产线', icon: FactoryIcon, to: { path: '/master-data/facilities' } },
         { title: '设备台账', icon: CpuIcon, to: { path: '/master-data/devices' } },
         { title: '数据字典', icon: BookMarkedIcon, to: { path: '/master-data/reference-data' } },
+        { title: '计量单位', icon: RulerIcon, to: { path: '/master-data/units' } },
         { title: '组织与人员', icon: UsersRoundIcon, to: { path: '/master-data/organization' } },
       ],
     },

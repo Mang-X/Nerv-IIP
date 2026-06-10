@@ -24,6 +24,7 @@ const GOLD_STANDARD_PAGES = [
   'master-data/partners.vue',
   'master-data/facilities.vue',
   'master-data/devices.vue',
+  'master-data/units.vue',
   'master-data/organization.vue',
   'master-data/reference-data.vue',
   'wms/inbound.vue',
