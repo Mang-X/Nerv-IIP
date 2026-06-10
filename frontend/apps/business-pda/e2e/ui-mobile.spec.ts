@@ -34,13 +34,16 @@ test('BottomSheet opens and closes (Escape dismiss)', async ({ page }) => {
   await expect(page.getByText('抽屉内容')).toHaveCount(0)
   await page.getByTestId('open-sheet').click()
   await expect(page.getByText('抽屉内容')).toBeVisible()
-  await expect(page.getByText('选择库位')).toBeVisible()
+  // `选择库位` appears twice (visible DialogTitle + sr-only DialogDescription fallback); assert the visible title.
+  await expect(page.getByText('选择库位').first()).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByText('抽屉内容')).toHaveCount(0)
 })
 
 test('AppShellMobile applies the safe-area minimum padding on header and footer', async ({ page }) => {
   await page.goto(GALLERY)
+  // Wait for the shell to mount before reading computed styles (goto resolves before SPA hydration).
+  await expect(page.locator('[data-shell="footer"]')).toBeVisible()
   const pads = await page.evaluate(() => {
     const header = document.querySelector('[data-shell="header"]') as HTMLElement
     const footer = document.querySelector('[data-shell="footer"]') as HTMLElement

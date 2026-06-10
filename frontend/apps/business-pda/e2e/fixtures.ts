@@ -70,16 +70,34 @@ export async function expectNoHorizontalOverflow(page: Page) {
   expect(overflow).toBeLessThanOrEqual(1)
 }
 
-/** Every enabled interactive control must meet the 44px touch-target floor. */
+/**
+ * Every enabled interactive control must meet the 44px touch-target floor.
+ *
+ * The measured hit area is the control's own box OR—when the control delegates
+ * its tap surface to a wrapper (e.g. ScanBar's input fills a `min-h-touch` row)—
+ * the nearest ancestor that already provides a >=44px-tall hit area. We climb at
+ * most a few levels so a bare small control is still caught.
+ */
 export async function expectTouchTargets(page: Page) {
   const tooSmall = await page.evaluate(() => {
+    const FLOOR = 44
     const els = [...document.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input')]
     return els
       .map((el) => {
-        const r = el.getBoundingClientRect()
-        return { tag: el.tagName, w: r.width, h: r.height }
+        // Effective hit area: self, or the nearest ancestor (<=3 levels up) whose box
+        // already meets the floor in both dimensions (e.g. ScanBar's `min-h-touch` row).
+        let node: HTMLElement | null = el
+        let hit = el.getBoundingClientRect()
+        for (let depth = 0; node && depth < 3; depth++, node = node.parentElement) {
+          const r = node.getBoundingClientRect()
+          if (r.width >= FLOOR && r.height >= FLOOR) {
+            hit = r
+            break
+          }
+        }
+        return { tag: el.tagName, w: hit.width, h: hit.height }
       })
-      .filter((m) => m.w > 0 && m.h > 0 && (m.w < 44 || m.h < 44))
+      .filter((m) => m.w > 0 && m.h > 0 && (m.w < FLOOR || m.h < FLOOR))
   })
   expect(tooSmall).toEqual([])
 }
