@@ -9,3 +9,15 @@
 
 /* Design System v2 tokens — single source of truth in @nerv-iip/ui */
 @import '../../../../packages/ui/src/styles/theme.css';
+
+/*
+ * 落实主题色（动态强调色 `--brand`）：默认设计把多数高亮用中性 `--primary/--accent`，
+ * 用户在主题选色器选的色（写入 `--brand`）几乎不可见。这里把"当前选中的左侧菜单项"
+ * 高亮成主题色（品牌色背景淡染 + 左侧品牌色竖条），让选色真正有视觉反馈。
+ * 仅 business-console 应用层覆盖，不动 @nerv-iip/ui 原版组件与共享 token。
+ */
+[data-slot='sidebar-menu-item'] a[data-active='true'] {
+  background-color: color-mix(in oklab, var(--brand) 16%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--brand);
+}
+

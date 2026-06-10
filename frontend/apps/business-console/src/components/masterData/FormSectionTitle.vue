@@ -5,8 +5,8 @@
 </script>
 
 <template>
-  <div class="mt-1 flex items-center gap-2.5 border-b border-border/60 pb-2">
-    <span class="h-5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+  <div class="mt-1 flex items-center gap-2 border-b border-border/60 pb-2">
+    <span class="h-4 w-0.5 shrink-0 rounded-full bg-brand" aria-hidden="true" />
     <span class="text-base font-semibold tracking-wide text-foreground"><slot /></span>
   </div>
 </template>
