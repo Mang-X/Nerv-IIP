@@ -2,6 +2,7 @@
 import type { BusinessConsoleCreateSkuRequest, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -419,10 +420,10 @@ function isNonEmpty(value: string) {
                 {{ editingCode ? '修改物料档案（编码不可修改）。带 * 为必填项。' : '为采购、生产、库存和销售建立统一的物料档案。带 * 为必填项。' }}
               </DialogDescription>
             </DialogHeader>
-            <form class="grid gap-4" @submit.prevent="submitSku">
+            <form class="grid gap-5" @submit.prevent="submitSku">
               <p v-if="createShowErrors && !canCreateSku" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
-              <p class="text-sm font-medium text-foreground">基础信息</p>
+              <FormSectionTitle>基础信息</FormSectionTitle>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field>
                   <FieldLabel>物料编号</FieldLabel>
@@ -459,7 +460,7 @@ function isNonEmpty(value: string) {
                 </Field>
               </FieldGroup>
 
-              <p class="text-sm font-medium text-foreground">单位与追踪</p>
+              <FormSectionTitle>单位与追踪</FormSectionTitle>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="createShowErrors && !inOptions(baseUomOptions, createForm.baseUomCode)">
                   <FieldLabel for="sku-uom">基本单位 <span class="text-destructive">*</span></FieldLabel>
@@ -501,7 +502,7 @@ function isNonEmpty(value: string) {
                 </Field>
               </FieldGroup>
 
-              <p class="text-sm font-medium text-foreground">存储与条码</p>
+              <FormSectionTitle>存储与条码</FormSectionTitle>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="createShowErrors && !inOptions(shelfLifePolicyOptions, createForm.shelfLifePolicyCode)">
                   <FieldLabel for="sku-shelf">保质期管理 <span class="text-destructive">*</span></FieldLabel>
