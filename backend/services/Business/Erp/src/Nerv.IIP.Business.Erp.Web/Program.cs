@@ -2,7 +2,6 @@ using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
 using FastEndpoints.Swagger;
-using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -14,8 +13,6 @@ using Nerv.IIP.ServiceAuth;
 using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
-using NetCorePal.Extensions.NewtonsoftJson;
-using Newtonsoft.Json;
 using Prometheus;
 using Serilog;
 using Serilog.Formatting.Json;
@@ -33,12 +30,9 @@ try
     isTesting = builder.Environment.IsEnvironment("Testing");
 
     builder.Services.AddHealthChecks();
-    builder.Services.AddMvc()
-        .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
-    builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
         .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
         .SwaggerDocument(o =>
@@ -50,7 +44,6 @@ try
             };
         });
     builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.AddNetCorePalJsonConverters());
-    builder.Services.AddFluentValidationAutoValidation();
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
@@ -119,7 +112,6 @@ try
     app.UseRouting();
     app.UseAuthentication();
     app.UseAuthorization();
-    app.MapControllers();
     app.UseFastEndpoints(c =>
     {
         c.Endpoints.NameGenerator = ctx =>
