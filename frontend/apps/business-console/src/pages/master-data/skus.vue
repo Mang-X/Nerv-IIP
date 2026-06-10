@@ -51,7 +51,7 @@ import {
   SHELF_LIFE_OPTIONS,
   STORAGE_CONDITION_OPTIONS,
   UOM_OPTIONS,
-  type RefOption,
+  mergeReferenceOptions,
 } from '@/data/masterDataReference'
 
 definePage({ meta: { requiresAuth: true, title: '物料与产品' } })
@@ -149,17 +149,8 @@ const createForm = reactive<CreateSkuForm>({
   idempotencyKey: newSkuIdempotencyKey(),
 })
 
-// 字典选项「实时优先、常量兜底」：实时启用项（active!==false 且 code 非空）有则用之，否则回退常量。
-function referenceOptions(resources: BusinessConsoleResourceItem[], fallback: readonly RefOption[]) {
-  const liveOptions = resources
-    .filter((resource) => resource.active !== false && isNonEmpty(resource.code ?? ''))
-    .map((resource) => ({
-      label: resource.displayName ?? resource.code ?? '',
-      value: resource.code ?? '',
-    }))
-
-  return liveOptions.length > 0 ? liveOptions : [...fallback]
-}
+// 字典选项「实时优先、英文名用常量中文覆盖、整体为空回退常量」——见 mergeReferenceOptions。
+const referenceOptions = mergeReferenceOptions
 
 const productCategoryOptions = computed(() => referenceOptions(productCategoryResources.value, PRODUCT_CATEGORY_OPTIONS))
 const materialTypeOptions = computed(() => referenceOptions(materialTypeResources.value, MATERIAL_TYPE_OPTIONS))

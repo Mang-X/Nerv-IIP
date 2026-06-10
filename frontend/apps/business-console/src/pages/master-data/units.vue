@@ -43,6 +43,7 @@ import { PlusIcon, RulerIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
+import { mergeReferenceOptions } from '@/data/masterDataReference'
 
 definePage({ meta: { requiresAuth: true, title: '计量单位' } })
 
@@ -94,12 +95,7 @@ const uomActions = useMasterDataResourceActions('unit-of-measure')
 
 // 量纲下拉「实时拉取 + 常量兜底」：取数据字典 uom-dimension，实时为空回退常量。
 const { resources: dimensionResources } = useBusinessMasterDataResources('reference-data', { codeSet: 'uom-dimension' })
-const dimensionOptions = computed<Option[]>(() => {
-  const live = dimensionResources.value
-    .filter((r) => r.active !== false && isNonEmpty(r.code ?? ''))
-    .map((r) => ({ label: r.displayName ?? r.code ?? '', value: r.code ?? '' }))
-  return live.length > 0 ? live : DIMENSION_OPTIONS
-})
+const dimensionOptions = computed<Option[]>(() => mergeReferenceOptions(dimensionResources.value, DIMENSION_OPTIONS))
 
 const keyword = ref('')
 const page = ref(1)
