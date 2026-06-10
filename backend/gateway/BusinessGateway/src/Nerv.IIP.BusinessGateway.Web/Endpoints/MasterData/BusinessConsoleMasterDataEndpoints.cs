@@ -372,6 +372,10 @@ public sealed class BusinessConsoleUpdateMasterDataResourceRequestValidator : Va
         RuleFor(x => x.Category).MaximumLength(100);
         RuleFor(x => x.MaterialType).MaximumLength(100);
         RuleFor(x => x.PartnerType).MaximumLength(100);
+        RuleFor(x => x.ParentDepartmentCode).MaximumLength(100);
+        RuleFor(x => x.DepartmentCode).MaximumLength(100);
+        RuleFor(x => x.ShiftCode).MaximumLength(100);
+        RuleFor(x => x.PaidMinutes).GreaterThan(0).When(x => x.PaidMinutes.HasValue);
         RuleFor(x => x.ManagerUserId).MaximumLength(100);
         RuleFor(x => x.Description).MaximumLength(500);
         RuleFor(x => x.WorkshopCode).MaximumLength(100);

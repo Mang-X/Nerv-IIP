@@ -1753,13 +1753,30 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListResourcesAsync(
             "internal-token-001",
-            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", true, Take: 12),
+            new BusinessConsoleListResourcesRequest(
+                "org-001",
+                "env-dev",
+                "sku",
+                true,
+                Take: 12,
+                ParentCode: "DEPT-ROOT",
+                SiteCode: "SITE-001",
+                LineCode: "LINE-001",
+                WorkCenterCode: "WC-001",
+                Category: "chemical",
+                PartnerType: "supplier",
+                Keyword: "raw",
+                All: true,
+                DepartmentCode: "DEPT-SUB",
+                ShiftCode: "SHIFT-DAY",
+                UserId: "worker-001",
+                SkillCode: "WELD"),
             CancellationToken.None);
 
         Assert.Equal("SKU-HTTP", response.Resources.Single().Code);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&includeDisabled=true&skip=0&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&includeDisabled=true&skip=0&take=12&parentCode=DEPT-ROOT&siteCode=SITE-001&lineCode=LINE-001&workCenterCode=WC-001&category=chemical&partnerType=supplier&keyword=raw&all=true&departmentCode=DEPT-SUB&shiftCode=SHIFT-DAY&userId=worker-001&skillCode=WELD", request.RequestUri!.PathAndQuery);
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.Equal("internal-token-001", request.Headers.Authorization.Parameter);
     }

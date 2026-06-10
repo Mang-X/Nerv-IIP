@@ -54,7 +54,19 @@ public sealed record ListMasterDataResourcesRequest(
     bool IncludeDisabled = false,
     int Skip = 0,
     int Take = 100,
-    string? CodeSet = null);
+    string? CodeSet = null,
+    string? ParentCode = null,
+    string? SiteCode = null,
+    string? LineCode = null,
+    string? WorkCenterCode = null,
+    string? Category = null,
+    string? PartnerType = null,
+    string? Keyword = null,
+    bool All = false,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    string? UserId = null,
+    string? SkillCode = null);
 
 public sealed record CreateSkuRequest(
     string OrganizationId,
@@ -85,7 +97,26 @@ public sealed class ListMasterDataResourcesEndpoint(ISender sender)
     public override async Task HandleAsync(ListMasterDataResourcesRequest req, CancellationToken ct)
     {
         var response = await sender.Send(
-            new ListMasterDataResourcesQuery(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.IncludeDisabled, req.Skip, req.Take, req.CodeSet),
+            new ListMasterDataResourcesQuery(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.ResourceType,
+                req.IncludeDisabled,
+                req.Skip,
+                req.Take,
+                req.CodeSet,
+                req.ParentCode,
+                req.SiteCode,
+                req.LineCode,
+                req.WorkCenterCode,
+                req.Category,
+                req.PartnerType,
+                req.Keyword,
+                req.All,
+                req.DepartmentCode,
+                req.ShiftCode,
+                req.UserId,
+                req.SkillCode),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -135,6 +166,12 @@ public sealed record UpdateMasterDataResourceRequest(
     string? PartnerType = null,
     string? Timezone = null,
     string? SiteCode = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    int? PaidMinutes = null,
     string? ManagerUserId = null,
     string? Description = null,
     string? PlantCode = null,
@@ -193,6 +230,12 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
                 req.PartnerType,
                 req.Timezone,
                 req.SiteCode,
+                req.ParentDepartmentCode,
+                req.DepartmentCode,
+                req.ShiftCode,
+                req.StartsAt,
+                req.EndsAt,
+                req.PaidMinutes,
                 req.ManagerUserId,
                 req.Description,
                 req.PlantCode,

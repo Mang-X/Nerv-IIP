@@ -30,6 +30,12 @@ public sealed record MasterDataResourceDetail(
     IReadOnlyCollection<string>? PartnerRoles = null,
     string? Timezone = null,
     string? SiteCode = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    int? PaidMinutes = null,
     string? ManagerUserId = null,
     string? Description = null,
     string? PlantCode = null,
@@ -87,6 +93,15 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
                 ?? throw NotFound(type, request.Code)),
             "workshop" => UpdateMasterDataResourceCommandHandler.Detail(
                 await dbContext.Workshops.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+                ?? throw NotFound(type, request.Code)),
+            "department" => UpdateMasterDataResourceCommandHandler.Detail(
+                await dbContext.Departments.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+                ?? throw NotFound(type, request.Code)),
+            "team" => UpdateMasterDataResourceCommandHandler.Detail(
+                await dbContext.Teams.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+                ?? throw NotFound(type, request.Code)),
+            "shift" => UpdateMasterDataResourceCommandHandler.Detail(
+                await dbContext.Shifts.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
             "production-line" => UpdateMasterDataResourceCommandHandler.Detail(
                 await dbContext.ProductionLines.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)

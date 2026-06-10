@@ -1,10 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
@@ -33,6 +36,12 @@ public sealed record UpdateMasterDataResourceCommand(
     string? PartnerType = null,
     string? Timezone = null,
     string? SiteCode = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    int? PaidMinutes = null,
     string? ManagerUserId = null,
     string? Description = null,
     string? PlantCode = null,
@@ -131,6 +140,27 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.ManagerUserId ?? workshop.ManagerUserId,
                     request.Description ?? workshop.Description);
                 return Detail(workshop);
+            case "department":
+                var department = await FindDepartmentAsync(request, cancellationToken);
+                department.Update(
+                    request.Name ?? department.Name,
+                    request.ParentDepartmentCode ?? department.ParentDepartmentCode);
+                return Detail(department);
+            case "team":
+                var team = await FindTeamAsync(request, cancellationToken);
+                team.Update(
+                    request.Name ?? team.Name,
+                    request.DepartmentCode ?? team.DepartmentCode,
+                    request.ShiftCode ?? team.ShiftCode);
+                return Detail(team);
+            case "shift":
+                var shift = await FindShiftAsync(request, cancellationToken);
+                shift.Update(
+                    request.Name ?? shift.Name,
+                    request.StartsAt ?? shift.StartsAt,
+                    request.EndsAt ?? shift.EndsAt,
+                    request.PaidMinutes ?? shift.PaidMinutes);
+                return Detail(shift);
             case "production-line":
                 var line = await FindProductionLineAsync(request, cancellationToken);
                 line.Update(request.Name ?? line.Name, request.SiteCode ?? line.SiteCode, request.WorkshopCode ?? line.WorkshopCode);
@@ -192,6 +222,18 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
 
     private async Task<Workshop> FindWorkshopAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
         await dbContext.Workshops.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<Department> FindDepartmentAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.Departments.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<Team> FindTeamAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.Teams.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<Shift> FindShiftAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.Shifts.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<ProductionLine> FindProductionLineAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
@@ -297,6 +339,15 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
     internal static MasterDataResourceDetail Detail(Workshop x) =>
         new("workshop", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, SiteCode: x.SiteCode, ManagerUserId: x.ManagerUserId, Description: x.Description, Status: x.Disabled ? "disabled" : "active");
 
+    internal static MasterDataResourceDetail Detail(Department x) =>
+        new("department", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, ParentDepartmentCode: x.ParentDepartmentCode, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(Team x) =>
+        new("team", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, DepartmentCode: x.DepartmentCode, ShiftCode: x.ShiftCode, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(Shift x) =>
+        new("shift", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, StartsAt: x.StartsAt, EndsAt: x.EndsAt, PaidMinutes: x.PaidMinutes, Status: x.Disabled ? "disabled" : "active");
+
     internal static MasterDataResourceDetail Detail(ProductionLine x) =>
         new("production-line", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, SiteCode: x.SiteCode, WorkshopCode: x.WorkshopCode, Status: x.Disabled ? "disabled" : "active");
 
@@ -343,6 +394,18 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(ApplicationDbCont
                 var workshop = await FindAsync(dbContext.Workshops, request, cancellationToken);
                 if (request.Enabled) workshop.Enable(reason); else workshop.Disable(reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(workshop);
+            case "department":
+                var department = await FindAsync(dbContext.Departments, request, cancellationToken);
+                if (request.Enabled) department.Enable(reason); else department.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(department);
+            case "team":
+                var team = await FindAsync(dbContext.Teams, request, cancellationToken);
+                if (request.Enabled) team.Enable(reason); else team.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(team);
+            case "shift":
+                var shift = await FindAsync(dbContext.Shifts, request, cancellationToken);
+                if (request.Enabled) shift.Enable(reason); else shift.Disable(reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(shift);
             case "production-line":
                 var line = await FindAsync(dbContext.ProductionLines, request, cancellationToken);
                 if (request.Enabled) line.Enable(reason); else line.Disable(reason);

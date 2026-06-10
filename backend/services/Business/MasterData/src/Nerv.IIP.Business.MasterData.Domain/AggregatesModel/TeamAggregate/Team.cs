@@ -38,6 +38,16 @@ public class Team : Entity<TeamId>, IAggregateRoot
         return new Team(organizationId, environmentId, code, name, departmentCode, shiftCode);
     }
 
+    public void Update(string name, string departmentCode, string shiftCode)
+    {
+        EnsureEnabled();
+        Name = Required(name);
+        DepartmentCode = Required(departmentCode);
+        ShiftCode = Required(shiftCode);
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(Team), OrganizationId, EnvironmentId, Code));
+    }
+
     public void Disable(string reason)
     {
         var validReason = Required(reason);
@@ -45,6 +55,19 @@ public class Team : Entity<TeamId>, IAggregateRoot
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(Team), OrganizationId, EnvironmentId, Code, validReason));
+    }
+
+    public void Enable(string reason)
+    {
+        _ = Required(reason);
+        if (!Disabled)
+        {
+            return;
+        }
+
+        Disabled = false;
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(Team), OrganizationId, EnvironmentId, Code));
     }
 
     private void EnsureEnabled()

@@ -7706,6 +7706,103 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "parentCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "siteCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "lineCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "workCenterCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "partnerType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "all",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "nullable": false
+            }
+          },
+          {
+            "name": "departmentCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "shiftCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skillCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -20933,6 +21030,40 @@
           "taxId": {
             "type": "string",
             "nullable": true
+          },
+          "parentDepartmentCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "departmentCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "shiftCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "userId": {
+            "type": "string",
+            "nullable": true
+          },
+          "skillCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "skillLevel": {
+            "type": "string",
+            "nullable": true
+          },
+          "effectiveFrom": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "effectiveTo": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
           }
         }
       },
@@ -21191,6 +21322,33 @@
             "type": "string",
             "nullable": true
           },
+          "parentDepartmentCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "departmentCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "shiftCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "time",
+            "nullable": true
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "time",
+            "nullable": true
+          },
+          "paidMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
           "plantCode": {
             "type": "string",
             "nullable": true
@@ -21384,6 +21542,41 @@
           "siteCode": {
             "type": "string",
             "nullable": true
+          },
+          "parentDepartmentCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "departmentCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "shiftCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "time",
+            "nullable": true
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "time",
+            "nullable": true
+          },
+          "paidMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0.0,
+            "nullable": true,
+            "exclusiveMinimum": true
           },
           "managerUserId": {
             "type": "string",

@@ -48,18 +48,58 @@ public class Shift : Entity<ShiftId>, IAggregateRoot
         return new Shift(organizationId, environmentId, code, name, startsAt, endsAt, paidMinutes);
     }
 
+    public void Update(string name, TimeOnly startsAt, TimeOnly endsAt, int paidMinutes)
+    {
+        if (paidMinutes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(paidMinutes), "Paid minutes must be positive.");
+        }
+
+        EnsureEnabled();
+        Name = Required(name);
+        StartsAt = startsAt;
+        EndsAt = endsAt;
+        CrossesMidnight = endsAt <= startsAt;
+        PaidMinutes = paidMinutes;
+        Touch();
+    }
+
     public void Disable(string reason)
     {
         var validReason = Required(reason);
-        if (Disabled)
-        {
-            throw new InvalidOperationException("Disabled shift cannot be changed.");
-        }
+        EnsureEnabled();
 
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(Shift), OrganizationId, EnvironmentId, Code, validReason));
         this.AddDomainEvent(new ResourceChangedDomainEvent(nameof(Shift), OrganizationId, EnvironmentId, Code));
+    }
+
+    public void Enable(string reason)
+    {
+        _ = Required(reason);
+        if (!Disabled)
+        {
+            return;
+        }
+
+        Disabled = false;
+        Touch();
+    }
+
+    private void Touch()
+    {
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(Shift), OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new ResourceChangedDomainEvent(nameof(Shift), OrganizationId, EnvironmentId, Code));
+    }
+
+    private void EnsureEnabled()
+    {
+        if (Disabled)
+        {
+            throw new InvalidOperationException("Disabled shift cannot be changed.");
+        }
     }
 
     private static string Required(string value)

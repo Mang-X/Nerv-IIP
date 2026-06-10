@@ -21,7 +21,15 @@ public sealed record BusinessConsoleResourceItem(
     string? MaterialType = null,
     string? CodeSet = null,
     string? BaseUomCode = null,
-    string? TaxId = null);
+    string? TaxId = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    string? UserId = null,
+    string? SkillCode = null,
+    string? SkillLevel = null,
+    DateOnly? EffectiveFrom = null,
+    DateOnly? EffectiveTo = null);
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
@@ -34,7 +42,19 @@ public sealed record BusinessConsoleListResourcesRequest(
     bool IncludeDisabled = false,
     int Skip = 0,
     int Take = 100,
-    string? CodeSet = null);
+    string? CodeSet = null,
+    string? ParentCode = null,
+    string? SiteCode = null,
+    string? LineCode = null,
+    string? WorkCenterCode = null,
+    string? Category = null,
+    string? PartnerType = null,
+    string? Keyword = null,
+    bool All = false,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    string? UserId = null,
+    string? SkillCode = null);
 
 public sealed record BusinessConsoleListSkusRequest(
     string OrganizationId,
@@ -281,6 +301,12 @@ public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     string? PartnerType = null,
     string? Timezone = null,
     string? SiteCode = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    int? PaidMinutes = null,
     string? ManagerUserId = null,
     string? Description = null,
     string? PlantCode = null,
@@ -342,6 +368,12 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     IReadOnlyCollection<string>? PartnerRoles = null,
     string? Timezone = null,
     string? SiteCode = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    int? PaidMinutes = null,
     string? PlantCode = null,
     string? LineCode = null,
     int? CapacityMinutesPerDay = null,

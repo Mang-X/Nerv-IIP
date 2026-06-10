@@ -1943,6 +1943,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     codeSet?: string | null;
     baseUomCode?: string | null;
     taxId?: string | null;
+    parentDepartmentCode?: string | null;
+    departmentCode?: string | null;
+    shiftCode?: string | null;
+    userId?: string | null;
+    skillCode?: string | null;
+    skillLevel?: string | null;
+    effectiveFrom?: string | null;
+    effectiveTo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListResourcesRequest = {
@@ -2005,6 +2013,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     partnerRoles?: Array<string> | null;
     timezone?: string | null;
     siteCode?: string | null;
+    parentDepartmentCode?: string | null;
+    departmentCode?: string | null;
+    shiftCode?: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    paidMinutes?: number | null;
     plantCode?: string | null;
     lineCode?: string | null;
     capacityMinutesPerDay?: number | null;
@@ -2052,6 +2066,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     partnerType?: string | null;
     timezone?: string | null;
     siteCode?: string | null;
+    parentDepartmentCode?: string | null;
+    departmentCode?: string | null;
+    shiftCode?: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    paidMinutes?: number | null;
     managerUserId?: string | null;
     description?: string | null;
     plantCode?: string | null;
@@ -7142,6 +7162,18 @@ export type ListBusinessConsoleMasterDataResourcesData = {
         skip?: number;
         take?: number;
         codeSet?: string | null;
+        parentCode?: string | null;
+        siteCode?: string | null;
+        lineCode?: string | null;
+        workCenterCode?: string | null;
+        category?: string | null;
+        partnerType?: string | null;
+        keyword?: string | null;
+        all?: boolean;
+        departmentCode?: string | null;
+        shiftCode?: string | null;
+        userId?: string | null;
+        skillCode?: string | null;
     };
     url: '/api/business-console/v1/master-data/resources';
 };

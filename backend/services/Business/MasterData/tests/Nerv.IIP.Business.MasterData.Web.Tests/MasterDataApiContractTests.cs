@@ -217,6 +217,12 @@ public sealed class MasterDataApiContractTests
         dbContext.ProductionLines.Add(Domain.AggregatesModel.ProductionLineAggregate.ProductionLine.Create("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001"));
         dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.CreateResource("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "PLANT-001", "LINE-001", "WS-001", "CAL-001", "minute", true));
         dbContext.DeviceAssets.Add(Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.RegisterCapability("org-001", "env-dev", "DEV-001", "Mixer", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>()));
+        dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-ROOT", "Manufacturing", null));
+        dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-ALT", "Quality", null));
+        dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-SUB", "Line Ops", "DEPT-ROOT"));
+        dbContext.Teams.Add(Domain.AggregatesModel.TeamAggregate.Team.Create("org-001", "env-dev", "TEAM-001", "Line A Day Team", "DEPT-SUB", "SHIFT-DAY"));
+        dbContext.Teams.Add(Domain.AggregatesModel.TeamAggregate.Team.Create("org-001", "env-dev", "TEAM-002", "Quality Team", "DEPT-ROOT", "SHIFT-NIGHT"));
+        dbContext.PersonnelSkills.Add(Domain.AggregatesModel.PersonnelSkillAggregate.PersonnelSkill.Assign("org-001", "env-dev", "worker-001", "WELD", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)));
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "material-type", "raw-material", "Raw Material"));
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "storage-condition", "ambient", "Ambient"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -250,6 +256,29 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("LINE-001", device.LineCode);
         Assert.Equal("WC-001", device.WorkCenterCode);
         Assert.Equal("active", device.Status);
+
+        var childDepartment = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", ParentCode: "DEPT-ROOT"), CancellationToken.None)).Resources);
+        Assert.Equal("DEPT-SUB", childDepartment.Code);
+        Assert.Equal("DEPT-ROOT", childDepartment.ParentDepartmentCode);
+
+        var team = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "team", DepartmentCode: "DEPT-SUB"), CancellationToken.None)).Resources);
+        Assert.Equal("TEAM-001", team.Code);
+        Assert.Equal("DEPT-SUB", team.DepartmentCode);
+        Assert.Equal("SHIFT-DAY", team.ShiftCode);
+
+        var skill = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "personnel-skill", UserId: "worker-001", SkillCode: "WELD"), CancellationToken.None)).Resources);
+        Assert.Equal("worker-001", skill.UserId);
+        Assert.Equal("WELD", skill.SkillCode);
+        Assert.Equal("senior", skill.SkillLevel);
+        Assert.Equal(new DateOnly(2026, 1, 1), skill.EffectiveFrom);
+        Assert.Equal(new DateOnly(2026, 12, 31), skill.EffectiveTo);
+
+        var filteredSku = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Category: "chemical", Keyword: "raw"), CancellationToken.None)).Resources);
+        Assert.Equal("RM-001", filteredSku.Code);
+
+        var allDepartments = await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", Take: 1, All: true), CancellationToken.None);
+        Assert.Equal(3, allDepartments.Resources.Count);
+        Assert.Equal(3, allDepartments.Total);
 
         var referenceData = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "reference-data", CodeSet: "material-type"), CancellationToken.None)).Resources);
         Assert.Equal("material-type", referenceData.CodeSet);
@@ -352,6 +381,61 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None);
         Assert.True(enabled.Active);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task MasterData_lifecycle_commands_update_organization_and_shift_structure_fields()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-ROOT", "Manufacturing", null));
+        dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-SUB", "Line Ops", "DEPT-ROOT"));
+        dbContext.Teams.Add(Domain.AggregatesModel.TeamAggregate.Team.Create("org-001", "env-dev", "TEAM-001", "Line A Day Team", "DEPT-SUB", "SHIFT-DAY"));
+        dbContext.Shifts.Add(Domain.AggregatesModel.ShiftAggregate.Shift.Create("org-001", "env-dev", "SHIFT-DAY", "Day", new TimeOnly(8, 0), new TimeOnly(20, 0), 720));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+
+        var department = await handler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "department",
+                "DEPT-SUB",
+                Name: "Assembly Ops",
+                ParentDepartmentCode: "DEPT-ALT"),
+            CancellationToken.None);
+        Assert.Equal("Assembly Ops", department.DisplayName);
+        Assert.Equal("DEPT-ALT", department.ParentDepartmentCode);
+
+        var team = await handler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "team",
+                "TEAM-001",
+                DepartmentCode: "DEPT-ROOT",
+                ShiftCode: "SHIFT-NIGHT"),
+            CancellationToken.None);
+        Assert.Equal("DEPT-ROOT", team.DepartmentCode);
+        Assert.Equal("SHIFT-NIGHT", team.ShiftCode);
+
+        var shift = await handler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "shift",
+                "SHIFT-DAY",
+                Name: "Day 8h",
+                StartsAt: new TimeOnly(8, 30),
+                EndsAt: new TimeOnly(17, 30),
+                PaidMinutes: 480),
+            CancellationToken.None);
+        Assert.Equal("Day 8h", shift.DisplayName);
+        Assert.Equal(new TimeOnly(8, 30), shift.StartsAt);
+        Assert.Equal(new TimeOnly(17, 30), shift.EndsAt);
+        Assert.Equal(480, shift.PaidMinutes);
     }
 
     [Fact]
