@@ -1,5 +1,7 @@
 export { defineStepFlow } from './sop/defineStepFlow'
 export type { StepFlow, StepFlowStep, StepFlowContext } from './sop/defineStepFlow'
+export { inboundReceiveFlow, outboundReviewFlow } from './sop/wmsFlows'
+export type { InboundReceiveCtx, OutboundReviewCtx } from './sop/wmsFlows'
 export { sanitizeRedirectPath } from './routing/sanitizeRedirectPath'
 export { PDA_TASK_KINDS, getPdaTaskKind } from './tasks/pdaTaskKinds'
 export type { PdaTaskKind } from './tasks/pdaTaskKinds'

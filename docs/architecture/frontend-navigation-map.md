@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-06-06（FE-10 console 迁移完成、FE-11 仓储作业只读批次接入）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-06-10（FE-10 console 迁移完成、FE-11 仓储作业只读批次接入、Plan 2 PDA WMS 收货入库/复核发货落地）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 
@@ -145,6 +145,8 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | PDA/mobile | 一线报工、收货、拣货、盘点、巡检、报修、报警处理。 | 不复用 PC 菜单树；首页优先是我的任务、快捷应用墙和扫码直达。 |
 
 > PDA v1 任务地图与组件/UX 标准见 `docs/architecture/mobile-pda-module-product-design.md` 与 `docs/superpowers/specs/2026-06-09-mobile-pda-design.md`。实现轨为独立 app `frontend/apps/business-pda`，不复用 PC 菜单树。
+>
+> PDA 仓储作业状态：**收货入库 `/wms/inbound`、复核发货 `/wms/review` 已落地（PDA，Plan 2）**，应用墙入口已点亮；拣货、上架、盘点待 #374（缺独立 list facade，保持 disabled，不做半截入口）。
 
 ### 角色导航样例
 

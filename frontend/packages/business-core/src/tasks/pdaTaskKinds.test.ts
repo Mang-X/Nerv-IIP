@@ -15,6 +15,17 @@ describe('PDA task kinds dictionary', () => {
     expect(getPdaTaskKind('mes.report')?.routeReady).toBe(false)
   })
 
+  it('lights up the delivered WMS frontline pages (inbound receiving + outbound review)', () => {
+    expect(getPdaTaskKind('wms.inbound')?.routeReady).toBe(true)
+    expect(getPdaTaskKind('wms.review')?.routeReady).toBe(true)
+  })
+
+  it('keeps blocked WMS tasks dark until #374 lands (no half-baked entries)', () => {
+    expect(getPdaTaskKind('wms.pick')?.routeReady).toBe(false)
+    expect(getPdaTaskKind('wms.putaway')?.routeReady).toBe(false)
+    expect(getPdaTaskKind('wms.count')?.routeReady).toBe(false)
+  })
+
   it('returns undefined for unknown ids', () => {
     expect(getPdaTaskKind('nope')).toBeUndefined()
   })
