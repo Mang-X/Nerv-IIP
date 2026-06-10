@@ -139,6 +139,7 @@ public static class NervIipObservabilityRegistration
         var loggerConfiguration = new LoggerConfiguration()
             .MinimumLevel.Is(ReadMinimumLevel(configuration))
             .Enrich.FromLogContext()
+            .Enrich.WithClientIp()
             .Enrich.WithProperty("service.name", serviceName)
             .Enrich.WithProperty("service", serviceName)
             .WriteTo.Console(formatter);
