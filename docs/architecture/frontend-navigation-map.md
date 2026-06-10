@@ -144,6 +144,8 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 近期/星标 | 高频重复操作用户。 | 最近访问和星标页面固定在导航顶部，但不得绕过权限。 |
 | PDA/mobile | 一线报工、收货、拣货、盘点、巡检、报修、报警处理。 | 不复用 PC 菜单树；首页优先是我的任务、快捷应用墙和扫码直达。 |
 
+> PDA v1 任务地图与组件/UX 标准见 `docs/architecture/mobile-pda-module-product-design.md` 与 `docs/superpowers/specs/2026-06-09-mobile-pda-design.md`。实现轨为独立 app `frontend/apps/business-pda`，不复用 PC 菜单树。
+
 ### 角色导航样例
 
 下表是第一版 RBAC 裁剪参考，不替代 IAM permission catalog、Gateway enforcement 或业务行级授权；与 IAM permission catalog 有差异时，以 IAM permission catalog 为准。导航隐藏只是 UX 优化，Gateway 仍必须按接口和动作返回 401/403。

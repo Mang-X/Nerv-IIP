@@ -325,7 +325,7 @@
 ### 当前初步使用方式
 
 1. 根目录 `.\nerv.ps1 bootstrap` 已成为有网空白机器的预检/restore/本地 secrets 初始化入口；Windows 有网机器可用 `.\nerv.ps1 bootstrap -InstallMissing` 补齐缺失工具链，Docker Desktop 首次安装后仍需人工启动 daemon。根目录 `.\nerv.ps1 dev` 已成为主平台本地联调入口；`.\nerv.ps1 ports` 输出标准本地端口矩阵。
-2. 平台 HTTP 服务端口收敛到 `5100-5125`，其中 PlatformGateway 使用 `5100`，Console 使用 `5105` 而不是 Vite 默认 `5173`；Business Wave 1 服务使用 `5107-5111`，Business Wave 2 服务使用 `5112-5115`：DemandPlanning `5112`、BarcodeLabel `5113`、BusinessApproval `5114`、WMS `5115`；Equipment Reliability 服务使用 `5116-5117`：IndustrialTelemetry `5116`、Maintenance `5117`；BusinessERP 使用 `5118`；BusinessGateway 使用 `5119`；BusinessScheduling 使用 `5120`；BusinessConsole 使用 `5125`。
+2. 平台 HTTP 服务端口收敛到 `5100-5125`，其中 PlatformGateway 使用 `5100`，Console 使用 `5105` 而不是 Vite 默认 `5173`；Business Wave 1 服务使用 `5107-5111`，Business Wave 2 服务使用 `5112-5115`：DemandPlanning `5112`、BarcodeLabel `5113`、BusinessApproval `5114`、WMS `5115`；Equipment Reliability 服务使用 `5116-5117`：IndustrialTelemetry `5116`、Maintenance `5117`；BusinessERP 使用 `5118`；BusinessGateway 使用 `5119`；BusinessScheduling 使用 `5120`；BusinessConsole 使用 `5125`。移动端为独立实施轨：`business-pda` 本地 dev 端口建议 `5126`（待 `.\nerv.ps1 ports` 矩阵确认），详见 `docs/architecture/mobile-pda-module-product-design.md` 与 `docs/superpowers/specs/2026-06-09-mobile-pda-design.md`。
 3. 本地 MinIO 运行镜像使用 `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`。
 4. 运行 `pwsh scripts/verify-first-slice.ps1` 可验证 backend 与 connector-hosts 的 restore、build、test，以及 AppHub 到 PlatformGateway 的第一条本地纵切。
 5. 运行 `pwsh scripts/verify-second-slice-ops.ps1` 可验证 Gateway、Ops、Connector Host 和 Docker Connector 的低风险 restart 闭环。
