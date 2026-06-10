@@ -45,8 +45,87 @@ export async function routeConsoleApi(route: Route) {
   return route.fallback()
 }
 
-/** Mock any business-console gateway call the home may make (none required for the foundation home). */
+/**
+ * Mock the business-console gateway calls the PDA equipment pages make.
+ *
+ * Item shapes mirror the real generated row types (BusinessConsoleMaintenanceWorkOrderItem,
+ * BusinessConsoleMaintenancePlan*, BusinessConsoleMaintenanceInspectionItem,
+ * EquipmentRuntimeAlarmSummary) so the pages render realistic Chinese labels (severity/priority/
+ * status → 中文 via business-core equipmentLabels). Unmatched paths fall back to the default
+ * empty envelope (the home + foundation pages need nothing more).
+ */
 export async function routeBusinessConsoleApi(route: Route) {
+  const { pathname } = new URL(route.request().url())
+  const method = route.request().method()
+
+  // 报修：维修工单 list / create
+  if (pathname === '/api/business-console/v1/maintenance/work-orders') {
+    if (method === 'POST') {
+      return fulfillJson(route, envelope({ workOrderId: 'WO-M-new' }))
+    }
+    return fulfillJson(
+      route,
+      envelope({
+        items: [
+          {
+            workOrderId: 'WO-M1',
+            deviceAssetId: 'DEV-A',
+            priority: 'high',
+            status: 'open',
+            openedBy: principal.loginName,
+            openedAtUtc: '2026-06-10T01:00:00.000Z',
+          },
+        ],
+        total: 1,
+      }),
+    )
+  }
+
+  // 点检：保养计划 list（点检页先选计划）
+  if (pathname === '/api/business-console/v1/maintenance/plans') {
+    return fulfillJson(
+      route,
+      envelope({
+        items: [
+          {
+            planId: 'PLAN-1',
+            planCode: 'PM-001',
+            deviceAssetId: 'DEV-A',
+            interval: 'P7D',
+          },
+        ],
+        total: 1,
+      }),
+    )
+  }
+
+  // 点检：记录 list（空）/ record
+  if (pathname === '/api/business-console/v1/maintenance/inspections') {
+    if (method === 'POST') {
+      return fulfillJson(route, envelope({ inspectionId: 'INS-new' }))
+    }
+    return fulfillJson(route, envelope({ items: [], total: 0 }))
+  }
+
+  // 报警查看（只读）
+  if (pathname === '/api/business-console/v1/equipment/alarms') {
+    return fulfillJson(
+      route,
+      envelope({
+        items: [
+          {
+            alarmEventId: 'ALM-1',
+            deviceAssetId: 'DEV-A',
+            alarmCode: 'E-101',
+            severity: 'critical',
+            raisedAtUtc: '2026-06-10T02:30:00.000Z',
+          },
+        ],
+        total: 1,
+      }),
+    )
+  }
+
   return fulfillJson(route, envelope({}))
 }
 
