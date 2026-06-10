@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
 import { ChevronRight } from 'lucide-vue-next'
 import { cn } from '../../lib/utils'
 
-withDefaults(defineProps<{ title: string; subtitle?: string; interactive?: boolean; class?: string }>(), {
+withDefaults(defineProps<{ title: string; subtitle?: string; interactive?: boolean; class?: HTMLAttributes['class'] }>(), {
   interactive: true,
 })
 const emit = defineEmits<{ select: [] }>()

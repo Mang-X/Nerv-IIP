@@ -1,12 +1,19 @@
 <script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
 import { onMounted, ref } from 'vue'
 import { ScanLine } from 'lucide-vue-next'
 import { cn } from '../../lib/utils'
 
-withDefaults(defineProps<{ placeholder?: string; class?: string; autofocus?: boolean }>(), {
-  placeholder: '扫描条码 / 二维码',
-  autofocus: true,
-})
+// `active` 是焦点抢夺的 opt-out 开关：键盘楔入设备需要输入框常驻焦点，
+// 但当消费方打开 BottomSheet/Dialog 等浮层时应传 `active=false`，
+// 让 ScanBar 停止自动重聚焦，避免把焦点从浮层抢回、破坏 focus-trap。
+const props = withDefaults(
+  defineProps<{ placeholder?: string; class?: HTMLAttributes['class']; active?: boolean }>(),
+  {
+    placeholder: '扫描条码 / 二维码',
+    active: true,
+  },
+)
 const emit = defineEmits<{ scan: [value: string] }>()
 
 const inputEl = ref<HTMLInputElement>()
@@ -20,12 +27,13 @@ function submit() {
 }
 
 function refocus() {
+  if (!props.active) return
   // 键盘楔入设备需要输入框始终持有焦点
   requestAnimationFrame(() => inputEl.value?.focus())
 }
 
 onMounted(() => {
-  if (inputEl.value && (inputEl.value as HTMLInputElement).autofocus !== false) refocus()
+  if (props.active) refocus()
 })
 </script>
 

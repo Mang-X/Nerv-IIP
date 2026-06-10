@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
 import { CircleCheck, CircleX } from 'lucide-vue-next'
 import { cn } from '../../lib/utils'
 
-const props = defineProps<{ status: 'success' | 'error'; title: string; description?: string; class?: string }>()
+const props = defineProps<{ status: 'success' | 'error'; title: string; description?: string; class?: HTMLAttributes['class'] }>()
 const tone = computed(() =>
   props.status === 'success' ? 'text-success' : 'text-destructive',
 )

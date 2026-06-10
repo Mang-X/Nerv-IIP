@@ -20,4 +20,10 @@ describe('ListRow', () => {
     const plain = mount(ListRow, { props: { title: 'X', interactive: false } })
     expect(plain.find('[data-chevron]').exists()).toBe(false)
   })
+
+  it('does not emit select on click when not interactive', async () => {
+    const wrapper = mount(ListRow, { props: { title: 'X', interactive: false } })
+    await wrapper.get('[data-row]').trigger('click')
+    expect(wrapper.emitted('select')).toBeFalsy()
+  })
 })

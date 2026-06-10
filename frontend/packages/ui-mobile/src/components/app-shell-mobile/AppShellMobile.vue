@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
 import { useSlots } from 'vue'
 import { cn } from '../../lib/utils'
 
-defineProps<{ class?: string }>()
+defineProps<{ class?: HTMLAttributes['class'] }>()
 const slots = useSlots()
 </script>
 

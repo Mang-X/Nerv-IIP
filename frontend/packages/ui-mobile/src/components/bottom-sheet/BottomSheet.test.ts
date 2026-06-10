@@ -22,4 +22,20 @@ describe('BottomSheet', () => {
     })
     expect(document.body.textContent).not.toContain('不可见')
   })
+
+  it('emits update:open(false) when the dialog requests close via Escape', async () => {
+    const wrapper = mount(BottomSheet, {
+      props: { open: true, title: '选择库位' },
+      slots: { default: '<div>抽屉内容</div>' },
+      attachTo: document.body,
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await new Promise((r) => setTimeout(r, 0))
+
+    const events = wrapper.emitted('update:open')
+    expect(events).toBeTruthy()
+    expect(events!.at(-1)).toEqual([false])
+    wrapper.unmount()
+  })
 })

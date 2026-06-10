@@ -1,14 +1,21 @@
 <script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
 import {
   DialogRoot,
   DialogPortal,
   DialogOverlay,
   DialogContent,
   DialogTitle,
+  DialogDescription,
 } from 'reka-ui'
 import { cn } from '../../lib/utils'
 
-defineProps<{ open: boolean; title?: string; class?: string }>()
+defineProps<{
+  open: boolean
+  title?: string
+  description?: string
+  class?: HTMLAttributes['class']
+}>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 </script>
 
@@ -26,6 +33,10 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>()
         <DialogTitle v-if="title" class="px-4 py-3 text-base font-semibold text-foreground">
           {{ title }}
         </DialogTitle>
+        <!-- 始终渲染描述以消除 reka-ui 缺失描述的控制台告警；无可见描述时用 sr-only 承载标题/占位。 -->
+        <DialogDescription :class="description ? 'px-4 pb-2 text-sm text-muted-foreground' : 'sr-only'">
+          {{ description ?? title ?? '抽屉内容' }}
+        </DialogDescription>
         <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
           <slot />
         </div>

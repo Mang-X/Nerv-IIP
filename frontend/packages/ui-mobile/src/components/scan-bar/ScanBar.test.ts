@@ -24,4 +24,24 @@ describe('ScanBar', () => {
     const wrapper = mount(ScanBar, { props: { placeholder: '扫描库位或物料' } })
     expect(wrapper.get('input').attributes('placeholder')).toBe('扫描库位或物料')
   })
+
+  it('refocuses the input on blur when active (default)', async () => {
+    const wrapper = mount(ScanBar, { attachTo: document.body })
+    const input = wrapper.get('input').element as HTMLInputElement
+    input.blur()
+    await wrapper.get('input').trigger('blur')
+    await new Promise((r) => requestAnimationFrame(() => r(null)))
+    expect(document.activeElement).toBe(input)
+    wrapper.unmount()
+  })
+
+  it('does not refocus on blur when active is false', async () => {
+    const wrapper = mount(ScanBar, { props: { active: false }, attachTo: document.body })
+    const input = wrapper.get('input').element as HTMLInputElement
+    input.blur()
+    await wrapper.get('input').trigger('blur')
+    await new Promise((r) => requestAnimationFrame(() => r(null)))
+    expect(document.activeElement).not.toBe(input)
+    wrapper.unmount()
+  })
 })
