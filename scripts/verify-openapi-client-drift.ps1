@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: verify
+#   Category: verify, generate
 #   SideEffects:
 #     - Exports PlatformGateway and BusinessGateway OpenAPI snapshots
 #     - Regenerates the frontend api-client package

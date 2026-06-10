@@ -43,7 +43,7 @@
 #     - Docker Desktop
 ```
 
-`SideEffects` 必须说清楚是否会删除、重建或写入数据库。`Writes` 必须覆盖生成产物、日志目录和临时文件。`Cleanup` 必须说明脚本结束后会清理什么，以及哪些外部依赖会被保留。
+`Category` 可以是单一分类，也可以用逗号声明复合分类（例如 `verify, generate`）；所有分类项都必须属于 `check`、`verify`、`generate`、`release-install`。`SideEffects` 必须说清楚是否会删除、重建或写入数据库。`Writes` 必须覆盖生成产物、日志目录和临时文件。`Cleanup` 必须说明脚本结束后会清理什么，以及哪些外部依赖会被保留。
 
 ## Helper 契约
 

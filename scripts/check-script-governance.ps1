@@ -168,14 +168,16 @@ function Test-ScriptGovernance {
         Add-GovernanceViolation -Violations $violations -Path $relativePath -Rule 'MissingGovernanceHeader' -Message 'Missing Script-Governance header block.'
     }
 
-    $categoryMatch = [regex]::Match($content, '(?m)^\s*#\s*Category:\s*(?<category>[A-Za-z-]+)\s*$')
+    $categoryMatch = [regex]::Match($content, '(?m)^\s*#\s*Category:\s*(?<category>[A-Za-z-]+(?:\s*,\s*[A-Za-z-]+)*)\s*$')
     if (-not $categoryMatch.Success) {
         Add-GovernanceViolation -Violations $violations -Path $relativePath -Rule 'MissingCategory' -Message 'Missing Script-Governance Category.'
     }
     else {
-        $category = $categoryMatch.Groups['category'].Value.ToLowerInvariant()
-        if ($allowedCategories -notcontains $category) {
-            Add-GovernanceViolation -Violations $violations -Path $relativePath -Rule 'InvalidCategory' -Message "Invalid Script-Governance Category '$category'."
+        $categories = @($categoryMatch.Groups['category'].Value -split ',' | ForEach-Object { $_.Trim().ToLowerInvariant() })
+        foreach ($category in $categories) {
+            if ($allowedCategories -notcontains $category) {
+                Add-GovernanceViolation -Violations $violations -Path $relativePath -Rule 'InvalidCategory' -Message "Invalid Script-Governance Category '$category'."
+            }
         }
     }
 
