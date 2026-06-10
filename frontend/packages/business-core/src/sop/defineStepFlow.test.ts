@@ -30,4 +30,10 @@ describe('defineStepFlow', () => {
   it('exposes ordered progress for the UI step indicator', () => {
     expect(flow.progress({ order: 'RO-1' })).toEqual({ completed: 1, total: 3 })
   })
+
+  it('throws when defined with no steps so currentStep cannot return undefined', () => {
+    expect(() => defineStepFlow<ReceiveCtx>({ id: 'empty', steps: [] })).toThrow(
+      'stepFlow "empty" requires at least one step',
+    )
+  })
 })

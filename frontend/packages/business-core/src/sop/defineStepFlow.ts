@@ -19,6 +19,7 @@ export function defineStepFlow<TCtx extends StepFlowContext>(config: {
   steps: StepFlowStep<TCtx>[]
 }): StepFlow<TCtx> {
   const { id, steps } = config
+  if (steps.length === 0) throw new Error(`stepFlow "${id}" requires at least one step`)
   return {
     id,
     steps,
