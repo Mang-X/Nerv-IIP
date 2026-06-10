@@ -1,6 +1,7 @@
 import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
 import {
   ActivityIcon,
+  AwardIcon,
   BookMarkedIcon,
   BoxesIcon,
   Building2Icon,
@@ -50,14 +51,27 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
   'workbench': [{ items: [{ title: '工作台首页', to: { path: '/' } }] }],
   'master-data': [
     {
+      label: '主对象',
       items: [
         { title: '物料与产品', icon: PackageIcon, to: { path: '/master-data/skus' } },
-        { title: '客户与供应商', icon: Building2Icon, to: { path: '/master-data/partners' } },
-        { title: '工厂与产线', icon: FactoryIcon, to: { path: '/master-data/facilities' } },
+        { title: '业务伙伴', icon: Building2Icon, to: { path: '/master-data/partners' } },
+        { title: '工厂结构', icon: FactoryIcon, to: { path: '/master-data/facilities' } },
         { title: '设备台账', icon: CpuIcon, to: { path: '/master-data/devices' } },
-        { title: '数据字典', icon: BookMarkedIcon, to: { path: '/master-data/reference-data' } },
+      ],
+    },
+    {
+      label: '组织与排班',
+      items: [
+        { title: '组织与班组', icon: UsersRoundIcon, to: { path: '/master-data/organization' } },
+        { title: '排班与日历', icon: CalendarRangeIcon, to: { path: '/master-data/scheduling' } },
+        { title: '人员技能', icon: AwardIcon, to: { path: '/master-data/skills' } },
+      ],
+    },
+    {
+      label: '受控数据',
+      items: [
         { title: '计量单位', icon: RulerIcon, to: { path: '/master-data/units' } },
-        { title: '组织与人员', icon: UsersRoundIcon, to: { path: '/master-data/organization' } },
+        { title: '数据字典', icon: BookMarkedIcon, to: { path: '/master-data/reference-data' } },
       ],
     },
   ],

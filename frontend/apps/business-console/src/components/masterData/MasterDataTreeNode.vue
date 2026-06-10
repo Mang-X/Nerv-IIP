@@ -4,32 +4,34 @@ import { Button, StatusBadge } from '@nerv-iip/ui'
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-// 工厂结构树的递归节点。状态（展开/选中）由父页通过 Set/ref 注入，
+// 通用层级树节点（工厂结构、部门等共用）。状态（展开/选中）由父页通过 Set/ref 注入，
 // 节点只读其状态并通过回调上抛交互，保持可测、无内部数据层。
-export interface FacilitiesTreeNodeData {
-  type: 'site' | 'workshop' | 'production-line' | 'work-center'
+// `type` 用开放字符串而非固定枚举，使其不绑定到工厂结构的四级类型；
+// 各页用 `childLabelOf` 决定该类型节点能否就地新建子级及其中文名。
+export interface MasterDataTreeNodeData {
+  type: string
   code: string
   displayName: string
   active: boolean
   item: BusinessConsoleResourceItem
-  children: FacilitiesTreeNodeData[]
+  children: MasterDataTreeNodeData[]
 }
 
 const props = defineProps<{
-  node: FacilitiesTreeNodeData
+  node: MasterDataTreeNodeData
   depth: number
   /** 已展开节点 key 集合（`type:code`）。 */
   expanded: Set<string>
   /** 当前选中节点 key。 */
   selectedKey: string | null
   /** 该节点可就地新建的子级中文名（无则不显示「+ 子级」）。 */
-  childLabelOf: (type: FacilitiesTreeNodeData['type']) => string | undefined
+  childLabelOf: (type: string) => string | undefined
 }>()
 
 const emit = defineEmits<{
-  select: [node: FacilitiesTreeNodeData]
-  toggle: [node: FacilitiesTreeNodeData]
-  createChild: [node: FacilitiesTreeNodeData]
+  select: [node: MasterDataTreeNodeData]
+  toggle: [node: MasterDataTreeNodeData]
+  createChild: [node: MasterDataTreeNodeData]
 }>()
 
 const nodeKey = computed(() => `${props.node.type}:${props.node.code}`)
@@ -78,7 +80,7 @@ const childLabel = computed(() => props.childLabelOf(props.node.type))
       </Button>
     </div>
     <ul v-if="hasChildren && isExpanded" class="grid gap-0.5" role="group">
-      <FacilitiesTreeNode
+      <MasterDataTreeNode
         v-for="child in node.children"
         :key="`${child.type}:${child.code}`"
         :node="child"

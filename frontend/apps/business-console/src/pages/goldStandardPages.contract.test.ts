@@ -26,7 +26,10 @@ const GOLD_STANDARD_PAGES = [
   // 不含 DataTable/DataTablePagination 必备块，故从此清单移除。树页自身约束见 facilities.test.ts。
   'master-data/devices.vue',
   'master-data/units.vue',
-  'master-data/organization.vue',
+  // organization.vue 改为「组织与班组」树-详情页（左部门树 + 右详情/班组），不再是黄金标准列表，
+  // 不含主 DataTable/DataTablePagination 必备块，故从此清单移除。树页约束见 organization.test.ts。
+  'master-data/scheduling.vue',
+  'master-data/skills.vue',
   'master-data/reference-data.vue',
   'wms/inbound.vue',
   'wms/outbound.vue',

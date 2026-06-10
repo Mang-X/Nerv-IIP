@@ -5,7 +5,8 @@ import type {
   BusinessConsoleCreateWorkCenterRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import FacilitiesTreeNode from '@/components/masterData/FacilitiesTreeNode.vue'
+import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
+import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useBusinessWorkshops, useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
@@ -167,7 +168,7 @@ const forest = computed<TreeNode[]>(() => tree.value)
 // ---- 树搜索 + 展开/折叠 ----
 const treeSearch = ref('')
 const expanded = reactive(new Set<string>())
-function nodeKey(node: TreeNode) {
+function nodeKey(node: TreeNode | MasterDataTreeNodeData) {
   return `${node.type}:${node.code}`
 }
 function matchesSearch(node: TreeNode, kw: string): boolean {
@@ -213,7 +214,7 @@ watch([forest, treeSearch], () => {
   }
 }, { immediate: true })
 
-function toggleExpand(node: TreeNode) {
+function toggleExpand(node: TreeNode | MasterDataTreeNodeData) {
   const key = nodeKey(node)
   if (expanded.has(key)) expanded.delete(key)
   else expanded.add(key)
@@ -263,7 +264,7 @@ const selectedNode = computed<TreeNode | null>(() => {
   walk(tree.value)
   return found
 })
-function selectNode(node: TreeNode) {
+function selectNode(node: TreeNode | MasterDataTreeNodeData) {
   selectedKey.value = nodeKey(node)
 }
 // 数据就绪后默认选中首个工厂：右侧详情不空,单工厂也能直接选中/编辑该工厂。
@@ -394,8 +395,8 @@ function openCreateRoot() {
   createOpen.value = true
 }
 // 选中父节点 → 「+ 新建<子级>」，父 code 预填且只读。
-function openCreateChild(parent: TreeNode) {
-  const childType = CHILD_OF[parent.type]
+function openCreateChild(parent: TreeNode | MasterDataTreeNodeData) {
+  const childType = CHILD_OF[parent.type as NodeType]
   if (!childType) return
   resetCreateForm()
   createType.value = childType
@@ -627,6 +628,11 @@ async function submitEdit() {
 const selectedActions = computed(() => (selectedNode.value ? ACTIONS_BY_TYPE[selectedNode.value.type] : null))
 // 选中节点能否就地建子级。
 const childTypeOfSelected = computed(() => (selectedNode.value ? CHILD_OF[selectedNode.value.type] : undefined))
+// 通用树节点的 childLabelOf 回调（参数为开放 string）：映射到本页的子级中文名。
+function childLabelOf(type: string): string | undefined {
+  const child = CHILD_OF[type as NodeType]
+  return child ? NODE_LABEL[child] : undefined
+}
 </script>
 
 <template>
@@ -685,14 +691,14 @@ const childTypeOfSelected = computed(() => (selectedNode.value ? CHILD_OF[select
             <Button size="sm" variant="outline" type="button" class="mx-auto" @click="treeSearch = ''">清空搜索</Button>
           </div>
           <ul v-else class="grid gap-0.5" role="tree">
-            <FacilitiesTreeNode
+            <MasterDataTreeNode
               v-for="node in filteredForest"
               :key="nodeKey(node)"
               :node="node"
               :depth="0"
               :expanded="expanded"
               :selected-key="selectedKey"
-              :child-label-of="(type) => { const c = CHILD_OF[type]; return c ? NODE_LABEL[c] : undefined }"
+              :child-label-of="childLabelOf"
               @select="selectNode"
               @toggle="toggleExpand"
               @create-child="openCreateChild"

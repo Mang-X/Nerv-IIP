@@ -1,34 +1,30 @@
 <script setup lang="ts">
 import type {
   BusinessConsoleCreateDepartmentRequest,
-  BusinessConsoleCreateShiftRequest,
   BusinessConsoleCreateTeamRequest,
-  BusinessConsoleCreateWorkCalendarRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import TeamMembersDialog from '@/components/masterData/TeamMembersDialog.vue'
-import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
-import { useBusinessMasterDataResources, useMasterDataResource, useMasterDataResourceActions, usePersonnelSkillAssignment } from '@/composables/useBusinessMasterData'
+import { useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
-  DataTable,
-  DataTablePagination,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
   Input,
   PageHeader,
+  ScrollArea,
   SectionCard,
   SectionCards,
   Select,
@@ -38,174 +34,345 @@ import {
   SelectValue,
   Spinner,
   StatusBadge,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  Toolbar,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon, UsersIcon } from 'lucide-vue-next'
+import {
+  PlusIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  UsersIcon,
+  UsersRoundIcon,
+} from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '组织与人员' } })
+definePage({ meta: { requiresAuth: true, title: '组织与班组' } })
+
+// 层级树需尽量全量拼装：用较大 take 兜底（真正全量需后端全量端点 #373）。
+const TREE_TAKE = 200
 
 const departments = useMasterDataResource<BusinessConsoleCreateDepartmentRequest>('department')
 const teams = useMasterDataResource<BusinessConsoleCreateTeamRequest>('team')
-const shifts = useMasterDataResource<BusinessConsoleCreateShiftRequest>('shift')
-const calendars = useMasterDataResource<BusinessConsoleCreateWorkCalendarRequest>('work-calendar')
-// 人员技能：列表只读 + 登记可写（工人选择器 + 技能编码 + 等级）。
-const skills = useBusinessMasterDataResources('personnel-skill')
-const skillAssignment = usePersonnelSkillAssignment()
+// 班组挂靠班次：新建班组要选班次，取班次列表填下拉（只读引用，不在本页维护班次）。
+const shifts = useMasterDataResource('shift')
 const deptActions = useMasterDataResourceActions('department')
 const teamActions = useMasterDataResourceActions('team')
-const shiftActions = useMasterDataResourceActions('shift')
-const calActions = useMasterDataResourceActions('work-calendar')
 
-const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
-  { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
-  { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
-  { key: 'active', header: '状态', width: 'w-24' },
-  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
-]
-function baseDetailFields(row: BusinessConsoleResourceItem, codeLabel: string, nameLabel: string) {
-  return [
-    { label: codeLabel, value: row.code ?? '' },
-    { label: nameLabel, value: row.displayName ?? '' },
-  ]
-}
+departments.filters.take = TREE_TAKE
+teams.filters.take = TREE_TAKE
+shifts.filters.take = TREE_TAKE
 
-function rowKey(item: BusinessConsoleResourceItem) {
-  return `${item.resourceType ?? ''}:${item.code || item.displayName || ''}`
-}
 function isNonEmpty(value: string) {
   return value.trim().length > 0
-}
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
-}
-function filterRows(items: BusinessConsoleResourceItem[], keyword: string) {
-  const kw = keyword.trim().toLowerCase()
-  if (!kw) return items
-  return items.filter((row) =>
-    [row.code, row.displayName, row.snapshotVersion].some((value) => (value ?? '').toLowerCase().includes(kw)),
-  )
 }
 function refreshAll() {
   void departments.refresh()
   void teams.refresh()
   void shifts.refresh()
-  void calendars.refresh()
-  void skills.refreshResources()
 }
 
-// ---- 部门 ----
-const deptKeyword = ref('')
-const deptPage = ref(1)
-const deptPageSize = ref('10')
-const deptOpen = ref(false)
-const deptShowErrors = ref(false)
-const deptEditingCode = shallowRef<string | null>(null)
-const deptEditLoading = shallowRef(false)
-const deptForm = reactive({ code: '', name: '', parentDepartmentCode: '' })
-const deptRows = computed(() => filterRows(departments.items.value, deptKeyword.value))
-const canCreateDept = computed(() => [deptForm.code, deptForm.name].every(isNonEmpty))
-const deptListError = computed(() => formatError(departments.error.value))
-watch(deptOpen, (open) => { if (open) deptShowErrors.value = false })
-watch([deptKeyword, deptPageSize], () => { deptPage.value = 1 })
-watch([deptPage, deptPageSize], () => {
-  departments.filters.skip = (deptPage.value - 1) * (Number(deptPageSize.value) || 10)
-  departments.filters.take = Number(deptPageSize.value) || 10
+// ================= 部门树（按 parentDepartmentCode 前端拼，缺则平铺） =================
+// 注意：当前列表/详情端点未回传 parentDepartmentCode（仅创建时可设），故 Phase 1 多数环境
+// 部门以平铺单层呈现；一旦后端在读侧回传该字段（#373），此处自动拼出多层树，无需改前端。
+const DEPT_TYPE = 'department'
+function toDeptNode(item: BusinessConsoleResourceItem): MasterDataTreeNodeData {
+  return {
+    type: DEPT_TYPE,
+    code: item.code ?? '',
+    displayName: item.displayName ?? item.code ?? '',
+    active: item.active !== false,
+    item,
+    children: [],
+  }
+}
+// 列表项可能（未来）带 parentDepartmentCode；用 unknown 读取避免假设其一定存在。
+function parentCodeOf(item: BusinessConsoleResourceItem): string {
+  const v = (item as Record<string, unknown>).parentDepartmentCode
+  return typeof v === 'string' ? v : ''
+}
+
+const tree = computed<MasterDataTreeNodeData[]>(() => {
+  const nodes = departments.items.value.map(toDeptNode)
+  const byCode = new Map(nodes.map((n) => [n.code, n]))
+  const roots: MasterDataTreeNodeData[] = []
+  for (const n of nodes) {
+    const parentCode = parentCodeOf(n.item)
+    const parent = parentCode ? byCode.get(parentCode) : undefined
+    if (parent && parent !== n) parent.children.push(n)
+    else roots.push(n)
+  }
+  return roots
+})
+
+const totalDepartments = computed(() => departments.total.value)
+const treePending = computed(() => departments.pending.value)
+const treeTruncated = computed(() => departments.total.value > TREE_TAKE)
+const treeListError = computed(() => {
+  const e = departments.error.value
+  return e instanceof Error ? e.message : e ? '部门数据加载失败，请刷新重试。' : ''
+})
+
+// ---- 树搜索 + 展开/折叠 ----
+const treeSearch = ref('')
+const expanded = reactive(new Set<string>())
+function nodeKey(node: MasterDataTreeNodeData) {
+  return `${node.type}:${node.code}`
+}
+function matchesSearch(node: MasterDataTreeNodeData, kw: string): boolean {
+  if (!kw) return true
+  const self = `${node.displayName} ${node.code}`.toLowerCase().includes(kw)
+  return self || node.children.some((c) => matchesSearch(c, kw))
+}
+const filteredForest = computed<MasterDataTreeNodeData[]>(() => {
+  const kw = treeSearch.value.trim().toLowerCase()
+  if (!kw) return tree.value
+  const prune = (nodes: MasterDataTreeNodeData[]): MasterDataTreeNodeData[] =>
+    nodes
+      .filter((n) => matchesSearch(n, kw))
+      .map((n) => ({ ...n, children: prune(n.children) }))
+  return prune(tree.value)
+})
+
+watch([tree, treeSearch], () => {
+  const expandAll = (nodes: MasterDataTreeNodeData[]) => {
+    for (const n of nodes) {
+      if (n.children.length) {
+        expanded.add(nodeKey(n))
+        expandAll(n.children)
+      }
+    }
+  }
+  if (treeSearch.value.trim()) {
+    expandAll(filteredForest.value)
+    return
+  }
+  if (totalDepartments.value > 0 && totalDepartments.value < 50 && expanded.size === 0) {
+    expandAll(tree.value)
+  }
 }, { immediate: true })
-function resetDeptForm() {
-  Object.assign(deptForm, { code: '', name: '', parentDepartmentCode: '' })
+
+function toggleExpand(node: MasterDataTreeNodeData) {
+  const key = nodeKey(node)
+  if (expanded.has(key)) expanded.delete(key)
+  else expanded.add(key)
 }
-function openCreateDept() {
-  deptEditingCode.value = null
-  resetDeptForm()
-  deptShowErrors.value = false
-  deptOpen.value = true
-}
-async function openEditDept(row: BusinessConsoleResourceItem) {
-  if (!row.code) return
-  deptEditingCode.value = row.code
-  deptShowErrors.value = false
-  deptEditLoading.value = true
-  deptOpen.value = true
-  try {
-    const d = await deptActions.fetchDetail(row.code)
-    // 详情未返回 parentDepartmentCode（且更新契约不含该字段），编辑态上级部门只读留空。
-    Object.assign(deptForm, {
-      code: row.code,
-      name: d?.name ?? row.displayName ?? '',
-      parentDepartmentCode: '',
+const allExpanded = computed(() => {
+  let hasParent = false
+  const check = (nodes: MasterDataTreeNodeData[]): boolean =>
+    nodes.every((n) => {
+      if (!n.children.length) return true
+      hasParent = true
+      return expanded.has(nodeKey(n)) && check(n.children)
     })
+  const ok = check(tree.value)
+  return hasParent && ok
+})
+function expandAllToggle() {
+  if (allExpanded.value) {
+    expanded.clear()
+    return
+  }
+  const add = (nodes: MasterDataTreeNodeData[]) => {
+    for (const n of nodes) {
+      if (n.children.length) {
+        expanded.add(nodeKey(n))
+        add(n.children)
+      }
+    }
+  }
+  add(tree.value)
+}
+
+// 部门可就地新建「子部门」。
+function childLabelOf(type: string): string | undefined {
+  return type === DEPT_TYPE ? '子部门' : undefined
+}
+
+// ---- 选中态（单选，持久 code）+ 详情 ----
+const selectedKey = ref<string | null>(null)
+const selectedNode = computed<MasterDataTreeNodeData | null>(() => {
+  if (!selectedKey.value) return null
+  let found: MasterDataTreeNodeData | null = null
+  const walk = (nodes: MasterDataTreeNodeData[]) => {
+    for (const n of nodes) {
+      if (nodeKey(n) === selectedKey.value) {
+        found = n
+        return
+      }
+      walk(n.children)
+    }
+  }
+  walk(tree.value)
+  return found
+})
+function selectNode(node: MasterDataTreeNodeData) {
+  selectedKey.value = nodeKey(node)
+}
+// 默认选中首个部门：右侧详情不空。
+watch(tree, (roots) => {
+  if (!selectedKey.value && roots.length > 0) selectedKey.value = nodeKey(roots[0]!)
+}, { immediate: true })
+
+const selectedPath = computed<MasterDataTreeNodeData[]>(() => {
+  const target = selectedKey.value
+  if (!target) return []
+  const path: MasterDataTreeNodeData[] = []
+  const walk = (nodes: MasterDataTreeNodeData[]): boolean => {
+    for (const n of nodes) {
+      path.push(n)
+      if (nodeKey(n) === target) return true
+      if (walk(n.children)) return true
+      path.pop()
+    }
+    return false
+  }
+  walk(tree.value)
+  return path
+})
+
+const detailLoading = shallowRef(false)
+const detailExtra = shallowRef<Record<string, unknown> | null>(null)
+watch(selectedNode, async (node) => {
+  detailExtra.value = null
+  if (!node?.code) return
+  detailLoading.value = true
+  try {
+    detailExtra.value = (await deptActions.fetchDetail(node.code)) as Record<string, unknown> | null
   }
   finally {
-    deptEditLoading.value = false
+    detailLoading.value = false
   }
+})
+const detailFields = computed(() => {
+  const node = selectedNode.value
+  if (!node) return [] as { label: string, value: string }[]
+  const item = node.item
+  return [
+    { label: '部门编码', value: node.code },
+    { label: '部门名称', value: node.displayName },
+    { label: '更新时间', value: formatDateTime(item.snapshotVersion) },
+  ]
+})
+
+// ================= 班组列表（属选中部门下的班组维护出口） =================
+// 列表端点不回传 team.departmentCode（仅创建时可设），故 Phase 1 无法按部门精确归集班组，
+// 右侧展示全部班组并如实标注；在选中部门下「新建班组」时 departmentCode 已带入（写入侧可用）。
+const teamRows = computed(() => teams.items.value)
+const teamListError = computed(() => {
+  const e = teams.error.value
+  return e instanceof Error ? e.message : e ? '班组数据加载失败，请刷新重试。' : ''
+})
+
+// ================= 新建部门（含就地建子部门，父 code 预填只读） =================
+const deptCreateOpen = ref(false)
+const deptShowErrors = ref(false)
+const deptForm = reactive({ code: '', name: '', parentDepartmentCode: '' })
+// 父归属是否就地带入（决定上级部门字段是否只读）。
+const deptParentLocked = ref(false)
+const canCreateDept = computed(() => [deptForm.code, deptForm.name].every(isNonEmpty))
+watch(deptCreateOpen, (open) => { if (open) deptShowErrors.value = false })
+function resetDeptForm() {
+  Object.assign(deptForm, { code: '', name: '', parentDepartmentCode: '' })
+  deptParentLocked.value = false
 }
-async function submitDept() {
+function openCreateRootDept() {
+  resetDeptForm()
+  deptShowErrors.value = false
+  deptCreateOpen.value = true
+}
+function openCreateChildDept(parent: MasterDataTreeNodeData) {
+  resetDeptForm()
+  deptForm.parentDepartmentCode = parent.code
+  deptParentLocked.value = true
+  deptShowErrors.value = false
+  deptCreateOpen.value = true
+}
+async function submitCreateDept() {
   if (!canCreateDept.value) {
     deptShowErrors.value = true
     return
   }
+  const name = deptForm.name.trim()
   try {
-    if (deptEditingCode.value) {
-      // 通用 update 端点仅支持 name（上级部门等结构字段不在更新契约内）。
-      await deptActions.update(deptEditingCode.value, {
-        name: deptForm.name.trim(),
-      })
-      notifySuccess(`部门「${deptForm.name.trim()}」已更新。`)
-    }
-    else {
-      await departments.create({
-        organizationId: departments.filters.organizationId,
-        environmentId: departments.filters.environmentId,
-        code: deptForm.code.trim(),
-        name: deptForm.name.trim(),
-        parentDepartmentCode: deptForm.parentDepartmentCode.trim() || null,
-      })
-      notifySuccess(`部门「${deptForm.name.trim()}」已创建。`)
-    }
+    await departments.create({
+      organizationId: departments.filters.organizationId,
+      environmentId: departments.filters.environmentId,
+      code: deptForm.code.trim(),
+      name,
+      parentDepartmentCode: deptForm.parentDepartmentCode.trim() || null,
+    })
+    notifySuccess(`部门「${name}」已创建。`)
     resetDeptForm()
-    deptEditingCode.value = null
     deptShowErrors.value = false
-    deptOpen.value = false
+    deptCreateOpen.value = false
   }
   catch (error) {
     notifyError(error)
   }
 }
 
-// ---- 班组 ----
-const teamKeyword = ref('')
-const teamPage = ref(1)
-const teamPageSize = ref('10')
+// ================= 编辑部门（编码 / 归属只读，仅改名；改挂上级见 #373） =================
+const deptEditOpen = ref(false)
+const deptEditShowErrors = ref(false)
+const deptEditLoading = shallowRef(false)
+const deptEditCode = shallowRef('')
+const deptEditForm = reactive({ name: '' })
+const canEditDept = computed(() => isNonEmpty(deptEditForm.name))
+watch(deptEditOpen, (open) => { if (open) deptEditShowErrors.value = false })
+async function openEditDept(node: MasterDataTreeNodeData) {
+  if (!node.code) return
+  deptEditCode.value = node.code
+  deptEditShowErrors.value = false
+  deptEditLoading.value = true
+  deptEditOpen.value = true
+  deptEditForm.name = node.displayName
+  try {
+    const d = (await deptActions.fetchDetail(node.code)) as Record<string, unknown> | undefined
+    deptEditForm.name = (d?.name as string) || node.displayName
+  }
+  finally {
+    deptEditLoading.value = false
+  }
+}
+async function submitEditDept() {
+  if (!canEditDept.value) {
+    deptEditShowErrors.value = true
+    return
+  }
+  const name = deptEditForm.name.trim()
+  try {
+    await deptActions.update(deptEditCode.value, { name })
+    notifySuccess(`部门「${name}」已更新。`)
+    deptEditShowErrors.value = false
+    deptEditOpen.value = false
+  }
+  catch (error) {
+    notifyError(error)
+  }
+}
+
+// ================= 班组（新建：挂部门 + 班次；编辑：仅改名） =================
 const teamOpen = ref(false)
 const teamShowErrors = ref(false)
 const teamEditingCode = shallowRef<string | null>(null)
 const teamEditLoading = shallowRef(false)
+// departmentLocked：从选中部门「在此部门下新建班组」时带入且只读。
+const teamDepartmentLocked = ref(false)
 const teamForm = reactive({ code: '', name: '', departmentCode: '', shiftCode: '' })
-const teamRows = computed(() => filterRows(teams.items.value, teamKeyword.value))
 const canCreateTeam = computed(() => [teamForm.code, teamForm.name, teamForm.departmentCode, teamForm.shiftCode].every(isNonEmpty))
-// 编辑态仅校验名称（部门/班次归属不在更新契约内），新建态校验全部必填。
 const teamFormValid = computed(() => (teamEditingCode.value ? isNonEmpty(teamForm.name) : canCreateTeam.value))
-const teamListError = computed(() => formatError(teams.error.value))
 watch(teamOpen, (open) => { if (open) teamShowErrors.value = false })
-watch([teamKeyword, teamPageSize], () => { teamPage.value = 1 })
-watch([teamPage, teamPageSize], () => {
-  teams.filters.skip = (teamPage.value - 1) * (Number(teamPageSize.value) || 10)
-  teams.filters.take = Number(teamPageSize.value) || 10
-}, { immediate: true })
 function resetTeamForm() {
   Object.assign(teamForm, { code: '', name: '', departmentCode: '', shiftCode: '' })
+  teamDepartmentLocked.value = false
 }
-function openCreateTeam() {
+function openCreateTeam(departmentCode?: string) {
   teamEditingCode.value = null
   resetTeamForm()
+  if (departmentCode) {
+    teamForm.departmentCode = departmentCode
+    teamDepartmentLocked.value = true
+  }
   teamShowErrors.value = false
   teamOpen.value = true
 }
@@ -215,9 +382,10 @@ async function openEditTeam(row: BusinessConsoleResourceItem) {
   teamShowErrors.value = false
   teamEditLoading.value = true
   teamOpen.value = true
+  teamForm.code = row.code
+  teamForm.name = row.displayName ?? ''
   try {
     const d = await teamActions.fetchDetail(row.code)
-    teamForm.code = row.code
     teamForm.name = d?.name ?? row.displayName ?? ''
   }
   finally {
@@ -226,7 +394,6 @@ async function openEditTeam(row: BusinessConsoleResourceItem) {
 }
 async function submitTeam() {
   if (teamEditingCode.value) {
-    // 通用 update 端点仅支持 name（部门/班次归属不在更新契约内）。
     if (!isNonEmpty(teamForm.name)) {
       teamShowErrors.value = true
       return
@@ -267,7 +434,7 @@ async function submitTeam() {
   }
 }
 
-// ---- 班组成员维护（弹窗，按行打开）----
+// ---- 班组成员维护（弹窗，按行打开，复用 TeamMembersDialog）----
 const membersOpen = ref(false)
 const membersTeam = reactive({ code: '', name: '' })
 function openMembers(row: BusinessConsoleResourceItem) {
@@ -275,552 +442,318 @@ function openMembers(row: BusinessConsoleResourceItem) {
   membersTeam.name = row.displayName ?? row.code ?? ''
   membersOpen.value = true
 }
-
-// ---- 班次 ----
-const shiftKeyword = ref('')
-const shiftPage = ref(1)
-const shiftPageSize = ref('10')
-const shiftOpen = ref(false)
-const shiftShowErrors = ref(false)
-const shiftEditingCode = shallowRef<string | null>(null)
-const shiftEditLoading = shallowRef(false)
-const shiftForm = reactive({ code: '', name: '', startsAt: '08:00', endsAt: '16:00', paidMinutes: '480' })
-const shiftRows = computed(() => filterRows(shifts.items.value, shiftKeyword.value))
-const canCreateShift = computed(() => [shiftForm.code, shiftForm.name].every(isNonEmpty) && (Number(shiftForm.paidMinutes) || 0) > 0)
-// 编辑态仅校验名称（时段/计薪不在更新契约内），新建态校验全部必填。
-const shiftFormValid = computed(() => (shiftEditingCode.value ? isNonEmpty(shiftForm.name) : canCreateShift.value))
-const shiftListError = computed(() => formatError(shifts.error.value))
-watch(shiftOpen, (open) => { if (open) shiftShowErrors.value = false })
-watch([shiftKeyword, shiftPageSize], () => { shiftPage.value = 1 })
-watch([shiftPage, shiftPageSize], () => {
-  shifts.filters.skip = (shiftPage.value - 1) * (Number(shiftPageSize.value) || 10)
-  shifts.filters.take = Number(shiftPageSize.value) || 10
-}, { immediate: true })
-function resetShiftForm() {
-  Object.assign(shiftForm, { code: '', name: '', startsAt: '08:00', endsAt: '16:00', paidMinutes: '480' })
-}
-function openCreateShift() {
-  shiftEditingCode.value = null
-  resetShiftForm()
-  shiftShowErrors.value = false
-  shiftOpen.value = true
-}
-async function openEditShift(row: BusinessConsoleResourceItem) {
-  if (!row.code) return
-  shiftEditingCode.value = row.code
-  shiftShowErrors.value = false
-  shiftEditLoading.value = true
-  shiftOpen.value = true
-  try {
-    const d = await shiftActions.fetchDetail(row.code)
-    shiftForm.code = row.code
-    shiftForm.name = d?.name ?? row.displayName ?? ''
-  }
-  finally {
-    shiftEditLoading.value = false
-  }
-}
-async function submitShift() {
-  if (shiftEditingCode.value) {
-    // 通用 update 端点仅支持 name（时段/计薪不在更新契约内，crossesMidnight 不发）。
-    if (!isNonEmpty(shiftForm.name)) {
-      shiftShowErrors.value = true
-      return
-    }
-    try {
-      await shiftActions.update(shiftEditingCode.value, { name: shiftForm.name.trim() })
-      notifySuccess(`班次「${shiftForm.name.trim()}」已更新。`)
-      resetShiftForm()
-      shiftEditingCode.value = null
-      shiftShowErrors.value = false
-      shiftOpen.value = false
-    }
-    catch (error) {
-      notifyError(error)
-    }
-    return
-  }
-  if (!canCreateShift.value) {
-    shiftShowErrors.value = true
-    return
-  }
-  try {
-    await shifts.create({
-      organizationId: shifts.filters.organizationId,
-      environmentId: shifts.filters.environmentId,
-      code: shiftForm.code.trim(),
-      name: shiftForm.name.trim(),
-      startsAt: shiftForm.startsAt.trim() || undefined,
-      endsAt: shiftForm.endsAt.trim() || undefined,
-      paidMinutes: Number(shiftForm.paidMinutes) || 480,
-    })
-    notifySuccess(`班次「${shiftForm.name.trim()}」已创建。`)
-    resetShiftForm()
-    shiftShowErrors.value = false
-    shiftOpen.value = false
-  }
-  catch (error) {
-    notifyError(error)
-  }
-}
-
-// ---- 工作日历 ----
-const calKeyword = ref('')
-const calPage = ref(1)
-const calPageSize = ref('10')
-const calOpen = ref(false)
-const calShowErrors = ref(false)
-const calEditingCode = shallowRef<string | null>(null)
-const calEditLoading = shallowRef(false)
-const calForm = reactive({ code: '', name: '' })
-const calRows = computed(() => filterRows(calendars.items.value, calKeyword.value))
-const canCreateCal = computed(() => [calForm.code, calForm.name].every(isNonEmpty))
-const calListError = computed(() => formatError(calendars.error.value))
-watch(calOpen, (open) => { if (open) calShowErrors.value = false })
-watch([calKeyword, calPageSize], () => { calPage.value = 1 })
-watch([calPage, calPageSize], () => {
-  calendars.filters.skip = (calPage.value - 1) * (Number(calPageSize.value) || 10)
-  calendars.filters.take = Number(calPageSize.value) || 10
-}, { immediate: true })
-function resetCalForm() {
-  Object.assign(calForm, { code: '', name: '' })
-}
-function openCreateCal() {
-  calEditingCode.value = null
-  resetCalForm()
-  calShowErrors.value = false
-  calOpen.value = true
-}
-async function openEditCal(row: BusinessConsoleResourceItem) {
-  if (!row.code) return
-  calEditingCode.value = row.code
-  calShowErrors.value = false
-  calEditLoading.value = true
-  calOpen.value = true
-  try {
-    const d = await calActions.fetchDetail(row.code)
-    calForm.code = row.code
-    calForm.name = d?.name ?? row.displayName ?? ''
-  }
-  finally {
-    calEditLoading.value = false
-  }
-}
-async function submitCal() {
-  if (!canCreateCal.value) {
-    calShowErrors.value = true
-    return
-  }
-  try {
-    if (calEditingCode.value) {
-      await calActions.update(calEditingCode.value, { name: calForm.name.trim() })
-      notifySuccess(`工作日历「${calForm.name.trim()}」已更新。`)
-    }
-    else {
-      await calendars.create({
-        organizationId: calendars.filters.organizationId,
-        environmentId: calendars.filters.environmentId,
-        code: calForm.code.trim(),
-        name: calForm.name.trim(),
-      })
-      notifySuccess(`工作日历「${calForm.name.trim()}」已创建。`)
-    }
-    resetCalForm()
-    calEditingCode.value = null
-    calShowErrors.value = false
-    calOpen.value = false
-  }
-  catch (error) {
-    notifyError(error)
-  }
-}
-
-// ---- 人员技能（列表只读 + 登记可写）----
-const skillKeyword = ref('')
-const skillPage = ref(1)
-const skillPageSize = ref('10')
-const skillRows = computed(() => filterRows(skills.resources.value, skillKeyword.value))
-const skillListError = computed(() => formatError(skills.resourcesError.value))
-const skillActions = useMasterDataResourceActions('personnel-skill')
-watch([skillKeyword, skillPageSize], () => { skillPage.value = 1 })
-watch([skillPage, skillPageSize], () => {
-  skills.filters.skip = (skillPage.value - 1) * (Number(skillPageSize.value) || 10)
-  skills.filters.take = Number(skillPageSize.value) || 10
-}, { immediate: true })
-
-const SKILL_LEVELS = [
-  { value: 'junior', label: '初级' },
-  { value: 'intermediate', label: '中级' },
-  { value: 'senior', label: '高级' },
-  { value: 'expert', label: '专家' },
-] as const
-const skillOpen = ref(false)
-const skillShowErrors = ref(false)
-const skillForm = reactive({ userId: '', skillCode: '', level: '', effectiveFrom: '' })
-const canAssignSkill = computed(() =>
-  isNonEmpty(skillForm.userId) && isNonEmpty(skillForm.skillCode) && isNonEmpty(skillForm.level),
-)
-watch(skillOpen, (open) => {
-  if (open) {
-    skillShowErrors.value = false
-    Object.assign(skillForm, { userId: '', skillCode: '', level: '', effectiveFrom: '' })
-  }
-})
-async function submitSkill() {
-  if (!canAssignSkill.value) {
-    skillShowErrors.value = true
-    return
-  }
-  try {
-    await skillAssignment.assign({
-      userId: skillForm.userId,
-      skillCode: skillForm.skillCode.trim(),
-      level: skillForm.level,
-      effectiveFrom: skillForm.effectiveFrom.trim() || undefined,
-    })
-    notifySuccess('已登记人员技能。')
-    skillShowErrors.value = false
-    skillOpen.value = false
-  }
-  catch (error) {
-    notifyError(error)
-  }
-}
 </script>
 
 <template>
   <BusinessLayout>
-    <PageHeader title="组织与人员" :breadcrumbs="[{ label: '基础数据' }]" :count="`${departments.total.value} 个部门`">
+    <PageHeader title="组织与班组" :breadcrumbs="[{ label: '基础数据' }]" :count="`${totalDepartments} 个部门`">
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="departments.pending.value" @click="refreshAll">
+        <Button size="sm" variant="outline" type="button" :disabled="treePending" @click="refreshAll">
           <RefreshCwIcon aria-hidden="true" />
           刷新
+        </Button>
+        <Button size="sm" type="button" @click="openCreateRootDept">
+          <PlusIcon aria-hidden="true" />
+          新建部门
         </Button>
       </template>
     </PageHeader>
 
     <p class="text-sm text-muted-foreground">
-      工人来自系统用户（IAM）。可在班组行内维护成员（含组长），并为工人登记技能与等级；选择工人时按姓名 / 工号检索。
+      左侧部门树（选中父级可就地新建子部门），右侧维护该部门的班组与成员。工人来自系统用户，选择时按姓名 / 工号检索。
     </p>
 
-    <SectionCards :columns="4">
-      <SectionCard description="部门数" :value="departments.total.value" hint="组织结构" />
+    <SectionCards :columns="2">
+      <SectionCard description="部门数" :value="departments.total.value" hint="组织结构（树的根）" />
       <SectionCard description="班组数" :value="teams.total.value" hint="挂靠部门与班次" />
-      <SectionCard description="班次数" :value="shifts.total.value" hint="排班时段" />
-      <SectionCard description="工作日历数" :value="calendars.total.value" hint="可用工作日" />
     </SectionCards>
 
-    <Tabs default-value="department">
-      <TabsList>
-        <TabsTrigger value="department">部门 ({{ departments.total.value }})</TabsTrigger>
-        <TabsTrigger value="team">班组 ({{ teams.total.value }})</TabsTrigger>
-        <TabsTrigger value="shift">班次 ({{ shifts.total.value }})</TabsTrigger>
-        <TabsTrigger value="work-calendar">工作日历 ({{ calendars.total.value }})</TabsTrigger>
-        <TabsTrigger value="personnel-skill">人员技能 ({{ skills.resourcesTotal.value }})</TabsTrigger>
-      </TabsList>
+    <div class="grid gap-4 md:grid-cols-[320px_minmax(0,1fr)]">
+      <!-- 左：部门树 -->
+      <section class="flex flex-col gap-3 rounded-lg border border-border bg-card p-3" aria-label="部门树">
+        <div class="relative">
+          <SearchIcon class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input v-model="treeSearch" class="pl-8" placeholder="搜索部门编码、名称" aria-label="搜索部门树" />
+        </div>
+        <div class="flex items-center justify-between">
+          <Button v-if="tree.length" size="sm" variant="ghost" type="button" class="h-7 px-2 text-xs" @click="expandAllToggle">
+            {{ allExpanded ? '全部折叠' : '全部展开' }}
+          </Button>
+        </div>
 
-      <!-- 部门 -->
-      <TabsContent value="department" class="grid gap-3">
-        <Toolbar v-model:search="deptKeyword" search-placeholder="在当前页内筛选部门编码、名称">
-          <template #actions>
-            <Dialog v-model:open="deptOpen">
-              <DialogTrigger as-child>
-                <Button size="sm" type="button" @click="openCreateDept"><PlusIcon aria-hidden="true" />新建部门</Button>
-              </DialogTrigger>
-              <DialogContent class="sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>{{ deptEditingCode ? `编辑部门 · ${deptEditingCode}` : '新建部门' }}</DialogTitle>
-                  <DialogDescription>{{ deptEditingCode ? '修改部门名称（编码不可修改）。带 * 为必填项。' : '登记一个组织部门，可选挂靠上级部门。带 * 为必填项。' }}</DialogDescription>
-                </DialogHeader>
-                <form class="grid gap-4" @submit.prevent="submitDept">
-                  <p v-if="deptShowErrors && !canCreateDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.code)">
-                      <FieldLabel for="dept-code">部门编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="dept-code" v-model="deptForm.code" autocomplete="off" :disabled="!!deptEditingCode" required />
-                    </Field>
-                    <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.name)">
-                      <FieldLabel for="dept-name">部门名称 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="dept-name" v-model="deptForm.name" autocomplete="off" required />
-                    </Field>
-                    <Field>
-                      <FieldLabel for="dept-parent">上级部门</FieldLabel>
-                      <Select v-model="deptForm.parentDepartmentCode" :disabled="!!deptEditingCode">
-                        <SelectTrigger id="dept-parent"><SelectValue placeholder="无（顶级部门）" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
-                            {{ d.displayName ?? d.code }}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FieldDescription>留空表示顶级部门。</FieldDescription>
-                    </Field>
-                  </FieldGroup>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" @click="deptOpen = false">取消</Button>
-                    <Button type="submit" :disabled="departments.createPending.value || deptActions.updatePending.value || deptEditLoading">
-                      <Spinner v-if="departments.createPending.value || deptActions.updatePending.value" aria-hidden="true" />{{ deptEditingCode ? '保存修改' : '保存部门' }}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </template>
-        </Toolbar>
-        <p v-if="deptListError" class="text-sm text-destructive" role="alert">{{ deptListError }}</p>
-        <DataTable :columns="columns" :rows="deptRows" :row-key="rowKey" :loading="departments.pending.value" empty-message="暂无部门。可清空筛选或新建部门。">
-          <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
-          <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="部门" :detail-fields="baseDetailFields(row, '部门编码', '部门名称')" :actions="deptActions" @edit="openEditDept" />
-          </template>
-        </DataTable>
-        <DataTablePagination v-model:page="deptPage" v-model:page-size="deptPageSize" :total-items="departments.total.value" />
-      </TabsContent>
+        <p v-if="treeListError" class="text-sm text-destructive" role="alert">{{ treeListError }}</p>
 
-      <!-- 班组 -->
-      <TabsContent value="team" class="grid gap-3">
-        <Toolbar v-model:search="teamKeyword" search-placeholder="在当前页内筛选班组编码、名称">
-          <template #actions>
-            <Dialog v-model:open="teamOpen">
-              <DialogTrigger as-child>
-                <Button size="sm" type="button" @click="openCreateTeam"><PlusIcon aria-hidden="true" />新建班组</Button>
-              </DialogTrigger>
-              <DialogContent class="sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>{{ teamEditingCode ? `编辑班组 · ${teamEditingCode}` : '新建班组' }}</DialogTitle>
-                  <DialogDescription>{{ teamEditingCode ? '修改班组名称（编码不可修改）。带 * 为必填项。' : '将班组挂靠到部门与班次。带 * 为必填项。' }}</DialogDescription>
-                </DialogHeader>
-                <form class="grid gap-4" @submit.prevent="submitTeam">
-                  <p v-if="teamShowErrors && !teamFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.code)">
-                      <FieldLabel for="team-code">班组编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="team-code" v-model="teamForm.code" autocomplete="off" :disabled="!!teamEditingCode" required />
-                    </Field>
-                    <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.name)">
-                      <FieldLabel for="team-name">班组名称 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="team-name" v-model="teamForm.name" autocomplete="off" required />
-                    </Field>
-                    <Field :data-invalid="teamShowErrors && !teamEditingCode && !isNonEmpty(teamForm.departmentCode)">
-                      <FieldLabel for="team-dept">所属部门 <span class="text-destructive">*</span></FieldLabel>
-                      <Select v-model="teamForm.departmentCode" :disabled="!!teamEditingCode">
-                        <SelectTrigger id="team-dept"><SelectValue placeholder="请选择部门" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
-                            {{ d.displayName ?? d.code }}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field :data-invalid="teamShowErrors && !teamEditingCode && !isNonEmpty(teamForm.shiftCode)">
-                      <FieldLabel for="team-shift">所属班次 <span class="text-destructive">*</span></FieldLabel>
-                      <Select v-model="teamForm.shiftCode" :disabled="!!teamEditingCode">
-                        <SelectTrigger id="team-shift"><SelectValue placeholder="请选择班次" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="s in shifts.items.value" :key="s.code" :value="s.code ?? ''">
-                            {{ s.displayName ?? s.code }}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  </FieldGroup>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" @click="teamOpen = false">取消</Button>
-                    <Button type="submit" :disabled="teams.createPending.value || teamActions.updatePending.value || teamEditLoading">
-                      <Spinner v-if="teams.createPending.value || teamActions.updatePending.value" aria-hidden="true" />{{ teamEditingCode ? '保存修改' : '保存班组' }}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </template>
-        </Toolbar>
-        <p v-if="teamListError" class="text-sm text-destructive" role="alert">{{ teamListError }}</p>
-        <DataTable :columns="columns" :rows="teamRows" :row-key="rowKey" :loading="teams.pending.value" empty-message="暂无班组。可清空筛选或新建班组。">
-          <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
-          <template #cell-actions="{ row }">
-            <div class="flex items-center justify-end gap-1">
-              <Button
+        <ScrollArea class="h-[28rem]">
+          <div v-if="treePending && !tree.length" class="px-1 py-2 text-sm text-muted-foreground">加载部门中…</div>
+          <div v-else-if="!tree.length" class="grid gap-2 px-1 py-6 text-center">
+            <UsersRoundIcon class="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
+            <p class="text-sm text-muted-foreground">还没有部门，点击创建第一条。</p>
+            <Button size="sm" type="button" class="mx-auto" @click="openCreateRootDept">
+              <PlusIcon aria-hidden="true" />
+              新建部门
+            </Button>
+          </div>
+          <div v-else-if="treeSearch.trim() && !filteredForest.length" class="grid gap-2 px-1 py-6 text-center">
+            <p class="text-sm text-muted-foreground">没有匹配「{{ treeSearch.trim() }}」的部门。</p>
+            <Button size="sm" variant="outline" type="button" class="mx-auto" @click="treeSearch = ''">清空搜索</Button>
+          </div>
+          <ul v-else class="grid gap-0.5" role="tree">
+            <MasterDataTreeNode
+              v-for="node in filteredForest"
+              :key="nodeKey(node)"
+              :node="node"
+              :depth="0"
+              :expanded="expanded"
+              :selected-key="selectedKey"
+              :child-label-of="childLabelOf"
+              @select="selectNode"
+              @toggle="toggleExpand"
+              @create-child="openCreateChildDept"
+            />
+          </ul>
+        </ScrollArea>
+
+        <p v-if="treeTruncated" class="text-xs text-muted-foreground">
+          部门较多，当前仅展示前 {{ TREE_TAKE }} 条；完整层级加载能力即将上线。
+        </p>
+      </section>
+
+      <!-- 右：部门详情 + 该部门班组 -->
+      <section class="rounded-lg border border-border bg-card p-4" aria-label="部门详情">
+        <div v-if="!selectedNode" class="grid place-items-center gap-2 py-16 text-center">
+          <UsersRoundIcon class="size-8 text-muted-foreground" aria-hidden="true" />
+          <p class="text-sm text-muted-foreground">从左侧选择一个部门查看详情与班组。</p>
+        </div>
+        <div v-else class="grid gap-4">
+          <nav class="flex flex-wrap items-center gap-1 text-sm text-muted-foreground" aria-label="选中路径">
+            <template v-for="(node, idx) in selectedPath" :key="nodeKey(node)">
+              <span v-if="idx > 0" aria-hidden="true">▸</span>
+              <button
                 type="button"
-                variant="ghost"
-                size="sm"
-                :disabled="!row.code"
-                @click="openMembers(row)"
+                class="rounded px-1 hover:text-foreground hover:underline"
+                :class="idx === selectedPath.length - 1 ? 'font-medium text-foreground' : ''"
+                @click="selectNode(node)"
               >
-                <UsersIcon aria-hidden="true" />管理成员
-              </Button>
-              <MasterDataRowActions :row="row" entity-label="班组" :detail-fields="baseDetailFields(row, '班组编码', '班组名称')" :actions="teamActions" @edit="openEditTeam" />
+                {{ node.displayName }}
+              </button>
+            </template>
+          </nav>
+
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <h2 class="text-base font-semibold text-foreground">{{ selectedNode.displayName }}</h2>
+              <span class="text-xs text-muted-foreground">部门 · {{ selectedNode.code }}</span>
+              <StatusBadge :value="selectedNode.active ? 'active' : 'disabled'" />
             </div>
-          </template>
-        </DataTable>
-        <DataTablePagination v-model:page="teamPage" v-model:page-size="teamPageSize" :total-items="teams.total.value" />
-      </TabsContent>
+            <div class="flex items-center gap-2">
+              <Button size="sm" variant="outline" type="button" @click="openCreateChildDept(selectedNode)">
+                <PlusIcon aria-hidden="true" />
+                新建子部门
+              </Button>
+              <Button size="sm" type="button" @click="openCreateTeam(selectedNode.code)">
+                <PlusIcon aria-hidden="true" />
+                在此部门下新建班组
+              </Button>
+              <MasterDataRowActions
+                :row="selectedNode.item"
+                entity-label="部门"
+                :detail-fields="detailFields"
+                :actions="deptActions"
+                @edit="openEditDept(selectedNode)"
+              />
+            </div>
+          </div>
 
-      <!-- 班次 -->
-      <TabsContent value="shift" class="grid gap-3">
-        <Toolbar v-model:search="shiftKeyword" search-placeholder="在当前页内筛选班次编码、名称">
-          <template #actions>
-            <Dialog v-model:open="shiftOpen">
-              <DialogTrigger as-child>
-                <Button size="sm" type="button" @click="openCreateShift"><PlusIcon aria-hidden="true" />新建班次</Button>
-              </DialogTrigger>
-              <DialogContent class="sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>{{ shiftEditingCode ? `编辑班次 · ${shiftEditingCode}` : '新建班次' }}</DialogTitle>
-                  <DialogDescription>{{ shiftEditingCode ? '修改班次名称（编码不可修改）。带 * 为必填项。' : '定义一个排班时段及计薪时长。带 * 为必填项。' }}</DialogDescription>
-                </DialogHeader>
-                <form class="grid gap-4" @submit.prevent="submitShift">
-                  <p v-if="shiftShowErrors && !shiftFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.code)">
-                      <FieldLabel for="shift-code">班次编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="shift-code" v-model="shiftForm.code" autocomplete="off" :disabled="!!shiftEditingCode" required />
-                    </Field>
-                    <Field :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.name)">
-                      <FieldLabel for="shift-name">班次名称 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="shift-name" v-model="shiftForm.name" autocomplete="off" required />
-                    </Field>
-                    <Field>
-                      <FieldLabel for="shift-start">开始时间</FieldLabel>
-                      <Input id="shift-start" v-model="shiftForm.startsAt" type="time" :disabled="!!shiftEditingCode" />
-                    </Field>
-                    <Field>
-                      <FieldLabel for="shift-end">结束时间</FieldLabel>
-                      <Input id="shift-end" v-model="shiftForm.endsAt" type="time" :disabled="!!shiftEditingCode" />
-                    </Field>
-                    <Field :data-invalid="shiftShowErrors && !shiftEditingCode && !((Number(shiftForm.paidMinutes) || 0) > 0)">
-                      <FieldLabel for="shift-paid">计薪时长（分钟） <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="shift-paid" v-model="shiftForm.paidMinutes" type="number" min="1" inputmode="numeric" :disabled="!!shiftEditingCode" />
-                      <FieldDescription>扣除休息后的有效计薪分钟数，默认 480（8 小时）。</FieldDescription>
-                    </Field>
-                  </FieldGroup>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" @click="shiftOpen = false">取消</Button>
-                    <Button type="submit" :disabled="shifts.createPending.value || shiftActions.updatePending.value || shiftEditLoading">
-                      <Spinner v-if="shifts.createPending.value || shiftActions.updatePending.value" aria-hidden="true" />{{ shiftEditingCode ? '保存修改' : '保存班次' }}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </template>
-        </Toolbar>
-        <p v-if="shiftListError" class="text-sm text-destructive" role="alert">{{ shiftListError }}</p>
-        <DataTable :columns="columns" :rows="shiftRows" :row-key="rowKey" :loading="shifts.pending.value" empty-message="暂无班次。可清空筛选或新建班次。">
-          <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
-          <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="班次" :detail-fields="baseDetailFields(row, '班次编码', '班次名称')" :actions="shiftActions" @edit="openEditShift" />
-          </template>
-        </DataTable>
-        <DataTablePagination v-model:page="shiftPage" v-model:page-size="shiftPageSize" :total-items="shifts.total.value" />
-      </TabsContent>
+          <p v-if="detailLoading" class="text-sm text-muted-foreground">加载详情中…</p>
+          <dl v-else class="grid gap-3 sm:grid-cols-2">
+            <div v-for="field in detailFields" :key="field.label" class="grid gap-1">
+              <dt class="text-xs text-muted-foreground">{{ field.label }}</dt>
+              <dd class="text-sm text-foreground">{{ field.value || '无' }}</dd>
+            </div>
+          </dl>
 
-      <!-- 工作日历 -->
-      <TabsContent value="work-calendar" class="grid gap-3">
-        <Toolbar v-model:search="calKeyword" search-placeholder="在当前页内筛选日历编码、名称">
-          <template #actions>
-            <Dialog v-model:open="calOpen">
-              <DialogTrigger as-child>
-                <Button size="sm" type="button" @click="openCreateCal"><PlusIcon aria-hidden="true" />新建工作日历</Button>
-              </DialogTrigger>
-              <DialogContent class="sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>{{ calEditingCode ? `编辑工作日历 · ${calEditingCode}` : '新建工作日历' }}</DialogTitle>
-                  <DialogDescription>{{ calEditingCode ? '修改日历名称（编码不可修改）。带 * 为必填项。' : '登记一个工作日历，供工作中心与排程引用。带 * 为必填项。' }}</DialogDescription>
-                </DialogHeader>
-                <form class="grid gap-4" @submit.prevent="submitCal">
-                  <p v-if="calShowErrors && !canCreateCal" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="calShowErrors && !isNonEmpty(calForm.code)">
-                      <FieldLabel for="cal-code">日历编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="cal-code" v-model="calForm.code" autocomplete="off" :disabled="!!calEditingCode" required />
-                    </Field>
-                    <Field :data-invalid="calShowErrors && !isNonEmpty(calForm.name)">
-                      <FieldLabel for="cal-name">日历名称 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="cal-name" v-model="calForm.name" autocomplete="off" required />
-                    </Field>
-                  </FieldGroup>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" @click="calOpen = false">取消</Button>
-                    <Button type="submit" :disabled="calendars.createPending.value || calActions.updatePending.value || calEditLoading">
-                      <Spinner v-if="calendars.createPending.value || calActions.updatePending.value" aria-hidden="true" />{{ calEditingCode ? '保存修改' : '保存日历' }}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </template>
-        </Toolbar>
-        <p v-if="calListError" class="text-sm text-destructive" role="alert">{{ calListError }}</p>
-        <DataTable :columns="columns" :rows="calRows" :row-key="rowKey" :loading="calendars.pending.value" empty-message="暂无工作日历。可清空筛选或新建日历。">
-          <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
-          <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="工作日历" :detail-fields="baseDetailFields(row, '日历编码', '日历名称')" :actions="calActions" @edit="openEditCal" />
-          </template>
-        </DataTable>
-        <DataTablePagination v-model:page="calPage" v-model:page-size="calPageSize" :total-items="calendars.total.value" />
-      </TabsContent>
+          <!-- 该部门的班组 -->
+          <div class="border-t border-border/60 pt-3">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <h3 class="text-sm font-medium text-foreground">班组</h3>
+              <Button size="sm" type="button" @click="openCreateTeam(selectedNode.code)">
+                <PlusIcon aria-hidden="true" />
+                新建班组
+              </Button>
+            </div>
+            <p class="mb-2 text-xs text-muted-foreground">
+              班组与部门的精确归集即将上线，当前列出全部班组；可编辑、维护成员，新建时已带入本部门归属。
+            </p>
+            <p v-if="teamListError" class="text-sm text-destructive" role="alert">{{ teamListError }}</p>
+            <div v-if="teams.pending.value && !teamRows.length" class="px-1 py-2 text-sm text-muted-foreground">加载班组中…</div>
+            <div v-else-if="!teamRows.length" class="grid gap-2 px-1 py-6 text-center">
+              <p class="text-sm text-muted-foreground">还没有班组，点击「新建班组」创建第一条。</p>
+            </div>
+            <ul v-else class="divide-y rounded-md border border-border">
+              <li
+                v-for="row in teamRows"
+                :key="row.code ?? row.displayName"
+                class="flex items-center justify-between gap-3 px-3 py-2"
+              >
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="truncate text-sm" :class="row.active === false ? 'text-muted-foreground line-through' : ''">
+                    {{ row.displayName ?? row.code ?? '无' }}
+                  </span>
+                  <span class="shrink-0 text-xs text-muted-foreground">{{ row.code }}</span>
+                  <StatusBadge v-if="row.active === false" value="disabled" />
+                </div>
+                <div class="flex shrink-0 items-center gap-1">
+                  <Button type="button" variant="ghost" size="sm" :disabled="!row.code" @click="openMembers(row)">
+                    <UsersIcon aria-hidden="true" />管理成员
+                  </Button>
+                  <MasterDataRowActions
+                    :row="row"
+                    entity-label="班组"
+                    :detail-fields="[{ label: '班组编码', value: row.code ?? '' }, { label: '班组名称', value: row.displayName ?? '' }]"
+                    :actions="teamActions"
+                    @edit="openEditTeam"
+                  />
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </div>
 
-      <!-- 人员技能（列表只读 + 登记可写：工人选择器 + 技能编码 + 等级 + 生效日期） -->
-      <TabsContent value="personnel-skill" class="grid gap-3">
-        <Toolbar v-model:search="skillKeyword" search-placeholder="在当前页内筛选技能编码、名称">
-          <template #actions>
-            <Dialog v-model:open="skillOpen">
-              <DialogTrigger as-child>
-                <Button size="sm" type="button"><PlusIcon aria-hidden="true" />登记技能</Button>
-              </DialogTrigger>
-              <DialogContent class="sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>登记人员技能</DialogTitle>
-                  <DialogDescription>为某位工人登记一项技能与等级，可选填生效日期。带 * 为必填项。</DialogDescription>
-                </DialogHeader>
-                <form class="grid gap-4" @submit.prevent="submitSkill">
-                  <p v-if="skillShowErrors && !canAssignSkill" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field class="sm:col-span-2" :data-invalid="skillShowErrors && !isNonEmpty(skillForm.userId)">
-                      <FieldLabel for="skill-worker">工人 <span class="text-destructive">*</span></FieldLabel>
-                      <WorkerSelect id="skill-worker" v-model="skillForm.userId" placeholder="搜索并选择工人" />
-                    </Field>
-                    <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.skillCode)">
-                      <FieldLabel for="skill-code">技能 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="skill-code" v-model="skillForm.skillCode" autocomplete="off" required />
-                    </Field>
-                    <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.level)">
-                      <FieldLabel for="skill-level">等级 <span class="text-destructive">*</span></FieldLabel>
-                      <Select v-model="skillForm.level">
-                        <SelectTrigger id="skill-level"><SelectValue placeholder="请选择等级" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="lvl in SKILL_LEVELS" :key="lvl.value" :value="lvl.value">{{ lvl.label }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field>
-                      <FieldLabel for="skill-from">生效日期</FieldLabel>
-                      <Input id="skill-from" v-model="skillForm.effectiveFrom" type="date" />
-                      <FieldDescription>留空表示即时生效。</FieldDescription>
-                    </Field>
-                  </FieldGroup>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" @click="skillOpen = false">取消</Button>
-                    <Button type="submit" :disabled="skillAssignment.assignPending.value">
-                      <Spinner v-if="skillAssignment.assignPending.value" aria-hidden="true" />登记技能
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </template>
-        </Toolbar>
-        <p v-if="skillListError" class="text-sm text-destructive" role="alert">{{ skillListError }}</p>
-        <DataTable :columns="columns" :rows="skillRows" :row-key="rowKey" :loading="skills.resourcesPending.value" empty-message="暂无人员技能。可清空筛选或登记技能。">
-          <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
-          <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="人员技能" :detail-fields="baseDetailFields(row, '技能编码', '技能名称')" :actions="skillActions" />
-          </template>
-        </DataTable>
-        <DataTablePagination v-model:page="skillPage" v-model:page-size="skillPageSize" :total-items="skills.resourcesTotal.value" />
-      </TabsContent>
-    </Tabs>
+    <!-- 新建部门对话框（含就地建子部门，父归属只读） -->
+    <Dialog v-model:open="deptCreateOpen">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{{ deptParentLocked ? '新建子部门' : '新建部门' }}</DialogTitle>
+          <DialogDescription>
+            {{ deptParentLocked ? '在所选上级部门下登记一个子部门。上级已带入且不可更改。带 * 为必填项。' : '登记一个组织部门，可选挂靠上级部门。带 * 为必填项。' }}
+          </DialogDescription>
+        </DialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitCreateDept">
+          <p v-if="deptShowErrors && !canCreateDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
+          <FieldGroup class="grid gap-3 sm:grid-cols-2">
+            <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.code)">
+              <FieldLabel for="dept-code">部门编码 <span class="text-destructive">*</span></FieldLabel>
+              <Input id="dept-code" v-model="deptForm.code" autocomplete="off" required />
+            </Field>
+            <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.name)">
+              <FieldLabel for="dept-name">部门名称 <span class="text-destructive">*</span></FieldLabel>
+              <Input id="dept-name" v-model="deptForm.name" autocomplete="off" required />
+            </Field>
+            <Field v-if="deptParentLocked">
+              <FieldLabel for="dept-parent">上级部门</FieldLabel>
+              <Input id="dept-parent" :model-value="deptForm.parentDepartmentCode" disabled />
+            </Field>
+            <Field v-else>
+              <FieldLabel for="dept-parent">上级部门</FieldLabel>
+              <Select v-model="deptForm.parentDepartmentCode">
+                <SelectTrigger id="dept-parent"><SelectValue placeholder="无（顶级部门）" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
+                    {{ d.displayName ?? d.code }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <FieldDescription>留空表示顶级部门。</FieldDescription>
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button type="button" variant="outline" @click="deptCreateOpen = false">取消</Button>
+            <Button type="submit" :disabled="departments.createPending.value">
+              <Spinner v-if="departments.createPending.value" aria-hidden="true" />保存部门
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <!-- 编辑部门对话框（编码 / 归属只读，仅改名；改挂上级见 #373） -->
+    <Dialog v-model:open="deptEditOpen">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>编辑部门 · {{ deptEditCode }}</DialogTitle>
+          <DialogDescription>修改部门名称（编码与归属不可修改）。带 * 为必填项。</DialogDescription>
+        </DialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitEditDept">
+          <p v-if="deptEditShowErrors && !canEditDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
+          <FieldGroup class="grid gap-3 sm:grid-cols-2">
+            <Field>
+              <FieldLabel for="dept-edit-code">部门编码</FieldLabel>
+              <Input id="dept-edit-code" :model-value="deptEditCode" disabled />
+            </Field>
+            <Field :data-invalid="deptEditShowErrors && !isNonEmpty(deptEditForm.name)">
+              <FieldLabel for="dept-edit-name">部门名称 <span class="text-destructive">*</span></FieldLabel>
+              <Input id="dept-edit-name" v-model="deptEditForm.name" autocomplete="off" required />
+            </Field>
+          </FieldGroup>
+          <p class="text-xs text-muted-foreground">归属（上级部门）创建后不可更改，改挂上级功能即将上线。</p>
+          <DialogFooter>
+            <Button type="button" variant="outline" @click="deptEditOpen = false">取消</Button>
+            <Button type="submit" :disabled="deptActions.updatePending.value || deptEditLoading">
+              <Spinner v-if="deptActions.updatePending.value" aria-hidden="true" />保存修改
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <!-- 班组对话框（新建：挂部门 + 班次；编辑：仅改名，编码 / 归属只读） -->
+    <Dialog v-model:open="teamOpen">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{{ teamEditingCode ? `编辑班组 · ${teamEditingCode}` : '新建班组' }}</DialogTitle>
+          <DialogDescription>{{ teamEditingCode ? '修改班组名称（编码与归属不可修改）。带 * 为必填项。' : '将班组挂靠到部门与班次。带 * 为必填项。' }}</DialogDescription>
+        </DialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitTeam">
+          <p v-if="teamShowErrors && !teamFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
+          <FieldGroup class="grid gap-3 sm:grid-cols-2">
+            <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.code)">
+              <FieldLabel for="team-code">班组编码 <span class="text-destructive">*</span></FieldLabel>
+              <Input id="team-code" v-model="teamForm.code" autocomplete="off" :disabled="!!teamEditingCode" required />
+            </Field>
+            <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.name)">
+              <FieldLabel for="team-name">班组名称 <span class="text-destructive">*</span></FieldLabel>
+              <Input id="team-name" v-model="teamForm.name" autocomplete="off" required />
+            </Field>
+            <Field v-if="teamDepartmentLocked && !teamEditingCode">
+              <FieldLabel for="team-dept-locked">所属部门</FieldLabel>
+              <Input id="team-dept-locked" :model-value="teamForm.departmentCode" disabled />
+            </Field>
+            <Field v-else :data-invalid="teamShowErrors && !teamEditingCode && !isNonEmpty(teamForm.departmentCode)">
+              <FieldLabel for="team-dept">所属部门 <span class="text-destructive">*</span></FieldLabel>
+              <Select v-model="teamForm.departmentCode" :disabled="!!teamEditingCode">
+                <SelectTrigger id="team-dept"><SelectValue placeholder="请选择部门" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
+                    {{ d.displayName ?? d.code }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field :data-invalid="teamShowErrors && !teamEditingCode && !isNonEmpty(teamForm.shiftCode)">
+              <FieldLabel for="team-shift">所属班次 <span class="text-destructive">*</span></FieldLabel>
+              <Select v-model="teamForm.shiftCode" :disabled="!!teamEditingCode">
+                <SelectTrigger id="team-shift"><SelectValue placeholder="请选择班次" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="s in shifts.items.value" :key="s.code" :value="s.code ?? ''">
+                    {{ s.displayName ?? s.code }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <FieldDescription>班次在「排班与日历」页维护。</FieldDescription>
+            </Field>
+          </FieldGroup>
+          <p v-if="teamEditingCode" class="text-xs text-muted-foreground">归属（部门 / 班次）创建后不可更改，改挂功能即将上线。</p>
+          <DialogFooter>
+            <Button type="button" variant="outline" @click="teamOpen = false">取消</Button>
+            <Button type="submit" :disabled="teams.createPending.value || teamActions.updatePending.value || teamEditLoading">
+              <Spinner v-if="teams.createPending.value || teamActions.updatePending.value" aria-hidden="true" />{{ teamEditingCode ? '保存修改' : '保存班组' }}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
 
     <TeamMembersDialog v-model:open="membersOpen" :team-code="membersTeam.code" :team-name="membersTeam.name" />
   </BusinessLayout>
