@@ -10,11 +10,13 @@ using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 using Nerv.IIP.Business.Mes.Web;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 
 var builder = WebApplication.CreateBuilder(args);
 var isTesting = builder.Environment.IsEnvironment("Testing");
+builder.Services.AddNervIipObservability(builder.Configuration, "business-mes");
 
 builder.Services
     .AddFastEndpoints()
@@ -54,6 +56,7 @@ builder.Services.AddScoped<AssetUnavailableIntegrationEventHandlerForReschedule>
 builder.Services.AddScoped<AssetRestoredIntegrationEventHandlerForReschedule>();
 
 var app = builder.Build();
+app.UseNervIipCorrelation();
 var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
 if (autoMigrate && !app.Environment.IsDevelopment())
 {

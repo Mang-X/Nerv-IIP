@@ -11,25 +11,20 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
-using Serilog;
-using Serilog.Formatting.Json;
 
-Log.Logger = new LoggerConfiguration()
-    .Enrich.WithClientIp()
-    .WriteTo.Console(new JsonFormatter())
-    .CreateLogger();
 
 var isTesting = false;
 try
 {
     var builder = WebApplication.CreateBuilder(args);
-    builder.Host.UseSerilog();
     isTesting = builder.Environment.IsEnvironment("Testing");
+    builder.Services.AddNervIipObservability(builder.Configuration, "business-industrial-telemetry");
 
     builder.Services.AddHealthChecks();
     builder.Services.AddMvc();
@@ -101,6 +96,7 @@ try
     builder.Services.AddConfigurationServiceEndpointProvider();
 
     var app = builder.Build();
+    app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
     if (autoMigrate && !app.Environment.IsDevelopment())
     {
@@ -142,11 +138,7 @@ catch (Exception ex)
         throw;
     }
 
-    Log.Fatal(ex, "Application terminated unexpectedly");
-}
-finally
-{
-    await Log.CloseAndFlushAsync();
+    await Console.Error.WriteLineAsync($"Application terminated unexpectedly: {ex}");
 }
 
 static string ToLowerCamelEndpointName(string endpointTypeName)

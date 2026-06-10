@@ -78,6 +78,23 @@ public sealed class FastEndpointsArchitectureTests
         "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
     };
 
+    public static TheoryData<string> BusinessWebProjects => new()
+    {
+        "backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web",
+        "backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web",
+        "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web",
+        "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web",
+        "backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web",
+        "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web",
+        "backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web",
+        "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web",
+        "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web",
+        "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web",
+        "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web",
+        "backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web",
+        "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
+    };
+
     public static TheoryData<string> LocalPostgreSqlAppHostResources => new()
     {
         "apphub",
@@ -137,6 +154,27 @@ public sealed class FastEndpointsArchitectureTests
 
         Assert.Contains("UseCap<ApplicationDbContext>", sourceText);
         Assert.Contains("AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>", programText);
+    }
+
+    [Theory]
+    [MemberData(nameof(BusinessWebProjects))]
+    public void Business_web_projects_use_shared_observability_registration(string projectDirectory)
+    {
+        var root = FindRepositoryRoot();
+        var fullProjectDirectory = Path.Combine(root, projectDirectory);
+        var programText = File.ReadAllText(Path.Combine(fullProjectDirectory, "Program.cs"));
+        var projectText = File.ReadAllText(Directory.GetFiles(fullProjectDirectory, "*.csproj").Single());
+
+        Assert.Contains("using Nerv.IIP.Observability;", programText);
+        Assert.Contains("AddNervIipObservability", programText);
+        Assert.Contains("UseNervIipCorrelation", programText);
+        Assert.DoesNotContain("using Serilog", programText);
+        Assert.DoesNotContain("UseSerilog", programText);
+        Assert.DoesNotContain("Log.Logger", programText);
+        Assert.Contains("Nerv.IIP.Observability.csproj", projectText);
+        Assert.DoesNotContain("PackageReference Include=\"Serilog.AspNetCore\"", projectText);
+        Assert.DoesNotContain("PackageReference Include=\"Serilog.Enrichers.ClientInfo\"", projectText);
+        Assert.DoesNotContain("PackageReference Include=\"Serilog.Sinks.OpenTelemetry\"", projectText);
     }
 
     [Fact]
