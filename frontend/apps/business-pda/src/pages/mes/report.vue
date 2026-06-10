@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleMesWorkOrderItem } from '@nerv-iip/api-client'
-import { productionReportFlow, type ReportCtx } from '@nerv-iip/business-core'
+import {
+  operationTaskStatusLabel,
+  productionReportFlow,
+  type ReportCtx,
+  workOrderSubtitle,
+  workOrderTitle,
+} from '@nerv-iip/business-core'
 import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -92,43 +98,8 @@ const scanActive = computed(() =>
   currentStep.value === 'selectWorkOrder' && result.value === null && selectedTask.value === null,
 )
 
-// --- 可读状态标签 ---
-const WORK_ORDER_STATUS_LABELS: Record<string, string> = {
-  Released: '已下达',
-  Planned: '已计划',
-  InProgress: '生产中',
-  Started: '生产中',
-  Completed: '已完成',
-  Closed: '已关闭',
-  OnHold: '已挂起',
-}
-function workOrderStatusLabel(status?: string) {
-  return WORK_ORDER_STATUS_LABELS[status ?? ''] ?? '未知状态'
-}
-
-const TASK_STATUS_LABELS: Record<string, string> = {
-  Ready: '可开工',
-  Running: '执行中',
-  Started: '执行中',
-  InProgress: '执行中',
-  Paused: '已暂停',
-  Held: '已暂停',
-  Completed: '已完成',
-  Blocked: '受阻',
-}
-function taskStatusLabel(status?: string) {
-  return TASK_STATUS_LABELS[status ?? ''] ?? '未知状态'
-}
-
-function workOrderTitle(wo: WorkOrder) {
-  return wo.workOrderId ?? '无工单'
-}
-function workOrderSubtitle(wo: WorkOrder) {
-  const parts = [workOrderStatusLabel(wo.status)]
-  if (wo.skuId) parts.push(`物料 ${wo.skuId}`)
-  if (wo.quantity !== undefined) parts.push(`计划 ${wo.quantity}`)
-  return parts.join(' · ')
-}
+// 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core。
+const taskStatusLabel = operationTaskStatusLabel
 
 function taskTitle(task: Task) {
   const seq = task.operationSequence === undefined ? '' : `工序 ${task.operationSequence}`

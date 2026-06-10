@@ -3,6 +3,11 @@ import type {
   BusinessConsoleMesMaterialIssueRequestRow,
   BusinessConsoleMesWorkOrderItem,
 } from '@nerv-iip/api-client'
+import {
+  materialIssueStatusLabel,
+  workOrderSubtitle,
+  workOrderTitle,
+} from '@nerv-iip/business-core'
 import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -36,34 +41,8 @@ const {
   total: workOrderTotal,
 } = useMesWorkOrders()
 
-// --- 可读中文状态标签（不暴露原始状态码）---
-const STATUS_LABELS: Record<string, string> = {
-  Requested: '待领料',
-  Pending: '待领料',
-  Issued: '已发料',
-  PartiallyReceived: '部分接收',
-  Received: '已接收',
-  Confirmed: '已接收',
-  Completed: '已完成',
-  Cancelled: '已取消',
-  Rejected: '已驳回',
-}
-function statusLabel(status?: string) {
-  return STATUS_LABELS[status ?? ''] ?? '未知状态'
-}
-
-const WORK_ORDER_STATUS_LABELS: Record<string, string> = {
-  Released: '已下达',
-  Planned: '已计划',
-  InProgress: '生产中',
-  Started: '生产中',
-  Completed: '已完成',
-  Closed: '已关闭',
-  OnHold: '已挂起',
-}
-function workOrderStatusLabel(status?: string) {
-  return WORK_ORDER_STATUS_LABELS[status ?? ''] ?? '未知状态'
-}
+// 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不暴露原始状态码）。
+const statusLabel = materialIssueStatusLabel
 
 // 领料申请没有自带业务单号；用工单 + 物料组合作可读标题，
 // 不把 requestId（GUID）当标签暴露——它仅作为列表 key 与接收动作的 path 参数。
@@ -75,16 +54,6 @@ function requestSubtitle(req: IssueRequest) {
   const parts = [statusLabel(req.status)]
   if (req.requestedQuantity !== undefined) parts.push(`申请 ${req.requestedQuantity}`)
   if (req.receivedQuantity !== undefined) parts.push(`已收 ${req.receivedQuantity}`)
-  return parts.join(' · ')
-}
-
-function workOrderTitle(wo: WorkOrder) {
-  return wo.workOrderId ?? '无工单'
-}
-function workOrderSubtitle(wo: WorkOrder) {
-  const parts = [workOrderStatusLabel(wo.status)]
-  if (wo.skuId) parts.push(`物料 ${wo.skuId}`)
-  if (wo.quantity !== undefined) parts.push(`计划 ${wo.quantity}`)
   return parts.join(' · ')
 }
 

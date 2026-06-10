@@ -3,7 +3,13 @@ import type {
   BusinessConsoleMesReceiptRequestRow,
   BusinessConsoleMesWorkOrderItem,
 } from '@nerv-iip/api-client'
-import { finishedGoodsReceiptFlow, type ReceiptCtx } from '@nerv-iip/business-core'
+import {
+  finishedGoodsReceiptFlow,
+  type ReceiptCtx,
+  receiptStatusLabel,
+  workOrderSubtitle,
+  workOrderTitle,
+} from '@nerv-iip/business-core'
 import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -36,35 +42,7 @@ const {
   total: workOrderTotal,
 } = useMesWorkOrders()
 
-// --- 可读中文状态标签（不外显原始状态码 / GUID）---
-const RECEIPT_STATUS_LABELS: Record<string, string> = {
-  Requested: '待入库',
-  Pending: '待入库',
-  Created: '待入库',
-  Submitted: '待入库',
-  PartiallyReceived: '部分入库',
-  Received: '已入库',
-  Completed: '已入库',
-  Cancelled: '已取消',
-  Rejected: '已驳回',
-}
-function receiptStatusLabel(status?: string) {
-  return RECEIPT_STATUS_LABELS[status ?? ''] ?? '未知状态'
-}
-
-const WORK_ORDER_STATUS_LABELS: Record<string, string> = {
-  Released: '已下达',
-  Planned: '已计划',
-  InProgress: '生产中',
-  Started: '生产中',
-  Completed: '已完成',
-  Closed: '已关闭',
-  OnHold: '已挂起',
-}
-function workOrderStatusLabel(status?: string) {
-  return WORK_ORDER_STATUS_LABELS[status ?? ''] ?? '未知状态'
-}
-
+// 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不外显原始状态码 / GUID）。
 // 完工入库申请用工单 + 物料组合作可读标题；不把 receiptRequestId（GUID）当标签暴露，
 // 它仅作为列表 key。requestNo 若有则作为业务单号附在副标题里。
 function receiptTitle(req: Receipt) {
@@ -75,16 +53,6 @@ function receiptSubtitle(req: Receipt) {
   const parts = [receiptStatusLabel(req.receiptStatus)]
   if (req.quantity !== undefined) parts.push(`数量 ${req.quantity}`)
   if (req.requestNo) parts.push(`单号 ${req.requestNo}`)
-  return parts.join(' · ')
-}
-
-function workOrderTitle(wo: WorkOrder) {
-  return wo.workOrderId ?? '无工单'
-}
-function workOrderSubtitle(wo: WorkOrder) {
-  const parts = [workOrderStatusLabel(wo.status)]
-  if (wo.skuId) parts.push(`物料 ${wo.skuId}`)
-  if (wo.quantity !== undefined) parts.push(`计划 ${wo.quantity}`)
   return parts.join(' · ')
 }
 

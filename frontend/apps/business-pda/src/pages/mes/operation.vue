@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
+import { operationTaskStatusLabel } from '@nerv-iip/business-core'
 import { useMesOperationTasks } from '@/composables/useBusinessMes'
 import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
@@ -29,20 +30,8 @@ const {
 
 const router = useRouter()
 
-// --- 可读中文状态标签（不暴露原始状态码）---
-const STATUS_LABELS: Record<string, string> = {
-  Ready: '可开工',
-  Running: '执行中',
-  Started: '执行中',
-  InProgress: '执行中',
-  Paused: '已暂停',
-  Held: '已暂停',
-  Completed: '已完成',
-  Blocked: '受阻',
-}
-function statusLabel(status?: string) {
-  return STATUS_LABELS[status ?? ''] ?? '未知状态'
-}
+// 可读中文状态标签来自 @nerv-iip/business-core（不暴露原始状态码）。
+const statusLabel = operationTaskStatusLabel
 
 type ActionKind = 'start' | 'pause' | 'resume' | 'complete'
 
