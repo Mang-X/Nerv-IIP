@@ -3930,6 +3930,9 @@ export type ListBusinessConsoleWmsPutawayTasksData = {
         organizationId: string;
         environmentId: string;
         locationCode?: string | null;
+        /**
+         * Reserved for #374 P1 assigned-operator filtering. Current WMS warehouse tasks do not persist assigned operators; sending a non-empty value returns an empty list.
+         */
         operatorUserId?: string | null;
         skip?: number;
         take?: number;
@@ -4121,6 +4124,9 @@ export type ListBusinessConsoleWmsPickingTasksData = {
         organizationId: string;
         environmentId: string;
         locationCode?: string | null;
+        /**
+         * Reserved for #374 P1 assigned-operator filtering. Current WMS warehouse tasks do not persist assigned operators; sending a non-empty value returns an empty list.
+         */
         operatorUserId?: string | null;
         skip?: number;
         take?: number;

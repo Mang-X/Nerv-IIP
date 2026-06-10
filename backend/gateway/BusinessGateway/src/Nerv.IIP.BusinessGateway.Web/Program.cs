@@ -30,6 +30,7 @@ builder.Services
             s.Title = "Nerv IIP Business Gateway";
             s.Version = "v1";
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new WmsWarehouseTaskOpenApiDocumentProcessor());
         };
     });
 builder.Services.Configure<JsonOptions>(o =>

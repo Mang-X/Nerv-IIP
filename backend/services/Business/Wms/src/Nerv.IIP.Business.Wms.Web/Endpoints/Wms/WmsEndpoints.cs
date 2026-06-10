@@ -117,7 +117,7 @@ public sealed class ListPutawayTasksEndpoint(ISender sender) : WmsEndpoint<ListW
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListPutawayTasksEndpoint>());
     public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, "Putaway", req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
+        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, WarehouseTaskType.Putaway, req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -167,7 +167,7 @@ public sealed class ListPickingTasksEndpoint(ISender sender) : WmsEndpoint<ListW
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListPickingTasksEndpoint>());
     public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, "Picking", req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
+        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, WarehouseTaskType.Picking, req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

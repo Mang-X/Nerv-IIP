@@ -111,7 +111,7 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
 public sealed record ListWarehouseTasksQuery(
     string OrganizationId,
     string EnvironmentId,
-    string TaskType,
+    WarehouseTaskType TaskType,
     int Skip = 0,
     int Take = 100,
     string? Status = null,
@@ -150,16 +150,11 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
             return new ListWarehouseTasksResponse([], 0);
         }
 
-        if (!WmsListQueryFilters.TryParseStatus<WarehouseTaskType>(request.TaskType, out var taskType))
-        {
-            return new ListWarehouseTasksResponse([], 0);
-        }
-
         var query = dbContext.WarehouseTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.TaskType == taskType);
+            .Where(x => x.TaskType == request.TaskType);
 
         if (WmsListQueryFilters.TryParseStatus<WarehouseTaskStatus>(request.Status, out var status))
         {

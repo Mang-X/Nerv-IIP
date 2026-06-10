@@ -418,6 +418,7 @@
           {
             "name": "operatorUserId",
             "in": "query",
+            "description": "Reserved for #374 P1 assigned-operator filtering. Current WMS warehouse tasks do not persist assigned operators; sending a non-empty value returns an empty list.",
             "schema": {
               "type": "string",
               "nullable": true
@@ -841,6 +842,7 @@
           {
             "name": "operatorUserId",
             "in": "query",
+            "description": "Reserved for #374 P1 assigned-operator filtering. Current WMS warehouse tasks do not persist assigned operators; sending a non-empty value returns an empty list.",
             "schema": {
               "type": "string",
               "nullable": true

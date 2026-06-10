@@ -24,6 +24,7 @@ using OutboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.Outb
 using CountExecution = Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate.CountExecution;
 using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTask;
 using WarehouseTaskId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId;
+using WarehouseTaskType = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskType;
 using WcsTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate.WcsTask;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
@@ -291,7 +292,7 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
-            new ListWarehouseTasksQuery("org-001", "env-dev", "Putaway", 1, 1, "Open", "BIN-A", null, "page"),
+            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, 1, 1, "Open", "BIN-A", null, "page"),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
@@ -300,6 +301,24 @@ public sealed class WmsEndpointContractTests
         Assert.Equal("Putaway", item.TaskType);
         Assert.Equal("Open", item.Status);
         Assert.Equal("BIN-A", item.ToLocationCode);
+    }
+
+    [Fact]
+    public async Task Warehouse_task_query_returns_empty_when_operator_filter_is_supplied_until_assignment_field_exists()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WarehouseTasks.Add(
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-OPERATOR-001", "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 3m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
+            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, 0, 100, null, null, "user-001", null),
+            CancellationToken.None);
+
+        Assert.Equal(0, result.Total);
+        Assert.Empty(result.Items);
     }
 
     [Fact]
@@ -356,7 +375,7 @@ public sealed class WmsEndpointContractTests
             new ListOutboundOrdersQuery("org-001", "env-dev", 0, 100, "0", null),
             CancellationToken.None);
         var warehouseResult = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
-            new ListWarehouseTasksQuery("org-001", "env-dev", "Putaway", 0, 100, "2", null, null, null),
+            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, 0, 100, "2", null, null, null),
             CancellationToken.None);
         var countResult = await new ListCountExecutionsQueryHandler(dbContext).Handle(
             new ListCountExecutionsQuery("org-001", "env-dev", 0, 100, "0", null, null),
