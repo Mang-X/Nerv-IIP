@@ -6,6 +6,7 @@ import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 import App from './App.vue'
 import './assets/main.css'
+import { resolveGatewayBaseUrl } from './api/gateway-base-url'
 import { router } from './router'
 import { useAuthStore } from './stores/auth'
 
@@ -29,7 +30,7 @@ configureAuthenticatedApiClient({
   configureApiClient: (options) =>
     configureApiClient({
       ...options,
-      baseUrl: import.meta.env.VITE_NERV_IIP_API_BASE_URL || undefined,
+      baseUrl: resolveGatewayBaseUrl(),
     }),
   loginPath: '/login',
   router,

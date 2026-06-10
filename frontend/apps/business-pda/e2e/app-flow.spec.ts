@@ -66,3 +66,23 @@ test('clicking a not-ready app-wall entry does not navigate away', async ({ page
   await page.getByRole('button', { name: '收货入库' }).click({ force: true })
   await expect(page).toHaveURL('/')
 })
+
+test('home scan: type + Enter echoes in-page and keeps the operator on the workbench', async ({
+  page,
+}) => {
+  // R3 fix: scanning must NOT navigate to the not-yet-existent /scan route; it echoes
+  // the value in-page (`[data-testid="last-scan"]` → `已扫码：{value}`) so the operator
+  // stays on the workbench instead of being dropped on a dead route.
+  await seedStoredSession(page)
+  await page.goto('/')
+
+  const scanInput = page.locator('input[placeholder^="扫描"]')
+  await scanInput.focus()
+  await scanInput.type('SKU-12345')
+  await scanInput.press('Enter')
+
+  // Still on the workbench — no fake jump to /scan or any dead route.
+  await expect(page).toHaveURL('/')
+  // The in-page echo proves the scan was handled honestly.
+  await expect(page.getByTestId('last-scan')).toContainText('已扫码：SKU-12345')
+})
