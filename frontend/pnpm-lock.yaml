@@ -72,6 +72,9 @@ importers:
       '@nerv-iip/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@nerv-iip/scheduling':
+        specifier: workspace:*
+        version: link:../../packages/scheduling
       '@nerv-iip/ui':
         specifier: workspace:*
         version: link:../../packages/ui

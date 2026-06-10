@@ -2,6 +2,7 @@ import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
 import {
   ActivityIcon,
   BoxesIcon,
+  CalendarClockIcon,
   CalendarRangeIcon,
   ClipboardCheckIcon,
   FactoryIcon,
@@ -31,6 +32,7 @@ export const BUSINESS_DOMAINS: NavDomain[] = [
   { id: 'master-data', title: '基础数据', icon: BoxesIcon, to: { path: '/master-data/skus' } },
   { id: 'engineering', title: '产品工程', icon: GitBranchIcon, to: { path: '/engineering' } },
   { id: 'planning', title: '需求与计划', icon: CalendarRangeIcon, to: { path: '/planning' } },
+  { id: 'scheduling', title: '排产计划', icon: CalendarClockIcon, to: { path: '/scheduling' } },
   { id: 'mes', title: '制造执行', icon: FactoryIcon, to: { path: '/mes' } },
   { id: 'quality', title: '质量管理', icon: ClipboardCheckIcon, to: { path: '/quality/inspections' } },
   { id: 'inventory', title: '库存管理', icon: PackageSearchIcon, to: { path: '/inventory/availability' } },
@@ -62,6 +64,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
     },
   ],
   'planning': [{ items: [{ title: '需求与物料计划', to: { path: '/planning' } }] }],
+  'scheduling': [{ items: [{ title: '排产工作台', to: { path: '/scheduling' } }] }],
   'erp': [{ items: [{ title: '采购与供应', to: { path: '/erp' } }] }],
   'mes': [
     {
@@ -156,6 +159,7 @@ export function resolveDomainId(path: string): string {
   if (isUnder(path, '/master-data')) return 'master-data'
   if (isUnder(path, '/engineering')) return 'engineering'
   if (isUnder(path, '/planning')) return 'planning'
+  if (isUnder(path, '/scheduling')) return 'scheduling'
   if (isUnder(path, '/erp')) return 'erp'
   if (isUnder(path, '/mes')) return 'mes'
   if (isUnder(path, '/quality')) return 'quality'

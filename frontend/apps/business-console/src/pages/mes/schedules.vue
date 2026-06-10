@@ -7,6 +7,9 @@ import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesSchedules } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Button,
   DataTable,
   DataTablePagination,
@@ -119,6 +122,15 @@ function isNonEmpty(value: string) {
         </Button>
       </template>
     </PageHeader>
+
+    <Alert>
+      <AlertTitle>排产工作台已上线</AlertTitle>
+      <AlertDescription>
+        甘特与资源排产的可视化排产已迁移到
+        <RouterLink to="/scheduling" class="font-medium underline underline-offset-4">排产工作台</RouterLink>。
+        本页保留规则排程的触发入口。
+      </AlertDescription>
+    </Alert>
 
     <SectionCards :columns="3">
       <SectionCard

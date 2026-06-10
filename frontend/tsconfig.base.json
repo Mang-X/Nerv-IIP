@@ -11,8 +11,10 @@
       "@nerv-iip/app-shell": ["packages/app-shell/src/index.ts"],
       "@nerv-iip/auth": ["packages/auth/src/index.ts"],
       "@nerv-iip/business-core": ["packages/business-core/src/index.ts"],
+      "@nerv-iip/scheduling": ["packages/scheduling/src/index.ts"],
       "@nerv-iip/ui": ["packages/ui/src/index.ts"],
-      "@nerv-iip/ui-mobile": ["packages/ui-mobile/src/index.ts"]
+      "@nerv-iip/ui-mobile": ["packages/ui-mobile/src/index.ts"],
+      "@dhx/trial-gantt": ["packages/scheduling/src/engine/dhtmlx/stub.ts"]
     },
     "strict": true,
     "jsx": "preserve",

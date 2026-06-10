@@ -894,6 +894,7 @@ export {
 } from './generated/business-console/sdk.gen'
 
 import type {
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse,
   NervIipContractsSchedulingSchedulePlanContract,
   NervIipContractsSchedulingSchedulePlanStatusContract,
   NervIipContractsSchedulingScheduleAssignmentContract,
@@ -920,3 +921,5 @@ export type UnscheduledOperationContract = NervIipContractsSchedulingUnscheduled
 export type ScheduleChangeContract = NervIipContractsSchedulingScheduleChangeContract
 export type ScheduleChangeTypeContract = NervIipContractsSchedulingScheduleChangeTypeContract
 export type GanttScheduleItemContract = NervIipContractsSchedulingGanttScheduleItemContract
+export type SchedulePlanSummary =
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse
