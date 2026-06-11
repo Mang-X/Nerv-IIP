@@ -44,10 +44,21 @@ interface DhxTask {
 }
 
 const GRID_COLUMNS = (view: 'order' | 'resource') => [
-  { name: 'text', label: view === 'resource' ? '资源 / 工序' : '工单 / 工序', tree: true, width: 200, resize: true },
-  { name: 'start_date', label: '开始', align: 'center', width: 90, resize: true },
-  { name: 'duration', label: '工时', align: 'center', width: 56 },
+  { name: 'text', label: view === 'resource' ? '资源 / 工序' : '工单 / 工序', tree: true, width: 198, resize: true },
+  { name: 'start_date', label: '开始', align: 'center', width: 104, resize: true, template: (t: DhxTask) => gridDate(t) },
+  { name: 'duration', label: '工时', align: 'center', width: 60, template: (t: DhxTask) => durationLabel(t) },
 ]
+
+function gridDate(t: DhxTask): string {
+  if (!t.start_date || (t as { type?: string }).type === 'project') return ''
+  const d = t.start_date
+  return Number.isNaN(d.getTime?.()) ? '' : d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+}
+function durationLabel(t: DhxTask): string {
+  if ((t as { type?: string }).type === 'project' || !t.start_date || !t.end_date) return ''
+  const h = Math.round((t.end_date.getTime() - t.start_date.getTime()) / 3_600_000)
+  return h >= 1 ? `${h}h` : '<1h'
+}
 
 const SCALE_CONFIG: Record<Exclude<TimeScale, 'auto'>, Array<Record<string, unknown>>> = {
   hour: [
@@ -111,6 +122,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.model = model
     const g = this.gantt
     if (!g) return
+    // model 已知后再应用自适应刻度(configure 早于 setData,那时 horizon 未知)。
+    g.config.scales = SCALE_CONFIG[this.resolveScale()]
     g.clearAll()
     g.parse(this.toGanttData(model))
     this.refreshMarker()
@@ -289,8 +302,10 @@ export class DhtmlxEngine implements SchedulingEngine {
       ].filter(Boolean)
       return lines.join('<br/>')
     }
-    inst.templates.task_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) =>
-      task.nerv?.type === 'order' ? '' : task.text ?? ''
+    // 条内不渲染文字(短条会溢出);工序名放到条形右侧,始终可读。
+    inst.templates.task_text = () => ''
+    inst.templates.rightside_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) =>
+      task.nerv?.type === 'operation' ? task.text ?? '' : ''
   }
 
   private wireEvents(inst: DhxGantt): void {

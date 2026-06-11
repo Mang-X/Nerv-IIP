@@ -58,6 +58,14 @@
   color: #fff;
   font-weight: 500;
 }
+/* 条形右侧的工序名(短条也可读) */
+.nerv-gantt-dhx .gantt_side_content {
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0 6px;
+  opacity: 0.92;
+}
 .nerv-gantt-dhx .gantt_task_progress {
   background-color: color-mix(in oklch, var(--brand), black 30%) !important;
   border-radius: 7px 0 0 7px;
