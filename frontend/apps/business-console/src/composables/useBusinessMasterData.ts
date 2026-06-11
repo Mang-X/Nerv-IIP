@@ -9,6 +9,7 @@ import {
   createBusinessConsoleReferenceDataCodeMutationOptions,
   createBusinessConsoleSkuMutationOptions,
   createBusinessConsoleUnitOfMeasureMutationOptions,
+  createBusinessConsoleUomConversionMutationOptions,
   createBusinessConsoleTeamMutationOptions,
   createBusinessConsoleWorkCalendarMutationOptions,
   createBusinessConsoleWorkCenterMutationOptions,
@@ -17,6 +18,7 @@ import {
   enableBusinessConsoleMasterDataResourceMutationOptions,
   getBusinessConsoleMasterDataResourceDetail,
   listBusinessConsoleMasterDataResourcesQueryOptions,
+  listBusinessConsolePersonnelSkillMatrixQueryOptions,
   listBusinessConsoleSkusQueryOptions,
   listBusinessConsoleTeamMembersQueryOptions,
   listBusinessConsoleWorkersQueryOptions,
@@ -28,8 +30,11 @@ import {
   type BusinessConsoleCreateReferenceDataCodeRequest,
   type BusinessConsoleCreateSkuRequest,
   type BusinessConsoleCreateUnitOfMeasureRequest,
+  type BusinessConsoleCreateUomConversionRequest,
   type BusinessConsoleCreateWorkshopRequest,
   type BusinessConsoleMasterDataResourceDetail,
+  type BusinessConsolePersonnelSkillMatrixEnvelope,
+  type BusinessConsolePersonnelSkillMatrixRow,
   type BusinessConsoleResourceItem,
   type BusinessConsoleResourceListEnvelope,
   type BusinessConsoleSetMasterDataResourceEnabledRequest,
@@ -61,6 +66,14 @@ export interface MasterDataListFilters extends BusinessContextFilters {
 export interface MasterDataResourceFilters extends MasterDataListFilters {
   codeSet?: string
   resourceType: string
+  // #375 通用列表过滤——按需透传到 query（服务端过滤，真分页）。
+  parentCode?: string
+  siteCode?: string
+  lineCode?: string
+  workCenterCode?: string
+  category?: string
+  partnerType?: string
+  keyword?: string
 }
 
 export interface BusinessMasterDataGroupDefinition {
@@ -441,6 +454,15 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
         environmentId: filters.environmentId,
         resourceType: filters.resourceType,
         ...optionalQuery('includeDisabled', filters.includeDisabled),
+        ...optionalQuery('codeSet', filters.codeSet),
+        // #375 服务端过滤——页面按需写入 filters.xxx，未设则不带（保持旧行为）。
+        ...optionalQuery('parentCode', filters.parentCode),
+        ...optionalQuery('siteCode', filters.siteCode),
+        ...optionalQuery('lineCode', filters.lineCode),
+        ...optionalQuery('workCenterCode', filters.workCenterCode),
+        ...optionalQuery('category', filters.category),
+        ...optionalQuery('partnerType', filters.partnerType),
+        ...optionalQuery('keyword', filters.keyword),
         skip: filters.skip,
         take: filters.take,
       },
@@ -677,5 +699,106 @@ export function usePersonnelSkillAssignment() {
       }),
     assignPending: assignMutation.isLoading,
     assignError: assignMutation.error,
+  }
+}
+
+export interface PersonnelSkillMatrixFilters extends BusinessContextFilters {
+  userId?: string
+  skillCode?: string
+  includeDisabled?: boolean
+}
+
+function skillMatrixData(envelope: BusinessConsolePersonnelSkillMatrixEnvelope | undefined) {
+  if (!envelope?.success) {
+    return { skillCodes: [] as string[], rows: [] as BusinessConsolePersonnelSkillMatrixRow[] }
+  }
+
+  return {
+    skillCodes: envelope.data?.skillCodes ?? [],
+    rows: envelope.data?.rows ?? [],
+  }
+}
+
+/**
+ * 人员技能矩阵（读，#375）。读自 `/master-data/personnel-skills/matrix`，返回列头 skillCodes
+ * 与每人一行 rows（每行 userId + skills[skillCode/level/effectiveFrom/effectiveTo]）。
+ * 支持服务端 userId / skillCode 过滤。登记技能仍走 `usePersonnelSkillAssignment()`。
+ */
+export function usePersonnelSkillMatrix() {
+  const filters = bindBusinessContext(reactive<PersonnelSkillMatrixFilters>({
+    organizationId: '',
+    environmentId: '',
+    userId: undefined,
+    skillCode: undefined,
+    includeDisabled: undefined,
+  }))
+
+  const matrixQuery = useQuery(() =>
+    withBusinessContextEnabled(listBusinessConsolePersonnelSkillMatrixQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('userId', filters.userId),
+        ...optionalQuery('skillCode', filters.skillCode),
+        ...optionalQuery('includeDisabled', filters.includeDisabled),
+      },
+    }), filters),
+  )
+
+  return {
+    filters,
+    refresh: matrixQuery.refetch,
+    skillCodes: computed<string[]>(() => skillMatrixData(matrixQuery.data.value).skillCodes),
+    rows: computed<BusinessConsolePersonnelSkillMatrixRow[]>(() => skillMatrixData(matrixQuery.data.value).rows),
+    matrixError: matrixQuery.error,
+    matrixPending: matrixQuery.isLoading,
+  }
+}
+
+/**
+ * 计量单位换算（UoM conversion，#375）的「列表 + 新建」。换算无专属列端点，列表复用通用
+ * resources 端点（resourceType=`uom-conversion`，详情 code 为 `from→to` 复合键，含
+ * fromUomCode/toUomCode/factor/offset/effectiveFrom 等 typed 字段）；新建走 uom-conversions
+ * 专属端点（fromUomCode/toUomCode/roundingMode 必填，factor/offset/precision/effectiveFrom 可选）。
+ * 详情 / 停用经 `useMasterDataResourceActions('uom-conversion')`。
+ */
+export function useUomConversions() {
+  const filters = defaultResourceFilters('uom-conversion')
+  const queryCache = useQueryCache()
+
+  const conversionsQuery = useQuery(() =>
+    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        resourceType: filters.resourceType,
+        ...optionalQuery('includeDisabled', filters.includeDisabled),
+        ...optionalQuery('keyword', filters.keyword),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }), filters),
+  )
+
+  const createConversionMutation = useMutation({
+    ...createBusinessConsoleUomConversionMutationOptions(),
+    onSuccess() {
+      void queryCache
+        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleMasterDataResources') })
+        .catch(ignoreBackgroundError)
+    },
+  })
+
+  return {
+    createUomConversion: (body: BusinessConsoleCreateUomConversionRequest) =>
+      createConversionMutation.mutateAsync({ body }),
+    createUomConversionError: createConversionMutation.error,
+    createUomConversionPending: createConversionMutation.isLoading,
+    filters,
+    refreshConversions: conversionsQuery.refetch,
+    conversions: computed<BusinessConsoleResourceItem[]>(() => resourceItems(conversionsQuery.data.value)),
+    conversionsError: conversionsQuery.error,
+    conversionsPending: conversionsQuery.isLoading,
+    conversionsTotal: computed(() => resourceTotal(conversionsQuery.data.value)),
   }
 }
