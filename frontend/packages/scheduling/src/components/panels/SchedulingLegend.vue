@@ -65,8 +65,21 @@ withDefaults(defineProps<{ categories?: { key: string; label: string }[]; view?:
         <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true" class="text-foreground"><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2" /><rect x="5.5" y="10" width="13" height="9.5" rx="2.2" fill="currentColor" /></svg>
         锁定
       </span>
+      <!-- 资源时间块:斜纹块,各色一类 -->
       <span class="inline-flex items-center gap-1.5">
-        <span class="h-2.5 w-6 rounded-[3px] bg-muted"></span>非工作 / 夜班
+        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: oklch(0.55 0.02 260)"></span>设备维护
+      </span>
+      <span class="inline-flex items-center gap-1.5">
+        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--destructive)"></span>计划停机
+      </span>
+      <span class="inline-flex items-center gap-1.5">
+        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: oklch(0.58 0.13 250)"></span>换线窗口
+      </span>
+      <span class="inline-flex items-center gap-1.5">
+        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: oklch(0.7 0.15 60)"></span>换型
+      </span>
+      <span class="inline-flex items-center gap-1.5">
+        <span class="h-2.5 w-6 rounded-[3px] bg-foreground/[0.05]"></span>非工作 / 夜班
       </span>
       <span class="inline-flex items-center gap-1.5">
         <span class="h-3.5 w-0.5 rounded-full bg-brand"></span>现在
@@ -90,3 +103,17 @@ withDefaults(defineProps<{ categories?: { key: string; label: string }[]; view?:
     </template>
   </div>
 </template>
+
+<style scoped>
+.nerv-leg-hatch {
+  background-color: color-mix(in srgb, var(--h) 12%, transparent);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0,
+    transparent 2px,
+    color-mix(in srgb, var(--h) 50%, transparent) 2px,
+    color-mix(in srgb, var(--h) 50%, transparent) 3px
+  );
+  border: 1px solid color-mix(in srgb, var(--h) 45%, transparent);
+}
+</style>

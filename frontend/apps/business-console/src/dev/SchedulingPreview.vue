@@ -106,6 +106,46 @@ const model = computed(() => {
   m.tasks.push(milestone('ms-weld', 'WO-2026-001', '冲焊完成', '2026-06-10T19:00:00.000Z', 'weld'))
   m.tasks.push(milestone('ms-final', 'WO-2026-003', '总装下线', '2026-06-11T04:00:00.000Z', 'mach'))
 
+  // 资源时间块(非工单):维护 / 停机 / 换线 / 换型 —— 落在对应资源泳道,斜纹块、不可拖拽。
+  const block = (
+    id: string,
+    kind: 'maintenance' | 'downtime' | 'lineChange' | 'changeover',
+    wc: string,
+    startUtc: string,
+    endUtc: string,
+  ) => {
+    const x = WC_DIMS[wc]
+    return {
+      id,
+      orderId: '',
+      operationId: '',
+      operationSequence: 0,
+      type: 'operation' as const,
+      text: '',
+      blockKind: kind,
+      startUtc,
+      endUtc,
+      resourceId: wc,
+      workCenterId: wc,
+      dimensions: {
+        workCenter: { id: wc, label: WC_LABEL[wc] ?? wc },
+        ...(x
+          ? {
+              device: { id: x.device[0], label: x.device[1] },
+              team: { id: x.team[0], label: x.team[1] },
+              line: { id: x.line[0], label: x.line[1] },
+            }
+          : {}),
+      },
+      locked: true,
+      hasConflict: false,
+    }
+  }
+  m.tasks.push(block('blk-maint', 'maintenance', '焊接-01', '2026-06-11T03:00:00.000Z', '2026-06-11T04:30:00.000Z'))
+  m.tasks.push(block('blk-down', 'downtime', '加工中心-03', '2026-06-11T08:00:00.000Z', '2026-06-11T10:00:00.000Z'))
+  m.tasks.push(block('blk-line', 'lineChange', '激光切割-01', '2026-06-11T06:00:00.000Z', '2026-06-11T07:00:00.000Z'))
+  m.tasks.push(block('blk-co', 'changeover', '折弯-02', '2026-06-10T22:00:00.000Z', '2026-06-10T22:40:00.000Z'))
+
   // 资源 KPI(排产板左侧泳道头)。
   for (const r of m.resources) {
     const k = RES_KPI[r.id]

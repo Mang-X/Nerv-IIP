@@ -82,6 +82,8 @@ export interface ScheduleTask {
   load?: number
   /** 插单(紧急加入,排产板高亮 ⚡)。 */
   isRush?: boolean
+  /** 资源时间块(非工单):设备维护 / 计划停机 / 换线窗口 / 换型。渲染为斜纹块,不可拖拽。 */
+  blockKind?: 'maintenance' | 'downtime' | 'lineChange' | 'changeover'
   locked: boolean
   hasConflict: boolean
   conflictReason?: ConflictReason | null

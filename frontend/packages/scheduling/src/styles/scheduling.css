@@ -162,10 +162,10 @@
 
 /* 时间线底纹:周末稍重、夜班/非工作更淡。用 foreground 中性灰(srgb,亮暗都清晰可见,与图例一致) */
 .nerv-gantt-dhx .gantt_task_cell.nerv-weekend {
-  background-color: color-mix(in srgb, var(--foreground) 11%, transparent) !important;
+  background-color: color-mix(in srgb, var(--foreground) 5%, transparent) !important;
 }
 .nerv-gantt-dhx .gantt_task_cell.nerv-offwork {
-  background-color: color-mix(in srgb, var(--foreground) 6%, transparent) !important;
+  background-color: color-mix(in srgb, var(--foreground) 3%, transparent) !important;
 }
 .nerv-gantt-dhx .gantt_task_content {
   color: var(--foreground);
@@ -198,10 +198,24 @@
   box-shadow: 0 0 0 2px var(--brand), 0 4px 14px color-mix(in oklch, var(--brand), transparent 40%) !important;
   z-index: 2;
 }
-/* 冲突:保留分类色,危险色描边(收紧:仅 1px 环,不做大红辉光——多卡相邻时辉光叠加会让整片发红) */
+/* 冲突(工单甘特):危险色描边(甘特条细,与选中环不冲突)。 */
 .nerv-gantt-dhx .gantt_task_line.nerv-conflict {
   border-color: var(--destructive) !important;
   box-shadow: inset 0 0 0 1px var(--destructive) !important;
+}
+/* 冲突(资源排产板):改用右上角标,去掉边框/环,避免与"选中环"冲突。 */
+.nerv-gantt-dhx .gantt_task_line.nerv-conflict:has(.nerv-card) {
+  border-color: color-mix(in oklch, var(--bar), transparent 55%) !important;
+  box-shadow: none !important;
+}
+.nerv-gantt-dhx .nerv-card-alert {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  display: inline-flex;
+  color: var(--destructive);
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.18));
+  z-index: 1;
 }
 
 /* 里程碑:实色菱形(在淡彩条中保持醒目) */
@@ -290,7 +304,49 @@
 .nerv-gantt-dhx .gantt_task_line.nerv-drag-source {
   opacity: 0.35;
 }
+
+/* 资源时间块(维护/停机/换线/换型):斜纹底 + 虚线框 + 居中标签;不可拖拽(无 .nerv-card) */
+.nerv-gantt-dhx .gantt_task_line.nerv-block {
+  --blk: var(--muted-foreground);
+  background-color: color-mix(in srgb, var(--blk) 10%, transparent) !important;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0,
+    transparent 5px,
+    color-mix(in srgb, var(--blk) 22%, transparent) 5px,
+    color-mix(in srgb, var(--blk) 22%, transparent) 7px
+  ) !important;
+  border: 1px dashed color-mix(in srgb, var(--blk) 55%, transparent) !important;
+  border-radius: 6px !important;
+}
+.nerv-gantt-dhx .gantt_task_line.nerv-block-maintenance { --blk: oklch(0.55 0.02 260); }
+.nerv-gantt-dhx .gantt_task_line.nerv-block-downtime { --blk: var(--destructive); }
+.nerv-gantt-dhx .gantt_task_line.nerv-block-lineChange { --blk: oklch(0.58 0.13 250); }
+.nerv-gantt-dhx .gantt_task_line.nerv-block-changeover { --blk: oklch(0.7 0.15 60); }
+.nerv-gantt-dhx .nerv-blk {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  height: 100%;
+  padding: 2px;
+  text-align: center;
+  overflow: hidden;
+}
+.nerv-gantt-dhx .nerv-blk-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--blk) 70%, var(--foreground));
+  white-space: nowrap;
+}
+.nerv-gantt-dhx .nerv-blk-span {
+  font-size: 0.6rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
 .nerv-gantt-dhx .nerv-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 3px;

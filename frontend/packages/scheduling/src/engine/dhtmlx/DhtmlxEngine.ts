@@ -150,6 +150,22 @@ const fmtMd = (iso: string) => {
 const RUSH_SVG =
   '<svg class="nerv-rush-ic" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" fill="currentColor"/></svg>'
 
+const BLOCK_LABEL: Record<NonNullable<ScheduleTask['blockKind']>, string> = {
+  maintenance: '设备维护',
+  downtime: '计划停机',
+  lineChange: '换线窗口',
+  changeover: '换型',
+}
+/** 资源时间块(维护/停机/换线/换型):斜纹块 + 标签,不渲染 .nerv-card(故不可拖拽)。 */
+function blockHtml(t: ScheduleTask): string {
+  const fmtHm = (iso: string) => {
+    const d = new Date(iso)
+    return Number.isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+  const span = t.startUtc && t.endUtc ? `${fmtHm(t.startUtc)}-${fmtHm(t.endUtc)}` : ''
+  return `<div class="nerv-blk"><span class="nerv-blk-label">${BLOCK_LABEL[t.blockKind!]}</span>${span ? `<span class="nerv-blk-span">${span}</span>` : ''}</div>`
+}
+
 /** 资源排产板工单卡片(条内 HTML)。布局对齐参考图:WO+优先级+插单+锁 / 产品·工序 / 数量·交期 / 换型·占用 / 齐套。 */
 function cardHtml(t: ScheduleTask): string {
   const prio = t.priority
@@ -163,7 +179,11 @@ function cardHtml(t: ScheduleTask): string {
   const co = t.changeoverMin ? `换型 ${t.changeoverMin}m` : ''
   const load = t.load != null ? `占用 ${Math.round(t.load * 100)}%` : ''
   const meta3 = [co, load].filter(Boolean).join('　')
-  return `<div class="nerv-card">
+  // 冲突用右上角标(不用边框,避免与选中环视觉冲突)。
+  const alert = t.hasConflict
+    ? '<span class="nerv-card-alert" title="冲突"><svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M12 3L2 20h20L12 3z" fill="currentColor"/><rect x="11" y="9.5" width="2" height="5" rx="1" fill="var(--card)"/><rect x="11" y="16" width="2" height="2" rx="1" fill="var(--card)"/></svg></span>'
+    : ''
+  return `<div class="nerv-card">${alert}
     <div class="nerv-card-r1"><span class="nerv-card-wo">${t.orderId}</span><span class="nerv-card-meta">${prio}${rush}${lock}</span></div>
     <div class="nerv-card-r2">${t.product ?? ''}<span class="nerv-card-op"> · ${t.operationId}</span></div>
     <div class="nerv-card-r3">${t.quantity != null ? `数量 ${t.quantity}` : ''}${due ? `　交期 ${due}` : ''}</div>
@@ -540,8 +560,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     inst.templates.task_class = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) => {
       const t = task.nerv
       const cls: string[] = []
+      if (t?.blockKind) cls.push('nerv-block', `nerv-block-${t.blockKind}`)
       if (t?.type === 'order') cls.push('nerv-order')
-      if (t?.colorKey) cls.push(`nerv-cat-${t.colorKey}`)
+      if (t?.colorKey && !t?.blockKind) cls.push(`nerv-cat-${t.colorKey}`)
       if (t?.hasConflict) cls.push('nerv-conflict')
       if (t?.locked) cls.push('nerv-locked')
       if (t?.id === this.selectedTaskId) cls.push('nerv-selected')
@@ -581,8 +602,11 @@ export class DhtmlxEngine implements SchedulingEngine {
     }
     const isResource = options.view === 'resource'
     // 资源排产板:条内渲染工单卡片;工单甘特:条内不渲染,工序名放右侧。
-    inst.templates.task_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) =>
-      isResource && task.nerv?.type === 'operation' ? cardHtml(task.nerv) : ''
+    inst.templates.task_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) => {
+      const t = task.nerv
+      if (!isResource || t?.type !== 'operation') return ''
+      return t.blockKind ? blockHtml(t) : cardHtml(t)
+    }
     inst.templates.rightside_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) => {
       if (isResource) return ''
       const t = task.nerv
@@ -828,6 +852,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       // 一资源(所选维度)一泳道:分组行用 split task,同组工序铺在它那一行。里程碑不入资源板。
       const dim = this.options.groupBy || 'workCenter'
       const ops = model.tasks.filter((t) => t.type === 'operation' && !t.isMilestone)
+      // 资源时间块也按所选维度落到对应泳道(已含在 ops 中,blockKind 标记)。
       const resById = new Map(model.resources.map((r) => [r.id, r]))
       const groups = new Map<string, string>()
       const laneOf = (t: ScheduleTask) => t.dimensions?.[dim]?.id ?? t.resourceId ?? '__none__'
@@ -860,6 +885,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     }
 
     for (const t of model.tasks) {
+      if (t.blockKind) continue // 资源时间块只属于资源排产板,不进工单甘特
       const parent = t.type === 'operation' ? t.parentId ?? 0 : 0
       data.push(this.toGanttTask(t, parent, toDate))
     }
