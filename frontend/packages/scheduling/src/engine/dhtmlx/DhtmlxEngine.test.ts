@@ -111,7 +111,7 @@ describe('DhtmlxEngine (fake factory)', () => {
     expect(engine.getState().scale).toBe('week')
   })
 
-  it('normalizes onAfterTaskDrag into a taskDragEnd payload', () => {
+  it('normalizes onAfterTaskDrag into a taskDragEnd payload (deferred)', async () => {
     const fake = makeFakeGantt()
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
     let payload: { taskId: string; startUtc: string; kind: string } | undefined
@@ -125,6 +125,8 @@ describe('DhtmlxEngine (fake factory)', () => {
     moved.start_date = new Date('2026-06-10T09:00:00.000Z')
     moved.end_date = new Date('2026-06-10T11:00:00.000Z')
     fake.fire('onAfterTaskDrag', 'a1', 'move')
+    // emit 延后到 DHTMLX 处理完拖拽之后,等一拍。
+    await new Promise((r) => setTimeout(r, 1))
     expect(payload?.taskId).toBe('a1')
     expect(payload?.startUtc).toBe('2026-06-10T09:00:00.000Z')
     expect(payload?.kind).toBe('move')

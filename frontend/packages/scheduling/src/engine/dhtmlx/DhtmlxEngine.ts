@@ -317,8 +317,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.drag_resize = !options.readOnly
     c.drag_links = !options.readOnly
     c.drag_progress = false
-    c.order_branch = !options.readOnly // 网格内拖拽换分支(资源视图=改派)
-    c.order_branch_free = !options.readOnly
+    // 网格内拖拽换分支暂时关闭(onAfterTaskMove 易误触、破坏拖拽);改派后续用时间线跨行拖拽实现。
+    c.order_branch = false
+    c.order_branch_free = false
     c.open_split_tasks = false // split 分组行:同组工序铺在一行,不展开成多行
     c.row_height = options.view === 'resource' ? 44 : 48
     c.bar_height = options.view === 'resource' ? 26 : 22
@@ -409,16 +410,23 @@ export class DhtmlxEngine implements SchedulingEngine {
     const task = inst.getTask(taskId)
     const src = this.model?.tasks.find((t) => t.id === taskId)
     const parent = task?.parent != null ? String(task.parent) : undefined
-    const reassignedResource = parent?.startsWith('res:') ? parent.slice(4) : task?.$resource
+    const reassignedResource = parent?.startsWith('lane:') ? parent.slice(5) : task?.$resource
     const kind = mode === 'resize' ? 'resize' : reassignedResource && reassignedResource !== src?.resourceId ? 'reassign' : 'move'
-    this.emit('taskDragEnd', {
+    const start = task?.start_date?.toISOString() ?? src?.startUtc ?? ''
+    const end = task?.end_date?.toISOString() ?? src?.endUtc ?? ''
+    // 防御:零/负时长时不上报(避免把条收成一条线)。
+    if (start && end && Date.parse(end) <= Date.parse(start)) return
+    const payload = {
       taskId,
       operationId: src?.operationId ?? taskId,
       resourceId: reassignedResource ?? src?.resourceId,
-      startUtc: task?.start_date?.toISOString() ?? src?.startUtc ?? '',
-      endUtc: task?.end_date?.toISOString() ?? src?.endUtc ?? '',
-      kind,
-    })
+      startUtc: start,
+      endUtc: end,
+      kind: kind as 'move' | 'resize' | 'reassign',
+    }
+    // 关键:延后到 DHTMLX 完成本次拖拽后再上报。同步上报会触发上层 setData →
+    // clearAll()+parse() 在拖拽回调内重建数据,破坏拖拽中的条(收成一条线)。
+    setTimeout(() => this.emit('taskDragEnd', payload), 0)
   }
 
   /** 把 DHTMLX 的 task_id 属性镜像为统一的 data-task-id,供契约/选择器统一定位。 */
