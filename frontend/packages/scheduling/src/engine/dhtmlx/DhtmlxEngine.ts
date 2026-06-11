@@ -9,6 +9,7 @@ import {
   type ThemeBinding,
   type Unsubscribe,
 } from '../engine'
+import { conflictReasonLabel } from '../../model/labels'
 import { createGanttInstanceSync } from './loader'
 import { applySkin } from './skin'
 
@@ -230,6 +231,7 @@ export class DhtmlxEngine implements SchedulingEngine {
   private dragOrigLaneId?: string
   private cancelZone?: HTMLElement
   private overCancel = false
+  private suppressNextClick = false
   private readonly listeners = new Map<EngineEventName, Set<(p: unknown) => void>>()
   private readonly eventIds: string[] = []
   private readonly createInstance: () => unknown | null
@@ -297,8 +299,9 @@ export class DhtmlxEngine implements SchedulingEngine {
         this.lastPointerX = e.clientX
         if (!this.dragTaskId) return
         if (!this.dragging) {
-          if (Math.abs(e.clientX - downX) < 4 && Math.abs(e.clientY - downY) < 4) return
+          if (Math.abs(e.clientX - downX) < 3 && Math.abs(e.clientY - downY) < 3) return
           this.dragging = true
+          this.suppressNextClick = true // 拖拽一旦开始,抑制随后的点击(避免弹详情)
           if (this.cancelZone) this.cancelZone.style.display = 'flex'
           this.barEl(this.dragTaskId)?.classList.add('nerv-drag-source')
         }
@@ -549,13 +552,32 @@ export class DhtmlxEngine implements SchedulingEngine {
     inst.templates.tooltip_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) => {
       const t = task.nerv
       if (!t) return task.text ?? ''
-      const lines = [
-        `<b>${t.type === 'order' ? '工单' : '工序'}:</b> ${t.text || t.orderId}`,
-        t.resourceId ? `<b>资源:</b> ${t.resourceId}` : '',
-        `<b>起止:</b> ${fmt(t.startUtc)} → ${fmt(t.endUtc)}`,
-        t.locked ? '<span style="color:var(--muted-foreground)">● 已锁定</span>' : '',
-      ].filter(Boolean)
-      return lines.join('<br/>')
+      const prio = t.priority ? { high: '高', medium: '中', low: '低' }[t.priority] : ''
+      const pct = (v?: number) => (v == null ? '' : `${Math.round(v * 100)}%`)
+      const head = `<div style="font-weight:700;margin-bottom:3px">${t.orderId}${prio ? ` · ${prio}优先` : ''}${t.isRush ? ' · ⚡插单' : ''}${t.locked ? ' · 🔒锁定' : ''}</div>`
+      const rows: Array<[string, string]> = [
+        ['工序', t.text || '—'],
+        ...(t.product ? ([['产品', t.product]] as Array<[string, string]>) : []),
+        ...(t.resourceId ? ([['资源', t.resourceId]] as Array<[string, string]>) : []),
+        ...(t.owner ? ([['负责人', t.owner]] as Array<[string, string]>) : []),
+        ['起止', `${fmt(t.startUtc)} → ${fmt(t.endUtc)}`],
+        ...(t.quantity != null ? ([['数量', String(t.quantity)]] as Array<[string, string]>) : []),
+        ...(t.dueUtc ? ([['交期', fmt(t.dueUtc)]] as Array<[string, string]>) : []),
+        ...(t.kitting != null ? ([['齐套', pct(t.kitting)]] as Array<[string, string]>) : []),
+        ...(t.changeoverMin ? ([['换型', `${t.changeoverMin} 分钟`]] as Array<[string, string]>) : []),
+        ...(t.load != null ? ([['占用', pct(t.load)]] as Array<[string, string]>) : []),
+        ...(t.status ? ([['状态', t.status.label]] as Array<[string, string]>) : []),
+        ...(t.hasConflict && t.conflictReason
+          ? ([['冲突', conflictReasonLabel[t.conflictReason]]] as Array<[string, string]>)
+          : []),
+      ]
+      const body = rows
+        .map(
+          ([k, v]) =>
+            `<div style="display:flex;gap:10px;justify-content:space-between"><span style="opacity:.7">${k}</span><span>${v}</span></div>`,
+        )
+        .join('')
+      return head + body
     }
     const isResource = options.view === 'resource'
     // 资源排产板:条内渲染工单卡片;工单甘特:条内不渲染,工序名放右侧。
@@ -582,6 +604,11 @@ export class DhtmlxEngine implements SchedulingEngine {
   private wireEvents(inst: DhxGantt): void {
     this.eventIds.push(
       inst.attachEvent('onTaskClick', (id) => {
+        // 资源板自定义拖拽后,DHTMLX 会把 mouseup 当点击 → 抑制这次点击,避免拖完弹详情。
+        if (this.suppressNextClick) {
+          this.suppressNextClick = false
+          return false
+        }
         const taskId = String(id)
         this.selectedTaskId = taskId
         this.emit('taskSelected', { taskId })

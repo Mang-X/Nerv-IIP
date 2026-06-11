@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ScheduleAssignmentContract } from '@nerv-iip/api-client'
 import { Button, Tabs, TabsContent, TabsList, TabsTrigger, toast } from '@nerv-iip/ui'
-import { ListFilterIcon } from 'lucide-vue-next'
+import { ListFilterIcon, PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
 import { useSchedulingEdits } from '../composables/useSchedulingEdits'
@@ -11,9 +11,9 @@ import GanttChart from './GanttChart.vue'
 import ResourceSchedulerBoard from './ResourceSchedulerBoard.vue'
 import ChangeSummaryPanel from './panels/ChangeSummaryPanel.vue'
 import ConflictPanel from './panels/ConflictPanel.vue'
-import InspectorSheet from './panels/InspectorSheet.vue'
 import SchedulingLegend from './panels/SchedulingLegend.vue'
 import SchedulingToolbar from './panels/SchedulingToolbar.vue'
+import TaskDetailPanel from './panels/TaskDetailPanel.vue'
 import UnscheduledPanel from './panels/UnscheduledPanel.vue'
 
 // 排产工作台:工具栏 + 视图切换(工单甘特/资源排产板)+ 主图 + 右侧面板 + 检视。
@@ -52,7 +52,7 @@ const readOnly = ref(props.readOnly)
 watch(() => props.readOnly, (v) => (readOnly.value = v))
 
 const selectedTask = ref<ScheduleTask>()
-const inspectorOpen = ref(false)
+const sidebarOpen = ref(true)
 
 const previewFn = props.preview ?? (async () => workingModel.value)
 const releaseFn = props.release ?? (async () => {})
@@ -78,7 +78,7 @@ const legendCategories = computed(() => {
 
 function onTaskSelect(taskId: string) {
   selectedTask.value = workingModel.value.tasks.find((t) => t.id === taskId)
-  inspectorOpen.value = true
+  sidebarOpen.value = true // 选中即在侧栏展示详情(不再弹抽屉)
 }
 function focusTask(taskId: string) {
   sendCommand({ kind: 'selectTask', taskId })
@@ -173,7 +173,28 @@ async function onRelease() {
         />
       </div>
 
-      <aside class="flex w-[320px] shrink-0 flex-col border-l border-border/60 bg-card/60">
+      <!-- 折叠态:细条 + 展开按钮 -->
+      <button
+        v-if="!sidebarOpen"
+        type="button"
+        class="flex w-9 shrink-0 items-center justify-center border-l border-border/60 bg-card/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        title="展开侧栏"
+        @click="sidebarOpen = true"
+      >
+        <PanelRightOpenIcon class="size-4" aria-hidden="true" />
+      </button>
+
+      <aside v-else class="flex w-[320px] shrink-0 flex-col border-l border-border/60 bg-card/60">
+        <div class="flex items-center justify-between px-3 pt-2.5">
+          <span class="text-xs font-semibold tracking-wide text-muted-foreground">详情与排程</span>
+          <Button size="icon" variant="ghost" class="size-7 text-muted-foreground" title="收起侧栏" @click="sidebarOpen = false">
+            <PanelRightCloseIcon class="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+
+        <!-- 选中详情(常驻,取代弹出抽屉) -->
+        <TaskDetailPanel :task="selectedTask" />
+
         <Tabs default-value="conflicts" class="flex min-h-0 flex-1 flex-col">
           <TabsList class="mx-3 mt-3">
             <TabsTrigger value="conflicts">冲突 {{ conflicts.length }}</TabsTrigger>
@@ -194,7 +215,5 @@ async function onRelease() {
     </div>
 
     <SchedulingLegend v-if="showLegend" :categories="legendCategories" :view="view" />
-
-    <InspectorSheet v-model:open="inspectorOpen" :task="selectedTask" />
   </div>
 </template>
