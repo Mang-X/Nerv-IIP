@@ -212,7 +212,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.configure(inst, options)
     this.wireEvents(inst)
     inst.init(container)
-    this.addBaselineLayer(inst)
+    // 计划基线只在工单甘特出现;资源排产板是卡片板,不画计划/实际基线(避免卡片上多出细线)。
+    if (options.view !== 'resource') this.addBaselineLayer(inst)
     if (this.model) this.setData(this.model)
   }
 
