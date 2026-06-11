@@ -165,6 +165,12 @@ function cardHtml(t: ScheduleTask): string {
 const WEEKDAY = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const fmtDayLong = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAY[d.getDay()]}`
 const fmtHour = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:00`
+// 班次带(资源排产板):8h 三班制 — 夜班 00-08 / 早班 08-16 / 中班 16-24。
+const shiftLabel = (d: Date) => {
+  const h = d.getHours()
+  return h < 8 ? '夜班 00–08' : h < 16 ? '早班 08–16' : '中班 16–24'
+}
+const shiftCss = (d: Date) => (d.getHours() < 8 || d.getHours() >= 16 ? 'nerv-shift nerv-shift-dim' : 'nerv-shift')
 const fmtDayShort = (d: Date) => `${d.getDate()} ${WEEKDAY[d.getDay()].slice(1)}`
 const fmtMonth = (d: Date) => `${d.getFullYear()}年${d.getMonth() + 1}月`
 
@@ -252,7 +258,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     const g = this.gantt
     if (!g) return
     // model 已知后再应用自适应刻度(configure 早于 setData,那时 horizon 未知)。
-    g.config.scales = SCALE_CONFIG[this.resolveScale()]
+    g.config.scales = this.scalesFor()
     g.clearAll()
     g.parse(this.toGanttData(model))
     this.refreshMarker()
@@ -357,7 +363,7 @@ export class DhtmlxEngine implements SchedulingEngine {
 
   private applyScale(g?: DhxGantt): void {
     if (!g) return
-    g.config.scales = SCALE_CONFIG[this.resolveScale()]
+    g.config.scales = this.scalesFor()
     g.render()
   }
 
@@ -370,6 +376,16 @@ export class DhtmlxEngine implements SchedulingEngine {
     if (days <= 14) return 'day'
     if (days <= 90) return 'week'
     return 'month'
+  }
+
+  /** 当前刻度配置。资源排产板在小时刻度下插入「班次带」(日期 / 班次 / 小时)。 */
+  private scalesFor(): Array<Record<string, unknown>> {
+    const scale = this.resolveScale()
+    const base = SCALE_CONFIG[scale]
+    if (this.options.view === 'resource' && scale === 'hour') {
+      return [base[0], { unit: 'hour', step: 8, format: shiftLabel, css: shiftCss }, base[1]]
+    }
+    return base
   }
 
   /** 当前分组维度的显示名(左侧列1表头)。 */
@@ -421,8 +437,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.show_links = options.view === 'order'
     c.highlight_critical_path = options.view === 'order'
     c.columns = GRID_COLUMNS(options.view, this.resolveDimLabel())
-    c.scales = SCALE_CONFIG[this.resolveScale()]
-    c.scale_height = 50
+    c.scales = this.scalesFor()
+    // 资源排产板小时刻度有 3 行(日期/班次/小时),抬高刻度区。
+    c.scale_height = options.view === 'resource' && this.resolveScale() === 'hour' ? 70 : 50
     c.min_column_width = 36
     c.tooltip_timeout = 20
 

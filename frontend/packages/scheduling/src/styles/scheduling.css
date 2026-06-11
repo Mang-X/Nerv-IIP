@@ -95,6 +95,18 @@
   color: var(--muted-foreground);
   font-size: 0.72rem;
 }
+/* 资源排产板班次带(早/中/夜班):本班加重,非工作班次淡化 + 轻底纹 */
+.nerv-gantt-dhx .gantt_scale_cell.nerv-shift {
+  font-weight: 600;
+  font-size: 0.7rem;
+  color: var(--foreground);
+  letter-spacing: 0.02em;
+  border-right: 1px solid color-mix(in oklch, var(--border), transparent 35%) !important;
+}
+.nerv-gantt-dhx .gantt_scale_cell.nerv-shift-dim {
+  color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--muted), transparent 50%);
+}
 
 /* 淡彩轻盈:淡色填充 + 饱和同色描边;进度用较实的同色;工序名深色在右(亮暗皆通透)。
    底色由 --bar 变量驱动(分类/冲突只改 --bar,互不打架)。 */
