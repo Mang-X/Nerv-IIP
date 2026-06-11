@@ -198,10 +198,10 @@
   box-shadow: 0 0 0 2px var(--brand), 0 4px 14px color-mix(in oklch, var(--brand), transparent 40%) !important;
   z-index: 2;
 }
-/* 冲突:保留分类色,危险色描边 + 红色辉光(不改 --bar,避免色相插值跑偏) */
+/* 冲突:保留分类色,危险色描边(收紧:仅 1px 环,不做大红辉光——多卡相邻时辉光叠加会让整片发红) */
 .nerv-gantt-dhx .gantt_task_line.nerv-conflict {
   border-color: var(--destructive) !important;
-  box-shadow: 0 0 0 1px var(--destructive), 0 4px 12px color-mix(in oklch, var(--destructive), transparent 55%) !important;
+  box-shadow: inset 0 0 0 1px var(--destructive) !important;
 }
 
 /* 里程碑:实色菱形(在淡彩条中保持醒目) */
