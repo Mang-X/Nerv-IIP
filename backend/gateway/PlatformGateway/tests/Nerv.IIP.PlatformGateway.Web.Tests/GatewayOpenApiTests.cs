@@ -97,6 +97,10 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("patchConsoleTusUpload", paths.GetProperty("/api/console/v1/files/tus/{uploadSessionId}").GetProperty("patch").GetProperty("operationId").GetString());
         Assert.Equal("downloadConsoleFileGrantContent", paths.GetProperty("/api/console/v1/files/download-grants/{downloadGrantId}/content").GetProperty("get").GetProperty("operationId").GetString());
 
+        var queryLogs = paths.GetProperty("/api/console/v1/logs/query").GetProperty("post");
+        Assert.Equal("queryConsoleLogs", queryLogs.GetProperty("operationId").GetString());
+        AssertJsonResponseSchema(queryLogs, "200", "NervIIPPlatformGatewayWebApplicationLogsConsoleLogQueryResponse");
+
         Assert.Equal("HealthEndpoint", paths.GetProperty("/health").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("GetBuildInfoEndpoint", paths.GetProperty("/internal/gateway/v1/build-info").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("InvalidateGatewayCacheEndpoint", paths.GetProperty("/internal/gateway/cache/invalidate").GetProperty("post").GetProperty("operationId").GetString());
@@ -173,7 +177,8 @@ public sealed class GatewayOpenApiTests
         var responseTypeName = schemaName
             .Replace("NervIIPContractsAppHubQueries", string.Empty)
             .Replace("NervIIPContractsOps", string.Empty)
-            .Replace("NervIIPPlatformGatewayWebApplicationAuth", string.Empty);
+            .Replace("NervIIPPlatformGatewayWebApplicationAuth", string.Empty)
+            .Replace("NervIIPPlatformGatewayWebApplicationLogs", string.Empty);
 
         Assert.StartsWith("#/components/schemas/NetCorePalExtensionsDtoResponseDataOf", response);
         Assert.Contains(responseTypeName, response);

@@ -5,12 +5,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createConsoleI18n } from '@/i18n'
 import LoginPage from './login.vue'
 
-const api = vi.hoisted(() => ({
-  getConsoleMe: vi.fn(),
-  loginConsole: vi.fn(),
-  logoutConsole: vi.fn(),
-  refreshConsole: vi.fn(),
-}))
+const api = vi.hoisted(() => {
+  const consoleAuthApi = {
+    getConsoleMe: vi.fn(),
+    loginConsole: vi.fn(),
+    logoutConsole: vi.fn(),
+    refreshConsole: vi.fn(),
+  }
+  return {
+    ...consoleAuthApi,
+    consoleAuthApi,
+  }
+})
 
 const router = vi.hoisted(() => ({
   push: vi.fn(),

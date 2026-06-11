@@ -161,6 +161,47 @@ export type NervIipContractsNotificationMarkNotificationMessagesReadRequest = {
     messageIds?: Array<string>;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfConsoleLogQueryResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationLogsConsoleLogQueryResponse | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationLogsConsoleLogQueryResponse = {
+    items?: Array<NervIipPlatformGatewayWebApplicationLogsConsoleLogEntryResponse>;
+    nextCursor?: number | null;
+    partial?: boolean;
+    backendStatus?: string;
+};
+
+export type NervIipPlatformGatewayWebApplicationLogsConsoleLogEntryResponse = {
+    timestamp?: string;
+    level?: string;
+    service?: string;
+    message?: string;
+    instanceKey?: string | null;
+    operationTaskId?: string | null;
+    correlationId?: string | null;
+    traceId?: string | null;
+    source?: string;
+    labels?: {
+        [key: string]: string;
+    };
+    fields?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipPlatformGatewayWebApplicationLogsConsoleLogQueryRequest = {
+    from?: string | null;
+    to?: string | null;
+    service?: string | null;
+    correlationId?: string | null;
+    traceId?: string | null;
+    level?: string | null;
+    text?: string | null;
+    limit?: number | null;
+    cursor?: number | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfInstanceListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsAppHubQueriesInstanceListResponse | null;
 };
@@ -664,6 +705,33 @@ export type MarkConsoleNotificationMessagesReadResponses = {
 };
 
 export type MarkConsoleNotificationMessagesReadResponse = MarkConsoleNotificationMessagesReadResponses[keyof MarkConsoleNotificationMessagesReadResponses];
+
+export type QueryConsoleLogsData = {
+    body: NervIipPlatformGatewayWebApplicationLogsConsoleLogQueryRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/logs/query';
+};
+
+export type QueryConsoleLogsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type QueryConsoleLogsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleLogQueryResponse;
+};
+
+export type QueryConsoleLogsResponse = QueryConsoleLogsResponses[keyof QueryConsoleLogsResponses];
 
 export type ListConsoleInstancesData = {
     body?: never;

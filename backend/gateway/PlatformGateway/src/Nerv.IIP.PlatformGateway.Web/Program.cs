@@ -32,6 +32,7 @@ builder.Services
     });
 builder.Services.AddNervIipCaching(builder.Configuration, "platform-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "platform-gateway");
+builder.Services.AddVictoriaLogsClient(builder.Configuration);
 builder.Services.AddNervIipLocalization();
 builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, builder.Environment);
 builder.Services.Configure<GatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));

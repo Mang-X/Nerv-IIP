@@ -78,6 +78,23 @@ public sealed class FastEndpointsArchitectureTests
         "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
     };
 
+    public static TheoryData<string> BusinessWebProjects => new()
+    {
+        "backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web",
+        "backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web",
+        "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web",
+        "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web",
+        "backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web",
+        "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web",
+        "backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web",
+        "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web",
+        "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web",
+        "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web",
+        "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web",
+        "backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web",
+        "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
+    };
+
     public static TheoryData<string> LocalPostgreSqlAppHostResources => new()
     {
         "apphub",
@@ -139,6 +156,27 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>", programText);
     }
 
+    [Theory]
+    [MemberData(nameof(BusinessWebProjects))]
+    public void Business_web_projects_use_shared_observability_registration(string projectDirectory)
+    {
+        var root = FindRepositoryRoot();
+        var fullProjectDirectory = Path.Combine(root, projectDirectory);
+        var programText = File.ReadAllText(Path.Combine(fullProjectDirectory, "Program.cs"));
+        var projectText = File.ReadAllText(Directory.GetFiles(fullProjectDirectory, "*.csproj").Single());
+
+        Assert.Contains("using Nerv.IIP.Observability;", programText);
+        Assert.Contains("AddNervIipObservability", programText);
+        Assert.Contains("UseNervIipCorrelation", programText);
+        Assert.DoesNotContain("using Serilog", programText);
+        Assert.DoesNotContain("UseSerilog", programText);
+        Assert.DoesNotContain("Log.Logger", programText);
+        Assert.Contains("Nerv.IIP.Observability.csproj", projectText);
+        Assert.DoesNotContain("PackageReference Include=\"Serilog.AspNetCore\"", projectText);
+        Assert.DoesNotContain("PackageReference Include=\"Serilog.Enrichers.ClientInfo\"", projectText);
+        Assert.DoesNotContain("PackageReference Include=\"Serilog.Sinks.OpenTelemetry\"", projectText);
+    }
+
     [Fact]
     public void Aspire_apphost_covers_platform_services_and_real_infrastructure()
     {
@@ -155,6 +193,18 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("WithHttpEndpoint(port: 5106", programText);
         Assert.Contains("Notification__BaseUrl", programText);
         Assert.Contains("AddContainer(\"minio\"", programText);
+        Assert.Contains("AddContainer(\"victoria-logs\"", programText);
+        Assert.Contains("victoriametrics/victoria-logs", programText);
+        Assert.Contains("v1.50.0", programText);
+        Assert.Contains("nerv-iip-victoria-logs", programText);
+        Assert.Contains("OpenTelemetry__Logs__Endpoint", programText);
+        Assert.Contains("OpenTelemetry__Logs__Path", programText);
+        Assert.Contains("VictoriaLogs__BaseUrl", programText);
+        Assert.Contains("VictoriaLogs__Enabled", programText);
+        var normalizedProgramText = programText.Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            ".WithEnvironment(\"OpenTelemetry__Protocol\", \"HttpProtobuf\")\n            .WithEnvironment(\"OpenTelemetry__Logs__Endpoint\"",
+            normalizedProgramText);
         Assert.Contains("AddContainer(\"otel-collector\"", programText);
         Assert.Contains("otel-collector.dev.yaml", programText);
         Assert.Contains("OTEL_EXPORTER_OTLP_ENDPOINT", programText);
@@ -167,8 +217,14 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("Aspire.Hosting.JavaScript", projectText);
 
         Assert.True(File.Exists(collectorConfig), "OpenTelemetry Collector dev config must be present.");
+        var collectorText = File.ReadAllText(collectorConfig);
+        Assert.Contains("otlphttp/victorialogs", collectorText);
+        Assert.Contains("logs_endpoint: ${env:NERV_IIP_VICTORIA_LOGS_OTLP_HTTP_ENDPOINT}", collectorText);
         Assert.Contains("--config=/etc/otelcol/config.yaml", composeText);
         Assert.Contains("./otel/otel-collector.dev.yaml:/etc/otelcol/config.yaml:ro", composeText);
+        Assert.Contains("victoria-logs:", composeText);
+        Assert.Contains("victoriametrics/victoria-logs:v1.50.0", composeText);
+        Assert.Contains("nerv-iip-victoria-logs:/victoria-logs-data", composeText);
     }
 
     [Fact]

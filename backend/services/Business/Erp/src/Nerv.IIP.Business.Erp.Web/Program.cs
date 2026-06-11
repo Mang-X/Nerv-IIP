@@ -2,7 +2,6 @@ using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
 using FastEndpoints.Swagger;
-using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -10,35 +9,25 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
-using NetCorePal.Extensions.NewtonsoftJson;
-using Newtonsoft.Json;
 using Prometheus;
-using Serilog;
-using Serilog.Formatting.Json;
 
-Log.Logger = new LoggerConfiguration()
-    .Enrich.WithClientIp()
-    .WriteTo.Console(new JsonFormatter())
-    .CreateLogger();
 
 var isTesting = false;
 try
 {
     var builder = WebApplication.CreateBuilder(args);
-    builder.Host.UseSerilog();
     isTesting = builder.Environment.IsEnvironment("Testing");
+    builder.Services.AddNervIipObservability(builder.Configuration, "business-erp");
 
     builder.Services.AddHealthChecks();
-    builder.Services.AddMvc()
-        .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
-    builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
         .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
         .SwaggerDocument(o =>
@@ -50,7 +39,6 @@ try
             };
         });
     builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.AddNetCorePalJsonConverters());
-    builder.Services.AddFluentValidationAutoValidation();
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
@@ -100,6 +88,7 @@ try
     builder.Services.AddConfigurationServiceEndpointProvider();
 
     var app = builder.Build();
+    app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
     if (autoMigrate && !app.Environment.IsDevelopment())
     {
@@ -119,7 +108,6 @@ try
     app.UseRouting();
     app.UseAuthentication();
     app.UseAuthorization();
-    app.MapControllers();
     app.UseFastEndpoints(c =>
     {
         c.Endpoints.NameGenerator = ctx =>
@@ -140,11 +128,7 @@ catch (Exception ex)
         throw;
     }
 
-    Log.Fatal(ex, "Application terminated unexpectedly");
-}
-finally
-{
-    await Log.CloseAndFlushAsync();
+    await Console.Error.WriteLineAsync($"Application terminated unexpectedly: {ex}");
 }
 
 static string ToLowerCamelEndpointName(string endpointTypeName)

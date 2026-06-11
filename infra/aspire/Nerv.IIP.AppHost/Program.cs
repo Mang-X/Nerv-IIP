@@ -14,8 +14,11 @@ var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secre
 var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
 var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
+var useRedisMessaging = string.Equals(messagingProvider, "Redis", StringComparison.OrdinalIgnoreCase);
 var useOtelCollector = builder.Configuration.GetValue("Observability:UseCollector", false);
+var useVictoriaLogs = builder.Configuration.GetValue("Observability:VictoriaLogs:Enabled", true);
 var aspireDashboardOtlpHttpEndpoint = builder.Configuration["Observability:AspireDashboardOtlpHttpEndpoint"] ?? "http://host.docker.internal:18890";
+var victoriaLogsRetentionPeriod = builder.Configuration["Observability:VictoriaLogs:RetentionPeriod"] ?? "30d";
 var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
 if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 {
@@ -44,7 +47,8 @@ var businessErpDatabase = postgres.AddDatabase("business-erp-db", "nerv_iip_erp"
 var businessSchedulingDatabase = postgres.AddDatabase("business-scheduling-db", "nerv_iip_scheduling");
 var redis = builder.AddRedis("redis", password: redisPassword)
     .WithImageTag("8")
-    .WithDataVolume("nerv-iip-redis");
+    .WithDataVolume("nerv-iip-redis")
+    .WithPersistence(TimeSpan.FromSeconds(60), 1);
 var rabbitmq = useRabbitMq
     ? builder.AddRabbitMQ("rabbitmq").WithManagementPlugin()
     : null;
@@ -55,6 +59,14 @@ var minio = builder.AddContainer("minio", "pgsty/minio", "RELEASE.2026-04-17T00-
     .WithHttpEndpoint(port: 9000, targetPort: 9000, name: "api")
     .WithHttpEndpoint(port: 9001, targetPort: 9001, name: "console")
     .WithVolume("nerv-iip-minio", "/data");
+Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ContainerResource>? victoriaLogs = null;
+if (useVictoriaLogs)
+{
+    victoriaLogs = builder.AddContainer("victoria-logs", "victoriametrics/victoria-logs", "v1.50.0")
+        .WithArgs("-storageDataPath=/victoria-logs-data", $"-retentionPeriod={victoriaLogsRetentionPeriod}")
+        .WithHttpEndpoint(port: 9428, targetPort: 9428, name: "http")
+        .WithVolume("nerv-iip-victoria-logs", "/victoria-logs-data");
+}
 Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ContainerResource>? otelCollector = null;
 if (useOtelCollector)
 {
@@ -108,6 +120,7 @@ var ops = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProjec
     .WithReference(opsDatabase, "OpsDb")
     .WaitFor(opsDatabase)
     .WaitFor(iam);
+ops = WithRedisMessagingTransport(ops);
 if (rabbitmq is not null)
 {
     ops = ops
@@ -134,6 +147,7 @@ var notification = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(notificationDatabase, "NotificationDb")
     .WaitFor(notificationDatabase);
+notification = WithRedisMessagingTransport(notification);
 if (rabbitmq is not null)
 {
     notification = notification
@@ -166,6 +180,7 @@ var businessProductEngineering = WithNervIipTelemetry(WithLocalDevelopmentEnviro
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessProductEngineeringDatabase, "PostgreSQL")
     .WaitFor(businessProductEngineeringDatabase);
+businessProductEngineering = WithRedisMessagingTransport(businessProductEngineering);
 if (rabbitmq is not null)
 {
     businessProductEngineering = businessProductEngineering
@@ -181,6 +196,7 @@ var businessInventory = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bui
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessInventoryDatabase, "PostgreSQL")
     .WaitFor(businessInventoryDatabase);
+businessInventory = WithRedisMessagingTransport(businessInventory);
 if (rabbitmq is not null)
 {
     businessInventory = businessInventory
@@ -213,6 +229,7 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
     .WaitFor(businessMesDatabase);
+businessMes = WithRedisMessagingTransport(businessMes);
 if (rabbitmq is not null)
 {
     businessMes = businessMes
@@ -234,6 +251,7 @@ var businessDemandPlanning = WithNervIipTelemetry(WithLocalDevelopmentEnvironmen
     .WaitFor(businessDemandPlanningDatabase)
     .WaitFor(businessProductEngineering)
     .WaitFor(businessInventory);
+businessDemandPlanning = WithRedisMessagingTransport(businessDemandPlanning);
 if (rabbitmq is not null)
 {
     businessDemandPlanning = businessDemandPlanning
@@ -249,6 +267,7 @@ var businessBarcodeLabel = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessBarcodeLabelDatabase, "PostgreSQL")
     .WaitFor(businessBarcodeLabelDatabase);
+businessBarcodeLabel = WithRedisMessagingTransport(businessBarcodeLabel);
 if (rabbitmq is not null)
 {
     businessBarcodeLabel = businessBarcodeLabel
@@ -264,6 +283,7 @@ var businessApproval = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(buil
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessApprovalDatabase, "PostgreSQL")
     .WaitFor(businessApprovalDatabase);
+businessApproval = WithRedisMessagingTransport(businessApproval);
 if (rabbitmq is not null)
 {
     businessApproval = businessApproval
@@ -282,6 +302,7 @@ var businessWms = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithReference(businessInventory)
     .WaitFor(businessWmsDatabase)
     .WaitFor(businessInventory);
+businessWms = WithRedisMessagingTransport(businessWms);
 if (rabbitmq is not null)
 {
     businessWms = businessWms
@@ -297,6 +318,7 @@ var businessIndustrialTelemetry = WithNervIipTelemetry(WithLocalDevelopmentEnvir
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessIndustrialTelemetryDatabase, "PostgreSQL")
     .WaitFor(businessIndustrialTelemetryDatabase);
+businessIndustrialTelemetry = WithRedisMessagingTransport(businessIndustrialTelemetry);
 if (rabbitmq is not null)
 {
     businessIndustrialTelemetry = businessIndustrialTelemetry
@@ -312,6 +334,7 @@ var businessMaintenance = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(b
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMaintenanceDatabase, "PostgreSQL")
     .WaitFor(businessMaintenanceDatabase);
+businessMaintenance = WithRedisMessagingTransport(businessMaintenance);
 if (rabbitmq is not null)
 {
     businessMaintenance = businessMaintenance
@@ -329,6 +352,7 @@ var businessErp = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithReference(iam)
     .WaitFor(businessErpDatabase)
     .WaitFor(iam);
+businessErp = WithRedisMessagingTransport(businessErp);
 if (rabbitmq is not null)
 {
     businessErp = businessErp
@@ -344,6 +368,7 @@ var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessSchedulingDatabase, "PostgreSQL")
     .WaitFor(businessSchedulingDatabase);
+businessScheduling = WithRedisMessagingTransport(businessScheduling);
 if (rabbitmq is not null)
 {
     businessScheduling = businessScheduling
@@ -399,6 +424,17 @@ var gateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPr
     .WaitFor(businessErp)
     .WaitFor(businessScheduling)
     .WaitFor(redis);
+if (victoriaLogs is not null)
+{
+    gateway = gateway
+        .WithEnvironment("VictoriaLogs__BaseUrl", victoriaLogs.GetEndpoint("http"))
+        .WaitFor(victoriaLogs);
+}
+else
+{
+    gateway = gateway
+        .WithEnvironment("VictoriaLogs__Enabled", "false");
+}
 
 var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")))
     .WithHttpEndpoint(port: 5119, name: "http")
@@ -471,6 +507,14 @@ builder.AddViteApp("business-console", "../../../frontend/apps/business-console"
 
 builder.Build().Run();
 
+Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithRedisMessagingTransport(
+    Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> project)
+{
+    return useRedisMessaging
+        ? project.WithReference(redis).WaitFor(redis)
+        : project;
+}
+
 Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithLocalDevelopmentEnvironment(
     Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> project)
 {
@@ -482,6 +526,14 @@ Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel
 Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithNervIipTelemetry(
     Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> project)
 {
+    if (victoriaLogs is not null)
+    {
+        project = project
+            .WithEnvironment("OpenTelemetry__Logs__Endpoint", victoriaLogs.GetEndpoint("http"))
+            .WithEnvironment("OpenTelemetry__Logs__Path", "/insert/opentelemetry/v1/logs")
+            .WaitFor(victoriaLogs);
+    }
+
     if (otelCollector is null)
     {
         return project;

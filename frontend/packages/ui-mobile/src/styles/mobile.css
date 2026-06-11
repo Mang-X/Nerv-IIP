@@ -1,0 +1,21 @@
+/*
+ * Nerv-IIP 移动端基线（@nerv-iip/ui-mobile）。
+ * 安全区工具类统一注入顶/底/左右；触控密度变量。token 仍来自 @nerv-iip/ui 的 theme.css。
+ */
+
+@utility pt-safe {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+@utility pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+@utility px-safe {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+@utility min-h-touch {
+  min-height: 48px;
+}
+@utility min-h-row {
+  min-height: 56px;
+}

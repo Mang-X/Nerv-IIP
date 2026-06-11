@@ -20,6 +20,7 @@ services:
   redis:
     image: redis:8
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     ports:
       - "${NERV_IIP_REDIS_PORT:-6379}:6379"
     volumes:
@@ -61,12 +62,22 @@ services:
       timeout: 5s
       retries: 10
 
+  victoria-logs:
+    image: victoriametrics/victoria-logs:v1.50.0
+    restart: unless-stopped
+    command: ["-storageDataPath=/victoria-logs-data", "-retentionPeriod=${NERV_IIP_VICTORIA_LOGS_RETENTION:-30d}"]
+    ports:
+      - "${NERV_IIP_VICTORIA_LOGS_PORT:-9428}:9428"
+    volumes:
+      - nerv-iip-victoria-logs:/victoria-logs-data
+
   otel-collector:
     image: otel/opentelemetry-collector:0.116.1
     restart: unless-stopped
     command: ["--config=/etc/otelcol/config.yaml"]
     environment:
       NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT: ${NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT:-http://aspire-dashboard:18890}
+      NERV_IIP_VICTORIA_LOGS_OTLP_HTTP_ENDPOINT: ${NERV_IIP_VICTORIA_LOGS_OTLP_HTTP_ENDPOINT:-http://victoria-logs:9428/insert/opentelemetry/v1/logs}
     ports:
       - "${NERV_IIP_OTEL_GRPC_PORT:-4317}:4317"
       - "${NERV_IIP_OTEL_HTTP_PORT:-4318}:4318"
@@ -90,4 +101,5 @@ volumes:
   nerv-iip-postgres-18:
   nerv-iip-redis:
   nerv-iip-minio:
+  nerv-iip-victoria-logs:
   nerv-iip-otel-queue:

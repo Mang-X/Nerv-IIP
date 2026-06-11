@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -67,6 +70,25 @@ public static class NervIipObservabilityRegistration
         });
     }
 
+    public static IServiceCollection AddVictoriaLogsClient(this IServiceCollection services, IConfiguration configuration)
+    {
+        var options = VictoriaLogsOptions.FromConfiguration(configuration, "platform-gateway");
+        services.AddSingleton(options);
+        if (options.Enabled)
+        {
+            services.AddHttpClient<IVictoriaLogsClient, VictoriaLogsClient>(client =>
+            {
+                client.BaseAddress = options.BaseUrl;
+            });
+        }
+        else
+        {
+            services.AddSingleton<IVictoriaLogsClient, DisabledVictoriaLogsClient>();
+        }
+
+        return services;
+    }
+
     private static IServiceCollection AddNervIipOpenTelemetry(this IServiceCollection services, IConfiguration configuration, string serviceName)
     {
         var traceOtlpEndpoint = ReadOtlpEndpoint(configuration, NervIipOpenTelemetrySignal.Traces);
@@ -117,6 +139,7 @@ public static class NervIipObservabilityRegistration
         var loggerConfiguration = new LoggerConfiguration()
             .MinimumLevel.Is(ReadMinimumLevel(configuration))
             .Enrich.FromLogContext()
+            .Enrich.WithClientIp()
             .Enrich.WithProperty("service.name", serviceName)
             .Enrich.WithProperty("service", serviceName)
             .WriteTo.Console(formatter);
@@ -145,10 +168,11 @@ public static class NervIipObservabilityRegistration
 
         if (!string.IsNullOrWhiteSpace(otlpEndpoint))
         {
+            var resolvedLogsEndpoint = ResolveOpenTelemetryOtlpEndpoint(configuration, otlpEndpoint, NervIipOpenTelemetrySignal.Logs);
             loggerConfiguration.WriteTo.OpenTelemetry(options =>
             {
-                options.Endpoint = otlpEndpoint;
-                options.Protocol = ReadSerilogOtlpProtocol(configuration, otlpEndpoint);
+                options.Endpoint = resolvedLogsEndpoint.ToString();
+                options.Protocol = ReadSerilogOtlpProtocol(configuration, resolvedLogsEndpoint.ToString());
                 options.ResourceAttributes = new Dictionary<string, object>
                 {
                     ["service.name"] = serviceName
@@ -230,6 +254,16 @@ public static class NervIipObservabilityRegistration
     internal static Uri ResolveOpenTelemetryOtlpEndpoint(IConfiguration configuration, string endpoint, NervIipOpenTelemetrySignal signal)
     {
         var endpointUri = new Uri(endpoint, UriKind.Absolute);
+        var configuredPath = configuration[$"OpenTelemetry:{signal}:Path"];
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            var customBuilder = new UriBuilder(endpointUri)
+            {
+                Path = configuredPath.TrimStart('/')
+            };
+            return customBuilder.Uri;
+        }
+
         if (ReadOpenTelemetryOtlpProtocol(configuration, endpoint) != OtlpExportProtocol.HttpProtobuf)
         {
             return endpointUri;
@@ -309,6 +343,238 @@ public static class NervIipObservabilityRegistration
 }
 
 public sealed record NervIipObservabilityOptions(string ServiceName);
+
+public sealed record VictoriaLogsOptions(
+    bool Enabled,
+    Uri BaseUrl,
+    string RetentionPeriod,
+    string StorageDataPath,
+    IReadOnlyDictionary<string, string> ResourceAttributes)
+{
+    public Uri OtlpLogsEndpoint => new(BaseUrl, "/insert/opentelemetry/v1/logs");
+    public Uri QueryEndpoint => new(BaseUrl, "/select/logsql/query");
+
+    public static VictoriaLogsOptions FromConfiguration(IConfiguration configuration, string serviceName)
+    {
+        var baseUrl = configuration["VictoriaLogs:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            baseUrl = "http://victoria-logs:9428";
+        }
+
+        return new VictoriaLogsOptions(
+            ReadBoolean(configuration, "VictoriaLogs:Enabled", "Observability:VictoriaLogs:Enabled", defaultValue: true),
+            new Uri(baseUrl, UriKind.Absolute),
+            string.IsNullOrWhiteSpace(configuration["VictoriaLogs:RetentionPeriod"]) ? "30d" : configuration["VictoriaLogs:RetentionPeriod"]!,
+            string.IsNullOrWhiteSpace(configuration["VictoriaLogs:StorageDataPath"]) ? "/victoria-logs-data" : configuration["VictoriaLogs:StorageDataPath"]!,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["service.name"] = serviceName,
+                ["service"] = serviceName
+            });
+    }
+
+    public string[] ToCommandLineArgs() =>
+    [
+        $"-storageDataPath={StorageDataPath}",
+        $"-retentionPeriod={RetentionPeriod}"
+    ];
+
+    private static bool ReadBoolean(IConfiguration configuration, string firstKey, string secondKey, bool defaultValue)
+    {
+        var configuredValue = !string.IsNullOrWhiteSpace(configuration[firstKey])
+            ? configuration[firstKey]
+            : configuration[secondKey];
+        return bool.TryParse(configuredValue, out var parsed) ? parsed : defaultValue;
+    }
+}
+
+public sealed record VictoriaLogsQueryFilter(
+    string? Service,
+    string? CorrelationId,
+    string? TraceId,
+    string? Level,
+    string? Text);
+
+public sealed record VictoriaLogsQueryRequest(
+    DateTimeOffset FromUtc,
+    DateTimeOffset ToUtc,
+    int Limit,
+    int Offset,
+    VictoriaLogsQueryFilter Filter);
+
+public sealed record VictoriaLogsLogEntry(
+    DateTimeOffset Timestamp,
+    string Level,
+    string Service,
+    string Message,
+    string? InstanceKey,
+    string? OperationTaskId,
+    string? CorrelationId,
+    string? TraceId,
+    string Source,
+    IReadOnlyDictionary<string, string> Labels,
+    IReadOnlyDictionary<string, string> Fields);
+
+public sealed record VictoriaLogsQueryResponse(
+    IReadOnlyList<VictoriaLogsLogEntry> Items,
+    int? NextOffset,
+    bool Partial,
+    string BackendStatus);
+
+public interface IVictoriaLogsClient
+{
+    Task<VictoriaLogsQueryResponse> QueryAsync(VictoriaLogsQueryRequest request, CancellationToken cancellationToken);
+}
+
+public static class VictoriaLogsQueryBuilder
+{
+    public static IReadOnlyDictionary<string, string> BuildForm(VictoriaLogsQueryRequest request)
+    {
+        var predicates = new List<string>();
+        AddDualFieldFilter(predicates, "service", "service.name", request.Filter.Service);
+        AddExactFilter(predicates, "correlationId", request.Filter.CorrelationId);
+        AddDualFieldFilter(predicates, "traceId", "trace_id", request.Filter.TraceId);
+        AddDualFieldFilter(predicates, "level", "severity_text", request.Filter.Level);
+        AddPhraseFilter(predicates, request.Filter.Text);
+
+        var queryParts = predicates.Count == 0 ? new List<string> { "*" } : predicates;
+        queryParts.Add("| fields _time, level, service, _msg, message, instanceKey, operationTaskId, correlationId, traceId, severity_text, \"service.name\", trace_id");
+
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["query"] = string.Join(' ', queryParts.Where(filter => !string.IsNullOrWhiteSpace(filter))),
+            ["start"] = request.FromUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+            ["end"] = request.ToUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+            ["limit"] = request.Limit.ToString(CultureInfo.InvariantCulture),
+            ["offset"] = request.Offset.ToString(CultureInfo.InvariantCulture)
+        };
+    }
+
+    private static void AddDualFieldFilter(List<string> filters, string firstField, string secondField, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        filters.Add($"({FormatField(firstField)}:={Quote(value)} OR {FormatField(secondField)}:={Quote(value)})");
+    }
+
+    private static void AddExactFilter(List<string> filters, string field, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            filters.Add($"{FormatField(field)}:={Quote(value)}");
+        }
+    }
+
+    private static void AddPhraseFilter(List<string> filters, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            filters.Add(Quote(value));
+        }
+    }
+
+    private static string FormatField(string field) =>
+        field.All(character => char.IsLetterOrDigit(character) || character is '_')
+            ? field
+            : Quote(field);
+
+    private static string Quote(string value) =>
+        "\"" + value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+}
+
+internal sealed class VictoriaLogsClient(HttpClient httpClient, VictoriaLogsOptions options) : IVictoriaLogsClient
+{
+    public async Task<VictoriaLogsQueryResponse> QueryAsync(VictoriaLogsQueryRequest request, CancellationToken cancellationToken)
+    {
+        using var content = new FormUrlEncodedContent(VictoriaLogsQueryBuilder.BuildForm(request));
+        using var response = await httpClient.PostAsync(options.QueryEndpoint.PathAndQuery, content, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        var entries = new List<VictoriaLogsLogEntry>();
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            entries.Add(ParseEntry(line));
+        }
+
+        int? nextOffset = entries.Count == request.Limit ? request.Offset + entries.Count : null;
+        return new VictoriaLogsQueryResponse(entries, nextOffset, false, "victoriaLogs");
+    }
+
+    private static VictoriaLogsLogEntry ParseEntry(string line)
+    {
+        using var document = JsonDocument.Parse(line);
+        var root = document.RootElement;
+        var fields = root.EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value.ToString(), StringComparer.Ordinal);
+        var timestamp = DateTimeOffset.TryParse(Get(fields, "_time"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+            ? parsed
+            : DateTimeOffset.UnixEpoch;
+        var level = FirstNonEmpty(Get(fields, "level"), Get(fields, "severity_text"));
+        var service = FirstNonEmpty(Get(fields, "service"), Get(fields, "service.name"));
+        var message = FirstNonEmpty(Get(fields, "_msg"), Get(fields, "message"));
+
+        return new VictoriaLogsLogEntry(
+            timestamp,
+            level,
+            service,
+            RedactValue(message),
+            Get(fields, "instanceKey"),
+            Get(fields, "operationTaskId"),
+            Get(fields, "correlationId"),
+            FirstNonEmpty(Get(fields, "traceId"), Get(fields, "trace_id")),
+            "victoriaLogs",
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            fields.ToDictionary(pair => pair.Key, pair => RedactFieldValue(pair.Key, pair.Value), StringComparer.Ordinal));
+    }
+
+    private static string Get(IReadOnlyDictionary<string, string> fields, string key) =>
+        fields.TryGetValue(key, out var value) ? value : string.Empty;
+
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+
+    private static string RedactFieldValue(string key, string value)
+    {
+        return ContainsSensitiveToken(key) || ContainsSensitiveToken(value)
+            ? "[redacted]"
+            : value;
+    }
+
+    private static string RedactValue(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        return ContainsSensitiveToken(value)
+            ? "[redacted]"
+            : value;
+    }
+
+    private static bool ContainsSensitiveToken(string value)
+    {
+        var sensitiveTokens = new[] { "password", "secret", "token", "connection string", "connectionstring", "credential", "apikey", "api_key" };
+        return sensitiveTokens.Any(token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
+    }
+}
+
+internal sealed class DisabledVictoriaLogsClient : IVictoriaLogsClient
+{
+    public Task<VictoriaLogsQueryResponse> QueryAsync(VictoriaLogsQueryRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(new VictoriaLogsQueryResponse([], null, true, "disabled"));
+}
 
 internal enum NervIipOpenTelemetrySignal
 {

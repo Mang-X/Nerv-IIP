@@ -51,6 +51,7 @@ public static class NervIipSeedPermissions
         "ops.tasks.read",
         "ops.results.write",
         "ops.audit.read",
+        "observability.logs.read",
         "business.masterdata.products.read",
         "business.masterdata.products.manage",
         "business.masterdata.partners.read",
