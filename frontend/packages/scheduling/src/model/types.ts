@@ -78,6 +78,10 @@ export interface ScheduleTask {
   kitting?: number
   /** 换型时间(分钟)。 */
   changeoverMin?: number
+  /** 资源占用率 0..1(该工序占目标资源产能的比例)。 */
+  load?: number
+  /** 插单(紧急加入,排产板高亮 ⚡)。 */
+  isRush?: boolean
   locked: boolean
   hasConflict: boolean
   conflictReason?: ConflictReason | null

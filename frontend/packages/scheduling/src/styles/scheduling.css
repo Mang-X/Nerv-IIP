@@ -293,15 +293,15 @@
 .nerv-gantt-dhx .nerv-card {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 10px;
+  gap: 3px;
+  padding: 7px 11px;
   height: 100%;
   box-sizing: border-box;
   overflow: hidden;
   text-align: left;
   color: var(--foreground);
   font-size: 0.72rem;
-  line-height: 1.38;
+  line-height: 1.45;
 }
 .nerv-gantt-dhx .nerv-card-r1 {
   display: flex;
@@ -326,6 +326,11 @@
   font-size: 0.64rem;
   padding: 0 4px;
   border-radius: 4px;
+}
+.nerv-gantt-dhx .nerv-card-rush {
+  display: inline-flex;
+  align-items: center;
+  color: oklch(0.7 0.17 60);
 }
 .nerv-gantt-dhx .nerv-card-prio.nerv-prio-high { color: var(--destructive); background: color-mix(in oklch, var(--destructive), transparent 86%); }
 .nerv-gantt-dhx .nerv-card-prio.nerv-prio-mid { color: var(--warning); background: color-mix(in oklch, var(--warning), transparent 86%); }

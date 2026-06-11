@@ -146,20 +146,28 @@ const fmtMd = (iso: string) => {
   return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** 资源排产板工单卡片(条内 HTML)。 */
+const RUSH_SVG =
+  '<svg class="nerv-rush-ic" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" fill="currentColor"/></svg>'
+
+/** 资源排产板工单卡片(条内 HTML)。布局对齐参考图:WO+优先级+插单+锁 / 产品·工序 / 数量·交期 / 换型·占用 / 齐套。 */
 function cardHtml(t: ScheduleTask): string {
   const prio = t.priority
     ? `<span class="nerv-card-prio nerv-prio-${t.priority}">${PRIORITY_CELL[t.priority][2]}</span>`
     : ''
+  const rush = t.isRush ? `<span class="nerv-card-rush" title="插单">${RUSH_SVG}</span>` : ''
   const lock = t.locked ? LOCK_SVG : ''
   const due = t.dueUtc ? fmtMd(t.dueUtc) : ''
   const kit = t.kitting != null ? Math.round(t.kitting * 100) : null
   const kitCls = kit == null ? '' : kit >= 100 ? 'ok' : kit >= 80 ? 'warn' : 'bad'
+  const co = t.changeoverMin ? `换型 ${t.changeoverMin}m` : ''
+  const load = t.load != null ? `占用 ${Math.round(t.load * 100)}%` : ''
+  const meta3 = [co, load].filter(Boolean).join('　')
   return `<div class="nerv-card">
-    <div class="nerv-card-r1"><span class="nerv-card-wo">${t.orderId}</span><span class="nerv-card-meta">${prio}${lock}</span></div>
+    <div class="nerv-card-r1"><span class="nerv-card-wo">${t.orderId}</span><span class="nerv-card-meta">${prio}${rush}${lock}</span></div>
     <div class="nerv-card-r2">${t.product ?? ''}<span class="nerv-card-op"> · ${t.operationId}</span></div>
     <div class="nerv-card-r3">${t.quantity != null ? `数量 ${t.quantity}` : ''}${due ? `　交期 ${due}` : ''}</div>
-    <div class="nerv-card-tags">${kit != null ? `<span class="nerv-kit nerv-kit-${kitCls}">齐套 ${kit}%</span>` : ''}${t.changeoverMin ? `<span class="nerv-co">换型 ${t.changeoverMin}m</span>` : ''}</div>
+    <div class="nerv-card-r3">${meta3}</div>
+    <div class="nerv-card-tags">${kit != null ? `<span class="nerv-kit nerv-kit-${kitCls}">齐套 ${kit}%</span>` : ''}</div>
   </div>`
 }
 
@@ -501,8 +509,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.order_branch = false
     c.order_branch_free = false
     c.open_split_tasks = false // split 分组行:同组工序铺在一行,不展开成多行
-    c.row_height = options.view === 'resource' ? 96 : 48
-    c.bar_height = options.view === 'resource' ? 78 : 22
+    c.row_height = options.view === 'resource' ? 112 : 48
+    c.bar_height = options.view === 'resource' ? 94 : 22
     c.grid_width = options.view === 'resource' ? 258 : 560
     c.grid_resize = true
     // 资源排产板不画依赖连线(跨泳道连线无业务意义,且横穿卡片影响可读性);仅工单甘特显示。
