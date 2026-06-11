@@ -312,6 +312,12 @@ export class DhtmlxEngine implements SchedulingEngine {
   private configure(inst: DhxGantt, options: SchedulingEngineOptions): void {
     const c = inst.config
     c.date_format = '%Y-%m-%d %H:%i'
+    // 关键:工序是亚天(小时级)。默认 duration_unit='day' 会把时长取整到 0 天,
+    // 导致拖拽/拉伸时条宽变 0 并乱跳。改为按小时计时 + 按小时吸附。
+    c.duration_unit = 'hour'
+    c.duration_step = 1
+    c.time_step = 60
+    c.round_dnd_dates = true
     c.readonly = options.readOnly
     c.drag_move = !options.readOnly
     c.drag_resize = !options.readOnly
