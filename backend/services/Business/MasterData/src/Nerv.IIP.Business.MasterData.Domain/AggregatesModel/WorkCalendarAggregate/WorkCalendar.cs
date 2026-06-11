@@ -110,7 +110,11 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
     public void Disable(string reason)
     {
         var validReason = Required(reason);
-        EnsureEnabled();
+        if (Disabled)
+        {
+            return;
+        }
+
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(WorkCalendar), OrganizationId, EnvironmentId, Code, validReason));

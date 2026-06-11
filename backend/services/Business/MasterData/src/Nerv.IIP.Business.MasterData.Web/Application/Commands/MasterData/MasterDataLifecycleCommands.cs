@@ -121,7 +121,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 return Detail(uom);
             case "uom-conversion":
                 var conversion = await FindUomConversionAsync(request, cancellationToken);
-                await ValidateUomConversionGraphAsync(conversion, cancellationToken);
+                await ValidateUomConversionUnitsAsync(conversion, cancellationToken);
                 conversion.Update(
                     request.Factor ?? conversion.Factor,
                     request.Offset ?? conversion.Offset,
@@ -342,15 +342,15 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         }
     }
 
-    private async Task ValidateUomConversionGraphAsync(UomConversion conversion, CancellationToken cancellationToken)
+    private async Task ValidateUomConversionUnitsAsync(UomConversion conversion, CancellationToken cancellationToken)
     {
-        var validator = new CreateUomConversionCommandHandler(new UomConversionRepository(dbContext), dbContext);
-        await validator.ValidateUomConversionGraphAsync(
+        await UomConversionValidator.ValidateUnitsAsync(
+            dbContext,
             conversion.OrganizationId,
             conversion.EnvironmentId,
             conversion.FromUomCode,
             conversion.ToUomCode,
-            conversion.EffectiveFrom,
+            requireActiveUnits: false,
             cancellationToken);
     }
 

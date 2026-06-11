@@ -67,7 +67,10 @@ public class Shift : Entity<ShiftId>, IAggregateRoot
     public void Disable(string reason)
     {
         var validReason = Required(reason);
-        EnsureEnabled();
+        if (Disabled)
+        {
+            return;
+        }
 
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;

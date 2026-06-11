@@ -39,7 +39,9 @@ public sealed record BusinessConsoleResourceItem(
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
-    int Total);
+    int Total,
+    bool Truncated = false,
+    int? Limit = null);
 
 public sealed record BusinessConsoleListResourcesRequest(
     string OrganizationId,

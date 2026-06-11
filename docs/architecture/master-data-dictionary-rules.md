@@ -67,6 +67,8 @@ SKU 创建/更新时,以下字段的取值**必须存在于对应 CodeSet 且为
 
 人员技能 `level` 字段校验 `skill-level`;业务伙伴 `partnerType`/`partnerRoles` 校验 `partner-type`。
 
+UoM 换算是有向换算规则,允许工厂同时维护正向和反向换算(例如 `kg->g` 与 `g->kg`),也允许同量纲换算网络闭合;后端只强制创建时源/目标单位存在且启用、二者属于同一 `uom-dimension`、`factor > 0` 且同一 `(fromUomCode,toUomCode,effectiveFrom)` 不重复。反向规则不会由平台自动倒数推导,以便保留独立精度、舍入和 affine offset 语义。
+
 ## 4. 治理规则
 
 1. **CodeSet 名平台保留**:工厂不可新增/改名 CodeSet,只能在既有 CodeSet 下维护码值。

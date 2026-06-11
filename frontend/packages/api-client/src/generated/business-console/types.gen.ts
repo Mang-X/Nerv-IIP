@@ -1921,6 +1921,8 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceListResp
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResourceListResponse = {
     resources?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResourceItem>;
     total?: number;
+    truncated?: boolean;
+    limit?: number | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResourceItem = {

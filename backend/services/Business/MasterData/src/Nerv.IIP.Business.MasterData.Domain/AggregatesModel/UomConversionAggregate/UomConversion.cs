@@ -94,7 +94,11 @@ public class UomConversion : Entity<UomConversionId>, IAggregateRoot
     public void Disable(string reason)
     {
         _ = Required(reason);
-        EnsureEnabled();
+        if (Disabled)
+        {
+            return;
+        }
+
         Disabled = true;
         TouchUpdated();
     }

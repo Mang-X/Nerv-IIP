@@ -280,10 +280,35 @@ public sealed class MasterDataApiContractTests
         var allDepartments = await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", Take: 1, All: true), CancellationToken.None);
         Assert.Equal(3, allDepartments.Resources.Count);
         Assert.Equal(3, allDepartments.Total);
+        Assert.False(allDepartments.Truncated);
+        Assert.Equal(5000, allDepartments.Limit);
 
         var referenceData = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "reference-data", CodeSet: "material-type"), CancellationToken.None)).Resources);
         Assert.Equal("material-type", referenceData.CodeSet);
         Assert.Equal("raw-material", referenceData.Code);
+    }
+
+    [Fact]
+    public async Task List_resources_all_mode_reports_truncation_when_limit_is_reached()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        for (var i = 0; i < 5001; i++)
+        {
+            dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", $"DEPT-{i:0000}", $"Department {i:0000}", null));
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListMasterDataResourcesQueryHandler(dbContext).Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "department", All: true),
+            CancellationToken.None);
+
+        Assert.Equal(5001, response.Total);
+        Assert.Equal(5000, response.Resources.Count);
+        Assert.True(response.Truncated);
+        Assert.Equal(5000, response.Limit);
     }
 
     [Fact]
@@ -437,6 +462,16 @@ public sealed class MasterDataApiContractTests
         Assert.Equal(new TimeOnly(8, 30), shift.StartsAt);
         Assert.Equal(new TimeOnly(17, 30), shift.EndsAt);
         Assert.Equal(480, shift.PaidMinutes);
+
+        var enabledHandler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+        var disabled = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "shift", "SHIFT-DAY", false, Reason: "retired"),
+            CancellationToken.None);
+        Assert.False(disabled.Active);
+        var disabledAgain = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "shift", "SHIFT-DAY", false, Reason: "duplicate click"),
+            CancellationToken.None);
+        Assert.False(disabledAgain.Active);
     }
 
     [Fact]
@@ -506,10 +541,39 @@ public sealed class MasterDataApiContractTests
         Assert.Equal(4, conversionUpdate.Precision);
         Assert.Equal("bankers", conversionUpdate.RoundingMode);
 
-        var disabled = await new SetMasterDataResourceEnabledCommandHandler(dbContext).Handle(
+        var kg = await dbContext.UnitsOfMeasure.SingleAsync(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev" && x.Code == "kg", CancellationToken.None);
+        kg.Disable("legacy unit");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var conversionUpdateWithDisabledUnit = await updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "uom-conversion",
+                "kg->g",
+                Factor: 1000.75m,
+                EffectiveFrom: new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.Equal(1000.75m, conversionUpdateWithDisabledUnit.Factor);
+
+        var enabledHandler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+        var disabled = await enabledHandler.Handle(
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "uom-conversion", "kg->g", false, Reason: "superseded", EffectiveFrom: new DateOnly(2026, 1, 1)),
             CancellationToken.None);
         Assert.False(disabled.Active);
+        var disabledAgain = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "uom-conversion", "kg->g", false, Reason: "duplicate click", EffectiveFrom: new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.False(disabledAgain.Active);
+
+        var disabledCalendar = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-calendar", "CAL-001", false, Reason: "retired"),
+            CancellationToken.None);
+        Assert.False(disabledCalendar.Active);
+        var disabledCalendarAgain = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-calendar", "CAL-001", false, Reason: "duplicate click"),
+            CancellationToken.None);
+        Assert.False(disabledCalendarAgain.Active);
     }
 
     [Fact]
@@ -537,7 +601,7 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
-    public async Task Create_uom_conversion_requires_same_dimension_and_rejects_cycles()
+    public async Task Create_uom_conversion_requires_same_dimension_and_allows_reverse_conversion()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -559,10 +623,10 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var cycle = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+        var reverse = await handler.Handle(
             new CreateUomConversionCommand("org-001", "env-dev", "g", "kg", 0.001m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
-            CancellationToken.None));
-        Assert.Contains("cycle", cycle.Message, StringComparison.OrdinalIgnoreCase);
+            CancellationToken.None);
+        Assert.Equal("g->kg", reverse.Code);
     }
 
     [Fact]

@@ -39,7 +39,9 @@ public sealed record MasterDataResourceItem(
 
 public sealed record ListMasterDataResourcesResponse(
     IReadOnlyCollection<MasterDataResourceItem> Resources,
-    int Total);
+    int Total,
+    bool Truncated = false,
+    int? Limit = null);
 
 public sealed record ListMasterDataResourcesQuery(
     string OrganizationId,
@@ -98,11 +100,12 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         CancellationToken cancellationToken)
     {
         var total = await query.CountAsync(cancellationToken);
+        var limit = request.All ? 5000 : Math.Clamp(request.Take, 1, 500);
         var resources = await query
             .Skip(request.All ? 0 : Math.Max(0, request.Skip))
-            .Take(request.All ? 5000 : Math.Clamp(request.Take, 1, 500))
+            .Take(limit)
             .ToListAsync(cancellationToken);
-        return new ListMasterDataResourcesResponse(resources, total);
+        return new ListMasterDataResourcesResponse(resources, total, request.All && total > limit, request.All ? limit : null);
     }
 
     private IQueryable<MasterDataResourceItem> ListSkus(ListMasterDataResourcesQuery request, string resourceType)
