@@ -43,7 +43,7 @@ test('failed login shows an error and stays on the login route', async ({ page }
   await expect(page.getByRole('button', { name: '登录' })).toBeVisible()
 })
 
-test('home shows scan bar, my-tasks empty state and a disabled app wall', async ({ page }) => {
+test('home shows scan bar, my-tasks empty state and a gated app wall', async ({ page }) => {
   await seedStoredSession(page)
   await page.goto('/')
 
@@ -52,8 +52,8 @@ test('home shows scan bar, my-tasks empty state and a disabled app wall', async 
   await expect(page.locator('input[placeholder^="扫描"]')).toBeVisible()
   // my-tasks empty state (no fake data)
   await expect(page.getByText('暂无分配给你的任务')).toBeVisible()
-  // app wall labels render and are disabled until M2 pages land
-  await expect(page.getByRole('button', { name: '收货入库' })).toBeDisabled()
+  // WMS pages have landed → those entries are enabled; MES/equipment are still gated off.
+  await expect(page.getByRole('button', { name: '收货入库' })).toBeEnabled()
   await expect(page.getByRole('button', { name: '报工' })).toBeDisabled()
 
   await expectNoHorizontalOverflow(page)
@@ -63,7 +63,8 @@ test('home shows scan bar, my-tasks empty state and a disabled app wall', async 
 test('clicking a not-ready app-wall entry does not navigate away', async ({ page }) => {
   await seedStoredSession(page)
   await page.goto('/')
-  await page.getByRole('button', { name: '收货入库' }).click({ force: true })
+  // 报工 (mes.report) is still routeReady:false on this branch.
+  await page.getByRole('button', { name: '报工' }).click({ force: true })
   await expect(page).toHaveURL('/')
 })
 
