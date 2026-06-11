@@ -13,12 +13,13 @@ export const PDA_TASK_KINDS: PdaTaskKind[] = [
   { id: 'wms.pick', label: '拣货', group: 'wms', route: '/wms/pick', routeReady: false },
   { id: 'wms.review', label: '复核发货', group: 'wms', route: '/wms/review', routeReady: false },
   { id: 'wms.count', label: '盘点', group: 'wms', route: '/wms/count', routeReady: false },
-  { id: 'mes.report', label: '报工', group: 'mes', route: '/mes/report', routeReady: false },
-  { id: 'mes.issue', label: '领料', group: 'mes', route: '/mes/issue', routeReady: false },
-  { id: 'mes.receipt', label: '完工入库', group: 'mes', route: '/mes/receipt', routeReady: false },
-  { id: 'mes.operation', label: '工序执行', group: 'mes', route: '/mes/operation', routeReady: false },
-  { id: 'equipment.repair', label: '报修', group: 'equipment', route: '/equipment/repair', routeReady: false },
-  { id: 'equipment.inspect', label: '点检', group: 'equipment', route: '/equipment/inspect', routeReady: false },
+  { id: 'mes.report', label: '报工', group: 'mes', route: '/mes/report', routeReady: true },
+  { id: 'mes.issue', label: '领料', group: 'mes', route: '/mes/issue', routeReady: true },
+  { id: 'mes.receipt', label: '完工入库', group: 'mes', route: '/mes/receipt', routeReady: true },
+  { id: 'mes.operation', label: '工序执行', group: 'mes', route: '/mes/operation', routeReady: true },
+  { id: 'equipment.repair', label: '报修', group: 'equipment', route: '/equipment/repair', routeReady: true },
+  { id: 'equipment.inspect', label: '点检', group: 'equipment', route: '/equipment/inspect', routeReady: true },
+  { id: 'equipment.alarms', label: '查看报警', group: 'equipment', route: '/equipment/alarms', routeReady: true },
 ]
 
 const byId = new Map(PDA_TASK_KINDS.map((k) => [k.id, k]))

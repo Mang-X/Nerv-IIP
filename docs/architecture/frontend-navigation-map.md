@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-06-06（FE-10 console 迁移完成、FE-11 仓储作业只读批次接入）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-06-10（PDA MES 一线闭环 Plan 3：工序执行/报工/领料/完工入库 字典点亮 + business-core MES StepFlow 落地；PDA 设备运维 Plan 4：报修/点检/报警查看 business-core 字典/StepFlow/标签落地；此前 2026-06-06 FE-10 console 迁移完成、FE-11 仓储作业只读批次接入）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 
@@ -145,6 +145,10 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | PDA/mobile | 一线报工、收货、拣货、盘点、巡检、报修、报警处理。 | 不复用 PC 菜单树；首页优先是我的任务、快捷应用墙和扫码直达。 |
 
 > PDA v1 任务地图与组件/UX 标准见 `docs/architecture/mobile-pda-module-product-design.md` 与 `docs/superpowers/specs/2026-06-09-mobile-pda-design.md`。实现轨为独立 app `frontend/apps/business-pda`，不复用 PC 菜单树。
+>
+> PDA MES 状态（Plan 3）：MES 工序执行/报工/领料/完工入库 已建——`@nerv-iip/business-core` 已点亮 `mes.operation`/`mes.report`/`mes.issue`/`mes.receipt` 四个应用墙入口（`routeReady=true`），并落地报工/完工入库的 `productionReportFlow`/`finishedGoodsReceiptFlow` StepFlow；MES facade 全就绪、无后端阻塞。WMS PDA 入口仍 disabled（待后端缺口 #374 列表端点）。
+>
+> **设备运维 PDA（Plan 4，2026-06-10 校验）：** 设备运维 报修/点检/报警查看 已建 (Plan 4)（facade 就绪、无后端阻塞）。`@nerv-iip/business-core` 已点亮设备字典（`equipment.repair`/`equipment.inspect`/`equipment.alarms` routeReady=true，应用墙入口可跳）、落地设备 StepFlow（`repairOrderFlow`/`inspectionFlow`）与设备标签（severity/state/priority/工单状态/点检结果中文，镜像 PC `useBusinessEquipment`）；PDA 作业页 报修(故障报修)/点检/报警查看 三页 + 数据 composable（`useBusinessMaintenance`/`useBusinessEquipmentAlarms`）+ StepFlow/标签接线 + e2e 均已建 (Plan 4)。报警→报修保持上下文穿透（带 `deviceAssetId` + `sourceAlarmId`）。
 
 ### 角色导航样例
 
