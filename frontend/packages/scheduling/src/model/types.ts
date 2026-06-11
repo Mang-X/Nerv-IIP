@@ -70,6 +70,14 @@ export interface ScheduleTask {
   milestoneLabel?: string
   /** 分类着色键(按车间/工序);映射到分类色板,缺省用品牌色。 */
   colorKey?: string
+  /** 排产板工单卡片信息(MES/工程数据;当前 APS 契约未提供 → 后端缺口)。 */
+  product?: string
+  quantity?: number
+  dueUtc?: string
+  /** 齐套率 0..1。 */
+  kitting?: number
+  /** 换型时间(分钟)。 */
+  changeoverMin?: number
   locked: boolean
   hasConflict: boolean
   conflictReason?: ConflictReason | null
@@ -91,6 +99,11 @@ export interface ScheduleResource {
   /** 业务化资源名。 */
   text: string
   capacityMinutesPerDay?: number
+  /** 排产板泳道头指标:利用率 0..1+(>1 过载)、OEE 0..1、换型次数、待料风险数。 */
+  utilization?: number
+  oee?: number
+  changeoverCount?: number
+  materialRisk?: number
 }
 
 export interface ResourceLoadBucket {

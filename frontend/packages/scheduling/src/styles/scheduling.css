@@ -256,6 +256,141 @@
   min-width: 30px;
   text-align: right;
 }
+
+/* ---- 资源排产板:工单卡片(条内) ---- */
+.nerv-gantt-dhx .nerv-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-align: left;
+  color: var(--foreground);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+.nerv-gantt-dhx .nerv-card-r1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.nerv-gantt-dhx .nerv-card-wo {
+  font-weight: 700;
+  font-size: 0.76rem;
+  letter-spacing: 0.01em;
+}
+.nerv-gantt-dhx .nerv-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.nerv-gantt-dhx .nerv-card-prio {
+  font-weight: 700;
+  font-size: 0.64rem;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.nerv-gantt-dhx .nerv-card-prio.nerv-prio-high { color: var(--destructive); background: color-mix(in oklch, var(--destructive), transparent 86%); }
+.nerv-gantt-dhx .nerv-card-prio.nerv-prio-mid { color: var(--warning); background: color-mix(in oklch, var(--warning), transparent 86%); }
+.nerv-gantt-dhx .nerv-card-prio.nerv-prio-low { color: var(--muted-foreground); background: color-mix(in oklch, var(--muted-foreground), transparent 86%); }
+.nerv-gantt-dhx .nerv-card-r2 {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nerv-gantt-dhx .nerv-card-op { color: var(--muted-foreground); }
+.nerv-gantt-dhx .nerv-card-r3 {
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.nerv-gantt-dhx .nerv-card-tags {
+  display: flex;
+  gap: 5px;
+  margin-top: auto;
+}
+.nerv-gantt-dhx .nerv-kit {
+  font-size: 0.64rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.nerv-gantt-dhx .nerv-kit-ok { color: var(--success); background: color-mix(in oklch, var(--success), transparent 84%); }
+.nerv-gantt-dhx .nerv-kit-warn { color: var(--warning); background: color-mix(in oklch, var(--warning), transparent 84%); }
+.nerv-gantt-dhx .nerv-kit-bad { color: var(--destructive); background: color-mix(in oklch, var(--destructive), transparent 84%); }
+.nerv-gantt-dhx .nerv-co {
+  font-size: 0.64rem;
+  color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--muted), transparent 25%);
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* 网格首列(任务名/泳道名):用 flex 居中替代 DHTMLX 的 line-height:96px 单行居中,支持泳道头多行 KPI */
+.nerv-gantt-dhx .gantt_grid_data .gantt_tree_content {
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+  line-height: 1.35 !important;
+  white-space: normal !important;
+}
+
+/* ---- 资源排产板:左侧泳道头(资源 + 利用率/OEE/瓶颈) ---- */
+.nerv-gantt-dhx .nerv-lane {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 2px;
+}
+.nerv-gantt-dhx .nerv-lane-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.nerv-gantt-dhx .nerv-lane-name {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--foreground);
+}
+.nerv-gantt-dhx .nerv-lane-tag {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--destructive);
+  background: color-mix(in oklch, var(--destructive), transparent 84%);
+  padding: 0 5px;
+  border-radius: 4px;
+}
+.nerv-gantt-dhx .nerv-lane-kpis {
+  display: flex;
+  gap: 12px;
+}
+.nerv-gantt-dhx .nerv-lane-kpi {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.nerv-gantt-dhx .nerv-lane-kpi i {
+  font-style: normal;
+  font-size: 0.6rem;
+  color: var(--muted-foreground);
+}
+.nerv-gantt-dhx .nerv-lane-kpi b {
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+.nerv-gantt-dhx .nerv-lane-kpi b.nerv-over { color: var(--destructive); }
+.nerv-gantt-dhx .nerv-lane-kpi b.nerv-warn { color: var(--warning); }
 /* 锁定:同色虚线描边(语义"固定",非装饰侧条) */
 .nerv-gantt-dhx .gantt_task_line.nerv-locked {
   border-style: dashed !important;

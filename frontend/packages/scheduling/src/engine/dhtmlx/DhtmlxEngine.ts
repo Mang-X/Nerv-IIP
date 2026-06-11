@@ -65,17 +65,33 @@ const PRIORITY_CELL: Record<string, [string, string, string]> = {
   low: ['nerv-prio-low', '↓', '低'],
 }
 
+interface LaneTask extends GridTask {
+  kpi?: { utilization?: number; oee?: number; changeoverCount?: number; materialRisk?: number }
+}
+
+function laneCell(t: LaneTask): string {
+  const name = t.nerv?.text ?? ''
+  const k = t.kpi
+  if (!k) return `<span class="nerv-lane-name">${name}</span>`
+  const util = Math.round((k.utilization ?? 0) * 100)
+  const oee = Math.round((k.oee ?? 0) * 100)
+  const over = util > 100
+  const risk = k.materialRisk ?? 0
+  return `<div class="nerv-lane">
+    <div class="nerv-lane-head"><span class="nerv-lane-name">${name}</span>${over ? '<span class="nerv-lane-tag">瓶颈</span>' : ''}</div>
+    <div class="nerv-lane-kpis">
+      <span class="nerv-lane-kpi"><i>利用率</i><b class="${over ? 'nerv-over' : ''}">${util}%</b></span>
+      <span class="nerv-lane-kpi"><i>OEE</i><b>${oee}%</b></span>
+      ${risk ? `<span class="nerv-lane-kpi"><i>待料</i><b class="nerv-warn">${risk}</b></span>` : ''}
+    </div>
+  </div>`
+}
+
 const GRID_COLUMNS = (view: 'order' | 'resource') => {
-  const name = {
-    name: 'text',
-    label: view === 'resource' ? '资源 / 工序' : '任务名称',
-    tree: true,
-    width: view === 'resource' ? 188 : 196,
-    resize: true,
-  }
   if (view === 'resource') {
-    return [name, { name: 'duration', label: '工时', align: 'center', width: 60, template: durationLabel }]
+    return [{ name: 'text', label: '工作中心 / 设备', tree: true, width: 222, resize: true, template: laneCell }]
   }
+  const name = { name: 'text', label: '任务名称', tree: true, width: 196, resize: true }
   return [
     name,
     { name: 'owner', label: '负责人', align: 'center', width: 72, template: ownerCell },
@@ -109,6 +125,30 @@ function progressCell(t: GridTask): string {
   if (t.type === 'project' || t.nerv?.type !== 'operation') return ''
   const pct = Math.round((t.nerv?.progress ?? 0) * 100)
   return `<span class="nerv-pcell"><span class="nerv-pbar"><span style="width:${pct}%"></span></span><span class="nerv-ptext">${pct}%</span></span>`
+}
+
+const LOCK_SVG =
+  '<svg class="nerv-lock-ic" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="5.5" y="10" width="13" height="9.5" rx="2.2" fill="currentColor"/></svg>'
+const fmtMd = (iso: string) => {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 资源排产板工单卡片(条内 HTML)。 */
+function cardHtml(t: ScheduleTask): string {
+  const prio = t.priority
+    ? `<span class="nerv-card-prio nerv-prio-${t.priority}">${PRIORITY_CELL[t.priority][2]}</span>`
+    : ''
+  const lock = t.locked ? LOCK_SVG : ''
+  const due = t.dueUtc ? fmtMd(t.dueUtc) : ''
+  const kit = t.kitting != null ? Math.round(t.kitting * 100) : null
+  const kitCls = kit == null ? '' : kit >= 100 ? 'ok' : kit >= 80 ? 'warn' : 'bad'
+  return `<div class="nerv-card">
+    <div class="nerv-card-r1"><span class="nerv-card-wo">${t.orderId}</span><span class="nerv-card-meta">${prio}${lock}</span></div>
+    <div class="nerv-card-r2">${t.product ?? ''}<span class="nerv-card-op"> · ${t.operationId}</span></div>
+    <div class="nerv-card-r3">${t.quantity != null ? `数量 ${t.quantity}` : ''}${due ? `　交期 ${due}` : ''}</div>
+    <div class="nerv-card-tags">${kit != null ? `<span class="nerv-kit nerv-kit-${kitCls}">齐套 ${kit}%</span>` : ''}${t.changeoverMin ? `<span class="nerv-co">换型 ${t.changeoverMin}m</span>` : ''}</div>
+  </div>`
 }
 
 const WEEKDAY = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -327,9 +367,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.order_branch = false
     c.order_branch_free = false
     c.open_split_tasks = false // split 分组行:同组工序铺在一行,不展开成多行
-    c.row_height = options.view === 'resource' ? 44 : 48
-    c.bar_height = options.view === 'resource' ? 26 : 22
-    c.grid_width = options.view === 'resource' ? 280 : 560
+    c.row_height = options.view === 'resource' ? 96 : 48
+    c.bar_height = options.view === 'resource' ? 78 : 22
+    c.grid_width = options.view === 'resource' ? 224 : 560
     c.grid_resize = true
     c.show_links = true
     c.highlight_critical_path = options.view === 'order'
@@ -373,9 +413,12 @@ export class DhtmlxEngine implements SchedulingEngine {
       ].filter(Boolean)
       return lines.join('<br/>')
     }
-    // 条内不渲染文字(短条会溢出);工序名放到条形右侧,始终可读。锁定用干净 SVG 锁(非 emoji)。
-    inst.templates.task_text = () => ''
+    const isResource = options.view === 'resource'
+    // 资源排产板:条内渲染工单卡片;工单甘特:条内不渲染,工序名放右侧。
+    inst.templates.task_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) =>
+      isResource && task.nerv?.type === 'operation' ? cardHtml(task.nerv) : ''
     inst.templates.rightside_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) => {
+      if (isResource) return ''
       const t = task.nerv
       if (t?.type !== 'operation') return ''
       const lock = t.locked
@@ -470,9 +513,10 @@ export class DhtmlxEngine implements SchedulingEngine {
     const data: unknown[] = []
 
     if (this.options.view === 'resource') {
-      // 一资源(所选维度)一泳道:分组行用 split task,同组工序铺在它那一行。
+      // 一资源(所选维度)一泳道:分组行用 split task,同组工序铺在它那一行。里程碑不入资源板。
       const dim = this.options.groupBy || 'workCenter'
-      const ops = model.tasks.filter((t) => t.type === 'operation')
+      const ops = model.tasks.filter((t) => t.type === 'operation' && !t.isMilestone)
+      const resById = new Map(model.resources.map((r) => [r.id, r]))
       const groups = new Map<string, string>()
       const laneOf = (t: ScheduleTask) => t.dimensions?.[dim]?.id ?? t.resourceId ?? '__none__'
       for (const t of ops) {
@@ -480,12 +524,16 @@ export class DhtmlxEngine implements SchedulingEngine {
         if (!groups.has(id)) groups.set(id, t.dimensions?.[dim]?.label ?? t.resourceId ?? '未分配')
       }
       for (const [id, label] of groups) {
+        const res = resById.get(id)
         data.push({
           id: `lane:${id}`,
           text: label,
           type: 'project',
           render: 'split',
           open: true,
+          kpi: res
+            ? { utilization: res.utilization, oee: res.oee, changeoverCount: res.changeoverCount, materialRisk: res.materialRisk }
+            : undefined,
           nerv: { type: 'order', orderId: id, operationId: '', operationSequence: 0, text: label, startUtc: '', endUtc: '', locked: false, hasConflict: false },
         })
       }
