@@ -68,6 +68,9 @@ export function useEngine(opts: UseEngineOptions) {
     return new NativeEngine()
   }
 
+  // 拖拽引起的 model 变更:引擎(DHTMLX)已就地移好条,不应再 setData 重建(否则条被收成线)。
+  let suppressSetData = false
+
   async function init() {
     if (!opts.container.value || engine.value) return
     const e = await build()
@@ -83,14 +86,26 @@ export function useEngine(opts: UseEngineOptions) {
     }
     e.mount(opts.container.value, options)
     for (const [name, cb] of Object.entries(opts.on ?? {})) {
-      e.on(name as keyof EngineEvents, cb as never)
+      if (name === 'taskDragEnd') {
+        e.on('taskDragEnd', ((p: never) => {
+          suppressSetData = true
+          ;(cb as (payload: unknown) => void)(p)
+          setTimeout(() => {
+            suppressSetData = false
+          }, 80)
+        }) as never)
+      } else {
+        e.on(name as keyof EngineEvents, cb as never)
+      }
     }
     if (opts.model.value) e.setData(opts.model.value)
     engine.value = e
   }
 
   watch(opts.container, (el) => { if (el) void init() }, { immediate: true })
-  watch(opts.model, (m) => { if (m) engine.value?.setData(m) })
+  watch(opts.model, (m) => {
+    if (m && !suppressSetData) engine.value?.setData(m)
+  })
   watch(opts.scale, (s) => engine.value?.applyCommand({ kind: 'scaleTo', scale: s }))
   watch(opts.readOnly, (r) => engine.value?.applyCommand({ kind: 'setReadOnly', readOnly: r }))
   if (opts.groupBy) {
