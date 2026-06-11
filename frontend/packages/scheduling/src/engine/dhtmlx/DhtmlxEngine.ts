@@ -72,27 +72,35 @@ interface LaneTask extends GridTask {
   kpi?: { utilization?: number; oee?: number; changeoverCount?: number; materialRisk?: number }
 }
 
-function laneCell(t: LaneTask): string {
+// 左侧列1:资源名(+瓶颈标)。列头随所选维度变(工作中心/设备/班组/产线)。
+function laneNameCell(t: LaneTask): string {
   const name = t.nerv?.text ?? ''
+  const over = (t.kpi?.utilization ?? 0) > 1
+  return `<div class="nerv-lane-id"><span class="nerv-lane-name">${name}</span>${over ? '<span class="nerv-lane-tag">瓶颈</span>' : ''}</div>`
+}
+// 左侧列2:产能指标(利用率 / OEE / 切换 / 待料)。
+function laneKpiCell(t: LaneTask): string {
   const k = t.kpi
-  if (!k) return `<span class="nerv-lane-name">${name}</span>`
+  if (!k) return ''
   const util = Math.round((k.utilization ?? 0) * 100)
   const oee = Math.round((k.oee ?? 0) * 100)
   const over = util > 100
+  const co = k.changeoverCount ?? 0
   const risk = k.materialRisk ?? 0
-  return `<div class="nerv-lane">
-    <div class="nerv-lane-head"><span class="nerv-lane-name">${name}</span>${over ? '<span class="nerv-lane-tag">瓶颈</span>' : ''}</div>
-    <div class="nerv-lane-kpis">
-      <span class="nerv-lane-kpi"><i>利用率</i><b class="${over ? 'nerv-over' : ''}">${util}%</b></span>
-      <span class="nerv-lane-kpi"><i>OEE</i><b>${oee}%</b></span>
-      ${risk ? `<span class="nerv-lane-kpi"><i>待料</i><b class="nerv-warn">${risk}</b></span>` : ''}
-    </div>
+  return `<div class="nerv-lane-kpis">
+    <span class="nerv-lane-kpi"><i>利用率</i><b class="${over ? 'nerv-over' : ''}">${util}%</b></span>
+    <span class="nerv-lane-kpi"><i>OEE</i><b>${oee}%</b></span>
+    <span class="nerv-lane-kpi"><i>切换</i><b>${co}</b></span>
+    <span class="nerv-lane-kpi"><i>待料</i><b class="${risk ? 'nerv-warn' : ''}">${risk}</b></span>
   </div>`
 }
 
-const GRID_COLUMNS = (view: 'order' | 'resource') => {
+const GRID_COLUMNS = (view: 'order' | 'resource', dimLabel = '工作中心') => {
   if (view === 'resource') {
-    return [{ name: 'text', label: '工作中心 / 设备', tree: true, width: 222, resize: true, template: laneCell }]
+    return [
+      { name: 'text', label: dimLabel, tree: true, width: 128, resize: true, template: laneNameCell },
+      { name: 'kpi', label: '产能指标', width: 124, resize: true, template: laneKpiCell },
+    ]
   }
   const name = { name: 'text', label: '任务名称', tree: true, width: 196, resize: true }
   return [
@@ -295,6 +303,10 @@ export class DhtmlxEngine implements SchedulingEngine {
         break
       case 'setGroupBy':
         this.options.groupBy = command.groupBy
+        {
+          const cols = g?.config?.columns as Array<{ label?: string }> | undefined
+          if (cols?.[0]) cols[0].label = this.resolveDimLabel()
+        }
         if (this.model) this.setData(this.model)
         break
       case 'scrollToToday':
@@ -360,6 +372,12 @@ export class DhtmlxEngine implements SchedulingEngine {
     return 'month'
   }
 
+  /** 当前分组维度的显示名(左侧列1表头)。 */
+  private resolveDimLabel(): string {
+    const key = this.options.groupBy || 'workCenter'
+    return this.model?.groupDimensions?.find((d) => d.key === key)?.label ?? '工作中心'
+  }
+
   private nowDate(): Date {
     const h = this.model?.horizon
     if (!h?.startUtc || !h?.endUtc) return new Date()
@@ -397,11 +415,12 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.open_split_tasks = false // split 分组行:同组工序铺在一行,不展开成多行
     c.row_height = options.view === 'resource' ? 96 : 48
     c.bar_height = options.view === 'resource' ? 78 : 22
-    c.grid_width = options.view === 'resource' ? 224 : 560
+    c.grid_width = options.view === 'resource' ? 258 : 560
     c.grid_resize = true
-    c.show_links = true
+    // 资源排产板不画依赖连线(跨泳道连线无业务意义,且横穿卡片影响可读性);仅工单甘特显示。
+    c.show_links = options.view === 'order'
     c.highlight_critical_path = options.view === 'order'
-    c.columns = GRID_COLUMNS(options.view)
+    c.columns = GRID_COLUMNS(options.view, this.resolveDimLabel())
     c.scales = SCALE_CONFIG[this.resolveScale()]
     c.scale_height = 50
     c.min_column_width = 36

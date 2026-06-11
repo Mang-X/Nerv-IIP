@@ -18,7 +18,7 @@ const WC_DIMS: Record<string, { device: [string, string]; team: [string, string]
   '激光切割-01': { device: ['DEV-L1', '激光切割机 L1'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
   '折弯-02': { device: ['DEV-B2', '数控折弯机 B2'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
   '焊接-01': { device: ['DEV-W1', '焊接机器人 W1'], team: ['T-B', '乙班'], line: ['LN-WELD', '焊装线'] },
-  '加工中心-03': { device: ['DEV-C3', 'CNC加工中心 M3'], team: ['T-B', '乙班'], line: ['LN-MACH', '机加线'] },
+  '加工中心-03': { device: ['DEV-C3', '数控机床 M3'], team: ['T-B', '乙班'], line: ['LN-MACH', '机加线'] },
 }
 
 const OWNERS = ['张伟', '李强', '王磊', '刘洋', '陈刚', '赵敏', '孙凯']

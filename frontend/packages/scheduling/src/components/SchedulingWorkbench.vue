@@ -193,7 +193,7 @@ async function onRelease() {
       </aside>
     </div>
 
-    <SchedulingLegend v-if="showLegend" :categories="legendCategories" />
+    <SchedulingLegend v-if="showLegend" :categories="legendCategories" :view="view" />
 
     <InspectorSheet v-model:open="inspectorOpen" :task="selectedTask" />
   </div>

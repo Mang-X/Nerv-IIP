@@ -113,12 +113,13 @@
 
 /* 分类色板:按车间/工序着色,提亮做轻盈。定义为全局变量,图例与条形共用同一套色。 */
 :root {
-  --nerv-cat-cut: oklch(0.62 0.14 255);
-  --nerv-cat-bend: oklch(0.58 0.15 290);
-  --nerv-cat-weld: oklch(0.7 0.15 55);
-  --nerv-cat-mach: oklch(0.65 0.1 195);
-  --nerv-cat-paint: oklch(0.6 0.16 350);
-  --nerv-cat-pack: oklch(0.66 0.14 150);
+  /* 按工序语义着色(冲压/钣金 绿、折弯 琥珀、焊接 红、机加/涂装 蓝、总装 青绿、检测 紫) */
+  --nerv-cat-cut: oklch(0.62 0.13 155);
+  --nerv-cat-bend: oklch(0.72 0.13 75);
+  --nerv-cat-weld: oklch(0.57 0.17 25);
+  --nerv-cat-mach: oklch(0.58 0.13 250);
+  --nerv-cat-paint: oklch(0.56 0.13 250);
+  --nerv-cat-pack: oklch(0.6 0.12 165);
 }
 .nerv-gantt-dhx .gantt_task_line.nerv-cat-cut { --bar: var(--nerv-cat-cut); }
 .nerv-gantt-dhx .gantt_task_line.nerv-cat-bend { --bar: var(--nerv-cat-bend); }
@@ -258,18 +259,33 @@
 }
 
 /* ---- 资源排产板:工单卡片(条内) ---- */
+/* 卡片底色混向 --card(非透明叠加),亮暗都浅而通透、文字清晰;工序色靠左描边 + WO 号体现 */
+.nerv-gantt-dhx .gantt_task_line:has(.nerv-card) {
+  background-color: color-mix(in oklch, var(--bar), var(--card) 88%) !important;
+  border-color: color-mix(in oklch, var(--bar), transparent 35%) !important;
+  border-left-width: 3px !important;
+}
+/* 资源卡片不显示进度填充(进度信息不在排产板呈现):去掉透出的深色块,避免与文字交杂成横线 */
+.nerv-gantt-dhx .gantt_task_line:has(.nerv-card) .gantt_task_progress,
+.nerv-gantt-dhx .gantt_task_line:has(.nerv-card) .gantt_task_progress_wrapper {
+  display: none !important;
+}
+/* split 模式泳道汇总条(贯穿整行的灰/蓝横线):排产板按泳道铺卡片,不需要汇总条,隐藏 */
+.nerv-gantt-dhx .gantt_task_line.gantt_split_parent {
+  display: none !important;
+}
 .nerv-gantt-dhx .nerv-card {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 9px;
+  padding: 6px 10px;
   height: 100%;
   box-sizing: border-box;
   overflow: hidden;
   text-align: left;
   color: var(--foreground);
   font-size: 0.72rem;
-  line-height: 1.35;
+  line-height: 1.38;
 }
 .nerv-gantt-dhx .nerv-card-r1 {
   display: flex;
@@ -281,6 +297,7 @@
   font-weight: 700;
   font-size: 0.76rem;
   letter-spacing: 0.01em;
+  color: color-mix(in oklch, var(--bar), var(--foreground) 32%);
 }
 .nerv-gantt-dhx .nerv-card-meta {
   display: inline-flex;
@@ -315,22 +332,36 @@
   gap: 5px;
   margin-top: auto;
 }
+/* 齐套用实色 chip(白/深字),不再用淡色填充——避免和卡片底色糊在一起 */
 .nerv-gantt-dhx .nerv-kit {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 0.64rem;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 4px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
   white-space: nowrap;
+  letter-spacing: 0.01em;
 }
-.nerv-gantt-dhx .nerv-kit-ok { color: var(--success); background: color-mix(in oklch, var(--success), transparent 84%); }
-.nerv-gantt-dhx .nerv-kit-warn { color: var(--warning); background: color-mix(in oklch, var(--warning), transparent 84%); }
-.nerv-gantt-dhx .nerv-kit-bad { color: var(--destructive); background: color-mix(in oklch, var(--destructive), transparent 84%); }
+.nerv-gantt-dhx .nerv-kit::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.85;
+}
+.nerv-gantt-dhx .nerv-kit-ok { color: #fff; background: oklch(0.6 0.14 150); }
+.nerv-gantt-dhx .nerv-kit-warn { color: oklch(0.28 0.05 75); background: oklch(0.82 0.15 85); }
+.nerv-gantt-dhx .nerv-kit-bad { color: #fff; background: oklch(0.58 0.2 25); }
 .nerv-gantt-dhx .nerv-co {
-  font-size: 0.64rem;
+  font-size: 0.62rem;
+  font-weight: 600;
   color: var(--muted-foreground);
-  background: color-mix(in oklch, var(--muted), transparent 25%);
-  padding: 1px 5px;
-  border-radius: 4px;
+  background: color-mix(in oklch, var(--card), var(--foreground) 9%);
+  padding: 1px 6px;
+  border-radius: 999px;
   white-space: nowrap;
 }
 
@@ -365,26 +396,20 @@
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
 }
 
-/* ---- 资源排产板:左侧泳道头(资源 + 利用率/OEE/瓶颈) ---- */
-.nerv-gantt-dhx .nerv-lane {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 8px 2px;
-}
-.nerv-gantt-dhx .nerv-lane-head {
+/* ---- 资源排产板:左侧两列(列1 资源名 / 列2 产能指标) ---- */
+.nerv-gantt-dhx .nerv-lane-id {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
 }
 .nerv-gantt-dhx .nerv-lane-name {
   font-weight: 600;
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   color: var(--foreground);
 }
 .nerv-gantt-dhx .nerv-lane-tag {
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   font-weight: 700;
   color: var(--destructive);
   background: color-mix(in oklch, var(--destructive), transparent 84%);
@@ -392,13 +417,15 @@
   border-radius: 4px;
 }
 .nerv-gantt-dhx .nerv-lane-kpis {
-  display: flex;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 10px;
+  width: 100%;
 }
 .nerv-gantt-dhx .nerv-lane-kpi {
   display: inline-flex;
   flex-direction: column;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 .nerv-gantt-dhx .nerv-lane-kpi i {
   font-style: normal;
