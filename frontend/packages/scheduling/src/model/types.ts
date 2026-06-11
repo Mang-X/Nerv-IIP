@@ -16,6 +16,13 @@ export type ConflictReason =
   | 'invalidLockedAssignment'
   | 'predecessorUnscheduled'
 export type ChangeType = 'added' | 'moved' | 'delayed' | 'preserved' | 'blocked'
+export type TaskPriority = 'high' | 'medium' | 'low'
+
+/** 业务执行状态(网格状态列显示)。 */
+export interface TaskStatus {
+  label: string
+  tone: 'success' | 'info' | 'warning' | 'danger' | 'neutral'
+}
 
 /** 资源排产板的可切换分组维度(设备 / 班组 / 产线 / 工作中心 …)。 */
 export interface SchedulingDimension {
@@ -48,8 +55,19 @@ export interface ScheduleTask {
   dimensions?: Record<string, DimensionValue>
   startUtc: string
   endUtc: string
+  /** 计划基线(与实际 start/end 对比;甘特画"计划 vs 实际"双层条)。 */
+  plannedStartUtc?: string
+  plannedEndUtc?: string
   /** 0..1。 */
   progress?: number
+  /** 网格列:负责人 / 优先级 / 状态。来源于 MES/工程数据(当前 APS 契约未提供 → 后端缺口)。 */
+  owner?: string
+  priority?: TaskPriority
+  status?: TaskStatus
+  /** 里程碑(渲染为菱形,无时长)。 */
+  isMilestone?: boolean
+  /** 分类着色键(按车间/工序);映射到分类色板,缺省用品牌色。 */
+  colorKey?: string
   locked: boolean
   hasConflict: boolean
   conflictReason?: ConflictReason | null

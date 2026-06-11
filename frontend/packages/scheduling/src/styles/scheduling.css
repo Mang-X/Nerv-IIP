@@ -100,18 +100,28 @@
   font-size: 0.72rem;
 }
 
-/* 工序条:shadcn 偏平品牌色,1px 内高光做轻微立体,柔阴影做悬浮,不用廉价光泽渐变 */
+/* 工序条:shadcn 偏平,底色由 --bar 变量驱动(分类/冲突只改 --bar,互不打架)。
+   1px 内高光做轻微立体,柔阴影做悬浮,不用廉价光泽渐变。 */
 .nerv-gantt-dhx .gantt_task_line {
-  background-color: var(--brand) !important;
+  --bar: var(--brand);
+  background-color: var(--bar) !important;
   background-image: none !important;
-  border: 1px solid color-mix(in oklch, var(--brand), black 24%) !important;
+  border: 1px solid color-mix(in oklch, var(--bar), black 26%) !important;
   border-radius: 6px !important;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.1);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.12);
 }
 .nerv-gantt-dhx .gantt_task_progress {
-  background-color: color-mix(in oklch, var(--brand), black 34%) !important;
+  background-color: color-mix(in oklch, var(--bar), black 32%) !important;
   border-radius: 5px 0 0 5px;
 }
+
+/* 分类色板:按车间/工序着色(只设 --bar,base 规则消费) */
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-cut { --bar: oklch(0.58 0.15 250); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-bend { --bar: oklch(0.56 0.16 300); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-weld { --bar: oklch(0.64 0.15 55); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-mach { --bar: oklch(0.6 0.12 190); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-paint { --bar: oklch(0.58 0.15 330); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-pack { --bar: oklch(0.62 0.13 150); }
 .nerv-gantt-dhx .gantt_task_content {
   color: #fff;
   font-weight: 500;
@@ -143,10 +153,74 @@
   box-shadow: 0 0 0 2px var(--brand), 0 4px 14px color-mix(in oklch, var(--brand), transparent 40%) !important;
   z-index: 2;
 }
-/* 冲突:用背景色调融危险色 + 危险色描边(不用侧边色条) */
+/* 冲突:把 --bar 调融危险色 + 危险色描边(不用侧边色条) */
 .nerv-gantt-dhx .gantt_task_line.nerv-conflict {
-  background-color: color-mix(in oklch, var(--brand), var(--destructive) 40%) !important;
+  --bar: color-mix(in oklch, var(--brand), var(--destructive) 45%);
   border-color: var(--destructive) !important;
+}
+
+/* 里程碑:菱形 */
+.nerv-gantt-dhx .gantt_task_line.gantt_milestone {
+  border-radius: 3px !important;
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--bar), black 30%), 0 1px 3px rgb(0 0 0 / 0.25);
+}
+
+/* ---- 左侧网格单元格内容:优先级 / 状态 / 进度条 ---- */
+.nerv-gantt-dhx .nerv-prio {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 600;
+  font-size: 0.72rem;
+}
+.nerv-gantt-dhx .nerv-prio-high { color: var(--destructive); }
+.nerv-gantt-dhx .nerv-prio-mid { color: var(--warning); }
+.nerv-gantt-dhx .nerv-prio-low { color: var(--muted-foreground); }
+.nerv-gantt-dhx .nerv-st {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  color: var(--foreground);
+}
+.nerv-gantt-dhx .nerv-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex: none;
+}
+.nerv-gantt-dhx .nerv-dot-success { background: var(--success); }
+.nerv-gantt-dhx .nerv-dot-info { background: var(--brand); }
+.nerv-gantt-dhx .nerv-dot-warning { background: var(--warning); }
+.nerv-gantt-dhx .nerv-dot-danger { background: var(--destructive); }
+.nerv-gantt-dhx .nerv-dot-neutral { background: var(--muted-foreground); }
+.nerv-gantt-dhx .nerv-pcell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0 4px;
+}
+.nerv-gantt-dhx .nerv-pbar {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--muted-foreground), transparent 70%);
+  overflow: hidden;
+}
+.nerv-gantt-dhx .nerv-pbar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--brand);
+}
+.nerv-gantt-dhx .nerv-ptext {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  min-width: 30px;
+  text-align: right;
 }
 /* 锁定:虚线描边(语义"固定",非装饰侧条) */
 .nerv-gantt-dhx .gantt_task_line.nerv-locked {

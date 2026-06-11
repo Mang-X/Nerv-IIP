@@ -13,8 +13,23 @@ const WC_DIMS: Record<string, { device: [string, string]; team: [string, string]
   '加工中心-03': { device: ['DEV-C3', 'CNC 加工中心 03'], team: ['T-B', '乙班'], line: ['LN-MACH', '机加产线'] },
 }
 
+const OWNERS = ['张伟', '李强', '王磊', '刘洋', '陈刚', '赵敏', '孙凯']
+const PRIORITIES = ['high', 'medium', 'low'] as const
+const STATUSES = [
+  { label: '已完成', tone: 'success' as const, progress: 1 },
+  { label: '进行中', tone: 'info' as const, progress: 0.55 },
+  { label: '未开始', tone: 'neutral' as const, progress: 0 },
+]
+const WC_COLOR: Record<string, string> = {
+  '激光切割-01': 'cut',
+  '折弯-02': 'bend',
+  '焊接-01': 'weld',
+  '加工中心-03': 'mach',
+}
+
 const model = computed(() => {
   const m = toModel(previewPlan)
+  let i = 0
   for (const t of m.tasks) {
     if (t.type !== 'operation') continue
     const wc = t.workCenterId ?? ''
@@ -29,6 +44,13 @@ const model = computed(() => {
           }
         : {}),
     }
+    const st = STATUSES[i % STATUSES.length]
+    t.owner = OWNERS[i % OWNERS.length]
+    t.priority = PRIORITIES[i % PRIORITIES.length]
+    t.status = { label: st.label, tone: st.tone }
+    t.progress = st.progress
+    t.colorKey = WC_COLOR[wc] ?? 'cut'
+    i += 1
   }
   m.groupDimensions = [
     { key: 'workCenter', label: '工作中心' },

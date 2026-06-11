@@ -43,21 +43,63 @@ interface DhxTask {
   $resource?: string
 }
 
-const GRID_COLUMNS = (view: 'order' | 'resource') => [
-  { name: 'text', label: view === 'resource' ? '资源 / 工序' : '工单 / 工序', tree: true, width: 198, resize: true },
-  { name: 'start_date', label: '开始', align: 'center', width: 104, resize: true, template: (t: DhxTask) => gridDate(t) },
-  { name: 'duration', label: '工时', align: 'center', width: 60, template: (t: DhxTask) => durationLabel(t) },
-]
-
-function gridDate(t: DhxTask): string {
-  if (!t.start_date || (t as { type?: string }).type === 'project') return ''
-  const d = t.start_date
-  return Number.isNaN(d.getTime?.()) ? '' : d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+interface GridTask {
+  type?: string
+  start_date?: Date
+  end_date?: Date
+  nerv?: ScheduleTask
 }
-function durationLabel(t: DhxTask): string {
-  if ((t as { type?: string }).type === 'project' || !t.start_date || !t.end_date) return ''
+
+const PRIORITY_CELL: Record<string, [string, string, string]> = {
+  high: ['nerv-prio-high', '↑', '高'],
+  medium: ['nerv-prio-mid', '—', '中'],
+  low: ['nerv-prio-low', '↓', '低'],
+}
+
+const GRID_COLUMNS = (view: 'order' | 'resource') => {
+  const name = {
+    name: 'text',
+    label: view === 'resource' ? '资源 / 工序' : '任务名称',
+    tree: true,
+    width: view === 'resource' ? 188 : 196,
+    resize: true,
+  }
+  if (view === 'resource') {
+    return [name, { name: 'duration', label: '工时', align: 'center', width: 60, template: durationLabel }]
+  }
+  return [
+    name,
+    { name: 'owner', label: '负责人', align: 'center', width: 72, template: ownerCell },
+    { name: 'priority', label: '优先级', align: 'center', width: 66, template: priorityCell },
+    { name: 'status', label: '状态', align: 'center', width: 80, template: statusCell },
+    { name: 'duration', label: '工时', align: 'center', width: 52, template: durationLabel },
+    { name: 'progress', label: '进度', align: 'center', width: 98, template: progressCell },
+  ]
+}
+
+function durationLabel(t: GridTask): string {
+  if (t.type === 'project' || !t.start_date || !t.end_date) return ''
   const h = Math.round((t.end_date.getTime() - t.start_date.getTime()) / 3_600_000)
   return h >= 1 ? `${h}h` : '<1h'
+}
+function ownerCell(t: GridTask): string {
+  return t.type === 'project' ? '' : t.nerv?.owner ?? '—'
+}
+function priorityCell(t: GridTask): string {
+  const p = t.nerv?.priority
+  if (t.type === 'project' || !p) return ''
+  const [cls, arrow, label] = PRIORITY_CELL[p]
+  return `<span class="nerv-prio ${cls}">${arrow} ${label}</span>`
+}
+function statusCell(t: GridTask): string {
+  const s = t.nerv?.status
+  if (t.type === 'project' || !s) return ''
+  return `<span class="nerv-st"><i class="nerv-dot nerv-dot-${s.tone}"></i>${s.label}</span>`
+}
+function progressCell(t: GridTask): string {
+  if (t.type === 'project' || t.nerv?.type !== 'operation') return ''
+  const pct = Math.round((t.nerv?.progress ?? 0) * 100)
+  return `<span class="nerv-pcell"><span class="nerv-pbar"><span style="width:${pct}%"></span></span><span class="nerv-ptext">${pct}%</span></span>`
 }
 
 const SCALE_CONFIG: Record<Exclude<TimeScale, 'auto'>, Array<Record<string, unknown>>> = {
@@ -264,7 +306,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.open_split_tasks = false // split 分组行:同组工序铺在一行,不展开成多行
     c.row_height = 44
     c.bar_height = 26
-    c.grid_width = 380
+    c.grid_width = options.view === 'resource' ? 280 : 560
     c.grid_resize = true
     c.show_links = true
     c.highlight_critical_path = options.view === 'order'
@@ -289,6 +331,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       const t = task.nerv
       const cls: string[] = []
       if (t?.type === 'order') cls.push('nerv-order')
+      if (t?.colorKey) cls.push(`nerv-cat-${t.colorKey}`)
       if (t?.hasConflict) cls.push('nerv-conflict')
       if (t?.locked) cls.push('nerv-locked')
       if (t?.id === this.selectedTaskId) cls.push('nerv-selected')
@@ -406,7 +449,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       start_date: toDate(t.startUtc),
       end_date: toDate(t.endUtc),
       parent,
-      type: t.type === 'order' ? 'project' : 'task',
+      type: t.isMilestone ? 'milestone' : t.type === 'order' ? 'project' : 'task',
       progress: t.progress ?? 0,
       readonly: t.type === 'order',
       open: true,
