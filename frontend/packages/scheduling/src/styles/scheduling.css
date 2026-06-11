@@ -386,26 +386,28 @@
   white-space: normal !important;
 }
 
-/* 拖拽落点预览:自有覆盖层(定位到目标泳道整行,DHTMLX 重绘不影响) */
+/* 拖拽落点预览:卡片大小的虚影,跟随指针落在目标泳道的时间位置(DHTMLX 重绘不影响) */
 .nerv-gantt-dhx .nerv-drop-hint {
   position: absolute;
-  z-index: 6;
+  z-index: 7;
   pointer-events: none;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  border: 2px dashed color-mix(in oklch, var(--brand), transparent 25%);
+  border: 2px dashed var(--brand);
   border-radius: 8px;
-  background: color-mix(in oklch, var(--brand), transparent 86%);
+  background: color-mix(in oklch, var(--brand), transparent 82%);
+  box-shadow: 0 6px 18px -6px color-mix(in oklch, var(--brand), transparent 55%);
 }
-.nerv-gantt-dhx .nerv-drop-hint span {
-  font-size: 0.78rem;
-  font-weight: 600;
+.nerv-gantt-dhx .nerv-drop-hint .nerv-drop-tip {
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
   color: var(--brand);
   background: var(--card);
-  padding: 2px 10px;
+  padding: 2px 9px;
   border-radius: 999px;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.14);
 }
 
 /* ---- 资源排产板:左侧两列(列1 资源名 / 列2 产能指标) ---- */

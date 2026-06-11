@@ -208,9 +208,11 @@ export class DhtmlxEngine implements SchedulingEngine {
   private selectedTaskId?: string
   private markerId?: string
   private lastPointerY = 0
+  private lastPointerX = 0
   private pointerMove?: (e: MouseEvent) => void
   private dropHint?: HTMLElement
   private dragging = false
+  private dragTaskId?: string
   private readonly listeners = new Map<EngineEventName, Set<(p: unknown) => void>>()
   private readonly eventIds: string[] = []
   private readonly createInstance: () => unknown | null
@@ -241,11 +243,12 @@ export class DhtmlxEngine implements SchedulingEngine {
       const hint = document.createElement('div')
       hint.className = 'nerv-drop-hint'
       hint.style.display = 'none'
-      hint.innerHTML = '<span>移到此泳道改派</span>'
+      hint.innerHTML = '<span class="nerv-drop-tip"></span>'
       container.appendChild(hint)
       this.dropHint = hint
       this.pointerMove = (e: MouseEvent) => {
         this.lastPointerY = e.clientY
+        this.lastPointerX = e.clientX
         if (this.dragging) this.updateDropHint(inst)
       }
       document.addEventListener('mousemove', this.pointerMove)
@@ -518,8 +521,11 @@ export class DhtmlxEngine implements SchedulingEngine {
     )
     // 拖拽开始/结束:资源视图标记拖拽态,驱动落点预览覆盖层。
     this.eventIds.push(
-      inst.attachEvent('onBeforeTaskDrag', () => {
-        if (this.options.view === 'resource') this.dragging = true
+      inst.attachEvent('onBeforeTaskDrag', (id) => {
+        if (this.options.view === 'resource') {
+          this.dragging = true
+          this.dragTaskId = String(id)
+        }
         return true
       }),
     )
@@ -541,30 +547,43 @@ export class DhtmlxEngine implements SchedulingEngine {
     return lane?.id != null && String(lane.id).startsWith('lane:') ? lane : undefined
   }
 
-  /** 拖拽预览:把覆盖层定位到指针所在的目标泳道行(覆盖整行,松手前可见落点)。 */
+  /** 拖拽预览:在目标泳道、指针所在时间位置画一个卡片大小的虚影(松手前可见落点的「行+时间」)。 */
   private updateDropHint(inst: DhxGantt): void {
     const root = this.container
     const hint = this.dropHint
     if (!root || !hint) return
     const lane = this.laneAtPointer(inst)
     const row = lane?.id
-      ? root.querySelector(`.gantt_task_row[task_id="${String(lane.id)}"]`)
+      ? (root.querySelector(`.gantt_task_row[task_id="${String(lane.id)}"]`) as HTMLElement | null)
       : null
-    if (!row) {
+    const area = root.querySelector('.gantt_data_area') as HTMLElement | null
+    if (!row || !area) {
       hint.style.display = 'none'
       return
     }
     const cRect = root.getBoundingClientRect()
     const rRect = row.getBoundingClientRect()
+    const aRect = area.getBoundingClientRect()
+    // 虚影宽度=被拖卡片的宽度(取不到则用默认);水平跟随指针,夹在时间区内。
+    const dragBar = this.dragTaskId
+      ? (root.querySelector(`.gantt_task_line[task_id="${this.dragTaskId}"]`) as HTMLElement | null)
+      : null
+    const w = Math.max(96, Math.round(dragBar?.getBoundingClientRect().width ?? 150))
+    let left = this.lastPointerX - w / 2
+    left = Math.min(Math.max(left, aRect.left), aRect.right - w)
+    const laneName = lane?.nerv?.text ?? ''
+    const tip = hint.querySelector('.nerv-drop-tip')
+    if (tip) tip.textContent = `改派到 ${laneName}`
     hint.style.display = 'flex'
-    hint.style.top = `${rRect.top - cRect.top}px`
-    hint.style.left = `${rRect.left - cRect.left}px`
-    hint.style.width = `${rRect.width}px`
-    hint.style.height = `${rRect.height}px`
+    hint.style.top = `${rRect.top - cRect.top + 6}px`
+    hint.style.left = `${left - cRect.left}px`
+    hint.style.width = `${w}px`
+    hint.style.height = `${rRect.height - 12}px`
   }
 
   private hideDropHint(): void {
     this.dragging = false
+    this.dragTaskId = undefined
     if (this.dropHint) this.dropHint.style.display = 'none'
   }
 
