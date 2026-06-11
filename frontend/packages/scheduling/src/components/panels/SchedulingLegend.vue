@@ -43,7 +43,7 @@ withDefaults(defineProps<{ categories?: { key: string; label: string }[]; view?:
         <span class="rounded bg-destructive/15 px-1 py-px text-[0.58rem] font-bold text-destructive">高</span>优先级
       </span>
       <span class="inline-flex items-center gap-1" style="color: oklch(0.7 0.17 60)">
-        <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" fill="currentColor" /></svg>
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg>
         <span class="text-muted-foreground">插单</span>
       </span>
       <span class="inline-flex items-center gap-1">
@@ -62,8 +62,7 @@ withDefaults(defineProps<{ categories?: { key: string; label: string }[]; view?:
         <span class="h-2.5 w-6 rounded-[3px] border-2 border-destructive bg-destructive/15"></span>冲突
       </span>
       <span class="inline-flex items-center gap-1.5">
-        <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true" class="text-foreground"><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2" /><rect x="5.5" y="10" width="13" height="9.5" rx="2.2" fill="currentColor" /></svg>
-        锁定
+        <span class="h-2.5 w-6 rounded-[3px] border border-dashed border-muted-foreground/70"></span>锁定(虚线框)
       </span>
       <!-- 资源时间块:斜纹块,各色一类 -->
       <span class="inline-flex items-center gap-1.5">

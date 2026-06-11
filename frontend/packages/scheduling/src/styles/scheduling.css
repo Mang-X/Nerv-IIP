@@ -155,9 +155,14 @@
   align-items: center;
   gap: 4px;
 }
-.nerv-gantt-dhx .nerv-lock-ic {
+.nerv-gantt-dhx .nerv-ic {
+  display: inline-block;
+  vertical-align: -1px;
+}
+.nerv-gantt-dhx .nerv-card-lock {
+  display: inline-flex;
+  align-items: center;
   color: var(--muted-foreground);
-  opacity: 0.7;
 }
 
 /* 时间线底纹:周末稍重、夜班/非工作更淡。用 foreground 中性灰(srgb,亮暗都清晰可见,与图例一致) */

@@ -143,15 +143,21 @@ function progressCell(t: GridTask): string {
   return `<span class="nerv-pcell"><span class="nerv-pbar"><span style="width:${pct}%"></span></span><span class="nerv-ptext">${pct}%</span></span>`
 }
 
-const LOCK_SVG =
-  '<svg class="nerv-lock-ic" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="5.5" y="10" width="13" height="9.5" rx="2.2" fill="currentColor"/></svg>'
+// 统一用 lucide 图标(与项目图标包一致):lock / zap(插单)/ triangle-alert(冲突)。
+const lucide = (paths: string, size = 11) =>
+  `<svg class="nerv-ic" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`
+const LOCK_SVG = lucide('<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>')
+const RUSH_ICON = lucide(
+  '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+)
+const ALERT_ICON = lucide(
+  '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  12,
+)
 const fmtMd = (iso: string) => {
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`
 }
-
-const RUSH_SVG =
-  '<svg class="nerv-rush-ic" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" fill="currentColor"/></svg>'
 
 const BLOCK_LABEL: Record<NonNullable<ScheduleTask['blockKind']>, string> = {
   maintenance: '设备维护',
@@ -174,8 +180,8 @@ function cardHtml(t: ScheduleTask): string {
   const prio = t.priority
     ? `<span class="nerv-card-prio nerv-prio-${t.priority}">${PRIORITY_CELL[t.priority][2]}</span>`
     : ''
-  const rush = t.isRush ? `<span class="nerv-card-rush" title="插单">${RUSH_SVG}</span>` : ''
-  const lock = t.locked ? LOCK_SVG : ''
+  const rush = t.isRush ? `<span class="nerv-card-rush" title="插单">${RUSH_ICON}</span>` : ''
+  const lock = t.locked ? `<span class="nerv-card-lock" title="已锁定">${LOCK_SVG}</span>` : ''
   const due = t.dueUtc ? fmtMd(t.dueUtc) : ''
   const kit = t.kitting != null ? Math.round(t.kitting * 100) : null
   const kitCls = kit == null ? '' : kit >= 100 ? 'ok' : kit >= 80 ? 'warn' : 'bad'
@@ -183,9 +189,7 @@ function cardHtml(t: ScheduleTask): string {
   const load = t.load != null ? `占用 ${Math.round(t.load * 100)}%` : ''
   const meta3 = [co, load].filter(Boolean).join('　')
   // 冲突徽标:与优先级/插单/锁并排在首行(不再悬浮角标)。
-  const alert = t.hasConflict
-    ? '<span class="nerv-card-alert" title="冲突"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M12 3L2 20h20L12 3z" fill="currentColor"/><rect x="11" y="9.5" width="2" height="5" rx="1" fill="var(--card)"/><rect x="11" y="16" width="2" height="2" rx="1" fill="var(--card)"/></svg></span>'
-    : ''
+  const alert = t.hasConflict ? `<span class="nerv-card-alert" title="冲突">${ALERT_ICON}</span>` : ''
   const prog =
     t.progress != null
       ? `<span class="nerv-card-prog"><span style="width:${Math.round(t.progress * 100)}%"></span></span>`
@@ -329,7 +333,7 @@ export class DhtmlxEngine implements SchedulingEngine {
         this.lastPointerX = e.clientX
         if (!this.dragTaskId) return
         if (!this.dragging) {
-          if (Math.abs(e.clientX - downX) < 3 && Math.abs(e.clientY - downY) < 3) return
+          if (Math.abs(e.clientX - downX) < 5 && Math.abs(e.clientY - downY) < 5) return
           this.dragging = true
           this.suppressNextClick = true // 拖拽一旦开始,抑制随后的点击(避免弹详情)
           if (this.cancelZone) this.cancelZone.style.display = 'flex'
@@ -633,9 +637,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       if (isResource) return ''
       const t = task.nerv
       if (t?.type !== 'operation') return ''
-      const lock = t.locked
-        ? '<svg class="nerv-lock-ic" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="5.5" y="10" width="13" height="9.5" rx="2.2" fill="currentColor"/></svg>'
-        : ''
+      const lock = t.locked ? `<span class="nerv-card-lock">${LOCK_SVG}</span>` : ''
       return `<span class="nerv-bar-label">${task.text ?? ''}${lock}</span>`
     }
     // 时间线底纹:周末 + 非工作/夜班时段(轻盈底色,标出可排/不可排时间)。
@@ -657,6 +659,7 @@ export class DhtmlxEngine implements SchedulingEngine {
         }
         const taskId = String(id)
         this.selectedTaskId = taskId
+        this.markSelectedBar(taskId)
         this.showOrderLinks(taskId)
         this.emit('taskSelected', { taskId })
         if (this.model?.tasks.find((t) => t.id === taskId)?.hasConflict)
@@ -748,6 +751,14 @@ export class DhtmlxEngine implements SchedulingEngine {
       }
     }
     g.render()
+  }
+
+  /** 即时标记选中条(点击不触发重绘,task_class 不会重算,需手动加类)。 */
+  private markSelectedBar(taskId: string): void {
+    const root = this.container
+    if (!root) return
+    root.querySelectorAll('.gantt_task_line.nerv-selected').forEach((el) => el.classList.remove('nerv-selected'))
+    this.barEl(taskId)?.classList.add('nerv-selected')
   }
 
   /** 按 task_id 取条形元素。 */

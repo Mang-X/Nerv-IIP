@@ -10,7 +10,14 @@ const props = defineProps<{ task?: ScheduleTask }>()
 const emit = defineEmits<{ 'toggle-lock': [taskId: string, locked: boolean] }>()
 
 const isOrder = computed(() => props.task?.type === 'order')
+const isBlock = computed(() => !!props.task?.blockKind)
 const PRIO = { high: ['高', 'danger'], medium: ['中', 'warning'], low: ['低', 'muted'] } as const
+const BLOCK = {
+  maintenance: { label: '设备维护', desc: '设备保养期,该时段不排产', tone: 'oklch(0.55 0.02 260)' },
+  downtime: { label: '计划停机', desc: '计划性停机,资源不可用', tone: 'var(--destructive)' },
+  lineChange: { label: '换线窗口', desc: '产线切换准备,占用资源', tone: 'oklch(0.58 0.13 250)' },
+  changeover: { label: '换型窗口', desc: '工装/模具换型,占用资源', tone: 'oklch(0.7 0.15 60)' },
+} as const
 
 function fmt(iso?: string) {
   if (!iso) return '—'
@@ -36,6 +43,21 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
     <div v-if="!task" class="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
       <span class="text-sm font-medium text-muted-foreground">未选择</span>
       <span class="text-xs text-muted-foreground/70">点击甘特条 / 排产卡查看完整详情</span>
+    </div>
+
+    <!-- 资源时间块:专有信息(不套工单模板) -->
+    <div v-else-if="isBlock && task" class="px-4 py-3.5">
+      <div class="flex items-center gap-2">
+        <span class="nerv-blk-dot size-2.5 rounded-[2px]" :style="{ '--bk': BLOCK[task.blockKind!].tone }"></span>
+        <span class="text-sm font-semibold text-foreground">{{ BLOCK[task.blockKind!].label }}</span>
+      </div>
+      <p class="mt-1 text-xs text-muted-foreground">{{ BLOCK[task.blockKind!].desc }}</p>
+      <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
+        <div class="col-span-2 flex justify-between"><dt class="text-muted-foreground">资源</dt><dd class="font-medium text-foreground">{{ task.resourceId || '—' }}</dd></div>
+        <div class="flex justify-between"><dt class="text-muted-foreground">开始</dt><dd class="font-medium text-foreground">{{ fmt(task.startUtc) }}</dd></div>
+        <div class="flex justify-between"><dt class="text-muted-foreground">结束</dt><dd class="font-medium text-foreground">{{ fmt(task.endUtc) }}</dd></div>
+        <div class="col-span-2 flex justify-between"><dt class="text-muted-foreground">时长</dt><dd class="font-medium text-foreground">{{ durationH }}</dd></div>
+      </dl>
     </div>
 
     <div v-else class="px-4 py-3.5">
@@ -106,3 +128,17 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
     </div>
   </div>
 </template>
+
+<style scoped>
+.nerv-blk-dot {
+  background-color: color-mix(in srgb, var(--bk) 18%, transparent);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0,
+    transparent 2px,
+    color-mix(in srgb, var(--bk) 60%, transparent) 2px,
+    color-mix(in srgb, var(--bk) 60%, transparent) 3px
+  );
+  border: 1px solid color-mix(in srgb, var(--bk) 55%, transparent);
+}
+</style>
