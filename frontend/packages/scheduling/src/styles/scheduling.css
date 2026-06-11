@@ -96,20 +96,19 @@
   font-size: 0.72rem;
 }
 
-/* 工序条:shadcn 偏平,底色由 --bar 变量驱动(分类/冲突只改 --bar,互不打架)。
-   1px 内高光做轻微立体,柔阴影做悬浮,不用廉价光泽渐变。 */
+/* 淡彩轻盈:淡色填充 + 饱和同色描边;进度用较实的同色;工序名深色在右(亮暗皆通透)。
+   底色由 --bar 变量驱动(分类/冲突只改 --bar,互不打架)。 */
 .nerv-gantt-dhx .gantt_task_line {
   --bar: var(--brand);
-  background-color: var(--bar) !important;
+  background-color: color-mix(in oklch, var(--bar), transparent 84%) !important;
   background-image: none !important;
-  border: 1px solid color-mix(in oklch, var(--bar), black 18%) !important;
+  border: 1.5px solid var(--bar) !important;
   border-radius: 7px !important;
-  box-shadow: 0 1px 1px rgb(0 0 0 / 0.08);
+  box-shadow: none;
 }
 .nerv-gantt-dhx .gantt_task_progress {
-  background-color: color-mix(in oklch, var(--bar), black 26%) !important;
-  border-radius: 6px 0 0 6px;
-  opacity: 0.92;
+  background-color: color-mix(in oklch, var(--bar), transparent 56%) !important;
+  border-radius: 5px 0 0 5px;
 }
 
 /* 分类色板:按车间/工序着色,提亮做轻盈。定义为全局变量,图例与条形共用同一套色。 */
@@ -132,9 +131,9 @@
 .nerv-gantt-dhx .nerv-baseline {
   position: absolute;
   box-sizing: border-box;
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--bl, var(--brand)), transparent 78%);
-  border: 1px dashed color-mix(in oklch, var(--bl, var(--brand)), transparent 45%);
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--bl, var(--brand)), transparent 92%);
+  border: 1.5px dashed color-mix(in oklch, var(--bl, var(--brand)), transparent 35%);
 }
 
 /* 条形右侧标签 + 锁图标(干净 SVG,非 emoji) */
@@ -156,7 +155,7 @@
   background-color: color-mix(in oklch, var(--muted), transparent 50%) !important;
 }
 .nerv-gantt-dhx .gantt_task_content {
-  color: #fff;
+  color: var(--foreground);
   font-weight: 500;
 }
 /* 条形右侧工序名:轻盈、可读 */
@@ -186,16 +185,18 @@
   box-shadow: 0 0 0 2px var(--brand), 0 4px 14px color-mix(in oklch, var(--brand), transparent 40%) !important;
   z-index: 2;
 }
-/* 冲突:把 --bar 调融危险色 + 危险色描边(不用侧边色条) */
+/* 冲突:保留分类色,危险色描边 + 红色辉光(不改 --bar,避免色相插值跑偏) */
 .nerv-gantt-dhx .gantt_task_line.nerv-conflict {
-  --bar: color-mix(in oklch, var(--brand), var(--destructive) 45%);
   border-color: var(--destructive) !important;
+  box-shadow: 0 0 0 1px var(--destructive), 0 4px 12px color-mix(in oklch, var(--destructive), transparent 55%) !important;
 }
 
-/* 里程碑:菱形 */
+/* 里程碑:实色菱形(在淡彩条中保持醒目) */
 .nerv-gantt-dhx .gantt_task_line.gantt_milestone {
+  background-color: var(--bar) !important;
+  border-color: color-mix(in oklch, var(--bar), black 18%) !important;
   border-radius: 3px !important;
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--bar), black 30%), 0 1px 3px rgb(0 0 0 / 0.25);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
 }
 
 /* ---- 左侧网格单元格内容:优先级 / 状态 / 进度条 ---- */
@@ -255,10 +256,10 @@
   min-width: 30px;
   text-align: right;
 }
-/* 锁定:虚线描边(语义"固定",非装饰侧条) */
+/* 锁定:同色虚线描边(语义"固定",非装饰侧条) */
 .nerv-gantt-dhx .gantt_task_line.nerv-locked {
   border-style: dashed !important;
-  border-color: color-mix(in oklch, var(--brand), white 30%) !important;
+  border-color: var(--bar) !important;
 }
 
 /* 依赖连线:整条(含拐角)统一中性细线,不再出现不一致的灰拐角。关键路径连线用 warning。 */
