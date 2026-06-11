@@ -199,6 +199,39 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     quantity?: number;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskItem = {
+    warehouseTaskId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    taskType?: string;
+    taskNo?: string;
+    sourceOrderNo?: string;
+    sourceOrderLineNo?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    fromLocationCode?: string;
+    toLocationCode?: string;
+    plannedQuantity?: number;
+    executedQuantity?: number;
+    status?: string;
+    createdAtUtc?: string;
+    completedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWarehouseTaskListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteWmsMovementResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsMovementResponse | null;
 };
@@ -293,6 +326,36 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     siteCode: string;
     locationCode: string;
     expectedQuantity?: number;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsCountExecutionListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsCountExecutionListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsCountExecutionListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsCountExecutionItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsCountExecutionItem = {
+    countExecutionId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    countNo?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    locationCode?: string;
+    expectedQuantity?: number;
+    countedQuantity?: number | null;
+    varianceQuantity?: number | null;
+    status?: string;
+    createdAtUtc?: string;
+    completedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsCountExecutionListRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsCountExecutionRequest = {
@@ -3953,6 +4016,51 @@ export type CreateBusinessConsoleWmsPutawayTaskResponses = {
 
 export type CreateBusinessConsoleWmsPutawayTaskResponse = CreateBusinessConsoleWmsPutawayTaskResponses[keyof CreateBusinessConsoleWmsPutawayTaskResponses];
 
+export type ListBusinessConsoleWmsPutawayTasksData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        locationCode?: string | null;
+        /**
+         * Reserved for #374 P1 assigned-operator filtering. Current WMS warehouse tasks do not persist assigned operators; sending a non-empty value returns an empty list.
+         */
+        operatorUserId?: string | null;
+        skip?: number;
+        take?: number;
+        status?: string | null;
+        keyword?: string | null;
+    };
+    url: '/api/business-console/v1/wms/putaway-tasks';
+};
+
+export type ListBusinessConsoleWmsPutawayTasksErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleWmsPutawayTasksError = ListBusinessConsoleWmsPutawayTasksErrors[keyof ListBusinessConsoleWmsPutawayTasksErrors];
+
+export type ListBusinessConsoleWmsPutawayTasksResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskListResponse;
+};
+
+export type ListBusinessConsoleWmsPutawayTasksResponse = ListBusinessConsoleWmsPutawayTasksResponses[keyof ListBusinessConsoleWmsPutawayTasksResponses];
+
 export type CompleteBusinessConsoleWmsInboundOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsInboundOrderRequest;
     path: {
@@ -4102,6 +4210,51 @@ export type CreateBusinessConsoleWmsPickingTaskResponses = {
 
 export type CreateBusinessConsoleWmsPickingTaskResponse = CreateBusinessConsoleWmsPickingTaskResponses[keyof CreateBusinessConsoleWmsPickingTaskResponses];
 
+export type ListBusinessConsoleWmsPickingTasksData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        locationCode?: string | null;
+        /**
+         * Reserved for #374 P1 assigned-operator filtering. Current WMS warehouse tasks do not persist assigned operators; sending a non-empty value returns an empty list.
+         */
+        operatorUserId?: string | null;
+        skip?: number;
+        take?: number;
+        status?: string | null;
+        keyword?: string | null;
+    };
+    url: '/api/business-console/v1/wms/picking-tasks';
+};
+
+export type ListBusinessConsoleWmsPickingTasksErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleWmsPickingTasksError = ListBusinessConsoleWmsPickingTasksErrors[keyof ListBusinessConsoleWmsPickingTasksErrors];
+
+export type ListBusinessConsoleWmsPickingTasksResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskListResponse;
+};
+
+export type ListBusinessConsoleWmsPickingTasksResponse = ListBusinessConsoleWmsPickingTasksResponses[keyof ListBusinessConsoleWmsPickingTasksResponses];
+
 export type CompleteBusinessConsoleWmsOutboundOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsOutboundOrderRequest;
     path: {
@@ -4139,6 +4292,47 @@ export type CompleteBusinessConsoleWmsOutboundOrderResponses = {
 };
 
 export type CompleteBusinessConsoleWmsOutboundOrderResponse = CompleteBusinessConsoleWmsOutboundOrderResponses[keyof CompleteBusinessConsoleWmsOutboundOrderResponses];
+
+export type ListBusinessConsoleWmsCountExecutionsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        locationCode?: string | null;
+        skip?: number;
+        take?: number;
+        status?: string | null;
+        keyword?: string | null;
+    };
+    url: '/api/business-console/v1/wms/count-executions';
+};
+
+export type ListBusinessConsoleWmsCountExecutionsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleWmsCountExecutionsError = ListBusinessConsoleWmsCountExecutionsErrors[keyof ListBusinessConsoleWmsCountExecutionsErrors];
+
+export type ListBusinessConsoleWmsCountExecutionsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsCountExecutionListResponse;
+};
+
+export type ListBusinessConsoleWmsCountExecutionsResponse = ListBusinessConsoleWmsCountExecutionsResponses[keyof ListBusinessConsoleWmsCountExecutionsResponses];
 
 export type CreateBusinessConsoleWmsCountExecutionData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsCountExecutionRequest;
