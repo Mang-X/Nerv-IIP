@@ -95,7 +95,7 @@ async function onRelease() {
 </script>
 
 <template>
-  <div class="flex h-full min-h-[480px] flex-col overflow-hidden rounded-lg border border-border bg-card">
+  <div class="flex h-full min-h-[480px] flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
     <SchedulingToolbar
       :scale="scale"
       :read-only="readOnly"
@@ -115,7 +115,7 @@ async function onRelease() {
       @release="onRelease"
     />
 
-    <div class="flex items-center gap-2 border-b border-border px-3 py-2">
+    <div class="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
       <Tabs v-model="view">
         <TabsList>
           <TabsTrigger value="order">工单甘特</TabsTrigger>
@@ -152,9 +152,9 @@ async function onRelease() {
         />
       </div>
 
-      <aside class="flex w-[300px] shrink-0 flex-col border-l border-border">
+      <aside class="flex w-[320px] shrink-0 flex-col border-l border-border/60 bg-card/60">
         <Tabs default-value="conflicts" class="flex min-h-0 flex-1 flex-col">
-          <TabsList class="mx-2 mt-2">
+          <TabsList class="mx-3 mt-3">
             <TabsTrigger value="conflicts">冲突 {{ conflicts.length }}</TabsTrigger>
             <TabsTrigger value="unscheduled">未排 {{ unscheduled.length }}</TabsTrigger>
             <TabsTrigger value="changes">变更 {{ changes.length }}</TabsTrigger>

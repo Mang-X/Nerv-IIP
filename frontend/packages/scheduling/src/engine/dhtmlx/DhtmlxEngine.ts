@@ -257,9 +257,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.drag_progress = false
     c.order_branch = !options.readOnly // 网格内拖拽换分支(资源视图=改派)
     c.order_branch_free = !options.readOnly
-    c.row_height = 36
-    c.bar_height = 20
-    c.grid_width = 360
+    c.row_height = 44
+    c.bar_height = 26
+    c.grid_width = 380
     c.grid_resize = true
     c.show_links = true
     c.highlight_critical_path = options.view === 'order'
@@ -302,10 +302,13 @@ export class DhtmlxEngine implements SchedulingEngine {
       ].filter(Boolean)
       return lines.join('<br/>')
     }
-    // 条内不渲染文字(短条会溢出);工序名放到条形右侧,始终可读。
+    // 条内不渲染文字(短条会溢出);工序名放到条形右侧,始终可读。锁定加 🔒。
     inst.templates.task_text = () => ''
-    inst.templates.rightside_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) =>
-      task.nerv?.type === 'operation' ? task.text ?? '' : ''
+    inst.templates.rightside_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) => {
+      const t = task.nerv
+      if (t?.type !== 'operation') return ''
+      return `${task.text ?? ''}${t.locked ? '  🔒' : ''}`
+    }
   }
 
   private wireEvents(inst: DhxGantt): void {

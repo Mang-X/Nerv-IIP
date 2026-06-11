@@ -6,7 +6,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  StatusBadge,
 } from '@nerv-iip/ui'
 import {
   CalendarClockIcon,
@@ -52,9 +51,9 @@ const scaleModel = computed({
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2">
+  <div class="flex flex-wrap items-center gap-1.5 border-b border-border/60 bg-card/80 px-4 py-2.5 backdrop-blur-sm">
     <Select v-model="scaleModel">
-      <SelectTrigger class="h-8 w-28" aria-label="时间刻度"><SelectValue /></SelectTrigger>
+      <SelectTrigger class="h-8 w-24 border-border/70" aria-label="时间刻度"><SelectValue /></SelectTrigger>
       <SelectContent>
         <SelectItem value="auto">自适应</SelectItem>
         <SelectItem value="hour">小时</SelectItem>
@@ -64,25 +63,32 @@ const scaleModel = computed({
       </SelectContent>
     </Select>
 
-    <div class="flex items-center gap-1">
-      <Button size="icon" variant="ghost" aria-label="放大" @click="emit('zoomIn')"><ZoomInIcon aria-hidden="true" /></Button>
-      <Button size="icon" variant="ghost" aria-label="缩小" @click="emit('zoomOut')"><ZoomOutIcon aria-hidden="true" /></Button>
-      <Button size="icon" variant="ghost" aria-label="定位到当前" @click="emit('today')"><CalendarClockIcon aria-hidden="true" /></Button>
-      <Button size="icon" variant="ghost" aria-label="适配窗口" @click="emit('fit')"><MaximizeIcon aria-hidden="true" /></Button>
+    <span class="mx-1 h-5 w-px bg-border/60" aria-hidden="true" />
+
+    <div class="flex items-center">
+      <Button size="icon" variant="ghost" class="size-8" aria-label="放大" @click="emit('zoomIn')"><ZoomInIcon aria-hidden="true" /></Button>
+      <Button size="icon" variant="ghost" class="size-8" aria-label="缩小" @click="emit('zoomOut')"><ZoomOutIcon aria-hidden="true" /></Button>
+      <Button size="icon" variant="ghost" class="size-8" aria-label="定位到当前" @click="emit('today')"><CalendarClockIcon aria-hidden="true" /></Button>
+      <Button size="icon" variant="ghost" class="size-8" aria-label="适配窗口" @click="emit('fit')"><MaximizeIcon aria-hidden="true" /></Button>
     </div>
 
-    <div class="flex items-center gap-1">
-      <Button size="icon" variant="ghost" aria-label="撤销" :disabled="!canUndo" @click="emit('undo')"><Undo2Icon aria-hidden="true" /></Button>
-      <Button size="icon" variant="ghost" aria-label="重做" :disabled="!canRedo" @click="emit('redo')"><Redo2Icon aria-hidden="true" /></Button>
-      <Button size="icon" variant="ghost" :aria-label="readOnly ? '允许编辑' : '锁定为只读'" @click="emit('toggleReadOnly')">
+    <span class="mx-1 h-5 w-px bg-border/60" aria-hidden="true" />
+
+    <div class="flex items-center">
+      <Button size="icon" variant="ghost" class="size-8" aria-label="撤销" :disabled="!canUndo" @click="emit('undo')"><Undo2Icon aria-hidden="true" /></Button>
+      <Button size="icon" variant="ghost" class="size-8" aria-label="重做" :disabled="!canRedo" @click="emit('redo')"><Redo2Icon aria-hidden="true" /></Button>
+      <Button size="icon" variant="ghost" class="size-8" :aria-label="readOnly ? '允许编辑' : '锁定为只读'" @click="emit('toggleReadOnly')">
         <LockIcon v-if="readOnly" aria-hidden="true" />
         <LockOpenIcon v-else aria-hidden="true" />
       </Button>
     </div>
 
-    <div class="ml-auto flex items-center gap-2">
-      <StatusBadge v-if="dirty" tone="warning" label="有未应用的调整" />
-      <Button size="sm" variant="outline" :disabled="!dirty || busy" @click="emit('repreview')">
+    <div class="ml-auto flex items-center gap-2.5">
+      <span v-if="dirty" class="flex items-center gap-1.5 text-xs font-medium text-warning">
+        <span class="size-1.5 rounded-full bg-warning" aria-hidden="true" />
+        有未应用的调整
+      </span>
+      <Button size="sm" variant="outline" class="border-border/70" :disabled="!dirty || busy" @click="emit('repreview')">
         <RefreshCwIcon aria-hidden="true" />
         重新排程
       </Button>

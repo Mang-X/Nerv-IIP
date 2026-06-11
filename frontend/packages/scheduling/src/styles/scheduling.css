@@ -1,22 +1,25 @@
-/* 排程组件视觉:所有颜色走设计系统 v2 token,无裸 hex / 裸 palette。
+/* 排程组件视觉。所有颜色走设计系统 v2 token(无裸 hex/palette)。
+   原则(impeccable):呼吸感、发丝边框、shadcn 偏平、对比度达标、玻璃仅用于浮层、不用侧边色条。
    覆盖 NativeEngine(.nerv-gantt-native)与 DHTMLX(.nerv-gantt-dhx)两套渲染。 */
 
 .nerv-gantt {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 320px;
-  overflow: auto;
+  min-height: 360px;
+  overflow: hidden;
   background: var(--card);
   color: var(--foreground);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 0.5rem);
-  box-shadow: var(--shadow-sm, 0 1px 2px 0 rgb(0 0 0 / 0.05));
+  border-radius: var(--radius-lg, 0.625rem);
   font-family: var(--font-sans);
   font-size: 0.8125rem;
+  --nerv-hairline: color-mix(in oklch, var(--border), transparent 35%);
 }
 
-/* --- NativeEngine (SVG) --- */
+/* ============================ NativeEngine (SVG) ============================ */
+.nerv-gantt-native {
+  overflow: auto;
+}
 .nerv-gantt-native .nerv-gantt-svg {
   display: block;
 }
@@ -24,158 +27,171 @@
   cursor: pointer;
 }
 .nerv-gantt-native .nerv-gantt-bar {
-  transition: filter 150ms ease-out, transform 150ms ease-out;
+  transition: filter 150ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .nerv-gantt-native .nerv-gantt-node:hover .nerv-gantt-bar-op {
   filter: brightness(1.08);
 }
-.nerv-gantt-native .nerv-gantt-now {
-  opacity: 0.8;
-}
 
-/* --- DHTMLX scope: 关键视觉绑到设计 token(用 !important 压过 DHTMLX 默认皮肤/内联色)--- */
+/* ============================ DHTMLX skin ============================ */
+/* 面板/网格/时间区:统一 card 表面,发丝分隔,去掉 DHTMLX 厚边框 */
 .nerv-gantt-dhx,
 .nerv-gantt-dhx .gantt_container,
 .nerv-gantt-dhx .gantt_grid,
-.nerv-gantt-dhx .gantt_data_area,
 .nerv-gantt-dhx .gantt_grid_scale,
 .nerv-gantt-dhx .gantt_task_scale,
-.nerv-gantt-dhx .gantt_task {
+.nerv-gantt-dhx .gantt_data_area,
+.nerv-gantt-dhx .gantt_task,
+.nerv-gantt-dhx .gantt_task_bg {
   background-color: var(--card) !important;
   color: var(--foreground);
-  border-color: var(--border) !important;
+  border-color: var(--nerv-hairline) !important;
 }
 
-/* 工序条:品牌色实心 + 顶部微高光渐变 + 柔阴影,圆角胶囊 */
+/* 关键修复:DHTMLX 默认把行背景设成白色 → 暗色下白底白字。统一改透明,让 card 透出。 */
+.nerv-gantt-dhx .gantt_grid_data .gantt_row,
+.nerv-gantt-dhx .gantt_task_row,
+.nerv-gantt-dhx .gantt_row {
+  background-color: transparent !important;
+  border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 55%) !important;
+}
+/* 极淡斑马,仅做节奏,不抢戏 */
+.nerv-gantt-dhx .gantt_task_row:nth-child(even),
+.nerv-gantt-dhx .gantt_grid_data .gantt_row:nth-child(even) {
+  background-color: color-mix(in oklch, var(--muted), transparent 70%) !important;
+}
+/* hover / 选中行:中性 accent */
+.nerv-gantt-dhx .gantt_grid_data .gantt_row:hover,
+.nerv-gantt-dhx .gantt_task_row:hover {
+  background-color: color-mix(in oklch, var(--accent), transparent 25%) !important;
+}
+.nerv-gantt-dhx .gantt_grid_data .gantt_row.gantt_selected,
+.nerv-gantt-dhx .gantt_task_row.gantt_selected {
+  background-color: color-mix(in oklch, var(--brand), transparent 88%) !important;
+}
+
+/* 时间区竖向网格:发丝 */
+.nerv-gantt-dhx .gantt_task_cell {
+  border-right: 1px solid color-mix(in oklch, var(--border), transparent 65%) !important;
+}
+.nerv-gantt-dhx .gantt_scale_cell,
+.nerv-gantt-dhx .gantt_grid_scale,
+.nerv-gantt-dhx .gantt_task_scale {
+  border-bottom: 1px solid var(--nerv-hairline) !important;
+}
+
+/* 网格表头 + 单元格:清晰排版、弱化次要信息 */
+.nerv-gantt-dhx .gantt_grid_head_cell {
+  color: var(--muted-foreground);
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.01em;
+}
+.nerv-gantt-dhx .gantt_grid_data .gantt_cell {
+  color: var(--foreground);
+  font-size: 0.78rem;
+  border-color: transparent !important;
+}
+.nerv-gantt-dhx .gantt_grid_data .gantt_cell:first-child {
+  font-weight: 500;
+}
+.nerv-gantt-dhx .gantt_scale_cell {
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+}
+
+/* 工序条:shadcn 偏平品牌色,1px 内高光做轻微立体,柔阴影做悬浮,不用廉价光泽渐变 */
 .nerv-gantt-dhx .gantt_task_line {
   background-color: var(--brand) !important;
-  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.14), rgb(0 0 0 / 0.08)) !important;
-  border: 1px solid color-mix(in oklch, var(--brand), black 18%) !important;
-  border-radius: 7px !important;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25), inset 0 1px 0 rgb(255 255 255 / 0.12);
+  background-image: none !important;
+  border: 1px solid color-mix(in oklch, var(--brand), black 24%) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.1);
+}
+.nerv-gantt-dhx .gantt_task_progress {
+  background-color: color-mix(in oklch, var(--brand), black 34%) !important;
+  border-radius: 5px 0 0 5px;
 }
 .nerv-gantt-dhx .gantt_task_content {
   color: #fff;
   font-weight: 500;
 }
-/* 条形右侧的工序名(短条也可读) */
+/* 条形右侧工序名:轻盈、可读 */
 .nerv-gantt-dhx .gantt_side_content {
   color: var(--foreground);
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   font-weight: 500;
-  padding: 0 6px;
-  opacity: 0.92;
-}
-.nerv-gantt-dhx .gantt_task_progress {
-  background-color: color-mix(in oklch, var(--brand), black 30%) !important;
-  border-radius: 7px 0 0 7px;
-}
-
-/* 工单/资源分组条:中性、纤细 */
-.nerv-gantt-dhx .gantt_task_line.gantt_project,
-.nerv-gantt-dhx .gantt_task_line.nerv-order {
-  background-color: color-mix(in oklch, var(--muted-foreground), transparent 55%) !important;
-  background-image: none !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 4px !important;
-  box-shadow: none;
+  padding: 0 8px;
   opacity: 0.9;
 }
 
-/* 选中:品牌环 + 辉光 */
-.nerv-gantt-dhx .gantt_task_line.nerv-selected,
-.nerv-gantt-dhx .gantt_task_line.gantt_selected {
-  box-shadow: 0 0 0 2px var(--brand), 0 0 12px color-mix(in oklch, var(--brand), transparent 35%) !important;
-  z-index: 1;
-}
-/* 冲突:危险色描边 + 淡红投影 */
-.nerv-gantt-dhx .gantt_task_line.nerv-conflict {
-  background-color: color-mix(in oklch, var(--brand), var(--destructive) 35%) !important;
-  outline: 2px solid var(--destructive);
-  outline-offset: 0;
-}
-/* 锁定:左侧实色把手 */
-.nerv-gantt-dhx .gantt_task_line.nerv-locked::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--foreground);
-  opacity: 0.5;
-  border-radius: 7px 0 0 7px;
+/* 工单/资源分组条:纤细中性,做"汇总"而非主体 */
+.nerv-gantt-dhx .gantt_task_line.gantt_project,
+.nerv-gantt-dhx .gantt_task_line.nerv-order {
+  background-color: color-mix(in oklch, var(--muted-foreground), transparent 62%) !important;
+  border: none !important;
+  border-radius: 3px !important;
+  box-shadow: none;
+  opacity: 0.85;
+  height: 6px !important;
+  margin-top: 9px;
 }
 
-/* 依赖连线 + 箭头:品牌色、略粗 */
+/* 选中:品牌环 + 柔辉光 */
+.nerv-gantt-dhx .gantt_task_line.nerv-selected,
+.nerv-gantt-dhx .gantt_task_line.gantt_selected {
+  box-shadow: 0 0 0 2px var(--brand), 0 4px 14px color-mix(in oklch, var(--brand), transparent 40%) !important;
+  z-index: 2;
+}
+/* 冲突:用背景色调融危险色 + 危险色描边(不用侧边色条) */
+.nerv-gantt-dhx .gantt_task_line.nerv-conflict {
+  background-color: color-mix(in oklch, var(--brand), var(--destructive) 40%) !important;
+  border-color: var(--destructive) !important;
+}
+/* 锁定:虚线描边(语义"固定",非装饰侧条) */
+.nerv-gantt-dhx .gantt_task_line.nerv-locked {
+  border-style: dashed !important;
+  border-color: color-mix(in oklch, var(--brand), white 30%) !important;
+}
+
+/* 依赖连线 + 箭头 */
 .nerv-gantt-dhx .gantt_task_link .gantt_line_wrapper div {
-  background-color: color-mix(in oklch, var(--brand), var(--foreground) 10%) !important;
+  background-color: color-mix(in oklch, var(--brand), var(--foreground) 8%) !important;
 }
 .nerv-gantt-dhx .gantt_link_arrow_right,
 .nerv-gantt-dhx .gantt_link_arrow_left {
-  border-left-color: color-mix(in oklch, var(--brand), var(--foreground) 10%);
-  border-right-color: color-mix(in oklch, var(--brand), var(--foreground) 10%);
+  border-left-color: color-mix(in oklch, var(--brand), var(--foreground) 8%);
+  border-right-color: color-mix(in oklch, var(--brand), var(--foreground) 8%);
 }
 
-/* 左侧网格:表头、单元格、悬浮、选中行 */
-.nerv-gantt-dhx .gantt_grid_scale,
-.nerv-gantt-dhx .gantt_grid_head_cell {
-  color: var(--muted-foreground);
-  font-weight: 600;
-  border-bottom: 1px solid var(--border) !important;
-}
-.nerv-gantt-dhx .gantt_grid_data .gantt_cell,
-.nerv-gantt-dhx .gantt_scale_cell {
-  color: var(--foreground);
-  border-color: var(--border) !important;
-}
-.nerv-gantt-dhx .gantt_grid_data .gantt_row:hover,
-.nerv-gantt-dhx .gantt_grid_data .gantt_row.gantt_selected,
-.nerv-gantt-dhx .gantt_task_row.gantt_selected {
-  background-color: color-mix(in oklch, var(--accent), transparent 0%) !important;
-}
-.nerv-gantt-dhx .gantt_grid_data .gantt_row,
-.nerv-gantt-dhx .gantt_task_row {
-  border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 40%) !important;
-}
-.nerv-gantt-dhx .gantt_row.nerv-row-conflict,
-.nerv-gantt-dhx .gantt_task_row.nerv-row-conflict {
-  box-shadow: inset 3px 0 0 var(--destructive);
-}
-
-/* 时间网格竖线 */
-.nerv-gantt-dhx .gantt_task_cell,
-.nerv-gantt-dhx .gantt_scale_cell {
-  border-right: 1px solid color-mix(in oklch, var(--border), transparent 55%) !important;
-}
-
-/* 今天线 */
+/* 今天线:细品牌线 + 胶囊标签 */
 .nerv-gantt-dhx .gantt_marker.nerv-today-marker {
   background-color: var(--brand) !important;
-  opacity: 0.9;
   width: 2px;
+  opacity: 0.85;
 }
 .nerv-gantt-dhx .gantt_marker.nerv-today-marker .gantt_marker_content {
   background-color: var(--brand) !important;
   color: #fff;
-  border-radius: 4px;
+  border-radius: 999px;
+  font-size: 0.68rem;
   font-weight: 600;
+  padding: 1px 8px;
 }
 
-/* tooltip */
+/* tooltip:玻璃浮层(有目的的 glass) */
 .gantt_tooltip {
-  background-color: var(--card) !important;
+  background-color: color-mix(in oklch, var(--card), transparent 8%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
   color: var(--foreground) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25) !important;
+  border: 1px solid var(--nerv-hairline) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.28) !important;
   font-family: var(--font-sans) !important;
-  font-size: 0.8125rem !important;
-  padding: 8px 10px !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .nerv-gantt-native .nerv-gantt-bar {
-    transition: none;
-  }
+  font-size: 0.78rem !important;
+  line-height: 1.5 !important;
+  padding: 10px 12px !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
