@@ -203,15 +203,11 @@
   box-shadow: 0 0 0 2px var(--brand), 0 4px 14px color-mix(in oklch, var(--brand), transparent 40%) !important;
   z-index: 2;
 }
-/* 冲突(工单甘特):危险色描边(甘特条细,与选中环不冲突)。 */
-.nerv-gantt-dhx .gantt_task_line.nerv-conflict {
+/* 冲突(仅工单甘特条):危险色描边 + 内环。资源排产板冲突改用内联 ⚠ 角标,卡片本身不加环,
+   故此规则用 :not(:has(.nerv-card)) 排除资源卡,避免压住选中环(选中无效的根因)。 */
+.nerv-gantt-dhx .gantt_task_line.nerv-conflict:not(:has(.nerv-card)) {
   border-color: var(--destructive) !important;
   box-shadow: inset 0 0 0 1px var(--destructive) !important;
-}
-/* 冲突(资源排产板):改用右上角标,去掉边框/环,避免与"选中环"冲突。 */
-.nerv-gantt-dhx .gantt_task_line.nerv-conflict:has(.nerv-card) {
-  border-color: color-mix(in oklch, var(--bar), transparent 55%) !important;
-  box-shadow: none !important;
 }
 .nerv-gantt-dhx .nerv-card-alert {
   display: inline-flex;
