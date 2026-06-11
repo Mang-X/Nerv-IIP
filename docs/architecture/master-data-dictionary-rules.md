@@ -1,6 +1,6 @@
 # 数据字典规则（Master Data Reference / CodeSet 权威规范）
 
-> 状态：v1（2026-06-08 定稿）。本文件是**数据字典（ReferenceData / CodeSet）的单一事实源**——CodeSet 目录、标准码值、治理规则、字段校验映射、前后端对齐约定。
+> 状态：v1（2026-06-10 修订）。本文件是**数据字典（ReferenceData / CodeSet）的单一事实源**——CodeSet 目录、标准码值、治理规则、字段校验映射、前后端对齐约定。
 > 取代此前散落在 [`master-data-module-product-design.md`](./master-data-module-product-design.md) §5、ADR [`0013-business-master-data-governance.md`](../adr/0013-business-master-data-governance.md) 中的零散描述（§5 现指向本文件）。
 > 三处实现必须与本文件一致:① 后端种子 `backend/services/Business/MasterData/.../Application/Seed/MasterDataSeedService.cs`(运行真相);② 前端常量 `frontend/apps/business-console/src/data/masterDataReference.ts`(Phase 1 兜底);③ 本文件(设计真相)。
 
@@ -67,6 +67,8 @@ SKU 创建/更新时,以下字段的取值**必须存在于对应 CodeSet 且为
 
 人员技能 `level` 字段校验 `skill-level`;业务伙伴 `partnerType`/`partnerRoles` 校验 `partner-type`。
 
+UoM 换算是有向换算规则,允许工厂同时维护正向和反向换算(例如 `kg->g` 与 `g->kg`),也允许同量纲换算网络闭合;后端只强制创建时源/目标单位存在且启用、二者属于同一 `uom-dimension`、`factor > 0` 且同一 `(fromUomCode,toUomCode,effectiveFrom)` 不重复。反向规则不会由平台自动倒数推导,以便保留独立精度、舍入和 affine offset 语义。
+
 ## 4. 治理规则
 
 1. **CodeSet 名平台保留**:工厂不可新增/改名 CodeSet,只能在既有 CodeSet 下维护码值。
@@ -82,12 +84,12 @@ SKU 创建/更新时,以下字段的取值**必须存在于对应 CodeSet 且为
 - **本文件 = 设计真相**;**后端种子 `MasterDataSeedService` = 运行真相**;二者**必须一致**(任一方改动需同步本文件并对齐另一方)。
 - **前端常量 `masterDataReference.ts` = 离线兜底**:物料表单优先实时 `?codeSet=` 拉取,后端字典暂不可用时才用本常量;其码值必须与本文件一致。
 - **Phase 2 联动**:物料表单已实时 `?codeSet=` 拉取(`数据字典`页维护 → 表单即时可选),前端常量降级为离线兜底。
-- 三处的 code 值集合必须等同(Name 可按语言差异,code 必须一致)。
+- 三处的 code 值集合必须等同；前端离线兜底的中文 label 应与本文件和后端种子 name 保持一致，避免实时字典不可用时出现不同展示名。
 
-## 6. 落地状态（2026-06-09）
+## 6. 落地状态（2026-06-10）
 
 - ✅ 前端:`数据字典`页(CodeSet 主从可维护),物料表单优先通过 `?codeSet=` 实时拉取产品分类、物料类型、追踪策略、存储条件、条码规则和合规标签;`masterDataReference.ts` 保留为离线兜底。
-- ✅ 后端种子 `MasterDataSeedService` 已通过 #352 对齐本文件:补齐 §2 权威码值,修正 `product-category`/`material-type` 旧错配,并对历史误种码值执行软停用而非物理删除。
+- ✅ 后端种子 `MasterDataSeedService` 已通过 #352/#369 对齐本文件:补齐 §2 权威码值,修正 `product-category`/`material-type` 旧错配,对 `batch-tracking-policy:lot`、`serial-tracking-policy:serial`、`shelf-life-policy:180d/365d`、`uom-dimension:mass/quantity` 等历史误种码值执行软停用而非物理删除；seed 会修复既有启用标准码的中文 name 与 UOM 种子的名称/量纲。
 - ✅ SKU 创建/更新会按 §3 校验受控字段必须引用启用 ReferenceData;系统枚举 CodeSet 禁止运行时新增非标准码或改写标准码名称,平台预置/工厂自定义 CodeSet 仍可按治理规则新增码值。
 
 ## 附:相关文件

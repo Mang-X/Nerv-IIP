@@ -21,11 +21,27 @@ public sealed record BusinessConsoleResourceItem(
     string? MaterialType = null,
     string? CodeSet = null,
     string? BaseUomCode = null,
-    string? TaxId = null);
+    string? TaxId = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    string? UserId = null,
+    string? SkillCode = null,
+    string? SkillLevel = null,
+    DateOnly? EffectiveFrom = null,
+    DateOnly? EffectiveTo = null,
+    string? FromUomCode = null,
+    string? ToUomCode = null,
+    decimal? Factor = null,
+    decimal? Offset = null,
+    int? Precision = null,
+    string? RoundingMode = null);
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
-    int Total);
+    int Total,
+    bool Truncated = false,
+    int? Limit = null);
 
 public sealed record BusinessConsoleListResourcesRequest(
     string OrganizationId,
@@ -34,7 +50,19 @@ public sealed record BusinessConsoleListResourcesRequest(
     bool IncludeDisabled = false,
     int Skip = 0,
     int Take = 100,
-    string? CodeSet = null);
+    string? CodeSet = null,
+    string? ParentCode = null,
+    string? SiteCode = null,
+    string? LineCode = null,
+    string? WorkCenterCode = null,
+    string? Category = null,
+    string? PartnerType = null,
+    string? Keyword = null,
+    bool All = false,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    string? UserId = null,
+    string? SkillCode = null);
 
 public sealed record BusinessConsoleListSkusRequest(
     string OrganizationId,
@@ -224,6 +252,22 @@ public sealed record BusinessConsoleCreateWorkCalendarRequest(
     string Code,
     string Name);
 
+public sealed record BusinessConsoleWorkCalendarWorkingTime(
+    DayOfWeek DayOfWeek,
+    TimeOnly StartsAt,
+    TimeOnly EndsAt);
+
+public sealed record BusinessConsoleWorkCalendarHoliday(
+    DateOnly Date,
+    string Name);
+
+public sealed record BusinessConsoleWorkCalendarException(
+    DateOnly Date,
+    bool IsWorkingDay,
+    TimeOnly? StartsAt,
+    TimeOnly? EndsAt,
+    string? Reason);
+
 public sealed record BusinessConsoleCreateTeamRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -260,7 +304,8 @@ public sealed record BusinessConsoleMasterDataResourceRequest(
     string EnvironmentId,
     string ResourceType,
     string Code,
-    string? CodeSet = null);
+    string? CodeSet = null,
+    DateOnly? EffectiveFrom = null);
 
 public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     string OrganizationId,
@@ -281,6 +326,12 @@ public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     string? PartnerType = null,
     string? Timezone = null,
     string? SiteCode = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    int? PaidMinutes = null,
     string? ManagerUserId = null,
     string? Description = null,
     string? PlantCode = null,
@@ -306,7 +357,13 @@ public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     int? Precision = null,
     string? RoundingMode = null,
     IReadOnlyCollection<string>? PartnerRoles = null,
-    string? TaxId = null);
+    string? TaxId = null,
+    IReadOnlyCollection<BusinessConsoleWorkCalendarWorkingTime>? WorkingTimes = null,
+    IReadOnlyCollection<BusinessConsoleWorkCalendarHoliday>? Holidays = null,
+    IReadOnlyCollection<BusinessConsoleWorkCalendarException>? Exceptions = null,
+    decimal? Factor = null,
+    decimal? Offset = null,
+    DateOnly? EffectiveFrom = null);
 
 public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
     string OrganizationId,
@@ -314,7 +371,8 @@ public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
     string ResourceType,
     string Code,
     string? CodeSet = null,
-    string Reason = "");
+    string Reason = "",
+    DateOnly? EffectiveFrom = null);
 
 public sealed record BusinessConsoleMasterDataResourceDetail(
     string ResourceType,
@@ -342,6 +400,12 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     IReadOnlyCollection<string>? PartnerRoles = null,
     string? Timezone = null,
     string? SiteCode = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    int? PaidMinutes = null,
     string? PlantCode = null,
     string? LineCode = null,
     int? CapacityMinutesPerDay = null,
@@ -365,7 +429,40 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     int? Precision = null,
     string? RoundingMode = null,
     string? TaxId = null,
-    string? Status = null);
+    string? Status = null,
+    IReadOnlyCollection<BusinessConsoleWorkCalendarWorkingTime>? WorkingTimes = null,
+    IReadOnlyCollection<BusinessConsoleWorkCalendarHoliday>? Holidays = null,
+    IReadOnlyCollection<BusinessConsoleWorkCalendarException>? Exceptions = null,
+    string? FromUomCode = null,
+    string? ToUomCode = null,
+    decimal? Factor = null,
+    decimal? Offset = null,
+    DateOnly? EffectiveFrom = null,
+    DateOnly? EffectiveTo = null,
+    string? UserId = null,
+    string? SkillCode = null,
+    string? SkillLevel = null);
+
+public sealed record BusinessConsolePersonnelSkillMatrixRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? UserId = null,
+    string? SkillCode = null,
+    bool IncludeDisabled = false);
+
+public sealed record BusinessConsolePersonnelSkillMatrixCell(
+    string SkillCode,
+    string Level,
+    DateOnly EffectiveFrom,
+    DateOnly EffectiveTo);
+
+public sealed record BusinessConsolePersonnelSkillMatrixRow(
+    string UserId,
+    IReadOnlyCollection<BusinessConsolePersonnelSkillMatrixCell> Skills);
+
+public sealed record BusinessConsolePersonnelSkillMatrixResponse(
+    IReadOnlyCollection<string> SkillCodes,
+    IReadOnlyCollection<BusinessConsolePersonnelSkillMatrixRow> Rows);
 
 public sealed record BusinessConsoleWorkbenchSummaryRequest(
     string OrganizationId,

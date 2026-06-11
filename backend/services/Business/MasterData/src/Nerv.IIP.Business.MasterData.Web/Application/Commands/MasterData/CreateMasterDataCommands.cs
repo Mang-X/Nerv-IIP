@@ -206,11 +206,20 @@ public sealed record CreateUomConversionCommand(
     string RoundingMode,
     DateOnly EffectiveFrom) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateUomConversionCommandHandler(IUomConversionRepository repository)
+public sealed class CreateUomConversionCommandHandler(IUomConversionRepository repository, ApplicationDbContext dbContext)
     : ICommandHandler<CreateUomConversionCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateUomConversionCommand request, CancellationToken cancellationToken)
     {
+        await UomConversionValidator.ValidateUnitsAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.FromUomCode,
+            request.ToUomCode,
+            requireActiveUnits: true,
+            cancellationToken);
+
         if (await repository.ExistsAsync(
             request.OrganizationId,
             request.EnvironmentId,

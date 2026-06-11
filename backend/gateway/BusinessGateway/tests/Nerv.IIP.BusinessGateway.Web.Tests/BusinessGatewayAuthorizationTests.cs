@@ -478,6 +478,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/workshops", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/workers", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/teams/T-001/members", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/personnel-skills/matrix", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/teams/T-001/members", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Delete, "/api/business-console/v1/master-data/teams/T-001/members/user-001", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/skus", BusinessGatewayPermissions.MasterDataProductsRead);

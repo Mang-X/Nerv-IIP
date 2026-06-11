@@ -105,8 +105,12 @@ public static class MasterDataDictionaryRules
     public static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> ObsoleteSeedCodes =
         new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
         {
+            ["batch-tracking-policy"] = new HashSet<string>(["lot"], StringComparer.Ordinal),
             ["product-category"] = new HashSet<string>(["finished-good", "raw-material", "packaging", "spare-part"], StringComparer.Ordinal),
-            ["material-type"] = new HashSet<string>(["material", "service"], StringComparer.Ordinal)
+            ["material-type"] = new HashSet<string>(["material", "service"], StringComparer.Ordinal),
+            ["serial-tracking-policy"] = new HashSet<string>(["serial"], StringComparer.Ordinal),
+            ["shelf-life-policy"] = new HashSet<string>(["180d", "365d"], StringComparer.Ordinal),
+            ["uom-dimension"] = new HashSet<string>(["mass", "quantity"], StringComparer.Ordinal)
         };
 
     public static IEnumerable<SkuControlledReference> GetCreateSkuReferences(
