@@ -251,6 +251,28 @@ public sealed class CreateBusinessConsoleWmsPutawayTaskEndpoint(
 }
 
 [Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/putaway-tasks")]
+[BusinessGatewayOperationId("listBusinessConsoleWmsPutawayTasks")]
+public sealed class ListBusinessConsoleWmsPutawayTasksEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsWarehouseTaskListRequest, BusinessConsoleWmsWarehouseTaskListResponse>(
+        auth,
+        BusinessGatewayPermissions.WmsReceiptsRead)
+{
+    protected override string OrganizationId(BusinessConsoleWmsWarehouseTaskListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleWmsWarehouseTaskListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleWmsWarehouseTaskListResponse> ForwardAsync(
+        BusinessConsoleWmsWarehouseTaskListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        wms.ListPutawayTasksAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsInboundOrder")]
 public sealed class CompleteBusinessConsoleWmsInboundOrderEndpoint(
@@ -353,6 +375,28 @@ public sealed class CreateBusinessConsoleWmsPickingTaskEndpoint(
 }
 
 [Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/picking-tasks")]
+[BusinessGatewayOperationId("listBusinessConsoleWmsPickingTasks")]
+public sealed class ListBusinessConsoleWmsPickingTasksEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsWarehouseTaskListRequest, BusinessConsoleWmsWarehouseTaskListResponse>(
+        auth,
+        BusinessGatewayPermissions.WmsShipmentsRead)
+{
+    protected override string OrganizationId(BusinessConsoleWmsWarehouseTaskListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleWmsWarehouseTaskListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleWmsWarehouseTaskListResponse> ForwardAsync(
+        BusinessConsoleWmsWarehouseTaskListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        wms.ListPickingTasksAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/complete")]
 [BusinessGatewayOperationId("completeBusinessConsoleWmsOutboundOrder")]
 public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
@@ -401,6 +445,28 @@ public sealed class CreateBusinessConsoleWmsCountExecutionEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         wms.CreateCountExecutionAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/count-executions")]
+[BusinessGatewayOperationId("listBusinessConsoleWmsCountExecutions")]
+public sealed class ListBusinessConsoleWmsCountExecutionsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsCountExecutionListRequest, BusinessConsoleWmsCountExecutionListResponse>(
+        auth,
+        BusinessGatewayPermissions.WmsReceiptsRead)
+{
+    protected override string OrganizationId(BusinessConsoleWmsCountExecutionListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleWmsCountExecutionListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleWmsCountExecutionListResponse> ForwardAsync(
+        BusinessConsoleWmsCountExecutionListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        wms.ListCountExecutionsAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console WMS")]
@@ -607,6 +673,21 @@ public sealed class BusinessConsoleCompleteWmsInboundOrderRequestValidator
     }
 }
 
+public sealed class BusinessConsoleWmsWarehouseTaskListRequestValidator : Validator<BusinessConsoleWmsWarehouseTaskListRequest>
+{
+    public BusinessConsoleWmsWarehouseTaskListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LocationCode).MaximumLength(100);
+        RuleFor(x => x.OperatorUserId).MaximumLength(150);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Keyword).MaximumLength(150);
+    }
+}
+
 public sealed class BusinessConsoleCreateWmsOutboundOrderRequestValidator
     : Validator<BusinessConsoleCreateWmsOutboundOrderRequest>
 {
@@ -663,6 +744,20 @@ public sealed class BusinessConsoleCreateWmsCountExecutionRequestValidator
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.LocationCode).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleWmsCountExecutionListRequestValidator : Validator<BusinessConsoleWmsCountExecutionListRequest>
+{
+    public BusinessConsoleWmsCountExecutionListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LocationCode).MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Keyword).MaximumLength(150);
     }
 }
 
