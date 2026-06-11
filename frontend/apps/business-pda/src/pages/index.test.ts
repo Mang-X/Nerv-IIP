@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // 真实 router.push 返回 Promise（index.vue 的 openTask 会 `.catch`）；mock 同此契约。
 const push = vi.fn(() => Promise.resolve())
@@ -10,7 +10,18 @@ vi.mock('vue-router', () => ({
 
 import HomePage from './index.vue'
 
+/** Find an app-wall button by its visible label. */
+function buttonByLabel(wrapper: ReturnType<typeof mount>, label: string) {
+  const btn = wrapper.findAll('button').find((b) => b.text() === label)
+  if (!btn) throw new Error(`app-wall button "${label}" not found`)
+  return btn
+}
+
 describe('PDA home', () => {
+  beforeEach(() => {
+    push.mockReset()
+  })
+
   it('renders the scan bar and the app wall from the task dictionary', () => {
     const wrapper = mount(HomePage)
     // 扫码条：以 placeholder 做稳健断言（不依赖 SFC 组件名推断）
@@ -28,13 +39,6 @@ describe('PDA home', () => {
     const wrapper = mount(HomePage)
     expect(wrapper.text()).toContain('暂无分配给你的任务')
   })
-
-  /** Helper: 按可见标签精确取应用墙按钮（避免「报工」⊂「报工」之类的子串误匹配）。 */
-  function buttonByLabel(wrapper: ReturnType<typeof mount>, label: string) {
-    const btn = wrapper.findAll('button').find((b) => b.text() === label)
-    if (!btn) throw new Error(`app-wall button not found: ${label}`)
-    return btn
-  }
 
   it('enables the ready equipment entries and navigates to their routes on click', async () => {
     const wrapper = mount(HomePage)
@@ -55,17 +59,31 @@ describe('PDA home', () => {
     }
   })
 
-  it('keeps not-yet-ready MES/WMS entries disabled and does not navigate on click', async () => {
+  it('enables the four MES app-wall entries and navigates to their routes on click', async () => {
     const wrapper = mount(HomePage)
+    const mesEntries: Array<[label: string, route: string]> = [
+      ['报工', '/mes/report'],
+      ['领料', '/mes/issue'],
+      ['完工入库', '/mes/receipt'],
+      ['工序执行', '/mes/operation'],
+    ]
+    for (const [label, route] of mesEntries) {
+      const btn = buttonByLabel(wrapper, label)
+      expect(btn.attributes('disabled')).toBeUndefined()
+      await btn.trigger('click')
+      expect(push).toHaveBeenCalledWith(route)
+    }
+    expect(push).toHaveBeenCalledTimes(mesEntries.length)
+  })
 
-    // 本分支 mes.*/wms.* 仍 routeReady:false → 应保持 disabled
-    for (const label of ['报工', '收货入库']) {
+  it('keeps the WMS app-wall entries disabled and does not navigate on click', async () => {
+    const wrapper = mount(HomePage)
+    const wmsLabels = ['收货入库', '拣货', '上架', '复核发货', '盘点']
+    for (const label of wmsLabels) {
       const btn = buttonByLabel(wrapper, label)
       expect(btn.attributes('disabled')).toBeDefined()
+      await btn.trigger('click')
     }
-
-    push.mockClear()
-    await buttonByLabel(wrapper, '收货入库').trigger('click')
     expect(push).not.toHaveBeenCalled()
   })
 

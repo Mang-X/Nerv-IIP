@@ -10,15 +10,23 @@ describe('PDA task kinds dictionary', () => {
     expect(getPdaTaskKind('wms.inbound')).toMatchObject({ label: '收货入库', route: '/wms/inbound' })
   })
 
-  it('marks not-yet-implemented WMS/MES tasks so the app wall can disable them (no fake links)', () => {
+  it('keeps not-yet-implemented WMS tasks disabled so the app wall can disable them (no fake links)', () => {
+    // WMS PDA 入口仍待后端缺口列表端点（#374 之外的个人过滤/缺口），保持 disabled。
     expect(getPdaTaskKind('wms.pick')?.routeReady).toBe(false)
-    expect(getPdaTaskKind('mes.report')?.routeReady).toBe(false)
-    // 本分支所有 mes.*/wms.* 仍未落地，应保持 false。
+    expect(getPdaTaskKind('wms.inbound')?.routeReady).toBe(false)
+    // 合并 #378(MES) + #379(equipment) 后，所有 wms.* 仍未落地，应保持 false。
     for (const kind of PDA_TASK_KINDS) {
-      if (kind.group === 'wms' || kind.group === 'mes') {
+      if (kind.group === 'wms') {
         expect(kind.routeReady, `${kind.id} should stay false`).toBe(false)
       }
     }
+  })
+
+  it('lights up the MES frontline tasks once their work pages land (Plan 3)', () => {
+    expect(getPdaTaskKind('mes.report')?.routeReady).toBe(true)
+    expect(getPdaTaskKind('mes.issue')?.routeReady).toBe(true)
+    expect(getPdaTaskKind('mes.receipt')?.routeReady).toBe(true)
+    expect(getPdaTaskKind('mes.operation')?.routeReady).toBe(true)
   })
 
   it('lights up the equipment maintenance trio (Plan 4: repair / inspect / alarms)', () => {
