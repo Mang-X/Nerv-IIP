@@ -111,22 +111,28 @@ function progressCell(t: GridTask): string {
   return `<span class="nerv-pcell"><span class="nerv-pbar"><span style="width:${pct}%"></span></span><span class="nerv-ptext">${pct}%</span></span>`
 }
 
+const WEEKDAY = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+const fmtDayLong = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAY[d.getDay()]}`
+const fmtHour = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:00`
+const fmtDayShort = (d: Date) => `${d.getDate()} ${WEEKDAY[d.getDay()].slice(1)}`
+const fmtMonth = (d: Date) => `${d.getFullYear()}年${d.getMonth() + 1}月`
+
 const SCALE_CONFIG: Record<Exclude<TimeScale, 'auto'>, Array<Record<string, unknown>>> = {
   hour: [
-    { unit: 'day', step: 1, format: '%m-%d' },
-    { unit: 'hour', step: 2, format: '%H:00' },
+    { unit: 'day', step: 1, format: fmtDayLong },
+    { unit: 'hour', step: 2, format: fmtHour },
   ],
   day: [
-    { unit: 'month', step: 1, format: '%Y年%m月' },
-    { unit: 'day', step: 1, format: '%j' },
+    { unit: 'month', step: 1, format: fmtMonth },
+    { unit: 'day', step: 1, format: fmtDayShort },
   ],
   week: [
-    { unit: 'month', step: 1, format: '%Y年%m月' },
-    { unit: 'week', step: 1, format: '第%W周' },
+    { unit: 'month', step: 1, format: fmtMonth },
+    { unit: 'day', step: 7, format: fmtDayShort },
   ],
   month: [
-    { unit: 'year', step: 1, format: '%Y' },
-    { unit: 'month', step: 1, format: '%M' },
+    { unit: 'year', step: 1, format: (d: Date) => `${d.getFullYear()}年` },
+    { unit: 'month', step: 1, format: (d: Date) => `${d.getMonth() + 1}月` },
   ],
 }
 
@@ -431,13 +437,16 @@ export class DhtmlxEngine implements SchedulingEngine {
     inst.addTaskLayer((task: DhxTask) => {
       if (!task.planned_start || !task.planned_end || task.nerv?.type !== 'operation') return false
       const pos = inst.getTaskPosition!(task, task.planned_start, task.planned_end)
+      const barH = Number(inst.config.bar_height) || pos.height
+      const rowH = Number(inst.config.row_height) || pos.height
+      const offset = Math.max(0, (rowH - barH) / 2)
       const el = document.createElement('div')
       el.className = 'nerv-baseline'
       if (task.nerv?.colorKey) el.style.setProperty('--bl', `var(--nerv-cat-${task.nerv.colorKey})`)
       el.style.left = `${pos.left}px`
-      el.style.top = `${pos.top}px`
+      el.style.top = `${pos.top + offset}px`
       el.style.width = `${Math.max(3, pos.width)}px`
-      el.style.height = `${pos.height}px`
+      el.style.height = `${barH}px`
       return el
     })
   }

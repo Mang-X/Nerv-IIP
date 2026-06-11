@@ -277,6 +277,19 @@
 .nerv-gantt-dhx .gantt_critical_link .gantt_link_arrow_right {
   border-left-color: var(--warning) !important;
 }
+/* 拐角用 border 画的,要单独改 border-color,否则保持默认灰 */
+.nerv-gantt-dhx .gantt_task_link .gantt_link_corner {
+  border-color: var(--muted-foreground) !important;
+}
+.nerv-gantt-dhx .gantt_critical_link .gantt_link_corner {
+  border-color: var(--warning) !important;
+}
+
+/* 时间线顶层(日期)更醒目,底层(小时)弱化 */
+.nerv-gantt-dhx .gantt_scale_line:first-child .gantt_scale_cell {
+  font-weight: 600;
+  color: var(--foreground);
+}
 
 /* 今天线:细品牌线 + 胶囊标签 */
 .nerv-gantt-dhx .gantt_marker.nerv-today-marker {
