@@ -137,10 +137,10 @@
 
 /* 时间线底纹:周末稍重、夜班/非工作更淡,营造可排/不可排留白 */
 .nerv-gantt-dhx .gantt_task_cell.nerv-weekend {
-  background-color: color-mix(in oklch, var(--muted), transparent 45%) !important;
+  background-color: color-mix(in oklch, var(--muted), transparent 20%) !important;
 }
 .nerv-gantt-dhx .gantt_task_cell.nerv-offwork {
-  background-color: color-mix(in oklch, var(--muted), transparent 72%) !important;
+  background-color: color-mix(in oklch, var(--muted), transparent 50%) !important;
 }
 .nerv-gantt-dhx .gantt_task_content {
   color: #fff;

@@ -52,6 +52,25 @@ const model = computed(() => {
     t.colorKey = WC_COLOR[wc] ?? 'cut'
     i += 1
   }
+  // 里程碑(渲染为菱形,演示视觉语言)。
+  const milestone = (id: string, orderId: string, text: string, whenUtc: string, colorKey: string) => ({
+    id,
+    orderId,
+    operationId: '',
+    operationSequence: 99,
+    parentId: `order:${orderId}`,
+    type: 'operation' as const,
+    text,
+    startUtc: whenUtc,
+    endUtc: whenUtc,
+    isMilestone: true,
+    locked: false,
+    hasConflict: false,
+    colorKey,
+  })
+  m.tasks.push(milestone('ms-weld', 'WO-2026-001', '冲焊完成', '2026-06-10T19:00:00.000Z', 'weld'))
+  m.tasks.push(milestone('ms-final', 'WO-2026-003', '总装下线', '2026-06-11T04:00:00.000Z', 'mach'))
+
   m.groupDimensions = [
     { key: 'workCenter', label: '工作中心' },
     { key: 'device', label: '设备' },
