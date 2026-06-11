@@ -41,6 +41,8 @@ const maintenance = useBusinessMaintenance()
 const {
   plansPending,
   plansError,
+  plansTotal,
+  loadMorePlans,
   recordInspection,
   recordPending,
   inspectionsPending,
@@ -51,7 +53,7 @@ const {
 const allPlans = computed<PlanRow[]>(() => maintenance.plans.value as PlanRow[])
 const inspections = computed<InspectionRow[]>(() => maintenance.inspections.value as InspectionRow[])
 
-// 扫码/手输关键字 → 对已全量加载的 plans 做客户端过滤（plans 列表小，facade 无 keyword 查询参数）。
+// 扫码/手输关键字 → 对**已加载**的 plans 做客户端过滤（facade 无 keyword/device 查询参数）。
 const scanKeyword = ref('')
 const plans = computed<PlanRow[]>(() => {
   const kw = scanKeyword.value.trim().toLowerCase()
@@ -62,6 +64,11 @@ const plans = computed<PlanRow[]>(() => {
     return code.includes(kw) || device.includes(kw)
   })
 })
+
+// 已加载条数 / 服务端总数：facade 仅支持 org/env/skip/take，关键字命中第一页之外时
+// 不能把"已加载页内未命中"当作"不存在"——还有更多页可加载（loadMorePlans）。
+const loadedPlans = computed(() => allPlans.value.length)
+const hasMorePlans = computed(() => loadedPlans.value < plansTotal.value)
 
 // 点检表单 = inspectionFlow 的上下文（selectPlan → enterResult → record）。
 const form = reactive<InspectCtx>({
@@ -238,6 +245,25 @@ function inspectionSubtitle(item: { result?: string, inspectedAtUtc?: string }) 
             暂无保养计划
           </div>
 
+          <!-- 已加载页内未命中，但服务端仍有更多页：诚实提示 + 加载更多，不做死路。 -->
+          <div
+            v-else-if="plans.length === 0 && hasMorePlans"
+            data-testid="plans-partial-no-match"
+            class="space-y-3 rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
+          >
+            <p>在已加载的 {{ loadedPlans }} 条计划中未匹配（共 {{ plansTotal }} 条）。</p>
+            <button
+              data-testid="load-more-plans"
+              type="button"
+              :disabled="plansPending"
+              class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
+              @click="loadMorePlans"
+            >
+              加载更多
+            </button>
+          </div>
+
+          <!-- 全部计划已加载且仍无命中：确定性"未找到"。 -->
           <div
             v-else-if="plans.length === 0"
             class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"

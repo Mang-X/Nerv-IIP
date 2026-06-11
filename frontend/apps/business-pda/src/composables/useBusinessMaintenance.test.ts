@@ -166,4 +166,25 @@ describe('useBusinessMaintenance', () => {
     expect(arg.body.inspectedAtUtc).not.toBe('1999-01-01T00:00:00.000Z')
     expect(typeof arg.body.inspectedAtUtc).toBe('string')
   })
+
+  it('refuses createWorkOrder when the principal lacks org/env scope (no mutation, throws)', async () => {
+    // No principal seeded → org/env empty → scope not ready.
+    const { createWorkOrder } = useBusinessMaintenance()
+
+    await expect(
+      createWorkOrder({ deviceAssetId: 'D1', priority: 'high', assetUnavailableReason: 'x' } as never),
+    ).rejects.toThrow('登录态未就绪')
+    expect(coladaState.mutate.createWorkOrder).not.toHaveBeenCalled()
+  })
+
+  it('refuses recordInspection when the principal lacks org/env scope (no mutation, throws)', async () => {
+    // Principal restored but missing environmentId → scope not ready.
+    seedPrincipal({ environmentId: '' })
+    const { recordInspection } = useBusinessMaintenance()
+
+    await expect(
+      recordInspection({ planId: 'P1', result: 'pass' } as never),
+    ).rejects.toThrow('登录态未就绪')
+    expect(coladaState.mutate.recordInspection).not.toHaveBeenCalled()
+  })
 })

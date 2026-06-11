@@ -97,6 +97,8 @@ export function useBusinessMaintenance() {
     enabled: scopeReady.value,
   }))
 
+  const plansTotal = computed(() => listTotal(plansQuery.data.value as ListEnvelope<unknown>))
+
   const createMutation = useMutation({
     ...createBusinessConsoleMaintenanceWorkOrderMutationOptions(),
     onSuccess() {
@@ -111,7 +113,12 @@ export function useBusinessMaintenance() {
     },
   })
 
-  function createWorkOrder(input: CreateWorkOrderInput) {
+  async function createWorkOrder(input: CreateWorkOrderInput) {
+    // scope 未就绪（未登录 / 缺 org/env）时绝不发请求：否则 org/env='' 会被
+    // BusinessGateway 拒为 400 或落到错误租户。调用页已 try/catch，抛错即可呈现。
+    if (!scopeReady.value) {
+      throw new Error('登录态未就绪，请稍后重试')
+    }
     // 注入后置：即使调用方（`as never`）混入 org/env/openedBy，也被这里覆盖。
     const body = {
       ...input,
@@ -122,7 +129,10 @@ export function useBusinessMaintenance() {
     return createMutation.mutateAsync({ body })
   }
 
-  function recordInspection(input: RecordInspectionInput) {
+  async function recordInspection(input: RecordInspectionInput) {
+    if (!scopeReady.value) {
+      throw new Error('登录态未就绪，请稍后重试')
+    }
     const body = {
       ...input,
       organizationId: organizationId.value,
@@ -131,6 +141,14 @@ export function useBusinessMaintenance() {
       inspectedAtUtc: new Date().toISOString(),
     } satisfies RecordMaintenanceInspectionRequest
     return recordMutation.mutateAsync({ body })
+  }
+
+  // 保养计划无服务端 keyword/device 过滤（仅 org/env/skip/take），inspect 页
+  // 客户端扫码过滤；当扫码命中第一页之外时，调用方据 plansTotal 加载更多页。
+  function loadMorePlans() {
+    if (planFilters.take < plansTotal.value) {
+      planFilters.take += DEFAULT_TAKE
+    }
   }
 
   return {
@@ -157,9 +175,11 @@ export function useBusinessMaintenance() {
     recordPending: recordMutation.isLoading,
 
     plans: computed(() => listItems(plansQuery.data.value as ListEnvelope<unknown>)),
+    plansTotal,
     plansPending: plansQuery.isLoading,
     plansError: plansQuery.error,
     refreshPlans: () => (scopeReady.value ? plansQuery.refetch() : Promise.resolve()),
     planFilters,
+    loadMorePlans,
   }
 }

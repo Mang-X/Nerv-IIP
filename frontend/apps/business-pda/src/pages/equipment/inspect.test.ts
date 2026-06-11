@@ -30,7 +30,9 @@ const plans = ref<Array<Record<string, unknown>>>([
 ])
 const plansPending = ref(false)
 const plansError = ref<unknown>(null)
+const plansTotal = ref(2)
 const refreshPlans = vi.fn(async () => {})
+const loadMorePlans = vi.fn()
 const planFilters = { skip: 0, take: 100 }
 
 const inspections = ref<Array<Record<string, unknown>>>([
@@ -53,7 +55,9 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     plans,
     plansPending,
     plansError,
+    plansTotal,
     refreshPlans,
+    loadMorePlans,
     planFilters,
     recordInspection,
     recordPending,
@@ -72,10 +76,12 @@ beforeEach(() => {
   recordInspection.mockClear()
   recordInspection.mockResolvedValue({})
   refreshPlans.mockClear()
+  loadMorePlans.mockClear()
   refreshInspections.mockClear()
   recordPending.value = false
   plansError.value = null
   plansPending.value = false
+  plansTotal.value = 2
   inspectionsError.value = null
   inspectionsPending.value = false
 })
@@ -128,6 +134,38 @@ describe('PDA equipment inspect page', () => {
     const options = wrapper.findAll('[data-testid="plan-option"]')
     expect(options).toHaveLength(1)
     expect(options[0].text()).toContain('PLAN-B')
+  })
+
+  it('offers "加载更多" (not a dead-end) when a scan matches nothing on the loaded page but more plans exist server-side', async () => {
+    // 2 plans loaded, but server has more (plansTotal > loadedPlans).
+    plansTotal.value = 5
+    const wrapper = mount(InspectPage)
+
+    const scanInput = wrapper.find('input[placeholder*="扫描"]')
+    await scanInput.setValue('PLAN-ZZZ') // matches nothing on the loaded page
+    await scanInput.trigger('keydown.enter')
+
+    // No dead-end "未找到匹配的保养计划" message.
+    expect(wrapper.text()).not.toContain('未找到匹配的保养计划')
+    // Honest "loaded N, no match" + a load-more affordance.
+    const loadMore = wrapper.find('[data-testid="load-more-plans"]')
+    expect(loadMore.exists()).toBe(true)
+
+    await loadMore.trigger('click')
+    expect(loadMorePlans).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the definitive "未找到匹配的保养计划" only when all plans are loaded', async () => {
+    // All plans loaded (plansTotal === loadedPlans), scan matches nothing.
+    plansTotal.value = 2
+    const wrapper = mount(InspectPage)
+
+    const scanInput = wrapper.find('input[placeholder*="扫描"]')
+    await scanInput.setValue('PLAN-ZZZ')
+    await scanInput.trigger('keydown.enter')
+
+    expect(wrapper.text()).toContain('未找到匹配的保养计划')
+    expect(wrapper.find('[data-testid="load-more-plans"]').exists()).toBe(false)
   })
 
   it('starts the flow at select-plan: no result options until a plan is chosen', () => {
