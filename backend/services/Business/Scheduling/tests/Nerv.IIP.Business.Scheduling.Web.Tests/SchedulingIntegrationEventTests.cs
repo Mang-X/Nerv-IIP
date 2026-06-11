@@ -3,6 +3,7 @@ using System.Reflection;
 using Microsoft.AspNetCore.Http;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
+using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEvents;
 using Nerv.IIP.Contracts.Scheduling;
@@ -165,10 +166,10 @@ public sealed class SchedulingIntegrationEventTests
 
     private static SchedulePlan CreatePlan()
     {
-        return SchedulePlan.FromGeneratedContract(
+        return SchedulePlan.FromGeneratedPlan(
             "org-001",
             "env-dev",
-            new SchedulePlanContract(
+            SchedulePlanContractMapper.ToDomainSnapshot(new SchedulePlanContract(
                 ContractVersion: 1,
                 PlanId: "plan-001",
                 ProblemId: "problem-001",
@@ -204,7 +205,7 @@ public sealed class SchedulingIntegrationEventTests
                 ],
                 UnscheduledOperations: [],
                 ChangeSummary: [],
-                GanttItems: []));
+                GanttItems: [])));
     }
 
     private static void AssertSchedulingEnvelope<TPayload>(

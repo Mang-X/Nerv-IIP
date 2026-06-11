@@ -1,5 +1,4 @@
 using Nerv.IIP.AppHub.Domain;
-using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 
 namespace Nerv.IIP.AppHub.Domain.Tests;
@@ -26,7 +25,7 @@ public sealed class AppHubStateStoreTests
         Assert.Equal(3, store.StateHistory.Count);
         Assert.Single(store.PublishedStatusChanges);
 
-        InstanceDetailResponse detail = store.GetInstanceDetail("org-001", "env-dev", "demo-api-001");
+        InstanceDetailFact detail = store.GetInstanceDetail("org-001", "env-dev", "demo-api-001");
         Assert.Equal("stopped", detail.ReportedStatus);
         Assert.Equal("unhealthy", detail.HealthStatus);
         Assert.NotNull(detail.LastHeartbeatAtUtc);

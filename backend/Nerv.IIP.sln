@@ -439,6 +439,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Business.Schedulin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Contracts.Inventory", "common\Contracts\Nerv.IIP.Contracts.Inventory\Nerv.IIP.Contracts.Inventory.csproj", "{99CD2FD0-3792-4558-885F-20BA40A0CBB1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.ContractBoundary.Tests", "tests\Nerv.IIP.ContractBoundary.Tests\Nerv.IIP.ContractBoundary.Tests.csproj", "{AB976C39-8C24-43D0-A77D-47EC2D28DA63}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -2177,6 +2179,18 @@ Global
 		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Release|x64.Build.0 = Release|Any CPU
 		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Release|x86.ActiveCfg = Release|Any CPU
 		{99CD2FD0-3792-4558-885F-20BA40A0CBB1}.Release|x86.Build.0 = Release|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Debug|x64.Build.0 = Debug|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Debug|x86.Build.0 = Debug|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Release|x64.ActiveCfg = Release|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Release|x64.Build.0 = Release|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Release|x86.ActiveCfg = Release|Any CPU
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -2396,5 +2410,6 @@ Global
 		{5FB8E6FC-0EF8-4459-A79E-18E9E2647158} = {BF58F8C9-EA77-15F8-82FD-B875D73E3FE4}
 		{FD7C2DBD-D126-4438-B520-5D70B5DDA7BC} = {BF58F8C9-EA77-15F8-82FD-B875D73E3FE4}
 		{99CD2FD0-3792-4558-885F-20BA40A0CBB1} = {56787BCC-1D17-4674-3EC8-20108B77A4E0}
+		{AB976C39-8C24-43D0-A77D-47EC2D28DA63} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

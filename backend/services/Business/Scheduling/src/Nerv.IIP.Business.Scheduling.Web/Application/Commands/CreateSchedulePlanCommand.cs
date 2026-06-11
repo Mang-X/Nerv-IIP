@@ -77,10 +77,10 @@ public sealed class CreateSchedulePlanCommandHandler(
             request.Problem.HorizonStartUtc,
             request.Problem.HorizonEndUtc,
             generatedAtUtc));
-        dbContext.SchedulePlans.Add(SchedulePlan.FromGeneratedContract(
+        dbContext.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
             request.Problem.OrganizationId,
             request.Problem.EnvironmentId,
-            generated));
+            SchedulePlanContractMapper.ToDomainSnapshot(generated)));
         return generated;
     }
 

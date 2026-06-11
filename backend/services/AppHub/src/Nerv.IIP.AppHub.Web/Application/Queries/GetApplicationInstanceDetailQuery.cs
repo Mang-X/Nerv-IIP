@@ -16,7 +16,9 @@ public class GetApplicationInstanceDetailQueryHandler(IServiceProvider services)
         var db = services.GetService<ApplicationDbContext>();
         if (db is null)
         {
-            return services.GetRequiredService<IAppHubStateStore>().GetInstanceDetail(request.OrganizationId, request.EnvironmentId, request.InstanceKey);
+            return services.GetRequiredService<IAppHubStateStore>()
+                .GetInstanceDetail(request.OrganizationId, request.EnvironmentId, request.InstanceKey)
+                .ToContract();
         }
 
         var instance = await db.ApplicationInstances

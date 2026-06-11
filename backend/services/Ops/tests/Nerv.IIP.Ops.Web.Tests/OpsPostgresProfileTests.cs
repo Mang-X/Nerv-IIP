@@ -66,7 +66,7 @@ public sealed class OpsPostgresProfileTests
                     .Include(x => x.Attempts)
                     .Include(x => x.AuditRecords)
                     .SingleAsync(x => x.Id == new OperationTaskId(created.OperationTaskId));
-                var task = aggregate.ToResponse();
+                var task = aggregate.ToDetailFact();
 
                 Assert.Equal("completed", task.Status);
                 Assert.Equal(pending.AttemptId, task.CurrentAttemptId);
