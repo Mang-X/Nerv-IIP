@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// 真实 router.push 返回 Promise（index.vue 的 openTask 会 `.catch`）；mock 同此契约。
 const push = vi.fn(() => Promise.resolve())
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
@@ -28,6 +29,10 @@ describe('PDA home', () => {
     // 应用墙渲染字典中的任务标签
     expect(wrapper.text()).toContain('收货入库')
     expect(wrapper.text()).toContain('报工')
+    // 设备运维三件套（Plan 4）也渲染在墙上（含新增的查看报警入口）
+    expect(wrapper.text()).toContain('报修')
+    expect(wrapper.text()).toContain('点检')
+    expect(wrapper.text()).toContain('查看报警')
   })
 
   it('shows an empty-state for "我的任务" until the backend personal-task facade lands', () => {
@@ -35,11 +40,23 @@ describe('PDA home', () => {
     expect(wrapper.text()).toContain('暂无分配给你的任务')
   })
 
-  it('disables not-yet-ready app-wall entries and does not navigate on click', async () => {
+  it('enables the ready equipment entries and navigates to their routes on click', async () => {
     const wrapper = mount(HomePage)
-    const disabled = wrapper.get('button[disabled]')
-    await disabled.trigger('click')
-    expect(push).not.toHaveBeenCalled()
+
+    const cases: Array<[string, string]> = [
+      ['报修', '/equipment/repair'],
+      ['点检', '/equipment/inspect'],
+      ['查看报警', '/equipment/alarms'],
+    ]
+
+    for (const [label, route] of cases) {
+      const btn = buttonByLabel(wrapper, label)
+      // 字典已点亮（routeReady=true）→ 入口不再 disabled
+      expect(btn.attributes('disabled')).toBeUndefined()
+      push.mockClear()
+      await btn.trigger('click')
+      expect(push).toHaveBeenCalledWith(route)
+    }
   })
 
   it('enables the four MES app-wall entries and navigates to their routes on click', async () => {
