@@ -15,6 +15,7 @@ import {
   useMesProductionReports,
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
+import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 
 definePage({
   meta: {
@@ -93,6 +94,10 @@ type ResultState = { status: 'success' | 'error'; title: string; description?: s
 const result = ref<ResultState | null>(null)
 const submitting = ref(false)
 
+// 稳定的逐操作幂等键：在提交时铸造一次，重试复用同键；
+// 开始新报工（改选工单/工序、成功后回到起点）时清空 → 下次提交铸造新键。
+const operationKey = ref('')
+
 // ScanBar 仅在选工单步活跃；录数量/结果时不抢焦点
 const scanActive = computed(() =>
   currentStep.value === 'selectWorkOrder' && result.value === null && selectedTask.value === null,
@@ -127,26 +132,29 @@ const tasksErrorMessage = computed(() => {
 function chooseWorkOrder(wo: WorkOrder) {
   selectedWorkOrder.value = wo
   ctx.workOrderId = wo.workOrderId
-  // 重置后续步状态
+  // 重置后续步状态 → 新报工操作，作废上一个幂等键
   selectedTask.value = null
   ctx.operationTaskId = undefined
   ctx.quantityEntered = false
+  operationKey.value = ''
 }
 
 function chooseTask(task: Task) {
   selectedTask.value = task
   ctx.operationTaskId = task.operationTaskId
-  // 重置数量录入
+  // 重置数量录入 → 新报工操作，作废上一个幂等键
   goodQuantity.value = 0
   scrapQuantity.value = 0
   completesOperation.value = false
   ctx.quantityEntered = false
+  operationKey.value = ''
 }
 
 function closeSheet() {
   selectedTask.value = null
   ctx.operationTaskId = undefined
   ctx.quantityEntered = false
+  operationKey.value = ''
 }
 
 // 返回上一步
@@ -156,6 +164,7 @@ function backToWorkOrders() {
   selectedTask.value = null
   ctx.operationTaskId = undefined
   ctx.quantityEntered = false
+  operationKey.value = ''
 }
 
 async function submit() {
@@ -164,6 +173,10 @@ async function submit() {
   if (!workOrderId || !operationTaskId) return
   if (!quantityValid.value) return
   ctx.quantityEntered = true
+  // 本次报工操作的稳定幂等键：首次提交铸造，重试复用同键。
+  if (operationKey.value === '') {
+    operationKey.value = makeIdempotencyKey()
+  }
   submitting.value = true
   // 关闭录数量面板（结果以 Result 呈现）
   const good = goodQuantity.value
@@ -177,6 +190,7 @@ async function submit() {
       goodQuantity: good,
       scrapQuantity: scrap,
       completesOperation: completes,
+      idempotencyKey: operationKey.value,
     })
     ctx.recorded = true
     result.value = {

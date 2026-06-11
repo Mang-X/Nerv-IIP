@@ -14,6 +14,7 @@ import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesReceipts, useMesWorkOrders } from '@/composables/useBusinessMes'
+import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 
 definePage({
   meta: {
@@ -100,6 +101,10 @@ type ResultState = { status: 'success' | 'error'; title: string; description?: s
 const result = ref<ResultState | null>(null)
 const submitting = ref(false)
 
+// 稳定的逐操作幂等键：提交时铸造一次，重试复用同键；
+// 开始新完工入库（重新打开新建、成功）时清空 → 下次提交铸造新键。
+const operationKey = ref('')
+
 const createSheetOpen = computed({
   get: () => creating.value && result.value === null,
   set: (open) => {
@@ -116,6 +121,8 @@ function resetForm() {
   ctx.skuId = undefined
   ctx.quantityEntered = false
   ctx.created = false
+  // 新一轮完工入库 → 作废上一个幂等键
+  operationKey.value = ''
 }
 
 function openCreate() {
@@ -149,6 +156,10 @@ async function submitCreate() {
   const qty = quantity.value
   if (!workOrderId || sku === '' || uom === '' || qty === null || !(qty > 0)) return
   syncEnterStep()
+  // 首次提交铸造稳定幂等键，重试复用同键。
+  if (operationKey.value === '') {
+    operationKey.value = makeIdempotencyKey()
+  }
   submitting.value = true
   creating.value = false
   try {
@@ -157,6 +168,7 @@ async function submitCreate() {
       skuId: sku,
       quantity: qty,
       uomCode: uom,
+      idempotencyKey: operationKey.value,
     })
     ctx.created = true
     result.value = {
@@ -186,6 +198,7 @@ function continueWork() {
 }
 function goBack() {
   result.value = null
+  operationKey.value = ''
   router.push('/').catch(() => {})
 }
 

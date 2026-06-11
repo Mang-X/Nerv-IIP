@@ -135,15 +135,65 @@ describe('PDA MES production reporting page', () => {
     expect(body.goodQuantity).toBe(8)
     expect(body.scrapQuantity).toBe(0)
     expect(body).toHaveProperty('completesOperation')
-    // org/env/idempotencyKey/timestamp 由 composable 注入，页面不传
+    // org/env/timestamp 仍由 composable 注入，页面不传
     expect(body).not.toHaveProperty('organizationId')
     expect(body).not.toHaveProperty('environmentId')
-    expect(body).not.toHaveProperty('idempotencyKey')
     expect(body).not.toHaveProperty('reportedAtUtc')
+    // idempotencyKey 现由页面提供（稳定逐操作键）
+    expect(body.idempotencyKey).toBeTruthy()
 
     // 成功后 Result 成功态
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('报工成功')
+    wrapper.unmount()
+  })
+
+  it('reuses the SAME idempotencyKey on retry; a new operation mints a different key', async () => {
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await selectWorkOrder(wrapper, 0)
+    const taskRows = wrapper.findAll('[data-row]')
+    await taskRows[0].trigger('click')
+    await flushPromises()
+
+    const goodInput = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    goodInput.value = '8'
+    goodInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    // 首次提交失败
+    recordReport.mockRejectedValueOnce(new Error('lost response'))
+    document.body.querySelector<HTMLElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+
+    // 不重新发起，直接点重试 → 复用同一 idempotencyKey
+    wrapper.get('[data-testid="retry-report"]').trigger('click')
+    await flushPromises()
+
+    expect(recordReport).toHaveBeenCalledTimes(2)
+    const firstKey = recordReport.mock.calls[0][0].idempotencyKey
+    const retryKey = recordReport.mock.calls[1][0].idempotencyKey
+    expect(firstKey).toBeTruthy()
+    expect(retryKey).toBe(firstKey)
+
+    // 成功后回到起点，发起新报工 → 新键
+    wrapper.get('[data-testid="continue-report"]').trigger('click')
+    await flushPromises()
+    await selectWorkOrder(wrapper, 0)
+    const newTaskRows = wrapper.findAll('[data-row]')
+    await newTaskRows[0].trigger('click')
+    await flushPromises()
+    const good2 = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    good2.value = '3'
+    good2.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+
+    expect(recordReport).toHaveBeenCalledTimes(3)
+    const newOpKey = recordReport.mock.calls[2][0].idempotencyKey
+    expect(newOpKey).toBeTruthy()
+    expect(newOpKey).not.toBe(firstKey)
     wrapper.unmount()
   })
 

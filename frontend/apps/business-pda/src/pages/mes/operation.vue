@@ -2,6 +2,7 @@
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { operationTaskStatusLabel } from '@nerv-iip/business-core'
 import { useMesOperationTasks } from '@/composables/useBusinessMes'
+import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -67,12 +68,16 @@ const SUCCESS_TITLES: Record<ActionKind, string> = {
   complete: '工序已完成',
 }
 
-const ACTION_FNS: Record<ActionKind, (id: string) => Promise<unknown>> = {
-  start: (id) => startTask(id),
-  pause: (id) => pauseTask(id),
-  resume: (id) => resumeTask(id),
-  complete: (id) => completeTask(id),
+const ACTION_FNS: Record<ActionKind, (id: string, idempotencyKey: string) => Promise<unknown>> = {
+  start: (id, idempotencyKey) => startTask(id, { idempotencyKey }),
+  pause: (id, idempotencyKey) => pauseTask(id, { idempotencyKey }),
+  resume: (id, idempotencyKey) => resumeTask(id, { idempotencyKey }),
+  complete: (id, idempotencyKey) => completeTask(id, { idempotencyKey }),
 }
+
+// 稳定的逐动作幂等键：用户发起某动作时铸造一次，重试该动作复用同键；
+// 换动作或重新打开面板 → 新键。
+const operationKey = ref('')
 
 // --- BottomSheet 状态 ---
 const selected = ref<Task | null>(null)
@@ -113,6 +118,8 @@ const errorMessage = computed(() => {
 function openSheet(task: Task) {
   result.value = null
   confirmingComplete.value = false
+  // 重新打开面板 → 新一轮操作，作废上一个幂等键
+  operationKey.value = ''
   selected.value = task
 }
 function closeSheet() {
@@ -123,15 +130,21 @@ function closeSheet() {
 async function runAction(action: ActionKind) {
   const task = selected.value
   if (!task?.operationTaskId) return
-  // 完成是终态动作，先进入二次确认
+  // 完成是终态动作，先进入二次确认；在用户发起该动作（点动作按钮）时铸造稳定键
   if (action === 'complete' && !confirmingComplete.value) {
     confirmingComplete.value = true
+    operationKey.value = makeIdempotencyKey()
     return
   }
+  // 非完成动作点击即发起；完成动作此处为确认（沿用进入确认时铸造的键）
+  if (action !== 'complete') {
+    operationKey.value = makeIdempotencyKey()
+  }
   const id = task.operationTaskId
+  const key = operationKey.value
   closeSheet()
   try {
-    await ACTION_FNS[action](id)
+    await ACTION_FNS[action](id, key)
     result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId: id }
   } catch (e) {
     result.value = {
@@ -148,9 +161,11 @@ async function retry() {
   const state = result.value
   if (!state) return
   const { action, taskId } = state
+  // 重试同一动作：复用发起时铸造的稳定幂等键，不重新铸造。
+  const key = operationKey.value
   result.value = null
   try {
-    await ACTION_FNS[action](taskId)
+    await ACTION_FNS[action](taskId, key)
     result.value = { status: 'success', title: SUCCESS_TITLES[action], action, taskId }
   } catch (e) {
     result.value = {
@@ -165,9 +180,12 @@ async function retry() {
 
 function continueWork() {
   result.value = null
+  // 成功后回到列表态，作废本次操作幂等键 → 下次发起铸造新键
+  operationKey.value = ''
 }
 function backToList() {
   result.value = null
+  operationKey.value = ''
   router.push('/').catch(() => {})
 }
 

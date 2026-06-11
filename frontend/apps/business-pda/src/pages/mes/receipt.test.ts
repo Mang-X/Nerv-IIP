@@ -155,21 +155,70 @@ describe('PDA MES finished-goods receipt page', () => {
 
     expect(createReceipt).toHaveBeenCalledTimes(1)
     const body = createReceipt.mock.calls[0][0]
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       workOrderId: 'WO-2026-0001',
       skuId: 'SKU-A',
       quantity: 20,
       uomCode: 'PCS',
     })
-    // org/env/idempotencyKey/timestamp 由 composable 注入，页面不传
+    // idempotencyKey 现由页面提供（稳定逐操作键）；org/env/timestamp 仍由 composable 注入
+    expect(body.idempotencyKey).toBeTruthy()
     expect(body).not.toHaveProperty('organizationId')
     expect(body).not.toHaveProperty('environmentId')
-    expect(body).not.toHaveProperty('idempotencyKey')
     expect(body).not.toHaveProperty('requestedAtUtc')
 
     // 成功后 Result 成功态
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('完工入库已提交')
+    wrapper.unmount()
+  })
+
+  it('reuses the SAME idempotencyKey on create retry; a new receipt mints a different key', async () => {
+    const wrapper = mount(ReceiptPage, { attachTo: document.body })
+
+    async function fillCreate(sku: string) {
+      await wrapper.get('[data-testid="new-receipt"]').trigger('click')
+      await flushPromises()
+      document.body.querySelector<HTMLElement>('[data-testid="receipt-work-order"]')!.click()
+      await flushPromises()
+      const skuInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-sku"]')!
+      skuInput.value = sku
+      skuInput.dispatchEvent(new Event('input'))
+      const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-quantity"]')!
+      qtyInput.value = '20'
+      qtyInput.dispatchEvent(new Event('input'))
+      const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
+      uomInput.value = 'PCS'
+      uomInput.dispatchEvent(new Event('input'))
+      await flushPromises()
+      document.body.querySelector<HTMLElement>('[data-testid="submit-receipt"]')!.click()
+      await flushPromises()
+    }
+
+    // 首次提交失败
+    createReceipt.mockRejectedValueOnce(new Error('lost response'))
+    await fillCreate('SKU-A')
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+
+    // 不重新发起，直接点重试 → 复用同一 idempotencyKey
+    await wrapper.get('[data-testid="retry-receipt"]').trigger('click')
+    await flushPromises()
+
+    expect(createReceipt).toHaveBeenCalledTimes(2)
+    const firstKey = createReceipt.mock.calls[0][0].idempotencyKey
+    const retryKey = createReceipt.mock.calls[1][0].idempotencyKey
+    expect(firstKey).toBeTruthy()
+    expect(retryKey).toBe(firstKey)
+
+    // 成功后继续，发起新一轮完工入库 → 新键
+    await wrapper.get('[data-testid="continue-receipt"]').trigger('click')
+    await flushPromises()
+    await fillCreate('SKU-B')
+
+    expect(createReceipt).toHaveBeenCalledTimes(3)
+    const newKey = createReceipt.mock.calls[2][0].idempotencyKey
+    expect(newKey).toBeTruthy()
+    expect(newKey).not.toBe(firstKey)
     wrapper.unmount()
   })
 

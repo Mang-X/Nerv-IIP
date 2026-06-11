@@ -120,7 +120,7 @@ describe('PDA MES material issue page', () => {
     expect(issueFilters.keyword).toBe('WO-2026-0002')
   })
 
-  it('creates an issue with the bound fields and no idempotencyKey', async () => {
+  it('creates an issue with the bound fields and a page-supplied idempotencyKey', async () => {
     const wrapper = mount(IssuePage, { attachTo: document.body })
 
     // 打开新建领料表单
@@ -151,10 +151,56 @@ describe('PDA MES material issue page', () => {
     expect(workOrderId).toBe('WO-2026-0001')
     expect(body.materialId).toBe('MAT-X')
     expect(body.quantity).toBe(12)
-    expect(body).not.toHaveProperty('idempotencyKey')
+    // idempotencyKey 现由页面提供（稳定逐操作键）；org/env 仍由 composable 注入
+    expect(body.idempotencyKey).toBeTruthy()
+    expect(body).not.toHaveProperty('organizationId')
+    expect(body).not.toHaveProperty('environmentId')
 
     // 成功 Result
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('reuses the SAME idempotencyKey on create retry; a new create mints a different key', async () => {
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+
+    async function fillCreate(material: string) {
+      await wrapper.get('[data-testid="new-issue"]').trigger('click')
+      await flushPromises()
+      document.body.querySelectorAll<HTMLElement>('[data-testid="issue-work-order"]')[0].click()
+      await flushPromises()
+      const materialInput = document.body.querySelector<HTMLInputElement>('[data-testid="issue-material"]')!
+      materialInput.value = material
+      materialInput.dispatchEvent(new Event('input'))
+      await flushPromises()
+      document.body.querySelector<HTMLElement>('[data-testid="submit-issue"]')!.click()
+      await flushPromises()
+    }
+
+    // 首次提交失败
+    createIssue.mockRejectedValueOnce(new Error('lost response'))
+    await fillCreate('MAT-X')
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+
+    // 不重新发起，直接点重试 → 复用同一 idempotencyKey
+    await wrapper.get('[data-testid="retry-issue"]').trigger('click')
+    await flushPromises()
+
+    expect(createIssue).toHaveBeenCalledTimes(2)
+    const firstKey = createIssue.mock.calls[0][1].idempotencyKey
+    const retryKey = createIssue.mock.calls[1][1].idempotencyKey
+    expect(firstKey).toBeTruthy()
+    expect(retryKey).toBe(firstKey)
+
+    // 成功后回到起点，发起新一轮新建 → 新键
+    await wrapper.findAll('button').find((b) => b.text() === '继续')!.trigger('click')
+    await flushPromises()
+    await fillCreate('MAT-Y')
+
+    expect(createIssue).toHaveBeenCalledTimes(3)
+    const newKey = createIssue.mock.calls[2][1].idempotencyKey
+    expect(newKey).toBeTruthy()
+    expect(newKey).not.toBe(firstKey)
     wrapper.unmount()
   })
 
@@ -176,7 +222,7 @@ describe('PDA MES material issue page', () => {
     wrapper.unmount()
   })
 
-  it('confirms line-side receipt with no idempotencyKey and shows success', async () => {
+  it('confirms line-side receipt with a page-supplied idempotencyKey and shows success', async () => {
     const wrapper = mount(IssuePage, { attachTo: document.body })
 
     // 行内线边接收动作（第一条申请）
@@ -197,9 +243,51 @@ describe('PDA MES material issue page', () => {
     const [requestId, body] = confirmLineSideReceipt.mock.calls[0]
     expect(requestId).toBe('REQ-1')
     expect(body.receivedQuantity).toBe(100)
-    expect(body).not.toHaveProperty('idempotencyKey')
+    // idempotencyKey 现由页面提供（稳定逐操作键）
+    expect(body.idempotencyKey).toBeTruthy()
 
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('reuses the SAME idempotencyKey on receive retry; a new receive mints a different key', async () => {
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+
+    async function fillReceive(testid: string) {
+      await wrapper.get(`[data-testid="${testid}"]`).trigger('click')
+      await flushPromises()
+      const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="received-quantity"]')!
+      qtyInput.value = '100'
+      qtyInput.dispatchEvent(new Event('input'))
+      await flushPromises()
+      document.body.querySelector<HTMLElement>('[data-testid="submit-receive"]')!.click()
+      await flushPromises()
+    }
+
+    // 首次确认失败
+    confirmLineSideReceipt.mockRejectedValueOnce(new Error('lost response'))
+    await fillReceive('receive-REQ-1')
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+
+    // 不重新发起，直接点重试 → 复用同一 idempotencyKey
+    await wrapper.get('[data-testid="retry-issue"]').trigger('click')
+    await flushPromises()
+
+    expect(confirmLineSideReceipt).toHaveBeenCalledTimes(2)
+    const firstKey = confirmLineSideReceipt.mock.calls[0][1].idempotencyKey
+    const retryKey = confirmLineSideReceipt.mock.calls[1][1].idempotencyKey
+    expect(firstKey).toBeTruthy()
+    expect(retryKey).toBe(firstKey)
+
+    // 成功后回到起点，发起对另一条申请的新一轮接收 → 新键
+    await wrapper.findAll('button').find((b) => b.text() === '继续')!.trigger('click')
+    await flushPromises()
+    await fillReceive('receive-REQ-2')
+
+    expect(confirmLineSideReceipt).toHaveBeenCalledTimes(3)
+    const newKey = confirmLineSideReceipt.mock.calls[2][1].idempotencyKey
+    expect(newKey).toBeTruthy()
+    expect(newKey).not.toBe(firstKey)
     wrapper.unmount()
   })
 })

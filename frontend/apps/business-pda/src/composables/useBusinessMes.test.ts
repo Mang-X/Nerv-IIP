@@ -132,7 +132,7 @@ describe('pda useBusinessMes composables', () => {
     expect(coladaState.queryOptionsById.get('listBusinessConsoleMesWorkOrders')?.enabled).toBe(true)
   })
 
-  it('records a production report with idempotency key and business fields', async () => {
+  it('records a production report forwarding the caller-supplied idempotency key + business fields', async () => {
     const { recordReport } = useMesProductionReports()
 
     await recordReport({
@@ -141,6 +141,7 @@ describe('pda useBusinessMes composables', () => {
       goodQuantity: 9,
       scrapQuantity: 1,
       completesOperation: true,
+      idempotencyKey: 'op-report-1',
     })
 
     expect(recordBusinessConsoleMesProductionReportMutationOptions).toHaveBeenCalled()
@@ -156,14 +157,15 @@ describe('pda useBusinessMes composables', () => {
       scrapQuantity: 1,
       completesOperation: true,
     })
-    expect(payload.body.idempotencyKey).toBeTruthy()
+    // caller-supplied key passes through verbatim
+    expect(payload.body.idempotencyKey).toBe('op-report-1')
     expect(payload.body.reportedAtUtc).toBeTruthy()
   })
 
-  it('completes an operation task with an idempotency key', async () => {
+  it('completes an operation task forwarding the caller-supplied idempotency key', async () => {
     const { completeTask } = useMesOperationTasks()
 
-    await completeTask('ot-9')
+    await completeTask('ot-9', { idempotencyKey: 'op-complete-1' })
 
     expect(completeBusinessConsoleMesOperationTaskMutationOptions).toHaveBeenCalled()
     const mutateAsync = coladaState.mutateById.get('completeBusinessConsoleMesOperationTask')
@@ -171,26 +173,26 @@ describe('pda useBusinessMes composables', () => {
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.path).toEqual({ operationTaskId: 'ot-9' })
     expect(payload.query).toMatchObject({ organizationId: 'org-001', environmentId: 'env-dev' })
-    expect(payload.body.idempotencyKey).toBeTruthy()
+    expect(payload.body.idempotencyKey).toBe('op-complete-1')
   })
 
-  it('starts an operation task forwarding an optional reason code with the idempotency key', async () => {
+  it('starts an operation task forwarding an optional reason code with the caller-supplied key', async () => {
     const { startTask } = useMesOperationTasks()
 
-    await startTask('ot-3', 'OPERATOR_READY')
+    await startTask('ot-3', { reasonCode: 'OPERATOR_READY', idempotencyKey: 'op-start-1' })
 
     const mutateAsync = coladaState.mutateById.get('startBusinessConsoleMesOperationTask')
     expect(startBusinessConsoleMesOperationTaskMutationOptions).toHaveBeenCalled()
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.path).toEqual({ operationTaskId: 'ot-3' })
     expect(payload.body).toMatchObject({ reasonCode: 'OPERATOR_READY' })
-    expect(payload.body.idempotencyKey).toBeTruthy()
+    expect(payload.body.idempotencyKey).toBe('op-start-1')
   })
 
-  it('attaches an idempotency key when creating a material issue request', async () => {
+  it('forwards the caller-supplied key when creating a material issue request', async () => {
     const { createIssue } = useMesMaterialIssue()
 
-    await createIssue('wo-7', { materialId: 'mat-1', quantity: 5 })
+    await createIssue('wo-7', { materialId: 'mat-1', quantity: 5, idempotencyKey: 'op-issue-1' })
 
     expect(createBusinessConsoleMesMaterialIssueRequestMutationOptions).toHaveBeenCalled()
     const mutateAsync = coladaState.mutateById.get('createBusinessConsoleMesMaterialIssueRequest')
@@ -198,26 +200,26 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.path).toEqual({ workOrderId: 'wo-7' })
     expect(payload.query).toMatchObject({ organizationId: 'org-001', environmentId: 'env-dev' })
     expect(payload.body).toMatchObject({ materialId: 'mat-1', quantity: 5 })
-    expect(payload.body.idempotencyKey).toBeTruthy()
+    expect(payload.body.idempotencyKey).toBe('op-issue-1')
   })
 
-  it('attaches an idempotency key when confirming a line-side material receipt', async () => {
+  it('forwards the caller-supplied key when confirming a line-side material receipt', async () => {
     const { confirmLineSideReceipt } = useMesMaterialIssue()
 
-    await confirmLineSideReceipt('req-2', { receivedQuantity: 4 })
+    await confirmLineSideReceipt('req-2', { receivedQuantity: 4, idempotencyKey: 'op-confirm-1' })
 
     expect(confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions).toHaveBeenCalled()
     const mutateAsync = coladaState.mutateById.get('confirmBusinessConsoleMesLineSideMaterialReceipt')
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.path).toEqual({ requestId: 'req-2' })
     expect(payload.body).toMatchObject({ receivedQuantity: 4 })
-    expect(payload.body.idempotencyKey).toBeTruthy()
+    expect(payload.body.idempotencyKey).toBe('op-confirm-1')
   })
 
-  it('attaches an idempotency key and business fields when creating a finished-goods receipt', async () => {
+  it('forwards the caller-supplied key + injects business fields when creating a finished-goods receipt', async () => {
     const { createReceipt } = useMesReceipts()
 
-    await createReceipt({ workOrderId: 'wo-5', skuId: 'sku-1', quantity: 12, uomCode: 'EA' })
+    await createReceipt({ workOrderId: 'wo-5', skuId: 'sku-1', quantity: 12, uomCode: 'EA', idempotencyKey: 'op-receipt-1' })
 
     expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toHaveBeenCalled()
     const mutateAsync = coladaState.mutateById.get('createBusinessConsoleMesFinishedGoodsReceiptRequest')
@@ -230,11 +232,11 @@ describe('pda useBusinessMes composables', () => {
       quantity: 12,
       uomCode: 'EA',
     })
-    expect(payload.body.idempotencyKey).toBeTruthy()
+    expect(payload.body.idempotencyKey).toBe('op-receipt-1')
     expect(payload.body.requestedAtUtc).toBeTruthy()
   })
 
-  it('ignores caller attempts to override injected scope/idempotency on recordReport', async () => {
+  it('keeps injected scope/timestamp override-proof on recordReport (hostile org/env lose; caller key wins)', async () => {
     const { recordReport } = useMesProductionReports()
 
     await recordReport({
@@ -243,22 +245,23 @@ describe('pda useBusinessMes composables', () => {
       goodQuantity: 1,
       scrapQuantity: 0,
       completesOperation: false,
+      idempotencyKey: 'op-report-stable',
       organizationId: 'EVIL',
       environmentId: 'EVIL',
-      idempotencyKey: 'evil',
       reportedAtUtc: '1999-01-01T00:00:00.000Z',
     } as never)
 
     const mutateAsync = coladaState.mutateById.get('recordBusinessConsoleMesProductionReport')
     const payload = mutateAsync!.mock.calls[0][0]
+    // org/env + timestamp injected LAST from principal scope — hostile caller values lose
     expect(payload.body.organizationId).toBe('org-001')
     expect(payload.body.environmentId).toBe('env-dev')
-    expect(payload.body.idempotencyKey).not.toBe('evil')
-    expect(payload.body.idempotencyKey).toBeTruthy()
     expect(payload.body.reportedAtUtc).not.toBe('1999-01-01T00:00:00.000Z')
+    // the idempotency key is now the caller's responsibility — it passes through verbatim
+    expect(payload.body.idempotencyKey).toBe('op-report-stable')
   })
 
-  it('ignores caller attempts to override injected scope/idempotency on createReceipt', async () => {
+  it('keeps injected scope/timestamp override-proof on createReceipt (hostile org/env lose; caller key wins)', async () => {
     const { createReceipt } = useMesReceipts()
 
     await createReceipt({
@@ -266,9 +269,9 @@ describe('pda useBusinessMes composables', () => {
       skuId: 'sku-1',
       quantity: 12,
       uomCode: 'EA',
+      idempotencyKey: 'op-receipt-stable',
       organizationId: 'EVIL',
       environmentId: 'EVIL',
-      idempotencyKey: 'evil',
       requestedAtUtc: '1999-01-01T00:00:00.000Z',
     } as never)
 
@@ -276,20 +279,7 @@ describe('pda useBusinessMes composables', () => {
     const payload = mutateAsync!.mock.calls[0][0]
     expect(payload.body.organizationId).toBe('org-001')
     expect(payload.body.environmentId).toBe('env-dev')
-    expect(payload.body.idempotencyKey).not.toBe('evil')
-    expect(payload.body.idempotencyKey).toBeTruthy()
     expect(payload.body.requestedAtUtc).not.toBe('1999-01-01T00:00:00.000Z')
-  })
-
-  it('ignores caller attempts to override the injected idempotency key on createIssue', async () => {
-    const { createIssue } = useMesMaterialIssue()
-
-    await createIssue('wo-7', { materialId: 'mat-1', idempotencyKey: 'evil' } as never)
-
-    const mutateAsync = coladaState.mutateById.get('createBusinessConsoleMesMaterialIssueRequest')
-    const payload = mutateAsync!.mock.calls[0][0]
-    expect(payload.body.materialId).toBe('mat-1')
-    expect(payload.body.idempotencyKey).not.toBe('evil')
-    expect(payload.body.idempotencyKey).toBeTruthy()
+    expect(payload.body.idempotencyKey).toBe('op-receipt-stable')
   })
 })

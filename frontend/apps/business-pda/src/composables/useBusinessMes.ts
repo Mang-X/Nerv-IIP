@@ -17,6 +17,7 @@ import {
   type BusinessConsoleMesCreateReceiptRequest,
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
   type BusinessConsoleMesMaterialIssueRequestRow,
+  type BusinessConsoleMesOperationTaskActionRequest,
   type BusinessConsoleMesOperationTaskListEnvelope,
   type BusinessConsoleMesOperationTaskRow,
   type BusinessConsoleMesProductionReportListEnvelope,
@@ -30,7 +31,6 @@ import {
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, watchEffect } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { makeIdempotencyKey } from './makeIdempotencyKey'
 
 const DEFAULT_TAKE = 100
 
@@ -163,6 +163,16 @@ export function useMesWorkOrders() {
   }
 }
 
+/**
+ * Per-action options for operation-task transitions. The page mints a STABLE
+ * `idempotencyKey` once per user-initiated action and reuses it across retries,
+ * so a lost response never double-applies (illegal 工序 start/complete).
+ */
+export interface OperationActionOptions {
+  reasonCode?: string
+  idempotencyKey: string
+}
+
 export function useMesOperationTasks() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
@@ -194,14 +204,15 @@ export function useMesOperationTasks() {
     onSuccess: invalidate,
   })
 
-  function actionPayload(operationTaskId: string, reasonCode?: string) {
+  function actionPayload(operationTaskId: string, options: OperationActionOptions) {
+    const { reasonCode, idempotencyKey } = options
     return {
       path: { operationTaskId },
       query: scopeQuery(filters),
       body: {
         ...(reasonCode === undefined ? {} : { reasonCode }),
-        idempotencyKey: makeIdempotencyKey(),
-      },
+        idempotencyKey,
+      } satisfies BusinessConsoleMesOperationTaskActionRequest,
     }
   }
 
@@ -216,14 +227,14 @@ export function useMesOperationTasks() {
     pending: operationTasksQuery.isLoading,
     error: operationTasksQuery.error,
     refresh: operationTasksQuery.refetch,
-    startTask: (operationTaskId: string, reasonCode?: string) =>
-      startMutation.mutateAsync(actionPayload(operationTaskId, reasonCode)),
-    pauseTask: (operationTaskId: string, reasonCode?: string) =>
-      pauseMutation.mutateAsync(actionPayload(operationTaskId, reasonCode)),
-    resumeTask: (operationTaskId: string, reasonCode?: string) =>
-      resumeMutation.mutateAsync(actionPayload(operationTaskId, reasonCode)),
-    completeTask: (operationTaskId: string, reasonCode?: string) =>
-      completeMutation.mutateAsync(actionPayload(operationTaskId, reasonCode)),
+    startTask: (operationTaskId: string, options: OperationActionOptions) =>
+      startMutation.mutateAsync(actionPayload(operationTaskId, options)),
+    pauseTask: (operationTaskId: string, options: OperationActionOptions) =>
+      pauseMutation.mutateAsync(actionPayload(operationTaskId, options)),
+    resumeTask: (operationTaskId: string, options: OperationActionOptions) =>
+      resumeMutation.mutateAsync(actionPayload(operationTaskId, options)),
+    completeTask: (operationTaskId: string, options: OperationActionOptions) =>
+      completeMutation.mutateAsync(actionPayload(operationTaskId, options)),
     actionPending: computed(() =>
       startMutation.isLoading.value
       || pauseMutation.isLoading.value
@@ -234,7 +245,7 @@ export function useMesOperationTasks() {
 }
 
 export type RecordReportInput =
-  Omit<BusinessConsoleRecordProductionReportRequest, 'organizationId' | 'environmentId' | 'idempotencyKey' | 'reportedAtUtc'>
+  Omit<BusinessConsoleRecordProductionReportRequest, 'organizationId' | 'environmentId' | 'reportedAtUtc'>
 
 export function useMesProductionReports() {
   const filters = defaultFilters()
@@ -272,18 +283,18 @@ export function useMesProductionReports() {
       recordMutation.mutateAsync({
         body: {
           ...input,
+          // org/env + timestamp injected LAST from principal scope — never the caller.
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
           reportedAtUtc: new Date().toISOString(),
-          idempotencyKey: makeIdempotencyKey(),
         } satisfies BusinessConsoleRecordProductionReportRequest,
       }),
   }
 }
 
-export type CreateIssueInput = Omit<BusinessConsoleMesCreateMaterialIssueRequest, 'idempotencyKey'>
+export type CreateIssueInput = BusinessConsoleMesCreateMaterialIssueRequest
 
-export type ConfirmLineSideReceiptInput = Omit<BusinessConsoleMesConfirmLineSideReceiptRequest, 'idempotencyKey'>
+export type ConfirmLineSideReceiptInput = BusinessConsoleMesConfirmLineSideReceiptRequest
 
 export function useMesMaterialIssue() {
   const filters = defaultFilters()
@@ -325,19 +336,19 @@ export function useMesMaterialIssue() {
       createMutation.mutateAsync({
         path: { workOrderId },
         query: scopeQuery(filters),
-        body: { ...body, idempotencyKey: makeIdempotencyKey() } satisfies BusinessConsoleMesCreateMaterialIssueRequest,
+        body: { ...body } satisfies BusinessConsoleMesCreateMaterialIssueRequest,
       }),
     confirmLineSideReceipt: (requestId: string, body: ConfirmLineSideReceiptInput) =>
       confirmMutation.mutateAsync({
         path: { requestId },
         query: scopeQuery(filters),
-        body: { ...body, idempotencyKey: makeIdempotencyKey() } satisfies BusinessConsoleMesConfirmLineSideReceiptRequest,
+        body: { ...body } satisfies BusinessConsoleMesConfirmLineSideReceiptRequest,
       }),
   }
 }
 
 export type CreateReceiptInput =
-  Omit<BusinessConsoleMesCreateReceiptRequest, 'organizationId' | 'environmentId' | 'idempotencyKey' | 'requestedAtUtc'>
+  Omit<BusinessConsoleMesCreateReceiptRequest, 'organizationId' | 'environmentId' | 'requestedAtUtc'>
 
 export function useMesReceipts() {
   const filters = defaultFilters()
@@ -372,10 +383,10 @@ export function useMesReceipts() {
       createMutation.mutateAsync({
         body: {
           ...input,
+          // org/env + timestamp injected LAST from principal scope — never the caller.
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
           requestedAtUtc: new Date().toISOString(),
-          idempotencyKey: makeIdempotencyKey(),
         } satisfies BusinessConsoleMesCreateReceiptRequest,
       }),
   }

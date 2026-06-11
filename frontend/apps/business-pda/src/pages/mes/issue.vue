@@ -12,6 +12,7 @@ import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesMaterialIssue, useMesWorkOrders } from '@/composables/useBusinessMes'
+import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 
 definePage({
   meta: {
@@ -69,6 +70,10 @@ type ResultState = { status: 'success' | 'error'; title: string; description?: s
 const result = ref<ResultState | null>(null)
 const submitting = ref(false)
 
+// 稳定的逐操作幂等键：在提交（创建/接收）时铸造一次，重试复用同键；
+// 开始新操作（重新打开新建/接收表单、成功）时清空 → 下次提交铸造新键。
+const operationKey = ref('')
+
 // --- 新建领料表单 ---
 const creating = ref(false)
 const selectedWorkOrder = ref<WorkOrder | null>(null)
@@ -95,6 +100,8 @@ function openCreate() {
   selectedWorkOrder.value = null
   issueMaterialId.value = ''
   issueQuantity.value = null
+  // 新一轮新建领料 → 作废上一个幂等键
+  operationKey.value = ''
   creating.value = true
 }
 function closeCreate() {
@@ -111,11 +118,16 @@ async function submitCreate() {
   if (!workOrderId || materialId === '') return
   if (issueQuantity.value !== null && !(issueQuantity.value > 0)) return
   const quantity = issueQuantity.value
+  // 首次提交铸造稳定幂等键，重试复用同键。
+  if (operationKey.value === '') {
+    operationKey.value = makeIdempotencyKey()
+  }
   submitting.value = true
   creating.value = false
   const doSubmit = () => createIssue(workOrderId, {
     materialId,
     ...(quantity === null ? {} : { quantity }),
+    idempotencyKey: operationKey.value,
   })
   try {
     await doSubmit()
@@ -160,6 +172,8 @@ const receiveSheetOpen = computed({
 
 function openReceive(req: IssueRequest) {
   result.value = null
+  // 新一轮线边接收 → 作废上一个幂等键
+  operationKey.value = ''
   receiving.value = req
   receivedQuantity.value = req.requestedQuantity ?? null
 }
@@ -174,10 +188,15 @@ async function submitReceive() {
   if (!requestId) return
   if (!receiveValid.value) return
   const quantity = receivedQuantity.value
+  // 首次提交铸造稳定幂等键，重试复用同键。
+  if (operationKey.value === '') {
+    operationKey.value = makeIdempotencyKey()
+  }
   submitting.value = true
   receiving.value = null
   const doSubmit = () => confirmLineSideReceipt(requestId, {
     ...(quantity === null ? {} : { receivedQuantity: quantity }),
+    idempotencyKey: operationKey.value,
   })
   try {
     await doSubmit()
@@ -207,9 +226,12 @@ async function retryReceive(req: IssueRequest, quantity: number | null) {
 
 function continueWork() {
   result.value = null
+  // 成功 → 作废本次操作幂等键，下次发起铸造新键
+  operationKey.value = ''
 }
 function goBack() {
   result.value = null
+  operationKey.value = ''
   router.push('/').catch(() => {})
 }
 
