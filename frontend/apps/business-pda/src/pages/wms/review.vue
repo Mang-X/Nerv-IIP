@@ -24,11 +24,13 @@ const completed = ref(false)
 // 复核录入：复核单号 + 通过/不通过开关。
 const packReviewNo = ref('')
 const passed = ref(true)
+// 复核单号需有非空白内容才算有效（纯空格 "   " 不可提交）。
+const validPackReviewNo = computed(() => packReviewNo.value.trim().length > 0)
 
 // outboundReviewFlow 驱动进度：selectOrder→enterReviewNo→complete。
 const flowCtx = computed(() => ({
   orderId: selectedOrderId.value || undefined,
-  packReviewNo: packReviewNo.value || undefined,
+  packReviewNo: packReviewNo.value.trim() || undefined,
   completed: completed.value,
 }))
 const flowStep = computed(() => outboundReviewFlow.currentStep(flowCtx.value).id)
@@ -64,12 +66,12 @@ function closeSheet() {
 }
 
 async function confirmComplete() {
-  // 防重：pending 中或复核单号未填直接早退（按钮也已禁用，UI 守双道）。
-  if (completePending.value || !packReviewNo.value) return
+  // 防重：pending 中或复核单号无有效内容直接早退（按钮也已禁用，UI 守双道）。
+  if (completePending.value || !validPackReviewNo.value) return
   submitError.value = ''
   try {
     await completeOutbound(selectedOrderId.value, {
-      packReviewNo: packReviewNo.value,
+      packReviewNo: packReviewNo.value.trim(),
       passed: passed.value,
     })
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
@@ -209,7 +211,7 @@ function goHome() {
           <button
             type="button"
             data-testid="confirm-complete"
-            :disabled="completePending || !packReviewNo"
+            :disabled="completePending || !validPackReviewNo"
             class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="confirmComplete"
           >

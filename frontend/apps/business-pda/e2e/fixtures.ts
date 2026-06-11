@@ -109,7 +109,8 @@ const countExecutions = [
 /**
  * Mock the business-console WMS gateway endpoints the PDA pages depend on.
  * Lists return `{ success, data: { items, total } }`; completes return a bare success.
- * Any other path falls through to the default empty envelope so unrelated calls stay quiet.
+ * Any other path falls back (does NOT fake-succeed) so a complete-endpoint URL/method/path
+ * regression surfaces loudly instead of being silently swallowed (aligns with routeConsoleApi).
  */
 export async function routeBusinessConsoleApi(route: Route) {
   const { pathname } = new URL(route.request().url())
@@ -144,7 +145,9 @@ export async function routeBusinessConsoleApi(route: Route) {
     return fulfillJson(route, listEnvelope(countExecutions))
   }
 
-  return fulfillJson(route, envelope({}))
+  // Don't fake-succeed unmatched paths — fall back so a future un-mocked / mistyped
+  // endpoint surfaces loudly instead of being silently swallowed (aligns with routeConsoleApi).
+  return route.fallback()
 }
 
 /** Seed a stored session so guarded routes load without going through the login form. */

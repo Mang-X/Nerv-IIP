@@ -86,6 +86,20 @@ describe('WMS 复核发货', () => {
     wrapper.unmount()
   })
 
+  it('复核单号仅含空白（"   "）时确认按钮禁用且不调用 completeOutbound', async () => {
+    const wrapper = mount(ReviewPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
+    reviewInput.value = '   '
+    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    expect(confirm.disabled).toBe(true)
+    confirm.click()
+    expect(wmsState.completeOutbound).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('填写复核单号后 → 以该单 id 与 {packReviewNo,passed} 调用 completeOutbound（不带 idempotencyKey）', async () => {
     const wrapper = mount(ReviewPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
