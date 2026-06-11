@@ -62,6 +62,7 @@ function Invoke-GovernanceScriptCase {
 }
 
 Invoke-GovernanceCase -Name 'allowed-check.ps1' -ExpectedExitCode 0
+Invoke-GovernanceCase -Name 'allowed-multi-category.ps1' -ExpectedExitCode 0
 Invoke-GovernanceCase -Name 'missing-helper.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'direct-dotnet.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'direct-start-job.ps1' -ExpectedExitCode 1

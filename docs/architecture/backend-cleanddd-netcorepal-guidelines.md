@@ -247,19 +247,20 @@ DbContext：
 5. CAP 使用 netcorepal storage 绑定当前 `ApplicationDbContext`，并通过 `backend/common/Messaging/Nerv.IIP.Messaging.CAP` 按 `Messaging:Provider` 选择默认 InMemory message queue、显式 RabbitMQ 或 Redis Streams。
 6. FastEndpoints、KnownException 处理中间件、ResponseData、OpenAPI 生成正常启用。
 7. OpenTelemetry 接入 ASP.NET Core、HTTP、CAP 和 netcorepal instrumentation。
-8. `ILogger<T>` 作为业务代码唯一日志入口；Program/Host 层可以接入 Serilog provider、OpenTelemetry sink 和 Console sink。
+8. `ILogger<T>` 作为业务代码唯一日志入口；Program/Host 层通过 `Nerv.IIP.Observability` 的 `AddNervIipObservability` 和 `UseNervIipCorrelation` 接入统一 Serilog provider、OpenTelemetry sink、Console sink 和 correlation scope。
 
 这些注册原则先由模板生成，后续只做与 Nerv-IIP 基线一致的裁剪，避免手写一套与框架管线平行的基础设施。
 
 ## 日志规则
 
 1. 业务代码只注入 `ILogger<T>`，不直接依赖 Serilog 静态 API、sink API 或具体日志后端 SDK。
-2. 宿主层默认接入 Serilog，输出结构化 JSON 日志到 Console，并通过 OpenTelemetry/OTLP 交给 Collector；本地开发允许仅 Console 输出。
-3. 所有跨服务请求、Connector Host 心跳、状态同步、任务创建、任务领取、任务结果回传必须带 `correlationId`，并让日志 scope、Activity tag 和响应头保持一致。
-4. 日志字段使用稳定命名：`service.name`、`environment`、`traceId`、`spanId`、`correlationId`、`organizationId`、`environmentId`、`actor`、`operationTaskId`、`instanceKey`。没有上下文时不伪造字段。
-5. 不记录 access token、refresh token、密码、密钥、完整连接串、个人敏感信息、文件内容或大体积 payload；异常日志记录异常类型、错误码、业务 id 和 correlationId。
-6. 日志不是审计。用户动作、运维动作、审批、工具调用和文件授权等可追溯事实必须写入对应领域模型或 Ops `AuditRecord`，日志只用于诊断。
-7. 日志不写业务 PostgreSQL schema；持久化由 OpenTelemetry Collector 转发到部署 profile 的观测后端，日志包和诊断包通过 File Storage/MinIO 作为附件归档。
+2. 服务宿主不直接引用 `Serilog.AspNetCore`、`Serilog.Enrichers.ClientInfo` 或 `Serilog.Sinks.OpenTelemetry`；这些包和日志后端接线由 `backend/common/Observability/Nerv.IIP.Observability` 集中维护。
+3. 宿主层默认经共享 Observability 库接入 Serilog，输出结构化 JSON 日志到 Console，并通过 OpenTelemetry/OTLP 交给 Collector 或 VictoriaLogs；本地开发允许仅 Console 输出。
+4. 所有跨服务请求、Connector Host 心跳、状态同步、任务创建、任务领取、任务结果回传必须带 `correlationId`，并让日志 scope、Activity tag 和响应头保持一致。
+5. 日志字段使用稳定命名：`service.name`、`environment`、`traceId`、`spanId`、`correlationId`、`organizationId`、`environmentId`、`actor`、`operationTaskId`、`instanceKey`。没有上下文时不伪造字段。
+6. 不记录 access token、refresh token、密码、密钥、完整连接串、个人敏感信息、文件内容或大体积 payload；异常日志记录异常类型、错误码、业务 id 和 correlationId。
+7. 日志不是审计。用户动作、运维动作、审批、工具调用和文件授权等可追溯事实必须写入对应领域模型或 Ops `AuditRecord`，日志只用于诊断。
+8. 日志不写业务 PostgreSQL schema；持久化由 OpenTelemetry Collector 转发到部署 profile 的观测后端，日志包和诊断包通过 File Storage/MinIO 作为附件归档。
 
 ## 测试与验收
 

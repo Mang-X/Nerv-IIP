@@ -40,6 +40,7 @@ Observability 不拥有：
 3. Compose、PoC 和生产路径以 OpenTelemetry Collector 作为采集入口。Collector 可以把 logs 转发到 VictoriaLogs，并可通过 `NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT` 把数据转发到 standalone Aspire Dashboard 的 OTLP/HTTP endpoint，用于短期诊断。
 4. standalone Aspire Dashboard 只保存内存态 telemetry，适合开发、联调、PoC 和现场短期排障。生产长期日志检索默认走 VictoriaLogs；trace 检索、审计保留和导出仍需按后续 profile 明确，不由本次 logs-only 后端承担。
 5. CLI 校验优先使用 `aspire otel logs`、VictoriaLogs LogsQL query 和 `aspire otel traces`，不要只看资源状态判断 telemetry 是否进入后端。
+6. 平台服务、Gateway 和业务服务的 Web host 统一通过 `Nerv.IIP.Observability` 的 `AddNervIipObservability` / `UseNervIipCorrelation` 接入日志、trace、metric 和 correlation；服务项目不直接引用 `Serilog.AspNetCore`、`Serilog.Enrichers.ClientInfo` 或 `Serilog.Sinks.OpenTelemetry`，Serilog provider、ClientInfo enrichment、Console JSON、local file 和 OTLP logs sink 由共享库集中维护。
 
 ## 计划表族
 
