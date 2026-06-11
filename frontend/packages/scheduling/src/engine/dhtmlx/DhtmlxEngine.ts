@@ -29,6 +29,7 @@ interface DhxGantt {
   getTaskByIndex?: (index: number) => DhxTask | undefined
   updateTask?: (id: string | number) => void
   getScrollState?: () => { x: number; y: number }
+  dateFromPos?: (x: number) => Date
   render: () => void
   setSizes?: () => void
   destructor?: () => void
@@ -210,9 +211,12 @@ export class DhtmlxEngine implements SchedulingEngine {
   private lastPointerY = 0
   private lastPointerX = 0
   private pointerMove?: (e: MouseEvent) => void
+  private pointerDown?: (e: MouseEvent) => void
+  private pointerUp?: (e: MouseEvent) => void
   private dropHint?: HTMLElement
   private dragging = false
   private dragTaskId?: string
+  private dragGrabOffX = 0
   private dragOrigStart?: Date
   private dragOrigEnd?: Date
   private dragOrigLaneId?: string
@@ -259,17 +263,55 @@ export class DhtmlxEngine implements SchedulingEngine {
         '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>拖到此处取消改派</span>'
       container.appendChild(cancel)
       this.cancelZone = cancel
+
+      // 自定义拖拽:DHTMLX 原生 move 已关(见 configure)。原块静止,虚影随指针(横向=改时间、
+      // 纵向=改泳道),松手于泳道提交、松手于取消区撤销。彻底解决"原块漂"与"横向失效"。
+      let downX = 0
+      let downY = 0
+      this.pointerDown = (e: MouseEvent) => {
+        if (e.button !== 0) return
+        const bar = (e.target as HTMLElement)?.closest?.('.gantt_task_line') as HTMLElement | null
+        if (!bar || !bar.querySelector('.nerv-card')) return
+        const id = bar.getAttribute('task_id')
+        const t = id ? inst.getTask(id) : undefined
+        if (!id || !t) return
+        this.dragTaskId = id
+        this.dragGrabOffX = e.clientX - bar.getBoundingClientRect().left
+        downX = e.clientX
+        downY = e.clientY
+        this.dragOrigStart = t.start_date ? new Date(t.start_date) : undefined
+        this.dragOrigEnd = t.end_date ? new Date(t.end_date) : undefined
+        this.dragOrigLaneId = t.parent != null ? String(t.parent) : undefined
+        this.dragging = false
+      }
       this.pointerMove = (e: MouseEvent) => {
         this.lastPointerY = e.clientY
         this.lastPointerX = e.clientX
-        if (this.dragging) {
-          const cr = this.cancelZone?.getBoundingClientRect()
-          this.overCancel = !!cr && e.clientX >= cr.left && e.clientX <= cr.right && e.clientY >= cr.top && e.clientY <= cr.bottom
-          this.cancelZone?.classList.toggle('nerv-drop-cancel-hot', this.overCancel)
-          this.updateDropHint(inst)
+        if (!this.dragTaskId) return
+        if (!this.dragging) {
+          if (Math.abs(e.clientX - downX) < 4 && Math.abs(e.clientY - downY) < 4) return
+          this.dragging = true
+          if (this.cancelZone) this.cancelZone.style.display = 'flex'
+          this.barEl(this.dragTaskId)?.classList.add('nerv-drag-source')
         }
+        const cr = this.cancelZone?.getBoundingClientRect()
+        this.overCancel =
+          !!cr && e.clientX >= cr.left && e.clientX <= cr.right && e.clientY >= cr.top && e.clientY <= cr.bottom
+        this.cancelZone?.classList.toggle('nerv-drop-cancel-hot', this.overCancel)
+        this.updateDropHint(inst)
       }
+      this.pointerUp = () => {
+        const id = this.dragTaskId
+        if (!id) return
+        const committed = this.dragging && !this.overCancel
+        this.barEl(id)?.classList.remove('nerv-drag-source')
+        if (committed) this.commitCustomDrag(inst, id)
+        this.hideDropHint()
+        this.dragTaskId = undefined
+      }
+      container.addEventListener('mousedown', this.pointerDown)
       document.addEventListener('mousemove', this.pointerMove)
+      document.addEventListener('mouseup', this.pointerUp)
     }
     if (this.model) this.setData(this.model)
   }
@@ -316,10 +358,11 @@ export class DhtmlxEngine implements SchedulingEngine {
       case 'setReadOnly':
         this.options.readOnly = command.readOnly
         if (g) {
+          const nativeDrag = !command.readOnly && this.options.view !== 'resource'
           g.config.readonly = command.readOnly
-          g.config.drag_move = !command.readOnly
-          g.config.drag_resize = !command.readOnly
-          g.config.drag_links = !command.readOnly
+          g.config.drag_move = nativeDrag
+          g.config.drag_resize = nativeDrag
+          g.config.drag_links = !command.readOnly && this.options.view === 'order'
           g.render()
         }
         break
@@ -363,7 +406,11 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.eventIds.length = 0
     this.listeners.clear()
     if (this.pointerMove) document.removeEventListener('mousemove', this.pointerMove)
+    if (this.pointerUp) document.removeEventListener('mouseup', this.pointerUp)
+    if (this.pointerDown && this.container) this.container.removeEventListener('mousedown', this.pointerDown)
     this.pointerMove = undefined
+    this.pointerUp = undefined
+    this.pointerDown = undefined
     this.dropHint?.remove()
     this.dropHint = undefined
     this.cancelZone?.remove()
@@ -444,9 +491,11 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.time_step = 60
     c.round_dnd_dates = true
     c.readonly = options.readOnly
-    c.drag_move = !options.readOnly
-    c.drag_resize = !options.readOnly
-    c.drag_links = !options.readOnly
+    // 资源排产板用自定义拖拽(原块静止 + 虚影随指针);关闭 DHTMLX 原生 move/resize 以免冲突。
+    const nativeDrag = !options.readOnly && options.view !== 'resource'
+    c.drag_move = nativeDrag
+    c.drag_resize = nativeDrag
+    c.drag_links = !options.readOnly && options.view === 'order'
     c.drag_progress = false
     // 网格内拖拽换分支暂时关闭(onAfterTaskMove 易误触、破坏拖拽);改派后续用时间线跨行拖拽实现。
     c.order_branch = false
@@ -539,33 +588,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.eventIds.push(
       inst.attachEvent('onAfterTaskMove', (id) => this.emitDrag(inst, String(id), 'move')),
     )
-    // 拖拽开始/结束:资源视图标记拖拽态,驱动落点预览覆盖层。
-    this.eventIds.push(
-      inst.attachEvent('onBeforeTaskDrag', (id, mode) => {
-        if (this.options.view === 'resource' && String(mode) === 'move') {
-          this.dragging = true
-          this.dragTaskId = String(id)
-          this.overCancel = false
-          const t = inst.getTask(String(id))
-          this.dragOrigStart = t?.start_date ? new Date(t.start_date) : undefined
-          this.dragOrigEnd = t?.end_date ? new Date(t.end_date) : undefined
-          this.dragOrigLaneId = t?.parent != null ? String(t.parent) : undefined
-          if (this.cancelZone) this.cancelZone.style.display = 'flex'
-        }
-        return true
-      }),
-    )
-    // 资源板拖拽 = 纯改派:每帧把工序时间还原到拖拽起点,横向移动不改变时间(原块不漂)。
-    this.eventIds.push(
-      inst.attachEvent('onTaskDrag', (id, mode, task) => {
-        if (this.options.view === 'resource' && this.dragging && String(mode) === 'move') {
-          const t = task as DhxTask
-          if (this.dragOrigStart) t.start_date = new Date(this.dragOrigStart)
-          if (this.dragOrigEnd) t.end_date = new Date(this.dragOrigEnd)
-        }
-        return true
-      }),
-    )
+    // 资源视图拖拽走自定义实现(见 mount 的 pointerDown/Move/Up);此处不接 DHTMLX 原生拖拽。
     this.eventIds.push(inst.attachEvent('onGanttRender', () => this.mirrorTaskIds()))
   }
 
@@ -594,33 +617,65 @@ export class DhtmlxEngine implements SchedulingEngine {
       ? (root.querySelector(`.gantt_task_row[task_id="${String(lane.id)}"]`) as HTMLElement | null)
       : null
     const area = root.querySelector('.gantt_data_area') as HTMLElement | null
-    if (!row || !area) {
-      hint.style.display = 'none'
-      return
-    }
+    const srcBar = this.dragTaskId ? this.barEl(this.dragTaskId) : null
     // 在取消区上方时,不显示泳道虚影(取消区自身高亮即可)。
-    if (this.overCancel) {
+    if (!row || !area || !srcBar || this.overCancel) {
       hint.style.display = 'none'
       return
     }
     const cRect = root.getBoundingClientRect()
     const rRect = row.getBoundingClientRect()
-    // 时间锁定:虚影对齐被拖卡片当前(冻结)的时间位置,而非指针 X,如实表达"时间不变、仅换资源"。
-    const dragBar = this.dragTaskId
-      ? (root.querySelector(`.gantt_task_line[task_id="${this.dragTaskId}"]`) as HTMLElement | null)
-      : null
-    const bRect = dragBar?.getBoundingClientRect()
-    const w = Math.max(96, Math.round(bRect?.width ?? 150))
-    const left = bRect ? bRect.left : this.lastPointerX - w / 2
+    const aRect = area.getBoundingClientRect()
+    // 虚影随指针:横向 = 新时间(保留抓取点),纵向 = 目标泳道。夹在时间区内。
+    const w = Math.max(96, Math.round(srcBar.getBoundingClientRect().width))
+    const left = Math.min(Math.max(this.lastPointerX - this.dragGrabOffX, aRect.left), aRect.right - w)
+    const newStart = this.timeAtScreenX(inst, left, aRect)
     const laneName = lane?.nerv?.text ?? ''
-    const tip = hint.querySelector('.nerv-drop-tip')
     const same = String(lane?.id) === String(this.dragOrigLaneId)
-    if (tip) tip.textContent = same ? '回到原泳道' : `改派到 ${laneName}`
+    const timeStr = newStart ? this.fmtHm(newStart) : ''
+    const tip = hint.querySelector('.nerv-drop-tip')
+    if (tip) tip.textContent = (same ? '调整到 ' : `改派 ${laneName} · `) + timeStr
     hint.style.display = 'flex'
     hint.style.top = `${rRect.top - cRect.top + 6}px`
     hint.style.left = `${left - cRect.left}px`
     hint.style.width = `${w}px`
     hint.style.height = `${rRect.height - 12}px`
+  }
+
+  /** 按 task_id 取条形元素。 */
+  private barEl(id: string): HTMLElement | null {
+    return (this.container?.querySelector(`.gantt_task_line[task_id="${id}"]`) as HTMLElement | null) ?? null
+  }
+
+  /** 屏幕 X(虚影左缘)→ 时间(经数据区偏移与水平滚动换算)。 */
+  private timeAtScreenX(inst: DhxGantt, screenLeft: number, aRect: DOMRect): Date | undefined {
+    if (!inst.dateFromPos) return undefined
+    const scrollX = inst.getScrollState?.().x ?? 0
+    const d = inst.dateFromPos(screenLeft - aRect.left + scrollX)
+    return d && !Number.isNaN(d.getTime()) ? d : undefined
+  }
+
+  private fmtHm(d: Date): string {
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+
+  /** 自定义拖拽提交:按虚影位置算出新时间(横向)+ 目标泳道(纵向),写回任务后走统一上报。 */
+  private commitCustomDrag(inst: DhxGantt, id: string): void {
+    const t = inst.getTask(id)
+    const area = this.container?.querySelector('.gantt_data_area') as HTMLElement | null
+    const srcBar = this.barEl(id)
+    if (t && area && srcBar && this.dragOrigStart && this.dragOrigEnd) {
+      const aRect = area.getBoundingClientRect()
+      const w = srcBar.getBoundingClientRect().width
+      const left = Math.min(Math.max(this.lastPointerX - this.dragGrabOffX, aRect.left), aRect.right - w)
+      const newStart = this.timeAtScreenX(inst, left, aRect)
+      if (newStart) {
+        const dur = this.dragOrigEnd.getTime() - this.dragOrigStart.getTime()
+        t.start_date = newStart
+        t.end_date = new Date(newStart.getTime() + dur)
+      }
+    }
+    this.emitDrag(inst, id, 'move')
   }
 
   private hideDropHint(): void {

@@ -286,6 +286,10 @@
 .nerv-gantt-dhx .gantt_task_line.gantt_split_parent {
   display: none !important;
 }
+/* 自定义拖拽:被拖卡片(原块)淡化,焦点给随指针的虚影 */
+.nerv-gantt-dhx .gantt_task_line.nerv-drag-source {
+  opacity: 0.35;
+}
 .nerv-gantt-dhx .nerv-card {
   display: flex;
   flex-direction: column;
