@@ -9,10 +9,10 @@ export interface PdaTaskKind {
 
 export const PDA_TASK_KINDS: PdaTaskKind[] = [
   { id: 'wms.inbound', label: '收货入库', group: 'wms', route: '/wms/inbound', routeReady: true },
-  { id: 'wms.putaway', label: '上架', group: 'wms', route: '/wms/putaway', routeReady: false },
-  { id: 'wms.pick', label: '拣货', group: 'wms', route: '/wms/pick', routeReady: false },
+  { id: 'wms.putaway', label: '上架', group: 'wms', route: '/wms/putaway', routeReady: true },
+  { id: 'wms.pick', label: '拣货', group: 'wms', route: '/wms/pick', routeReady: true },
   { id: 'wms.review', label: '复核发货', group: 'wms', route: '/wms/review', routeReady: true },
-  { id: 'wms.count', label: '盘点', group: 'wms', route: '/wms/count', routeReady: false },
+  { id: 'wms.count', label: '盘点', group: 'wms', route: '/wms/count', routeReady: true },
   { id: 'mes.report', label: '报工', group: 'mes', route: '/mes/report', routeReady: false },
   { id: 'mes.issue', label: '领料', group: 'mes', route: '/mes/issue', routeReady: false },
   { id: 'mes.receipt', label: '完工入库', group: 'mes', route: '/mes/receipt', routeReady: false },

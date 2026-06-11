@@ -11,7 +11,6 @@ describe('PDA task kinds dictionary', () => {
   })
 
   it('marks not-yet-implemented tasks so the app wall can disable them (no fake links)', () => {
-    expect(getPdaTaskKind('wms.pick')?.routeReady).toBe(false)
     expect(getPdaTaskKind('mes.report')?.routeReady).toBe(false)
   })
 
@@ -20,10 +19,19 @@ describe('PDA task kinds dictionary', () => {
     expect(getPdaTaskKind('wms.review')?.routeReady).toBe(true)
   })
 
-  it('keeps blocked WMS tasks dark until #374 lands (no half-baked entries)', () => {
-    expect(getPdaTaskKind('wms.pick')?.routeReady).toBe(false)
-    expect(getPdaTaskKind('wms.putaway')?.routeReady).toBe(false)
-    expect(getPdaTaskKind('wms.count')?.routeReady).toBe(false)
+  it('lights up the #374-unlocked WMS frontline pages (picking + putaway + count)', () => {
+    expect(getPdaTaskKind('wms.pick')?.routeReady).toBe(true)
+    expect(getPdaTaskKind('wms.putaway')?.routeReady).toBe(true)
+    expect(getPdaTaskKind('wms.count')?.routeReady).toBe(true)
+  })
+
+  it('keeps MES/equipment tasks dark until their plans land (no fake links)', () => {
+    expect(getPdaTaskKind('mes.report')?.routeReady).toBe(false)
+    expect(getPdaTaskKind('mes.issue')?.routeReady).toBe(false)
+    expect(getPdaTaskKind('mes.receipt')?.routeReady).toBe(false)
+    expect(getPdaTaskKind('mes.operation')?.routeReady).toBe(false)
+    expect(getPdaTaskKind('equipment.repair')?.routeReady).toBe(false)
+    expect(getPdaTaskKind('equipment.inspect')?.routeReady).toBe(false)
   })
 
   it('returns undefined for unknown ids', () => {
