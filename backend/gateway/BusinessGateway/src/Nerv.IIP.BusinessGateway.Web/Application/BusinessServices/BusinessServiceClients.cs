@@ -117,6 +117,11 @@ public interface IBusinessMasterDataClient
         BusinessConsoleAssignPersonnelSkillRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsolePersonnelSkillMatrixResponse> ListPersonnelSkillMatrixAsync(
+        string internalBearerToken,
+        BusinessConsolePersonnelSkillMatrixRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleResourceItem> CreateReferenceDataCodeAsync(
         string internalBearerToken,
         BusinessConsoleCreateReferenceDataCodeRequest request,
@@ -1374,7 +1379,19 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("includeDisabled", TrueFlag(request.IncludeDisabled)),
                 ("skip", request.Skip),
                 ("take", request.Take),
-                ("codeSet", request.CodeSet)),
+                ("codeSet", request.CodeSet),
+                ("parentCode", request.ParentCode),
+                ("siteCode", request.SiteCode),
+                ("lineCode", request.LineCode),
+                ("workCenterCode", request.WorkCenterCode),
+                ("category", request.Category),
+                ("partnerType", request.PartnerType),
+                ("keyword", request.Keyword),
+                ("all", TrueFlag(request.All)),
+                ("departmentCode", request.DepartmentCode),
+                ("shiftCode", request.ShiftCode),
+                ("userId", request.UserId),
+                ("skillCode", request.SkillCode)),
             null,
             cancellationToken);
         return response.Total > 0 ? response : response with { Total = response.Resources.Count };
@@ -1390,7 +1407,8 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             ResourcePath(request.ResourceType, request.Code) + "?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
-                ("codeSet", request.CodeSet)),
+                ("codeSet", request.CodeSet),
+                ("effectiveFrom", request.EffectiveFrom)),
             null,
             cancellationToken);
 
@@ -1542,6 +1560,22 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         BusinessConsoleAssignPersonnelSkillRequest request,
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/personnel-skills", request, cancellationToken);
+
+    public Task<BusinessConsolePersonnelSkillMatrixResponse> ListPersonnelSkillMatrixAsync(
+        string internalBearerToken,
+        BusinessConsolePersonnelSkillMatrixRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsolePersonnelSkillMatrixResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/master-data/personnel-skills/matrix?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("userId", request.UserId),
+                ("skillCode", request.SkillCode),
+                ("includeDisabled", TrueFlag(request.IncludeDisabled))),
+            null,
+            cancellationToken);
 
     public Task<BusinessConsoleResourceItem> CreateReferenceDataCodeAsync(
         string internalBearerToken,

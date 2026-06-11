@@ -19,9 +19,11 @@ public sealed class UomConversionEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.Precision).HasColumnName("precision").IsRequired().HasComment("Decimal precision used for converted values.");
         builder.Property(x => x.RoundingMode).HasColumnName("rounding_mode").IsRequired().HasMaxLength(80).HasComment("Rounding mode used for converted values.");
         builder.Property(x => x.EffectiveFrom).HasColumnName("effective_from").IsRequired().HasComment("Business date from which the conversion rule is effective.");
+        builder.Property(x => x.Disabled).HasColumnName("disabled").IsRequired().HasComment("Disabled flag that hides the conversion rule from active use.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the conversion rule was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the conversion rule was last updated.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.FromUomCode, x.ToUomCode, x.EffectiveFrom }).IsUnique();
         builder.HasIndex(x => new { x.FromUomCode, x.ToUomCode });
+        builder.HasIndex(x => x.Disabled);
     }
 }
