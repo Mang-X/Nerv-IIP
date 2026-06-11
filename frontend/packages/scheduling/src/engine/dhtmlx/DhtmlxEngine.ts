@@ -304,8 +304,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.order_branch = !options.readOnly // 网格内拖拽换分支(资源视图=改派)
     c.order_branch_free = !options.readOnly
     c.open_split_tasks = false // split 分组行:同组工序铺在一行,不展开成多行
-    c.row_height = 44
-    c.bar_height = 26
+    c.row_height = options.view === 'resource' ? 44 : 48
+    c.bar_height = options.view === 'resource' ? 26 : 22
     c.grid_width = options.view === 'resource' ? 280 : 560
     c.grid_resize = true
     c.show_links = true
@@ -346,16 +346,26 @@ export class DhtmlxEngine implements SchedulingEngine {
         `<b>${t.type === 'order' ? '工单' : '工序'}:</b> ${t.text || t.orderId}`,
         t.resourceId ? `<b>资源:</b> ${t.resourceId}` : '',
         `<b>起止:</b> ${fmt(t.startUtc)} → ${fmt(t.endUtc)}`,
-        t.locked ? '🔒 已锁定' : '',
+        t.locked ? '<span style="color:var(--muted-foreground)">● 已锁定</span>' : '',
       ].filter(Boolean)
       return lines.join('<br/>')
     }
-    // 条内不渲染文字(短条会溢出);工序名放到条形右侧,始终可读。锁定加 🔒。
+    // 条内不渲染文字(短条会溢出);工序名放到条形右侧,始终可读。锁定用干净 SVG 锁(非 emoji)。
     inst.templates.task_text = () => ''
     inst.templates.rightside_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) => {
       const t = task.nerv
       if (t?.type !== 'operation') return ''
-      return `${task.text ?? ''}${t.locked ? '  🔒' : ''}`
+      const lock = t.locked
+        ? '<svg class="nerv-lock-ic" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="5.5" y="10" width="13" height="9.5" rx="2.2" fill="currentColor"/></svg>'
+        : ''
+      return `<span class="nerv-bar-label">${task.text ?? ''}${lock}</span>`
+    }
+    // 时间线底纹:周末 + 非工作/夜班时段(轻盈底色,标出可排/不可排时间)。
+    inst.templates.timeline_cell_class = (_task: unknown, date: Date) => {
+      const day = date.getDay()
+      if (day === 0 || day === 6) return 'nerv-weekend'
+      const h = date.getHours()
+      return h < 8 || h >= 20 ? 'nerv-offwork' : ''
     }
   }
 

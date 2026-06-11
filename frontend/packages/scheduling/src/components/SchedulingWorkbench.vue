@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ScheduleAssignmentContract } from '@nerv-iip/api-client'
-import { Tabs, TabsContent, TabsList, TabsTrigger, toast } from '@nerv-iip/ui'
+import { Button, Tabs, TabsContent, TabsList, TabsTrigger, toast } from '@nerv-iip/ui'
+import { ListFilterIcon } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
 import { useSchedulingEdits } from '../composables/useSchedulingEdits'
@@ -11,6 +12,7 @@ import ResourceSchedulerBoard from './ResourceSchedulerBoard.vue'
 import ChangeSummaryPanel from './panels/ChangeSummaryPanel.vue'
 import ConflictPanel from './panels/ConflictPanel.vue'
 import InspectorSheet from './panels/InspectorSheet.vue'
+import SchedulingLegend from './panels/SchedulingLegend.vue'
 import SchedulingToolbar from './panels/SchedulingToolbar.vue'
 import UnscheduledPanel from './panels/UnscheduledPanel.vue'
 
@@ -44,6 +46,7 @@ watch(
 )
 
 const view = ref<'order' | 'resource'>(props.defaultView)
+const showLegend = ref(true)
 const scale = ref<TimeScale>('auto')
 const readOnly = ref(props.readOnly)
 watch(() => props.readOnly, (v) => (readOnly.value = v))
@@ -122,6 +125,16 @@ async function onRelease() {
           <TabsTrigger value="resource">资源排产板</TabsTrigger>
         </TabsList>
       </Tabs>
+      <Button
+        size="sm"
+        variant="ghost"
+        class="ml-auto h-8 gap-1.5"
+        :class="showLegend ? 'text-foreground' : 'text-muted-foreground'"
+        @click="showLegend = !showLegend"
+      >
+        <ListFilterIcon aria-hidden="true" />
+        图例
+      </Button>
     </div>
 
     <div class="flex min-h-0 flex-1">
@@ -171,6 +184,8 @@ async function onRelease() {
         </Tabs>
       </aside>
     </div>
+
+    <SchedulingLegend v-if="showLegend" />
 
     <InspectorSheet v-model:open="inspectorOpen" :task="selectedTask" />
   </div>

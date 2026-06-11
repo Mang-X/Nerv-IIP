@@ -51,7 +51,7 @@ const scaleModel = computed({
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center gap-1.5 border-b border-border/60 bg-card/80 px-4 py-2.5 backdrop-blur-sm">
+  <div class="flex flex-wrap items-center gap-2 border-b border-border/60 bg-card/80 px-5 py-3 backdrop-blur-sm">
     <Select v-model="scaleModel">
       <SelectTrigger class="h-8 w-24 border-border/70" aria-label="时间刻度"><SelectValue /></SelectTrigger>
       <SelectContent>
@@ -65,7 +65,7 @@ const scaleModel = computed({
 
     <span class="mx-1 h-5 w-px bg-border/60" aria-hidden="true" />
 
-    <div class="flex items-center">
+    <div class="flex items-center gap-0.5">
       <Button size="icon" variant="ghost" class="size-8" aria-label="放大" @click="emit('zoomIn')"><ZoomInIcon aria-hidden="true" /></Button>
       <Button size="icon" variant="ghost" class="size-8" aria-label="缩小" @click="emit('zoomOut')"><ZoomOutIcon aria-hidden="true" /></Button>
       <Button size="icon" variant="ghost" class="size-8" aria-label="定位到当前" @click="emit('today')"><CalendarClockIcon aria-hidden="true" /></Button>
@@ -74,7 +74,7 @@ const scaleModel = computed({
 
     <span class="mx-1 h-5 w-px bg-border/60" aria-hidden="true" />
 
-    <div class="flex items-center">
+    <div class="flex items-center gap-0.5">
       <Button size="icon" variant="ghost" class="size-8" aria-label="撤销" :disabled="!canUndo" @click="emit('undo')"><Undo2Icon aria-hidden="true" /></Button>
       <Button size="icon" variant="ghost" class="size-8" aria-label="重做" :disabled="!canRedo" @click="emit('redo')"><Redo2Icon aria-hidden="true" /></Button>
       <Button size="icon" variant="ghost" class="size-8" :aria-label="readOnly ? '允许编辑' : '锁定为只读'" @click="emit('toggleReadOnly')">

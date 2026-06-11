@@ -106,22 +106,42 @@
   --bar: var(--brand);
   background-color: var(--bar) !important;
   background-image: none !important;
-  border: 1px solid color-mix(in oklch, var(--bar), black 26%) !important;
-  border-radius: 6px !important;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.12);
+  border: 1px solid color-mix(in oklch, var(--bar), black 18%) !important;
+  border-radius: 7px !important;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 0.08);
 }
 .nerv-gantt-dhx .gantt_task_progress {
-  background-color: color-mix(in oklch, var(--bar), black 32%) !important;
-  border-radius: 5px 0 0 5px;
+  background-color: color-mix(in oklch, var(--bar), black 26%) !important;
+  border-radius: 6px 0 0 6px;
+  opacity: 0.92;
 }
 
-/* 分类色板:按车间/工序着色(只设 --bar,base 规则消费) */
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-cut { --bar: oklch(0.58 0.15 250); }
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-bend { --bar: oklch(0.56 0.16 300); }
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-weld { --bar: oklch(0.64 0.15 55); }
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-mach { --bar: oklch(0.6 0.12 190); }
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-paint { --bar: oklch(0.58 0.15 330); }
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-pack { --bar: oklch(0.62 0.13 150); }
+/* 分类色板:按车间/工序着色,提亮做轻盈(只设 --bar,base 规则消费) */
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-cut { --bar: oklch(0.62 0.14 255); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-bend { --bar: oklch(0.58 0.15 290); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-weld { --bar: oklch(0.7 0.15 55); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-mach { --bar: oklch(0.65 0.1 195); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-paint { --bar: oklch(0.6 0.16 350); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-pack { --bar: oklch(0.66 0.14 150); }
+
+/* 条形右侧标签 + 锁图标(干净 SVG,非 emoji) */
+.nerv-gantt-dhx .nerv-bar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.nerv-gantt-dhx .nerv-lock-ic {
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+
+/* 时间线底纹:周末稍重、夜班/非工作更淡,营造可排/不可排留白 */
+.nerv-gantt-dhx .gantt_task_cell.nerv-weekend {
+  background-color: color-mix(in oklch, var(--muted), transparent 45%) !important;
+}
+.nerv-gantt-dhx .gantt_task_cell.nerv-offwork {
+  background-color: color-mix(in oklch, var(--muted), transparent 72%) !important;
+}
 .nerv-gantt-dhx .gantt_task_content {
   color: #fff;
   font-weight: 500;
