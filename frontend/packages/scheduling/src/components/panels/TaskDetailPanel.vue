@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { Button } from '@nerv-iip/ui'
+import { LockIcon, UnlockIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { conflictReasonLabel } from '../../model/labels'
 import type { ScheduleTask } from '../../model/types'
 
 // 选中工序/工单的完整详情(取代弹出抽屉,常驻右侧栏顶部)。
 const props = defineProps<{ task?: ScheduleTask }>()
+const emit = defineEmits<{ 'toggle-lock': [taskId: string, locked: boolean] }>()
 
 const isOrder = computed(() => props.task?.type === 'order')
 const PRIO = { high: ['高', 'danger'], medium: ['中', 'warning'], low: ['低', 'muted'] } as const
@@ -55,6 +58,18 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
         {{ task.product || (isOrder ? '工单' : '工序') }}
         <span v-if="!isOrder" class="text-muted-foreground"> · {{ task.text }}</span>
       </p>
+
+      <!-- 锁定/解锁:锁定后不可拖拽,这里提供解锁交互 -->
+      <Button
+        v-if="!isOrder"
+        size="sm"
+        :variant="task.locked ? 'secondary' : 'outline'"
+        class="mt-2.5 h-7 w-full gap-1.5 text-xs"
+        @click="emit('toggle-lock', task.id, !task.locked)"
+      >
+        <component :is="task.locked ? UnlockIcon : LockIcon" class="size-3.5" aria-hidden="true" />
+        {{ task.locked ? '解锁(允许拖拽)' : '锁定此工序' }}
+      </Button>
 
       <!-- 冲突横幅 -->
       <div

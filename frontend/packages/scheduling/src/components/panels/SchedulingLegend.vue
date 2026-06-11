@@ -76,7 +76,7 @@ withDefaults(defineProps<{ categories?: { key: string; label: string }[]; view?:
         <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: oklch(0.58 0.13 250)"></span>换线窗口
       </span>
       <span class="inline-flex items-center gap-1.5">
-        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: oklch(0.7 0.15 60)"></span>换型
+        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: oklch(0.7 0.15 60)"></span>换型窗口
       </span>
       <span class="inline-flex items-center gap-1.5">
         <span class="h-2.5 w-6 rounded-[3px] bg-foreground/[0.05]"></span>非工作 / 夜班

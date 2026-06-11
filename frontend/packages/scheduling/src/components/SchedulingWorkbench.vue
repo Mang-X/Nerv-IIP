@@ -80,6 +80,11 @@ function onTaskSelect(taskId: string) {
   selectedTask.value = workingModel.value.tasks.find((t) => t.id === taskId)
   sidebarOpen.value = true // 选中即在侧栏展示详情(不再弹抽屉)
 }
+function onToggleLock(taskId: string, locked: boolean) {
+  edits.setLocked(taskId, locked)
+  selectedTask.value = workingModel.value.tasks.find((t) => t.id === taskId)
+  toast.success(locked ? '已锁定该工序' : '已解锁,可拖拽调整')
+}
 function focusTask(taskId: string) {
   sendCommand({ kind: 'selectTask', taskId })
   onTaskSelect(taskId)
@@ -193,7 +198,7 @@ async function onRelease() {
         </div>
 
         <!-- 选中详情(常驻,取代弹出抽屉) -->
-        <TaskDetailPanel :task="selectedTask" />
+        <TaskDetailPanel :task="selectedTask" @toggle-lock="onToggleLock" />
 
         <Tabs default-value="conflicts" class="flex min-h-0 flex-1 flex-col">
           <TabsList class="mx-3 mt-3">

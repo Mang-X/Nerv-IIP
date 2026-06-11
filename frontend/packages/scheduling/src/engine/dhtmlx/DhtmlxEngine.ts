@@ -37,6 +37,9 @@ interface DhxGantt {
   showDate?: (date: Date) => void
   addMarker?: (marker: Record<string, unknown>) => string
   deleteMarker?: (id: string) => void
+  addLink?: (link: Record<string, unknown>) => string
+  deleteLink?: (id: string | number) => void
+  isLinkExists?: (id: string | number) => boolean
   addTaskLayer?: (renderer: (task: DhxTask) => HTMLElement | boolean) => string
   getTaskPosition?: (
     task: DhxTask,
@@ -154,7 +157,7 @@ const BLOCK_LABEL: Record<NonNullable<ScheduleTask['blockKind']>, string> = {
   maintenance: '设备维护',
   downtime: '计划停机',
   lineChange: '换线窗口',
-  changeover: '换型',
+  changeover: '换型窗口',
 }
 /** 资源时间块(维护/停机/换线/换型):斜纹块 + 标签,不渲染 .nerv-card(故不可拖拽)。 */
 function blockHtml(t: ScheduleTask): string {
@@ -179,16 +182,21 @@ function cardHtml(t: ScheduleTask): string {
   const co = t.changeoverMin ? `换型 ${t.changeoverMin}m` : ''
   const load = t.load != null ? `占用 ${Math.round(t.load * 100)}%` : ''
   const meta3 = [co, load].filter(Boolean).join('　')
-  // 冲突用右上角标(不用边框,避免与选中环视觉冲突)。
+  // 冲突徽标:与优先级/插单/锁并排在首行(不再悬浮角标)。
   const alert = t.hasConflict
-    ? '<span class="nerv-card-alert" title="冲突"><svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M12 3L2 20h20L12 3z" fill="currentColor"/><rect x="11" y="9.5" width="2" height="5" rx="1" fill="var(--card)"/><rect x="11" y="16" width="2" height="2" rx="1" fill="var(--card)"/></svg></span>'
+    ? '<span class="nerv-card-alert" title="冲突"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M12 3L2 20h20L12 3z" fill="currentColor"/><rect x="11" y="9.5" width="2" height="5" rx="1" fill="var(--card)"/><rect x="11" y="16" width="2" height="2" rx="1" fill="var(--card)"/></svg></span>'
     : ''
-  return `<div class="nerv-card">${alert}
-    <div class="nerv-card-r1"><span class="nerv-card-wo">${t.orderId}</span><span class="nerv-card-meta">${prio}${rush}${lock}</span></div>
+  const prog =
+    t.progress != null
+      ? `<span class="nerv-card-prog"><span style="width:${Math.round(t.progress * 100)}%"></span></span>`
+      : ''
+  return `<div class="nerv-card">
+    <div class="nerv-card-r1"><span class="nerv-card-wo">${t.orderId}</span><span class="nerv-card-meta">${prio}${rush}${alert}${lock}</span></div>
     <div class="nerv-card-r2">${t.product ?? ''}<span class="nerv-card-op"> · ${t.operationId}</span></div>
     <div class="nerv-card-r3">${t.quantity != null ? `数量 ${t.quantity}` : ''}${due ? `　交期 ${due}` : ''}</div>
     <div class="nerv-card-r3">${meta3}</div>
     <div class="nerv-card-tags">${kit != null ? `<span class="nerv-kit nerv-kit-${kitCls}">齐套 ${kit}%</span>` : ''}</div>
+    ${prog}
   </div>`
 }
 
@@ -252,6 +260,7 @@ export class DhtmlxEngine implements SchedulingEngine {
   private cancelZone?: HTMLElement
   private overCancel = false
   private suppressNextClick = false
+  private shownLinkIds: string[] = []
   private readonly listeners = new Map<EngineEventName, Set<(p: unknown) => void>>()
   private readonly eventIds: string[] = []
   private readonly createInstance: () => unknown | null
@@ -305,6 +314,7 @@ export class DhtmlxEngine implements SchedulingEngine {
         const id = bar.getAttribute('task_id')
         const t = id ? inst.getTask(id) : undefined
         if (!id || !t) return
+        if (t.nerv?.locked) return // 已锁定:不可拖拽(需先在详情解锁)
         this.dragTaskId = id
         this.dragGrabOffX = e.clientX - bar.getBoundingClientRect().left
         downX = e.clientX
@@ -354,9 +364,11 @@ export class DhtmlxEngine implements SchedulingEngine {
     // model 已知后再应用自适应刻度(configure 早于 setData,那时 horizon 未知)。
     g.config.scales = this.scalesFor()
     g.clearAll()
+    this.shownLinkIds = [] // clearAll 已清掉连线
     g.parse(this.toGanttData(model))
     this.refreshMarker()
     this.mirrorTaskIds()
+    if (this.selectedTaskId) this.showOrderLinks(this.selectedTaskId) // 拖拽/重排后保持选中工单连线
   }
 
   applyCommand(command: EngineCommand): void {
@@ -532,12 +544,12 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.order_branch = false
     c.order_branch_free = false
     c.open_split_tasks = false // split 分组行:同组工序铺在一行,不展开成多行
-    c.row_height = options.view === 'resource' ? 112 : 48
-    c.bar_height = options.view === 'resource' ? 94 : 22
+    c.row_height = options.view === 'resource' ? 128 : 48
+    c.bar_height = options.view === 'resource' ? 112 : 22
     c.grid_width = options.view === 'resource' ? 258 : 560
     c.grid_resize = true
-    // 资源排产板不画依赖连线(跨泳道连线无业务意义,且横穿卡片影响可读性);仅工单甘特显示。
-    c.show_links = options.view === 'order'
+    // 默认不画连线;资源板仅在「选中某工序」时动态显示该工单的工序连线(showOrderLinks)。
+    c.show_links = true
     c.highlight_critical_path = options.view === 'order'
     c.columns = GRID_COLUMNS(options.view, this.resolveDimLabel())
     c.scales = this.scalesFor()
@@ -575,7 +587,17 @@ export class DhtmlxEngine implements SchedulingEngine {
       if (!t) return task.text ?? ''
       const prio = t.priority ? { high: '高', medium: '中', low: '低' }[t.priority] : ''
       const pct = (v?: number) => (v == null ? '' : `${Math.round(v * 100)}%`)
-      const head = `<div style="font-weight:700;margin-bottom:3px">${t.orderId}${prio ? ` · ${prio}优先` : ''}${t.isRush ? ' · ⚡插单' : ''}${t.locked ? ' · 🔒锁定' : ''}</div>`
+      const chip = (txt: string, tone: string) =>
+        `<span style="font-size:11px;font-weight:600;padding:0 6px;border-radius:4px;color:${tone};background:color-mix(in oklch,${tone},transparent 86%)">${txt}</span>`
+      const badges = [
+        prio ? chip(`${prio}优先`, 'var(--destructive)') : '',
+        t.isRush ? chip('插单', 'oklch(0.7 0.17 60)') : '',
+        t.locked ? chip('已锁定', 'var(--brand)') : '',
+        t.hasConflict ? chip('冲突', 'var(--destructive)') : '',
+      ]
+        .filter(Boolean)
+        .join('')
+      const head = `<div style="font-weight:700;font-size:13px;letter-spacing:.01em;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid color-mix(in oklch,var(--foreground),transparent 88%);display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>${t.orderId}</span>${badges}</div>`
       const rows: Array<[string, string]> = [
         ['工序', t.text || '—'],
         ...(t.product ? ([['产品', t.product]] as Array<[string, string]>) : []),
@@ -635,6 +657,7 @@ export class DhtmlxEngine implements SchedulingEngine {
         }
         const taskId = String(id)
         this.selectedTaskId = taskId
+        this.showOrderLinks(taskId)
         this.emit('taskSelected', { taskId })
         if (this.model?.tasks.find((t) => t.id === taskId)?.hasConflict)
           this.emit('conflictClicked', { taskId })
@@ -699,6 +722,32 @@ export class DhtmlxEngine implements SchedulingEngine {
     hint.style.left = `${left - cRect.left}px`
     hint.style.width = `${w}px`
     hint.style.height = `${rRect.height - 12}px`
+  }
+
+  /** 选中某工序时,显示其所属工单各工序之间的连线(跨泳道);切换选中即换。 */
+  private showOrderLinks(taskId?: string): void {
+    const g = this.gantt
+    if (!g) return
+    for (const id of this.shownLinkIds) {
+      if (!g.isLinkExists || g.isLinkExists(id)) g.deleteLink?.(id)
+    }
+    this.shownLinkIds = []
+    const task = this.model?.tasks.find((t) => t.id === taskId)
+    if (!task || this.options.view !== 'resource') {
+      g.render()
+      return
+    }
+    const orderIds = new Set(
+      this.model!.tasks.filter((t) => t.orderId === task.orderId && t.type === 'operation').map((t) => t.id),
+    )
+    for (const l of this.model?.links ?? []) {
+      if (orderIds.has(l.source) && orderIds.has(l.target) && g.isTaskExists?.(l.source) && g.isTaskExists?.(l.target)) {
+        const id = `sel:${l.id}`
+        g.addLink?.({ id, source: l.source, target: l.target, type: '0' })
+        this.shownLinkIds.push(id)
+      }
+    }
+    g.render()
   }
 
   /** 按 task_id 取条形元素。 */
@@ -856,9 +905,14 @@ export class DhtmlxEngine implements SchedulingEngine {
       const resById = new Map(model.resources.map((r) => [r.id, r]))
       const groups = new Map<string, string>()
       const laneOf = (t: ScheduleTask) => t.dimensions?.[dim]?.id ?? t.resourceId ?? '__none__'
+      // 先用全部资源播种泳道(工作中心维度=资源本身),保证空泳道也常驻——拖走最后一个工序时该行不消失。
+      if (dim === 'workCenter') {
+        for (const r of model.resources) if (!groups.has(r.id)) groups.set(r.id, r.text)
+      }
       for (const t of ops) {
         const id = laneOf(t)
-        if (!groups.has(id)) groups.set(id, t.dimensions?.[dim]?.label ?? t.resourceId ?? '未分配')
+        // 工序携带的维度标签(如「切割中心」)优先于资源原始名(如「激光切割-01」)。
+        groups.set(id, t.dimensions?.[dim]?.label ?? t.resourceId ?? groups.get(id) ?? '未分配')
       }
       // 泳道按资源固定顺序排(改派后不重排整板);非资源维度保持出现顺序(稳定排序)。
       const resOrder = new Map(model.resources.map((r, i) => [r.id, i]))

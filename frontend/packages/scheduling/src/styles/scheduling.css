@@ -209,13 +209,25 @@
   box-shadow: none !important;
 }
 .nerv-gantt-dhx .nerv-card-alert {
-  position: absolute;
-  top: 4px;
-  right: 5px;
   display: inline-flex;
+  align-items: center;
   color: var(--destructive);
-  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.18));
-  z-index: 1;
+}
+/* 卡片底部进度条:同工序色,薄条贴底 */
+.nerv-gantt-dhx .nerv-card-prog {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: color-mix(in oklch, var(--bar), transparent 82%);
+  border-radius: 0 0 7px 7px;
+  overflow: hidden;
+}
+.nerv-gantt-dhx .nerv-card-prog > span {
+  display: block;
+  height: 100%;
+  background: var(--bar);
 }
 
 /* 里程碑:实色菱形(在淡彩条中保持醒目) */
@@ -350,14 +362,14 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 7px 11px;
+  padding: 8px 11px 10px;
   height: 100%;
   box-sizing: border-box;
   overflow: hidden;
   text-align: left;
   color: var(--foreground);
-  font-size: 0.72rem;
-  line-height: 1.45;
+  font-size: 0.73rem;
+  line-height: 1.5;
 }
 .nerv-gantt-dhx .nerv-card-r1 {
   display: flex;
