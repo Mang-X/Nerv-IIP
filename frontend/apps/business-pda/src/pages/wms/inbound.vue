@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useWmsInbound } from '@/composables/useBusinessWms'
 import { inboundOrderStatusLabel, inboundReceiveFlow } from '@nerv-iip/business-core'
 import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
@@ -20,6 +21,10 @@ const selectedOrderId = ref('')
 const selectedOrderNo = ref('')
 const sheetOpen = ref(false)
 const completed = ref(false)
+
+// 每次用户发起操作（点单开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复入库；
+// 选新单/继续后再点单才换新键。绝不在重试时重新生成。
+const operationKey = ref('')
 
 // inboundReceiveFlow 驱动进度：selectOrder→complete。
 const flowCtx = computed(() => ({
@@ -44,6 +49,8 @@ function selectOrder(inboundOrderId: string | undefined, inboundOrderNo: string 
   if (!inboundOrderId) return
   selectedOrderId.value = inboundOrderId
   selectedOrderNo.value = inboundOrderNo ?? ''
+  // 新操作开始：换一把新幂等键。
+  operationKey.value = makeIdempotencyKey()
   submitError.value = ''
   sheetOpen.value = true
 }
@@ -57,7 +64,8 @@ async function confirmComplete() {
   if (completePending.value) return
   submitError.value = ''
   try {
-    await completeInbound(selectedOrderId.value)
+    // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
+    await completeInbound(selectedOrderId.value, operationKey.value)
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
     completed.value = true
@@ -70,6 +78,8 @@ function resetFlow() {
   completed.value = false
   selectedOrderId.value = ''
   selectedOrderNo.value = ''
+  // 清空操作键：下次点单会铸新键，保证新操作 ≠ 旧键。
+  operationKey.value = ''
   submitError.value = ''
 }
 

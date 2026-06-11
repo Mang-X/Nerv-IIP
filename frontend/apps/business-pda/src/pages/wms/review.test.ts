@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed } from 'vue'
 
@@ -15,7 +15,7 @@ const wmsState = vi.hoisted(() => ({
     { outboundOrderId: '11111111-1111-1111-1111-111111111111', outboundOrderNo: 'OB-2026-0001', status: 'open', createdAtUtc: '2026-06-11T08:00:00Z' },
     { outboundOrderId: '22222222-2222-2222-2222-222222222222', outboundOrderNo: 'OB-2026-0002', status: 'inProgress', createdAtUtc: '2026-06-11T09:00:00Z' },
   ],
-  completeOutbound: vi.fn(() => Promise.resolve()),
+  completeOutbound: vi.fn((_outboundOrderId: string, _input: { packReviewNo: string; passed: boolean; idempotencyKey: string }) => Promise.resolve()),
   completePending: false,
   error: null as unknown,
   pending: false,
@@ -100,7 +100,7 @@ describe('WMS 复核发货', () => {
     wrapper.unmount()
   })
 
-  it('填写复核单号后 → 以该单 id 与 {packReviewNo,passed} 调用 completeOutbound（不带 idempotencyKey）', async () => {
+  it('填写复核单号后 → 以该单 id 与 {packReviewNo,passed,idempotencyKey} 调用 completeOutbound', async () => {
     const wrapper = mount(ReviewPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
@@ -112,10 +112,51 @@ describe('WMS 复核发货', () => {
     expect(confirm.disabled).toBe(false)
     confirm.click()
     expect(wmsState.completeOutbound).toHaveBeenCalledTimes(1)
-    expect(wmsState.completeOutbound).toHaveBeenCalledWith(
-      '11111111-1111-1111-1111-111111111111',
-      { packReviewNo: 'PR-1', passed: true },
-    )
+    const [id, input] = wmsState.completeOutbound.mock.calls[0] as [string, { packReviewNo: string; passed: boolean; idempotencyKey: string }]
+    expect(id).toBe('11111111-1111-1111-1111-111111111111')
+    expect(input.packReviewNo).toBe('PR-1')
+    expect(input.passed).toBe(true)
+    // 页面生成稳定幂等键并随业务字段一并传入。
+    expect(typeof input.idempotencyKey).toBe('string')
+    expect(input.idempotencyKey.length).toBeGreaterThan(0)
+    wrapper.unmount()
+  })
+
+  it('重试（不重新点单）复用同一 idempotencyKey；重新点单为新操作换新键', async () => {
+    wmsState.completeOutbound.mockRejectedValueOnce(new Error('lost response'))
+    const wrapper = mount(ReviewPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
+    reviewInput.value = 'PR-1'
+    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+    // 重试：不重新点单，直接再次确认。
+    confirm.click()
+    await flushPromises()
+    expect(wmsState.completeOutbound).toHaveBeenCalledTimes(2)
+    const firstKey = (wmsState.completeOutbound.mock.calls[0][1] as { idempotencyKey: string }).idempotencyKey
+    const retryKey = (wmsState.completeOutbound.mock.calls[1][1] as { idempotencyKey: string }).idempotencyKey
+    expect(retryKey).toBe(firstKey)
+
+    // 重试成功 → 进入成功态；点「继续」回列表清空选择与 operationKey。
+    const continueBtn = wrapper.findAll('button').find(b => b.text() === '继续')!
+    expect(continueBtn).toBeTruthy()
+    await continueBtn.trigger('click')
+
+    // 重新点单（新操作）→ 新键。
+    await wrapper.findAll('[data-row]')[1].trigger('click')
+    const reviewInput2 = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
+    reviewInput2.value = 'PR-2'
+    reviewInput2.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    expect(wmsState.completeOutbound).toHaveBeenCalledTimes(3)
+    const newOpKey = (wmsState.completeOutbound.mock.calls[2][1] as { idempotencyKey: string }).idempotencyKey
+    expect(newOpKey).not.toBe(firstKey)
     wrapper.unmount()
   })
 

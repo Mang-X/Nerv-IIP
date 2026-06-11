@@ -130,9 +130,9 @@ describe('PDA WMS composables', () => {
     expect(result.orders.value).toEqual([])
   })
 
-  it('injects an idempotency key into the inbound complete body and targets the path', async () => {
+  it('uses the page-supplied idempotency key for the inbound complete body and targets the path', async () => {
     const { completeInbound } = useWmsInbound()
-    await completeInbound('inbound-1')
+    await completeInbound('inbound-1', 'KEY-1')
 
     const vars = coladaState.lastMutationVars.get('completeInbound') as {
       path: { inboundOrderId: string }
@@ -141,42 +141,54 @@ describe('PDA WMS composables', () => {
     }
     expect(vars.path).toEqual({ inboundOrderId: 'inbound-1' })
     expect(vars.query).toEqual(SCOPE)
-    expect(typeof vars.body.idempotencyKey).toBe('string')
-    expect(vars.body.idempotencyKey.length).toBeGreaterThan(0)
+    // 页面提供的稳定键原样透传，封装不再生成。
+    expect(vars.body.idempotencyKey).toBe('KEY-1')
   })
 
-  it('keeps packReviewNo/passed and never lets a caller-supplied idempotencyKey win on outbound complete', async () => {
+  it('passes the supplied idempotencyKey through outbound and keeps org/env override-proof', async () => {
     const { completeOutbound } = useWmsOutbound()
     await completeOutbound('outbound-1', {
       packReviewNo: 'PR',
       passed: true,
-      // 调用方试图覆盖幂等键——必须被内部注入覆盖。
-      idempotencyKey: 'evil',
+      idempotencyKey: 'KEY-OUT',
+      // 调用方试图注入敌意 org/env——必须永远落空（query 恒取登录主体）。
+      organizationId: 'evil-org',
+      environmentId: 'evil-env',
     } as never)
 
     const vars = coladaState.lastMutationVars.get('completeOutbound') as {
       path: { outboundOrderId: string }
+      query: { organizationId: string; environmentId: string }
       body: { packReviewNo: string; passed?: boolean; idempotencyKey: string }
     }
     expect(vars.path).toEqual({ outboundOrderId: 'outbound-1' })
     expect(vars.body.packReviewNo).toBe('PR')
     expect(vars.body.passed).toBe(true)
-    expect(vars.body.idempotencyKey).not.toBe('evil')
-    expect(vars.body.idempotencyKey.length).toBeGreaterThan(0)
+    // 页面提供的稳定键原样透传。
+    expect(vars.body.idempotencyKey).toBe('KEY-OUT')
+    // org/env 取自登录主体，敌意值永远不进 query。
+    expect(vars.query).toEqual(SCOPE)
   })
 
-  it('injects an idempotency key alongside countedQuantity on count complete', async () => {
+  it('passes the supplied idempotencyKey through count and keeps org/env override-proof', async () => {
     const { completeCount } = useWmsCount()
-    await completeCount('count-1', { countedQuantity: 5 })
+    await completeCount('count-1', {
+      countedQuantity: 5,
+      idempotencyKey: 'KEY-CNT',
+      // 调用方试图注入敌意 org/env——必须永远落空。
+      organizationId: 'evil-org',
+      environmentId: 'evil-env',
+    } as never)
 
     const vars = coladaState.lastMutationVars.get('completeCount') as {
       path: { countExecutionId: string }
+      query: { organizationId: string; environmentId: string }
       body: { countedQuantity?: number; idempotencyKey: string }
     }
     expect(vars.path).toEqual({ countExecutionId: 'count-1' })
     expect(vars.body.countedQuantity).toBe(5)
-    expect(typeof vars.body.idempotencyKey).toBe('string')
-    expect(vars.body.idempotencyKey.length).toBeGreaterThan(0)
+    expect(vars.body.idempotencyKey).toBe('KEY-CNT')
+    expect(vars.query).toEqual(SCOPE)
   })
 
   it('enables picking/putaway read-only lists without a non-empty operatorUserId', () => {

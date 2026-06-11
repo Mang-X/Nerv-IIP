@@ -1,6 +1,6 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 const push = vi.fn()
 vi.mock('vue-router', () => ({
@@ -15,7 +15,7 @@ const wmsState = vi.hoisted(() => ({
     { inboundOrderId: '11111111-1111-1111-1111-111111111111', inboundOrderNo: 'IB-2026-0001', status: 'open', createdAtUtc: '2026-06-11T08:00:00Z' },
     { inboundOrderId: '22222222-2222-2222-2222-222222222222', inboundOrderNo: 'IB-2026-0002', status: 'inProgress', createdAtUtc: '2026-06-11T09:00:00Z' },
   ],
-  completeInbound: vi.fn(() => Promise.resolve()),
+  completeInbound: vi.fn((_inboundOrderId: string, _idempotencyKey: string) => Promise.resolve()),
   completePending: false,
   error: null as unknown,
   pending: false,
@@ -75,7 +75,7 @@ describe('WMS 收货入库', () => {
     expect(wmsState.filters.keyword).toBe('IB-2026-0002')
   })
 
-  it('点单 → 抽屉确认 → 以该单 id 调用 completeInbound（不带 idempotencyKey 参数）', async () => {
+  it('点单 → 抽屉确认 → 以该单 id 与页面生成的稳定 idempotencyKey 调用 completeInbound', async () => {
     const wrapper = mount(InboundPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     // BottomSheet 经 reka-ui Portal teleport 到 body，需在 document 中查询。
@@ -83,7 +83,42 @@ describe('WMS 收货入库', () => {
     expect(confirm).toBeTruthy()
     confirm.click()
     expect(wmsState.completeInbound).toHaveBeenCalledTimes(1)
-    expect(wmsState.completeInbound).toHaveBeenCalledWith('11111111-1111-1111-1111-111111111111')
+    const [id, key] = wmsState.completeInbound.mock.calls[0]
+    expect(id).toBe('11111111-1111-1111-1111-111111111111')
+    expect(typeof key).toBe('string')
+    expect((key as string).length).toBeGreaterThan(0)
+    wrapper.unmount()
+  })
+
+  it('重试（不重新点单）复用同一 idempotencyKey；重新点单为新操作换新键', async () => {
+    // 首次提交失败，停留在抽屉，operationKey 不变。
+    wmsState.completeInbound.mockRejectedValueOnce(new Error('lost response'))
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+    // 重试：不重新点单，直接再次确认。
+    confirm.click()
+    await flushPromises()
+    expect(wmsState.completeInbound).toHaveBeenCalledTimes(2)
+    const firstKey = wmsState.completeInbound.mock.calls[0][1]
+    const retryKey = wmsState.completeInbound.mock.calls[1][1]
+    // 重试复用同一键——丢响应也不会重复入库。
+    expect(retryKey).toBe(firstKey)
+
+    // 重试成功 → 进入成功态；点「继续」回列表清空选择与 operationKey。
+    const continueBtn = wrapper.findAll('button').find(b => b.text() === '继续')!
+    expect(continueBtn).toBeTruthy()
+    await continueBtn.trigger('click')
+
+    // 重新点单（新操作）→ 新键。
+    await wrapper.findAll('[data-row]')[1].trigger('click')
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    expect(wmsState.completeInbound).toHaveBeenCalledTimes(3)
+    const newOpKey = wmsState.completeInbound.mock.calls[2][1]
+    expect(newOpKey).not.toBe(firstKey)
     wrapper.unmount()
   })
 

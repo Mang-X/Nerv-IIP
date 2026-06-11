@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useWmsCount } from '@/composables/useBusinessWms'
 import { countExecutionFlow, countExecutionStatusLabel } from '@nerv-iip/business-core'
 import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
@@ -21,6 +22,10 @@ const selectedCountNo = ref('')
 const expectedQuantity = ref(0)
 const sheetOpen = ref(false)
 const completed = ref(false)
+
+// 每次用户发起操作（点任务开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复提交；
+// 选新任务/继续后再点任务才换新键。绝不在重试时重新生成。
+const operationKey = ref('')
 
 // 实盘数量录入。type=number 下 v-model 解包可能是 number 或 ''，统一按字符串校验。
 const countedQuantityText = ref<string | number>('')
@@ -64,6 +69,8 @@ function selectExecution(countExecutionId: string | undefined, countNo: string |
   selectedCountNo.value = countNo ?? ''
   expectedQuantity.value = expected ?? 0
   countedQuantityText.value = ''
+  // 新操作开始：换一把新幂等键。
+  operationKey.value = makeIdempotencyKey()
   submitError.value = ''
   sheetOpen.value = true
 }
@@ -77,7 +84,11 @@ async function confirmComplete() {
   if (completePending.value || !validCount.value) return
   submitError.value = ''
   try {
-    await completeCount(selectedExecutionId.value, { countedQuantity: countedQuantity.value })
+    // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
+    await completeCount(selectedExecutionId.value, {
+      countedQuantity: countedQuantity.value,
+      idempotencyKey: operationKey.value,
+    })
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
     completed.value = true
@@ -92,6 +103,8 @@ function resetFlow() {
   selectedCountNo.value = ''
   expectedQuantity.value = 0
   countedQuantityText.value = ''
+  // 清空操作键：下次点任务会铸新键，保证新操作 ≠ 旧键。
+  operationKey.value = ''
   submitError.value = ''
 }
 
