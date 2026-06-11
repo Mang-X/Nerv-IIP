@@ -64,8 +64,10 @@ export interface ScheduleTask {
   owner?: string
   priority?: TaskPriority
   status?: TaskStatus
-  /** 里程碑(渲染为菱形,无时长)。 */
+  /** 里程碑(独立节点,渲染为菱形,无时长)。 */
   isMilestone?: boolean
+  /** 阶段里程碑:贴在本工序条末尾的菱形 + 标签(如"冲焊完成"),不独占一行。 */
+  milestoneLabel?: string
   /** 分类着色键(按车间/工序);映射到分类色板,缺省用品牌色。 */
   colorKey?: string
   locked: boolean
