@@ -87,8 +87,9 @@ export function useEngine(opts: UseEngineOptions) {
     e.mount(opts.container.value, options)
     for (const [name, cb] of Object.entries(opts.on ?? {})) {
       if (name === 'taskDragEnd') {
-        e.on('taskDragEnd', ((p: never) => {
-          suppressSetData = true
+        e.on('taskDragEnd', ((p: { kind?: string }) => {
+          // 改派要重新 parse 才能把卡片落到新泳道;移动/拉伸 DHTMLX 已就地处理,跳过 setData 避免重建破坏。
+          suppressSetData = p?.kind !== 'reassign'
           ;(cb as (payload: unknown) => void)(p)
           setTimeout(() => {
             suppressSetData = false

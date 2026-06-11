@@ -26,6 +26,9 @@ interface DhxGantt {
   getTask: (id: string | number) => DhxTask | undefined
   isTaskExists?: (id: string | number) => boolean
   selectTask?: (id: string | number) => void
+  getTaskByIndex?: (index: number) => DhxTask | undefined
+  updateTask?: (id: string | number) => void
+  getScrollState?: () => { x: number; y: number }
   render: () => void
   setSizes?: () => void
   destructor?: () => void
@@ -190,6 +193,8 @@ export class DhtmlxEngine implements SchedulingEngine {
   private scale: TimeScale = 'day'
   private selectedTaskId?: string
   private markerId?: string
+  private lastPointerY = 0
+  private pointerMove?: (e: MouseEvent) => void
   private readonly listeners = new Map<EngineEventName, Set<(p: unknown) => void>>()
   private readonly eventIds: string[] = []
   private readonly createInstance: () => unknown | null
@@ -214,6 +219,13 @@ export class DhtmlxEngine implements SchedulingEngine {
     inst.init(container)
     // 计划基线只在工单甘特出现;资源排产板是卡片板,不画计划/实际基线(避免卡片上多出细线)。
     if (options.view !== 'resource') this.addBaselineLayer(inst)
+    // 资源视图跨泳道拖拽改派:记录指针 Y(监听 document,DHTMLX 拖拽会捕获指针,container 上收不到)。
+    if (options.view === 'resource') {
+      this.pointerMove = (e: MouseEvent) => {
+        this.lastPointerY = e.clientY
+      }
+      document.addEventListener('mousemove', this.pointerMove)
+    }
     if (this.model) this.setData(this.model)
   }
 
@@ -301,6 +313,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     if (g?.detachEvent) for (const id of this.eventIds) g.detachEvent(id)
     this.eventIds.length = 0
     this.listeners.clear()
+    if (this.pointerMove) document.removeEventListener('mousemove', this.pointerMove)
+    this.pointerMove = undefined
     g?.destructor?.()
     this.gantt = undefined
     this.markerId = undefined
@@ -456,12 +470,55 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.eventIds.push(inst.attachEvent('onGanttRender', () => this.mirrorTaskIds()))
   }
 
+  /** 资源视图:按指针落点 Y 定位目标泳道任务(split 模式下可见行即泳道)。 */
+  private laneAtPointer(inst: DhxGantt): DhxTask | undefined {
+    const root = this.container
+    if (!root || !inst.getTaskByIndex) return undefined
+    const area = root.querySelector('.gantt_data_area') ?? root.querySelector('.gantt_task_bg')
+    if (!area) return undefined
+    const top = area.getBoundingClientRect().top
+    const scrollY = inst.getScrollState?.().y ?? 0
+    const rowH = Number(inst.config.row_height) || 1
+    const idx = Math.floor((this.lastPointerY - top + scrollY) / rowH)
+    if (idx < 0) return undefined
+    const lane = inst.getTaskByIndex(idx)
+    return lane?.id != null && String(lane.id).startsWith('lane:') ? lane : undefined
+  }
+
   private emitDrag(inst: DhxGantt, taskId: string, mode: string): void {
     const task = inst.getTask(taskId)
     const src = this.model?.tasks.find((t) => t.id === taskId)
+    // 注意:src 与 task.nerv 是同一对象,改派前先存原 resourceId,否则 kind 判定会被自身改写干扰。
+    const originalResourceId = src?.resourceId
+    let reassigned = false
+    // 资源视图跨泳道拖拽 = 改派:按落点找目标泳道,更新该任务在当前分组维度的归属。
+    // (split 模式下不能只 updateTask 跨行;更新归属后让上层重新 parse 才会落到新泳道。)
+    if (this.options.view === 'resource' && task?.nerv && mode !== 'resize') {
+      const lane = this.laneAtPointer(inst)
+      if (lane && String(lane.id) !== String(task.parent)) {
+        const laneResId = String(lane.id).slice(5)
+        const dim = this.options.groupBy || 'workCenter'
+        task.nerv.dimensions = {
+          ...(task.nerv.dimensions ?? {}),
+          [dim]: { id: laneResId, label: String(lane.text ?? laneResId) },
+        }
+        if (dim === 'workCenter') {
+          task.nerv.resourceId = laneResId
+          task.nerv.workCenterId = laneResId
+        }
+        task.parent = String(lane.id)
+        task.$resource = laneResId
+        reassigned = true
+      }
+    }
     const parent = task?.parent != null ? String(task.parent) : undefined
     const reassignedResource = parent?.startsWith('lane:') ? parent.slice(5) : task?.$resource
-    const kind = mode === 'resize' ? 'resize' : reassignedResource && reassignedResource !== src?.resourceId ? 'reassign' : 'move'
+    const kind =
+      mode === 'resize'
+        ? 'resize'
+        : reassigned || (reassignedResource && reassignedResource !== originalResourceId)
+          ? 'reassign'
+          : 'move'
     const start = task?.start_date?.toISOString() ?? src?.startUtc ?? ''
     const end = task?.end_date?.toISOString() ?? src?.endUtc ?? ''
     // 防御:零/负时长时不上报(避免把条收成一条线)。
@@ -524,7 +581,12 @@ export class DhtmlxEngine implements SchedulingEngine {
         const id = laneOf(t)
         if (!groups.has(id)) groups.set(id, t.dimensions?.[dim]?.label ?? t.resourceId ?? '未分配')
       }
-      for (const [id, label] of groups) {
+      // 泳道按资源固定顺序排(改派后不重排整板);非资源维度保持出现顺序(稳定排序)。
+      const resOrder = new Map(model.resources.map((r, i) => [r.id, i]))
+      const sortedGroups = [...groups.entries()].sort(
+        (a, b) => (resOrder.get(a[0]) ?? Number.MAX_SAFE_INTEGER) - (resOrder.get(b[0]) ?? Number.MAX_SAFE_INTEGER),
+      )
+      for (const [id, label] of sortedGroups) {
         const res = resById.get(id)
         data.push({
           id: `lane:${id}`,
