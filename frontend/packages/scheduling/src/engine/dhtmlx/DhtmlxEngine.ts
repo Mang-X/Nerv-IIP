@@ -213,6 +213,11 @@ export class DhtmlxEngine implements SchedulingEngine {
   private dropHint?: HTMLElement
   private dragging = false
   private dragTaskId?: string
+  private dragOrigStart?: Date
+  private dragOrigEnd?: Date
+  private dragOrigLaneId?: string
+  private cancelZone?: HTMLElement
+  private overCancel = false
   private readonly listeners = new Map<EngineEventName, Set<(p: unknown) => void>>()
   private readonly eventIds: string[] = []
   private readonly createInstance: () => unknown | null
@@ -246,10 +251,23 @@ export class DhtmlxEngine implements SchedulingEngine {
       hint.innerHTML = '<span class="nerv-drop-tip"></span>'
       container.appendChild(hint)
       this.dropHint = hint
+      // 取消区:拖拽时出现,松手于此处则撤销改派。
+      const cancel = document.createElement('div')
+      cancel.className = 'nerv-drop-cancel'
+      cancel.style.display = 'none'
+      cancel.innerHTML =
+        '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>拖到此处取消改派</span>'
+      container.appendChild(cancel)
+      this.cancelZone = cancel
       this.pointerMove = (e: MouseEvent) => {
         this.lastPointerY = e.clientY
         this.lastPointerX = e.clientX
-        if (this.dragging) this.updateDropHint(inst)
+        if (this.dragging) {
+          const cr = this.cancelZone?.getBoundingClientRect()
+          this.overCancel = !!cr && e.clientX >= cr.left && e.clientX <= cr.right && e.clientY >= cr.top && e.clientY <= cr.bottom
+          this.cancelZone?.classList.toggle('nerv-drop-cancel-hot', this.overCancel)
+          this.updateDropHint(inst)
+        }
       }
       document.addEventListener('mousemove', this.pointerMove)
     }
@@ -348,6 +366,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.pointerMove = undefined
     this.dropHint?.remove()
     this.dropHint = undefined
+    this.cancelZone?.remove()
+    this.cancelZone = undefined
     this.dragging = false
     g?.destructor?.()
     this.gantt = undefined
@@ -521,10 +541,27 @@ export class DhtmlxEngine implements SchedulingEngine {
     )
     // 拖拽开始/结束:资源视图标记拖拽态,驱动落点预览覆盖层。
     this.eventIds.push(
-      inst.attachEvent('onBeforeTaskDrag', (id) => {
-        if (this.options.view === 'resource') {
+      inst.attachEvent('onBeforeTaskDrag', (id, mode) => {
+        if (this.options.view === 'resource' && String(mode) === 'move') {
           this.dragging = true
           this.dragTaskId = String(id)
+          this.overCancel = false
+          const t = inst.getTask(String(id))
+          this.dragOrigStart = t?.start_date ? new Date(t.start_date) : undefined
+          this.dragOrigEnd = t?.end_date ? new Date(t.end_date) : undefined
+          this.dragOrigLaneId = t?.parent != null ? String(t.parent) : undefined
+          if (this.cancelZone) this.cancelZone.style.display = 'flex'
+        }
+        return true
+      }),
+    )
+    // 资源板拖拽 = 纯改派:每帧把工序时间还原到拖拽起点,横向移动不改变时间(原块不漂)。
+    this.eventIds.push(
+      inst.attachEvent('onTaskDrag', (id, mode, task) => {
+        if (this.options.view === 'resource' && this.dragging && String(mode) === 'move') {
+          const t = task as DhxTask
+          if (this.dragOrigStart) t.start_date = new Date(this.dragOrigStart)
+          if (this.dragOrigEnd) t.end_date = new Date(this.dragOrigEnd)
         }
         return true
       }),
@@ -561,19 +598,24 @@ export class DhtmlxEngine implements SchedulingEngine {
       hint.style.display = 'none'
       return
     }
+    // 在取消区上方时,不显示泳道虚影(取消区自身高亮即可)。
+    if (this.overCancel) {
+      hint.style.display = 'none'
+      return
+    }
     const cRect = root.getBoundingClientRect()
     const rRect = row.getBoundingClientRect()
-    const aRect = area.getBoundingClientRect()
-    // 虚影宽度=被拖卡片的宽度(取不到则用默认);水平跟随指针,夹在时间区内。
+    // 时间锁定:虚影对齐被拖卡片当前(冻结)的时间位置,而非指针 X,如实表达"时间不变、仅换资源"。
     const dragBar = this.dragTaskId
       ? (root.querySelector(`.gantt_task_line[task_id="${this.dragTaskId}"]`) as HTMLElement | null)
       : null
-    const w = Math.max(96, Math.round(dragBar?.getBoundingClientRect().width ?? 150))
-    let left = this.lastPointerX - w / 2
-    left = Math.min(Math.max(left, aRect.left), aRect.right - w)
+    const bRect = dragBar?.getBoundingClientRect()
+    const w = Math.max(96, Math.round(bRect?.width ?? 150))
+    const left = bRect ? bRect.left : this.lastPointerX - w / 2
     const laneName = lane?.nerv?.text ?? ''
     const tip = hint.querySelector('.nerv-drop-tip')
-    if (tip) tip.textContent = `改派到 ${laneName}`
+    const same = String(lane?.id) === String(this.dragOrigLaneId)
+    if (tip) tip.textContent = same ? '回到原泳道' : `改派到 ${laneName}`
     hint.style.display = 'flex'
     hint.style.top = `${rRect.top - cRect.top + 6}px`
     hint.style.left = `${left - cRect.left}px`
@@ -584,10 +626,29 @@ export class DhtmlxEngine implements SchedulingEngine {
   private hideDropHint(): void {
     this.dragging = false
     this.dragTaskId = undefined
+    this.dragOrigStart = undefined
+    this.dragOrigEnd = undefined
+    this.dragOrigLaneId = undefined
+    this.overCancel = false
     if (this.dropHint) this.dropHint.style.display = 'none'
+    if (this.cancelZone) {
+      this.cancelZone.style.display = 'none'
+      this.cancelZone.classList.remove('nerv-drop-cancel-hot')
+    }
   }
 
   private emitDrag(inst: DhxGantt, taskId: string, mode: string): void {
+    // 落在取消区:撤销改派,工序回到原泳道与原时间,不上报。
+    if (this.options.view === 'resource' && this.overCancel && mode === 'move') {
+      const t = inst.getTask(taskId)
+      if (t) {
+        if (this.dragOrigStart) t.start_date = new Date(this.dragOrigStart)
+        if (this.dragOrigEnd) t.end_date = new Date(this.dragOrigEnd)
+        inst.updateTask?.(taskId)
+      }
+      this.hideDropHint()
+      return
+    }
     this.hideDropHint()
     const task = inst.getTask(taskId)
     const src = this.model?.tasks.find((t) => t.id === taskId)

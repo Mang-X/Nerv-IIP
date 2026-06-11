@@ -271,11 +271,10 @@
 }
 
 /* ---- 资源排产板:工单卡片(条内) ---- */
-/* 卡片底色混向 --card(非透明叠加),亮暗都浅而通透、文字清晰;工序色靠左描边 + WO 号体现 */
+/* 卡片底色混向 --card(近白浅染),全圈细边(不做左侧色条);工序识别靠底色 + WO 号 + 图例 */
 .nerv-gantt-dhx .gantt_task_line:has(.nerv-card) {
-  background-color: color-mix(in oklch, var(--bar), var(--card) 88%) !important;
-  border-color: color-mix(in oklch, var(--bar), transparent 35%) !important;
-  border-left-width: 3px !important;
+  background-color: color-mix(in oklch, var(--bar), var(--card) 91%) !important;
+  border: 1px solid color-mix(in oklch, var(--bar), transparent 55%) !important;
 }
 /* 资源卡片不显示进度填充(进度信息不在排产板呈现):去掉透出的深色块,避免与文字交杂成横线 */
 .nerv-gantt-dhx .gantt_task_line:has(.nerv-card) .gantt_task_progress,
@@ -344,36 +343,23 @@
   gap: 5px;
   margin-top: auto;
 }
-/* 齐套用实色 chip(白/深字),不再用淡色填充——避免和卡片底色糊在一起 */
+/* 齐套 chip:浅底 + 同色描边 + 彩字(无前置圆点)。卡片近白,浅 chip 也清晰且不显眼喧宾夺主。 */
 .nerv-gantt-dhx .nerv-kit {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
   font-size: 0.64rem;
   font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 999px;
+  padding: 0 6px;
+  border-radius: 5px;
   white-space: nowrap;
   letter-spacing: 0.01em;
+  border: 1px solid currentColor;
 }
-.nerv-gantt-dhx .nerv-kit::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.85;
-}
-.nerv-gantt-dhx .nerv-kit-ok { color: #fff; background: oklch(0.6 0.14 150); }
-.nerv-gantt-dhx .nerv-kit-warn { color: oklch(0.28 0.05 75); background: oklch(0.82 0.15 85); }
-.nerv-gantt-dhx .nerv-kit-bad { color: #fff; background: oklch(0.58 0.2 25); }
+.nerv-gantt-dhx .nerv-kit-ok { color: oklch(0.5 0.13 150); background: color-mix(in oklch, oklch(0.6 0.14 150), var(--card) 84%); }
+.nerv-gantt-dhx .nerv-kit-warn { color: oklch(0.52 0.12 70); background: color-mix(in oklch, oklch(0.75 0.14 75), var(--card) 82%); }
+.nerv-gantt-dhx .nerv-kit-bad { color: oklch(0.55 0.19 25); background: color-mix(in oklch, oklch(0.58 0.2 25), var(--card) 84%); }
 .nerv-gantt-dhx .nerv-co {
   font-size: 0.62rem;
   font-weight: 600;
   color: var(--muted-foreground);
-  background: color-mix(in oklch, var(--card), var(--foreground) 9%);
-  padding: 1px 6px;
-  border-radius: 999px;
   white-space: nowrap;
 }
 
@@ -408,6 +394,34 @@
   padding: 2px 9px;
   border-radius: 999px;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.14);
+}
+
+/* 拖拽取消区:拖拽时浮现于顶部居中,松手于此撤销改派 */
+.nerv-gantt-dhx .nerv-drop-cancel {
+  position: absolute;
+  z-index: 8;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  pointer-events: none;
+  color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--card), transparent 8%);
+  border: 1.5px dashed color-mix(in oklch, var(--muted-foreground), transparent 50%);
+  box-shadow: 0 8px 22px -8px rgb(0 0 0 / 0.35);
+  backdrop-filter: blur(6px);
+}
+.nerv-gantt-dhx .nerv-drop-cancel-hot {
+  color: var(--destructive);
+  background: color-mix(in oklch, var(--destructive), var(--card) 82%);
+  border-color: var(--destructive);
+  border-style: solid;
 }
 
 /* ---- 资源排产板:左侧两列(列1 资源名 / 列2 产能指标) ---- */
