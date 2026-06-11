@@ -32,6 +32,12 @@ interface DhxGantt {
   showDate?: (date: Date) => void
   addMarker?: (marker: Record<string, unknown>) => string
   deleteMarker?: (id: string) => void
+  addTaskLayer?: (renderer: (task: DhxTask) => HTMLElement | boolean) => string
+  getTaskPosition?: (
+    task: DhxTask,
+    start?: Date,
+    end?: Date,
+  ) => { left: number; top: number; width: number; height: number }
   date?: { add: (d: Date, n: number, unit: string) => Date }
 }
 interface DhxTask {
@@ -39,8 +45,11 @@ interface DhxTask {
   text?: string
   start_date?: Date
   end_date?: Date
+  planned_start?: Date
+  planned_end?: Date
   parent?: string | number
   $resource?: string
+  nerv?: ScheduleTask
 }
 
 interface GridTask {
@@ -157,6 +166,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.configure(inst, options)
     this.wireEvents(inst)
     inst.init(container)
+    this.addBaselineLayer(inst)
     if (this.model) this.setData(this.model)
   }
 
@@ -415,6 +425,23 @@ export class DhtmlxEngine implements SchedulingEngine {
     })
   }
 
+  /** 计划基线层:在实际条后画半透明"计划"条(plannedStart/End),偏移即见计划/实际差。 */
+  private addBaselineLayer(inst: DhxGantt): void {
+    if (!inst.addTaskLayer || !inst.getTaskPosition) return
+    inst.addTaskLayer((task: DhxTask) => {
+      if (!task.planned_start || !task.planned_end || task.nerv?.type !== 'operation') return false
+      const pos = inst.getTaskPosition!(task, task.planned_start, task.planned_end)
+      const el = document.createElement('div')
+      el.className = 'nerv-baseline'
+      if (task.nerv?.colorKey) el.style.setProperty('--bl', `var(--nerv-cat-${task.nerv.colorKey})`)
+      el.style.left = `${pos.left}px`
+      el.style.top = `${pos.top}px`
+      el.style.width = `${Math.max(3, pos.width)}px`
+      el.style.height = `${pos.height}px`
+      return el
+    })
+  }
+
   private toGanttData(model: ScheduleModel): { data: unknown[]; links: unknown[] } {
     const toDate = (isoVal: string) => (isoVal ? new Date(isoVal) : undefined)
     const data: unknown[] = []
@@ -458,6 +485,8 @@ export class DhtmlxEngine implements SchedulingEngine {
       text: t.text || t.operationId || t.orderId,
       start_date: toDate(t.startUtc),
       end_date: toDate(t.endUtc),
+      planned_start: t.plannedStartUtc ? toDate(t.plannedStartUtc) : undefined,
+      planned_end: t.plannedEndUtc ? toDate(t.plannedEndUtc) : undefined,
       parent,
       type: t.isMilestone ? 'milestone' : t.type === 'order' ? 'project' : 'task',
       progress: t.progress ?? 0,

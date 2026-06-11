@@ -55,11 +55,7 @@
   background-color: transparent !important;
   border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 55%) !important;
 }
-/* 极淡斑马,仅做节奏,不抢戏 */
-.nerv-gantt-dhx .gantt_task_row:nth-child(even),
-.nerv-gantt-dhx .gantt_grid_data .gantt_row:nth-child(even) {
-  background-color: color-mix(in oklch, var(--muted), transparent 70%) !important;
-}
+/* 不做斑马行:时间区已有周末/夜班底纹,再加行间隔色会打架。 */
 /* hover / 选中行:中性 accent */
 .nerv-gantt-dhx .gantt_grid_data .gantt_row:hover,
 .nerv-gantt-dhx .gantt_task_row:hover {
@@ -116,13 +112,30 @@
   opacity: 0.92;
 }
 
-/* 分类色板:按车间/工序着色,提亮做轻盈(只设 --bar,base 规则消费) */
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-cut { --bar: oklch(0.62 0.14 255); }
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-bend { --bar: oklch(0.58 0.15 290); }
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-weld { --bar: oklch(0.7 0.15 55); }
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-mach { --bar: oklch(0.65 0.1 195); }
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-paint { --bar: oklch(0.6 0.16 350); }
-.nerv-gantt-dhx .gantt_task_line.nerv-cat-pack { --bar: oklch(0.66 0.14 150); }
+/* 分类色板:按车间/工序着色,提亮做轻盈。定义为全局变量,图例与条形共用同一套色。 */
+:root {
+  --nerv-cat-cut: oklch(0.62 0.14 255);
+  --nerv-cat-bend: oklch(0.58 0.15 290);
+  --nerv-cat-weld: oklch(0.7 0.15 55);
+  --nerv-cat-mach: oklch(0.65 0.1 195);
+  --nerv-cat-paint: oklch(0.6 0.16 350);
+  --nerv-cat-pack: oklch(0.66 0.14 150);
+}
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-cut { --bar: var(--nerv-cat-cut); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-bend { --bar: var(--nerv-cat-bend); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-weld { --bar: var(--nerv-cat-weld); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-mach { --bar: var(--nerv-cat-mach); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-paint { --bar: var(--nerv-cat-paint); }
+.nerv-gantt-dhx .gantt_task_line.nerv-cat-pack { --bar: var(--nerv-cat-pack); }
+
+/* 计划基线:半透明浅条,表示"计划";实际实色条叠在其上,偏移即见计划/实际差 */
+.nerv-gantt-dhx .nerv-baseline {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--bl, var(--brand)), transparent 78%);
+  border: 1px dashed color-mix(in oklch, var(--bl, var(--brand)), transparent 45%);
+}
 
 /* 条形右侧标签 + 锁图标(干净 SVG,非 emoji) */
 .nerv-gantt-dhx .nerv-bar-label {
@@ -248,14 +261,21 @@
   border-color: color-mix(in oklch, var(--brand), white 30%) !important;
 }
 
-/* 依赖连线 + 箭头 */
+/* 依赖连线:整条(含拐角)统一中性细线,不再出现不一致的灰拐角。关键路径连线用 warning。 */
 .nerv-gantt-dhx .gantt_task_link .gantt_line_wrapper div {
-  background-color: color-mix(in oklch, var(--brand), var(--foreground) 8%) !important;
+  background-color: var(--muted-foreground) !important;
 }
-.nerv-gantt-dhx .gantt_link_arrow_right,
+.nerv-gantt-dhx .gantt_link_arrow_right {
+  border-left-color: var(--muted-foreground) !important;
+}
 .nerv-gantt-dhx .gantt_link_arrow_left {
-  border-left-color: color-mix(in oklch, var(--brand), var(--foreground) 8%);
-  border-right-color: color-mix(in oklch, var(--brand), var(--foreground) 8%);
+  border-right-color: var(--muted-foreground) !important;
+}
+.nerv-gantt-dhx .gantt_critical_link .gantt_line_wrapper div {
+  background-color: var(--warning) !important;
+}
+.nerv-gantt-dhx .gantt_critical_link .gantt_link_arrow_right {
+  border-left-color: var(--warning) !important;
 }
 
 /* 今天线:细品牌线 + 胶囊标签 */

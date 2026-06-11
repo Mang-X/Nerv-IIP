@@ -50,6 +50,9 @@ const model = computed(() => {
     t.status = { label: st.label, tone: st.tone }
     t.progress = st.progress
     t.colorKey = WC_COLOR[wc] ?? 'cut'
+    // 计划基线:比实际早 1 小时(演示计划 vs 实际偏差)。
+    t.plannedStartUtc = new Date(Date.parse(t.startUtc) - 3_600_000).toISOString()
+    t.plannedEndUtc = new Date(Date.parse(t.endUtc) - 3_600_000).toISOString()
     i += 1
   }
   // 里程碑(渲染为菱形,演示视觉语言)。

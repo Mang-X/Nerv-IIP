@@ -67,6 +67,14 @@ function sendCommand(cmd: EngineCommand) {
 const conflicts = computed(() => workingModel.value.conflicts)
 const unscheduled = computed(() => workingModel.value.unscheduled)
 const changes = computed(() => workingModel.value.changes)
+const legendCategories = computed(() => {
+  const seen = new Map<string, string>()
+  for (const t of workingModel.value.tasks) {
+    if (t.type !== 'operation' || !t.colorKey || seen.has(t.colorKey)) continue
+    seen.set(t.colorKey, t.dimensions?.workCenter?.label ?? t.workCenterId ?? t.colorKey)
+  }
+  return [...seen].map(([key, label]) => ({ key, label }))
+})
 
 function onTaskSelect(taskId: string) {
   selectedTask.value = workingModel.value.tasks.find((t) => t.id === taskId)
@@ -185,7 +193,7 @@ async function onRelease() {
       </aside>
     </div>
 
-    <SchedulingLegend v-if="showLegend" />
+    <SchedulingLegend v-if="showLegend" :categories="legendCategories" />
 
     <InspectorSheet v-model:open="inspectorOpen" :task="selectedTask" />
   </div>
