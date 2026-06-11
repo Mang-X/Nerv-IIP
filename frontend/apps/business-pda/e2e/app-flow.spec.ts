@@ -52,9 +52,10 @@ test('home shows scan bar, my-tasks empty state and a disabled app wall', async 
   await expect(page.locator('input[placeholder^="扫描"]')).toBeVisible()
   // my-tasks empty state (no fake data)
   await expect(page.getByText('暂无分配给你的任务')).toBeVisible()
-  // app wall labels render and are disabled until M2 pages land
+  // WMS app-wall entries stay disabled until their pages land (blocked on #374).
   await expect(page.getByRole('button', { name: '收货入库' })).toBeDisabled()
-  await expect(page.getByRole('button', { name: '报工' })).toBeDisabled()
+  // MES entries are now lit up (Plan 3) — the page exists so the entry is enabled.
+  await expect(page.getByRole('button', { name: '报工' })).toBeEnabled()
 
   await expectNoHorizontalOverflow(page)
   await expectTouchTargets(page)

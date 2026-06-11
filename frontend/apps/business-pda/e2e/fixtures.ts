@@ -45,8 +45,116 @@ export async function routeConsoleApi(route: Route) {
   return route.fallback()
 }
 
-/** Mock any business-console gateway call the home may make (none required for the foundation home). */
+/**
+ * Realistic MES list rows used by the operation/report flows. Shapes mirror the
+ * generated `BusinessConsoleMesOperationTaskRow` / `BusinessConsoleMesWorkOrderItem`
+ * so the pages render real titles/subtitles instead of empty states.
+ */
+export const mesOperationTasks = [
+  {
+    operationTaskId: 'OP-1',
+    workOrderId: 'WO-1',
+    status: 'Running',
+    operationSequence: 10,
+    workCenterId: 'WC-A',
+  },
+  {
+    operationTaskId: 'OP-2',
+    workOrderId: 'WO-1',
+    status: 'Ready',
+    operationSequence: 20,
+    workCenterId: 'WC-B',
+  },
+]
+
+export const mesWorkOrders = [
+  {
+    workOrderId: 'WO-1',
+    skuId: 'SKU-1',
+    quantity: 100,
+    status: 'Released',
+  },
+]
+
+/**
+ * Material-issue request rows — shape mirrors `BusinessConsoleMesMaterialIssueRequestRow`
+ * so `/mes/issue` renders real titles/subtitles instead of the empty state.
+ */
+export const mesMaterialIssueRequests = [
+  {
+    requestId: 'ISS-1',
+    workOrderId: 'WO-1',
+    materialId: 'MAT-1',
+    requestedQuantity: 100,
+    receivedQuantity: 0,
+    status: 'Requested',
+  },
+  {
+    requestId: 'ISS-2',
+    workOrderId: 'WO-1',
+    materialId: 'MAT-2',
+    requestedQuantity: 50,
+    receivedQuantity: 50,
+    status: 'Received',
+  },
+]
+
+/**
+ * Finished-goods receipt request rows — shape mirrors `BusinessConsoleMesReceiptRequestRow`
+ * so `/mes/receipt` renders real titles/subtitles instead of the empty state.
+ */
+export const mesReceiptRequests = [
+  {
+    receiptRequestId: 'RCPT-1',
+    requestNo: 'FGR-2026-0001',
+    workOrderId: 'WO-1',
+    skuId: 'SKU-1',
+    quantity: 100,
+    receiptStatus: 'Requested',
+  },
+  {
+    receiptRequestId: 'RCPT-2',
+    requestNo: 'FGR-2026-0002',
+    workOrderId: 'WO-1',
+    skuId: 'SKU-2',
+    quantity: 50,
+    receiptStatus: 'Received',
+  },
+]
+
+/**
+ * Mock the business-console gateway. MES list/action/create endpoints the
+ * operation + report flows hit get realistic envelopes; everything else keeps
+ * returning the default empty envelope.
+ */
 export async function routeBusinessConsoleApi(route: Route) {
+  const { pathname } = new URL(route.request().url())
+  const method = route.request().method()
+  const base = '/api/business-console/v1/mes'
+
+  // Operation-task actions: start/pause/resume/complete → success envelope.
+  if (method === 'POST' && /\/mes\/operation-tasks\/[^/]+\/(start|pause|resume|complete)$/.test(pathname)) {
+    return fulfillJson(route, envelope({}))
+  }
+  if (pathname === `${base}/operation-tasks`) {
+    return fulfillJson(route, envelope({ items: mesOperationTasks, total: mesOperationTasks.length }))
+  }
+  if (pathname === `${base}/work-orders`) {
+    return fulfillJson(route, envelope({ items: mesWorkOrders, total: mesWorkOrders.length }))
+  }
+  if (pathname === `${base}/production-reports`) {
+    if (method === 'POST') return fulfillJson(route, envelope({}))
+    return fulfillJson(route, envelope({ items: [], total: 0 }))
+  }
+  if (pathname === `${base}/material-issue-requests`) {
+    return fulfillJson(route, envelope({ items: mesMaterialIssueRequests, total: mesMaterialIssueRequests.length }))
+  }
+  if (pathname === `${base}/finished-goods-receipt-requests`) {
+    if (method === 'POST') return fulfillJson(route, envelope({}))
+    return fulfillJson(route, envelope({ items: mesReceiptRequests, total: mesReceiptRequests.length }))
+  }
+
+  // Keep other paths returning the existing default envelope.
   return fulfillJson(route, envelope({}))
 }
 
