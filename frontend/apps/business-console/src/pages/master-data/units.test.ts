@@ -13,6 +13,8 @@ const stub = vi.hoisted(() => ({
     precision: 0,
     roundingMode: 'half-up',
   }),
+  createUomConversion: vi.fn().mockResolvedValue({ data: { code: 'BOX→EA' } }),
+  conversionDisable: vi.fn().mockResolvedValue(undefined),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }))
@@ -27,6 +29,29 @@ const uomRow = {
   precision: 0,
   roundingMode: 'half-up',
 }
+const uomRowBox = {
+  resourceType: 'unit-of-measure',
+  code: 'BOX',
+  displayName: '箱',
+  active: true,
+  snapshotVersion: '2026-06-08T13:02:00',
+  dimensionType: 'count',
+  precision: 0,
+  roundingMode: 'half-up',
+}
+const conversionRow = {
+  resourceType: 'uom-conversion',
+  code: 'BOX→EA',
+  displayName: 'BOX→EA',
+  active: true,
+  snapshotVersion: '2026-06-08T13:03:00',
+  fromUomCode: 'BOX',
+  toUomCode: 'EA',
+  factor: 12,
+  offset: null,
+}
+
+const conversionState = vi.hoisted(() => ({ rows: [] as unknown[] }))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessUoms: () => ({
@@ -35,14 +60,25 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     createUomPending: shallowRef(false),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', resourceType: 'unit-of-measure', skip: 0, take: 10 }),
     refreshUoms: vi.fn(),
-    uoms: computed(() => [uomRow]),
+    uoms: computed(() => [uomRow, uomRowBox]),
     uomsError: shallowRef(undefined),
     uomsPending: shallowRef(false),
-    uomsTotal: computed(() => 1),
+    uomsTotal: computed(() => 2),
   }),
-  useMasterDataResourceActions: () => ({
+  useUomConversions: () => ({
+    createUomConversion: stub.createUomConversion,
+    createUomConversionError: shallowRef(undefined),
+    createUomConversionPending: shallowRef(false),
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', resourceType: 'uom-conversion', skip: 0, take: 10 }),
+    refreshConversions: vi.fn(),
+    conversions: computed(() => conversionState.rows),
+    conversionsError: shallowRef(undefined),
+    conversionsPending: shallowRef(false),
+    conversionsTotal: computed(() => conversionState.rows.length),
+  }),
+  useMasterDataResourceActions: (resourceType: string) => ({
     update: stub.update,
-    disable: vi.fn(),
+    disable: resourceType === 'uom-conversion' ? stub.conversionDisable : vi.fn(),
     enable: vi.fn(),
     fetchDetail: stub.fetchDetail,
     updatePending: shallowRef(false),
@@ -75,6 +111,17 @@ const dialogStubs = {
   DialogTitle: { template: '<h2><slot /></h2>' },
   DialogDescription: { template: '<p><slot /></p>' },
 }
+// 停用/启用二次确认弹窗就地渲染（不 teleport），便于点「确认停用」。
+const alertDialogStubs = {
+  AlertDialog: { template: '<div><slot /></div>' },
+  AlertDialogContent: { template: '<div><slot /></div>' },
+  AlertDialogHeader: { template: '<div><slot /></div>' },
+  AlertDialogFooter: { template: '<div><slot /></div>' },
+  AlertDialogTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogDescription: { template: '<p><slot /></p>' },
+  AlertDialogCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+}
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
 const selectStubs = {
   Select: {
@@ -97,10 +144,21 @@ async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
   await flushPromises()
 }
 
+// 切到指定 Tab（reka-ui Tabs 用 focus + mousedown 激活）。
+async function switchTab(wrapper: ReturnType<typeof mount>, label: string) {
+  const tab = wrapper.findAll('[role="tab"]').find((t) => t.text().includes(label))!
+  await tab.trigger('focus')
+  await tab.trigger('mousedown')
+  await flushPromises()
+}
+
 beforeEach(() => {
+  conversionState.rows = [conversionRow]
   stub.createUom.mockClear()
   stub.update.mockClear()
   stub.fetchDetail.mockClear()
+  stub.createUomConversion.mockClear()
+  stub.conversionDisable.mockClear()
   stub.toastSuccess.mockClear()
   stub.toastError.mockClear()
 })
@@ -187,5 +245,113 @@ describe('master-data units page', () => {
 
     expect(wrapper.text()).toContain('请完整填写带 * 的必填项')
     expect(stub.createUom).not.toHaveBeenCalled()
+  })
+
+  it('换算 Tab：渲染换算列表，源/目标单位显示名称（非编码）', async () => {
+    const wrapper = mount(UnitsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    await switchTab(wrapper, '换算关系')
+
+    // 公式与源/目标单位显示单位名称（箱/个），不显编码（BOX/EA）。
+    expect(wrapper.text()).toContain('1 箱 = 12 个')
+    expect(wrapper.text()).toContain('箱')
+    expect(wrapper.text()).toContain('个')
+    expect(wrapper.text()).not.toContain('BOX→EA')
+  })
+
+  it('换算 Tab：填全必填后提交，createUomConversion 收到 body 且弹成功 toast', async () => {
+    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+    await switchTab(wrapper, '换算关系')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建换算关系'))!.trigger('click')
+    await flushPromises()
+    // 表单内的下拉顺序：源单位 / 目标单位 / 取整方式。
+    const selects = wrapper.findAll('select')
+    await selects[0]!.setValue('BOX')
+    await selects[1]!.setValue('EA')
+    await wrapper.find('#conv-factor').setValue('12')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createUomConversion).toHaveBeenCalledTimes(1)
+    const body = stub.createUomConversion.mock.calls[0]![0] as {
+      fromUomCode: string, toUomCode: string, factor: number, roundingMode: string
+    }
+    expect(body.fromUomCode).toBe('BOX')
+    expect(body.toUomCode).toBe('EA')
+    expect(body.factor).toBe(12)
+    expect(body.roundingMode).toBe('half-up')
+    expect(stub.toastSuccess).toHaveBeenCalled()
+    expect(stub.toastError).not.toHaveBeenCalled()
+  })
+
+  it('换算 Tab：源=目标单位时校验拦截，不发创建请求', async () => {
+    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+    await switchTab(wrapper, '换算关系')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建换算关系'))!.trigger('click')
+    await flushPromises()
+    const selects = wrapper.findAll('select')
+    await selects[0]!.setValue('EA')
+    await selects[1]!.setValue('EA')
+    await wrapper.find('#conv-factor').setValue('2')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('源单位与目标单位不能相同')
+    expect(stub.createUomConversion).not.toHaveBeenCalled()
+  })
+
+  it('换算 Tab：factor≤0 时校验拦截，不发创建请求', async () => {
+    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+    await switchTab(wrapper, '换算关系')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建换算关系'))!.trigger('click')
+    await flushPromises()
+    const selects = wrapper.findAll('select')
+    await selects[0]!.setValue('BOX')
+    await selects[1]!.setValue('EA')
+    await wrapper.find('#conv-factor').setValue('0')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createUomConversion).not.toHaveBeenCalled()
+  })
+
+  it('换算 Tab：行「停用」二次确认后调用换算的 disable', async () => {
+    const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...rowActionStubs, ...alertDialogStubs } } })
+    await flushPromises()
+    await switchTab(wrapper, '换算关系')
+
+    const disableItem = wrapper.findAll('button').find((b) => b.text().trim() === '停用')
+    expect(disableItem).toBeTruthy()
+    await disableItem!.trigger('click')
+    await flushPromises()
+
+    const confirmBtn = wrapper.findAll('button').find((b) => b.text().includes('确认停用'))
+    expect(confirmBtn).toBeTruthy()
+    await confirmBtn!.trigger('click')
+    await flushPromises()
+
+    expect(stub.conversionDisable).toHaveBeenCalledWith('BOX→EA')
+  })
+
+  it('换算 Tab：无换算时显示「去新建」空态', async () => {
+    conversionState.rows = []
+    const wrapper = mount(UnitsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    await switchTab(wrapper, '换算关系')
+
+    expect(wrapper.text()).toContain('还没有换算关系')
+    expect(wrapper.findAll('button').some((b) => b.text().includes('新建换算关系'))).toBe(true)
   })
 })

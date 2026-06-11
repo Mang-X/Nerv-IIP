@@ -127,6 +127,19 @@ const dialogStubs = {
   DialogDescription: { template: '<p><slot /></p>' },
 }
 
+// 把 reka-ui Select 换成原生 <select>，让测试能 setValue（归属改挂下拉）。
+const formSelectStubs = {
+  Select: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+  },
+  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectValue: { template: '<span />' },
+  SelectContent: { template: '<slot />' },
+  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+}
+
 // 找到树里某节点的「选中」按钮（按文本）。
 function findNodeButton(wrapper: ReturnType<typeof mount>, label: string) {
   return wrapper.findAll('button').find((b) => b.text().includes(label) && !b.attributes('aria-label')?.includes('新建'))
@@ -293,14 +306,15 @@ describe('master-data facilities tree page', () => {
     expect((wrapper.find('#create-name').element as HTMLInputElement).value).toBe('广州工厂')
   })
 
-  it('编辑态：行「编辑」拉详情，编码与归属只读、仅可改名', async () => {
+  const editStubs = {
+    RowActions: { template: '<div><slot /></div>' },
+    DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  }
+
+  it('编辑工厂：编码只读、可改名 / 时区（工厂无归属，不显示归属选择）', async () => {
     actionStub.fetchDetail.mockClear()
-    const rowActionStubs = {
-      RowActions: { template: '<div><slot /></div>' },
-      DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
-    }
     const wrapper = mount(FacilitiesPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub, ...rowActionStubs } },
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub, ...formSelectStubs, ...editStubs } },
     })
     await flushPromises()
 
@@ -317,7 +331,90 @@ describe('master-data facilities tree page', () => {
     expect(wrapper.text()).toContain('编辑工厂')
     const codeInput = wrapper.find('#edit-code').element as HTMLInputElement
     expect(codeInput.disabled).toBe(true)
-    // 改挂提示在场。
-    expect(wrapper.text()).toContain('归属（上级）创建后不可更改')
+    // 改挂提示已删除；工厂无上级，不渲染归属选择器。
+    expect(wrapper.text()).not.toContain('归属（上级）创建后不可更改')
+    expect(wrapper.find('#edit-site').exists()).toBe(false)
+  })
+
+  it('编辑车间：可改挂工厂（update 收到新 siteCode），编码只读', async () => {
+    actionStub.update.mockClear()
+    const wrapper = mount(FacilitiesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub, ...formSelectStubs, ...editStubs } },
+    })
+    await flushPromises()
+
+    await findNodeButton(wrapper, '总装车间')!.trigger('click')
+    await flushPromises()
+    const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
+    await editItem!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('编辑车间')
+    expect((wrapper.find('#edit-code').element as HTMLInputElement).disabled).toBe(true)
+    // 改挂工厂：PLANT-A → PLANT-B。
+    const siteSelect = wrapper.findAll('select').find((s) => s.html().includes('PLANT-B'))!
+    await siteSelect.setValue('PLANT-B')
+    await flushPromises()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(actionStub.update).toHaveBeenCalledWith('WS-A', expect.objectContaining({ siteCode: 'PLANT-B' }))
+  })
+
+  it('编辑工作中心：可改挂工厂 / 产线（update 收到新 plantCode + lineCode）', async () => {
+    actionStub.update.mockClear()
+    const wrapper = mount(FacilitiesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub, ...formSelectStubs, ...editStubs } },
+    })
+    await flushPromises()
+
+    await findNodeButton(wrapper, '焊接中心')!.trigger('click')
+    await flushPromises()
+    const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
+    await editItem!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('编辑工作中心')
+    // 归属字段就位（工厂 / 产线选择器）。
+    expect(wrapper.find('#edit-wc-plant').exists()).toBe(true)
+    expect(wrapper.find('#edit-wc-line').exists()).toBe(true)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    // 不改归属直接提交：透传当前归属（plantCode/lineCode）给 update。
+    expect(actionStub.update).toHaveBeenCalledWith(
+      'WC-A',
+      expect.objectContaining({ plantCode: 'PLANT-A', lineCode: 'LINE-A' }),
+    )
+  })
+
+  it('编辑产线改挂工厂后清空不匹配的车间（防归属错配）', async () => {
+    actionStub.update.mockClear()
+    const wrapper = mount(FacilitiesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub, ...formSelectStubs, ...editStubs } },
+    })
+    await flushPromises()
+
+    await findNodeButton(wrapper, '前桥线')!.trigger('click')
+    await flushPromises()
+    const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
+    await editItem!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('编辑产线')
+    // 初始：siteCode=PLANT-A、workshopCode=WS-A（属 PLANT-A）。改挂到 PLANT-B：
+    // WS-A 不属 PLANT-B → 车间应被级联清空，避免归属错配。
+    const siteSelect = wrapper.find('#edit-line-site').exists()
+      ? wrapper.findAll('select').find((s) => s.html().includes('PLANT-B') && s.html().includes('PLANT-A'))!
+      : wrapper.findAll('select')[0]!
+    await siteSelect.setValue('PLANT-B')
+    await flushPromises()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(actionStub.update).toHaveBeenCalledWith(
+      'LINE-A',
+      expect.objectContaining({ siteCode: 'PLANT-B', workshopCode: null }),
+    )
   })
 })

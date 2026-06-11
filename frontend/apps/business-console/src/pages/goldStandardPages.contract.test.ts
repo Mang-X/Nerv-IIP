@@ -29,7 +29,8 @@ const GOLD_STANDARD_PAGES = [
   // organization.vue 改为「组织与班组」树-详情页（左部门树 + 右详情/班组），不再是黄金标准列表，
   // 不含主 DataTable/DataTablePagination 必备块，故从此清单移除。树页约束见 organization.test.ts。
   'master-data/scheduling.vue',
-  'master-data/skills.vue',
+  // skills.vue 升为「人员技能」矩阵页（工人 × 技能），不再是黄金标准列表，
+  // 不含 DataTable/DataTablePagination 必备块，故从此清单移除。矩阵约束见 skills.test.ts。
   'master-data/reference-data.vue',
   'wms/inbound.vue',
   'wms/outbound.vue',

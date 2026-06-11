@@ -11,14 +11,17 @@ const stub = vi.hoisted(() => ({
   toastError: vi.fn(),
 }))
 
-// 部门列表项不回传 parentDepartmentCode（读侧无该字段），故部门以平铺呈现；
-// 两个部门 → 都是根，可选中、可就地建子部门 / 班组。
+// 列表回传 parentDepartmentCode（#375）→ 前端拼多层部门树：
+// DEPT-A（总装部，根）▸ DEPT-A1（总装一工段，挂 DEPT-A）；DEPT-B（焊接部，根）。
 const DEPT_ROWS = [
   { resourceType: 'department', code: 'DEPT-A', displayName: '总装部', active: true, snapshotVersion: '1' },
+  { resourceType: 'department', code: 'DEPT-A1', displayName: '总装一工段', active: true, snapshotVersion: '1', parentDepartmentCode: 'DEPT-A' },
   { resourceType: 'department', code: 'DEPT-B', displayName: '焊接部', active: true, snapshotVersion: '1' },
 ]
+// 列表回传 team.departmentCode（#375）→ 班组按部门归集：TEAM-A 属 DEPT-A、TEAM-B 属 DEPT-B。
 const TEAM_ROWS = [
-  { resourceType: 'team', code: 'TEAM-A', displayName: '白班班组', active: true, snapshotVersion: '1' },
+  { resourceType: 'team', code: 'TEAM-A', displayName: '白班班组', active: true, snapshotVersion: '1', departmentCode: 'DEPT-A', shiftCode: 'SHIFT-A' },
+  { resourceType: 'team', code: 'TEAM-B', displayName: '焊工班组', active: true, snapshotVersion: '1', departmentCode: 'DEPT-B', shiftCode: 'SHIFT-A' },
 ]
 const SHIFT_ROWS = [
   { resourceType: 'shift', code: 'SHIFT-A', displayName: '白班', active: true, snapshotVersion: '1' },
@@ -165,6 +168,30 @@ describe('master-data organization (department tree) page', () => {
     // 右侧出现该部门的班组区与成员维护出口。
     expect(wrapper.text()).toContain('班组')
     expect(wrapper.findAll('button').some((b) => b.text().includes('管理成员'))).toBe(true)
+    // 班组按部门归集：选中 DEPT-B 只列其班组（TEAM-B），不混入别部门的 TEAM-A。
+    expect(wrapper.text()).toContain('焊工班组')
+    expect(wrapper.text()).not.toContain('白班班组')
+  })
+
+  it('renders a multi-level department tree from parentDepartmentCode', async () => {
+    const wrapper = mount(OrganizationPage, mountOpts)
+    await flushPromises()
+
+    // 子部门由 parentDepartmentCode 挂到上级下；默认展开（节点少）→ 应可见。
+    expect(wrapper.text()).toContain('总装部')
+    expect(wrapper.text()).toContain('总装一工段')
+    // 子部门是 treeitem，且其父行 aria-expanded 反映层级（有子级）。
+    const parentItem = wrapper.findAll('[role="treeitem"]').find((li) => li.text().includes('总装部'))
+    expect(parentItem?.attributes('aria-expanded')).toBe('true')
+  })
+
+  it('班组按部门归集：选中部门只列归属该部门的班组', async () => {
+    const wrapper = mount(OrganizationPage, mountOpts)
+    await flushPromises()
+
+    // 挂载默认选中首个部门 DEPT-A → 只列 TEAM-A（白班班组）。
+    expect(wrapper.text()).toContain('白班班组')
+    expect(wrapper.text()).not.toContain('焊工班组')
   })
 
   it('「新建子部门」prefills parent department code read-only', async () => {
@@ -266,8 +293,9 @@ describe('master-data organization (department tree) page', () => {
     expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
-  it('editing a department opens rename-only dialog with code read-only and rehoming notice', async () => {
+  it('editing a department: code read-only, can rehome to another parent (update gets new parentDepartmentCode)', async () => {
     actionStub.fetchDetail.mockClear()
+    actionStub.update.mockClear()
     const rowActionStubs = {
       RowActions: { template: '<div><slot /></div>' },
       DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
@@ -277,20 +305,88 @@ describe('master-data organization (department tree) page', () => {
     })
     await flushPromises()
 
-    await findNodeButton(wrapper, '总装部')!.trigger('click')
+    // 选中子部门 DEPT-A1（默认展开可见），打开编辑。
+    await findNodeButton(wrapper, '总装一工段')!.trigger('click')
     await flushPromises()
     actionStub.fetchDetail.mockClear()
 
-    // 部门详情区的 RowActions「编辑」（非班组行）。
     const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
     expect(editItem).toBeTruthy()
     await editItem!.trigger('click')
     await flushPromises()
 
-    expect(actionStub.fetchDetail).toHaveBeenCalledWith('DEPT-A')
+    expect(actionStub.fetchDetail).toHaveBeenCalledWith('DEPT-A1')
     expect(wrapper.text()).toContain('编辑部门')
     const codeInput = wrapper.find('#dept-edit-code').element as HTMLInputElement
     expect(codeInput.disabled).toBe(true)
-    expect(wrapper.text()).toContain('归属（上级部门）创建后不可更改')
+    // 改挂上级：把 DEPT-A1 从 DEPT-A 改挂到 DEPT-B。
+    const parentSelect = wrapper.findAll('select').find((s) => s.html().includes('DEPT-B'))!
+    await parentSelect.setValue('DEPT-B')
+    await flushPromises()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(actionStub.update).toHaveBeenCalledWith('DEPT-A1', expect.objectContaining({ parentDepartmentCode: 'DEPT-B' }))
+  })
+
+  it('防环：编辑部门时上级候选排除自身及其子孙', async () => {
+    const rowActionStubs = {
+      RowActions: { template: '<div><slot /></div>' },
+      DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+    }
+    const wrapper = mount(OrganizationPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs, ...rowActionStubs } },
+    })
+    await flushPromises()
+
+    // 选中父部门 DEPT-A（其子孙含自身 DEPT-A 与 DEPT-A1），打开编辑。
+    await findNodeButton(wrapper, '总装部')!.trigger('click')
+    await flushPromises()
+    const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
+    await editItem!.trigger('click')
+    await flushPromises()
+
+    // 上级下拉（formSelect 桩把 options 渲染进 <select>）：含其他根 DEPT-B。
+    const parentSelect = wrapper.findAll('select').find((s) => s.html().includes('DEPT-B'))!
+    expect(parentSelect).toBeTruthy()
+    const html = parentSelect.html()
+    // 防环：不含子孙（value="DEPT-A1"）与自身（value="DEPT-A"），但含其他根 DEPT-B。
+    expect(html).not.toContain('value="DEPT-A1"')
+    expect(html).not.toContain('value="DEPT-A"')
+    expect(html).toContain('value="DEPT-B"')
+  })
+
+  it('editing a team: can rehome department/shift (update gets new departmentCode + shiftCode)', async () => {
+    actionStub.update.mockClear()
+    const rowActionStubs = {
+      RowActions: { template: '<div><slot /></div>' },
+      DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+    }
+    const wrapper = mount(OrganizationPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs, ...rowActionStubs } },
+    })
+    await flushPromises()
+
+    // 默认选中 DEPT-A → 列出 TEAM-A（白班班组）；打开其行编辑（班组行 RowActions 在部门 RowActions 之后）。
+    expect(wrapper.text()).toContain('白班班组')
+    const editButtons = wrapper.findAll('button').filter((b) => b.text().trim() === '编辑')
+    // 末个「编辑」属班组行（部门详情区的「编辑」在前）。
+    await editButtons[editButtons.length - 1]!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('编辑班组')
+    // 班组编码只读。
+    expect((wrapper.find('#team-code').element as HTMLInputElement).disabled).toBe(true)
+    // 改挂部门：DEPT-A → DEPT-B（部门下拉可改，非只读）。
+    const deptSelect = wrapper.findAll('select').find((s) => s.html().includes('DEPT-B') && s.html().includes('DEPT-A'))!
+    await deptSelect.setValue('DEPT-B')
+    await flushPromises()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(actionStub.update).toHaveBeenCalledWith(
+      'TEAM-A',
+      expect.objectContaining({ departmentCode: 'DEPT-B', shiftCode: 'SHIFT-A' }),
+    )
   })
 })

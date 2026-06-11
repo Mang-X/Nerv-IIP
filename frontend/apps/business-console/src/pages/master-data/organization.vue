@@ -71,9 +71,8 @@ function refreshAll() {
   void shifts.refresh()
 }
 
-// ================= 部门树（按 parentDepartmentCode 前端拼，缺则平铺） =================
-// 注意：当前列表/详情端点未回传 parentDepartmentCode（仅创建时可设），故 Phase 1 多数环境
-// 部门以平铺单层呈现；一旦后端在读侧回传该字段（#373），此处自动拼出多层树，无需改前端。
+// ================= 部门多层树（按 parentDepartmentCode 前端拼） =================
+// 列表回传 parentDepartmentCode（#375）：据此拼多层部门树；缺/找不到上级的视为顶级根。
 const DEPT_TYPE = 'department'
 function toDeptNode(item: BusinessConsoleResourceItem): MasterDataTreeNodeData {
   return {
@@ -85,10 +84,8 @@ function toDeptNode(item: BusinessConsoleResourceItem): MasterDataTreeNodeData {
     children: [],
   }
 }
-// 列表项可能（未来）带 parentDepartmentCode；用 unknown 读取避免假设其一定存在。
 function parentCodeOf(item: BusinessConsoleResourceItem): string {
-  const v = (item as Record<string, unknown>).parentDepartmentCode
-  return typeof v === 'string' ? v : ''
+  return item.parentDepartmentCode ?? ''
 }
 
 const tree = computed<MasterDataTreeNodeData[]>(() => {
@@ -103,6 +100,31 @@ const tree = computed<MasterDataTreeNodeData[]>(() => {
   }
   return roots
 })
+
+// 防环：某部门的全部子孙 code（含自身）——改挂上级时不能挂到自己或子孙下。
+function descendantCodesOf(code: string): Set<string> {
+  const childrenByParent = new Map<string, string[]>()
+  for (const item of departments.items.value) {
+    const parent = parentCodeOf(item)
+    const self = item.code ?? ''
+    if (!self) continue
+    const list = childrenByParent.get(parent) ?? []
+    list.push(self)
+    childrenByParent.set(parent, list)
+  }
+  const result = new Set<string>([code])
+  const stack = [code]
+  while (stack.length) {
+    const current = stack.pop()!
+    for (const child of childrenByParent.get(current) ?? []) {
+      if (!result.has(child)) {
+        result.add(child)
+        stack.push(child)
+      }
+    }
+  }
+  return result
+}
 
 const totalDepartments = computed(() => departments.total.value)
 const treePending = computed(() => departments.pending.value)
@@ -254,10 +276,13 @@ const detailFields = computed(() => {
   ]
 })
 
-// ================= 班组列表（属选中部门下的班组维护出口） =================
-// 列表端点不回传 team.departmentCode（仅创建时可设），故 Phase 1 无法按部门精确归集班组，
-// 右侧展示全部班组并如实标注；在选中部门下「新建班组」时 departmentCode 已带入（写入侧可用）。
-const teamRows = computed(() => teams.items.value)
+// ================= 班组按部门归集（属选中部门下的班组维护出口） =================
+// 列表回传 team.departmentCode（#375）：选中某部门时，右侧只列归属该部门的班组。
+const teamRows = computed(() => {
+  const deptCode = selectedNode.value?.code
+  if (!deptCode) return []
+  return teams.items.value.filter((t) => (t.departmentCode ?? '') === deptCode)
+})
 const teamListError = computed(() => {
   const e = teams.error.value
   return e instanceof Error ? e.message : e ? '班组数据加载失败，请刷新重试。' : ''
@@ -311,13 +336,19 @@ async function submitCreateDept() {
   }
 }
 
-// ================= 编辑部门（编码 / 归属只读，仅改名；改挂上级见 #373） =================
+// ================= 编辑部门（编码只读；改名 + 改挂上级 parentDepartmentCode） =================
 const deptEditOpen = ref(false)
 const deptEditShowErrors = ref(false)
 const deptEditLoading = shallowRef(false)
 const deptEditCode = shallowRef('')
-const deptEditForm = reactive({ name: '' })
+const deptEditForm = reactive({ name: '', parentDepartmentCode: '' })
 const canEditDept = computed(() => isNonEmpty(deptEditForm.name))
+// 防环：编辑部门时，上级候选排除自身及其全部子孙（不能把部门挂到自己的子孙下）。
+const deptParentOptions = computed(() => {
+  if (!deptEditCode.value) return departments.items.value
+  const blocked = descendantCodesOf(deptEditCode.value)
+  return departments.items.value.filter((d) => !blocked.has(d.code ?? ''))
+})
 watch(deptEditOpen, (open) => { if (open) deptEditShowErrors.value = false })
 async function openEditDept(node: MasterDataTreeNodeData) {
   if (!node.code) return
@@ -326,9 +357,11 @@ async function openEditDept(node: MasterDataTreeNodeData) {
   deptEditLoading.value = true
   deptEditOpen.value = true
   deptEditForm.name = node.displayName
+  deptEditForm.parentDepartmentCode = parentCodeOf(node.item)
   try {
     const d = (await deptActions.fetchDetail(node.code)) as Record<string, unknown> | undefined
     deptEditForm.name = (d?.name as string) || node.displayName
+    deptEditForm.parentDepartmentCode = (d?.parentDepartmentCode as string) ?? parentCodeOf(node.item)
   }
   finally {
     deptEditLoading.value = false
@@ -339,9 +372,15 @@ async function submitEditDept() {
     deptEditShowErrors.value = true
     return
   }
+  const newParent = deptEditForm.parentDepartmentCode.trim()
+  // 防环兜底：拦截把部门挂到自己 / 子孙下的非法归属。
+  if (newParent && descendantCodesOf(deptEditCode.value).has(newParent)) {
+    notifyError('不能把部门挂到自己或其下级部门下。')
+    return
+  }
   const name = deptEditForm.name.trim()
   try {
-    await deptActions.update(deptEditCode.value, { name })
+    await deptActions.update(deptEditCode.value, { name, parentDepartmentCode: newParent || null })
     notifySuccess(`部门「${name}」已更新。`)
     deptEditShowErrors.value = false
     deptEditOpen.value = false
@@ -360,7 +399,12 @@ const teamEditLoading = shallowRef(false)
 const teamDepartmentLocked = ref(false)
 const teamForm = reactive({ code: '', name: '', departmentCode: '', shiftCode: '' })
 const canCreateTeam = computed(() => [teamForm.code, teamForm.name, teamForm.departmentCode, teamForm.shiftCode].every(isNonEmpty))
-const teamFormValid = computed(() => (teamEditingCode.value ? isNonEmpty(teamForm.name) : canCreateTeam.value))
+// 编辑也校验归属（部门 / 班次可改但不可空）；新建额外校验 code。
+const teamFormValid = computed(() =>
+  teamEditingCode.value
+    ? [teamForm.name, teamForm.departmentCode, teamForm.shiftCode].every(isNonEmpty)
+    : canCreateTeam.value,
+)
 watch(teamOpen, (open) => { if (open) teamShowErrors.value = false })
 function resetTeamForm() {
   Object.assign(teamForm, { code: '', name: '', departmentCode: '', shiftCode: '' })
@@ -384,9 +428,13 @@ async function openEditTeam(row: BusinessConsoleResourceItem) {
   teamOpen.value = true
   teamForm.code = row.code
   teamForm.name = row.displayName ?? ''
+  teamForm.departmentCode = row.departmentCode ?? ''
+  teamForm.shiftCode = row.shiftCode ?? ''
   try {
     const d = await teamActions.fetchDetail(row.code)
     teamForm.name = d?.name ?? row.displayName ?? ''
+    teamForm.departmentCode = (d?.departmentCode as string | undefined) ?? row.departmentCode ?? ''
+    teamForm.shiftCode = (d?.shiftCode as string | undefined) ?? row.shiftCode ?? ''
   }
   finally {
     teamEditLoading.value = false
@@ -394,12 +442,17 @@ async function openEditTeam(row: BusinessConsoleResourceItem) {
 }
 async function submitTeam() {
   if (teamEditingCode.value) {
-    if (!isNonEmpty(teamForm.name)) {
+    // 编辑：改名 + 改挂部门 / 班次（归属可改，编码只读）。
+    if (![teamForm.name, teamForm.departmentCode, teamForm.shiftCode].every(isNonEmpty)) {
       teamShowErrors.value = true
       return
     }
     try {
-      await teamActions.update(teamEditingCode.value, { name: teamForm.name.trim() })
+      await teamActions.update(teamEditingCode.value, {
+        name: teamForm.name.trim(),
+        departmentCode: teamForm.departmentCode.trim(),
+        shiftCode: teamForm.shiftCode.trim(),
+      })
       notifySuccess(`班组「${teamForm.name.trim()}」已更新。`)
       resetTeamForm()
       teamEditingCode.value = null
@@ -514,7 +567,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
         </ScrollArea>
 
         <p v-if="treeTruncated" class="text-xs text-muted-foreground">
-          部门较多，当前仅展示前 {{ TREE_TAKE }} 条；完整层级加载能力即将上线。
+          部门较多，当前仅展示前 {{ TREE_TAKE }} 条。
         </p>
       </section>
 
@@ -582,7 +635,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
               </Button>
             </div>
             <p class="mb-2 text-xs text-muted-foreground">
-              班组与部门的精确归集即将上线，当前列出全部班组；可编辑、维护成员，新建时已带入本部门归属。
+              归属本部门的班组；可编辑、改挂部门 / 班次、维护成员，新建时已带入本部门归属。
             </p>
             <p v-if="teamListError" class="text-sm text-destructive" role="alert">{{ teamListError }}</p>
             <div v-if="teams.pending.value && !teamRows.length" class="px-1 py-2 text-sm text-muted-foreground">加载班组中…</div>
@@ -668,12 +721,12 @@ function openMembers(row: BusinessConsoleResourceItem) {
       </DialogContent>
     </Dialog>
 
-    <!-- 编辑部门对话框（编码 / 归属只读，仅改名；改挂上级见 #373） -->
+    <!-- 编辑部门对话框（编码只读；改名 + 改挂上级） -->
     <Dialog v-model:open="deptEditOpen">
       <DialogContent class="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>编辑部门 · {{ deptEditCode }}</DialogTitle>
-          <DialogDescription>修改部门名称（编码与归属不可修改）。带 * 为必填项。</DialogDescription>
+          <DialogDescription>修改部门名称，或改挂到其他上级部门（编码不可修改）。带 * 为必填项。</DialogDescription>
         </DialogHeader>
         <form class="grid gap-4" @submit.prevent="submitEditDept">
           <p v-if="deptEditShowErrors && !canEditDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
@@ -686,8 +739,20 @@ function openMembers(row: BusinessConsoleResourceItem) {
               <FieldLabel for="dept-edit-name">部门名称 <span class="text-destructive">*</span></FieldLabel>
               <Input id="dept-edit-name" v-model="deptEditForm.name" autocomplete="off" required />
             </Field>
+            <Field>
+              <FieldLabel for="dept-edit-parent">上级部门</FieldLabel>
+              <Select v-model="deptEditForm.parentDepartmentCode">
+                <SelectTrigger id="dept-edit-parent"><SelectValue placeholder="无（顶级部门）" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">无（顶级部门）</SelectItem>
+                  <SelectItem v-for="d in deptParentOptions" :key="d.code" :value="d.code ?? ''">
+                    {{ d.displayName ?? d.code }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <FieldDescription>留空表示顶级部门；不能挂到自己或其下级部门下。</FieldDescription>
+            </Field>
           </FieldGroup>
-          <p class="text-xs text-muted-foreground">归属（上级部门）创建后不可更改，改挂上级功能即将上线。</p>
           <DialogFooter>
             <Button type="button" variant="outline" @click="deptEditOpen = false">取消</Button>
             <Button type="submit" :disabled="deptActions.updatePending.value || deptEditLoading">
@@ -698,12 +763,12 @@ function openMembers(row: BusinessConsoleResourceItem) {
       </DialogContent>
     </Dialog>
 
-    <!-- 班组对话框（新建：挂部门 + 班次；编辑：仅改名，编码 / 归属只读） -->
+    <!-- 班组对话框（新建：挂部门 + 班次；编辑：改名 + 改挂部门 / 班次，编码只读） -->
     <Dialog v-model:open="teamOpen">
       <DialogContent class="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{{ teamEditingCode ? `编辑班组 · ${teamEditingCode}` : '新建班组' }}</DialogTitle>
-          <DialogDescription>{{ teamEditingCode ? '修改班组名称（编码与归属不可修改）。带 * 为必填项。' : '将班组挂靠到部门与班次。带 * 为必填项。' }}</DialogDescription>
+          <DialogDescription>{{ teamEditingCode ? '修改班组名称，或改挂到其他部门 / 班次（编码不可修改）。带 * 为必填项。' : '将班组挂靠到部门与班次。带 * 为必填项。' }}</DialogDescription>
         </DialogHeader>
         <form class="grid gap-4" @submit.prevent="submitTeam">
           <p v-if="teamShowErrors && !teamFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
@@ -720,9 +785,9 @@ function openMembers(row: BusinessConsoleResourceItem) {
               <FieldLabel for="team-dept-locked">所属部门</FieldLabel>
               <Input id="team-dept-locked" :model-value="teamForm.departmentCode" disabled />
             </Field>
-            <Field v-else :data-invalid="teamShowErrors && !teamEditingCode && !isNonEmpty(teamForm.departmentCode)">
+            <Field v-else :data-invalid="teamShowErrors && !isNonEmpty(teamForm.departmentCode)">
               <FieldLabel for="team-dept">所属部门 <span class="text-destructive">*</span></FieldLabel>
-              <Select v-model="teamForm.departmentCode" :disabled="!!teamEditingCode">
+              <Select v-model="teamForm.departmentCode">
                 <SelectTrigger id="team-dept"><SelectValue placeholder="请选择部门" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
@@ -731,9 +796,9 @@ function openMembers(row: BusinessConsoleResourceItem) {
                 </SelectContent>
               </Select>
             </Field>
-            <Field :data-invalid="teamShowErrors && !teamEditingCode && !isNonEmpty(teamForm.shiftCode)">
+            <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.shiftCode)">
               <FieldLabel for="team-shift">所属班次 <span class="text-destructive">*</span></FieldLabel>
-              <Select v-model="teamForm.shiftCode" :disabled="!!teamEditingCode">
+              <Select v-model="teamForm.shiftCode">
                 <SelectTrigger id="team-shift"><SelectValue placeholder="请选择班次" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem v-for="s in shifts.items.value" :key="s.code" :value="s.code ?? ''">
@@ -744,7 +809,6 @@ function openMembers(row: BusinessConsoleResourceItem) {
               <FieldDescription>班次在「排班与日历」页维护。</FieldDescription>
             </Field>
           </FieldGroup>
-          <p v-if="teamEditingCode" class="text-xs text-muted-foreground">归属（部门 / 班次）创建后不可更改，改挂功能即将上线。</p>
           <DialogFooter>
             <Button type="button" variant="outline" @click="teamOpen = false">取消</Button>
             <Button type="submit" :disabled="teams.createPending.value || teamActions.updatePending.value || teamEditLoading">

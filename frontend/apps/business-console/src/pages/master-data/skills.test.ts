@@ -6,10 +6,20 @@ import SkillsPage from './skills.vue'
 
 const stub = vi.hoisted(() => ({
   assign: vi.fn().mockResolvedValue({}),
+  matrixRefresh: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  // 可被各用例覆写的矩阵数据源（默认含一名工人 + 一项技能）。
+  skillCodes: ['SKILL-A'] as string[],
+  rows: [
+    {
+      userId: 'usr-1',
+      skills: [{ skillCode: 'SKILL-A', level: 'senior', effectiveTo: undefined as string | undefined }],
+    },
+  ] as Array<{ userId: string, skills: Array<{ skillCode: string, level: string, effectiveTo?: string }> }>,
 }))
 
+// 技能字典（personnel-skill）：SKILL-A → 焊接技能；工人解析另走 useBusinessWorkers。
 function stubReadonlyResource(resourceType: string) {
   const rows = resourceType === 'personnel-skill'
     ? [{ resourceType, code: 'SKILL-A', displayName: '焊接技能', active: true, snapshotVersion: '1' }]
@@ -21,19 +31,6 @@ function stubReadonlyResource(resourceType: string) {
     resourcesError: shallowRef(undefined),
     resourcesPending: shallowRef(false),
     refreshResources: vi.fn(),
-  }
-}
-
-function stubActions() {
-  return {
-    update: vi.fn(),
-    disable: vi.fn(),
-    enable: vi.fn(),
-    fetchDetail: vi.fn().mockResolvedValue({}),
-    updatePending: shallowRef(false),
-    disablePending: shallowRef(false),
-    enablePending: shallowRef(false),
-    actionError: shallowRef(undefined),
   }
 }
 
@@ -51,6 +48,17 @@ function stubWorkers() {
   }
 }
 
+function stubSkillMatrix() {
+  return {
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', userId: undefined, skillCode: undefined, includeDisabled: undefined }),
+    refresh: stub.matrixRefresh,
+    skillCodes: computed(() => stub.skillCodes),
+    rows: computed(() => stub.rows),
+    matrixError: shallowRef(undefined),
+    matrixPending: shallowRef(false),
+  }
+}
+
 function stubSkillAssignment() {
   return {
     assign: stub.assign,
@@ -61,8 +69,8 @@ function stubSkillAssignment() {
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessMasterDataResources: (resourceType: string) => stubReadonlyResource(resourceType),
-  useMasterDataResourceActions: () => stubActions(),
   useBusinessWorkers: () => stubWorkers(),
+  usePersonnelSkillMatrix: () => stubSkillMatrix(),
   usePersonnelSkillAssignment: () => stubSkillAssignment(),
 }))
 
@@ -98,24 +106,65 @@ const formSelectStubs = {
   },
 }
 
-describe('master-data skills page', () => {
-  it('renders title, a disabled 矩阵视图 entry marked 建设中 and an enabled 登记技能 button', async () => {
+function resetMatrix() {
+  stub.skillCodes = ['SKILL-A']
+  stub.rows = [{ userId: 'usr-1', skills: [{ skillCode: 'SKILL-A', level: 'senior', effectiveTo: undefined }] }]
+}
+
+describe('master-data skills page (matrix)', () => {
+  it('renders the matrix with worker name, skill 中文名 column header and level 中文 cell', async () => {
+    resetMatrix()
     const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('人员技能')
+    // userId → 工人姓名（不暴露裸 usr-1）。
+    expect(wrapper.text()).toContain('张三')
+    expect(wrapper.text()).not.toContain('usr-1')
+    // skillCode → 技能中文名（列头）。
     expect(wrapper.text()).toContain('焊接技能')
-    const matrixBtn = wrapper.findAll('button').find((b) => b.text().includes('矩阵视图'))
-    expect(matrixBtn).toBeTruthy()
-    expect(matrixBtn!.text()).toContain('建设中')
-    expect(matrixBtn!.attributes('disabled')).toBeDefined()
-
-    const registerBtn = wrapper.findAll('button').find((b) => b.text().includes('登记技能'))
-    expect(registerBtn).toBeDefined()
-    expect(registerBtn!.attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('SKILL-A')
+    // level → 中文。
+    expect(wrapper.text()).toContain('高级')
+    // 已删除「建设中」文案。
+    expect(wrapper.text()).not.toContain('建设中')
   })
 
-  it('blocks skill assignment on empty required fields with summary alert and no assign call', async () => {
+  it('highlights soon-expiring cells with a 临期 badge and token class', async () => {
+    resetMatrix()
+    const soon = new Date(Date.now() + 10 * 86_400_000).toISOString()
+    stub.rows = [{ userId: 'usr-1', skills: [{ skillCode: 'SKILL-A', level: 'senior', effectiveTo: soon }] }]
+    const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('临期')
+    expect(wrapper.html()).toContain('text-warning')
+  })
+
+  it('highlights past-expired cells with 已过期 badge and destructive token', async () => {
+    resetMatrix()
+    const past = new Date(Date.now() - 5 * 86_400_000).toISOString()
+    stub.rows = [{ userId: 'usr-1', skills: [{ skillCode: 'SKILL-A', level: 'expert', effectiveTo: past }] }]
+    const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已过期')
+    expect(wrapper.html()).toContain('text-destructive')
+  })
+
+  it('shows a 去登记 empty state when there is no dimension data', async () => {
+    stub.skillCodes = []
+    stub.rows = []
+    const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('还没有任何技能登记')
+    const goBtn = wrapper.findAll('button').find((b) => b.text().includes('去登记技能'))
+    expect(goBtn).toBeTruthy()
+  })
+
+  it('blocks assignment on empty required fields with summary alert and no assign call', async () => {
+    resetMatrix()
     stub.assign.mockClear()
     const wrapper = mount(SkillsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
     await flushPromises()
@@ -129,15 +178,16 @@ describe('master-data skills page', () => {
     expect(stub.assign).not.toHaveBeenCalled()
   })
 
-  it('assigns a skill with worker / code / level and fires success toast', async () => {
+  it('assigns a skill and refreshes the matrix on success', async () => {
+    resetMatrix()
     stub.assign.mockClear()
+    stub.matrixRefresh.mockClear()
     stub.toastSuccess.mockClear()
     const wrapper = mount(SkillsPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } })
     await flushPromises()
 
     await wrapper.findAll('button').find((b) => b.text().includes('登记技能'))!.trigger('click')
     await flushPromises()
-    // WorkerSelect 桩为 <select>（含 usr-1 选项）；等级 Select 桩为 <select>（含 senior 选项）。
     const workerSelect = wrapper.findAll('select').find((s) => s.html().includes('usr-1'))!
     await workerSelect.setValue('usr-1')
     await wrapper.find('#skill-code').setValue('SKILL-WELD')
@@ -153,5 +203,7 @@ describe('master-data skills page', () => {
     expect(body.skillCode).toBe('SKILL-WELD')
     expect(body.level).toBe('senior')
     expect(stub.toastSuccess).toHaveBeenCalled()
+    // 登记成功后矩阵 refresh。
+    expect(stub.matrixRefresh).toHaveBeenCalled()
   })
 })

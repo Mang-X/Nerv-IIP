@@ -28,6 +28,11 @@ import {
   ScrollArea,
   SectionCard,
   SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Spinner,
   StatusBadge,
 } from '@nerv-iip/ui'
@@ -532,7 +537,7 @@ async function submitCreate() {
   }
 }
 
-// ================= 编辑（编码/父级只读，仅改名；归属改不了见 #373） =================
+// ================= 编辑（编码只读；改名 + 改挂上级，归属经 update 透传） =================
 const editOpen = ref(false)
 const editType = shallowRef<NodeType>('site')
 const editShowErrors = ref(false)
@@ -541,7 +546,7 @@ const editCode = shallowRef('')
 const editForm = reactive({
   name: '',
   timezone: DEFAULT_TIMEZONE,
-  // 只读归属（展示用，不参与改挂）。
+  // 归属（可改挂上级）：车间→siteCode；产线→workshopCode/siteCode；工作中心→lineCode/plantCode。
   siteCode: '',
   workshopCode: '',
   plantCode: '',
@@ -549,9 +554,40 @@ const editForm = reactive({
   defaultCalendarCode: '',
   capacityMinutesPerDay: '480',
 })
-const canEdit = computed(() => isNonEmpty(editForm.name))
+const canEdit = computed(() => {
+  if (!isNonEmpty(editForm.name)) return false
+  switch (editType.value) {
+    case 'workshop': return isNonEmpty(editForm.siteCode)
+    case 'production-line': return isNonEmpty(editForm.siteCode)
+    case 'work-center': return isNonEmpty(editForm.plantCode) && isNonEmpty(editForm.lineCode)
+    default: return true
+  }
+})
 const editPending = computed(() => ACTIONS_BY_TYPE[editType.value].updatePending.value)
 const editTitle = computed(() => `编辑${NODE_LABEL[editType.value]} · ${editCode.value}`)
+
+// 改挂上级的父级候选（取页内已加载列表）。层级类型固定（工厂→车间→产线→工作中心），
+// 跨层挂载结构上不可能成环；这里只把候选限定为合法上级，并随上层选择联动过滤。
+const editWorkshopOptions = computed(() =>
+  workshops.workshops.value.filter((w) => !editForm.siteCode || (w.siteCode ?? '') === editForm.siteCode),
+)
+const editLineOptions = computed(() =>
+  lines.items.value.filter((l) => !editForm.plantCode || (l.siteCode ?? '') === editForm.plantCode),
+)
+// 改挂工厂后，原车间 / 产线可能不再归属该工厂——置空让用户重选，避免归属错配。
+const editCascadeReady = shallowRef(false)
+watch(() => editForm.siteCode, () => {
+  if (editType.value !== 'production-line' || !editCascadeReady.value) return
+  if (editForm.workshopCode && !editWorkshopOptions.value.some((w) => (w.code ?? '') === editForm.workshopCode)) {
+    editForm.workshopCode = ''
+  }
+})
+watch(() => editForm.plantCode, () => {
+  if (editType.value !== 'work-center' || !editCascadeReady.value) return
+  if (editForm.lineCode && !editLineOptions.value.some((l) => (l.code ?? '') === editForm.lineCode)) {
+    editForm.lineCode = ''
+  }
+})
 
 watch(editOpen, (open) => { if (open) editShowErrors.value = false })
 
@@ -562,6 +598,8 @@ async function openEdit(node: TreeNode) {
   editShowErrors.value = false
   editLoading.value = true
   editOpen.value = true
+  // 回填期间关闭级联清空，避免把刚载入的归属误清掉。
+  editCascadeReady.value = false
   Object.assign(editForm, {
     name: node.displayName,
     timezone: DEFAULT_TIMEZONE,
@@ -591,6 +629,7 @@ async function openEdit(node: TreeNode) {
   }
   finally {
     editLoading.value = false
+    editCascadeReady.value = true
   }
 }
 
@@ -885,15 +924,16 @@ function childLabelOf(type: string): string | undefined {
       </DialogContent>
     </Dialog>
 
-    <!-- 编辑对话框（编码 / 父级只读，仅改名；归属改不了见 #373） -->
+    <!-- 编辑对话框（编码只读；改名 + 改挂上级） -->
     <Dialog v-model:open="editOpen">
       <DialogContent class="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{{ editTitle }}</DialogTitle>
-          <DialogDescription>修改{{ NODE_LABEL[editType] }}名称（编码与归属不可修改）。带 * 为必填项。</DialogDescription>
+          <DialogDescription>修改{{ NODE_LABEL[editType] }}名称，或改挂到其他上级（编码不可修改）。带 * 为必填项。</DialogDescription>
         </DialogHeader>
         <form class="grid gap-4" @submit.prevent="submitEdit">
           <p v-if="editShowErrors && !canEdit" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
+          <FormSectionTitle>基础信息</FormSectionTitle>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
               <FieldLabel for="edit-code">{{ NODE_LABEL[editType] }}编码</FieldLabel>
@@ -908,7 +948,74 @@ function childLabelOf(type: string): string | undefined {
               <Input id="edit-tz" v-model="editForm.timezone" autocomplete="off" />
             </Field>
           </FieldGroup>
-          <p class="text-xs text-muted-foreground">归属（上级）创建后不可更改，改挂上级功能即将上线。</p>
+
+          <!-- 归属（可改挂上级；选项取页内已加载列表，跨层不成环） -->
+          <template v-if="editType !== 'site'">
+            <FormSectionTitle>归属</FormSectionTitle>
+            <FieldGroup class="grid gap-3 sm:grid-cols-2">
+              <Field v-if="editType === 'workshop'" :data-invalid="editShowErrors && !isNonEmpty(editForm.siteCode)">
+                <FieldLabel for="edit-site">所属工厂 <span class="text-destructive">*</span></FieldLabel>
+                <Select v-model="editForm.siteCode">
+                  <SelectTrigger id="edit-site"><SelectValue placeholder="请选择工厂" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="s in sites.items.value" :key="s.code" :value="s.code ?? ''">
+                      {{ s.displayName ?? s.code }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <template v-if="editType === 'production-line'">
+                <Field :data-invalid="editShowErrors && !isNonEmpty(editForm.siteCode)">
+                  <FieldLabel for="edit-line-site">所属工厂 <span class="text-destructive">*</span></FieldLabel>
+                  <Select v-model="editForm.siteCode">
+                    <SelectTrigger id="edit-line-site"><SelectValue placeholder="请选择工厂" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="s in sites.items.value" :key="s.code" :value="s.code ?? ''">
+                        {{ s.displayName ?? s.code }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field>
+                  <FieldLabel for="edit-line-workshop">所属车间</FieldLabel>
+                  <Select v-model="editForm.workshopCode">
+                    <SelectTrigger id="edit-line-workshop"><SelectValue placeholder="无（直挂工厂）" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">无（直挂工厂）</SelectItem>
+                      <SelectItem v-for="w in editWorkshopOptions" :key="w.code" :value="w.code ?? ''">
+                        {{ w.displayName ?? w.code }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>留空表示该产线直接挂在工厂下（无车间层）。</FieldDescription>
+                </Field>
+              </template>
+              <template v-if="editType === 'work-center'">
+                <Field :data-invalid="editShowErrors && !isNonEmpty(editForm.plantCode)">
+                  <FieldLabel for="edit-wc-plant">所属工厂 <span class="text-destructive">*</span></FieldLabel>
+                  <Select v-model="editForm.plantCode">
+                    <SelectTrigger id="edit-wc-plant"><SelectValue placeholder="请选择工厂" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="s in sites.items.value" :key="s.code" :value="s.code ?? ''">
+                        {{ s.displayName ?? s.code }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field :data-invalid="editShowErrors && !isNonEmpty(editForm.lineCode)">
+                  <FieldLabel for="edit-wc-line">所属产线 <span class="text-destructive">*</span></FieldLabel>
+                  <Select v-model="editForm.lineCode">
+                    <SelectTrigger id="edit-wc-line"><SelectValue placeholder="请选择产线" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="l in editLineOptions" :key="l.code" :value="l.code ?? ''">
+                        {{ l.displayName ?? l.code }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </template>
+            </FieldGroup>
+          </template>
           <DialogFooter>
             <Button type="button" variant="outline" @click="editOpen = false">取消</Button>
             <Button type="submit" :disabled="editPending || editLoading">
