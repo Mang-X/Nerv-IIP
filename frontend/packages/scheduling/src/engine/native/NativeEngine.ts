@@ -86,6 +86,10 @@ export class NativeEngine implements SchedulingEngine {
         this.applyTheme(command.theme)
         this.render()
         break
+      case 'setGroupBy':
+        this.options.groupBy = command.groupBy
+        this.render()
+        break
       case 'scrollToToday':
       case 'fitToScreen':
         // 确定性:用 horizon 中点而非真实时钟,保证测试/视觉基线稳定。
@@ -177,11 +181,17 @@ export class NativeEngine implements SchedulingEngine {
     const width = Math.max(640, x(model.horizon.endUtc) + RIGHT_PAD)
 
     const rows = this.layoutRows(model)
+    const dim = this.options.groupBy || 'workCenter'
+    const laneOf = (t: ScheduleTask) => t.dimensions?.[dim]?.id ?? t.resourceId ?? '__none__'
     const resourceRowIndex = new Map<string, number>()
     if (this.options.view === 'resource') {
-      model.resources.forEach((r, i) => resourceRowIndex.set(r.id, i))
+      for (const t of model.tasks) {
+        if (t.type !== 'operation') continue
+        const id = laneOf(t)
+        if (!resourceRowIndex.has(id)) resourceRowIndex.set(id, resourceRowIndex.size)
+      }
     }
-    const rowCount = this.options.view === 'resource' ? Math.max(1, model.resources.length) : rows.length
+    const rowCount = this.options.view === 'resource' ? Math.max(1, resourceRowIndex.size) : rows.length
     const height = HEADER_H + rowCount * ROW_H + 8
 
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
@@ -261,7 +271,7 @@ export class NativeEngine implements SchedulingEngine {
       node.setAttribute('class', 'nerv-gantt-node')
 
       const view = this.options.view
-      const rowIdx = view === 'resource' ? (task.resourceId ? resourceRowIndex.get(task.resourceId) ?? i : i) : i
+      const rowIdx = view === 'resource' ? resourceRowIndex.get(laneOf(task)) ?? i : i
       const y = HEADER_H + rowIdx * ROW_H + (ROW_H - BAR_H) / 2
       const bx = x(task.startUtc)
       const bw = Math.max(6, x(task.endUtc) - bx)

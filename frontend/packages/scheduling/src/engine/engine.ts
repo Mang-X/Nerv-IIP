@@ -17,6 +17,8 @@ export interface SchedulingEngineOptions {
   scale: TimeScale
   theme: ThemeBinding
   locale: 'zh' | 'en'
+  /** 资源排产板的分组维度键(对应 ScheduleModel.groupDimensions);缺省按工作中心。 */
+  groupBy?: string
 }
 
 export type EngineCommand =
@@ -29,6 +31,7 @@ export type EngineCommand =
   | { kind: 'focusConflict'; taskId: string }
   | { kind: 'setReadOnly'; readOnly: boolean }
   | { kind: 'setTheme'; theme: ThemeBinding }
+  | { kind: 'setGroupBy'; groupBy: string }
 
 /** 拖拽结束的归一化负载,不含任何引擎私有结构——接缝处的关键契约。 */
 export interface TaskDragPayload {

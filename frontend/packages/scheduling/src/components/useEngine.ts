@@ -42,6 +42,7 @@ export interface UseEngineOptions {
   view: 'order' | 'resource'
   scale: Ref<TimeScale>
   readOnly: Ref<boolean>
+  groupBy?: Ref<string | undefined>
   engineKind?: EngineKind
   on?: Partial<{ [E in keyof EngineEvents]: (p: EngineEvents[E]) => void }>
 }
@@ -76,6 +77,7 @@ export function useEngine(opts: UseEngineOptions) {
       view: opts.view,
       readOnly: opts.readOnly.value,
       scale: opts.scale.value,
+      groupBy: opts.groupBy?.value,
       locale: 'zh',
       theme: { isDark: isDark.value, tokens: readTokens() },
     }
@@ -91,6 +93,11 @@ export function useEngine(opts: UseEngineOptions) {
   watch(opts.model, (m) => { if (m) engine.value?.setData(m) })
   watch(opts.scale, (s) => engine.value?.applyCommand({ kind: 'scaleTo', scale: s }))
   watch(opts.readOnly, (r) => engine.value?.applyCommand({ kind: 'setReadOnly', readOnly: r }))
+  if (opts.groupBy) {
+    watch(opts.groupBy, (g) =>
+      engine.value?.applyCommand({ kind: 'setGroupBy', groupBy: g ?? 'workCenter' }),
+    )
+  }
   watch(isDark, (d) =>
     engine.value?.applyCommand({ kind: 'setTheme', theme: { isDark: d, tokens: readTokens() } }),
   )

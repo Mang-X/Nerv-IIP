@@ -172,6 +172,10 @@ export class DhtmlxEngine implements SchedulingEngine {
         if (this.container) applySkin(this.container, command.theme)
         g?.render()
         break
+      case 'setGroupBy':
+        this.options.groupBy = command.groupBy
+        if (this.model) this.setData(this.model)
+        break
       case 'scrollToToday':
         if (g?.showDate) g.showDate(this.nowDate())
         break
@@ -257,6 +261,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.drag_progress = false
     c.order_branch = !options.readOnly // 网格内拖拽换分支(资源视图=改派)
     c.order_branch_free = !options.readOnly
+    c.open_split_tasks = false // split 分组行:同组工序铺在一行,不展开成多行
     c.row_height = 44
     c.bar_height = 26
     c.grid_width = 380
@@ -362,18 +367,26 @@ export class DhtmlxEngine implements SchedulingEngine {
     const data: unknown[] = []
 
     if (this.options.view === 'resource') {
-      const used = new Set(model.tasks.filter((t) => t.type === 'operation').map((t) => t.resourceId).filter(Boolean) as string[])
-      const resourceIds = model.resources.length
-        ? model.resources.map((r) => r.id)
-        : [...used]
-      for (const id of resourceIds) {
-        const text = model.resources.find((r) => r.id === id)?.text ?? id
-        data.push({ id: `res:${id}`, text, type: 'project', open: true, nerv: { type: 'order', orderId: id, text, resourceId: id, startUtc: '', endUtc: '', locked: false, hasConflict: false } })
+      // 一资源(所选维度)一泳道:分组行用 split task,同组工序铺在它那一行。
+      const dim = this.options.groupBy || 'workCenter'
+      const ops = model.tasks.filter((t) => t.type === 'operation')
+      const groups = new Map<string, string>()
+      const laneOf = (t: ScheduleTask) => t.dimensions?.[dim]?.id ?? t.resourceId ?? '__none__'
+      for (const t of ops) {
+        const id = laneOf(t)
+        if (!groups.has(id)) groups.set(id, t.dimensions?.[dim]?.label ?? t.resourceId ?? '未分配')
       }
-      for (const t of model.tasks) {
-        if (t.type !== 'operation') continue
-        data.push(this.toGanttTask(t, t.resourceId ? `res:${t.resourceId}` : 0, toDate))
+      for (const [id, label] of groups) {
+        data.push({
+          id: `lane:${id}`,
+          text: label,
+          type: 'project',
+          render: 'split',
+          open: true,
+          nerv: { type: 'order', orderId: id, operationId: '', operationSequence: 0, text: label, startUtc: '', endUtc: '', locked: false, hasConflict: false },
+        })
       }
+      for (const t of ops) data.push(this.toGanttTask(t, `lane:${laneOf(t)}`, toDate))
       // 资源视图不连工单依赖线(跨资源视觉噪声)。
       return { data, links: [] }
     }

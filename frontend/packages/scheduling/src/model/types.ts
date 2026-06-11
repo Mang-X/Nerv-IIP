@@ -17,6 +17,20 @@ export type ConflictReason =
   | 'predecessorUnscheduled'
 export type ChangeType = 'added' | 'moved' | 'delayed' | 'preserved' | 'blocked'
 
+/** 资源排产板的可切换分组维度(设备 / 班组 / 产线 / 工作中心 …)。 */
+export interface SchedulingDimension {
+  /** 维度键,对应 ScheduleTask.dimensions 的键。 */
+  key: string
+  /** 维度显示名(如「设备」「班组」「产线」)。 */
+  label: string
+}
+
+/** 某工序在某维度上的归属值。 */
+export interface DimensionValue {
+  id: string
+  label: string
+}
+
 export interface ScheduleTask {
   /** assignmentId 优先,缺则 `${orderId}:${operationId}`。 */
   id: string
@@ -30,6 +44,8 @@ export interface ScheduleTask {
   text: string
   resourceId?: string
   workCenterId?: string
+  /** 多维分组归属(资源排产板按所选维度铺泳道)。键对应 ScheduleModel.groupDimensions。 */
+  dimensions?: Record<string, DimensionValue>
   startUtc: string
   endUtc: string
   /** 0..1。 */
@@ -103,6 +119,8 @@ export interface ScheduleModel {
   unscheduled: UnscheduledItem[]
   /** 重预览 diff。 */
   changes: ScheduleChange[]
+  /** 资源排产板可用的分组维度(为空时默认按工作中心)。 */
+  groupDimensions?: SchedulingDimension[]
   horizon: { startUtc: string; endUtc: string }
   meta: { planId: string; status: PlanStatus; algorithmVersion: string }
 }

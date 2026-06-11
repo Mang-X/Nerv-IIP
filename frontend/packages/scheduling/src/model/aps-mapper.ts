@@ -31,6 +31,10 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     text: a.operationId ?? '',
     resourceId: a.resourceId ?? a.workCenterId ?? undefined,
     workCenterId: a.workCenterId ?? undefined,
+    dimensions:
+      a.workCenterId || a.resourceId
+        ? { workCenter: { id: (a.workCenterId ?? a.resourceId)!, label: (a.workCenterId ?? a.resourceId)! } }
+        : undefined,
     startUtc: a.startUtc ?? '',
     endUtc: a.endUtc ?? '',
     locked: a.isLocked ?? false,
@@ -133,6 +137,9 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     conflicts,
     unscheduled,
     changes,
+    groupDimensions: operations.some((o) => o.dimensions?.workCenter)
+      ? [{ key: 'workCenter', label: '工作中心' }]
+      : [],
     horizon: { startUtc: allStarts[0] ?? '', endUtc: allEnds[allEnds.length - 1] ?? '' },
     meta: {
       planId: plan.planId ?? '',

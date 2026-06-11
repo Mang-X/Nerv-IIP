@@ -14,6 +14,7 @@ const props = withDefaults(
     scale?: TimeScale
     readOnly?: boolean
     loading?: boolean
+    groupBy?: string
     engineKind?: 'auto' | 'native' | 'dhtmlx'
   }>(),
   { scale: 'auto', readOnly: false, loading: false, engineKind: 'auto' },
@@ -33,6 +34,7 @@ const { engine, engineName } = useEngine({
   view: props.view,
   scale: toRef(props, 'scale'),
   readOnly: toRef(props, 'readOnly'),
+  groupBy: toRef(props, 'groupBy'),
   engineKind: props.engineKind,
   on: {
     taskSelected: (p) => emit('taskSelect', p.taskId),
