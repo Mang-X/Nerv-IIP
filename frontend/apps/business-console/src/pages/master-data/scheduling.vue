@@ -655,7 +655,7 @@ const sortedExceptions = computed(() =>
         </Toolbar>
         <p v-if="calListError" class="text-sm text-destructive" role="alert">{{ calListError }}</p>
 
-        <div class="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
+        <div class="grid items-start gap-4 md:grid-cols-[minmax(300px,360px)_minmax(0,1fr)]">
           <!-- 左：日历列表（选中一个驱动右侧月历） -->
           <div class="grid h-fit gap-3">
             <DataTable
