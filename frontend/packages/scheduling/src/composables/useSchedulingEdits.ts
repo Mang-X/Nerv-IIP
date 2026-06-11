@@ -34,11 +34,13 @@ export function useSchedulingEdits(model: Ref<ScheduleModel>, deps: SchedulingEd
     pointer.value = 0
   }
 
-  /** 拖动落点:乐观更新本地模型并锁定该工序,等待重预览。 */
+  /** 拖动落点:乐观更新本地模型(仅改位置/资源,不改锁定状态)。
+   *  锁定是用户显式动作(详情面板);拖拽不应自动上锁,否则"拖一次即锁死、无法再拖"。
+   *  如需让该落点在重排中保留,由用户手动锁定后再重预览。 */
   function onTaskDragEnd(p: TaskDragPayload) {
     const tasks = model.value.tasks.map((t) =>
       t.id === p.taskId
-        ? { ...t, startUtc: p.startUtc, endUtc: p.endUtc, resourceId: p.resourceId ?? t.resourceId, locked: true }
+        ? { ...t, startUtc: p.startUtc, endUtc: p.endUtc, resourceId: p.resourceId ?? t.resourceId }
         : t,
     )
     model.value = { ...model.value, tasks }
