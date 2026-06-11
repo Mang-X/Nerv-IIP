@@ -9,7 +9,7 @@ const stub = vi.hoisted(() => ({
   update: vi.fn().mockResolvedValue(undefined),
   fetchDetail: vi.fn().mockResolvedValue({
     name: '智能网关主机',
-    baseUomCode: 'PCS',
+    baseUomCode: 'pcs',
     category: 'electronic',
     materialType: 'finished-goods',
     batchTrackingPolicy: 'none',
@@ -33,7 +33,7 @@ const skuRow = {
   snapshotVersion: '2026-06-08T13:01:00',
   category: 'electronic',
   materialType: 'finished-goods',
-  baseUomCode: 'PCS',
+  baseUomCode: 'pcs',
 }
 
 vi.mock('@/composables/useBusinessMasterData', () => ({

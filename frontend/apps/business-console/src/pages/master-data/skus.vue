@@ -129,7 +129,7 @@ type CreateSkuFormDefaults = Omit<CreateSkuForm, 'organizationId' | 'environment
 // 默认值取平台中性值（非样板业务词）；产品分类留空，强制用户主动选择。
 const SKU_FORM_DEFAULTS: CreateSkuFormDefaults = {
   name: '',
-  baseUomCode: 'PCS',
+  baseUomCode: 'pcs',
   category: '',
   materialType: 'finished-goods',
   batchTrackingPolicy: 'none',
@@ -362,7 +362,7 @@ async function openEdit(row: BusinessConsoleResourceItem) {
     const d = await skuActions.fetchDetail(row.code)
     Object.assign(createForm, {
       name: d?.name ?? row.displayName ?? '',
-      baseUomCode: d?.baseUomCode || 'PCS',
+      baseUomCode: d?.baseUomCode || 'pcs',
       category: d?.category ?? '',
       materialType: d?.materialType ?? SKU_FORM_DEFAULTS.materialType,
       batchTrackingPolicy: d?.batchTrackingPolicy ?? SKU_FORM_DEFAULTS.batchTrackingPolicy,

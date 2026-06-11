@@ -47,7 +47,7 @@ const CRITICALITY_OPTIONS = [
   { value: 'low', label: '低' },
 ]
 const DEVICE_DEFAULTS = {
-  capacityUomCode: 'PCS',
+  capacityUomCode: 'pcs',
   criticality: 'medium',
   maintainable: true,
   telemetryEnabled: false,
