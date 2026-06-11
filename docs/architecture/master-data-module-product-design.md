@@ -124,9 +124,9 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 ### 3.3 落地可行性 + 重构顺序
 
 **字段已具备、前端可拼、不等后端**:工厂结构树（siteCode/workshopCode/plantCode/lineCode 全回传 #345）、部门树（parentDepartmentCode）。
-**真数据缺口、Phase 1 不能假做**（保留现平表 + 标注"建设中"，**不做假月历/假矩阵**）:① 日历月历需后端**工作日/节假日明细**；② 技能矩阵需后端**按工人聚合的 typed 技能明细**；③ `update` 仅支持改名 → 树"改挂上级"/班组改挂部门做不到（**不许偷偷只改名**，§1.5-A.4）；④ 列表端点无父级/分类/keyword 过滤、有分页上限 → 拼全树用 `take` 兜底并标注。已汇总 **#370**（列表端点扩过滤+全量 / update 补结构字段 / 日历明细 / 技能聚合 / UoM 换算）。
+**曾经的真数据缺口 → 已由 #373/#375 后端交付、前端补完整形态**（不再假做）:① 日历月历 ← 后端回 `workingTimes/holidays/exceptions`(detail) + update 写回 → 排班与日历页真实月历；② 技能矩阵 ← `listPersonnelSkillMatrix`(skillCodes+rows) → 人员技能页真实矩阵；③ 改挂上级 ← update 全字段(parentDepartmentCode/departmentCode/shiftCode/siteCode/workshopCode/lineCode 等) → 部门/班组/工厂结构改归属；④ 列表过滤 + 回归属字段 ← `parentCode/category/keyword` + 列表回 `parentDepartmentCode/departmentCode` → 部门多层树 + 班组按部门归集；⑤ UoM 换算 ← `createUomConversion` + `uom-conversion` resourceType 可列/读 → 计量单位换算主从。
 
-**重构顺序**:**① 工厂结构树**（最典型层级载体、不依赖后端、复用价值最高）→ 作为**树型示范页** → **② 数据字典**（已是主从示范，仅确认）→ **③ 组织与班组**（复用树范式+主从）→ **④ 排班/技能**（待 #370 解锁数据后；先建页壳+保留平表+标注）。
+**重构顺序(已完成)**:① 工厂结构树(树型示范页)→ ② 数据字典(主从示范)→ ③ 组织与班组(部门多层树+班组归集+改挂)→ ④ 排班与日历(班次时段+真实月历)/ 人员技能(矩阵)/ 计量单位(换算)。全部以 typed 数据驱动,无假分页/假数据。
 
 ---
 
