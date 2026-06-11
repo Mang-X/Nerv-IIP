@@ -9,8 +9,6 @@ using FluentValidation.AspNetCore;
 using Nerv.IIP.Business.MasterData.Web.Extensions;
 using FastEndpoints;
 using FastEndpoints.Swagger;
-using Serilog;
-using Serilog.Formatting.Json;
 using Hangfire;
 using Hangfire.Redis.StackExchange;
 using Microsoft.AspNetCore.Http.Json;
@@ -23,20 +21,17 @@ using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 
-Log.Logger = new LoggerConfiguration()
-    .Enrich.WithClientIp()
-    .WriteTo.Console(new JsonFormatter())
-    .CreateLogger();
 var isTesting = false;
 try
 {
     var builder = WebApplication.CreateBuilder(args);
-    builder.Host.UseSerilog();
     isTesting = builder.Environment.IsEnvironment("Testing");
+    builder.Services.AddNervIipObservability(builder.Configuration, "business-master-data");
 
     #region SignalR
 
@@ -192,6 +187,7 @@ try
 
 
     var app = builder.Build();
+    app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
     if (autoMigrate && !app.Environment.IsDevelopment())
     {
@@ -250,11 +246,7 @@ catch (Exception ex)
         throw;
     }
 
-    Log.Fatal(ex, "Application terminated unexpectedly");
-}
-finally
-{
-    await Log.CloseAndFlushAsync();
+    await Console.Error.WriteLineAsync($"Application terminated unexpectedly: {ex}");
 }
 
 static string ToLowerCamelEndpointName(string endpointTypeName)
