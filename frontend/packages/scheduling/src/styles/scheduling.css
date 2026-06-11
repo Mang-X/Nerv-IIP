@@ -273,7 +273,8 @@
 /* ---- 资源排产板:工单卡片(条内) ---- */
 /* 卡片底色混向 --card(近白浅染),全圈细边(不做左侧色条);工序识别靠底色 + WO 号 + 图例 */
 .nerv-gantt-dhx .gantt_task_line:has(.nerv-card) {
-  background-color: color-mix(in oklch, var(--bar), var(--card) 91%) !important;
+  /* 关键:向 transparent 混合(保留工序色相);严禁向 --card 混合——暗色下 --card 带红色相会把所有卡片染成暗红。 */
+  background-color: color-mix(in oklch, var(--bar), transparent 90%) !important;
   border: 1px solid color-mix(in oklch, var(--bar), transparent 55%) !important;
 }
 /* 资源卡片不显示进度填充(进度信息不在排产板呈现):去掉透出的深色块,避免与文字交杂成横线 */
@@ -353,9 +354,9 @@
   letter-spacing: 0.01em;
   border: 1px solid currentColor;
 }
-.nerv-gantt-dhx .nerv-kit-ok { color: oklch(0.5 0.13 150); background: color-mix(in oklch, oklch(0.6 0.14 150), var(--card) 84%); }
-.nerv-gantt-dhx .nerv-kit-warn { color: oklch(0.52 0.12 70); background: color-mix(in oklch, oklch(0.75 0.14 75), var(--card) 82%); }
-.nerv-gantt-dhx .nerv-kit-bad { color: oklch(0.55 0.19 25); background: color-mix(in oklch, oklch(0.58 0.2 25), var(--card) 84%); }
+.nerv-gantt-dhx .nerv-kit-ok { color: oklch(0.62 0.15 150); background: color-mix(in oklch, oklch(0.6 0.14 150), transparent 84%); }
+.nerv-gantt-dhx .nerv-kit-warn { color: oklch(0.7 0.15 75); background: color-mix(in oklch, oklch(0.75 0.14 75), transparent 82%); }
+.nerv-gantt-dhx .nerv-kit-bad { color: oklch(0.64 0.2 25); background: color-mix(in oklch, oklch(0.58 0.2 25), transparent 84%); }
 .nerv-gantt-dhx .nerv-co {
   font-size: 0.62rem;
   font-weight: 600;
