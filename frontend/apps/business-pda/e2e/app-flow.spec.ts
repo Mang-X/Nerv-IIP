@@ -52,20 +52,21 @@ test('home shows scan bar, my-tasks empty state and a gated app wall', async ({ 
   await expect(page.locator('input[placeholder^="扫描"]')).toBeVisible()
   // my-tasks empty state (no fake data)
   await expect(page.getByText('暂无分配给你的任务')).toBeVisible()
-  // WMS pages have landed → those entries are enabled; MES/equipment are still gated off.
+  // 所有 PDA 域（WMS + MES + 设备运维）均已交付 → 应用墙入口全部点亮、无 disabled。
   await expect(page.getByRole('button', { name: '收货入库' })).toBeEnabled()
-  await expect(page.getByRole('button', { name: '报工' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '报工' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: '报修' })).toBeEnabled()
 
   await expectNoHorizontalOverflow(page)
   await expectTouchTargets(page)
 })
 
-test('clicking a not-ready app-wall entry does not navigate away', async ({ page }) => {
+test('clicking an app-wall entry navigates to its work page', async ({ page }) => {
   await seedStoredSession(page)
   await page.goto('/')
-  // 报工 (mes.report) is still routeReady:false on this branch.
-  await page.getByRole('button', { name: '报工' }).click({ force: true })
-  await expect(page).toHaveURL('/')
+  // 入口已点亮 → 点击直达对应作业页（以 WMS 收货入库为代表）。
+  await page.getByRole('button', { name: '收货入库' }).click()
+  await expect(page).toHaveURL('/wms/inbound')
 })
 
 test('home scan: type + Enter echoes in-page and keeps the operator on the workbench', async ({
