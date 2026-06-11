@@ -6,18 +6,19 @@ import { previewPlan } from './schedulingPreviewData'
 
 // 开发预览(非产品页/不进路由):用样例数据展示排产工作台,供视觉确认与组件开发。
 // 真实 APS 契约只带工作中心;此处为演示「按 设备/班组/产线 切换泳道」补多维样例归属。
-// 工作中心显示名:ID(激光切割-01…)保留用于匹配,但展示成明确的"工位/设备"名,避免和工序(折弯/焊接)撞名。
+// 层级:工作中心(切割/折弯/焊装/机加中心) > 设备(具体机台)。ID 保留用于匹配,仅改展示名。
+// 工作中心 = 中心级;设备 = 机台级(激光切割机/数控折弯机/焊接机器人/CNC加工中心)。
 const WC_LABEL: Record<string, string> = {
-  '激光切割-01': '激光切割机 L1',
-  '折弯-02': '数控折弯机 B2',
-  '焊接-01': '焊接机器人 W1',
-  '加工中心-03': '加工中心 M3',
+  '激光切割-01': '切割中心',
+  '折弯-02': '折弯中心',
+  '焊接-01': '焊装中心',
+  '加工中心-03': '机加中心',
 }
 const WC_DIMS: Record<string, { device: [string, string]; team: [string, string]; line: [string, string] }> = {
-  '激光切割-01': { device: ['DEV-L1', 'LC-3015·L1'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
-  '折弯-02': { device: ['DEV-B2', 'WC67K·B2'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
-  '焊接-01': { device: ['DEV-W1', 'OTC-FD·W1'], team: ['T-B', '乙班'], line: ['LN-WELD', '焊装线'] },
-  '加工中心-03': { device: ['DEV-C3', 'VMC850·M3'], team: ['T-B', '乙班'], line: ['LN-MACH', '机加线'] },
+  '激光切割-01': { device: ['DEV-L1', '激光切割机 L1'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
+  '折弯-02': { device: ['DEV-B2', '数控折弯机 B2'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
+  '焊接-01': { device: ['DEV-W1', '焊接机器人 W1'], team: ['T-B', '乙班'], line: ['LN-WELD', '焊装线'] },
+  '加工中心-03': { device: ['DEV-C3', 'CNC加工中心 M3'], team: ['T-B', '乙班'], line: ['LN-MACH', '机加线'] },
 }
 
 const OWNERS = ['张伟', '李强', '王磊', '刘洋', '陈刚', '赵敏', '孙凯']

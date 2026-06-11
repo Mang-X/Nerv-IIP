@@ -195,6 +195,8 @@ export class DhtmlxEngine implements SchedulingEngine {
   private markerId?: string
   private lastPointerY = 0
   private pointerMove?: (e: MouseEvent) => void
+  private dropHint?: HTMLElement
+  private dragging = false
   private readonly listeners = new Map<EngineEventName, Set<(p: unknown) => void>>()
   private readonly eventIds: string[] = []
   private readonly createInstance: () => unknown | null
@@ -220,9 +222,17 @@ export class DhtmlxEngine implements SchedulingEngine {
     // 计划基线只在工单甘特出现;资源排产板是卡片板,不画计划/实际基线(避免卡片上多出细线)。
     if (options.view !== 'resource') this.addBaselineLayer(inst)
     // 资源视图跨泳道拖拽改派:记录指针 Y(监听 document,DHTMLX 拖拽会捕获指针,container 上收不到)。
+    // 同时用自有覆盖层做拖拽落点预览(不被 DHTMLX 重绘冲掉)。
     if (options.view === 'resource') {
+      const hint = document.createElement('div')
+      hint.className = 'nerv-drop-hint'
+      hint.style.display = 'none'
+      hint.innerHTML = '<span>移到此泳道改派</span>'
+      container.appendChild(hint)
+      this.dropHint = hint
       this.pointerMove = (e: MouseEvent) => {
         this.lastPointerY = e.clientY
+        if (this.dragging) this.updateDropHint(inst)
       }
       document.addEventListener('mousemove', this.pointerMove)
     }
@@ -315,6 +325,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.listeners.clear()
     if (this.pointerMove) document.removeEventListener('mousemove', this.pointerMove)
     this.pointerMove = undefined
+    this.dropHint?.remove()
+    this.dropHint = undefined
+    this.dragging = false
     g?.destructor?.()
     this.gantt = undefined
     this.markerId = undefined
@@ -467,6 +480,13 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.eventIds.push(
       inst.attachEvent('onAfterTaskMove', (id) => this.emitDrag(inst, String(id), 'move')),
     )
+    // 拖拽开始/结束:资源视图标记拖拽态,驱动落点预览覆盖层。
+    this.eventIds.push(
+      inst.attachEvent('onBeforeTaskDrag', () => {
+        if (this.options.view === 'resource') this.dragging = true
+        return true
+      }),
+    )
     this.eventIds.push(inst.attachEvent('onGanttRender', () => this.mirrorTaskIds()))
   }
 
@@ -485,7 +505,35 @@ export class DhtmlxEngine implements SchedulingEngine {
     return lane?.id != null && String(lane.id).startsWith('lane:') ? lane : undefined
   }
 
+  /** 拖拽预览:把覆盖层定位到指针所在的目标泳道行(覆盖整行,松手前可见落点)。 */
+  private updateDropHint(inst: DhxGantt): void {
+    const root = this.container
+    const hint = this.dropHint
+    if (!root || !hint) return
+    const lane = this.laneAtPointer(inst)
+    const row = lane?.id
+      ? root.querySelector(`.gantt_task_row[task_id="${String(lane.id)}"]`)
+      : null
+    if (!row) {
+      hint.style.display = 'none'
+      return
+    }
+    const cRect = root.getBoundingClientRect()
+    const rRect = row.getBoundingClientRect()
+    hint.style.display = 'flex'
+    hint.style.top = `${rRect.top - cRect.top}px`
+    hint.style.left = `${rRect.left - cRect.left}px`
+    hint.style.width = `${rRect.width}px`
+    hint.style.height = `${rRect.height}px`
+  }
+
+  private hideDropHint(): void {
+    this.dragging = false
+    if (this.dropHint) this.dropHint.style.display = 'none'
+  }
+
   private emitDrag(inst: DhxGantt, taskId: string, mode: string): void {
+    this.hideDropHint()
     const task = inst.getTask(taskId)
     const src = this.model?.tasks.find((t) => t.id === taskId)
     // 注意:src 与 task.nerv 是同一对象,改派前先存原 resourceId,否则 kind 判定会被自身改写干扰。
