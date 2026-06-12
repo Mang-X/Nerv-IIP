@@ -431,7 +431,7 @@ function formatError(error: unknown) {
                       <SelectItem v-for="o in mbomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FieldDescription>仅可绑定已发布（Published）的 MBOM。</FieldDescription>
+                  <FieldDescription>仅可选择已发布的 MBOM。</FieldDescription>
                 </Field>
                 <Field :data-invalid="showErrors && !routingValid">
                   <FieldLabel for="pv-routing">已发布工艺路线 <span class="text-destructive">*</span></FieldLabel>
@@ -441,7 +441,7 @@ function formatError(error: unknown) {
                       <SelectItem v-for="o in routingOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FieldDescription>仅可绑定已发布（Published）的工艺路线。</FieldDescription>
+                  <FieldDescription>仅可选择已发布的工艺路线。</FieldDescription>
                 </Field>
               </FieldGroup>
 
@@ -485,15 +485,15 @@ function formatError(error: unknown) {
       </template>
     </PageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="有效生产版本" :value="activeCount" hint="可被解析、供 MES 消费" />
-      <SectionCard description="默认版本" :value="defaultCount" hint="生效期内的默认绑定" />
-      <SectionCard description="当前页版本" :value="productionVersions.length" hint="按当前筛选" />
+    <SectionCards :columns="2">
+      <SectionCard description="有效生产版本" :value="activeCount" hint="在有效期内、可投产的版本" />
+      <SectionCard description="默认版本" :value="defaultCount" hint="一料多版时默认采用的版本" />
     </SectionCards>
 
-    <Card class="bg-gradient-to-t from-primary/5 to-card">
+    <Card>
       <CardHeader>
         <CardTitle class="text-base">版本解析</CardTitle>
+        <p class="text-sm text-muted-foreground">选物料、生效日和批量，查此时投产该用哪个版本。</p>
       </CardHeader>
       <CardContent class="grid gap-3 md:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
         <Field>
