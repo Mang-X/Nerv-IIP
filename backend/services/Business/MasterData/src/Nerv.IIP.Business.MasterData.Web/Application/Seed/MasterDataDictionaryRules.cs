@@ -72,6 +72,12 @@ public static class MasterDataDictionaryRules
         new("partner-type", "supplier", "供应商", ReferenceDataCodeSetKind.SystemEnum),
         new("partner-type", "carrier", "承运商", ReferenceDataCodeSetKind.SystemEnum),
 
+        new("skill", "welding", "焊接", ReferenceDataCodeSetKind.FactoryCustom),
+        new("skill", "assembly", "装配", ReferenceDataCodeSetKind.FactoryCustom),
+        new("skill", "inspection", "质检", ReferenceDataCodeSetKind.FactoryCustom),
+        new("skill", "cnc-operation", "数控操作", ReferenceDataCodeSetKind.FactoryCustom),
+        new("skill", "forklift", "叉车", ReferenceDataCodeSetKind.FactoryCustom),
+
         new("skill-level", "junior", "初级", ReferenceDataCodeSetKind.SystemEnum),
         new("skill-level", "intermediate", "中级", ReferenceDataCodeSetKind.SystemEnum),
         new("skill-level", "senior", "高级", ReferenceDataCodeSetKind.SystemEnum),

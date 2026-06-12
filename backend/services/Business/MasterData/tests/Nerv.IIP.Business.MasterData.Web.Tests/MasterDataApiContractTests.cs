@@ -843,6 +843,40 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Assign_personnel_skill_command_validates_skill_and_level_reference_data_when_repository_is_available()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new AssignPersonnelSkillCommandHandler(
+            new PersonnelSkillRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext));
+
+        var missingSkill = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None));
+        Assert.Contains("skill:welding", missingSkill.Message, StringComparison.Ordinal);
+
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill", "welding", "焊接"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var missingLevel = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None));
+        Assert.Contains("skill-level:senior", missingLevel.Message, StringComparison.Ordinal);
+
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", "senior", "高级"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var created = await handler.Handle(
+            new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None);
+
+        Assert.Equal("personnel-skill", created.ResourceType);
+        Assert.Equal("worker-001:welding", created.Code);
+    }
+
+    [Fact]
     public async Task Master_data_seed_is_idempotent_and_creates_controlled_reference_data()
     {
         await using var provider = CreateInMemoryProvider();
