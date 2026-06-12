@@ -7,6 +7,8 @@ public partial record WorkCalendarId : IGuidStronglyTypedId;
 public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
 {
     private readonly List<WorkCalendarWorkingTime> workingTimes = [];
+    private readonly List<WorkCalendarHoliday> holidays = [];
+    private readonly List<WorkCalendarException> exceptions = [];
 
     protected WorkCalendar()
     {
@@ -32,6 +34,8 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
     public IReadOnlyCollection<WorkCalendarWorkingTime> WorkingTimes => workingTimes.AsReadOnly();
+    public IReadOnlyCollection<WorkCalendarHoliday> Holidays => holidays.AsReadOnly();
+    public IReadOnlyCollection<WorkCalendarException> Exceptions => exceptions.AsReadOnly();
 
     public static WorkCalendar Create(string organizationId, string environmentId, string code, string name)
     {
@@ -52,14 +56,81 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
         this.AddDomainEvent(new WorkCalendarChangedDomainEvent(OrganizationId, EnvironmentId, Code));
     }
 
+    public void Update(
+        string name,
+        IReadOnlyCollection<WorkCalendarWorkingTime>? newWorkingTimes,
+        IReadOnlyCollection<WorkCalendarHoliday>? newHolidays,
+        IReadOnlyCollection<WorkCalendarException>? newExceptions)
+    {
+        EnsureEnabled();
+        Name = Required(name);
+        if (newWorkingTimes is not null)
+        {
+            workingTimes.Clear();
+            foreach (var item in newWorkingTimes)
+            {
+                ValidateWindow(item.StartsAt, item.EndsAt, nameof(newWorkingTimes));
+                workingTimes.Add(item);
+            }
+        }
+
+        if (newHolidays is not null)
+        {
+            holidays.Clear();
+            holidays.AddRange(newHolidays.Select(x => new WorkCalendarHoliday(x.Date, Required(x.Name))));
+        }
+
+        if (newExceptions is not null)
+        {
+            exceptions.Clear();
+            foreach (var item in newExceptions)
+            {
+                if (item.StartsAt.HasValue != item.EndsAt.HasValue)
+                {
+                    throw new ArgumentException("Exception working window requires both start and end.");
+                }
+
+                if (item.StartsAt.HasValue && item.EndsAt.HasValue)
+                {
+                    ValidateWindow(item.StartsAt.Value, item.EndsAt.Value, nameof(newExceptions));
+                }
+
+                exceptions.Add(new WorkCalendarException(
+                    item.Date,
+                    item.IsWorkingDay,
+                    item.StartsAt,
+                    item.EndsAt,
+                    string.IsNullOrWhiteSpace(item.Reason) ? null : item.Reason.Trim()));
+            }
+        }
+
+        TouchUpdated();
+    }
+
     public void Disable(string reason)
     {
         var validReason = Required(reason);
-        EnsureEnabled();
+        if (Disabled)
+        {
+            return;
+        }
+
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(WorkCalendar), OrganizationId, EnvironmentId, Code, validReason));
         this.AddDomainEvent(new WorkCalendarChangedDomainEvent(OrganizationId, EnvironmentId, Code));
+    }
+
+    public void Enable(string reason)
+    {
+        _ = Required(reason);
+        if (!Disabled)
+        {
+            return;
+        }
+
+        Disabled = false;
+        TouchUpdated();
     }
 
     private void EnsureEnabled()
@@ -70,6 +141,21 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
         }
     }
 
+    private void TouchUpdated()
+    {
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(WorkCalendar), OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new WorkCalendarChangedDomainEvent(OrganizationId, EnvironmentId, Code));
+    }
+
+    private static void ValidateWindow(TimeOnly startsAt, TimeOnly endsAt, string parameterName)
+    {
+        if (endsAt <= startsAt)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, "Working time end must be after start.");
+        }
+    }
+
     private static string Required(string value)
     {
         return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
@@ -77,3 +163,5 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
 }
 
 public record WorkCalendarWorkingTime(DayOfWeek DayOfWeek, TimeOnly StartsAt, TimeOnly EndsAt);
+public record WorkCalendarHoliday(DateOnly Date, string Name);
+public record WorkCalendarException(DateOnly Date, bool IsWorkingDay, TimeOnly? StartsAt, TimeOnly? EndsAt, string? Reason);

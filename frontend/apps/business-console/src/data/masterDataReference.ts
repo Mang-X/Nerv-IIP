@@ -62,7 +62,7 @@ export const STORAGE_CONDITION_OPTIONS: RefOption[] = [
   { value: 'ambient', label: '常温' },
   { value: 'refrigerated', label: '冷藏' },
   { value: 'frozen', label: '冷冻' },
-  { value: 'dry', label: '干燥/防潮' },
+  { value: 'dry', label: '干燥防潮' },
   { value: 'esd', label: '防静电' },
   { value: 'hazardous', label: '危化品' },
 ]
@@ -86,13 +86,11 @@ export const COMPLIANCE_TAG_OPTIONS: RefOption[] = [
 
 /** 计量单位（CodeSet: uom，§5.2 种子的常用子集）。 */
 export const UOM_OPTIONS: RefOption[] = [
-  { value: 'PCS', label: '个/件' },
-  { value: 'SET', label: '套' },
-  { value: 'BOX', label: '箱' },
-  { value: 'KG', label: '千克' },
-  { value: 'G', label: '克' },
-  { value: 'M', label: '米' },
-  { value: 'L', label: '升' },
+  { value: 'pcs', label: '件' },
+  { value: 'kg', label: '千克' },
+  { value: 'g', label: '克' },
+  { value: 'l', label: '升' },
+  { value: 'min', label: '分钟' },
 ]
 
 /** 业务伙伴角色（CodeSet: partner-type，系统枚举）。 */

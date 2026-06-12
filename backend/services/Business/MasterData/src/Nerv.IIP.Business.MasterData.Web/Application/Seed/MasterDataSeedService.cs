@@ -12,11 +12,11 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 {
     private static readonly UomSeed[] Units =
     [
-        new("kg", "Kilogram", "mass", 3, "half-up"),
-        new("g", "Gram", "mass", 3, "half-up"),
-        new("pcs", "Piece", "quantity", 0, "half-up"),
-        new("l", "Liter", "volume", 3, "half-up"),
-        new("min", "Minute", "time", 0, "half-up")
+        new("kg", "千克", "weight", 3, "half-up"),
+        new("g", "克", "weight", 3, "half-up"),
+        new("pcs", "件", "count", 0, "half-up"),
+        new("l", "升", "volume", 3, "half-up"),
+        new("min", "分钟", "time", 0, "half-up")
     ];
 
     private static readonly ShiftSeed[] Shifts =
@@ -29,12 +29,13 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
     {
         foreach (var item in MasterDataDictionaryRules.StandardReferenceData)
         {
-            if (!await dbContext.ReferenceDataCodes.AnyAsync(x =>
-                    x.OrganizationId == organizationId &&
-                    x.EnvironmentId == environmentId &&
-                    x.CodeSet == item.CodeSet &&
-                    x.Code == item.Code,
-                    cancellationToken))
+            var existing = await dbContext.ReferenceDataCodes.SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.CodeSet == item.CodeSet &&
+                x.Code == item.Code,
+                cancellationToken);
+            if (existing is null)
             {
                 dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create(
                     organizationId,
@@ -42,6 +43,10 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
                     item.CodeSet,
                     item.Code,
                     item.Name));
+            }
+            else if (!existing.Disabled && !string.Equals(existing.Name, item.Name, StringComparison.Ordinal))
+            {
+                existing.Update(item.Name);
             }
         }
 
@@ -61,11 +66,12 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 
         foreach (var item in Units)
         {
-            if (!await dbContext.UnitsOfMeasure.AnyAsync(x =>
-                    x.OrganizationId == organizationId &&
-                    x.EnvironmentId == environmentId &&
-                    x.Code == item.Code,
-                    cancellationToken))
+            var existing = await dbContext.UnitsOfMeasure.SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.Code == item.Code,
+                cancellationToken);
+            if (existing is null)
             {
                 dbContext.UnitsOfMeasure.Add(UnitOfMeasure.Create(
                     organizationId,
@@ -75,6 +81,14 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
                     item.DimensionType,
                     item.Precision,
                     item.RoundingMode));
+            }
+            else if (!existing.Disabled &&
+                (!string.Equals(existing.Name, item.Name, StringComparison.Ordinal) ||
+                 !string.Equals(existing.DimensionType, item.DimensionType, StringComparison.Ordinal) ||
+                 existing.Precision != item.Precision ||
+                 !string.Equals(existing.RoundingMode, item.RoundingMode, StringComparison.Ordinal)))
+            {
+                existing.Update(item.Name, item.DimensionType, item.Precision, item.RoundingMode);
             }
         }
 

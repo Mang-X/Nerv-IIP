@@ -1753,13 +1753,30 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListResourcesAsync(
             "internal-token-001",
-            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", true, Take: 12),
+            new BusinessConsoleListResourcesRequest(
+                "org-001",
+                "env-dev",
+                "sku",
+                true,
+                Take: 12,
+                ParentCode: "DEPT-ROOT",
+                SiteCode: "SITE-001",
+                LineCode: "LINE-001",
+                WorkCenterCode: "WC-001",
+                Category: "chemical",
+                PartnerType: "supplier",
+                Keyword: "raw",
+                All: true,
+                DepartmentCode: "DEPT-SUB",
+                ShiftCode: "SHIFT-DAY",
+                UserId: "worker-001",
+                SkillCode: "WELD"),
             CancellationToken.None);
 
         Assert.Equal("SKU-HTTP", response.Resources.Single().Code);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&includeDisabled=true&skip=0&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=sku&includeDisabled=true&skip=0&take=12&parentCode=DEPT-ROOT&siteCode=SITE-001&lineCode=LINE-001&workCenterCode=WC-001&category=chemical&partnerType=supplier&keyword=raw&all=true&departmentCode=DEPT-SUB&shiftCode=SHIFT-DAY&userId=worker-001&skillCode=WELD", request.RequestUri!.PathAndQuery);
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.Equal("internal-token-001", request.Headers.Authorization.Parameter);
     }
@@ -3193,6 +3210,7 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public BusinessConsoleAddTeamMemberRequest? LastAddTeamMemberRequest { get; private set; }
 
     public BusinessConsoleListTeamMembersRequest? LastListTeamMembersRequest { get; private set; }
+    public BusinessConsolePersonnelSkillMatrixRequest? LastPersonnelSkillMatrixRequest { get; private set; }
 
     public BusinessConsoleRemoveTeamMemberRequest? LastRemoveTeamMemberRequest { get; private set; }
 
@@ -3380,6 +3398,18 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         BusinessConsoleAssignPersonnelSkillRequest request,
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/personnel-skills", "personnel-skill", $"{request.UserId}:{request.SkillCode}", request.Level);
+
+    public Task<BusinessConsolePersonnelSkillMatrixResponse> ListPersonnelSkillMatrixAsync(
+        string internalBearerToken,
+        BusinessConsolePersonnelSkillMatrixRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPersonnelSkillMatrixRequest = request;
+        return Task.FromResult(new BusinessConsolePersonnelSkillMatrixResponse(
+            [request.SkillCode ?? "WELD"],
+            [new BusinessConsolePersonnelSkillMatrixRow(request.UserId ?? "worker-001", [new BusinessConsolePersonnelSkillMatrixCell(request.SkillCode ?? "WELD", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31))])]));
+    }
 
     public Task<BusinessConsoleResourceItem> CreateReferenceDataCodeAsync(
         string internalBearerToken,

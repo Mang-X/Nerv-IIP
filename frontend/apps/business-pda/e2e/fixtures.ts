@@ -45,6 +45,67 @@ export async function routeConsoleApi(route: Route) {
   return route.fallback()
 }
 
+/** A `{ items, total }` list payload wrapped in the standard success envelope. */
+function listEnvelope<T>(items: T[]) {
+  return envelope({ items, total: items.length })
+}
+
+const nowUtc = '2026-06-11T00:00:00.000Z'
+
+// Realistic WMS row shapes mirroring the real api-client item types — just enough
+// fields for the PDA pages to render business codes + Chinese status (no raw codes/GUIDs).
+const inboundOrders = [
+  { inboundOrderId: 'in-1', inboundOrderNo: 'IN-1', status: 'pending', createdAtUtc: nowUtc },
+  { inboundOrderId: 'in-2', inboundOrderNo: 'IN-2', status: 'pending', createdAtUtc: nowUtc },
+]
+
+const outboundOrders = [
+  { outboundOrderId: 'out-1', outboundOrderNo: 'OUT-1', status: 'pending', createdAtUtc: nowUtc },
+  { outboundOrderId: 'out-2', outboundOrderNo: 'OUT-2', status: 'pending', createdAtUtc: nowUtc },
+]
+
+const pickingTasks = [
+  {
+    warehouseTaskId: 'wt-pk-1',
+    taskNo: 'PK-1',
+    taskType: 'picking',
+    sourceOrderNo: 'OUT-1',
+    skuCode: 'SKU-1',
+    fromLocationCode: 'A1',
+    toLocationCode: 'B2',
+    plannedQuantity: 10,
+    status: 'pending',
+    createdAtUtc: nowUtc,
+  },
+]
+
+const putawayTasks = [
+  {
+    warehouseTaskId: 'wt-pa-1',
+    taskNo: 'PA-1',
+    taskType: 'putaway',
+    sourceOrderNo: 'IN-1',
+    skuCode: 'SKU-1',
+    fromLocationCode: 'A1',
+    toLocationCode: 'B2',
+    plannedQuantity: 10,
+    status: 'pending',
+    createdAtUtc: nowUtc,
+  },
+]
+
+const countExecutions = [
+  {
+    countExecutionId: 'ce-1',
+    countNo: 'CN-1',
+    skuCode: 'SKU-1',
+    locationCode: 'A1',
+    expectedQuantity: 100,
+    status: 'pending',
+    createdAtUtc: nowUtc,
+  },
+]
+
 /**
  * Realistic MES list rows used by the operation/report flows. Shapes mirror the
  * generated `BusinessConsoleMesOperationTaskRow` / `BusinessConsoleMesWorkOrderItem`
@@ -128,13 +189,48 @@ export const mesReceiptRequests = [
  * maintenance/alarms endpoints the repair/inspect/alarms pages hit get realistic
  * envelopes (item shapes mirror BusinessConsoleMaintenanceWorkOrderItem,
  * BusinessConsoleMaintenancePlan*, BusinessConsoleMaintenanceInspectionItem and
- * EquipmentRuntimeAlarmSummary so the pages render real Chinese labels); everything
- * else keeps returning the default empty envelope.
+ * EquipmentRuntimeAlarmSummary so the pages render real Chinese labels). WMS
+ * lists return `{ items, total }`; completes return a bare success.
+ *
+ * Any unmatched path falls back (does NOT fake-succeed) so a future un-mocked /
+ * mistyped endpoint surfaces loudly instead of being silently swallowed (aligns
+ * with routeConsoleApi). Every endpoint a spec hits must be explicitly mocked here.
  */
 export async function routeBusinessConsoleApi(route: Route) {
   const { pathname } = new URL(route.request().url())
   const method = route.request().method()
+  const isPost = method === 'POST'
 
+  // ---- WMS（收货/复核/盘点 + 拣货/上架） ----
+  // complete endpoints (POST .../{id}/complete) — match before the list paths.
+  if (isPost && /\/wms\/inbound-orders\/[^/]+\/complete$/.test(pathname)) {
+    return fulfillJson(route, envelope({}))
+  }
+  if (isPost && /\/wms\/outbound-orders\/[^/]+\/complete$/.test(pathname)) {
+    return fulfillJson(route, envelope({}))
+  }
+  if (isPost && /\/wms\/count-executions\/[^/]+\/complete$/.test(pathname)) {
+    return fulfillJson(route, envelope({}))
+  }
+
+  // list endpoints (GET).
+  if (pathname.endsWith('/wms/inbound-orders')) {
+    return fulfillJson(route, listEnvelope(inboundOrders))
+  }
+  if (pathname.endsWith('/wms/outbound-orders')) {
+    return fulfillJson(route, listEnvelope(outboundOrders))
+  }
+  if (pathname.endsWith('/wms/picking-tasks')) {
+    return fulfillJson(route, listEnvelope(pickingTasks))
+  }
+  if (pathname.endsWith('/wms/putaway-tasks')) {
+    return fulfillJson(route, listEnvelope(putawayTasks))
+  }
+  if (pathname.endsWith('/wms/count-executions')) {
+    return fulfillJson(route, listEnvelope(countExecutions))
+  }
+
+  // ---- 设备运维（报修/点检/报警查看） ----
   // 报修：维修工单 list / create
   if (pathname === '/api/business-console/v1/maintenance/work-orders') {
     if (method === 'POST') {
@@ -203,6 +299,7 @@ export async function routeBusinessConsoleApi(route: Route) {
     )
   }
 
+  // ---- MES（工序执行/报工/领料/完工入库） ----
   const base = '/api/business-console/v1/mes'
 
   // Operation-task actions: start/pause/resume/complete → success envelope.
@@ -227,8 +324,9 @@ export async function routeBusinessConsoleApi(route: Route) {
     return fulfillJson(route, envelope({ items: mesReceiptRequests, total: mesReceiptRequests.length }))
   }
 
-  // Keep other paths returning the existing default envelope.
-  return fulfillJson(route, envelope({}))
+  // Don't fake-succeed unmatched paths — fall back so a future un-mocked / mistyped
+  // endpoint surfaces loudly instead of being silently swallowed (aligns with routeConsoleApi).
+  return route.fallback()
 }
 
 /** Seed a stored session so guarded routes load without going through the login form. */

@@ -1984,6 +1984,8 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceListResp
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResourceListResponse = {
     resources?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResourceItem>;
     total?: number;
+    truncated?: boolean;
+    limit?: number | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResourceItem = {
@@ -2006,6 +2008,20 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     codeSet?: string | null;
     baseUomCode?: string | null;
     taxId?: string | null;
+    parentDepartmentCode?: string | null;
+    departmentCode?: string | null;
+    shiftCode?: string | null;
+    userId?: string | null;
+    skillCode?: string | null;
+    skillLevel?: string | null;
+    effectiveFrom?: string | null;
+    effectiveTo?: string | null;
+    fromUomCode?: string | null;
+    toUomCode?: string | null;
+    factor?: number | null;
+    offset?: number | null;
+    precision?: number | null;
+    roundingMode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListResourcesRequest = {
@@ -2068,6 +2084,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     partnerRoles?: Array<string> | null;
     timezone?: string | null;
     siteCode?: string | null;
+    parentDepartmentCode?: string | null;
+    departmentCode?: string | null;
+    shiftCode?: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    paidMinutes?: number | null;
     plantCode?: string | null;
     lineCode?: string | null;
     capacityMinutesPerDay?: number | null;
@@ -2092,6 +2114,39 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     roundingMode?: string | null;
     taxId?: string | null;
     status?: string | null;
+    workingTimes?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarWorkingTime> | null;
+    holidays?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarHoliday> | null;
+    exceptions?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarException> | null;
+    fromUomCode?: string | null;
+    toUomCode?: string | null;
+    factor?: number | null;
+    offset?: number | null;
+    effectiveFrom?: string | null;
+    effectiveTo?: string | null;
+    userId?: string | null;
+    skillCode?: string | null;
+    skillLevel?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarWorkingTime = {
+    dayOfWeek?: SystemDayOfWeek;
+    startsAt?: string;
+    endsAt?: string;
+};
+
+export type SystemDayOfWeek = 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarHoliday = {
+    date?: string;
+    name?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarException = {
+    date?: string;
+    isWorkingDay?: boolean;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    reason?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMasterDataResourceRequest = {
@@ -2115,6 +2170,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     partnerType?: string | null;
     timezone?: string | null;
     siteCode?: string | null;
+    parentDepartmentCode?: string | null;
+    departmentCode?: string | null;
+    shiftCode?: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    paidMinutes?: number | null;
     managerUserId?: string | null;
     description?: string | null;
     plantCode?: string | null;
@@ -2141,6 +2202,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     roundingMode?: string | null;
     partnerRoles?: Array<string> | null;
     taxId?: string | null;
+    workingTimes?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarWorkingTime> | null;
+    holidays?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarHoliday> | null;
+    exceptions?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarException> | null;
+    factor?: number | null;
+    offset?: number | null;
+    effectiveFrom?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSetMasterDataResourceEnabledRequest = {
@@ -2148,6 +2215,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     environmentId: string;
     codeSet?: string | null;
     reason?: string;
+    effectiveFrom?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateBusinessPartnerRequest = {
@@ -2353,6 +2421,31 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     level: string;
     effectiveFrom?: string;
     effectiveTo?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsolePersonnelSkillMatrixResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePersonnelSkillMatrixResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePersonnelSkillMatrixResponse = {
+    skillCodes?: Array<string>;
+    rows?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePersonnelSkillMatrixRow>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePersonnelSkillMatrixRow = {
+    userId?: string;
+    skills?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePersonnelSkillMatrixCell>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePersonnelSkillMatrixCell = {
+    skillCode?: string;
+    level?: string;
+    effectiveFrom?: string;
+    effectiveTo?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePersonnelSkillMatrixRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReferenceDataCodeRequest = {
@@ -7336,6 +7429,18 @@ export type ListBusinessConsoleMasterDataResourcesData = {
         skip?: number;
         take?: number;
         codeSet?: string | null;
+        parentCode?: string | null;
+        siteCode?: string | null;
+        lineCode?: string | null;
+        workCenterCode?: string | null;
+        category?: string | null;
+        partnerType?: string | null;
+        keyword?: string | null;
+        all?: boolean;
+        departmentCode?: string | null;
+        shiftCode?: string | null;
+        userId?: string | null;
+        skillCode?: string | null;
     };
     url: '/api/business-console/v1/master-data/resources';
 };
@@ -7436,6 +7541,7 @@ export type GetBusinessConsoleMasterDataResourceDetailData = {
         organizationId: string;
         environmentId: string;
         codeSet?: string | null;
+        effectiveFrom?: string | null;
     };
     url: '/api/business-console/v1/master-data/resources/{resourceType}/{code}';
 };
@@ -8191,6 +8297,39 @@ export type AssignBusinessConsolePersonnelSkillResponses = {
 };
 
 export type AssignBusinessConsolePersonnelSkillResponse = AssignBusinessConsolePersonnelSkillResponses[keyof AssignBusinessConsolePersonnelSkillResponses];
+
+export type ListBusinessConsolePersonnelSkillMatrixData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        userId?: string | null;
+        skillCode?: string | null;
+        includeDisabled?: boolean;
+    };
+    url: '/api/business-console/v1/master-data/personnel-skills/matrix';
+};
+
+export type ListBusinessConsolePersonnelSkillMatrixErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsolePersonnelSkillMatrixResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsolePersonnelSkillMatrixResponse;
+};
+
+export type ListBusinessConsolePersonnelSkillMatrixResponse = ListBusinessConsolePersonnelSkillMatrixResponses[keyof ListBusinessConsolePersonnelSkillMatrixResponses];
 
 export type CreateBusinessConsoleReferenceDataCodeData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateReferenceDataCodeRequest;

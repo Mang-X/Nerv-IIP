@@ -1106,6 +1106,11 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the conversion rule was created.");
 
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Disabled flag that hides the conversion rule from active use.");
+
                     b.Property<DateOnly>("EffectiveFrom")
                         .HasColumnType("date")
                         .HasColumnName("effective_from")
@@ -1169,6 +1174,8 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasComment("UTC time when the conversion rule was last updated.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Disabled");
 
                     b.HasIndex("FromUomCode", "ToUomCode");
 
@@ -1696,6 +1703,96 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
 
             modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendar", b =>
                 {
+                    b.OwnsMany("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendarException", "Exceptions", b1 =>
+                        {
+                            b1.Property<Guid>("id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("uuid")
+                                .HasColumnName("id")
+                                .HasComment("Work calendar exception row id.");
+
+                            b1.Property<DateOnly>("Date")
+                                .HasColumnType("date")
+                                .HasColumnName("date")
+                                .HasComment("Local exception date.");
+
+                            b1.Property<TimeOnly?>("EndsAt")
+                                .HasColumnType("time without time zone")
+                                .HasColumnName("ends_at")
+                                .HasComment("Optional local exception end time.");
+
+                            b1.Property<bool>("IsWorkingDay")
+                                .HasColumnType("boolean")
+                                .HasColumnName("is_working_day")
+                                .HasComment("Whether the exception date is treated as a working day.");
+
+                            b1.Property<string>("Reason")
+                                .HasMaxLength(300)
+                                .HasColumnType("character varying(300)")
+                                .HasColumnName("reason")
+                                .HasComment("Optional reason for the calendar exception.");
+
+                            b1.Property<TimeOnly?>("StartsAt")
+                                .HasColumnType("time without time zone")
+                                .HasColumnName("starts_at")
+                                .HasComment("Optional local exception start time.");
+
+                            b1.Property<Guid>("WorkCalendarId")
+                                .HasColumnType("uuid")
+                                .HasColumnName("work_calendar_id")
+                                .HasComment("Owning work calendar aggregate id.");
+
+                            b1.HasKey("id");
+
+                            b1.HasIndex("WorkCalendarId");
+
+                            b1.ToTable("work_calendar_exceptions", "business_masterdata", t =>
+                                {
+                                    t.HasComment("Exception dates owned by a business master data work calendar.");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("WorkCalendarId");
+                        });
+
+                    b.OwnsMany("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendarHoliday", "Holidays", b1 =>
+                        {
+                            b1.Property<Guid>("id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("uuid")
+                                .HasColumnName("id")
+                                .HasComment("Work calendar holiday row id.");
+
+                            b1.Property<DateOnly>("Date")
+                                .HasColumnType("date")
+                                .HasColumnName("date")
+                                .HasComment("Local holiday date.");
+
+                            b1.Property<string>("Name")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("name")
+                                .HasComment("Holiday display name.");
+
+                            b1.Property<Guid>("WorkCalendarId")
+                                .HasColumnType("uuid")
+                                .HasColumnName("work_calendar_id")
+                                .HasComment("Owning work calendar aggregate id.");
+
+                            b1.HasKey("id");
+
+                            b1.HasIndex("WorkCalendarId");
+
+                            b1.ToTable("work_calendar_holidays", "business_masterdata", t =>
+                                {
+                                    t.HasComment("Holiday dates owned by a business master data work calendar.");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("WorkCalendarId");
+                        });
+
                     b.OwnsMany("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendarWorkingTime", "WorkingTimes", b1 =>
                         {
                             b1.Property<Guid>("id")
@@ -1736,6 +1833,10 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                             b1.WithOwner()
                                 .HasForeignKey("WorkCalendarId");
                         });
+
+                    b.Navigation("Exceptions");
+
+                    b.Navigation("Holidays");
 
                     b.Navigation("WorkingTimes");
                 });

@@ -26,10 +26,9 @@ describe('PDA home', () => {
     const wrapper = mount(HomePage)
     // 扫码条：以 placeholder 做稳健断言（不依赖 SFC 组件名推断）
     expect(wrapper.find('input[placeholder^="扫描"]').exists()).toBe(true)
-    // 应用墙渲染字典中的任务标签
+    // 应用墙渲染字典中的任务标签（WMS / MES / 设备运维 三域）
     expect(wrapper.text()).toContain('收货入库')
     expect(wrapper.text()).toContain('报工')
-    // 设备运维三件套（Plan 4）也渲染在墙上（含新增的查看报警入口）
     expect(wrapper.text()).toContain('报修')
     expect(wrapper.text()).toContain('点检')
     expect(wrapper.text()).toContain('查看报警')
@@ -40,51 +39,32 @@ describe('PDA home', () => {
     expect(wrapper.text()).toContain('暂无分配给你的任务')
   })
 
-  it('enables the ready equipment entries and navigates to their routes on click', async () => {
+  const ENTRIES: Array<[label: string, route: string]> = [
+    // WMS
+    ['收货入库', '/wms/inbound'],
+    ['复核发货', '/wms/review'],
+    ['拣货', '/wms/pick'],
+    ['上架', '/wms/putaway'],
+    ['盘点', '/wms/count'],
+    // MES
+    ['报工', '/mes/report'],
+    ['领料', '/mes/issue'],
+    ['完工入库', '/mes/receipt'],
+    ['工序执行', '/mes/operation'],
+    // 设备运维
+    ['报修', '/equipment/repair'],
+    ['点检', '/equipment/inspect'],
+    ['查看报警', '/equipment/alarms'],
+  ]
+
+  it.each(ENTRIES)('enables the %s entry and navigates to %s on click', async (label, route) => {
     const wrapper = mount(HomePage)
-
-    const cases: Array<[string, string]> = [
-      ['报修', '/equipment/repair'],
-      ['点检', '/equipment/inspect'],
-      ['查看报警', '/equipment/alarms'],
-    ]
-
-    for (const [label, route] of cases) {
-      const btn = buttonByLabel(wrapper, label)
-      // 字典已点亮（routeReady=true）→ 入口不再 disabled
-      expect(btn.attributes('disabled')).toBeUndefined()
-      push.mockClear()
-      await btn.trigger('click')
-      expect(push).toHaveBeenCalledWith(route)
-    }
-  })
-
-  it('enables the four MES app-wall entries and navigates to their routes on click', async () => {
-    const wrapper = mount(HomePage)
-    const mesEntries: Array<[label: string, route: string]> = [
-      ['报工', '/mes/report'],
-      ['领料', '/mes/issue'],
-      ['完工入库', '/mes/receipt'],
-      ['工序执行', '/mes/operation'],
-    ]
-    for (const [label, route] of mesEntries) {
-      const btn = buttonByLabel(wrapper, label)
-      expect(btn.attributes('disabled')).toBeUndefined()
-      await btn.trigger('click')
-      expect(push).toHaveBeenCalledWith(route)
-    }
-    expect(push).toHaveBeenCalledTimes(mesEntries.length)
-  })
-
-  it('keeps the WMS app-wall entries disabled and does not navigate on click', async () => {
-    const wrapper = mount(HomePage)
-    const wmsLabels = ['收货入库', '拣货', '上架', '复核发货', '盘点']
-    for (const label of wmsLabels) {
-      const btn = buttonByLabel(wrapper, label)
-      expect(btn.attributes('disabled')).toBeDefined()
-      await btn.trigger('click')
-    }
-    expect(push).not.toHaveBeenCalled()
+    const btn = buttonByLabel(wrapper, label)
+    // 合并后全部域已交付（routeReady=true）→ 入口均不再 disabled
+    expect(btn.attributes('disabled')).toBeUndefined()
+    push.mockClear()
+    await btn.trigger('click')
+    expect(push).toHaveBeenCalledWith(route)
   })
 
   it('echoes the scanned value in-page and does NOT navigate (scan-resolve is M5)', async () => {
