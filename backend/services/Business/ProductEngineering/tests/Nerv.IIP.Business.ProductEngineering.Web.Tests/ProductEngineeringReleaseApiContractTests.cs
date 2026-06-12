@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Json;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
@@ -244,6 +246,42 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new RoutingOperationCommand(10, "WC-MIX-01", "mixing", "混合", 30)]),
             CancellationToken.None));
         Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Release_routing_endpoint_rejects_missing_operation_code(string operationCode)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/engineering/routings/release", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            routingCode = "ROUTE-1000",
+            revision = "A",
+            skuCode = "SKU-FG-1000",
+            effectiveDate = "2026-06-01",
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 10,
+                    workCenterCode = "WC-MIX-01",
+                    operationCode,
+                    operationName = "混合",
+                    standardMinutes = 30,
+                },
+            },
+        });
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("operationCode", responseBody, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

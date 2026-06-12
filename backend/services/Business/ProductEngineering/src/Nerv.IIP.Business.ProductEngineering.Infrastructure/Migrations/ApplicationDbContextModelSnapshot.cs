@@ -1078,7 +1078,7 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                                 .HasMaxLength(200)
                                 .HasColumnType("character varying(200)")
                                 .HasColumnName("operation_name")
-                                .HasComment("Operation display name snapshot from the operation CodeSet.");
+                                .HasComment("Operation display name submitted with routing release.");
 
                             b1.Property<int>("Sequence")
                                 .HasColumnType("integer")

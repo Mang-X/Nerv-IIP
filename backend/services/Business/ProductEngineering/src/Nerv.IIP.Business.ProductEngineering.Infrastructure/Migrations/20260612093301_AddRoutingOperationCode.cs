@@ -17,7 +17,7 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                 type: "character varying(200)",
                 maxLength: 200,
                 nullable: false,
-                comment: "Operation display name snapshot from the operation CodeSet.",
+                comment: "Operation display name submitted with routing release.",
                 oldClrType: typeof(string),
                 oldType: "character varying(200)",
                 oldMaxLength: 200,
@@ -35,7 +35,7 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
             migrationBuilder.Sql(
                 """
                 UPDATE product_engineering.routing_operations
-                SET operation_code = operation_name
+                SET operation_code = LEFT(operation_name, 100)
                 WHERE operation_code IS NULL OR operation_code = ''
                 """);
 
@@ -73,7 +73,7 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                 oldClrType: typeof(string),
                 oldType: "character varying(200)",
                 oldMaxLength: 200,
-                oldComment: "Operation display name snapshot from the operation CodeSet.");
+                oldComment: "Operation display name submitted with routing release.");
         }
     }
 }
