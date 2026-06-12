@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import type { DateValue } from 'reka-ui'
 import type { HTMLAttributes } from 'vue'
+import { DateFormatter, parseDate } from '@internationalized/date'
 import { CalendarIcon, XIcon } from 'lucide-vue-next'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, shallowRef } from 'vue'
 import { cn } from '../../../lib/utils'
 import { Button } from '../button'
-import { Input } from '../input'
+import { Calendar } from '../calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '../popover'
 
 const props = withDefaults(defineProps<{
@@ -14,7 +16,7 @@ const props = withDefaults(defineProps<{
   class?: HTMLAttributes['class']
 }>(), {
   modelValue: null,
-  placeholder: 'Pick a date',
+  placeholder: '选择日期',
 })
 
 const emits = defineEmits<{
@@ -23,23 +25,39 @@ const emits = defineEmits<{
   clear: []
 }>()
 
-const draftValue = shallowRef(props.modelValue ?? '')
 const open = shallowRef(false)
-const label = computed(() => props.modelValue || props.placeholder)
 
-watch(() => props.modelValue, (value) => {
-  draftValue.value = value ?? ''
-})
+const formatter = new DateFormatter('zh-CN', { dateStyle: 'long' })
 
-function apply() {
-  const value = draftValue.value || null
-  emits('update:modelValue', value)
-  emits('apply', value)
-  open.value = false
+function toDateValue(value: string | null | undefined): DateValue | undefined {
+  if (!value)
+    return undefined
+  try {
+    return parseDate(value)
+  }
+  catch {
+    return undefined
+  }
 }
 
+const calendarValue = computed<DateValue | undefined>({
+  get: () => toDateValue(props.modelValue),
+  set: (value) => {
+    const next = value ? value.toString() : null
+    emits('update:modelValue', next)
+    emits('apply', next)
+    open.value = false
+  },
+})
+
+const label = computed(() => {
+  const value = toDateValue(props.modelValue)
+  if (!value)
+    return props.placeholder
+  return formatter.format(value.toDate('UTC'))
+})
+
 function clear() {
-  draftValue.value = ''
   emits('update:modelValue', null)
   emits('clear')
   open.value = false
@@ -59,23 +77,13 @@ function clear() {
         <span class="truncate">{{ label }}</span>
       </Button>
     </PopoverTrigger>
-    <PopoverContent class="w-72">
-      <div class="flex flex-col gap-3">
-        <Input
-          v-model="draftValue"
-          type="date"
-          :disabled="disabled"
-          aria-label="Date"
-        />
-        <div class="flex justify-end gap-2">
-          <Button type="button" variant="ghost" size="sm" @click="clear">
-            <XIcon data-icon="inline-start" />
-            Clear
-          </Button>
-          <Button type="button" size="sm" @click="apply">
-            Apply
-          </Button>
-        </div>
+    <PopoverContent class="w-auto p-0">
+      <Calendar v-model="calendarValue" initial-focus />
+      <div v-if="modelValue" class="flex justify-end border-t p-2">
+        <Button type="button" variant="ghost" size="sm" @click="clear">
+          <XIcon data-icon="inline-start" />
+          清除
+        </Button>
       </div>
     </PopoverContent>
   </Popover>
