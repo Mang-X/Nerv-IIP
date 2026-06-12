@@ -220,6 +220,95 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Release_engineering_bom_wraps_duplicate_component_as_known_exception()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new ReleaseEngineeringBomCommandHandler(new EngineeringBomRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringBomCommand(
+                "org-001",
+                "env-dev",
+                "EBOM-2000",
+                "A",
+                "ENG-2000",
+                new DateOnly(2026, 6, 1),
+                [
+                    new BomLineCommand("ENG-2001", 1m, "EA"),
+                    new BomLineCommand("ENG-2001", 2m, "EA")
+                ]),
+            CancellationToken.None));
+
+        Assert.Contains("already contains child item", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+    }
+
+    [Fact]
+    public async Task Release_manufacturing_bom_wraps_duplicate_material_as_known_exception()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-2000", "A", "ENG-2000")
+            .AddLine("ENG-2001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ReleaseManufacturingBomCommandHandler(
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseManufacturingBomCommand(
+                "org-001",
+                "env-dev",
+                "MBOM-2000",
+                "A",
+                "SKU-FG-2000",
+                "EBOM-2000",
+                "A",
+                new DateOnly(2026, 6, 1),
+                [
+                    new ManufacturingBomMaterialLineCommand("SKU-RM-2000", 1m, "KG", 0m),
+                    new ManufacturingBomMaterialLineCommand("SKU-RM-2000", 2m, "KG", 0m)
+                ],
+                []),
+            CancellationToken.None));
+
+        Assert.Contains("already contains SKU", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+    }
+
+    [Fact]
+    public async Task Release_routing_wraps_duplicate_sequence_as_known_exception()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new ReleaseRoutingCommandHandler(new RoutingRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseRoutingCommand(
+                "org-001",
+                "env-dev",
+                "ROUTE-2000",
+                "A",
+                "SKU-FG-2000",
+                new DateOnly(2026, 6, 1),
+                [
+                    new RoutingOperationCommand(10, "WC-MIX-01", "Mix", 30),
+                    new RoutingOperationCommand(10, "WC-PACK-01", "Pack", 15)
+                ]),
+            CancellationToken.None));
+
+        Assert.Contains("already contains operation sequence", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+    }
+
+    [Fact]
     public async Task Release_routing_rejects_duplicate_business_key()
     {
         await using var provider = CreateInMemoryProvider();
