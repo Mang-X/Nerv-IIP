@@ -474,7 +474,7 @@ function formatError(error: unknown) {
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="createPending || updatePending || !canSubmit">
+                <Button type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingId ? '保存修改' : '创建版本' }}
                 </Button>

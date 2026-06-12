@@ -184,10 +184,13 @@ function blankForm(): MbomForm {
   }
 }
 
-// 选物料后把该行单位自动设为其基本单位（有值才设；用户仍可覆盖）。
+// 选物料后把该行单位自动设为其基本单位（按单位选项大小写不敏感匹配真实 code——
+// SKU 的基本单位可能与单位表大小写不一致，如 'PCS' vs 'pcs'；匹配不到则不填，避免落到无效值/占位符）。
 function applyMaterialUom(line: MaterialLine, code: string) {
-  const uom = baseUomByCode.value.get(code)
-  if (uom) line.unitOfMeasureCode = uom
+  const base = baseUomByCode.value.get(code)
+  if (!base) return
+  const match = uomOptions.value.find((o) => o.value.toLowerCase() === base.toLowerCase())
+  if (match) line.unitOfMeasureCode = match.value
 }
 
 const formOpen = shallowRef(false)
@@ -485,7 +488,7 @@ function formatScrap(rate?: number | null) {
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="releasePending || !canSubmit">
+                <Button type="submit" :disabled="releasePending">
                   <Spinner v-if="releasePending" aria-hidden="true" />
                   发布版本
                 </Button>

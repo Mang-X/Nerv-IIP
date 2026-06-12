@@ -387,7 +387,7 @@ function formatError(error: unknown) {
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="releasePending || !canSubmit">
+                <Button type="submit" :disabled="releasePending">
                   <Spinner v-if="releasePending" aria-hidden="true" />
                   发布版本
                 </Button>
