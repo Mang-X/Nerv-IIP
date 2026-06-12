@@ -8,26 +8,42 @@ namespace Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 public sealed record CreateWorkshopCommand(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string SiteCode,
     string? ManagerUserId,
-    string? Description) : ICommand<MasterDataResourceResult>;
+    string? Description,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateWorkshopCommandHandler(IWorkshopRepository repository)
+public sealed class CreateWorkshopCommandHandler(IWorkshopRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateWorkshopCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateWorkshopCommand request, CancellationToken cancellationToken)
     {
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, request.Code, cancellationToken))
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
+            codingService,
+            "workshop",
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Code,
+            request.IdempotencyKey,
+            MasterDataCodingService.Fingerprint(request.Name, request.SiteCode, request.ManagerUserId, request.Description),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
         {
-            throw new KnownException($"Workshop '{request.Code}' already exists.");
+            return new MasterDataResourceResult("workshop", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
+        {
+            throw new KnownException($"Workshop '{code}' already exists.");
         }
 
         var workshop = Workshop.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            request.Code,
+            code,
             request.Name,
             request.SiteCode,
             request.ManagerUserId,

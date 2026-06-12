@@ -134,9 +134,9 @@ const sitePage = ref(1)
 const sitePageSize = ref('10')
 const siteOpen = ref(false)
 const siteShowErrors = ref(false)
-const siteForm = reactive({ code: '', name: '', timezone: DEFAULT_TIMEZONE })
+const siteForm = reactive({ name: '', timezone: DEFAULT_TIMEZONE })
 const siteRows = computed(() => filterRows(sites.items.value, siteKeyword.value))
-const canCreateSite = computed(() => [siteForm.code, siteForm.name, siteForm.timezone].every(isNonEmpty))
+const canCreateSite = computed(() => [siteForm.name, siteForm.timezone].every(isNonEmpty))
 const siteCreateError = computed(() => formatError(sites.createError.value))
 const siteListError = computed(() => formatError(sites.error.value))
 
@@ -155,12 +155,11 @@ async function submitSite() {
   await sites.create({
     organizationId: sites.filters.organizationId,
     environmentId: sites.filters.environmentId,
-    code: siteForm.code.trim(),
     name: siteForm.name.trim(),
     timezone: siteForm.timezone.trim(),
   })
   toast.success(`工厂「${siteForm.name.trim()}」已创建。`)
-  Object.assign(siteForm, { code: '', name: '', timezone: DEFAULT_TIMEZONE })
+  Object.assign(siteForm, { name: '', timezone: DEFAULT_TIMEZONE })
   siteShowErrors.value = false
   siteOpen.value = false
 }
@@ -171,9 +170,9 @@ const workshopPage = ref(1)
 const workshopPageSize = ref('10')
 const workshopOpen = ref(false)
 const workshopShowErrors = ref(false)
-const workshopForm = reactive({ code: '', name: '', siteCode: '', managerUserId: '', description: '' })
+const workshopForm = reactive({ name: '', siteCode: '', managerUserId: '', description: '' })
 const workshopRows = computed(() => filterRows(workshops.workshops.value, workshopKeyword.value))
-const canCreateWorkshop = computed(() => [workshopForm.code, workshopForm.name, workshopForm.siteCode].every(isNonEmpty))
+const canCreateWorkshop = computed(() => [workshopForm.name, workshopForm.siteCode].every(isNonEmpty))
 const workshopCreateError = computed(() => formatError(workshops.createWorkshopError.value))
 const workshopListError = computed(() => formatError(workshops.workshopsError.value))
 
@@ -194,14 +193,13 @@ async function submitWorkshop() {
   await workshops.createWorkshop({
     organizationId: workshops.filters.organizationId,
     environmentId: workshops.filters.environmentId,
-    code: workshopForm.code.trim(),
     name: workshopForm.name.trim(),
     siteCode: workshopForm.siteCode.trim(),
     ...(manager ? { managerUserId: manager } : {}),
     ...(note ? { description: note } : {}),
   })
   toast.success(`车间「${workshopForm.name.trim()}」已创建。`)
-  Object.assign(workshopForm, { code: '', name: '', siteCode: '', managerUserId: '', description: '' })
+  Object.assign(workshopForm, { name: '', siteCode: '', managerUserId: '', description: '' })
   workshopShowErrors.value = false
   workshopOpen.value = false
 }
@@ -212,9 +210,9 @@ const linePage = ref(1)
 const linePageSize = ref('10')
 const lineOpen = ref(false)
 const lineShowErrors = ref(false)
-const lineForm = reactive({ code: '', name: '', siteCode: '', workshopCode: '' })
+const lineForm = reactive({ name: '', siteCode: '', workshopCode: '' })
 const lineRows = computed(() => filterRows(lines.items.value, lineKeyword.value))
-const canCreateLine = computed(() => [lineForm.code, lineForm.name, lineForm.siteCode].every(isNonEmpty))
+const canCreateLine = computed(() => [lineForm.name, lineForm.siteCode].every(isNonEmpty))
 const lineCreateError = computed(() => formatError(lines.createError.value))
 const lineListError = computed(() => formatError(lines.error.value))
 
@@ -234,13 +232,12 @@ async function submitLine() {
   await lines.create({
     organizationId: lines.filters.organizationId,
     environmentId: lines.filters.environmentId,
-    code: lineForm.code.trim(),
     name: lineForm.name.trim(),
     siteCode: lineForm.siteCode.trim(),
     ...(workshopCode ? { workshopCode } : {}),
   })
   toast.success(`产线「${lineForm.name.trim()}」已创建。`)
-  Object.assign(lineForm, { code: '', name: '', siteCode: '', workshopCode: '' })
+  Object.assign(lineForm, { name: '', siteCode: '', workshopCode: '' })
   lineShowErrors.value = false
   lineOpen.value = false
 }
@@ -251,10 +248,10 @@ const wcPage = ref(1)
 const wcPageSize = ref('10')
 const wcOpen = ref(false)
 const wcShowErrors = ref(false)
-const wcForm = reactive({ code: '', name: '', plantCode: '', lineCode: '', workshopCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
+const wcForm = reactive({ name: '', plantCode: '', lineCode: '', workshopCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
 const wcRows = computed(() => filterRows(workCenters.items.value, wcKeyword.value))
 const canCreateWorkCenter = computed(() =>
-  [wcForm.code, wcForm.name, wcForm.plantCode, wcForm.lineCode, wcForm.defaultCalendarCode].every(isNonEmpty)
+  [wcForm.name, wcForm.plantCode, wcForm.lineCode, wcForm.defaultCalendarCode].every(isNonEmpty)
   && (Number(wcForm.capacityMinutesPerDay) || 0) > 0,
 )
 const wcCreateError = computed(() => formatError(workCenters.createError.value))
@@ -276,7 +273,6 @@ async function submitWorkCenter() {
   await workCenters.create({
     organizationId: workCenters.filters.organizationId,
     environmentId: workCenters.filters.environmentId,
-    code: wcForm.code.trim(),
     name: wcForm.name.trim(),
     plantCode: wcForm.plantCode.trim(),
     lineCode: wcForm.lineCode.trim(),
@@ -288,7 +284,7 @@ async function submitWorkCenter() {
     ...(workshopCode ? { workshopCode } : {}),
   })
   toast.success(`工作中心「${wcForm.name.trim()}」已创建。`)
-  Object.assign(wcForm, { code: '', name: '', plantCode: '', lineCode: '', workshopCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
+  Object.assign(wcForm, { name: '', plantCode: '', lineCode: '', workshopCode: '', defaultCalendarCode: '', capacityMinutesPerDay: '480' })
   wcShowErrors.value = false
   wcOpen.value = false
 }
@@ -356,10 +352,6 @@ function refreshAll() {
                 <form class="grid gap-4" @submit.prevent="submitSite">
                   <p v-if="siteCreateError" class="text-sm text-destructive" role="alert">{{ siteCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="siteShowErrors && !isNonEmpty(siteForm.code)">
-                      <FieldLabel for="site-code">工厂编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="site-code" v-model="siteForm.code" autocomplete="off" required />
-                    </Field>
                     <Field :data-invalid="siteShowErrors && !isNonEmpty(siteForm.name)">
                       <FieldLabel for="site-name">工厂名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="site-name" v-model="siteForm.name" autocomplete="off" required />
@@ -420,10 +412,6 @@ function refreshAll() {
                 <form class="grid gap-4" @submit.prevent="submitLine">
                   <p v-if="lineCreateError" class="text-sm text-destructive" role="alert">{{ lineCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="lineShowErrors && !isNonEmpty(lineForm.code)">
-                      <FieldLabel for="line-code">产线编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="line-code" v-model="lineForm.code" autocomplete="off" required />
-                    </Field>
                     <Field :data-invalid="lineShowErrors && !isNonEmpty(lineForm.name)">
                       <FieldLabel for="line-name">产线名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="line-name" v-model="lineForm.name" autocomplete="off" required />
@@ -502,10 +490,6 @@ function refreshAll() {
                 <form class="grid gap-4" @submit.prevent="submitWorkshop">
                   <p v-if="workshopCreateError" class="text-sm text-destructive" role="alert">{{ workshopCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="workshopShowErrors && !isNonEmpty(workshopForm.code)">
-                      <FieldLabel for="workshop-code">车间编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="workshop-code" v-model="workshopForm.code" autocomplete="off" required />
-                    </Field>
                     <Field :data-invalid="workshopShowErrors && !isNonEmpty(workshopForm.name)">
                       <FieldLabel for="workshop-name">车间名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="workshop-name" v-model="workshopForm.name" autocomplete="off" required />
@@ -584,10 +568,6 @@ function refreshAll() {
                 <form class="grid gap-4" @submit.prevent="submitWorkCenter">
                   <p v-if="wcCreateError" class="text-sm text-destructive" role="alert">{{ wcCreateError }}</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.code)">
-                      <FieldLabel for="wc-code">工作中心编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="wc-code" v-model="wcForm.code" autocomplete="off" required />
-                    </Field>
                     <Field :data-invalid="wcShowErrors && !isNonEmpty(wcForm.name)">
                       <FieldLabel for="wc-name">工作中心名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="wc-name" v-model="wcForm.name" autocomplete="off" required />

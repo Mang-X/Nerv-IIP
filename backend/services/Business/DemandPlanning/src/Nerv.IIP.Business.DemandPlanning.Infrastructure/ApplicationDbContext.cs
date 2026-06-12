@@ -5,7 +5,7 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionSc
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
-using Nerv.IIP.Numbering;
+using Nerv.IIP.Coding;
 
 namespace Nerv.IIP.Business.DemandPlanning.Infrastructure;
 
@@ -17,8 +17,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<MrpRun> MrpRuns => Set<MrpRun>();
     public DbSet<PlanningSuggestion> PlanningSuggestions => Set<PlanningSuggestion>();
     public DbSet<PeggingLink> PeggingLinks => Set<PeggingLink>();
-    public DbSet<NumberingCounter> NumberingCounters => Set<NumberingCounter>();
-    public DbSet<NumberingIdempotencyKey> NumberingIdempotencyKeys => Set<NumberingIdempotencyKey>();
+    public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
+    public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

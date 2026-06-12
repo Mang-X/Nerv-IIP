@@ -78,7 +78,7 @@ public sealed class DemandPlanningEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var numbering = new DemandPlanningNumberingService();
+        var numbering = new DemandPlanningCodingService();
         var handler = new CreateOrUpdateDemandSourceCommandHandler(dbContext, numbering);
         var command = new CreateOrUpdateDemandSourceCommand(
             "org-001",

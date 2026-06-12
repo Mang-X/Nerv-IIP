@@ -49,7 +49,7 @@ public sealed class RushWorkOrderCommandTests
     public async Task CreateRushWorkOrderCommand_GeneratesWorkOrderAndOperationIdsWhenNotProvided()
     {
         var store = new InMemoryMesPlanningStore();
-        var numbering = new MesNumberingService();
+        var numbering = new MesCodingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), numbering);
 
@@ -79,7 +79,7 @@ public sealed class RushWorkOrderCommandTests
     public async Task CreateRushWorkOrderCommand_ReusesExistingWorkOrderForSameIdempotencyKey()
     {
         var store = new InMemoryMesPlanningStore();
-        var numbering = new MesNumberingService();
+        var numbering = new MesCodingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         var handler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), numbering);
         var command = new CreateRushWorkOrderCommand(
@@ -108,7 +108,7 @@ public sealed class RushWorkOrderCommandTests
     [Fact]
     public async Task CreateRushWorkOrderCommand_GeneratesUniqueWorkOrdersForParallelRequests()
     {
-        var numbering = new MesNumberingService();
+        var numbering = new MesCodingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
 
         var tasks = Enumerable.Range(1, 20)
@@ -147,7 +147,7 @@ public sealed class RushWorkOrderCommandTests
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        var numbering = new MesNumberingService();
+        var numbering = new MesCodingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         var handler = new ConvertPlanToWorkOrderCommandHandler(dbContext, numbering);
         var command = new ConvertPlanToWorkOrderCommand(
@@ -178,7 +178,7 @@ public sealed class RushWorkOrderCommandTests
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        var numbering = new MesNumberingService();
+        var numbering = new MesCodingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
             "org-001",
@@ -219,29 +219,28 @@ public sealed class RushWorkOrderCommandTests
     }
 
     [Fact]
-    public async Task MesNumberingService_PersistsCounterAndIdempotencyKey()
+    public async Task MesCodingService_PersistsCounterAndIdempotencyKey()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        var numbering = new MesNumberingService(dbContext, scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>());
+        var coding = new MesCodingService(dbContext, scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>());
 
-        var allocation = await numbering.AllocateAsync(
+        var allocation = await coding.AllocateAsync(
             "org-001",
             "env-dev",
             "work-order",
-            "WO",
             null,
             "mes-persisted-numbering",
             "payload",
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Matches("^WO-[0-9]{8}-[0-9]{6}$", allocation.Number);
+        Assert.Matches("^WO-[0-9]{8}-[0-9]{6}$", allocation.Code);
         using var observerScope = provider.CreateScope();
         var observerContext = observerScope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        Assert.Single(observerContext.NumberingCounters);
-        var idempotency = Assert.Single(observerContext.NumberingIdempotencyKeys);
-        Assert.Equal(allocation.Number, idempotency.Number);
+        Assert.Single(observerContext.CodeCounters);
+        var idempotency = Assert.Single(observerContext.CodeIdempotencyKeys);
+        Assert.Equal(allocation.Code, idempotency.Code);
     }
 }

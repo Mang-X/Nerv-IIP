@@ -36,26 +36,24 @@ public sealed class CreatePurchaseRequisitionFromSuggestionCommandValidator : Ab
     }
 }
 
-public sealed class CreatePurchaseRequisitionFromSuggestionCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null)
+public sealed class CreatePurchaseRequisitionFromSuggestionCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<CreatePurchaseRequisitionFromSuggestionCommand, PurchaseRequisitionId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<PurchaseRequisitionId> Handle(CreatePurchaseRequisitionFromSuggestionCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "purchase-requisition",
-            "PR",
+            request.EnvironmentId, "purchase-requisition",
             request.RequisitionNo,
             request.IdempotencyKey,
-            ErpNumberingService.Fingerprint(request.SuggestionId, request.SkuCode, request.UomCode, request.SiteCode, request.Quantity, request.RequiredDate),
+            ErpCodingService.Fingerprint(request.SuggestionId, request.SkuCode, request.UomCode, request.SiteCode, request.Quantity, request.RequiredDate),
             cancellationToken);
         var existing = await dbContext.PurchaseRequisitions.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
-            && (x.SuggestionId == request.SuggestionId || x.RequisitionNo == allocation.Number),
+            && (x.SuggestionId == request.SuggestionId || x.RequisitionNo == allocation.Code),
             cancellationToken);
         if (existing is not null)
         {
@@ -65,7 +63,7 @@ public sealed class CreatePurchaseRequisitionFromSuggestionCommandHandler(Applic
         var requisition = PurchaseRequisition.CreateFromSuggestion(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.SuggestionId,
             request.SkuCode,
             request.UomCode,
@@ -109,35 +107,33 @@ public sealed class CreateRequestForQuotationCommandValidator : AbstractValidato
     }
 }
 
-public sealed class CreateRequestForQuotationCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null)
+public sealed class CreateRequestForQuotationCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<CreateRequestForQuotationCommand, RequestForQuotationId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<RequestForQuotationId> Handle(CreateRequestForQuotationCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "request-for-quotation",
-            "RFQ",
+            request.EnvironmentId, "request-for-quotation",
             request.RfqNo,
             request.IdempotencyKey,
-            ErpNumberingService.Fingerprint(request.SupplierCodes, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.RequiredDate}")),
+            ErpCodingService.Fingerprint(request.SupplierCodes, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.RequiredDate}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.RequestForQuotations.SingleAsync(x =>
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.RfqNo == allocation.Number,
+                && x.RfqNo == allocation.Code,
                 cancellationToken)).Id;
         }
 
         var rfq = RequestForQuotation.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.SupplierCodes,
             request.Lines.Select(x => new RfqLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.SiteCode, x.RequiredDate)));
         dbContext.RequestForQuotations.Add(rfq);
@@ -178,35 +174,33 @@ public sealed class ReceiveSupplierQuotationCommandValidator : AbstractValidator
     }
 }
 
-public sealed class ReceiveSupplierQuotationCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null)
+public sealed class ReceiveSupplierQuotationCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<ReceiveSupplierQuotationCommand, SupplierQuotationId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<SupplierQuotationId> Handle(ReceiveSupplierQuotationCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "supplier-quotation",
-            "SQ",
+            request.EnvironmentId, "supplier-quotation",
             request.QuotationNo,
             request.IdempotencyKey,
-            ErpNumberingService.Fingerprint(request.RfqNo, request.SupplierCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}")),
+            ErpCodingService.Fingerprint(request.RfqNo, request.SupplierCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.SupplierQuotations.SingleAsync(x =>
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.QuotationNo == allocation.Number,
+                && x.QuotationNo == allocation.Code,
                 cancellationToken)).Id;
         }
 
         var quotation = SupplierQuotation.Receive(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.RfqNo,
             request.SupplierCode,
             request.Lines.Select(x => new SupplierQuotationLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.PromisedDate)));
@@ -248,35 +242,33 @@ public sealed class CreatePurchaseOrderCommandValidator : AbstractValidator<Crea
     }
 }
 
-public sealed class CreatePurchaseOrderCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null)
+public sealed class CreatePurchaseOrderCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<CreatePurchaseOrderCommand, PurchaseOrderId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<PurchaseOrderId> Handle(CreatePurchaseOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "purchase-order",
-            "PO",
+            request.EnvironmentId, "purchase-order",
             request.PurchaseOrderNo,
             request.IdempotencyKey,
-            ErpNumberingService.Fingerprint(request.SupplierCode, request.SiteCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}")),
+            ErpCodingService.Fingerprint(request.SupplierCode, request.SiteCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.PurchaseOrders.SingleAsync(x =>
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.PurchaseOrderNo == allocation.Number,
+                && x.PurchaseOrderNo == allocation.Code,
                 cancellationToken)).Id;
         }
 
         var order = PurchaseOrder.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.SupplierCode,
             request.SiteCode,
             request.Lines.Select(x => new PurchaseOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.PromisedDate)));
@@ -313,28 +305,26 @@ public sealed class RecordPurchaseReceiptCommandValidator : AbstractValidator<Re
     }
 }
 
-public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null)
+public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<RecordPurchaseReceiptCommand, PurchaseReceiptId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<PurchaseReceiptId> Handle(RecordPurchaseReceiptCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "purchase-receipt",
-            "GR",
+            request.EnvironmentId, "purchase-receipt",
             request.PurchaseReceiptNo,
             request.IdempotencyKey,
-            ErpNumberingService.Fingerprint(request.PurchaseOrderNo, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}")),
+            ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.PurchaseReceipts.SingleAsync(x =>
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.PurchaseReceiptNo == allocation.Number,
+                && x.PurchaseReceiptNo == allocation.Code,
                 cancellationToken)).Id;
         }
 
@@ -349,7 +339,7 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
 
         var receipt = PurchaseReceipt.Record(
             order,
-            allocation.Number,
+            allocation.Code,
             request.Lines.Select(x => new PurchaseReceiptLineDraft(x.PurchaseOrderLineNo, x.ReceivedQuantity, x.QualityStatus)));
         dbContext.PurchaseReceipts.Add(receipt);
         return receipt.Id;

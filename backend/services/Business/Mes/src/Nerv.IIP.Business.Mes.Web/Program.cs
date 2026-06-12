@@ -42,7 +42,7 @@ builder.Services.AddMesPostgreSqlPersistence(connectionString, builder.Environme
 builder.Services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
 builder.Services.AddScoped<MesFoundationReadinessService>();
 builder.Services.AddSingleton<RuleScheduler>();
-builder.Services.AddScoped<MesNumberingService>();
+builder.Services.AddScoped<MesCodingService>();
 builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();

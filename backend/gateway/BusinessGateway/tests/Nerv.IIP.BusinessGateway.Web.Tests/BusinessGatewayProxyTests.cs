@@ -3421,13 +3421,13 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         string internalBearerToken,
         string downstreamPath,
         string resourceType,
-        string code,
+        string? code,
         string displayName)
     {
         LastInternalToken = internalBearerToken;
         CreateResourceCallCount++;
         LastCreateResourcePath = downstreamPath;
-        return Task.FromResult(new BusinessConsoleResourceItem(resourceType, code, displayName, true, "v1"));
+        return Task.FromResult(new BusinessConsoleResourceItem(resourceType, code ?? $"{resourceType}-generated", displayName, true, "v1"));
     }
 
     private static BusinessConsoleMasterDataResourceDetail ResourceDetail(
