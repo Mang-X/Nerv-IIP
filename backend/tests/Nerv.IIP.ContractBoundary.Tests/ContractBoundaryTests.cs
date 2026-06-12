@@ -1,91 +1,84 @@
+using System.Reflection;
+using Nerv.IIP.AppHub.Domain;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
+using Nerv.IIP.Ops.Domain;
+
 namespace Nerv.IIP.ContractBoundary.Tests;
 
 public sealed class ContractBoundaryTests
 {
-    public static TheoryData<string, string[]> DomainProjectsWithForbiddenContracts => new()
+    public static TheoryData<Assembly, string[]> DomainAssembliesWithForbiddenContracts => new()
     {
         {
-            "backend/services/AppHub/src/Nerv.IIP.AppHub.Domain",
+            typeof(IAppHubStateStore).Assembly,
             ["Nerv.IIP.Contracts.AppHubQueries"]
         },
         {
-            "backend/services/Ops/src/Nerv.IIP.Ops.Domain",
+            typeof(OperationTaskFact).Assembly,
             ["Nerv.IIP.Contracts.Ops"]
         },
         {
-            "backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Domain",
+            typeof(SchedulePlan).Assembly,
             ["Nerv.IIP.Contracts.Scheduling"]
         }
     };
 
     [Theory]
-    [MemberData(nameof(DomainProjectsWithForbiddenContracts))]
+    [MemberData(nameof(DomainAssembliesWithForbiddenContracts))]
     public void Domain_projects_do_not_reference_query_or_algorithm_contracts(
-        string projectDirectory,
+        Assembly domainAssembly,
         string[] forbiddenContractNames)
     {
-        var root = FindRepositoryRoot();
-        var fullProjectDirectory = Path.Combine(root, projectDirectory);
-        var projectFile = Directory.GetFiles(fullProjectDirectory, "*.csproj").Single();
-        var projectText = File.ReadAllText(projectFile);
-        var sourceText = string.Join(
-            Environment.NewLine,
-            Directory.GetFiles(fullProjectDirectory, "*.cs", SearchOption.AllDirectories)
-                .Where(file => !IsGeneratedBuildOutput(file))
-                .Select(File.ReadAllText));
-
+        var referencedAssemblyNames = CollectReferencedAssemblyNames(domainAssembly);
         var offenders = forbiddenContractNames
-            .Where(contractName =>
-                projectText.Contains($"{contractName}.csproj", StringComparison.Ordinal)
-                || sourceText.Contains($"using {contractName};", StringComparison.Ordinal)
-                || sourceText.Contains($"{contractName}.", StringComparison.Ordinal))
+            .Where(referencedAssemblyNames.Contains)
             .ToArray();
 
         Assert.True(
             offenders.Length == 0,
-            $"Domain project {projectDirectory} must not reference query/read-model/algorithm contracts: {string.Join(", ", offenders)}");
+            $"Domain assembly {domainAssembly.GetName().Name} must not reference query/read-model/algorithm contracts: {string.Join(", ", offenders)}");
     }
 
     [Fact]
     public void Wms_uses_public_inventory_contract_instead_of_local_inventory_dto_copy()
     {
-        var root = FindRepositoryRoot();
-        var wmsWebDirectory = Path.Combine(root, "backend", "services", "Business", "Wms", "src", "Nerv.IIP.Business.Wms.Web");
-        var projectText = File.ReadAllText(Path.Combine(wmsWebDirectory, "Nerv.IIP.Business.Wms.Web.csproj"));
-        var sourceFiles = Directory.GetFiles(wmsWebDirectory, "*.cs", SearchOption.AllDirectories)
-            .Where(file => !IsGeneratedBuildOutput(file))
+        var wmsAssembly = typeof(WmsEndpoint<,>).Assembly;
+        var referencedAssemblyNames = CollectReferencedAssemblyNames(wmsAssembly);
+        var localDtoTypeNames = wmsAssembly
+            .GetTypes()
+            .Select(x => x.Name)
+            .Where(typeName =>
+                typeName is "IInventoryMovementClient"
+                    or "PostStockMovementRequest"
+                    or "PostStockMovementResponse")
             .ToArray();
-        var sourceText = string.Join(Environment.NewLine, sourceFiles.Select(File.ReadAllText));
 
-        Assert.Contains("Nerv.IIP.Contracts.Inventory.csproj", projectText);
-        Assert.DoesNotContain(
-            Path.Combine("Application", "Inventory", "IInventoryMovementClient.cs"),
-            sourceFiles.Select(file => Path.GetRelativePath(wmsWebDirectory, file)));
-        Assert.DoesNotContain("public interface IInventoryMovementClient", sourceText);
-        Assert.DoesNotContain("public sealed record PostStockMovementRequest", sourceText);
-        Assert.DoesNotContain("public sealed record PostStockMovementResponse", sourceText);
-        Assert.Contains("using Nerv.IIP.Contracts.Inventory;", sourceText);
+        Assert.Contains("Nerv.IIP.Contracts.Inventory", referencedAssemblyNames);
+        Assert.Empty(localDtoTypeNames);
     }
 
-    private static bool IsGeneratedBuildOutput(string file)
+    private static HashSet<string> CollectReferencedAssemblyNames(Assembly rootAssembly)
     {
-        return file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
-            || file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
-    }
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        Collect(rootAssembly);
+        return visited;
 
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
+        void Collect(Assembly assembly)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "README.md")) && Directory.Exists(Path.Combine(directory.FullName, "backend")))
+            foreach (var reference in assembly.GetReferencedAssemblies())
             {
-                return directory.FullName;
+                if (string.IsNullOrWhiteSpace(reference.Name) || !visited.Add(reference.Name))
+                {
+                    continue;
+                }
+
+                var localAssemblyPath = Path.Combine(AppContext.BaseDirectory, $"{reference.Name}.dll");
+                if (File.Exists(localAssemblyPath))
+                {
+                    Collect(Assembly.LoadFrom(localAssemblyPath));
+                }
             }
-
-            directory = directory.Parent;
         }
-
-        throw new DirectoryNotFoundException("Repository root was not found.");
     }
 }

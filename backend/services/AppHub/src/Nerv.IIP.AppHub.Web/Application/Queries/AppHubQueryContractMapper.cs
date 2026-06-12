@@ -20,8 +20,8 @@ internal static class AppHubQueryContractMapper
     public static InstanceListResponse ToContract(this InstanceListResult result)
     {
         return new InstanceListResponse(
-            result.PageIndex,
-            result.PageSize,
+            result.EffectivePageIndex,
+            result.EffectivePageSize,
             result.TotalCount,
             result.Items.Select(ToContract).ToList());
     }

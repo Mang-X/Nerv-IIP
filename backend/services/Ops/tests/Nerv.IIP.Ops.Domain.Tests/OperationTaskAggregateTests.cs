@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Text.Json;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
@@ -236,6 +238,35 @@ public sealed class OperationTaskAggregateTests
         Assert.Equal("failed", attempt.Status);
         Assert.Equal("restart-failed", attempt.FailureCode);
         Assert.Throws<InvalidOperationResultException>(duplicate);
+    }
+
+    [Fact]
+    public void Attempt_fact_reads_failure_json_with_legacy_connector_failure_shape()
+    {
+        var task = CreateTask();
+        Claim(task, "attempt-000001", "audit-000002", "lease-001", "connector-host-001");
+        var attempt = Assert.Single(task.Attempts);
+        var legacyFailureJson = JsonSerializer.Serialize(
+            new FailureReason(
+                "restart-failed",
+                "process exited",
+                "connector",
+                Retryable: true,
+                new Dictionary<string, string> { ["exitCode"] = "1" }),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        typeof(OperationAttempt)
+            .GetProperty(nameof(OperationAttempt.FailureJson), BindingFlags.Instance | BindingFlags.Public)!
+            .SetValue(attempt, legacyFailureJson);
+
+        var failure = Assert.Single(task.ToDetailFact().Attempts).Failure;
+
+        Assert.NotNull(failure);
+        Assert.Equal("restart-failed", failure.Code);
+        Assert.Equal("process exited", failure.Message);
+        Assert.Equal("connector", failure.Category);
+        Assert.True(failure.Retryable);
+        Assert.Equal("1", failure.Detail["exitCode"]);
     }
 
     [Fact]

@@ -51,7 +51,7 @@ public class ListApplicationInstancesQueryHandler(IServiceProvider services)
         var pageIndex = Math.Max(query.PageIndex, 1);
         var pageSize = Math.Max(query.PageSize, 1);
         var items = rows.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToList();
-        return new InstanceListResult(query.PageIndex, query.PageSize, rows.Count, items).ToContract();
+        return new InstanceListResult(pageIndex, pageSize, rows.Count, items).ToContract();
     }
 
     private static InstanceListItemFact ToListProjection(ApplicationInstance instance, List<AppHubApplication> applications, List<ManagedNode> nodes)

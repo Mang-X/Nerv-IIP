@@ -12,7 +12,7 @@ public sealed record InstanceStateHistoryFact(string InstanceKey, DateTimeOffset
 public sealed record RegistrationResult(string RegistrationId, string InstanceKey);
 public sealed record InstanceStatusChanged(string InstanceKey, string PreviousStatus, string CurrentStatus, DateTimeOffset ChangedAtUtc);
 public sealed record InstanceListCriteria(string OrganizationId, string EnvironmentId, int PageIndex, int PageSize, string? SortBy, string? SortOrder, string? FilterSearch);
-public sealed record InstanceListResult(int PageIndex, int PageSize, int TotalCount, IReadOnlyList<InstanceListItemFact> Items);
+public sealed record InstanceListResult(int EffectivePageIndex, int EffectivePageSize, int TotalCount, IReadOnlyList<InstanceListItemFact> Items);
 public sealed record InstanceListItemFact(string ApplicationKey, string ApplicationName, string Version, string NodeKey, string NodeName, string InstanceKey, string InstanceName, string ReportedStatus, string HealthStatus, DateTimeOffset? LastHeartbeatAtUtc, DateTimeOffset? LastStateAtUtc);
 public sealed record InstanceDetailFact(string ApplicationKey, string ApplicationName, string Version, string NodeKey, string NodeName, string InstanceKey, string InstanceName, string ReportedStatus, string HealthStatus, DateTimeOffset? LastHeartbeatAtUtc, DateTimeOffset? LastStateAtUtc, IReadOnlyList<CapabilitySummaryFact> Capabilities, IReadOnlyDictionary<string, string> Metadata);
 public sealed record CapabilitySummaryFact(string CapabilityCode, string CapabilityVersion, string Category, IReadOnlyList<string> SupportedOperations);
@@ -111,11 +111,13 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
                 .ApplyInstanceListSort(query)
                 .ToList();
 
+            var effectivePageIndex = Math.Max(query.PageIndex, 1);
+            var effectivePageSize = Math.Max(query.PageSize, 1);
             var items = filtered
-                .Skip((Math.Max(query.PageIndex, 1) - 1) * Math.Max(query.PageSize, 1))
-                .Take(Math.Max(query.PageSize, 1))
+                .Skip((effectivePageIndex - 1) * effectivePageSize)
+                .Take(effectivePageSize)
                 .ToList();
-            return new InstanceListResult(query.PageIndex, query.PageSize, filtered.Count, items);
+            return new InstanceListResult(effectivePageIndex, effectivePageSize, filtered.Count, items);
         }
     }
 

@@ -141,7 +141,7 @@ internal static class OpsContractMapper
                     task.Approval.DecidedBy,
                     task.Approval.DecidedAtUtc,
                     task.Approval.DecisionReason),
-            attemptSummaries.LastOrDefault()?.AttemptId,
+            detail.CurrentAttemptId,
             attemptSummaries,
             auditSummaries);
     }
