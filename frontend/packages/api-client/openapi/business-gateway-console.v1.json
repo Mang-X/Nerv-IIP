@@ -18558,6 +18558,9 @@
           "workCenterCode": {
             "type": "string"
           },
+          "operationCode": {
+            "type": "string"
+          },
           "operationName": {
             "type": "string"
           },

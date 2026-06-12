@@ -42,7 +42,7 @@ public sealed class Routing : Entity<RoutingId>, IAggregateRoot
         return new Routing(organizationId, environmentId, routingCode, revision, skuCode);
     }
 
-    public Routing AddOperation(int sequence, string workCenterCode, string operationName, int standardMinutes)
+    public Routing AddOperation(int sequence, string workCenterCode, string operationCode, string operationName, int standardMinutes)
     {
         EnsureDraft();
         if (sequence <= 0)
@@ -60,7 +60,7 @@ public sealed class Routing : Entity<RoutingId>, IAggregateRoot
             throw new InvalidOperationException($"Routing already contains operation sequence '{sequence}'.");
         }
 
-        operations.Add(new RoutingOperation(sequence, Required(workCenterCode), Required(operationName), standardMinutes));
+        operations.Add(new RoutingOperation(sequence, Required(workCenterCode), Required(operationCode), Required(operationName), standardMinutes));
         Touch();
         return this;
     }
@@ -99,16 +99,18 @@ public sealed class RoutingOperation
     {
     }
 
-    internal RoutingOperation(int sequence, string workCenterCode, string operationName, int standardMinutes)
+    internal RoutingOperation(int sequence, string workCenterCode, string operationCode, string operationName, int standardMinutes)
     {
         Sequence = sequence;
         WorkCenterCode = workCenterCode;
+        OperationCode = operationCode;
         OperationName = operationName;
         StandardMinutes = standardMinutes;
     }
 
     public int Sequence { get; private set; }
     public string WorkCenterCode { get; private set; } = string.Empty;
+    public string OperationCode { get; private set; } = string.Empty;
     public string OperationName { get; private set; } = string.Empty;
     public int StandardMinutes { get; private set; }
 }

@@ -399,6 +399,7 @@ public sealed class MasterDataDictionaryRulesTests
             ["partner-type"] = ["carrier", "customer", "supplier"],
             ["skill"] = ["assembly", "cnc-operation", "forklift", "inspection", "welding"],
             ["skill-level"] = ["expert", "intermediate", "junior", "senior"],
+            ["operation"] = ["assembly", "cnc-operation", "inspection", "packaging", "welding"],
             ["quality-reason"] = ["dimension-ng", "missing-part", "scratch", "solder-defect"],
             ["compliance-tag"] = ["msd", "reach", "rohs", "ul"],
             ["device-status"] = ["fault", "idle", "maintenance", "running", "scrapped"],

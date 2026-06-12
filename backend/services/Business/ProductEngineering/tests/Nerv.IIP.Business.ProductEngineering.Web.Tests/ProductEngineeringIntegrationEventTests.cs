@@ -51,7 +51,7 @@ public sealed class ProductEngineeringIntegrationEventTests
     public void Routing_release_converter_emits_stable_routing_released_event()
     {
         var routing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-1000", "A", "SKU-FG-1000")
-            .AddOperation(10, "WC-MIX-01", "Mix", 30);
+            .AddOperation(10, "WC-MIX-01", "mixing", "混合", 30);
         routing.Release(new DateOnly(2026, 6, 1));
 
         var converter = new RoutingReleasedIntegrationEventConverter(new StubContextAccessor());
@@ -60,7 +60,8 @@ public sealed class ProductEngineeringIntegrationEventTests
         Assert.Equal(ProductEngineeringIntegrationEventTypes.RoutingReleased, integrationEvent.EventType);
         Assert.Equal("SKU-FG-1000", integrationEvent.Payload.SkuCode);
         Assert.Equal(10, integrationEvent.Payload.Operations.Single().Sequence);
-        AssertJsonUsesCamelCase(integrationEvent, "eventType", "routingVersionId", "workCenterCode");
+        Assert.Equal("mixing", integrationEvent.Payload.Operations.Single().OperationCode);
+        AssertJsonUsesCamelCase(integrationEvent, "eventType", "routingVersionId", "operationCode", "workCenterCode");
     }
 
     [Fact]

@@ -875,6 +875,7 @@ public sealed record BusinessConsoleReleaseRoutingRequest(
 public sealed record BusinessConsoleRoutingOperationRequest(
     int Sequence,
     string WorkCenterCode,
+    string OperationCode,
     string OperationName,
     int StandardMinutes);
 

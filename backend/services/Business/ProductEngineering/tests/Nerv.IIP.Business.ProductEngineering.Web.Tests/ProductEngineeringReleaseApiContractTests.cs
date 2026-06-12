@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Json;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
@@ -226,7 +228,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var existing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-1000", "A", "SKU-FG-1000")
-            .AddOperation(10, "WC-MIX-01", "Mix", 30);
+            .AddOperation(10, "WC-MIX-01", "mixing", "混合", 30);
         existing.Release(new DateOnly(2026, 6, 1));
         dbContext.Routings.Add(existing);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -241,9 +243,45 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 "A",
                 "SKU-FG-1000",
                 new DateOnly(2026, 6, 1),
-                [new RoutingOperationCommand(10, "WC-MIX-01", "Mix", 30)]),
+                [new RoutingOperationCommand(10, "WC-MIX-01", "mixing", "混合", 30)]),
             CancellationToken.None));
         Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Release_routing_endpoint_rejects_missing_operation_code(string operationCode)
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/engineering/routings/release", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            routingCode = "ROUTE-1000",
+            revision = "A",
+            skuCode = "SKU-FG-1000",
+            effectiveDate = "2026-06-01",
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 10,
+                    workCenterCode = "WC-MIX-01",
+                    operationCode,
+                    operationName = "混合",
+                    standardMinutes = 30,
+                },
+            },
+        });
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("operationCode", responseBody, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

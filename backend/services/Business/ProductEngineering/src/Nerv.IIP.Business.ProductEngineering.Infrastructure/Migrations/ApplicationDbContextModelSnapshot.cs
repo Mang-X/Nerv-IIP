@@ -1059,12 +1059,19 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
 
                             NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("id"));
 
+                            b1.Property<string>("OperationCode")
+                                .IsRequired()
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("operation_code")
+                                .HasComment("MasterData reference-data operation code.");
+
                             b1.Property<string>("OperationName")
                                 .IsRequired()
                                 .HasMaxLength(200)
                                 .HasColumnType("character varying(200)")
                                 .HasColumnName("operation_name")
-                                .HasComment("Operation display name.");
+                                .HasComment("Operation display name submitted with routing release.");
 
                             b1.Property<int>("Sequence")
                                 .HasColumnType("integer")

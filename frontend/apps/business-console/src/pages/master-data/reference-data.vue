@@ -55,6 +55,7 @@ const CODE_SETS: CodeSetMeta[] = [
   { codeSet: 'barcode-rule', label: '条码规则', kind: 'platform-preset' },
   { codeSet: 'partner-type', label: '伙伴角色', kind: 'system-enum' },
   { codeSet: 'skill-level', label: '技能等级', kind: 'system-enum' },
+  { codeSet: 'operation', label: '标准工序', kind: 'factory-custom' },
   { codeSet: 'quality-reason', label: '质量原因', kind: 'factory-custom' },
   { codeSet: 'compliance-tag', label: '合规标签', kind: 'platform-preset' },
   { codeSet: 'device-status', label: '设备状态', kind: 'system-enum' },

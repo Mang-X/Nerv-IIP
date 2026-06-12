@@ -62,6 +62,7 @@ describe('master-data reference-data page', () => {
     expect(nav.exists()).toBe(true)
     expect(nav.text()).toContain('物料类型')
     expect(nav.text()).toContain('技能等级')
+    expect(nav.text()).toContain('标准工序')
     expect(nav.text()).toContain('仓储条件')
   })
 

@@ -144,6 +144,27 @@ public sealed record ReleaseRoutingRequest(
     IReadOnlyCollection<RoutingOperationCommand> Operations,
     string? IdempotencyKey = null);
 
+public sealed class ReleaseRoutingRequestValidator : Validator<ReleaseRoutingRequest>
+{
+    public ReleaseRoutingRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.RoutingCode).MaximumLength(100);
+        RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Operations).NotEmpty();
+        RuleForEach(x => x.Operations).ChildRules(operation =>
+        {
+            operation.RuleFor(x => x.Sequence).GreaterThan(0);
+            operation.RuleFor(x => x.WorkCenterCode).NotEmpty().MaximumLength(100);
+            operation.RuleFor(x => x.OperationCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
+            operation.RuleFor(x => x.OperationName).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(200);
+            operation.RuleFor(x => x.StandardMinutes).GreaterThan(0);
+        });
+    }
+}
+
 public sealed class ReleaseRoutingEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ReleaseRoutingRequest, ResponseData<EntityResponse>>
 {
