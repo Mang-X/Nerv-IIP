@@ -54,7 +54,19 @@ public sealed record ListMasterDataResourcesRequest(
     bool IncludeDisabled = false,
     int Skip = 0,
     int Take = 100,
-    string? CodeSet = null);
+    string? CodeSet = null,
+    string? ParentCode = null,
+    string? SiteCode = null,
+    string? LineCode = null,
+    string? WorkCenterCode = null,
+    string? Category = null,
+    string? PartnerType = null,
+    string? Keyword = null,
+    bool All = false,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    string? UserId = null,
+    string? SkillCode = null);
 
 public sealed record CreateSkuRequest(
     string OrganizationId,
@@ -85,7 +97,26 @@ public sealed class ListMasterDataResourcesEndpoint(ISender sender)
     public override async Task HandleAsync(ListMasterDataResourcesRequest req, CancellationToken ct)
     {
         var response = await sender.Send(
-            new ListMasterDataResourcesQuery(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.IncludeDisabled, req.Skip, req.Take, req.CodeSet),
+            new ListMasterDataResourcesQuery(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.ResourceType,
+                req.IncludeDisabled,
+                req.Skip,
+                req.Take,
+                req.CodeSet,
+                req.ParentCode,
+                req.SiteCode,
+                req.LineCode,
+                req.WorkCenterCode,
+                req.Category,
+                req.PartnerType,
+                req.Keyword,
+                req.All,
+                req.DepartmentCode,
+                req.ShiftCode,
+                req.UserId,
+                req.SkillCode),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -96,7 +127,8 @@ public sealed record GetMasterDataResourceDetailRequest(
     string EnvironmentId,
     string ResourceType,
     string Code,
-    string? CodeSet = null);
+    string? CodeSet = null,
+    DateOnly? EffectiveFrom = null);
 
 public sealed class GetMasterDataResourceDetailEndpoint(ISender sender)
     : MasterDataEndpoint<GetMasterDataResourceDetailRequest, ResponseData<MasterDataResourceDetail>>
@@ -110,7 +142,7 @@ public sealed class GetMasterDataResourceDetailEndpoint(ISender sender)
     public override async Task HandleAsync(GetMasterDataResourceDetailRequest req, CancellationToken ct)
     {
         var response = await sender.Send(
-            new GetMasterDataResourceDetailQuery(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.Code, req.CodeSet),
+            new GetMasterDataResourceDetailQuery(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.Code, req.CodeSet, req.EffectiveFrom),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -135,6 +167,12 @@ public sealed record UpdateMasterDataResourceRequest(
     string? PartnerType = null,
     string? Timezone = null,
     string? SiteCode = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    TimeOnly? StartsAt = null,
+    TimeOnly? EndsAt = null,
+    int? PaidMinutes = null,
     string? ManagerUserId = null,
     string? Description = null,
     string? PlantCode = null,
@@ -160,7 +198,13 @@ public sealed record UpdateMasterDataResourceRequest(
     int? Precision = null,
     string? RoundingMode = null,
     IReadOnlyCollection<string>? PartnerRoles = null,
-    string? TaxId = null);
+    string? TaxId = null,
+    IReadOnlyCollection<WorkCalendarWorkingTimeDetail>? WorkingTimes = null,
+    IReadOnlyCollection<WorkCalendarHolidayDetail>? Holidays = null,
+    IReadOnlyCollection<WorkCalendarExceptionDetail>? Exceptions = null,
+    decimal? Factor = null,
+    decimal? Offset = null,
+    DateOnly? EffectiveFrom = null);
 
 public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
     : MasterDataEndpoint<UpdateMasterDataResourceRequest, ResponseData<MasterDataResourceDetail>>
@@ -193,6 +237,12 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
                 req.PartnerType,
                 req.Timezone,
                 req.SiteCode,
+                req.ParentDepartmentCode,
+                req.DepartmentCode,
+                req.ShiftCode,
+                req.StartsAt,
+                req.EndsAt,
+                req.PaidMinutes,
                 req.ManagerUserId,
                 req.Description,
                 req.PlantCode,
@@ -218,7 +268,13 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
                 req.Precision,
                 req.RoundingMode,
                 req.PartnerRoles,
-                req.TaxId),
+                req.TaxId,
+                req.WorkingTimes,
+                req.Holidays,
+                req.Exceptions,
+                req.Factor,
+                req.Offset,
+                req.EffectiveFrom),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -230,7 +286,8 @@ public sealed record SetMasterDataResourceEnabledRequest(
     string ResourceType,
     string Code,
     string? CodeSet = null,
-    string Reason = "");
+    string Reason = "",
+    DateOnly? EffectiveFrom = null);
 
 public sealed class DisableMasterDataResourceEndpoint(ISender sender)
     : MasterDataEndpoint<SetMasterDataResourceEnabledRequest, ResponseData<MasterDataResourceDetail>>
@@ -244,7 +301,7 @@ public sealed class DisableMasterDataResourceEndpoint(ISender sender)
     public override async Task HandleAsync(SetMasterDataResourceEnabledRequest req, CancellationToken ct)
     {
         var response = await sender.Send(
-            new SetMasterDataResourceEnabledCommand(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.Code, false, req.CodeSet, req.Reason),
+            new SetMasterDataResourceEnabledCommand(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.Code, false, req.CodeSet, req.Reason, req.EffectiveFrom),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -262,7 +319,7 @@ public sealed class EnableMasterDataResourceEndpoint(ISender sender)
     public override async Task HandleAsync(SetMasterDataResourceEnabledRequest req, CancellationToken ct)
     {
         var response = await sender.Send(
-            new SetMasterDataResourceEnabledCommand(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.Code, true, req.CodeSet, req.Reason),
+            new SetMasterDataResourceEnabledCommand(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.Code, true, req.CodeSet, req.Reason, req.EffectiveFrom),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -539,6 +596,34 @@ public sealed class AssignPersonnelSkillEndpoint(ISender sender)
             req.EffectiveFrom,
             req.EffectiveTo), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed record ListPersonnelSkillMatrixRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? UserId = null,
+    string? SkillCode = null,
+    bool IncludeDisabled = false);
+
+public sealed class ListPersonnelSkillMatrixEndpoint(ISender sender)
+    : MasterDataEndpoint<ListPersonnelSkillMatrixRequest, ResponseData<PersonnelSkillMatrixResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<ListPersonnelSkillMatrixEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(ListPersonnelSkillMatrixRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListPersonnelSkillMatrixQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.UserId,
+            req.SkillCode,
+            req.IncludeDisabled), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -902,6 +987,7 @@ public static class MasterDataEndpointContracts
         new(typeof(ListTeamMembersEndpoint), "GET", "/api/business/v1/master-data/teams/{teamCode}/members", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataTeamMembers"),
         new(typeof(RemoveTeamMemberEndpoint), "DELETE", "/api/business/v1/master-data/teams/{teamCode}/members/{userId}", BusinessPermissionCodes.MasterDataResourcesManage, "removeBusinessMasterDataTeamMember"),
         new(typeof(AssignPersonnelSkillEndpoint), "POST", "/api/business/v1/master-data/personnel-skills", BusinessPermissionCodes.MasterDataResourcesManage, "assignBusinessMasterDataPersonnelSkill"),
+        new(typeof(ListPersonnelSkillMatrixEndpoint), "GET", "/api/business/v1/master-data/personnel-skills/matrix", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataPersonnelSkillMatrix"),
         new(typeof(CreateSiteEndpoint), "POST", "/api/business/v1/master-data/sites", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataSite"),
         new(typeof(CreateProductionLineEndpoint), "POST", "/api/business/v1/master-data/production-lines", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataProductionLine"),
         new(typeof(CreateShiftEndpoint), "POST", "/api/business/v1/master-data/shifts", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataShift"),

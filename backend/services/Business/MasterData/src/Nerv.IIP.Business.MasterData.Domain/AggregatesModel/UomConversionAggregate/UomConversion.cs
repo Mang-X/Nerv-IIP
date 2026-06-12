@@ -61,6 +61,7 @@ public class UomConversion : Entity<UomConversionId>, IAggregateRoot
     public int Precision { get; private set; }
     public string RoundingMode { get; private set; } = string.Empty;
     public DateOnly EffectiveFrom { get; private set; }
+    public bool Disabled { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
 
@@ -76,6 +77,72 @@ public class UomConversion : Entity<UomConversionId>, IAggregateRoot
         DateOnly effectiveFrom)
     {
         return new UomConversion(organizationId, environmentId, fromUomCode, toUomCode, factor, offset, precision, roundingMode, effectiveFrom);
+    }
+
+    public void Update(decimal factor, decimal offset, int precision, string roundingMode)
+    {
+        EnsureEnabled();
+        ValidateFactor(factor);
+        ValidatePrecision(precision);
+        Factor = factor;
+        Offset = offset;
+        Precision = precision;
+        RoundingMode = Required(roundingMode);
+        TouchUpdated();
+    }
+
+    public void Disable(string reason)
+    {
+        _ = Required(reason);
+        if (Disabled)
+        {
+            return;
+        }
+
+        Disabled = true;
+        TouchUpdated();
+    }
+
+    public void Enable(string reason)
+    {
+        _ = Required(reason);
+        if (!Disabled)
+        {
+            return;
+        }
+
+        Disabled = false;
+        TouchUpdated();
+    }
+
+    private void EnsureEnabled()
+    {
+        if (Disabled)
+        {
+            throw new InvalidOperationException("Disabled UOM conversion cannot be changed.");
+        }
+    }
+
+    private void TouchUpdated()
+    {
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new UnitOfMeasureChangedDomainEvent(OrganizationId, EnvironmentId, FromUomCode));
+    }
+
+    private static void ValidateFactor(decimal factor)
+    {
+        if (factor <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(factor), "Conversion factor must be positive.");
+        }
+    }
+
+    private static void ValidatePrecision(int precision)
+    {
+        if (precision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(precision), "Precision cannot be negative.");
+        }
     }
 
     private static string Required(string value)

@@ -53,6 +53,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/teams", "post", "createBusinessConsoleTeam");
         AssertOperationId(paths, "/api/business-console/v1/master-data/departments", "post", "createBusinessConsoleDepartment");
         AssertOperationId(paths, "/api/business-console/v1/master-data/personnel-skills", "post", "assignBusinessConsolePersonnelSkill");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/personnel-skills/matrix", "get", "listBusinessConsolePersonnelSkillMatrix");
         AssertOperationId(paths, "/api/business-console/v1/master-data/reference-data", "post", "createBusinessConsoleReferenceDataCode");
         AssertOperationId(paths, "/api/business-console/v1/inventory/availability", "get", "getBusinessConsoleInventoryAvailability");
         AssertOperationId(paths, "/api/business-console/v1/inventory/movements", "post", "postBusinessConsoleInventoryMovement");

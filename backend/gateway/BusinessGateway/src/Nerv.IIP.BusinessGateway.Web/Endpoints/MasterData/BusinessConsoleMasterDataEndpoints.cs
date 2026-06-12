@@ -372,6 +372,10 @@ public sealed class BusinessConsoleUpdateMasterDataResourceRequestValidator : Va
         RuleFor(x => x.Category).MaximumLength(100);
         RuleFor(x => x.MaterialType).MaximumLength(100);
         RuleFor(x => x.PartnerType).MaximumLength(100);
+        RuleFor(x => x.ParentDepartmentCode).MaximumLength(100);
+        RuleFor(x => x.DepartmentCode).MaximumLength(100);
+        RuleFor(x => x.ShiftCode).MaximumLength(100);
+        RuleFor(x => x.PaidMinutes).GreaterThan(0).When(x => x.PaidMinutes.HasValue);
         RuleFor(x => x.ManagerUserId).MaximumLength(100);
         RuleFor(x => x.Description).MaximumLength(500);
         RuleFor(x => x.WorkshopCode).MaximumLength(100);
@@ -889,6 +893,28 @@ public sealed class AssignBusinessConsolePersonnelSkillEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         masterData.AssignPersonnelSkillAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
+[HttpGet("/api/business-console/v1/master-data/personnel-skills/matrix")]
+[BusinessGatewayOperationId("listBusinessConsolePersonnelSkillMatrix")]
+public sealed class ListBusinessConsolePersonnelSkillMatrixEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsolePersonnelSkillMatrixRequest, BusinessConsolePersonnelSkillMatrixResponse>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesRead)
+{
+    protected override string OrganizationId(BusinessConsolePersonnelSkillMatrixRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsolePersonnelSkillMatrixRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsolePersonnelSkillMatrixResponse> ForwardAsync(
+        BusinessConsolePersonnelSkillMatrixRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.ListPersonnelSkillMatrixAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
