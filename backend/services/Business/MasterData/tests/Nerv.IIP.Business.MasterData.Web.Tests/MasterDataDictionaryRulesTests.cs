@@ -388,6 +388,7 @@ public sealed class MasterDataDictionaryRulesTests
             ["uom-dimension"] = ["area", "count", "length", "time", "volume", "weight"],
             ["partner-type"] = ["carrier", "customer", "supplier"],
             ["skill-level"] = ["expert", "intermediate", "junior", "senior"],
+            ["operation"] = ["assembly", "cnc-operation", "inspection", "packaging", "welding"],
             ["quality-reason"] = ["dimension-ng", "missing-part", "scratch", "solder-defect"],
             ["compliance-tag"] = ["msd", "reach", "rohs", "ul"],
             ["device-status"] = ["fault", "idle", "maintenance", "running", "scrapped"],

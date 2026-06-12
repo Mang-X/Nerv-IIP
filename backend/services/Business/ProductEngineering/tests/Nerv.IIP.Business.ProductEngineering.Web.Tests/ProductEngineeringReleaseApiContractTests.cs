@@ -226,7 +226,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var existing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-1000", "A", "SKU-FG-1000")
-            .AddOperation(10, "WC-MIX-01", "Mix", 30);
+            .AddOperation(10, "WC-MIX-01", "mixing", "混合", 30);
         existing.Release(new DateOnly(2026, 6, 1));
         dbContext.Routings.Add(existing);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -241,7 +241,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 "A",
                 "SKU-FG-1000",
                 new DateOnly(2026, 6, 1),
-                [new RoutingOperationCommand(10, "WC-MIX-01", "Mix", 30)]),
+                [new RoutingOperationCommand(10, "WC-MIX-01", "mixing", "混合", 30)]),
             CancellationToken.None));
         Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
     }

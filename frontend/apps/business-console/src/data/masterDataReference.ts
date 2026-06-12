@@ -100,6 +100,15 @@ export const PARTNER_TYPE_OPTIONS: RefOption[] = [
   { value: 'carrier', label: '承运商' },
 ]
 
+/** 标准工序目录（CodeSet: operation，工厂自定义）。 */
+export const OPERATION_OPTIONS: RefOption[] = [
+  { value: 'welding', label: '焊接' },
+  { value: 'assembly', label: '装配' },
+  { value: 'inspection', label: '检验' },
+  { value: 'cnc-operation', label: 'CNC加工' },
+  { value: 'packaging', label: '包装' },
+]
+
 /** 把码值映射为中文名（找不到则原样返回）。 */
 export function refLabel(options: RefOption[], value: string | undefined | null): string {
   if (!value) return '无'

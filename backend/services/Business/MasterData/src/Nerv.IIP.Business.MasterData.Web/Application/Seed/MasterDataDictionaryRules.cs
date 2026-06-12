@@ -77,6 +77,12 @@ public static class MasterDataDictionaryRules
         new("skill-level", "senior", "高级", ReferenceDataCodeSetKind.SystemEnum),
         new("skill-level", "expert", "专家", ReferenceDataCodeSetKind.SystemEnum),
 
+        new("operation", "welding", "焊接", ReferenceDataCodeSetKind.FactoryCustom),
+        new("operation", "assembly", "装配", ReferenceDataCodeSetKind.FactoryCustom),
+        new("operation", "inspection", "检验", ReferenceDataCodeSetKind.FactoryCustom),
+        new("operation", "cnc-operation", "CNC加工", ReferenceDataCodeSetKind.FactoryCustom),
+        new("operation", "packaging", "包装", ReferenceDataCodeSetKind.FactoryCustom),
+
         new("quality-reason", "scratch", "划伤", ReferenceDataCodeSetKind.FactoryCustom),
         new("quality-reason", "dimension-ng", "尺寸不良", ReferenceDataCodeSetKind.FactoryCustom),
         new("quality-reason", "missing-part", "缺件", ReferenceDataCodeSetKind.FactoryCustom),

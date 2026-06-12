@@ -301,7 +301,7 @@ public sealed record ReleaseRoutingCommand(
     IReadOnlyCollection<RoutingOperationCommand> Operations,
     string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
 
-public sealed record RoutingOperationCommand(int Sequence, string WorkCenterCode, string OperationName, int StandardMinutes);
+public sealed record RoutingOperationCommand(int Sequence, string WorkCenterCode, string OperationCode, string OperationName, int StandardMinutes);
 
 public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRoutingCommand>
 {
@@ -313,6 +313,14 @@ public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRo
         RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Operations).NotEmpty();
+        RuleForEach(x => x.Operations).ChildRules(operation =>
+        {
+            operation.RuleFor(x => x.Sequence).GreaterThan(0);
+            operation.RuleFor(x => x.WorkCenterCode).NotEmpty().MaximumLength(100);
+            operation.RuleFor(x => x.OperationCode).NotEmpty().MaximumLength(100);
+            operation.RuleFor(x => x.OperationName).NotEmpty().MaximumLength(200);
+            operation.RuleFor(x => x.StandardMinutes).GreaterThan(0);
+        });
     }
 }
 
@@ -330,7 +338,7 @@ public sealed class ReleaseRoutingCommandHandler(IRoutingRepository repository, 
             "RTG",
             request.RoutingCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.WorkCenterCode}:{x.OperationName}:{x.StandardMinutes}")),
+            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.WorkCenterCode}:{x.OperationCode}:{x.OperationName}:{x.StandardMinutes}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -345,7 +353,7 @@ public sealed class ReleaseRoutingCommandHandler(IRoutingRepository repository, 
         var routing = Routing.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, request.SkuCode);
         foreach (var operation in request.Operations)
         {
-            routing.AddOperation(operation.Sequence, operation.WorkCenterCode, operation.OperationName, operation.StandardMinutes);
+            routing.AddOperation(operation.Sequence, operation.WorkCenterCode, operation.OperationCode, operation.OperationName, operation.StandardMinutes);
         }
 
         routing.Release(request.EffectiveDate);

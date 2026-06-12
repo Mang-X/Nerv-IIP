@@ -50,6 +50,12 @@
 
 > 注:`work-center-type` 用于区分工作中心粒度,**与"车间(Workshop)组织层"是两码事**(车间是独立实体,不在字典里;见产品设计文档 §2.1)。
 
+### 2.4 产品工程 / 工艺
+
+| CodeSet | 中文名 | 类别 | 标准码值 |
+|---|---|---|---|
+| `operation` | 标准工序目录 | 工厂自定义 | 样例:`welding`=焊接 / `assembly`=装配 / `inspection`=检验 / `cnc-operation`=CNC加工 / `packaging`=包装 |
+
 ## 3. SKU 受控字段 → CodeSet 校验映射
 
 SKU 创建/更新时,以下字段的取值**必须存在于对应 CodeSet 且为启用状态**(后端校验,#346）：
@@ -65,7 +71,7 @@ SKU 创建/更新时,以下字段的取值**必须存在于对应 CodeSet 且为
 | `defaultBarcodeRuleCode` | `barcode-rule` | |
 | `baseUomCode` 及各 *UomCode | （不走字典）引用 `UnitOfMeasure.Code` | 计量单位是独立实体,非 CodeSet |
 
-人员技能 `level` 字段校验 `skill-level`;业务伙伴 `partnerType`/`partnerRoles` 校验 `partner-type`。
+人员技能 `level` 字段校验 `skill-level`;业务伙伴 `partnerType`/`partnerRoles` 校验 `partner-type`。ProductEngineering 工艺路线工序使用 `operation` 作为标准工序目录,路线发布时保存 `operationCode` 引用和 `operationName` 展示快照。
 
 UoM 换算是有向换算规则,允许工厂同时维护正向和反向换算(例如 `kg->g` 与 `g->kg`),也允许同量纲换算网络闭合;后端只强制创建时源/目标单位存在且启用、二者属于同一 `uom-dimension`、`factor > 0` 且同一 `(fromUomCode,toUomCode,effectiveFrom)` 不重复。反向规则不会由平台自动倒数推导,以便保留独立精度、舍入和 affine offset 语义。
 

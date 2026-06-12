@@ -1112,6 +1112,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRoutingOperationRequest = {
     sequence?: number;
     workCenterCode?: string;
+    operationCode?: string;
     operationName?: string;
     standardMinutes?: number;
 };

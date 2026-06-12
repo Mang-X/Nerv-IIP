@@ -425,6 +425,7 @@ public sealed class BusinessConsoleReleaseRoutingRequestValidator : Validator<Bu
         {
             operation.RuleFor(x => x.Sequence).GreaterThan(0);
             operation.RuleFor(x => x.WorkCenterCode).NotEmpty().MaximumLength(100);
+            operation.RuleFor(x => x.OperationCode).NotEmpty().MaximumLength(100);
             operation.RuleFor(x => x.OperationName).NotEmpty().MaximumLength(200);
             operation.RuleFor(x => x.StandardMinutes).GreaterThan(0);
         });
