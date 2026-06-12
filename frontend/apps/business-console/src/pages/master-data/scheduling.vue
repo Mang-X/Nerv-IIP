@@ -369,7 +369,7 @@ const monthCells = computed<DayCell[]>(() => {
     }
     else if (exception) {
       kind = exception.isWorkingDay ? 'exception-working' : 'exception-rest'
-      badge = '例'
+      badge = exception.isWorkingDay ? '班' : '休'
       title = `例外日${exception.reason ? `：${exception.reason}` : ''}（${exception.isWorkingDay ? '当日上班' : '当日休息'}）`
     }
     else if (baseWorking) {
@@ -404,12 +404,14 @@ function emptyCell(key: string): DayCell {
 }
 
 // 月历格底色（语义 token，跟随主题；色盲友好靠角标 + title 文字双编码）。
+// 4 类语义色,均为主题 token(随主题/明暗自适应):工作日=绿(明确可见,修隐形)、休息日=灰(下沉)、
+// 节假日=红、例外日=琥珀(班/休 靠角标区分)。
 const cellClassMap: Record<DayCell['kind'], string> = {
-  'working': 'bg-card text-card-foreground',
-  'rest': 'bg-muted/60 text-muted-foreground',
+  'working': 'bg-success/15 text-foreground ring-1 ring-inset ring-success/35',
+  'rest': 'bg-muted/50 text-muted-foreground',
   'holiday': 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/40',
-  'exception-working': 'bg-primary/15 text-primary ring-1 ring-inset ring-primary/40',
-  'exception-rest': 'bg-accent text-accent-foreground ring-1 ring-inset ring-border',
+  'exception-working': 'bg-warning/20 text-foreground ring-1 ring-inset ring-warning/45',
+  'exception-rest': 'bg-warning/20 text-foreground ring-1 ring-inset ring-warning/45',
 }
 
 async function selectCalendar(row: BusinessConsoleResourceItem) {
@@ -761,6 +763,14 @@ const sortedExceptions = computed(() =>
                   <p class="text-xs text-muted-foreground">点亮的星期为工作日（默认 08:00–17:00）；点击切换，立即保存。</p>
                 </div>
 
+                <!-- 图例（放月历上方，免下拉才能看到；色 + 文字角标双编码，色盲友好） -->
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-success/20 ring-1 ring-inset ring-success/40" aria-hidden="true" />工作日</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-muted/50 ring-1 ring-inset ring-border" aria-hidden="true" />休息日</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-destructive/20 ring-1 ring-inset ring-destructive/40" aria-hidden="true" /><span class="font-medium text-foreground">假</span> 节假日</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-warning/25 ring-1 ring-inset ring-warning/45" aria-hidden="true" /><span class="text-foreground">例外日 <span class="font-medium">班</span>上班 / <span class="font-medium">休</span>休息</span></span>
+                </div>
+
                 <!-- 月历网格（只读展示；点某天可在抽屉里预填该日期） -->
                 <div class="grid grid-cols-7 gap-1">
                   <div v-for="wd in WEEK_DAYS" :key="wd.key" class="pb-1 text-center text-xs font-medium text-muted-foreground">{{ wd.short }}</div>
@@ -779,14 +789,6 @@ const sortedExceptions = computed(() =>
                       <span v-if="cell.badge" class="absolute bottom-1 right-1 text-[10px] font-semibold leading-none">{{ cell.badge }}</span>
                     </template>
                   </button>
-                </div>
-
-                <!-- 图例（色 + 文字/角标双编码，色盲友好） -->
-                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm border border-border bg-card" aria-hidden="true" />工作日</span>
-                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-muted/60" aria-hidden="true" />休息日</span>
-                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-destructive/15 ring-1 ring-inset ring-destructive/40" aria-hidden="true" /><span class="font-medium">假</span> 法定节假日</span>
-                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-primary/15 ring-1 ring-inset ring-primary/40" aria-hidden="true" /><span class="font-medium">例</span> 例外日</span>
                 </div>
 
                 <!-- 空态引导：选中日历但完全没有明细 -->
