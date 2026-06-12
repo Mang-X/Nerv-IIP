@@ -2224,6 +2224,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     name: string;
     partnerRoles?: Array<string> | null;
     taxId?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateUnitOfMeasureRequest = {
@@ -2234,6 +2235,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     dimensionType: string;
     precision?: number;
     roundingMode: string;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateUomConversionRequest = {
@@ -2260,6 +2262,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     siteCode: string;
     managerUserId?: string | null;
     description?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWorkerDirectoryResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2292,6 +2295,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     code?: string | null;
     name: string;
     timezone: string;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateProductionLineRequest = {
@@ -2301,6 +2305,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     name: string;
     siteCode: string;
     workshopCode?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCenterRequest = {
@@ -2316,6 +2321,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     capacityUnit: string;
     finiteCapacity?: boolean;
     workshopCode?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterDeviceAssetRequest = {
@@ -2337,6 +2343,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     externalReferences?: {
         [key: string]: string;
     } | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftRequest = {
@@ -2347,6 +2354,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     startsAt?: string;
     endsAt?: string;
     paidMinutes?: number;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCalendarRequest = {
@@ -2354,6 +2362,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     environmentId: string;
     code?: string | null;
     name: string;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateTeamRequest = {
@@ -2363,6 +2372,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     name: string;
     departmentCode: string;
     shiftCode: string;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTeamMemberListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2409,6 +2419,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     code?: string | null;
     name: string;
     parentDepartmentCode?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssignPersonnelSkillRequest = {

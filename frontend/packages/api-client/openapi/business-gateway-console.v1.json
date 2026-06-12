@@ -22603,6 +22603,12 @@
           "taxId": {
             "type": "string",
             "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -22657,6 +22663,12 @@
             "maxLength": 100,
             "minLength": 0,
             "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -22777,6 +22789,12 @@
             "maxLength": 500,
             "minLength": 0,
             "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -22895,6 +22913,12 @@
             "maxLength": 100,
             "minLength": 0,
             "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -22941,6 +22965,12 @@
           "workshopCode": {
             "type": "string",
             "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
             "minLength": 0,
             "nullable": true
           }
@@ -23026,6 +23056,12 @@
           "workshopCode": {
             "type": "string",
             "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
             "minLength": 0,
             "nullable": true
           }
@@ -23135,6 +23171,12 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -23184,6 +23226,12 @@
             "format": "int32",
             "minimum": 0.0,
             "exclusiveMinimum": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -23219,6 +23267,12 @@
             "maxLength": 200,
             "minLength": 0,
             "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -23268,6 +23322,12 @@
             "maxLength": 100,
             "minLength": 0,
             "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -23446,6 +23506,12 @@
           "parentDepartmentCode": {
             "type": "string",
             "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
             "minLength": 0,
             "nullable": true
           }

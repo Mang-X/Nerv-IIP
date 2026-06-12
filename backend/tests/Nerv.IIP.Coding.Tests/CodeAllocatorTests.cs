@@ -145,6 +145,48 @@ public sealed class CodeAllocatorTests
     }
 
     [Fact]
+    public async Task AllocateAsync_replays_concurrent_in_memory_idempotency_requests()
+    {
+        var allocator = new CodeAllocator(timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));
+        var request = new CodeAllocationRequest("org", "env", SkuRule(), null, null, "idem-concurrent", "payload-a", "sku");
+        using var start = new ManualResetEventSlim();
+        var tasks = Enumerable.Range(1, 20)
+            .Select(_ => Task.Run(async () =>
+            {
+                start.Wait();
+                return await allocator.AllocateAsync(request, CancellationToken.None);
+            }))
+            .ToArray();
+
+        start.Set();
+        var allocations = await Task.WhenAll(tasks);
+
+        Assert.Single(allocations.Select(x => x.Code).Distinct(StringComparer.Ordinal));
+        Assert.Equal(19, allocations.Count(x => x.IsIdempotentReplay));
+    }
+
+    [Fact]
+    public async Task AllocateAsync_supports_explicit_hash_mod_checksum_algorithms()
+    {
+        var rule = new CodeRuleDefinition
+        {
+            RuleKey = "hash-check",
+            DisplayName = "Hash check",
+            Segments =
+            [
+                CodeRuleSegment.ConstantOf("HC"),
+                CodeRuleSegment.SequenceOf(width: 2),
+                CodeRuleSegment.ChecksumOf("hash-mod10"),
+            ],
+        };
+        var allocator = new CodeAllocator(timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));
+
+        var result = await allocator.AllocateAsync(new CodeAllocationRequest("org", "env", rule, null, null, null, "payload", "hash-check"), CancellationToken.None);
+
+        Assert.Matches("^HC[0-9]{3}$", result.Code);
+    }
+
+    [Fact]
     public async Task AllocateAsync_retries_store_concurrency_conflict()
     {
         var store = new InMemoryCodeStore { ConcurrencyFailuresBeforeSuccess = 1 };
@@ -168,6 +210,25 @@ public sealed class CodeAllocatorTests
         };
 
         Assert.Throws<ArgumentException>(() => rule.Validate());
+    }
+
+    [Fact]
+    public void Validate_rejects_rule_with_multiple_sequence_segments()
+    {
+        var rule = new CodeRuleDefinition
+        {
+            RuleKey = "bad",
+            DisplayName = "bad",
+            Segments =
+            [
+                CodeRuleSegment.ConstantOf("BAD"),
+                CodeRuleSegment.SequenceOf(width: 2),
+                CodeRuleSegment.SequenceOf(width: 2),
+            ],
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() => rule.Validate());
+        Assert.Contains("exactly one sequence", exception.Message, StringComparison.Ordinal);
     }
 
     private sealed class InMemoryCodeStore : ICodeStore

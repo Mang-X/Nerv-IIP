@@ -110,6 +110,7 @@ public sealed class BusinessConsoleCreateBusinessPartnerRequestValidator : Valid
         RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.PartnerType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -124,6 +125,7 @@ public sealed class BusinessConsoleCreateUnitOfMeasureRequestValidator : Validat
         RuleFor(x => x.DimensionType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Precision).GreaterThanOrEqualTo(0);
         RuleFor(x => x.RoundingMode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -173,6 +175,7 @@ public sealed class BusinessConsoleCreateWorkshopRequestValidator : Validator<Bu
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ManagerUserId).MaximumLength(100);
         RuleFor(x => x.Description).MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -185,6 +188,7 @@ public sealed class BusinessConsoleCreateSiteRequestValidator : Validator<Busine
         RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Timezone).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -198,6 +202,7 @@ public sealed class BusinessConsoleCreateProductionLineRequestValidator : Valida
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkshopCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -216,6 +221,7 @@ public sealed class BusinessConsoleCreateWorkCenterRequestValidator : Validator<
         RuleFor(x => x.WorkshopCode).MaximumLength(100);
         RuleFor(x => x.DefaultCalendarCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.CapacityUnit).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -236,6 +242,7 @@ public sealed class BusinessConsoleRegisterDeviceAssetRequestValidator : Validat
         RuleFor(x => x.Criticality).NotEmpty().MaximumLength(100);
         RuleFor(x => x.MaximumCapacity).GreaterThanOrEqualTo(x => x.MinimumCapacity)
             .When(x => x.MinimumCapacity.HasValue && x.MaximumCapacity.HasValue);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -248,6 +255,7 @@ public sealed class BusinessConsoleCreateShiftRequestValidator : Validator<Busin
         RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.PaidMinutes).GreaterThan(0);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -259,6 +267,7 @@ public sealed class BusinessConsoleCreateWorkCalendarRequestValidator : Validato
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -272,6 +281,7 @@ public sealed class BusinessConsoleCreateTeamRequestValidator : Validator<Busine
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.DepartmentCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ShiftCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -318,6 +328,7 @@ public sealed class BusinessConsoleCreateDepartmentRequestValidator : Validator<
         RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.ParentDepartmentCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 

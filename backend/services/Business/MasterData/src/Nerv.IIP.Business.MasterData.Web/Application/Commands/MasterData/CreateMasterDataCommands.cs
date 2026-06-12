@@ -170,21 +170,29 @@ public sealed record CreateUnitOfMeasureCommand(
     string Name,
     string DimensionType,
     int Precision,
-    string RoundingMode) : ICommand<MasterDataResourceResult>;
+    string RoundingMode,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateUnitOfMeasureCommandHandler(IUnitOfMeasureRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateUnitOfMeasureCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateUnitOfMeasureCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "unit-of-measure",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(request.Name, request.DimensionType, request.Precision, request.RoundingMode),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("unit-of-measure", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Unit of measure '{code}' already exists.");
@@ -261,22 +269,30 @@ public sealed record CreateBusinessPartnerCommand(
     string PartnerType,
     string Name,
     IReadOnlyCollection<string>? PartnerRoles = null,
-    string? TaxId = null) : ICommand<MasterDataResourceResult>;
+    string? TaxId = null,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateBusinessPartnerCommandHandler(IBusinessPartnerRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateBusinessPartnerCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateBusinessPartnerCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "business-partner",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(request.PartnerType, request.Name, request.PartnerRoles ?? [], request.TaxId),
             cancellationToken,
             new Dictionary<string, string> { ["partnerType"] = request.PartnerType });
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("business-partner", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsCodeAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Business partner '{code}' already exists.");
@@ -306,21 +322,29 @@ public sealed record CreateDepartmentCommand(
     string EnvironmentId,
     string? Code,
     string Name,
-    string? ParentDepartmentCode) : ICommand<MasterDataResourceResult>;
+    string? ParentDepartmentCode,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateDepartmentCommandHandler(IDepartmentRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateDepartmentCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateDepartmentCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "department",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(request.Name, request.ParentDepartmentCode),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("department", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Department '{code}' already exists.");
@@ -343,21 +367,29 @@ public sealed record CreateTeamCommand(
     string? Code,
     string Name,
     string DepartmentCode,
-    string ShiftCode) : ICommand<MasterDataResourceResult>;
+    string ShiftCode,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateTeamCommandHandler(ITeamRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateTeamCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateTeamCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "team",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(request.Name, request.DepartmentCode, request.ShiftCode),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("team", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Team '{code}' already exists.");
@@ -418,21 +450,29 @@ public sealed record CreateSiteCommand(
     string EnvironmentId,
     string? Code,
     string Name,
-    string Timezone) : ICommand<MasterDataResourceResult>;
+    string Timezone,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateSiteCommandHandler(ISiteRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateSiteCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateSiteCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "site",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(request.Name, request.Timezone),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("site", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Site '{code}' already exists.");
@@ -455,21 +495,29 @@ public sealed record CreateProductionLineCommand(
     string? Code,
     string Name,
     string SiteCode,
-    string? WorkshopCode = null) : ICommand<MasterDataResourceResult>;
+    string? WorkshopCode = null,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateProductionLineCommandHandler(IProductionLineRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateProductionLineCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateProductionLineCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "production-line",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(request.Name, request.SiteCode, request.WorkshopCode),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("production-line", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Production line '{code}' already exists.");
@@ -494,21 +542,29 @@ public sealed record CreateShiftCommand(
     string Name,
     TimeOnly StartsAt,
     TimeOnly EndsAt,
-    int PaidMinutes) : ICommand<MasterDataResourceResult>;
+    int PaidMinutes,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateShiftCommandHandler(IShiftRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateShiftCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateShiftCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "shift",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(request.Name, request.StartsAt, request.EndsAt, request.PaidMinutes),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("shift", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Shift '{code}' already exists.");
@@ -539,21 +595,29 @@ public sealed record CreateWorkCenterCommand(
     string DefaultCalendarCode,
     string CapacityUnit,
     bool FiniteCapacity,
-    string? WorkshopCode = null) : ICommand<MasterDataResourceResult>;
+    string? WorkshopCode = null,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateWorkCenterCommandHandler(IWorkCenterRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateWorkCenterCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateWorkCenterCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "work-center",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(request.Name, request.CapacityMinutesPerDay, request.ResourceType, request.PlantCode, request.LineCode, request.DefaultCalendarCode, request.CapacityUnit, request.FiniteCapacity, request.WorkshopCode),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("work-center", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Work center '{code}' already exists.");
@@ -581,21 +645,29 @@ public sealed record CreateWorkCalendarCommand(
     string OrganizationId,
     string EnvironmentId,
     string? Code,
-    string Name) : ICommand<MasterDataResourceResult>;
+    string Name,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateWorkCalendarCommandHandler(IWorkCalendarRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateWorkCalendarCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateWorkCalendarCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "work-calendar",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(request.Name),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("work-calendar", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Work calendar '{code}' already exists.");
@@ -627,19 +699,21 @@ public sealed record RegisterDeviceAssetCommand(
     string Criticality,
     bool Maintainable,
     bool TelemetryEnabled,
-    IReadOnlyDictionary<string, string> ExternalReferences) : ICommand<MasterDataResourceResult>;
+    IReadOnlyDictionary<string, string> ExternalReferences,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<RegisterDeviceAssetCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(RegisterDeviceAssetCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "device-asset",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(
                 request.Model,
                 request.LineCode,
@@ -655,6 +729,12 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
                 request.TelemetryEnabled,
                 request.ExternalReferences.Select(x => $"{x.Key}:{x.Value}")),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("device-asset", allocation.Code, request.Model);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Device asset '{code}' already exists.");
@@ -684,12 +764,13 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
 
 internal static class MasterDataCodeGenerator
 {
-    public static async Task<string> AllocateAsync(
+    public static async Task<MasterDataCodeAllocation> AllocateAsync(
         MasterDataCodingService? codingService,
         string ruleKey,
         string organizationId,
         string environmentId,
         string? requestedCode,
+        string? idempotencyKey,
         string payloadFingerprint,
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string>? fields = null)
@@ -699,11 +780,11 @@ internal static class MasterDataCodeGenerator
             environmentId,
             ruleKey,
             requestedCode,
-            idempotencyKey: null,
+            idempotencyKey,
             payloadFingerprint,
             cancellationToken,
             fields);
-        return allocation.Code;
+        return allocation;
     }
 }
 

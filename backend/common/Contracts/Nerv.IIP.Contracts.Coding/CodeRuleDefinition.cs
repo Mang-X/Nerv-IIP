@@ -43,9 +43,9 @@ public sealed record CodeRuleDefinition
             throw new ArgumentException($"Rule '{RuleKey}' has no segments.");
         }
 
-        if (!Segments.Any(segment => segment.Type == SegmentType.Sequence))
+        if (Segments.Count(segment => segment.Type == SegmentType.Sequence) != 1)
         {
-            throw new ArgumentException($"Rule '{RuleKey}' must contain at least one sequence segment.");
+            throw new ArgumentException($"Rule '{RuleKey}' must contain exactly one sequence segment.");
         }
 
         foreach (var segment in Segments)
@@ -70,7 +70,7 @@ public sealed record CodeRuleDefinition
                 throw new ArgumentException($"Rule '{RuleKey}' field segment requires Source.");
             case SegmentType.Field when segment.MaxLength <= 0:
                 throw new ArgumentException($"Rule '{RuleKey}' field segment max length must be positive.");
-            case SegmentType.Checksum when segment.Algorithm is not ("mod10" or "mod11"):
+            case SegmentType.Checksum when segment.Algorithm is not ("hash-mod10" or "hash-mod11"):
                 throw new ArgumentException($"Rule '{RuleKey}' checksum algorithm unsupported: '{segment.Algorithm}'.");
         }
     }

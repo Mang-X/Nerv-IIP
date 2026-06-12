@@ -957,6 +957,45 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Create_unit_of_measure_command_reuses_existing_result_for_same_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateUnitOfMeasureCommandHandler(new UnitOfMeasureRepository(dbContext), CreateCodingService(scope));
+        var command = new CreateUnitOfMeasureCommand("org-001", "env-dev", null, "Kilogram", "mass", 3, "half-up", "uom-idempotent-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var second = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first.Code, second.Code);
+        Assert.Single(dbContext.UnitsOfMeasure);
+    }
+
+    [Fact]
+    public async Task Create_unit_of_measure_command_rejects_same_idempotency_key_with_different_payload()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateUnitOfMeasureCommandHandler(new UnitOfMeasureRepository(dbContext), CreateCodingService(scope));
+
+        await handler.Handle(
+            new CreateUnitOfMeasureCommand("org-001", "env-dev", null, "Kilogram", "mass", 3, "half-up", "uom-idempotent-conflict"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateUnitOfMeasureCommand("org-001", "env-dev", null, "Gram", "mass", 3, "half-up", "uom-idempotent-conflict"),
+            CancellationToken.None));
+
+        Assert.Contains("conflicts with a different", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("create payload", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Create_sku_command_db_coding_generates_unique_codes_for_parallel_requests_after_counter_exists()
     {
         await using var provider = CreateInMemoryProvider("master-data-api-contract-db-coding-parallel");

@@ -363,7 +363,8 @@ public sealed record CreateUnitOfMeasureRequest(
     string Name,
     string DimensionType,
     int Precision,
-    string RoundingMode);
+    string RoundingMode,
+    string? IdempotencyKey = null);
 
 public sealed record CreateUomConversionRequest(
     string OrganizationId,
@@ -394,7 +395,8 @@ public sealed class CreateUnitOfMeasureEndpoint(ISender sender)
             req.Name,
             req.DimensionType,
             req.Precision,
-            req.RoundingMode), ct);
+            req.RoundingMode,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -431,7 +433,8 @@ public sealed record CreateBusinessPartnerRequest(
     string PartnerType,
     string Name,
     IReadOnlyCollection<string>? PartnerRoles = null,
-    string? TaxId = null);
+    string? TaxId = null,
+    string? IdempotencyKey = null);
 
 public sealed class CreateBusinessPartnerEndpoint(ISender sender)
     : MasterDataEndpoint<CreateBusinessPartnerRequest, ResponseData<MasterDataResourceResponse>>
@@ -451,7 +454,8 @@ public sealed class CreateBusinessPartnerEndpoint(ISender sender)
             req.PartnerType,
             req.Name,
             req.PartnerRoles,
-            req.TaxId), ct);
+            req.TaxId,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -468,14 +472,16 @@ public sealed record CreateWorkCenterRequest(
     string DefaultCalendarCode,
     string CapacityUnit,
     bool FiniteCapacity,
-    string? WorkshopCode = null);
+    string? WorkshopCode = null,
+    string? IdempotencyKey = null);
 
 public sealed record CreateDepartmentRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Code,
     string Name,
-    string? ParentDepartmentCode);
+    string? ParentDepartmentCode,
+    string? IdempotencyKey = null);
 
 public sealed record CreateTeamRequest(
     string OrganizationId,
@@ -483,7 +489,8 @@ public sealed record CreateTeamRequest(
     string? Code,
     string Name,
     string DepartmentCode,
-    string ShiftCode);
+    string ShiftCode,
+    string? IdempotencyKey = null);
 
 public sealed record AssignPersonnelSkillRequest(
     string OrganizationId,
@@ -499,7 +506,8 @@ public sealed record CreateSiteRequest(
     string EnvironmentId,
     string? Code,
     string Name,
-    string Timezone);
+    string Timezone,
+    string? IdempotencyKey = null);
 
 public sealed record CreateWorkshopRequest(
     string OrganizationId,
@@ -508,7 +516,8 @@ public sealed record CreateWorkshopRequest(
     string Name,
     string SiteCode,
     string? ManagerUserId,
-    string? Description);
+    string? Description,
+    string? IdempotencyKey = null);
 
 public sealed record CreateProductionLineRequest(
     string OrganizationId,
@@ -516,7 +525,8 @@ public sealed record CreateProductionLineRequest(
     string? Code,
     string Name,
     string SiteCode,
-    string? WorkshopCode = null);
+    string? WorkshopCode = null,
+    string? IdempotencyKey = null);
 
 public sealed record CreateShiftRequest(
     string OrganizationId,
@@ -525,13 +535,15 @@ public sealed record CreateShiftRequest(
     string Name,
     TimeOnly StartsAt,
     TimeOnly EndsAt,
-    int PaidMinutes);
+    int PaidMinutes,
+    string? IdempotencyKey = null);
 
 public sealed record CreateWorkCalendarRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Code,
-    string Name);
+    string Name,
+    string? IdempotencyKey = null);
 
 public sealed class CreateDepartmentEndpoint(ISender sender)
     : MasterDataEndpoint<CreateDepartmentRequest, ResponseData<MasterDataResourceResponse>>
@@ -549,7 +561,8 @@ public sealed class CreateDepartmentEndpoint(ISender sender)
             req.EnvironmentId,
             req.Code,
             req.Name,
-            req.ParentDepartmentCode), ct);
+            req.ParentDepartmentCode,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -571,7 +584,8 @@ public sealed class CreateTeamEndpoint(ISender sender)
             req.Code,
             req.Name,
             req.DepartmentCode,
-            req.ShiftCode), ct);
+            req.ShiftCode,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -643,7 +657,8 @@ public sealed class CreateSiteEndpoint(ISender sender)
             req.EnvironmentId,
             req.Code,
             req.Name,
-            req.Timezone), ct);
+            req.Timezone,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -666,7 +681,8 @@ public sealed class CreateWorkshopEndpoint(ISender sender)
             req.Name,
             req.SiteCode,
             req.ManagerUserId,
-            req.Description), ct);
+            req.Description,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -688,7 +704,8 @@ public sealed class CreateProductionLineEndpoint(ISender sender)
             req.Code,
             req.Name,
             req.SiteCode,
-            req.WorkshopCode), ct);
+            req.WorkshopCode,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -711,7 +728,8 @@ public sealed class CreateShiftEndpoint(ISender sender)
             req.Name,
             req.StartsAt,
             req.EndsAt,
-            req.PaidMinutes), ct);
+            req.PaidMinutes,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -731,7 +749,8 @@ public sealed class CreateWorkCalendarEndpoint(ISender sender)
             req.OrganizationId,
             req.EnvironmentId,
             req.Code,
-            req.Name), ct);
+            req.Name,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -759,7 +778,8 @@ public sealed class CreateWorkCenterEndpoint(ISender sender)
             req.DefaultCalendarCode,
             req.CapacityUnit,
             req.FiniteCapacity,
-            req.WorkshopCode), ct);
+            req.WorkshopCode,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -866,7 +886,8 @@ public sealed record RegisterDeviceAssetRequest(
     string Criticality,
     bool Maintainable,
     bool TelemetryEnabled,
-    IReadOnlyDictionary<string, string>? ExternalReferences);
+    IReadOnlyDictionary<string, string>? ExternalReferences,
+    string? IdempotencyKey = null);
 
 public sealed class RegisterDeviceAssetEndpoint(ISender sender)
     : MasterDataEndpoint<RegisterDeviceAssetRequest, ResponseData<MasterDataResourceResponse>>
@@ -895,7 +916,8 @@ public sealed class RegisterDeviceAssetEndpoint(ISender sender)
             req.Criticality,
             req.Maintainable,
             req.TelemetryEnabled,
-            req.ExternalReferences ?? new Dictionary<string, string>()), ct);
+            req.ExternalReferences ?? new Dictionary<string, string>(),
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }

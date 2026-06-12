@@ -211,6 +211,17 @@ public sealed class CodeAllocator(
         {
             if (normalizedIdempotencyKey is not null)
             {
+                var existingRecord = FindIdempotencyRecordInMemory(request, normalizedIdempotencyKey);
+                if (existingRecord is not null)
+                {
+                    if (!string.Equals(existingRecord.PayloadFingerprint, request.PayloadFingerprint, StringComparison.Ordinal))
+                    {
+                        throw IdempotencyConflict(normalizedIdempotencyKey, request.ConflictResourceLabel);
+                    }
+
+                    return new CodeAllocation(existingRecord.Code, true);
+                }
+
                 var idempotencyKey = new CodeIdempotencyKey(
                     request.OrganizationId,
                     request.EnvironmentId,
@@ -281,13 +292,13 @@ public sealed class CodeAllocator(
     {
         return algorithm switch
         {
-            "mod10" => ModChecksum(prefix, 10).ToString(CultureInfo.InvariantCulture),
-            "mod11" => ModChecksum(prefix, 11).ToString(CultureInfo.InvariantCulture),
+            "hash-mod10" => HashModChecksum(prefix, 10).ToString(CultureInfo.InvariantCulture),
+            "hash-mod11" => HashModChecksum(prefix, 11).ToString(CultureInfo.InvariantCulture),
             _ => throw new KnownException($"Unsupported checksum algorithm '{algorithm}'."),
         };
     }
 
-    private static int ModChecksum(string value, int mod)
+    private static int HashModChecksum(string value, int mod)
     {
         var sum = SHA256.HashData(Encoding.UTF8.GetBytes(value)).Sum(b => b);
         return sum % mod;

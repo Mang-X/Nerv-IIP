@@ -12,21 +12,29 @@ public sealed record CreateWorkshopCommand(
     string Name,
     string SiteCode,
     string? ManagerUserId,
-    string? Description) : ICommand<MasterDataResourceResult>;
+    string? Description,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateWorkshopCommandHandler(IWorkshopRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateWorkshopCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateWorkshopCommand request, CancellationToken cancellationToken)
     {
-        var code = await MasterDataCodeGenerator.AllocateAsync(
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "workshop",
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,
+            request.IdempotencyKey,
             MasterDataCodingService.Fingerprint(request.Name, request.SiteCode, request.ManagerUserId, request.Description),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("workshop", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
             throw new KnownException($"Workshop '{code}' already exists.");
