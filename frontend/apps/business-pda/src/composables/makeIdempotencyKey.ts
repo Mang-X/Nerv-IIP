@@ -1,21 +1,17 @@
+// 写操作（收货/复核/盘点/报工/完工入库/报修/点检 等 create/action）需要幂等键以防重复提交
+// （弱网重试、双击）在网关上被重复应用。
+// 优先用平台原生 crypto.randomUUID（jsdom/真机 WebView 均可用）；
+// 不可用时回退到时间戳 + 高精度计时器；连 performance 都没有时退化到自增计数器，
+// 仍保证同一会话内单调不重复。
 let fallbackCounter = 0
 
-/**
- * Generates a unique idempotency key for create/action requests so retries
- * (flaky PDA network, double taps) never double-apply on the gateway.
- *
- * Prefers the platform `crypto.randomUUID()`. Falls back to a timestamp +
- * monotonic-ish performance counter when the secure RNG is unavailable.
- */
 export function makeIdempotencyKey(): string {
-  const cryptoRef = globalThis.crypto
-  if (cryptoRef && typeof cryptoRef.randomUUID === 'function') {
-    return cryptoRef.randomUUID()
+  const cryptoApi = globalThis.crypto
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return cryptoApi.randomUUID()
   }
 
-  const perf = typeof performance !== 'undefined' && typeof performance.now === 'function'
-    ? Math.trunc(performance.now())
-    : (fallbackCounter += 1)
-
-  return `idem-${Date.now()}-${perf}`
+  const perf = globalThis.performance
+  const tick = perf && typeof perf.now === 'function' ? Math.trunc(perf.now()) : (fallbackCounter += 1)
+  return `idem-${Date.now()}-${tick}`
 }
