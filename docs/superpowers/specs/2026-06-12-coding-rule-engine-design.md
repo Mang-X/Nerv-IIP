@@ -179,7 +179,7 @@ CodeRuleSegment
 
 **`code_rules`**（仅 MasterData，新增主数据表）：承载 §5.1 规则定义 + 多租户 `(organization_id, environment_id)` + 审计字段；段以 JSON 列存储（带列注释，遵守 schema convention）。
 
-> 注：开发阶段直接以新表重建各服务 schema（删除 `AddNumberingCounters` migration 链或在其后追加替换 migration，最终 schema 不含 `numbering_*`）。具体迁移策略由实施计划裁定。
+> 注（迁移策略，与实施计划一致）：各服务**只追加一条替换 migration**（`AddCodingTables`），由 EF 模型 diff 自动 `DropTable numbering_*` + `CreateTable code_*`。**历史 `AddNumberingCounters` 等 migration 文件一律保留、不删除**——因为 `AddNumberingCounters` 在各服务并非最新 migration，`dotnet ef migrations remove` 只会删最新一条而删错目标。最终 runtime schema 不含 `numbering_*`。详见实施计划 Task 8 Step 6。
 
 ---
 

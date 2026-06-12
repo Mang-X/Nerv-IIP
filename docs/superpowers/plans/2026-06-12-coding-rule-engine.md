@@ -1072,7 +1072,7 @@ git commit -m "chore(coding): add verify script and update readiness/schema cata
 
 ## Self-Review（计划对 spec 覆盖核对）
 
-- spec §4 架构（分层/归属/数据流，含 Contracts→Coding 单向依赖）→ Task 1（双工程方向）、2（契约模型）、3–5（引擎）、6（分层守卫）、7、13 ✓
+- spec §4 架构（分层/归属/数据流，含 `Coding → Contracts.Coding` 单向依赖）→ Task 1（双工程方向）、2（契约模型）、3–5（引擎）、6（分层守卫）、7、13 ✓
 - spec §5 数据模型（CodeRuleDefinition/段/表）→ Task 2（契约模型）、3（EF 实体）、8(EF 配置)、13(code_rules) ✓
 - spec §6 段类型（含 checksum 预留、无隐式分隔符、强制 sequence）→ Task 2(Validate)、4(求值) ✓
 - spec §7 标准规则种子（§7.1 文档 + §7.2 全主数据）→ Task 7、12(补全) ✓
