@@ -197,9 +197,33 @@ public interface IBusinessProductEngineeringClient
         BusinessConsoleRegisterEngineeringDocumentRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleEngineeringDocumentListResponse> ListEngineeringDocumentsAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringDocumentsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringDocumentItem> GetEngineeringDocumentAsync(
+        string internalBearerToken,
+        string documentNumber,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleEngineeringEntityResponse> CreateEngineeringItemRevisionAsync(
         string internalBearerToken,
         BusinessConsoleCreateEngineeringItemRevisionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringItemListResponse> ListEngineeringItemsAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringItemsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringItemRevisionItem> GetEngineeringItemAsync(
+        string internalBearerToken,
+        string itemCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringBomAsync(
@@ -212,9 +236,23 @@ public interface IBusinessProductEngineeringClient
         BusinessConsoleListEngineeringBomsRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleEngineeringBomItem> GetEngineeringBomAsync(
+        string internalBearerToken,
+        string bomCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
         string internalBearerToken,
         BusinessConsoleListManufacturingBomsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleManufacturingBomItem> GetManufacturingBomAsync(
+        string internalBearerToken,
+        string bomCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(
@@ -227,6 +265,13 @@ public interface IBusinessProductEngineeringClient
         BusinessConsoleListRoutingsRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleRoutingItem> GetRoutingAsync(
+        string internalBearerToken,
+        string routingCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
         string internalBearerToken,
         BusinessConsoleReleaseRoutingRequest request,
@@ -235,6 +280,17 @@ public interface IBusinessProductEngineeringClient
     Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringChangeAsync(
         string internalBearerToken,
         BusinessConsoleReleaseEngineeringChangeRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringChangeListResponse> ListEngineeringChangesAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringChangesRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringChangeItem> GetEngineeringChangeAsync(
+        string internalBearerToken,
+        string changeNumber,
+        BusinessConsoleEngineeringContextRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleProductionVersionListResponse> ListProductionVersionsAsync(
@@ -1923,6 +1979,36 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             request,
             cancellationToken);
 
+    public Task<BusinessConsoleEngineeringDocumentListResponse> ListEngineeringDocumentsAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringDocumentsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringDocumentListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/documents?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("itemCode", request.ItemCode),
+                ("documentType", request.DocumentType),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringDocumentItem> GetEngineeringDocumentAsync(
+        string internalBearerToken,
+        string documentNumber,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringDocumentItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/engineering/documents/{Uri.EscapeDataString(documentNumber)}/{Uri.EscapeDataString(revision)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleEngineeringEntityResponse> CreateEngineeringItemRevisionAsync(
         string internalBearerToken,
         BusinessConsoleCreateEngineeringItemRevisionRequest request,
@@ -1932,6 +2018,36 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             HttpMethod.Post,
             "/api/business/v1/engineering/items",
             request,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringItemListResponse> ListEngineeringItemsAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringItemsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringItemListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/items?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("itemCode", request.ItemCode),
+                ("status", request.Status),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringItemRevisionItem> GetEngineeringItemAsync(
+        string internalBearerToken,
+        string itemCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringItemRevisionItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/engineering/items/{Uri.EscapeDataString(itemCode)}/{Uri.EscapeDataString(revision)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
             cancellationToken);
 
     public Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringBomAsync(
@@ -1962,6 +2078,19 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleEngineeringBomItem> GetEngineeringBomAsync(
+        string internalBearerToken,
+        string bomCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringBomItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/engineering/engineering-boms/{Uri.EscapeDataString(bomCode)}/{Uri.EscapeDataString(revision)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
         string internalBearerToken,
         BusinessConsoleListManufacturingBomsRequest request,
@@ -1976,6 +2105,19 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
                 ("status", request.Status),
                 ("skip", request.Skip),
                 ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleManufacturingBomItem> GetManufacturingBomAsync(
+        string internalBearerToken,
+        string bomCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleManufacturingBomItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/engineering/manufacturing-boms/{Uri.EscapeDataString(bomCode)}/{Uri.EscapeDataString(revision)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken);
 
@@ -2007,6 +2149,19 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleRoutingItem> GetRoutingAsync(
+        string internalBearerToken,
+        string routingCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleRoutingItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/engineering/routings/{Uri.EscapeDataString(routingCode)}/{Uri.EscapeDataString(revision)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
         string internalBearerToken,
         BusinessConsoleReleaseRoutingRequest request,
@@ -2027,6 +2182,34 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             HttpMethod.Post,
             "/api/business/v1/engineering/engineering-changes/release",
             request,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringChangeListResponse> ListEngineeringChangesAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringChangesRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringChangeListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/engineering-changes?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("status", request.Status),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringChangeItem> GetEngineeringChangeAsync(
+        string internalBearerToken,
+        string changeNumber,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringChangeItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/engineering/engineering-changes/{Uri.EscapeDataString(changeNumber)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
             cancellationToken);
 
     public Task<BusinessConsoleProductionVersionListResponse> ListProductionVersionsAsync(
@@ -2099,6 +2282,9 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             cancellationToken);
         return new BusinessConsoleAcceptedResponse(true);
     }
+
+    private static string ContextQuery(string organizationId, string environmentId) =>
+        Query(("organizationId", organizationId), ("environmentId", environmentId));
 
     private sealed record DownstreamArchiveProductionVersionRequest(string ProductionVersionId, string Reason);
 }

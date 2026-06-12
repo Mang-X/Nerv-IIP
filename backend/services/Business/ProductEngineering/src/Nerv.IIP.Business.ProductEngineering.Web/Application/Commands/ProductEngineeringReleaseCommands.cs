@@ -18,7 +18,8 @@ public sealed record RegisterEngineeringDocumentCommand(
     string FileName,
     string ContentType,
     string DocumentType,
-    string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
+    string? IdempotencyKey = null,
+    string? ItemCode = null) : ICommand<EntityCommandResult>;
 
 public sealed record EntityCommandResult(string Id);
 
@@ -34,6 +35,7 @@ public sealed class RegisterEngineeringDocumentCommandValidator : AbstractValida
         RuleFor(x => x.FileName).NotEmpty().MaximumLength(255);
         RuleFor(x => x.ContentType).NotEmpty().MaximumLength(120);
         RuleFor(x => x.DocumentType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ItemCode).MaximumLength(100);
     }
 }
 
@@ -49,7 +51,7 @@ public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocume
             request.EnvironmentId, "engineering-document",
             request.DocumentNumber,
             request.IdempotencyKey,
-            ProductEngineeringCodingService.Fingerprint(request.Revision, request.FileId, request.FileName, request.ContentType, request.DocumentType),
+            ProductEngineeringCodingService.Fingerprint(request.Revision, request.ItemCode, request.FileId, request.FileName, request.ContentType, request.DocumentType),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -66,6 +68,7 @@ public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocume
             request.EnvironmentId,
             allocation.Code,
             request.Revision,
+            request.ItemCode,
             request.FileId,
             request.FileName,
             request.ContentType,

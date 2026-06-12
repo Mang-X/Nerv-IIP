@@ -2044,18 +2044,44 @@ public sealed class BusinessGatewayProxyTests
             "internal-token-001",
             new BusinessConsoleReleaseEngineeringBomRequest("org-001", "env-dev", "EBOM-001", "A", "ITEM-001", new DateOnly(2026, 6, 1), [new BusinessConsoleBomLineRequest("ITEM-002", 1, "EA")]),
             CancellationToken.None);
+        await client.ListEngineeringDocumentsAsync(
+            "internal-token-001",
+            new BusinessConsoleListEngineeringDocumentsRequest("org-001", "env-dev", "ITEM-001", "cad", Skip: 1, Take: 10),
+            CancellationToken.None);
+        await client.GetEngineeringDocumentAsync("internal-token-001", "DOC-001", "A", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
+        await client.ListEngineeringItemsAsync(
+            "internal-token-001",
+            new BusinessConsoleListEngineeringItemsRequest("org-001", "env-dev", "ITEM-001", "Published", Skip: 2, Take: 20),
+            CancellationToken.None);
+        await client.GetEngineeringItemAsync("internal-token-001", "ITEM-001", "A", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
+        await client.ListEngineeringBomsAsync(
+            "internal-token-001",
+            new BusinessConsoleListEngineeringBomsRequest("org-001", "env-dev", "ITEM-001", "Published", Skip: 4, Take: 30),
+            CancellationToken.None);
+        await client.GetEngineeringBomAsync("internal-token-001", "EBOM-001", "A", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
         await client.ListManufacturingBomsAsync(
             "internal-token-001",
             new BusinessConsoleListManufacturingBomsRequest("org-001", "env-dev", "SKU-001", "Published", Skip: 3, Take: 25),
             CancellationToken.None);
+        await client.GetManufacturingBomAsync("internal-token-001", "MBOM-001", "A", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
         await client.ReleaseManufacturingBomAsync(
             "internal-token-001",
             new BusinessConsoleReleaseManufacturingBomRequest("org-001", "env-dev", "MBOM-001", "A", "SKU-001", "EBOM-001", "A", new DateOnly(2026, 6, 1), [new BusinessConsoleManufacturingBomMaterialLineRequest("RM-001", 1, "EA", 0)], []),
             CancellationToken.None);
+        await client.ListRoutingsAsync(
+            "internal-token-001",
+            new BusinessConsoleListRoutingsRequest("org-001", "env-dev", "SKU-001", "Published", Skip: 6, Take: 35),
+            CancellationToken.None);
+        await client.GetRoutingAsync("internal-token-001", "RTG-001", "A", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
         await client.ReleaseRoutingAsync(
             "internal-token-001",
             new BusinessConsoleReleaseRoutingRequest("org-001", "env-dev", "RTG-001", "A", "SKU-001", new DateOnly(2026, 6, 1), [new BusinessConsoleRoutingOperationRequest(10, "WC-001", "assembly", "装配", 15)]),
             CancellationToken.None);
+        await client.ListEngineeringChangesAsync(
+            "internal-token-001",
+            new BusinessConsoleListEngineeringChangesRequest("org-001", "env-dev", "Published", Skip: 7, Take: 40),
+            CancellationToken.None);
+        await client.GetEngineeringChangeAsync("internal-token-001", "ECO-001", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
         await client.ReleaseEngineeringChangeAsync(
             "internal-token-001",
             new BusinessConsoleReleaseEngineeringChangeRequest("org-001", "env-dev", "ECO-001", "Initial", "approval-001", new DateOnly(2026, 6, 1), [new BusinessConsoleAffectedVersionRequest("mbom", "MBOM-001:A")]),
@@ -2080,9 +2106,20 @@ public sealed class BusinessGatewayProxyTests
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/documents"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/items"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-boms/release"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/documents?organizationId=org-001&environmentId=env-dev&itemCode=ITEM-001&documentType=cad&skip=1&take=10"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/documents/DOC-001/A?organizationId=org-001&environmentId=env-dev"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/items?organizationId=org-001&environmentId=env-dev&itemCode=ITEM-001&status=Published&skip=2&take=20"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/items/ITEM-001/A?organizationId=org-001&environmentId=env-dev"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/engineering-boms?organizationId=org-001&environmentId=env-dev&parentItemCode=ITEM-001&status=Published&skip=4&take=30"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/engineering-boms/EBOM-001/A?organizationId=org-001&environmentId=env-dev"),
             request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/manufacturing-boms?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&status=Published&skip=3&take=25"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/manufacturing-boms/MBOM-001/A?organizationId=org-001&environmentId=env-dev"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/manufacturing-boms/release"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/routings?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&status=Published&skip=6&take=35"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/routings/RTG-001/A?organizationId=org-001&environmentId=env-dev"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/routings/release"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/engineering-changes?organizationId=org-001&environmentId=env-dev&status=Published&skip=7&take=40"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/engineering-changes/ECO-001?organizationId=org-001&environmentId=env-dev"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-changes/release"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/production-versions"),
             request => AssertRequest(request, HttpMethod.Put, "/api/business/v1/engineering/production-versions/pv-001"),
@@ -2099,11 +2136,22 @@ public sealed class BusinessGatewayProxyTests
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("RegisterEngineeringDocumentAsync", methodNames);
+        Assert.Contains("ListEngineeringDocumentsAsync", methodNames);
+        Assert.Contains("GetEngineeringDocumentAsync", methodNames);
         Assert.Contains("CreateEngineeringItemRevisionAsync", methodNames);
+        Assert.Contains("ListEngineeringItemsAsync", methodNames);
+        Assert.Contains("GetEngineeringItemAsync", methodNames);
         Assert.Contains("ReleaseEngineeringBomAsync", methodNames);
+        Assert.Contains("ListEngineeringBomsAsync", methodNames);
+        Assert.Contains("GetEngineeringBomAsync", methodNames);
         Assert.Contains("ListManufacturingBomsAsync", methodNames);
+        Assert.Contains("GetManufacturingBomAsync", methodNames);
         Assert.Contains("ReleaseManufacturingBomAsync", methodNames);
+        Assert.Contains("ListRoutingsAsync", methodNames);
+        Assert.Contains("GetRoutingAsync", methodNames);
         Assert.Contains("ReleaseRoutingAsync", methodNames);
+        Assert.Contains("ListEngineeringChangesAsync", methodNames);
+        Assert.Contains("GetEngineeringChangeAsync", methodNames);
         Assert.Contains("ReleaseEngineeringChangeAsync", methodNames);
         Assert.Contains("CreateProductionVersionAsync", methodNames);
         Assert.Contains("UpdateProductionVersionAsync", methodNames);
@@ -3601,6 +3649,26 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.DocumentNumber ?? "DOC-001"));
     }
 
+    public Task<BusinessConsoleEngineeringDocumentListResponse> ListEngineeringDocumentsAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringDocumentsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringDocumentListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleEngineeringDocumentItem> GetEngineeringDocumentAsync(
+        string internalBearerToken,
+        string documentNumber,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringDocumentItem(documentNumber, revision, null, "file-001", "design.dwg", "application/dwg", "cad", DateTime.UtcNow));
+    }
+
     public Task<BusinessConsoleEngineeringEntityResponse> CreateEngineeringItemRevisionAsync(
         string internalBearerToken,
         BusinessConsoleCreateEngineeringItemRevisionRequest request,
@@ -3609,6 +3677,26 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ItemCode ?? "ITEM-001"));
+    }
+
+    public Task<BusinessConsoleEngineeringItemListResponse> ListEngineeringItemsAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringItemsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringItemListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleEngineeringItemRevisionItem> GetEngineeringItemAsync(
+        string internalBearerToken,
+        string itemCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringItemRevisionItem(itemCode, revision, "Demo", "Published", DateTime.UtcNow, DateTime.UtcNow));
     }
 
     public Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringBomAsync(
@@ -3630,6 +3718,17 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         return Task.FromResult(new BusinessConsoleEngineeringBomListResponse([], 0));
     }
 
+    public Task<BusinessConsoleEngineeringBomItem> GetEngineeringBomAsync(
+        string internalBearerToken,
+        string bomCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringBomItem(bomCode, revision, "ITEM-001", "Published", DateOnly.FromDateTime(DateTime.UtcNow), []));
+    }
+
     public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
         string internalBearerToken,
         BusinessConsoleListManufacturingBomsRequest request,
@@ -3637,6 +3736,17 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleManufacturingBomListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleManufacturingBomItem> GetManufacturingBomAsync(
+        string internalBearerToken,
+        string bomCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleManufacturingBomItem(bomCode, revision, "SKU-001", "EBOM-001:A", "Published", DateOnly.FromDateTime(DateTime.UtcNow), [], []));
     }
 
     public Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(
@@ -3659,6 +3769,17 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         return Task.FromResult(new BusinessConsoleRoutingListResponse([], 0));
     }
 
+    public Task<BusinessConsoleRoutingItem> GetRoutingAsync(
+        string internalBearerToken,
+        string routingCode,
+        string revision,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleRoutingItem(routingCode, revision, "SKU-001", "Published", DateOnly.FromDateTime(DateTime.UtcNow), []));
+    }
+
     public Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
         string internalBearerToken,
         BusinessConsoleReleaseRoutingRequest request,
@@ -3677,6 +3798,25 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ChangeNumber ?? "ECO-001"));
+    }
+
+    public Task<BusinessConsoleEngineeringChangeListResponse> ListEngineeringChangesAsync(
+        string internalBearerToken,
+        BusinessConsoleListEngineeringChangesRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringChangeListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleEngineeringChangeItem> GetEngineeringChangeAsync(
+        string internalBearerToken,
+        string changeNumber,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringChangeItem(changeNumber, "Initial", "approval-001", "Published", DateOnly.FromDateTime(DateTime.UtcNow), DateTime.UtcNow, DateTime.UtcNow, []));
     }
 
     public Task<BusinessConsoleProductionVersionListResponse> ListProductionVersionsAsync(
