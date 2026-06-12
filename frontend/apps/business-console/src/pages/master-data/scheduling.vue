@@ -16,6 +16,7 @@ import {
   Button,
   DataTable,
   DataTablePagination,
+  DatePicker,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -29,6 +30,16 @@ import {
   FieldLabel,
   Input,
   PageHeader,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
   Spinner,
   StatusBadge,
   Tabs,
@@ -37,7 +48,7 @@ import {
   TabsTrigger,
   Toolbar,
 } from '@nerv-iip/ui'
-import { CalendarRangeIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
+import { CalendarCogIcon, CalendarRangeIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
@@ -196,8 +207,6 @@ async function submitShift() {
 
 // ---- 工作日历 ----
 const calKeyword = ref('')
-const calPage = ref(1)
-const calPageSize = ref('10')
 const calOpen = ref(false)
 const calShowErrors = ref(false)
 const calEditingCode = shallowRef<string | null>(null)
@@ -207,11 +216,9 @@ const calRows = computed(() => filterRows(calendars.items.value, calKeyword.valu
 const canCreateCal = computed(() => [calForm.code, calForm.name].every(isNonEmpty))
 const calListError = computed(() => formatError(calendars.error.value))
 watch(calOpen, (open) => { if (open) calShowErrors.value = false })
-watch([calKeyword, calPageSize], () => { calPage.value = 1 })
-watch([calPage, calPageSize], () => {
-  calendars.filters.skip = (calPage.value - 1) * (Number(calPageSize.value) || 10)
-  calendars.filters.take = Number(calPageSize.value) || 10
-}, { immediate: true })
+// 日历用整行可点列表（无分页），一次取足；通常数量很少。
+calendars.filters.skip = 0
+calendars.filters.take = 200
 function resetCalForm() {
   Object.assign(calForm, { code: '', name: '' })
 }
@@ -277,13 +284,6 @@ const WEEK_DAYS: { key: SystemDayOfWeek, label: string, short: string }[] = [
 ]
 const WEEK_KEYS: SystemDayOfWeek[] = WEEK_DAYS.map((d) => d.key)
 
-// 左侧日历选择列表只显示「名称 ｜ 状态」两列（窄栏）。
-const calListColumns: DataTableColumn<BusinessConsoleResourceItem>[] = [
-  { key: 'displayName', header: '工作日历', accessor: (r) => r.displayName ?? '无' },
-  { key: 'active', header: '状态', width: 'w-20' },
-  { key: 'actions', header: '', align: 'end', width: 'w-12' },
-]
-
 const selectedCalCode = shallowRef<string | null>(null)
 const calDetailLoading = shallowRef(false)
 const calDetailLoaded = shallowRef(false)
@@ -292,6 +292,8 @@ const workingTimes = ref<BusinessConsoleWorkCalendarWorkingTime[]>([])
 const holidays = ref<BusinessConsoleWorkCalendarHoliday[]>([])
 const exceptions = ref<BusinessConsoleWorkCalendarException[]>([])
 const calBoardSaving = shallowRef(false)
+// 节假日 / 例外日的增删收进右侧抽屉，月历网格保持只读展示。
+const manageSheetOpen = ref(false)
 
 const today = new Date()
 const viewYear = ref(today.getFullYear())
@@ -444,6 +446,14 @@ function goToday() {
   viewYear.value = today.getFullYear()
   viewMonth.value = today.getMonth()
 }
+// 点月历某天 → 打开抽屉并把该日期预填进两个草稿（加分项）。
+function openManageSheet(prefillDate?: string) {
+  if (prefillDate) {
+    holidayDraft.date = prefillDate
+    exceptionDraft.date = prefillDate
+  }
+  manageSheetOpen.value = true
+}
 
 const selectedCalName = computed(() =>
   calendars.items.value.find((c) => c.code === selectedCalCode.value)?.displayName ?? selectedCalCode.value ?? '',
@@ -527,6 +537,16 @@ async function removeException(date: string) {
   exceptions.value = exceptions.value.filter((e) => toDateKey(e.date ?? '') !== key)
   await persistCalendar('例外日已删除。')
 }
+
+// DatePicker 的 modelValue 是 'YYYY-MM-DD' | null；草稿仍用字符串，故清空(null)归一为 ''。
+const holidayDateModel = computed<string | null>({
+  get: () => holidayDraft.date || null,
+  set: (value) => { holidayDraft.date = value ?? '' },
+})
+const exceptionDateModel = computed<string | null>({
+  get: () => exceptionDraft.date || null,
+  set: (value) => { exceptionDraft.date = value ?? '' },
+})
 
 const sortedHolidays = computed(() =>
   [...holidays.value].filter((h) => h.date).sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '')),
@@ -655,31 +675,37 @@ const sortedExceptions = computed(() =>
         </Toolbar>
         <p v-if="calListError" class="text-sm text-destructive" role="alert">{{ calListError }}</p>
 
-        <div class="grid items-start gap-4 md:grid-cols-[auto_minmax(0,1fr)]">
-          <!-- 左：日历列表（选中一个驱动右侧月历）。auto 列自适应表宽,避免表格 min-content 溢出窄列。 -->
-          <div class="grid h-fit min-w-0 gap-3">
-            <DataTable
-              :columns="calListColumns"
-              :rows="calRows"
-              :row-key="rowKey"
-              :loading="calendars.pending.value"
-              empty-message="暂无工作日历。可清空筛选或新建日历。"
-            >
-              <template #cell-displayName="{ row }">
+        <div class="grid items-start gap-4 md:grid-cols-[16rem_minmax(0,1fr)]">
+          <!-- 左：日历列表（整行可点，选中一个驱动右侧月历）。 -->
+          <div class="grid h-fit min-w-0 gap-1.5">
+            <div v-if="calendars.pending.value" class="flex items-center gap-2 px-2 py-6 text-sm text-muted-foreground">
+              <Spinner aria-hidden="true" />加载工作日历…
+            </div>
+            <p v-else-if="!calRows.length" class="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+              暂无工作日历。可清空筛选或新建日历。
+            </p>
+            <ul v-else class="grid gap-1">
+              <li
+                v-for="row in calRows"
+                :key="rowKey(row)"
+                class="relative"
+              >
                 <button
                   type="button"
-                  class="rounded text-left font-medium hover:underline"
-                  :class="row.code === selectedCalCode ? 'text-primary' : ''"
+                  class="flex w-full items-center gap-2 rounded-md py-2 pl-3 pr-10 text-left transition-colors hover:bg-accent/50"
+                  :class="row.code === selectedCalCode ? 'bg-accent text-accent-foreground' : ''"
                   :aria-current="row.code === selectedCalCode ? 'true' : undefined"
                   @click="selectCalendar(row)"
-                >{{ row.displayName ?? '无' }}</button>
-              </template>
-              <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
-              <template #cell-actions="{ row }">
-                <MasterDataRowActions :row="row" entity-label="工作日历" :detail-fields="baseDetailFields(row, '日历编码', '日历名称')" :actions="calActions" @edit="openEditCal" />
-              </template>
-            </DataTable>
-            <DataTablePagination v-model:page="calPage" v-model:page-size="calPageSize" :total-items="calendars.total.value" />
+                >
+                  <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ row.displayName ?? '无' }}</span>
+                  <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+                </button>
+                <!-- 行尾「⋯」操作菜单：编辑 / 停用。绝对定位避免按钮嵌套。 -->
+                <div class="absolute inset-y-0 right-1 flex items-center">
+                  <MasterDataRowActions :row="row" entity-label="工作日历" :detail-fields="baseDetailFields(row, '日历编码', '日历名称')" :actions="calActions" @edit="openEditCal" />
+                </div>
+              </li>
+            </ul>
           </div>
 
           <!-- 右：月历视图（全部读真实 detail，无明细给空态引导） -->
@@ -691,7 +717,7 @@ const sortedExceptions = computed(() =>
             </div>
 
             <template v-else>
-              <!-- 头部：月份切换 + 选中日历名 -->
+              <!-- 头部：选中日历名 + 月份切换 + 管理入口 -->
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-semibold">{{ selectedCalName }}</span>
@@ -705,46 +731,20 @@ const sortedExceptions = computed(() =>
                 </div>
               </div>
 
-              <!-- 图例（色 + 文字/角标双编码，色盲友好） -->
-              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm border border-border bg-card" aria-hidden="true" />工作日</span>
-                <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-muted/60" aria-hidden="true" />休息日</span>
-                <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-destructive/15 ring-1 ring-inset ring-destructive/40" aria-hidden="true" /><span class="font-medium">假</span> 法定节假日</span>
-                <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-primary/15 ring-1 ring-inset ring-primary/40" aria-hidden="true" /><span class="font-medium">例</span> 例外日</span>
-              </div>
-
               <div v-if="calDetailLoading" class="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
                 <Spinner aria-hidden="true" />加载日历明细…
               </div>
 
               <template v-else>
-                <!-- 月历网格 -->
-                <div class="grid grid-cols-7 gap-1">
-                  <div v-for="wd in WEEK_DAYS" :key="wd.key" class="pb-1 text-center text-xs font-medium text-muted-foreground">{{ wd.short }}</div>
-                  <div
-                    v-for="cell in monthCells"
-                    :key="cell.key"
-                    class="relative aspect-square rounded-md p-1.5 text-sm"
-                    :class="cell.inMonth ? [cellClassMap[cell.kind], cell.isToday ? 'outline outline-2 outline-primary' : ''] : 'opacity-0'"
-                    :title="cell.inMonth ? cell.title : undefined"
-                  >
-                    <template v-if="cell.inMonth">
-                      <span class="tabular-nums">{{ cell.label }}</span>
-                      <span v-if="cell.badge" class="absolute bottom-1 right-1 text-[10px] font-semibold leading-none">{{ cell.badge }}</span>
-                    </template>
+                <!-- 每周工作模式：月历正上方一行 7 个星期 chip，点亮=工作日，即时保存 -->
+                <div class="grid gap-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-sm font-medium">每周工作模式</p>
+                    <Button size="sm" variant="outline" type="button" @click="openManageSheet()">
+                      <CalendarCogIcon aria-hidden="true" />管理节假日 / 例外日
+                    </Button>
                   </div>
-                </div>
-
-                <!-- 空态引导：选中日历但完全没有明细 -->
-                <div v-if="calDetailLoaded && !hasAnyDetail" class="rounded-md border border-dashed border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-                  该日历还没有任何工作时间 / 节假日设置，当前全部按休息日显示。请在下方设置每周工作模式、添加节假日或例外日。
-                </div>
-
-                <!-- 编辑：每周工作模式 -->
-                <div class="grid gap-2 border-t border-border pt-3">
-                  <p class="text-sm font-medium">每周工作模式</p>
-                  <p class="text-xs text-muted-foreground">点亮的星期为工作日（默认 08:00–17:00）；点击切换，立即保存。</p>
-                  <div class="flex flex-wrap gap-2">
+                  <div class="flex flex-wrap gap-1.5">
                     <Button
                       v-for="wd in WEEK_DAYS"
                       :key="wd.key"
@@ -752,70 +752,124 @@ const sortedExceptions = computed(() =>
                       type="button"
                       :variant="workingDaySet.has(wd.key) ? 'default' : 'outline'"
                       :disabled="calBoardSaving"
+                      :aria-pressed="workingDaySet.has(wd.key)"
                       @click="toggleWeekday(wd.key)"
                     >
                       {{ wd.label }}
                     </Button>
                   </div>
+                  <p class="text-xs text-muted-foreground">点亮的星期为工作日（默认 08:00–17:00）；点击切换，立即保存。</p>
                 </div>
 
-                <!-- 编辑：节假日 -->
-                <div class="grid gap-2 border-t border-border pt-3">
-                  <p class="text-sm font-medium">法定节假日</p>
-                  <form class="flex flex-wrap items-end gap-2" @submit.prevent="addHoliday">
-                    <div class="grid gap-1">
-                      <label for="holiday-date" class="text-xs text-muted-foreground">日期</label>
-                      <Input id="holiday-date" v-model="holidayDraft.date" type="date" class="w-40" />
-                    </div>
-                    <div class="grid gap-1">
-                      <label for="holiday-name" class="text-xs text-muted-foreground">名称（可选）</label>
-                      <Input id="holiday-name" v-model="holidayDraft.name" placeholder="如 端午节" class="w-40" />
-                    </div>
-                    <Button size="sm" type="submit" :disabled="!holidayDraft.date || calBoardSaving"><PlusIcon aria-hidden="true" />添加</Button>
-                  </form>
-                  <p v-if="!sortedHolidays.length" class="text-xs text-muted-foreground">暂无节假日。</p>
-                  <ul v-else class="grid gap-1">
-                    <li v-for="h in sortedHolidays" :key="h.date" class="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm">
-                      <span><span class="font-medium tabular-nums">{{ formatDate(h.date) }}</span> <span class="text-muted-foreground">{{ h.name || '节假日' }}</span></span>
-                      <Button size="icon" variant="ghost" type="button" aria-label="删除节假日" :disabled="calBoardSaving" @click="removeHoliday(h.date!)"><Trash2Icon aria-hidden="true" /></Button>
-                    </li>
-                  </ul>
+                <!-- 月历网格（只读展示；点某天可在抽屉里预填该日期） -->
+                <div class="grid grid-cols-7 gap-1">
+                  <div v-for="wd in WEEK_DAYS" :key="wd.key" class="pb-1 text-center text-xs font-medium text-muted-foreground">{{ wd.short }}</div>
+                  <button
+                    v-for="cell in monthCells"
+                    :key="cell.key"
+                    type="button"
+                    class="relative aspect-square rounded-md p-1.5 text-left text-sm"
+                    :class="cell.inMonth ? [cellClassMap[cell.kind], cell.isToday ? 'outline outline-2 outline-primary' : '', 'transition-shadow hover:ring-1 hover:ring-inset hover:ring-primary/50'] : 'pointer-events-none opacity-0'"
+                    :title="cell.inMonth ? cell.title : undefined"
+                    :disabled="!cell.inMonth"
+                    @click="cell.inMonth && openManageSheet(cell.key)"
+                  >
+                    <template v-if="cell.inMonth">
+                      <span class="tabular-nums">{{ cell.label }}</span>
+                      <span v-if="cell.badge" class="absolute bottom-1 right-1 text-[10px] font-semibold leading-none">{{ cell.badge }}</span>
+                    </template>
+                  </button>
                 </div>
 
-                <!-- 编辑：例外日 -->
-                <div class="grid gap-2 border-t border-border pt-3">
-                  <p class="text-sm font-medium">例外日</p>
-                  <p class="text-xs text-muted-foreground">指定某天「当日上班 / 当日休息」，覆盖每周工作模式（如调休）。</p>
-                  <form class="flex flex-wrap items-end gap-2" @submit.prevent="addException">
-                    <div class="grid gap-1">
-                      <label for="exception-date" class="text-xs text-muted-foreground">日期</label>
-                      <Input id="exception-date" v-model="exceptionDraft.date" type="date" class="w-40" />
-                    </div>
-                    <div class="grid gap-1">
-                      <label for="exception-kind" class="text-xs text-muted-foreground">类型</label>
-                      <select id="exception-kind" v-model="exceptionDraft.isWorkingDay" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
-                        <option value="true">当日上班</option>
-                        <option value="false">当日休息</option>
-                      </select>
-                    </div>
-                    <div class="grid gap-1">
-                      <label for="exception-reason" class="text-xs text-muted-foreground">原因（可选）</label>
-                      <Input id="exception-reason" v-model="exceptionDraft.reason" placeholder="如 调休" class="w-40" />
-                    </div>
-                    <Button size="sm" type="submit" :disabled="!exceptionDraft.date || calBoardSaving"><PlusIcon aria-hidden="true" />添加</Button>
-                  </form>
-                  <p v-if="!sortedExceptions.length" class="text-xs text-muted-foreground">暂无例外日。</p>
-                  <ul v-else class="grid gap-1">
-                    <li v-for="e in sortedExceptions" :key="e.date" class="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm">
-                      <span><span class="font-medium tabular-nums">{{ formatDate(e.date) }}</span> <span class="text-muted-foreground">{{ e.isWorkingDay ? '当日上班' : '当日休息' }}{{ e.reason ? ` · ${e.reason}` : '' }}</span></span>
-                      <Button size="icon" variant="ghost" type="button" aria-label="删除例外日" :disabled="calBoardSaving" @click="removeException(e.date!)"><Trash2Icon aria-hidden="true" /></Button>
-                    </li>
-                  </ul>
+                <!-- 图例（色 + 文字/角标双编码，色盲友好） -->
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm border border-border bg-card" aria-hidden="true" />工作日</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-muted/60" aria-hidden="true" />休息日</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-destructive/15 ring-1 ring-inset ring-destructive/40" aria-hidden="true" /><span class="font-medium">假</span> 法定节假日</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="size-3 rounded-sm bg-primary/15 ring-1 ring-inset ring-primary/40" aria-hidden="true" /><span class="font-medium">例</span> 例外日</span>
+                </div>
+
+                <!-- 空态引导：选中日历但完全没有明细 -->
+                <div v-if="calDetailLoaded && !hasAnyDetail" class="rounded-md border border-dashed border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+                  该日历还没有任何工作时间 / 节假日设置，当前全部按休息日显示。请在上方设置每周工作模式，或点「管理节假日 / 例外日」添加。
                 </div>
               </template>
             </template>
           </div>
         </div>
+
+        <!-- 节假日 / 例外日管理抽屉（右侧滑出） -->
+        <Sheet v-model:open="manageSheetOpen">
+          <SheetContent class="w-full gap-0 overflow-y-auto sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>节假日 / 例外日 · {{ selectedCalName }}</SheetTitle>
+              <SheetDescription>增删后立即保存到该日历，月历会同步刷新。</SheetDescription>
+            </SheetHeader>
+
+            <div class="grid gap-6 px-4 pb-6">
+              <!-- 节假日 -->
+              <section class="grid gap-2">
+                <p class="text-sm font-medium">法定节假日</p>
+                <form class="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-end" @submit.prevent="addHoliday">
+                  <div class="grid gap-1">
+                    <label class="text-xs text-muted-foreground">日期</label>
+                    <DatePicker v-model="holidayDateModel" placeholder="选择日期" class="w-40" />
+                  </div>
+                  <div class="grid gap-1">
+                    <label for="holiday-name" class="text-xs text-muted-foreground">名称（可选）</label>
+                    <Input id="holiday-name" v-model="holidayDraft.name" placeholder="如 端午节" />
+                  </div>
+                  <Button size="sm" type="submit" :disabled="!holidayDraft.date || calBoardSaving"><PlusIcon aria-hidden="true" />添加</Button>
+                </form>
+                <p v-if="!sortedHolidays.length" class="text-xs text-muted-foreground">暂无节假日。</p>
+                <ul v-else class="grid gap-1">
+                  <li v-for="h in sortedHolidays" :key="h.date" class="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm">
+                    <span><span class="font-medium tabular-nums">{{ formatDate(h.date) }}</span> <span class="text-muted-foreground">{{ h.name || '节假日' }}</span></span>
+                    <Button size="icon" variant="ghost" type="button" aria-label="删除节假日" :disabled="calBoardSaving" @click="removeHoliday(h.date!)"><Trash2Icon aria-hidden="true" /></Button>
+                  </li>
+                </ul>
+              </section>
+
+              <!-- 例外日 -->
+              <section class="grid gap-2 border-t border-border pt-4">
+                <p class="text-sm font-medium">例外日</p>
+                <p class="text-xs text-muted-foreground">指定某天「当日上班 / 当日休息」，覆盖每周工作模式（如调休）。</p>
+                <form class="grid gap-2" @submit.prevent="addException">
+                  <div class="grid gap-2 sm:grid-cols-2">
+                    <div class="grid gap-1">
+                      <label class="text-xs text-muted-foreground">日期</label>
+                      <DatePicker v-model="exceptionDateModel" placeholder="选择日期" class="w-40" />
+                    </div>
+                    <div class="grid gap-1">
+                      <label for="exception-kind" class="text-xs text-muted-foreground">类型</label>
+                      <Select v-model="exceptionDraft.isWorkingDay">
+                        <SelectTrigger id="exception-kind" class="w-40"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">当日上班</SelectItem>
+                          <SelectItem value="false">当日休息</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div class="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                    <div class="grid gap-1">
+                      <label for="exception-reason" class="text-xs text-muted-foreground">原因（可选）</label>
+                      <Input id="exception-reason" v-model="exceptionDraft.reason" placeholder="如 调休" />
+                    </div>
+                    <Button size="sm" type="submit" :disabled="!exceptionDraft.date || calBoardSaving"><PlusIcon aria-hidden="true" />添加</Button>
+                  </div>
+                </form>
+                <p v-if="!sortedExceptions.length" class="text-xs text-muted-foreground">暂无例外日。</p>
+                <ul v-else class="grid gap-1">
+                  <li v-for="e in sortedExceptions" :key="e.date" class="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm">
+                    <span><span class="font-medium tabular-nums">{{ formatDate(e.date) }}</span> <span class="text-muted-foreground">{{ e.isWorkingDay ? '当日上班' : '当日休息' }}{{ e.reason ? ` · ${e.reason}` : '' }}</span></span>
+                    <Button size="icon" variant="ghost" type="button" aria-label="删除例外日" :disabled="calBoardSaving" @click="removeException(e.date!)"><Trash2Icon aria-hidden="true" /></Button>
+                  </li>
+                </ul>
+              </section>
+            </div>
+          </SheetContent>
+        </Sheet>
       </TabsContent>
     </Tabs>
   </BusinessLayout>

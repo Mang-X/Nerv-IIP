@@ -71,9 +71,15 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 }))
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
+// 班次行操作：保留 RowActions 内的下拉项（编辑/停用）以便点击「编辑」。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
   DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+}
+// 工作日历左列：压平行尾「⋯」菜单 + StatusBadge，让整行按钮的可见文本就是日历名。
+const calRowActionStubs = {
+  MasterDataRowActions: { template: '<span data-testid="row-actions" />' },
+  StatusBadge: { template: '<span />' },
 }
 const dialogStubs = {
   Dialog: { template: '<div><slot /></div>' },
@@ -84,11 +90,54 @@ const dialogStubs = {
   DialogTitle: { template: '<h2><slot /></h2>' },
   DialogDescription: { template: '<p><slot /></p>' },
 }
+// 抽屉照 dialog 风格内联展开，使其内容在挂载后即可断言。
+const sheetStubs = {
+  Sheet: { template: '<div><slot /></div>' },
+  SheetContent: { template: '<div><slot /></div>' },
+  SheetHeader: { template: '<div><slot /></div>' },
+  SheetTitle: { template: '<h2><slot /></h2>' },
+  SheetDescription: { template: '<p><slot /></p>' },
+}
+// DatePicker 暴露一个原生 date input，让测试可 setValue 完成日期录入。
+const datePickerStub = {
+  DatePicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
+  },
+}
+// 把 reka-ui Select 换成原生 <select>，让测试能 setValue。
+const formSelectStubs = {
+  Select: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+  },
+  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectValue: { template: '<span />' },
+  SelectContent: { template: '<slot />' },
+  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+}
+
+const calStubs = { ...layoutStub, ...calRowActionStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs }
 
 async function switchTab(wrapper: ReturnType<typeof mount>, label: string) {
   const tab = wrapper.findAll('[role="tab"]').find((t) => t.text().includes(label))!
   await tab.trigger('focus')
   await tab.trigger('mousedown')
+  await flushPromises()
+}
+
+// 整行可点的日历选择按钮（文本含日历名；排除行尾占位）。
+function findCalRowButton(wrapper: ReturnType<typeof mount>, name: string) {
+  return wrapper.findAll('button').find((b) => b.text().trim() === name)
+}
+
+async function selectStandardCalendar(wrapper: ReturnType<typeof mount>) {
+  await switchTab(wrapper, '工作日历')
+  const rowBtn = findCalRowButton(wrapper, '标准日历')
+  expect(rowBtn).toBeTruthy()
+  await rowBtn!.trigger('click')
   await flushPromises()
 }
 
@@ -165,7 +214,7 @@ describe('master-data scheduling page', () => {
   })
 
   it('work-calendar tab shows empty month-view guidance before a calendar is selected', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
     await flushPromises()
     await switchTab(wrapper, '工作日历')
 
@@ -174,39 +223,86 @@ describe('master-data scheduling page', () => {
     expect(actionStub.calFetchDetail).not.toHaveBeenCalled()
   })
 
-  it('selecting a calendar reads real detail and renders month grid with holiday/exception badges', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+  it('clicking anywhere on a calendar row (not just the name text) selects it and reads detail', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
     await flushPromises()
     await switchTab(wrapper, '工作日历')
 
-    const nameBtn = wrapper.findAll('button').find((b) => b.text().trim() === '标准日历')
-    expect(nameBtn).toBeTruthy()
-    await nameBtn!.trigger('click')
+    // 整行就是一个 <button>，点中其内任意处都触发选中。
+    const rowBtn = findCalRowButton(wrapper, '标准日历')
+    expect(rowBtn).toBeTruthy()
+    expect(rowBtn!.element.tagName).toBe('BUTTON')
+    await rowBtn!.trigger('click')
     await flushPromises()
 
     expect(actionStub.calFetchDetail).toHaveBeenCalledWith('CAL-A')
-    // 每周工作模式按周一/周二点亮（来自 workingTimes）。
+    // 选中后行带 aria-current。
+    expect(rowBtn!.attributes('aria-current')).toBe('true')
+  })
+
+  it('selecting a calendar reads real detail and renders month grid with holiday/exception data', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    expect(actionStub.calFetchDetail).toHaveBeenCalledWith('CAL-A')
+    // 每周工作模式 chip 在月历上方。
     expect(wrapper.text()).toContain('每周工作模式')
-    // 节假日 / 例外日清单读自真实明细。
-    expect(wrapper.text()).toContain('端午节')
-    expect(wrapper.text()).toContain('调休')
     // 月历图例存在。
     expect(wrapper.text()).toContain('法定节假日')
     expect(wrapper.text()).toContain('例外日')
   })
 
-  it('adding a holiday writes back via update with the new holiday list', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+  it('weekly-mode chips render above the month grid and toggling writes the pattern back via update', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
     await flushPromises()
-    await switchTab(wrapper, '工作日历')
-    await wrapper.findAll('button').find((b) => b.text().trim() === '标准日历')!.trigger('click')
+    await selectStandardCalendar(wrapper)
+
+    // 周一/周二来自 workingTimes → 点亮（default variant）；周三未配置。
+    const wedBtn = wrapper.findAll('button').find((b) => b.text().trim() === '周三')
+    expect(wedBtn).toBeTruthy()
+    // chip 位置：每周工作模式标题在月历 7 列网格之前（在月历上方）。
+    const html = wrapper.html()
+    expect(html.indexOf('每周工作模式')).toBeLessThan(html.indexOf('grid-cols-7'))
+
+    await wedBtn!.trigger('click')
     await flushPromises()
 
-    await wrapper.find('#holiday-date').setValue('2026-10-01')
-    await wrapper.find('#holiday-name').setValue('国庆节')
+    expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
+    const [, patch] = actionStub.calUpdate.mock.calls[0]!
+    expect(patch.workingTimes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ dayOfWeek: 'wednesday' }),
+    ]))
+  })
+
+  it('opens the holiday/exception sheet from the 管理 button and lists existing detail there', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
     await flushPromises()
-    // 提交节假日表单（其内 [添加] 为 type=submit）。
-    const holidayForm = wrapper.findAll('form').find((f) => f.find('#holiday-date').exists())!
+    await selectStandardCalendar(wrapper)
+
+    const manageBtn = wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))
+    expect(manageBtn).toBeTruthy()
+    await manageBtn!.trigger('click')
+    await flushPromises()
+
+    // 抽屉内含读自真实明细的节假日 / 例外日清单。
+    expect(wrapper.text()).toContain('端午节')
+    expect(wrapper.text()).toContain('调休')
+  })
+
+  it('adding a holiday via the DatePicker writes back the new holiday list through update', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await flushPromises()
+
+    // 抽屉内的节假日表单：DatePicker(原生 date 桩) + 名称。
+    const holidayForm = wrapper.findAll('form').find((f) => f.find('#holiday-name').exists())!
+    await holidayForm.find('input[type="date"]').setValue('2026-10-01')
+    await holidayForm.find('#holiday-name').setValue('国庆节')
+    await flushPromises()
     await holidayForm.trigger('submit')
     await flushPromises()
 
@@ -220,23 +316,30 @@ describe('master-data scheduling page', () => {
     expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
-  it('toggling a weekday writes back the working-times pattern via update', async () => {
-    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+  it('adding an exception via DatePicker + Select writes back exceptions through update', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
     await flushPromises()
-    await switchTab(wrapper, '工作日历')
-    await wrapper.findAll('button').find((b) => b.text().trim() === '标准日历')!.trigger('click')
+    await selectStandardCalendar(wrapper)
+
+    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
     await flushPromises()
 
-    // 点「周三」（原本未配置）→ 加入工作日。
-    const wedBtn = wrapper.findAll('button').find((b) => b.text().trim() === '周三')
-    expect(wedBtn).toBeTruthy()
-    await wedBtn!.trigger('click')
+    // 例外日表单：含「原因」字段，借此定位该 form。
+    const exceptionForm = wrapper.findAll('form').find((f) => f.find('#exception-reason').exists())!
+    await exceptionForm.find('input[type="date"]').setValue('2026-10-08')
+    await exceptionForm.find('select').setValue('false') // 当日休息
+    await exceptionForm.find('#exception-reason').setValue('补休')
+    await flushPromises()
+    await exceptionForm.trigger('submit')
     await flushPromises()
 
     expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
-    const [, patch] = actionStub.calUpdate.mock.calls[0]!
-    expect(patch.workingTimes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ dayOfWeek: 'wednesday' }),
+    const [code, patch] = actionStub.calUpdate.mock.calls[0]!
+    expect(code).toBe('CAL-A')
+    expect(patch.exceptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ date: '2026-06-20', isWorkingDay: true }),
+      expect.objectContaining({ date: '2026-10-08', isWorkingDay: false, reason: '补休' }),
     ]))
+    expect(stub.toastSuccess).toHaveBeenCalled()
   })
 })
