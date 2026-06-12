@@ -51,7 +51,7 @@ public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocume
             request.EnvironmentId, "engineering-document",
             request.DocumentNumber,
             request.IdempotencyKey,
-            ProductEngineeringCodingService.Fingerprint(request.Revision, request.ItemCode, request.FileId, request.FileName, request.ContentType, request.DocumentType),
+            DocumentPayloadFingerprint(request),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -75,6 +75,14 @@ public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocume
             request.DocumentType);
         await repository.AddAsync(document, cancellationToken);
         return new EntityCommandResult(document.DocumentNumber);
+    }
+
+    private static string DocumentPayloadFingerprint(RegisterEngineeringDocumentCommand request)
+    {
+        var itemCode = string.IsNullOrWhiteSpace(request.ItemCode) ? null : request.ItemCode.Trim();
+        return itemCode is null
+            ? ProductEngineeringCodingService.Fingerprint(request.Revision, request.FileId, request.FileName, request.ContentType, request.DocumentType)
+            : ProductEngineeringCodingService.Fingerprint(request.Revision, itemCode, request.FileId, request.FileName, request.ContentType, request.DocumentType);
     }
 }
 

@@ -9,6 +9,11 @@ internal static class EngineeringQueryParameters
 
     internal static int NormalizeTake(int take) => Math.Clamp(take, 1, 500);
 
+    internal static string? NormalizeOptionalText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
     internal static EngineeringVersionStatus? ParseStatusOrThrow(string? status)
     {
         if (string.IsNullOrWhiteSpace(status))
@@ -365,14 +370,16 @@ public sealed class ListEngineeringDocumentsQueryHandler(ApplicationDbContext db
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (!string.IsNullOrWhiteSpace(request.ItemCode))
+        var itemCode = EngineeringQueryParameters.NormalizeOptionalText(request.ItemCode);
+        if (itemCode is not null)
         {
-            query = query.Where(x => x.ItemCode == request.ItemCode);
+            query = query.Where(x => x.ItemCode == itemCode);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.DocumentType))
+        var documentType = EngineeringQueryParameters.NormalizeOptionalText(request.DocumentType);
+        if (documentType is not null)
         {
-            query = query.Where(x => x.DocumentType == request.DocumentType);
+            query = query.Where(x => x.DocumentType == documentType);
         }
 
         var total = await query.CountAsync(cancellationToken);

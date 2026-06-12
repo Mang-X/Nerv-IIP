@@ -300,7 +300,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListEngineeringDocumentsQueryHandler(dbContext).Handle(
-            new ListEngineeringDocumentsQuery("org-001", "env-dev", "ENG-1000", "cad-drawing", Skip: 0, Take: 10),
+            new ListEngineeringDocumentsQuery("org-001", "env-dev", " ENG-1000 ", " cad-drawing ", Skip: 0, Take: 10),
             CancellationToken.None);
 
         var document = Assert.Single(response.Items);
@@ -675,6 +675,45 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
         Assert.Equal(first.Id, second.Id);
         Assert.Matches("^EDOC-[0-9]{8}-[0-9]{6}$", first.Id);
+        Assert.Single(dbContext.EngineeringDocuments);
+    }
+
+    [Fact]
+    public async Task Register_engineering_document_preserves_legacy_idempotency_fingerprint_without_item_code()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var numbering = new ProductEngineeringCodingService();
+        var handler = new RegisterEngineeringDocumentCommandHandler(new EngineeringDocumentRepository(dbContext), numbering);
+        var command = new RegisterEngineeringDocumentCommand(
+            "org-001",
+            "env-dev",
+            null,
+            "A",
+            "file-001",
+            "shock-absorber.dwg",
+            "application/dwg",
+            "cad-drawing",
+            "engineering-document-legacy");
+
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var legacyReplay = new RegisterEngineeringDocumentCommand(
+            "org-001",
+            "env-dev",
+            null,
+            "A",
+            "file-001",
+            "shock-absorber.dwg",
+            "application/dwg",
+            "cad-drawing",
+            "engineering-document-legacy",
+            ItemCode: "   ");
+
+        var replay = await handler.Handle(legacyReplay, CancellationToken.None);
+
+        Assert.Matches("^EDOC-[0-9]{8}-[0-9]{6}$", replay.Id);
         Assert.Single(dbContext.EngineeringDocuments);
     }
 

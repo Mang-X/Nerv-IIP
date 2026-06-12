@@ -61,12 +61,12 @@ const errorMessage = computed(() =>
   formatError(bomsError.value) || formatError(routingsError.value)
   || formatError(productionVersionsError.value) || formatError(resolveError.value),
 )
-const releasedBomCount = computed(() => boms.value.filter((i) => isReleased(i.status)).length)
-const releasedRoutingCount = computed(() => routings.value.filter((i) => isReleased(i.status)).length)
+const publishedBomCount = computed(() => boms.value.filter((i) => isPublished(i.status)).length)
+const publishedRoutingCount = computed(() => routings.value.filter((i) => isPublished(i.status)).length)
 const activeProductionVersionCount = computed(() => productionVersions.value.filter((i) => i.status?.toLowerCase() === 'active').length)
 
 const lifecycleOptions = [
-  { label: '已发布', value: 'Released' },
+  { label: '已发布', value: 'Published' },
   { label: '草稿', value: 'Draft' },
   { label: '已归档', value: 'Archived' },
 ]
@@ -102,12 +102,12 @@ const pvColumns: DataTableColumn<BusinessConsoleProductionVersionItem>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
 ]
 
-function isReleased(status?: string) {
-  return status?.toLowerCase() === 'released'
+function isPublished(status?: string) {
+  return status?.toLowerCase() === 'published'
 }
 function engStatus(status?: string | null): { label: string, tone: StatusTone } {
   const s = (status ?? '').toLowerCase()
-  if (s === 'released') return { label: '已发布', tone: 'success' }
+  if (s === 'published') return { label: '已发布', tone: 'success' }
   if (s === 'active') return { label: '有效', tone: 'success' }
   if (s === 'draft') return { label: '草稿', tone: 'warning' }
   if (s === 'archived') return { label: '已归档', tone: 'neutral' }
@@ -137,8 +137,8 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="3">
-      <SectionCard description="已发布 MBOM" :value="releasedBomCount" hint="可供 MES / MRP 消费" />
-      <SectionCard description="已发布工艺路线" :value="releasedRoutingCount" hint="按当前筛选" />
+      <SectionCard description="已发布 MBOM" :value="publishedBomCount" hint="可供 MES / MRP 消费" />
+      <SectionCard description="已发布工艺路线" :value="publishedRoutingCount" hint="按当前筛选" />
       <SectionCard description="有效生产版本" :value="activeProductionVersionCount" hint="可被解析绑定" />
     </SectionCards>
 
