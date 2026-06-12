@@ -14,16 +14,25 @@
 import {
   archiveBusinessConsoleEngineeringProductionVersionMutationOptions,
   createBusinessConsoleEngineeringProductionVersionMutationOptions,
+  listBusinessConsoleEngineeringBomsQueryOptions,
   listBusinessConsoleEngineeringManufacturingBomsQueryOptions,
   listBusinessConsoleEngineeringProductionVersionsQueryOptions,
   listBusinessConsoleEngineeringRoutingsQueryOptions,
+  releaseBusinessConsoleEngineeringBomMutationOptions,
+  releaseBusinessConsoleEngineeringManufacturingBomMutationOptions,
+  releaseBusinessConsoleEngineeringRoutingMutationOptions,
   resolveBusinessConsoleEngineeringProductionVersion,
   updateBusinessConsoleEngineeringProductionVersionMutationOptions,
   type BusinessConsoleCreateProductionVersionRequest,
+  type BusinessConsoleEngineeringBomItem,
+  type BusinessConsoleEngineeringBomListEnvelope,
   type BusinessConsoleManufacturingBomItem,
   type BusinessConsoleManufacturingBomListEnvelope,
   type BusinessConsoleProductionVersionItem,
   type BusinessConsoleProductionVersionListEnvelope,
+  type BusinessConsoleReleaseEngineeringBomRequest,
+  type BusinessConsoleReleaseManufacturingBomRequest,
+  type BusinessConsoleReleaseRoutingRequest,
   type BusinessConsoleResolveProductionVersionEnvelope,
   type BusinessConsoleResolveProductionVersionResponse,
   type BusinessConsoleRoutingItem,
@@ -51,6 +60,33 @@ export interface ProductionVersionResolveInput {
   skuCode: string
   effectiveDate: string
   lotSize: number
+}
+
+export interface EngineeringBomListFilters {
+  organizationId: string
+  environmentId: string
+  parentItemCode?: string
+  status?: string
+  skip: number
+  take: number
+}
+
+export interface ManufacturingBomListFilters {
+  organizationId: string
+  environmentId: string
+  skuCode?: string
+  status?: string
+  skip: number
+  take: number
+}
+
+export interface RoutingListFilters {
+  organizationId: string
+  environmentId: string
+  skuCode?: string
+  status?: string
+  skip: number
+  take: number
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -278,5 +314,219 @@ export function usePublishedRoutings() {
     routingsError: query.error,
     routingsPending: query.isLoading,
     refreshRoutings: query.refetch,
+  }
+}
+
+/**
+ * EBOM 列表（list + filters）+ 发布新版本（release）。
+ * EBOM list **不含行明细**（行明细待后端 #389），故页面查看仅展示版本头。
+ * release 后失效 EBOM 列表查询，即时刷新。
+ */
+export function useEngineeringEboms() {
+  const context = useBusinessContextStore()
+  const queryCache = useQueryCache()
+  const filters = reactive<EngineeringBomListFilters>({
+    organizationId: context.organizationId,
+    environmentId: context.environmentId,
+    parentItemCode: undefined,
+    status: undefined,
+    skip: 0,
+    take: DEFAULT_TAKE,
+  })
+
+  const listQuery = useQuery(() =>
+    listBusinessConsoleEngineeringBomsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('parentItemCode', filters.parentItemCode),
+        ...optionalQuery('status', filters.status),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
+
+  function invalidateList() {
+    void queryCache
+      .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleEngineeringBoms') })
+      .catch(ignoreBackgroundError)
+  }
+
+  const releaseMutation = useMutation({
+    ...releaseBusinessConsoleEngineeringBomMutationOptions(),
+    onSuccess: invalidateList,
+  } as unknown as UseMutationOptions)
+
+  return {
+    filters,
+    eboms: computed<BusinessConsoleEngineeringBomItem[]>(() =>
+      unwrapItems(listQuery.data.value as BusinessConsoleEngineeringBomListEnvelope | undefined),
+    ),
+    ebomsError: listQuery.error,
+    ebomsPending: listQuery.isLoading,
+    ebomsTotal: computed(() =>
+      unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringBomListEnvelope | undefined),
+    ),
+    refresh: listQuery.refetch,
+
+    releaseEbom: (body: BusinessConsoleReleaseEngineeringBomRequest) =>
+      (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
+    releasePending: releaseMutation.isLoading,
+    releaseError: releaseMutation.error,
+  }
+}
+
+/**
+ * 已发布 EBOM 选择器数据源（status=Published），供 MBOM 发布向导选「引用的设计 BOM」。
+ * 绑定用 `bomCode` + `revision`（MBOM release 需 engineeringBomCode + engineeringBomRevision）。
+ */
+export function usePublishedEboms() {
+  const context = useBusinessContextStore()
+  const filters = reactive({
+    organizationId: context.organizationId,
+    environmentId: context.environmentId,
+    parentItemCode: undefined as string | undefined,
+  })
+
+  const query = useQuery(() =>
+    listBusinessConsoleEngineeringBomsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('parentItemCode', filters.parentItemCode),
+        status: PUBLISHED,
+        skip: 0,
+        take: DEFAULT_TAKE,
+      },
+    }),
+  )
+
+  return {
+    filters,
+    eboms: computed<BusinessConsoleEngineeringBomItem[]>(() =>
+      unwrapItems(query.data.value as BusinessConsoleEngineeringBomListEnvelope | undefined),
+    ),
+    ebomsError: query.error,
+    ebomsPending: query.isLoading,
+    refreshEboms: query.refetch,
+  }
+}
+
+/**
+ * MBOM 列表（list + filters）+ 发布新版本（release）。
+ * MBOM list **含 MaterialLines**（物料行可直接展开看），但 **不含 RecipeLines**（配方明细待后端）。
+ */
+export function useEngineeringMboms() {
+  const context = useBusinessContextStore()
+  const queryCache = useQueryCache()
+  const filters = reactive<ManufacturingBomListFilters>({
+    organizationId: context.organizationId,
+    environmentId: context.environmentId,
+    skuCode: undefined,
+    status: undefined,
+    skip: 0,
+    take: DEFAULT_TAKE,
+  })
+
+  const listQuery = useQuery(() =>
+    listBusinessConsoleEngineeringManufacturingBomsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('skuCode', filters.skuCode),
+        ...optionalQuery('status', filters.status),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
+
+  function invalidateList() {
+    void queryCache
+      .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleEngineeringManufacturingBoms') })
+      .catch(ignoreBackgroundError)
+  }
+
+  const releaseMutation = useMutation({
+    ...releaseBusinessConsoleEngineeringManufacturingBomMutationOptions(),
+    onSuccess: invalidateList,
+  } as unknown as UseMutationOptions)
+
+  return {
+    filters,
+    mboms: computed<BusinessConsoleManufacturingBomItem[]>(() =>
+      unwrapItems(listQuery.data.value as BusinessConsoleManufacturingBomListEnvelope | undefined),
+    ),
+    mbomsError: listQuery.error,
+    mbomsPending: listQuery.isLoading,
+    mbomsTotal: computed(() =>
+      unwrapTotal(listQuery.data.value as BusinessConsoleManufacturingBomListEnvelope | undefined),
+    ),
+    refresh: listQuery.refetch,
+
+    releaseMbom: (body: BusinessConsoleReleaseManufacturingBomRequest) =>
+      (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
+    releasePending: releaseMutation.isLoading,
+    releaseError: releaseMutation.error,
+  }
+}
+
+/**
+ * 工艺路线列表（list + filters）+ 发布新版本（release）。
+ * Routing list **不含工序明细**（工序明细待后端 #389），故页面查看仅展示版本头。
+ */
+export function useEngineeringRoutings() {
+  const context = useBusinessContextStore()
+  const queryCache = useQueryCache()
+  const filters = reactive<RoutingListFilters>({
+    organizationId: context.organizationId,
+    environmentId: context.environmentId,
+    skuCode: undefined,
+    status: undefined,
+    skip: 0,
+    take: DEFAULT_TAKE,
+  })
+
+  const listQuery = useQuery(() =>
+    listBusinessConsoleEngineeringRoutingsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('skuCode', filters.skuCode),
+        ...optionalQuery('status', filters.status),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
+
+  function invalidateList() {
+    void queryCache
+      .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleEngineeringRoutings') })
+      .catch(ignoreBackgroundError)
+  }
+
+  const releaseMutation = useMutation({
+    ...releaseBusinessConsoleEngineeringRoutingMutationOptions(),
+    onSuccess: invalidateList,
+  } as unknown as UseMutationOptions)
+
+  return {
+    filters,
+    routings: computed<BusinessConsoleRoutingItem[]>(() =>
+      unwrapItems(listQuery.data.value as BusinessConsoleRoutingListEnvelope | undefined),
+    ),
+    routingsError: listQuery.error,
+    routingsPending: listQuery.isLoading,
+    routingsTotal: computed(() =>
+      unwrapTotal(listQuery.data.value as BusinessConsoleRoutingListEnvelope | undefined),
+    ),
+    refresh: listQuery.refetch,
+
+    releaseRouting: (body: BusinessConsoleReleaseRoutingRequest) =>
+      (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
+    releasePending: releaseMutation.isLoading,
+    releaseError: releaseMutation.error,
   }
 }

@@ -10,10 +10,14 @@ import {
   CpuIcon,
   FactoryIcon,
   GitBranchIcon,
+  GitForkIcon,
+  LayersIcon,
   LayoutDashboardIcon,
+  NetworkIcon,
   PackageIcon,
   PackageSearchIcon,
   ReceiptTextIcon,
+  RouteIcon,
   RulerIcon,
   UsersRoundIcon,
   WarehouseIcon,
@@ -36,7 +40,7 @@ export const WORKBENCH_DOMAIN_ID = 'workbench'
 export const BUSINESS_DOMAINS: NavDomain[] = [
   { id: 'workbench', title: '数字化工作台', icon: LayoutDashboardIcon, to: { path: '/' } },
   { id: 'master-data', title: '基础数据', icon: BoxesIcon, to: { path: '/master-data/skus' } },
-  { id: 'engineering', title: '产品工程', icon: GitBranchIcon, to: { path: '/engineering' } },
+  { id: 'engineering', title: '产品工程', icon: GitBranchIcon, to: { path: '/engineering/production-versions' } },
   { id: 'planning', title: '需求与计划', icon: CalendarRangeIcon, to: { path: '/planning' } },
   { id: 'mes', title: '制造执行', icon: FactoryIcon, to: { path: '/mes' } },
   { id: 'quality', title: '质量管理', icon: ClipboardCheckIcon, to: { path: '/quality/inspections' } },
@@ -78,8 +82,10 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
   'engineering': [
     {
       items: [
-        { title: '生产版本', to: { path: '/engineering/production-versions' } },
-        { title: '工程版本', to: { path: '/engineering' } },
+        { title: '设计 BOM', icon: NetworkIcon, to: { path: '/engineering/ebom' } },
+        { title: '制造 BOM', icon: GitForkIcon, to: { path: '/engineering/mbom' } },
+        { title: '工艺路线', icon: RouteIcon, to: { path: '/engineering/routings' } },
+        { title: '生产版本', icon: LayersIcon, to: { path: '/engineering/production-versions' } },
       ],
     },
   ],
