@@ -484,7 +484,7 @@ public sealed class MasterDataApiContractTests
         dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "weight", 3, "half-up"));
         dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create("org-001", "env-dev", "kg", "g", 1000m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)));
         var calendar = Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendar.Create("org-001", "env-dev", "CAL-001", "Standard Calendar");
-        calendar.AddWorkingTime(DayOfWeek.Monday, new TimeOnly(8, 0), new TimeOnly(17, 0));
+        calendar.AddWorkingDay(DayOfWeek.Monday);
         dbContext.WorkCalendars.Add(calendar);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -499,8 +499,8 @@ public sealed class MasterDataApiContractTests
                 Name: "Factory Calendar",
                 WorkingTimes:
                 [
-                    new WorkCalendarWorkingTimeDetail(DayOfWeek.Monday, new TimeOnly(8, 0), new TimeOnly(12, 0)),
-                    new WorkCalendarWorkingTimeDetail(DayOfWeek.Monday, new TimeOnly(13, 0), new TimeOnly(17, 0))
+                    new WorkCalendarWorkingTimeDetail(DayOfWeek.Monday),
+                    new WorkCalendarWorkingTimeDetail(DayOfWeek.Tuesday)
                 ],
                 Holidays: [new WorkCalendarHolidayDetail(new DateOnly(2026, 5, 1), "Labor Day")],
                 Exceptions: [new WorkCalendarExceptionDetail(new DateOnly(2026, 5, 2), true, new TimeOnly(9, 0), new TimeOnly(15, 0), "Make-up shift")]),
@@ -516,6 +516,9 @@ public sealed class MasterDataApiContractTests
             new GetMasterDataResourceDetailQuery("org-001", "env-dev", "work-calendar", "CAL-001"),
             CancellationToken.None);
         Assert.Equal(2, persistedCalendar.WorkingTimes?.Count);
+        Assert.Equal(
+            [DayOfWeek.Monday, DayOfWeek.Tuesday],
+            persistedCalendar.WorkingTimes!.Select(x => x.DayOfWeek).OrderBy(x => x).ToArray());
         Assert.Equal(new DateOnly(2026, 5, 1), Assert.Single(persistedCalendar.Holidays!).Date);
 
         var conversionDetail = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(

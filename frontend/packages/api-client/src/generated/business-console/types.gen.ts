@@ -2130,8 +2130,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarWorkingTime = {
     dayOfWeek?: SystemDayOfWeek;
-    startsAt?: string;
-    endsAt?: string;
 };
 
 export type SystemDayOfWeek = 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday';

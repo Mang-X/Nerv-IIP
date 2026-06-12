@@ -4,7 +4,7 @@ using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
 
-public sealed record WorkCalendarWorkingTimeDetail(DayOfWeek DayOfWeek, TimeOnly StartsAt, TimeOnly EndsAt);
+public sealed record WorkCalendarWorkingTimeDetail(DayOfWeek DayOfWeek);
 public sealed record WorkCalendarHolidayDetail(DateOnly Date, string Name);
 public sealed record WorkCalendarExceptionDetail(DateOnly Date, bool IsWorkingDay, TimeOnly? StartsAt, TimeOnly? EndsAt, string? Reason);
 
