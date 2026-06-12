@@ -40,6 +40,7 @@ public sealed class WorkCalendarEntityTypeConfiguration : IEntityTypeConfigurati
         builder.HasKey("id");
         builder.Property(x => x.DayOfWeek).HasColumnName("day_of_week").IsRequired().HasComment("Day of week for the recurring working day.");
         builder.HasIndex("WorkCalendarId");
+        builder.HasIndex("WorkCalendarId", nameof(WorkCalendarWorkingTime.DayOfWeek)).IsUnique();
     }
 
     private static void ConfigureHolidays(OwnedNavigationBuilder<WorkCalendar, WorkCalendarHoliday> builder)

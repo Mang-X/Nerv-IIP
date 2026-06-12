@@ -54,11 +54,41 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                 oldClrType: typeof(Guid),
                 oldType: "uuid",
                 oldComment: "Work calendar working time row id.");
+
+            migrationBuilder.Sql("""
+                DELETE FROM business_masterdata.work_calendar_working_times AS working_time
+                USING (
+                    SELECT id
+                    FROM (
+                        SELECT
+                            id,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY work_calendar_id, day_of_week
+                                ORDER BY id
+                            ) AS duplicate_order
+                        FROM business_masterdata.work_calendar_working_times
+                    ) AS ranked_working_times
+                    WHERE duplicate_order > 1
+                ) AS duplicates
+                WHERE working_time.id = duplicates.id;
+                """);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_work_calendar_working_times_work_calendar_id_day_of_week",
+                schema: "business_masterdata",
+                table: "work_calendar_working_times",
+                columns: new[] { "work_calendar_id", "day_of_week" },
+                unique: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropIndex(
+                name: "IX_work_calendar_working_times_work_calendar_id_day_of_week",
+                schema: "business_masterdata",
+                table: "work_calendar_working_times");
+
             migrationBuilder.AlterTable(
                 name: "work_calendars",
                 schema: "business_masterdata",

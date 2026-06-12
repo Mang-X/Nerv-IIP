@@ -1815,6 +1815,9 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
 
                             b1.HasIndex("WorkCalendarId");
 
+                            b1.HasIndex("WorkCalendarId", "DayOfWeek")
+                                .IsUnique();
+
                             b1.ToTable("work_calendar_working_times", "business_masterdata", t =>
                                 {
                                     t.HasComment("Recurring working day markers owned by a business master data work calendar.");

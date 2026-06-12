@@ -78,6 +78,26 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Work_calendar_deduplicates_recurring_working_days()
+    {
+        var calendar = WorkCalendar.Create("org-001", "env-dev", "CAL-DAY", "Day Shift Calendar");
+
+        calendar.AddWorkingDay(DayOfWeek.Monday);
+        calendar.AddWorkingDay(DayOfWeek.Monday);
+        calendar.Update(
+            "Day Shift Calendar",
+            [
+                new WorkCalendarWorkingTime(DayOfWeek.Monday),
+                new WorkCalendarWorkingTime(DayOfWeek.Monday),
+                new WorkCalendarWorkingTime(DayOfWeek.Tuesday)
+            ],
+            null,
+            null);
+
+        Assert.Equal([DayOfWeek.Monday, DayOfWeek.Tuesday], calendar.WorkingTimes.Select(x => x.DayOfWeek).OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
     public void Department_team_and_personnel_skill_reference_business_scope_without_copying_iam_user_facts()
     {
         var department = Department.Create("org-001", "env-dev", "D-PROD", "Production", null);

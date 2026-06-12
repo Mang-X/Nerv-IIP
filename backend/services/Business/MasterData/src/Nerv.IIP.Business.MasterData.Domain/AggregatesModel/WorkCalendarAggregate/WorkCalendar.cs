@@ -45,6 +45,11 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
     public void AddWorkingDay(DayOfWeek dayOfWeek)
     {
         EnsureEnabled();
+        if (workingTimes.Any(x => x.DayOfWeek == dayOfWeek))
+        {
+            return;
+        }
+
         workingTimes.Add(new WorkCalendarWorkingTime(dayOfWeek));
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(WorkCalendar), OrganizationId, EnvironmentId, Code));
@@ -62,7 +67,7 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
         if (newWorkingTimes is not null)
         {
             workingTimes.Clear();
-            foreach (var item in newWorkingTimes)
+            foreach (var item in newWorkingTimes.DistinctBy(x => x.DayOfWeek))
             {
                 workingTimes.Add(item);
             }
@@ -156,6 +161,9 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
     }
 }
 
+/// <summary>
+/// Legacy "working time" name retained for API/table compatibility; this value marks a recurring working day.
+/// </summary>
 public record WorkCalendarWorkingTime(DayOfWeek DayOfWeek);
 public record WorkCalendarHoliday(DateOnly Date, string Name);
 public record WorkCalendarException(DateOnly Date, bool IsWorkingDay, TimeOnly? StartsAt, TimeOnly? EndsAt, string? Reason);
