@@ -20,6 +20,7 @@ const GOLD_STANDARD_PAGES = [
   'mes/quality.vue',
   'quality/inspections.vue',
   'quality/ncrs.vue',
+  'engineering/production-versions.vue',
   'master-data/skus.vue',
   'master-data/partners.vue',
   // facilities.vue 是「工厂结构」树-详情示范页（左树 + 右详情），不再是黄金标准列表，
