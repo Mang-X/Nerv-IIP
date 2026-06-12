@@ -159,6 +159,17 @@ describe('WMS 上架（只读）', () => {
     expect(wrapper.text()).not.toContain('暂无上架任务')
   })
 
+  it('刷新失败但已有任务时：错误横幅与任务列表共存（列表不被隐藏）', () => {
+    wmsState.error = new Error('boom')
+    wmsState.tasks = freshTasks()
+    const wrapper = mount(PutawayPage)
+    expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(true)
+    const text = wrapper.text()
+    expect(text).toContain('PA-2026-0001')
+    expect(text).toContain('PA-2026-0002')
+    expect(text).not.toContain('暂无上架任务')
+  })
+
   it('无任务且无错误时显示空态', () => {
     wmsState.tasks = []
     const wrapper = mount(PutawayPage)

@@ -95,7 +95,7 @@ function rowSubtitle(task: {
         暂无拣货任务
       </div>
 
-      <div v-else-if="!error" class="overflow-hidden rounded-lg border border-border">
+      <div v-else-if="tasks.length > 0" class="overflow-hidden rounded-lg border border-border">
         <ListRow
           v-for="task in tasks"
           :key="task.warehouseTaskId"

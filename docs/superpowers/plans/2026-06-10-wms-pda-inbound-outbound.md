@@ -191,4 +191,3 @@ export function makeIdempotencyKey(): string {
 - **占位符**：无 TODO；关键代码（StepFlow、幂等键、composable 行为、页面结构、e2e mock）均给出或明确镜像来源。
 - **门禁**：每包/页 typecheck/test/build + e2e + 工作区回归防护。
 ```
-

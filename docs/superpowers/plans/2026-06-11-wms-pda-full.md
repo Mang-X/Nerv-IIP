@@ -110,4 +110,3 @@ export const countExecutionFlow = defineStepFlow<CountExecCtx>({
 - **同源/安全**：count flow + WMS 标签落 business-core；complete 幂等键注入后置 + Omit 不可覆盖；org/env 取登录主体；UI 无工程语言/无假数据/写操作防重。
 - **并行提示**：与 MES #378、equipment #379 共享 `pdaTaskKinds.ts`/`index.test.ts`/`fixtures.ts`/`business-core index`/`business-console.ts` barrel，合并次序后到者需解一次（基本加性）。
 ```
-
