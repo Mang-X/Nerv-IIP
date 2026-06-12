@@ -185,7 +185,7 @@ public sealed record CodeRuleDefinition
                     throw new ArgumentException($"Rule '{RuleKey}' sequence width must be positive.");
                 case SegmentType.Field when string.IsNullOrEmpty(s.Source):
                     throw new ArgumentException($"Rule '{RuleKey}' field segment requires Source.");
-                case SegmentType.Checksum when s.Algorithm is not ("mod10" or "mod11"):
+                case SegmentType.Checksum when s.Algorithm is not ("hash-mod10" or "hash-mod11"):
                     throw new ArgumentException($"Rule '{RuleKey}' checksum algorithm unsupported: '{s.Algorithm}'.");
             }
         }
@@ -568,7 +568,7 @@ public sealed class CodeAllocator(
     private static string Checksum(string prefix, string algorithm)
     {
         var sum = prefix.Where(char.IsDigit).Select(c => c - '0').Sum();
-        var mod = algorithm == "mod11" ? 11 : 10;
+        var mod = algorithm == "hash-mod11" ? 11 : 10;
         return (sum % mod % 10).ToString(CultureInfo.InvariantCulture);
     }
 

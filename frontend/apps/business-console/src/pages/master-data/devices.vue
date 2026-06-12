@@ -65,7 +65,6 @@ const pageSize = ref('10')
 const createOpen = ref(false)
 const createShowErrors = ref(false)
 const createForm = reactive({
-  code: '',
   model: '',
   manufacturer: '',
   serialNo: '',
@@ -103,7 +102,7 @@ const listRows = computed(() => {
   )
 })
 const canCreateDevice = computed(() =>
-  [createForm.code, createForm.model, createForm.manufacturer, createForm.serialNo,
+  [createForm.model, createForm.manufacturer, createForm.serialNo,
     createForm.assetClassCode, createForm.lineCode, createForm.workCenterCode, createForm.criticality].every(isNonEmpty),
 )
 const createErrorMessage = computed(() => formatError(devices.createError.value))
@@ -138,7 +137,6 @@ async function submitDevice() {
   await devices.create({
     organizationId: devices.filters.organizationId,
     environmentId: devices.filters.environmentId,
-    code: createForm.code.trim(),
     model: createForm.model.trim(),
     manufacturer: createForm.manufacturer.trim(),
     serialNo: createForm.serialNo.trim(),
@@ -152,7 +150,7 @@ async function submitDevice() {
   })
   toast.success(`设备「${createForm.model.trim()}」已登记。`)
   Object.assign(createForm, {
-    code: '', model: '', manufacturer: '', serialNo: '', assetClassCode: '',
+    model: '', manufacturer: '', serialNo: '', assetClassCode: '',
     lineCode: '', workCenterCode: '', criticality: DEVICE_DEFAULTS.criticality, maintainable: DEVICE_DEFAULTS.maintainable,
   })
   createShowErrors.value = false
@@ -183,10 +181,6 @@ async function submitDevice() {
             <form class="grid gap-4" @submit.prevent="submitDevice">
               <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
-                  <FieldLabel for="dev-code">设备编码 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="dev-code" v-model="createForm.code" autocomplete="off" required />
-                </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.model)">
                   <FieldLabel for="dev-model">设备型号 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="dev-model" v-model="createForm.model" autocomplete="off" required />

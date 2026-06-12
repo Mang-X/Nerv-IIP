@@ -124,6 +124,31 @@ function isBusinessQuery(id: string) {
 
 function ignoreBackgroundError(_error: unknown) {}
 
+function newCreateIdempotencyKey(resourceType: string) {
+  const cryptoApi = globalThis.crypto
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return `${resourceType}-${cryptoApi.randomUUID()}`
+  }
+
+  return `${resourceType}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function withCreateIdempotency<TBody>(resourceType: string, body: TBody): TBody {
+  if (typeof body !== 'object' || body === null) {
+    return body
+  }
+
+  const current = 'idempotencyKey' in body ? body.idempotencyKey : undefined
+  if (typeof current === 'string' && current.trim().length > 0) {
+    return body
+  }
+
+  return {
+    ...body,
+    idempotencyKey: newCreateIdempotencyKey(resourceType),
+  }
+}
+
 export function useBusinessSkus() {
   const filters = defaultListFilters()
   const queryCache = useQueryCache()
@@ -195,7 +220,7 @@ export function useBusinessPartners() {
 
   return {
     createPartner: (body: BusinessConsoleCreateBusinessPartnerRequest) =>
-      createPartnerMutation.mutateAsync({ body }),
+      createPartnerMutation.mutateAsync({ body: withCreateIdempotency('business-partner', body) }),
     createPartnerError: createPartnerMutation.error,
     createPartnerPending: createPartnerMutation.isLoading,
     filters,
@@ -240,7 +265,7 @@ export function useBusinessWorkshops() {
 
   return {
     createWorkshop: (body: BusinessConsoleCreateWorkshopRequest) =>
-      createWorkshopMutation.mutateAsync({ body }),
+      createWorkshopMutation.mutateAsync({ body: withCreateIdempotency('workshop', body) }),
     createWorkshopError: createWorkshopMutation.error,
     createWorkshopPending: createWorkshopMutation.isLoading,
     filters,
@@ -416,7 +441,9 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
     pending: listQuery.isLoading,
     refresh: listQuery.refetch,
     create: (body: TBody) =>
-      (createMutation.mutateAsync as unknown as (vars: { body: TBody }) => Promise<unknown>)({ body }),
+      (createMutation.mutateAsync as unknown as (vars: { body: TBody }) => Promise<unknown>)({
+        body: withCreateIdempotency(resourceType, body),
+      }),
     createError: createMutation.error,
     createPending: createMutation.isLoading,
   }

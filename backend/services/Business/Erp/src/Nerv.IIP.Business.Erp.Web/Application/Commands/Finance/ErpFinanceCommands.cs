@@ -24,19 +24,19 @@ public sealed class CreateAccountPayableCommandValidator : AbstractValidator<Cre
     }
 }
 
-public sealed class CreateAccountPayableCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null) : ICommandHandler<CreateAccountPayableCommand, AccountPayableId>
+public sealed class CreateAccountPayableCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null) : ICommandHandler<CreateAccountPayableCommand, AccountPayableId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<AccountPayableId> Handle(CreateAccountPayableCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "account-payable", "AP", request.PayableNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.SourceDocumentNo, request.SupplierCode, request.Amount, request.CurrencyCode), cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "account-payable", request.PayableNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceDocumentNo, request.SupplierCode, request.Amount, request.CurrencyCode), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return (await dbContext.AccountPayables.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.PayableNo == allocation.Number, cancellationToken)).Id;
+            return (await dbContext.AccountPayables.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.PayableNo == allocation.Code, cancellationToken)).Id;
         }
 
-        var payable = AccountPayable.Create(request.OrganizationId, request.EnvironmentId, allocation.Number, request.SourceDocumentNo, request.SupplierCode, request.Amount, request.CurrencyCode);
+        var payable = AccountPayable.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceDocumentNo, request.SupplierCode, request.Amount, request.CurrencyCode);
         dbContext.AccountPayables.Add(payable);
         return payable.Id;
     }
@@ -58,19 +58,19 @@ public sealed class CreateAccountReceivableCommandValidator : AbstractValidator<
     }
 }
 
-public sealed class CreateAccountReceivableCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null) : ICommandHandler<CreateAccountReceivableCommand, AccountReceivableId>
+public sealed class CreateAccountReceivableCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null) : ICommandHandler<CreateAccountReceivableCommand, AccountReceivableId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<AccountReceivableId> Handle(CreateAccountReceivableCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "account-receivable", "AR", request.ReceivableNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.SourceDocumentNo, request.CustomerCode, request.Amount, request.CurrencyCode), cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "account-receivable", request.ReceivableNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceDocumentNo, request.CustomerCode, request.Amount, request.CurrencyCode), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return (await dbContext.AccountReceivables.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.ReceivableNo == allocation.Number, cancellationToken)).Id;
+            return (await dbContext.AccountReceivables.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.ReceivableNo == allocation.Code, cancellationToken)).Id;
         }
 
-        var receivable = AccountReceivable.Create(request.OrganizationId, request.EnvironmentId, allocation.Number, request.SourceDocumentNo, request.CustomerCode, request.Amount, request.CurrencyCode);
+        var receivable = AccountReceivable.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceDocumentNo, request.CustomerCode, request.Amount, request.CurrencyCode);
         dbContext.AccountReceivables.Add(receivable);
         return receivable.Id;
     }
@@ -92,19 +92,19 @@ public sealed class CreateCostCandidateCommandValidator : AbstractValidator<Crea
     }
 }
 
-public sealed class CreateCostCandidateCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null) : ICommandHandler<CreateCostCandidateCommand, CostCandidateId>
+public sealed class CreateCostCandidateCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null) : ICommandHandler<CreateCostCandidateCommand, CostCandidateId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<CostCandidateId> Handle(CreateCostCandidateCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "cost-candidate", "COST", request.CandidateNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.SourceType, request.SourceDocumentNo, request.Amount, request.CurrencyCode), cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "cost-candidate", request.CandidateNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceType, request.SourceDocumentNo, request.Amount, request.CurrencyCode), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return (await dbContext.CostCandidates.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.CandidateNo == allocation.Number, cancellationToken)).Id;
+            return (await dbContext.CostCandidates.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.CandidateNo == allocation.Code, cancellationToken)).Id;
         }
 
-        var candidate = CostCandidate.Create(request.OrganizationId, request.EnvironmentId, allocation.Number, request.SourceType, request.SourceDocumentNo, request.Amount, request.CurrencyCode);
+        var candidate = CostCandidate.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceType, request.SourceDocumentNo, request.Amount, request.CurrencyCode);
         dbContext.CostCandidates.Add(candidate);
         return candidate.Id;
     }
@@ -139,22 +139,22 @@ public sealed class PostJournalVoucherCommandValidator : AbstractValidator<PostJ
     }
 }
 
-public sealed class PostJournalVoucherCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null) : ICommandHandler<PostJournalVoucherCommand, JournalVoucherId>
+public sealed class PostJournalVoucherCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null) : ICommandHandler<PostJournalVoucherCommand, JournalVoucherId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<JournalVoucherId> Handle(PostJournalVoucherCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "journal-voucher", "JV", request.VoucherNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.PostingDate, request.Lines.Select(x => $"{x.AccountCode}:{x.DebitAmount}:{x.CreditAmount}:{x.Memo}")), cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "journal-voucher", request.VoucherNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.PostingDate, request.Lines.Select(x => $"{x.AccountCode}:{x.DebitAmount}:{x.CreditAmount}:{x.Memo}")), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return (await dbContext.JournalVouchers.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.VoucherNo == allocation.Number, cancellationToken)).Id;
+            return (await dbContext.JournalVouchers.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.VoucherNo == allocation.Code, cancellationToken)).Id;
         }
 
         var voucher = JournalVoucher.Post(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.PostingDate,
             request.Lines.Select(x => new JournalVoucherLineDraft(x.AccountCode, x.DebitAmount, x.CreditAmount, x.Memo)));
         dbContext.JournalVouchers.Add(voucher);

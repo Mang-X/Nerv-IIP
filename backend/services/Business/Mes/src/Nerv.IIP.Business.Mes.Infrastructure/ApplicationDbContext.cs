@@ -11,7 +11,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
-using Nerv.IIP.Numbering;
+using Nerv.IIP.Coding;
 
 namespace Nerv.IIP.Business.Mes.Infrastructure;
 
@@ -42,9 +42,9 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<ShiftHandover> ShiftHandovers => Set<ShiftHandover>();
 
-    public DbSet<NumberingCounter> NumberingCounters => Set<NumberingCounter>();
+    public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
 
-    public DbSet<NumberingIdempotencyKey> NumberingIdempotencyKeys => Set<NumberingIdempotencyKey>();
+    public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
 
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
 

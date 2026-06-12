@@ -252,7 +252,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var numbering = new ProductEngineeringNumberingService();
+        var numbering = new ProductEngineeringCodingService();
         var handler = new RegisterEngineeringDocumentCommandHandler(new EngineeringDocumentRepository(dbContext), numbering);
         var command = new RegisterEngineeringDocumentCommand(
             "org-001",
