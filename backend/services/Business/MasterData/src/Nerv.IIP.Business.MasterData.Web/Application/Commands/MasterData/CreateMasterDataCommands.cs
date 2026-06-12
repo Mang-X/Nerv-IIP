@@ -351,12 +351,29 @@ public sealed record AssignPersonnelSkillCommand(
     DateOnly EffectiveFrom,
     DateOnly EffectiveTo) : ICommand<MasterDataResourceResult>;
 
-public sealed class AssignPersonnelSkillCommandHandler(IPersonnelSkillRepository repository)
-    : ICommandHandler<AssignPersonnelSkillCommand, MasterDataResourceResult>
+public sealed class AssignPersonnelSkillCommandHandler : ICommandHandler<AssignPersonnelSkillCommand, MasterDataResourceResult>
 {
+    private readonly IPersonnelSkillRepository _repository;
+    private readonly IReferenceDataCodeRepository? _referenceDataRepository;
+
+    public AssignPersonnelSkillCommandHandler(IPersonnelSkillRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public AssignPersonnelSkillCommandHandler(
+        IPersonnelSkillRepository repository,
+        IReferenceDataCodeRepository referenceDataRepository)
+    {
+        _repository = repository;
+        _referenceDataRepository = referenceDataRepository;
+    }
+
     public async Task<MasterDataResourceResult> Handle(AssignPersonnelSkillCommand request, CancellationToken cancellationToken)
     {
-        if (await repository.ExistsAsync(
+        await ValidateControlledReferenceDataAsync(request, cancellationToken);
+
+        if (await _repository.ExistsAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.UserId,
@@ -375,8 +392,53 @@ public sealed class AssignPersonnelSkillCommandHandler(IPersonnelSkillRepository
             request.Level,
             request.EffectiveFrom,
             request.EffectiveTo);
-        await repository.AddAsync(skill, cancellationToken);
+        await _repository.AddAsync(skill, cancellationToken);
         return new MasterDataResourceResult("personnel-skill", $"{skill.UserId}:{skill.SkillCode}", skill.Level);
+    }
+
+    private async Task ValidateControlledReferenceDataAsync(AssignPersonnelSkillCommand request, CancellationToken cancellationToken)
+    {
+        if (_referenceDataRepository is null)
+        {
+            return;
+        }
+
+        foreach (var reference in MasterDataDictionaryRules.GetPersonnelSkillReferences(request.SkillCode, request.Level))
+        {
+            await EnsureActiveReferenceDataAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                reference.CodeSet,
+                reference.Code,
+                reference.Field,
+                cancellationToken);
+        }
+    }
+
+    private async Task EnsureActiveReferenceDataAsync(
+        string organizationId,
+        string environmentId,
+        string codeSet,
+        string code,
+        string field,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            throw new KnownException($"Personnel skill field '{field}' must reference an active '{codeSet}' code.");
+        }
+
+        var trimmedCode = code.Trim();
+        var exists = await _referenceDataRepository!.ExistsActiveAsync(
+            organizationId,
+            environmentId,
+            codeSet,
+            trimmedCode,
+            cancellationToken);
+        if (!exists)
+        {
+            throw new KnownException($"Personnel skill field '{field}' references inactive or missing reference data '{codeSet}:{trimmedCode}'.");
+        }
     }
 }
 

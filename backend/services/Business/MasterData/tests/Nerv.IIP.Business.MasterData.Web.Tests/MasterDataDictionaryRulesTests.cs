@@ -300,6 +300,16 @@ public sealed class MasterDataDictionaryRulesTests
             CancellationToken.None);
         Assert.Equal("customer-return", qualityReason.Code);
 
+        var skill = await handler.Handle(
+            new CreateReferenceDataCodeCommand(
+                "org-001",
+                "env-dev",
+                "skill",
+                "packaging",
+                "包装"),
+            CancellationToken.None);
+        Assert.Equal("packaging", skill.Code);
+
         var unknownCodeSet = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateReferenceDataCodeCommand(
                 "org-001",
@@ -387,6 +397,7 @@ public sealed class MasterDataDictionaryRulesTests
             ["barcode-rule"] = ["code128", "customer-spec", "ean13", "gs1-128", "qr"],
             ["uom-dimension"] = ["area", "count", "length", "time", "volume", "weight"],
             ["partner-type"] = ["carrier", "customer", "supplier"],
+            ["skill"] = ["assembly", "cnc-operation", "forklift", "inspection", "welding"],
             ["skill-level"] = ["expert", "intermediate", "junior", "senior"],
             ["quality-reason"] = ["dimension-ng", "missing-part", "scratch", "solder-defect"],
             ["compliance-tag"] = ["msd", "reach", "rohs", "ul"],
