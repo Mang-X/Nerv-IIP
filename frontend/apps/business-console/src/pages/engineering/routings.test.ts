@@ -231,6 +231,17 @@ describe('engineering routings page', () => {
     expect(stub.releaseRouting).not.toHaveBeenCalled()
   })
 
+  it('打开向导：生效日默认今天', async () => {
+    const wrapper = mount(RoutingsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+
+    const d = new Date()
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect((wrapper.findAll('input[type="date"]')[0]!.element as HTMLInputElement).value).toBe(ymd)
+  })
+
   it('查看：行「查看」打开版本头并标注「工序明细待后端」', async () => {
     const wrapper = mount(RoutingsPage, { global: { stubs: allStubs } })
     await flushPromises()

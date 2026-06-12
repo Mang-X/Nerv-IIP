@@ -44,7 +44,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { formatDate } from '@/utils/format'
+import { formatDate, today } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: 'MBOM 制造BOM' } })
@@ -110,6 +110,10 @@ const uomOptions = computed(() =>
     .filter((u) => u.code)
     .map((u) => ({ value: u.code as string, label: u.displayName ?? u.code as string })),
 )
+// 物料编码 → 基本单位，选物料后自动带出行单位（仍可手动覆盖）。
+const baseUomByCode = computed(() =>
+  new Map(skus.value.filter((s) => s.code).map((s) => [s.code as string, s.baseUomCode ?? ''])),
+)
 // 已发布 EBOM 选择器：值用 `code::rev`，便于拆出 engineeringBomCode + engineeringBomRevision。
 const ebomOptions = computed(() =>
   publishedEboms.value
@@ -174,10 +178,16 @@ function blankForm(): MbomForm {
     ebomKey: '',
     skuCode: '',
     revision: '',
-    effectiveDate: null,
+    effectiveDate: today(),
     materialLines: [blankMaterialLine()],
     recipeLines: [],
   }
+}
+
+// 选物料后把该行单位自动设为其基本单位（有值才设；用户仍可覆盖）。
+function applyMaterialUom(line: MaterialLine, code: string) {
+  const uom = baseUomByCode.value.get(code)
+  if (uom) line.unitOfMeasureCode = uom
 }
 
 const formOpen = shallowRef(false)
@@ -219,10 +229,19 @@ function recipeLineComplete(line: RecipeLine) {
   return line.parameterCode.trim().length > 0 && line.targetValue.trim().length > 0
 }
 const recipeLinesValid = computed(() => form.recipeLines.every(recipeLineComplete))
+// 物料不能等于产出物料（自引用，后端拒绝）。返回第一个等于产出物料的物料编码。
+const selfReferenceMaterial = computed(() => {
+  const output = form.skuCode.trim()
+  if (!output) return ''
+  for (const l of form.materialLines) {
+    if (l.skuCode.trim() === output) return output
+  }
+  return ''
+})
 const hasSelectorData = computed(() => ebomOptions.value.length > 0)
 const canSubmit = computed(() =>
   ebomValid.value && skuValid.value && revisionValid.value && effectiveValid.value
-  && materialLinesValid.value && recipeLinesValid.value && !duplicateMaterial.value,
+  && materialLinesValid.value && recipeLinesValid.value && !duplicateMaterial.value && !selfReferenceMaterial.value,
 )
 
 function openCreate() {
@@ -329,7 +348,10 @@ function formatScrap(rate?: number | null) {
               </DialogDescription>
             </DialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
-              <p v-if="showErrors && duplicateMaterial" class="text-sm text-destructive" role="alert">
+              <p v-if="showErrors && selfReferenceMaterial" class="text-sm text-destructive" role="alert">
+                物料不能与产出物料「{{ skuLabel(selfReferenceMaterial) }}」相同——产出物料不能把自己当原料，请改选别的物料。
+              </p>
+              <p v-else-if="showErrors && duplicateMaterial" class="text-sm text-destructive" role="alert">
                 物料「{{ skuLabel(duplicateMaterial) }}」重复了——同一物料只能有一行，请合并数量或删除重复行。
               </p>
               <p v-else-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
@@ -390,7 +412,7 @@ function formatScrap(rate?: number | null) {
                 >
                   <Field :data-invalid="showErrors && !line.skuCode.trim()">
                     <FieldLabel :for="`mbom-mat-${index}`">物料 <span class="text-destructive">*</span></FieldLabel>
-                    <Select v-model="line.skuCode">
+                    <Select v-model="line.skuCode" @update:model-value="(v) => applyMaterialUom(line, String(v ?? ''))">
                       <SelectTrigger :id="`mbom-mat-${index}`"><SelectValue placeholder="选择物料" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>

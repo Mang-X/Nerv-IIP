@@ -46,12 +46,12 @@ vi.mock('@/composables/useProductEngineering', () => ({
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessSkus: () => ({
     skus: computed(() => [
-      { code: 'SKU-1', displayName: '智能网关主机' },
-      { code: 'SKU-2', displayName: '主控板' },
+      { code: 'SKU-1', displayName: '智能网关主机', baseUomCode: 'PCS' },
+      { code: 'SKU-2', displayName: '主控板', baseUomCode: 'PCS' },
     ]),
   }),
   useBusinessUoms: () => ({
-    uoms: computed(() => [{ code: 'PCS', displayName: '个' }]),
+    uoms: computed(() => [{ code: 'PCS', displayName: '个' }, { code: 'SET', displayName: '套' }]),
   }),
 }))
 
@@ -191,6 +191,54 @@ describe('engineering mbom page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('请完整填写带 * 的必填项')
+    expect(stub.releaseMbom).not.toHaveBeenCalled()
+  })
+
+  it('选物料后单位自动带出其基本单位（SKU-2 → PCS）', async () => {
+    const wrapper = mount(MbomPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+
+    // 引用EBOM(0)、产出物料(1)、物料行物料(2)、物料行单位(3)
+    const selects = wrapper.findAll('select')
+    await selects[2]!.setValue('SKU-2') // 选物料
+    await flushPromises()
+
+    const uomSelect = wrapper.findAll('select')[3]!
+    expect((uomSelect.element as HTMLSelectElement).value).toBe('PCS')
+  })
+
+  it('打开向导：生效日默认今天', async () => {
+    const wrapper = mount(MbomPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+
+    const d = new Date()
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect((wrapper.findAll('input[type="date"]')[0]!.element as HTMLInputElement).value).toBe(ymd)
+  })
+
+  it('自引用拦截：物料等于产出物料时点发布出现专属提示且不发请求', async () => {
+    const wrapper = mount(MbomPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+
+    const selects = wrapper.findAll('select')
+    await selects[0]!.setValue('EBOM-1::A')
+    await selects[1]!.setValue('SKU-1') // 产出物料
+    await wrapper.find('#mbom-rev').setValue('B')
+    const after = wrapper.findAll('select')
+    await after[2]!.setValue('SKU-1') // 物料 = 产出物料
+    await wrapper.findAll('input[type="number"]')[0]!.setValue('1')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('物料不能与产出物料')
     expect(stub.releaseMbom).not.toHaveBeenCalled()
   })
 })

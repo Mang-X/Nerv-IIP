@@ -37,12 +37,12 @@ vi.mock('@/composables/useProductEngineering', () => ({
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessSkus: () => ({
     skus: computed(() => [
-      { code: 'SKU-1', displayName: '智能网关主机' },
-      { code: 'SKU-2', displayName: '主控板' },
+      { code: 'SKU-1', displayName: '智能网关主机', baseUomCode: 'PCS' },
+      { code: 'SKU-2', displayName: '主控板', baseUomCode: 'PCS' },
     ]),
   }),
   useBusinessUoms: () => ({
-    uoms: computed(() => [{ code: 'PCS', displayName: '个' }]),
+    uoms: computed(() => [{ code: 'PCS', displayName: '个' }, { code: 'SET', displayName: '套' }]),
   }),
 }))
 
@@ -171,6 +171,53 @@ describe('engineering ebom page', () => {
     await flushPromises()
     // 每行新增「组件 + 单位」两个 select。
     expect(wrapper.findAll('select').length).toBe(before + 2)
+  })
+
+  it('选组件后单位自动带出其基本单位（SKU-2 → PCS）', async () => {
+    const wrapper = mount(EbomPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+
+    // 父项(0)、组件(1)、单位(2)
+    const formSelects = wrapper.findAll('select')
+    await formSelects[1]!.setValue('SKU-2') // 选组件
+    await flushPromises()
+
+    const uomSelect = wrapper.findAll('select')[2]!
+    expect((uomSelect.element as HTMLSelectElement).value).toBe('PCS')
+  })
+
+  it('打开向导：生效日默认今天', async () => {
+    const wrapper = mount(EbomPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+
+    const d = new Date()
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect((wrapper.findAll('input[type="date"]')[0]!.element as HTMLInputElement).value).toBe(ymd)
+  })
+
+  it('自引用拦截：组件等于父项时点发布出现专属提示且不发请求', async () => {
+    const wrapper = mount(EbomPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+
+    const selects = wrapper.findAll('select')
+    await selects[0]!.setValue('SKU-1') // 父项
+    await wrapper.find('#ebom-rev').setValue('B')
+    const formSelects = wrapper.findAll('select')
+    await formSelects[1]!.setValue('SKU-1') // 组件 = 父项
+    await wrapper.find('input[type="number"]').setValue('1')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('组件不能与父项')
+    expect(stub.releaseEbom).not.toHaveBeenCalled()
   })
 
   it('查看：行「查看」打开版本头并标注「明细待后端」', async () => {

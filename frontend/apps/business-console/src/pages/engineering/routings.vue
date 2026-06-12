@@ -44,7 +44,7 @@ import {
 } from '@nerv-iip/ui'
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { formatDate } from '@/utils/format'
+import { formatDate, today } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: '工艺路线' } })
@@ -161,7 +161,7 @@ function blankOperation(sequence: number): Operation {
   return { sequence, workCenterCode: '', operationName: '', standardMinutes: '' }
 }
 function blankForm(): RoutingForm {
-  return { skuCode: '', revision: '', effectiveDate: null, operations: [blankOperation(10)] }
+  return { skuCode: '', revision: '', effectiveDate: today(), operations: [blankOperation(10)] }
 }
 
 const formOpen = shallowRef(false)

@@ -23,3 +23,9 @@ export function formatDate(value?: string | null): string {
   if (Number.isNaN(date.getTime())) return value
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
 }
+
+/** 本地今天「YYYY-MM-DD」，用作表单生效日 / 有效期起的默认值。 */
+export function today(): string {
+  const date = new Date()
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+}

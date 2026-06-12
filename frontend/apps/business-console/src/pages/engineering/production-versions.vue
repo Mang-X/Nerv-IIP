@@ -57,7 +57,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, SearchIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { formatDate } from '@/utils/format'
+import { formatDate, today } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: '生产版本' } })
@@ -190,7 +190,7 @@ function blankForm(): ProductionVersionForm {
     skuCode: '',
     mbomVersionId: '',
     routingVersionId: '',
-    validFrom: null,
+    validFrom: today(),
     validTo: null,
     lotSizeMin: '',
     lotSizeMax: '',
@@ -336,7 +336,7 @@ async function confirmArchive() {
 // ── resolve 解析卡 ──────────────────────────────────────────────
 const resolveForm = reactive({
   skuCode: '',
-  effectiveDate: new Date().toISOString().slice(0, 10) as string | null,
+  effectiveDate: today() as string | null,
   lotSize: '100',
 })
 const canResolve = computed(() =>

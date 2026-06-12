@@ -201,6 +201,18 @@ describe('engineering production-versions page', () => {
     expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
+  it('新建：有效期起 validFrom 默认今天', async () => {
+    const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text().includes('新建生产版本'))!.trigger('click')
+    await flushPromises()
+
+    const d = new Date()
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    // 表单内第一个 date input 即生效起。
+    expect((wrapper.findAll('input[type="date"]')[0]!.element as HTMLInputElement).value).toBe(ymd)
+  })
+
   it('校验拦截：必填未填点保存出现汇总提示且不发创建请求', async () => {
     const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
     await flushPromises()

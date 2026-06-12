@@ -44,7 +44,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { formatDate } from '@/utils/format'
+import { formatDate, today } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: 'EBOM 设计BOM' } })
@@ -105,6 +105,10 @@ const skuOptions = computed(() =>
     .filter((s) => s.code)
     .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
 )
+// 物料编码 → 基本单位，选物料后自动带出行单位（仍可手动覆盖）。
+const baseUomByCode = computed(() =>
+  new Map(skus.value.filter((s) => s.code).map((s) => [s.code as string, s.baseUomCode ?? ''])),
+)
 const uomOptions = computed(() =>
   uoms.value
     .filter((u) => u.code)
@@ -149,7 +153,13 @@ function blankLine(): ComponentLine {
   return { componentCode: '', quantity: '1', unitOfMeasureCode: '' }
 }
 function blankForm(): EbomForm {
-  return { parentItemCode: '', revision: '', effectiveDate: null, lines: [blankLine()] }
+  return { parentItemCode: '', revision: '', effectiveDate: today(), lines: [blankLine()] }
+}
+
+// 选物料后把该行单位自动设为其基本单位（有值才设；用户仍可覆盖）。
+function applyComponentUom(line: ComponentLine, code: string) {
+  const uom = baseUomByCode.value.get(code)
+  if (uom) line.unitOfMeasureCode = uom
 }
 
 const formOpen = shallowRef(false)
@@ -185,7 +195,16 @@ const duplicateComponent = computed(() => {
   }
   return ''
 })
-const canSubmit = computed(() => parentValid.value && revisionValid.value && effectiveValid.value && linesValid.value && !duplicateComponent.value)
+// 组件不能等于父项（自引用会成环，后端拒绝）。返回第一个等于父项的组件编码。
+const selfReferenceComponent = computed(() => {
+  const parent = form.parentItemCode.trim()
+  if (!parent) return ''
+  for (const l of form.lines) {
+    if (l.componentCode.trim() === parent) return parent
+  }
+  return ''
+})
+const canSubmit = computed(() => parentValid.value && revisionValid.value && effectiveValid.value && linesValid.value && !duplicateComponent.value && !selfReferenceComponent.value)
 
 function openCreate() {
   Object.assign(form, blankForm())
@@ -268,7 +287,10 @@ function formatError(error: unknown) {
               </DialogDescription>
             </DialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
-              <p v-if="showErrors && duplicateComponent" class="text-sm text-destructive" role="alert">
+              <p v-if="showErrors && selfReferenceComponent" class="text-sm text-destructive" role="alert">
+                组件不能与父项「{{ skuLabel(selfReferenceComponent) }}」相同——一个物料不能把自己当组件，请改选别的组件。
+              </p>
+              <p v-else-if="showErrors && duplicateComponent" class="text-sm text-destructive" role="alert">
                 组件「{{ skuLabel(duplicateComponent) }}」重复了——同一组件只能有一行，请合并数量或删除重复行。
               </p>
               <p v-else-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
@@ -312,7 +334,7 @@ function formatError(error: unknown) {
                 >
                   <Field :data-invalid="showErrors && !line.componentCode.trim()">
                     <FieldLabel :for="`ebom-comp-${index}`">组件物料 <span class="text-destructive">*</span></FieldLabel>
-                    <Select v-model="line.componentCode">
+                    <Select v-model="line.componentCode" @update:model-value="(v) => applyComponentUom(line, String(v ?? ''))">
                       <SelectTrigger :id="`ebom-comp-${index}`"><SelectValue placeholder="选择组件" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
