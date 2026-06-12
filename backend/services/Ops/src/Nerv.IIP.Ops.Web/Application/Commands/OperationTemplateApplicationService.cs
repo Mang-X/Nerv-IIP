@@ -4,6 +4,7 @@ using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
+using Nerv.IIP.Ops.Web.Application;
 
 namespace Nerv.IIP.Ops.Web.Application.Commands;
 
@@ -18,17 +19,17 @@ public sealed class InMemoryOperationTemplateApplicationService(IOpsStateStore s
 {
     public Task<OperationTemplateResponse> CreateAsync(CreateOperationTemplateRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        return Task.FromResult(store.CreateTemplate(request, now));
+        return Task.FromResult(store.CreateTemplate(request.ToDomainInput(), now).ToContract());
     }
 
     public Task<OperationTemplateListResponse> ListAsync(CancellationToken cancellationToken)
     {
-        return Task.FromResult(store.ListTemplates());
+        return Task.FromResult(store.ListTemplates().ToContract());
     }
 
     public Task<OperationTemplateResponse> GetAsync(string operationCode, CancellationToken cancellationToken)
     {
-        return Task.FromResult(store.GetTemplate(operationCode));
+        return Task.FromResult(store.GetTemplate(operationCode).ToContract());
     }
 }
 

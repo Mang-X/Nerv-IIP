@@ -1,6 +1,6 @@
 using System.Text.Json;
-using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.DomainEvents;
 using NetCorePal.Extensions.DistributedTransactions;
 
@@ -43,6 +43,6 @@ public sealed class OperationTaskFailedIntegrationEventConverter
     {
         return string.IsNullOrWhiteSpace(failureJson)
             ? null
-            : JsonSerializer.Deserialize<FailureReason>(failureJson, JsonOptions)?.Code;
+            : JsonSerializer.Deserialize<OperationFailureFact>(failureJson, JsonOptions)?.Code;
     }
 }

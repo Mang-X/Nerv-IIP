@@ -64,6 +64,7 @@ Nerv-IIP/
 - 示例：backend/services/AppHub/src/Nerv.IIP.AppHub.Web、backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web、backend/services/AppHub/src/Nerv.IIP.AppHub.Domain、backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure。
 - 业务平台扩展服务示例：backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web、backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain、backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web。
 - 主平台服务不得引用 backend/services/Business 下的 Web、Domain、Infrastructure 项目；业务服务只能通过 Platform SDK、公开 Contracts、OpenAPI、IntegrationEvent 和 IAM 授权上下文消费主平台能力。
+- Domain 项目不得引用查询、读模型或算法输出契约项目；公开 API DTO、跨服务 DTO 与算法契约应在 Web/Application 或 Infrastructure 边界映射为领域输入、领域快照或领域 fact。
 
 ### connector-hosts
 
@@ -98,6 +99,7 @@ Nerv-IIP/
 9. 每个平台服务不得各自创建长期维护的 Aspire AppHost；统一平台编排入口归 infra/aspire。
 10. 业务平台扩展不得把 PDM/PLM、MPS/MRP、Scheduling/APS、MES、WMS、ERP、IIoT 或 CMMS 领域规则写入 PlatformGateway、IAM、AppHub、Ops 或主平台 console。
 11. BusinessGateway 可以通过公开 HTTP 契约、OpenAPI DTO、Platform SDK、IAM 授权上下文和 internal service token 调用业务服务，但不得引用 `backend/services/Business` 下的 Web、Domain 或 Infrastructure 项目。
+12. 服务间共享 DTO 必须通过 backend/common/Contracts 或 Sdk 的窄边界复用；调用方不得在本服务内长期复制其他服务的公开请求/响应 DTO。
 
 ## 非目标
 

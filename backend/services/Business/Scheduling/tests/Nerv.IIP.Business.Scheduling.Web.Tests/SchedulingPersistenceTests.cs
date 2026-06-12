@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Infrastructure.Repositories;
 using Nerv.IIP.Contracts.Scheduling;
 
@@ -48,7 +49,7 @@ public sealed class SchedulingPersistenceTests
             var plan = await repository.GetByPlanIdWithDetailsAsync("plan-001", "org-001", "env-dev", cancellationToken);
             Assert.NotNull(plan);
 
-            plan.ReplaceGeneratedPlan(CreateReplacementContract());
+            plan.ReplaceGeneratedPlan(SchedulePlanContractMapper.ToDomainSnapshot(CreateReplacementContract()));
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -91,14 +92,14 @@ public sealed class SchedulingPersistenceTests
 
     private static SchedulePlan CreatePlan()
     {
-        return SchedulePlan.FromGeneratedContract("org-001", "env-dev", CreateContract(
+        return SchedulePlan.FromGeneratedPlan("org-001", "env-dev", SchedulePlanContractMapper.ToDomainSnapshot(CreateContract(
             assignmentId: "assign-old",
             operationId: "op-old",
             resourceId: "res-old",
             conflictId: "conflict-old",
             unscheduledWorkOrderId: "wo-unscheduled-old",
             unscheduledOperationId: "op-unscheduled-old",
-            assignedMinutes: 60));
+            assignedMinutes: 60)));
     }
 
     private static SchedulePlanContract CreateReplacementContract()

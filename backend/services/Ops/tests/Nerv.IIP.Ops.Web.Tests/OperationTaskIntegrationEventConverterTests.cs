@@ -1,5 +1,6 @@
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Ops.Domain.DomainEvents;
@@ -153,7 +154,7 @@ public sealed class OperationTaskIntegrationEventConverterTests
                 "op-002",
                 "attempt-002",
                 "failed",
-                new FailureReason(
+                new OperationFailureFact(
                     "container-exited",
                     "Container exited before restart completed.",
                     "connector",
@@ -185,27 +186,26 @@ public sealed class OperationTaskIntegrationEventConverterTests
     {
         return OperationTask.Create(
             new OperationTaskId(taskId),
-            new CreateOperationTaskRequest(
+            new CreateOperationTaskInput(
                 "org-001",
                 "env-dev",
                 "docker-container-local-demo-001",
                 "lifecycle.restart",
                 $"idem-{taskId}",
                 "local-admin",
-                "manual smoke restart",
                 "corr-create-001",
                 new Dictionary<string, string>()),
             new OperationTemplateSnapshot("lifecycle.restart", true, 3, 300, false),
             DateTimeOffset.Parse("2026-05-15T00:00:00Z"));
     }
 
-    private static OperationResult CreateResult(
+    private static OperationResultInput CreateResult(
         string taskId,
         string attemptId,
         string status,
-        FailureReason? failure)
+        OperationFailureFact? failure)
     {
-        return new OperationResult(
+        return new OperationResultInput(
             new ConnectorRequestContext(
                 "2026-05-ops-test",
                 "test-sdk",

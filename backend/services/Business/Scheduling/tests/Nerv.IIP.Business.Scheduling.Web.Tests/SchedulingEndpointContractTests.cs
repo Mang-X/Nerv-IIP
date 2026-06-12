@@ -561,7 +561,7 @@ public sealed class SchedulingEndpointContractTests
         string problemId,
         DateTimeOffset generatedAtUtc)
     {
-        return SchedulePlan.FromGeneratedContract("org-001", "prod", new SchedulePlanContract(
+        return SchedulePlan.FromGeneratedPlan("org-001", "prod", SchedulePlanContractMapper.ToDomainSnapshot(new SchedulePlanContract(
             ContractVersion: 1,
             PlanId: planId,
             ProblemId: problemId,
@@ -613,7 +613,7 @@ public sealed class SchedulingEndpointContractTests
                     Message: "No eligible resource.")
             ],
             ChangeSummary: [],
-            GanttItems: []));
+            GanttItems: [])));
     }
 
     private static HttpRequestMessage JsonRequest<T>(HttpMethod method, string requestUri, T body)

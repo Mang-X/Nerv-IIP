@@ -1,5 +1,4 @@
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
-using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 
@@ -15,6 +14,81 @@ public enum SchedulePlanLifecycleStatus
     Generated = 0,
     Released = 1,
 }
+
+public enum SchedulePlanInputStatus
+{
+    Preview = 0,
+    Generated = 1,
+    Released = 2,
+}
+
+public enum ScheduleConflictReasonCode
+{
+    Capacity = 0,
+    Calendar = 1,
+    Equipment = 2,
+    Material = 3,
+    Quality = 4,
+    DueDate = 5,
+    NoEligibleResource = 6,
+    OutsideHorizon = 7,
+    PredecessorUnscheduled = 8,
+    InvalidLockedAssignment = 9,
+}
+
+public enum ScheduleConflictSeverity
+{
+    Warning = 0,
+    Error = 1,
+}
+
+public sealed record GeneratedSchedulePlanSnapshot(
+    string PlanId,
+    string ProblemId,
+    string ProblemFingerprint,
+    string AlgorithmVersion,
+    int ContractVersion,
+    DateTimeOffset GeneratedAtUtc,
+    SchedulePlanInputStatus Status,
+    IReadOnlyList<GeneratedScheduleAssignmentSnapshot> Assignments,
+    IReadOnlyList<GeneratedScheduleResourceLoadSnapshot> ResourceLoads,
+    IReadOnlyList<GeneratedScheduleConflictSnapshot> Conflicts,
+    IReadOnlyList<GeneratedUnscheduledOperationSnapshot> UnscheduledOperations);
+
+public sealed record GeneratedScheduleAssignmentSnapshot(
+    string AssignmentId,
+    string OrderId,
+    string OperationId,
+    int OperationSequence,
+    string ResourceId,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    bool IsLocked,
+    string ExplanationCode);
+
+public sealed record GeneratedScheduleResourceLoadSnapshot(
+    string ResourceId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    int AssignedMinutes,
+    int AvailableMinutes,
+    decimal Utilization);
+
+public sealed record GeneratedScheduleConflictSnapshot(
+    string ConflictId,
+    ScheduleConflictReasonCode ReasonCode,
+    ScheduleConflictSeverity Severity,
+    string? OrderId,
+    string? OperationId,
+    string? ResourceId,
+    string Message);
+
+public sealed record GeneratedUnscheduledOperationSnapshot(
+    string OrderId,
+    string OperationId,
+    ScheduleConflictReasonCode ReasonCode,
+    string Message);
 
 public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
 {
@@ -76,42 +150,42 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
     private SchedulePlan(
         string organizationId,
         string environmentId,
-        SchedulePlanContract contract)
+        GeneratedSchedulePlanSnapshot plan)
     {
-        if (contract.Status == SchedulePlanStatusContract.Released)
+        if (plan.Status == SchedulePlanInputStatus.Released)
         {
             throw new InvalidOperationException("Released contract plans cannot be persisted as newly generated plans.");
         }
 
         OrganizationId = Required(organizationId, nameof(organizationId));
         EnvironmentId = Required(environmentId, nameof(environmentId));
-        PlanId = Required(contract.PlanId, nameof(contract.PlanId));
-        ProblemId = Required(contract.ProblemId, nameof(contract.ProblemId));
-        ProblemFingerprint = Required(contract.ProblemFingerprint, nameof(contract.ProblemFingerprint));
-        AlgorithmVersion = Required(contract.AlgorithmVersion, nameof(contract.AlgorithmVersion));
-        ContractVersion = contract.ContractVersion;
-        GeneratedAtUtc = contract.GeneratedAtUtc;
+        PlanId = Required(plan.PlanId, nameof(plan.PlanId));
+        ProblemId = Required(plan.ProblemId, nameof(plan.ProblemId));
+        ProblemFingerprint = Required(plan.ProblemFingerprint, nameof(plan.ProblemFingerprint));
+        AlgorithmVersion = Required(plan.AlgorithmVersion, nameof(plan.AlgorithmVersion));
+        ContractVersion = plan.ContractVersion;
+        GeneratedAtUtc = plan.GeneratedAtUtc;
         Status = SchedulePlanLifecycleStatus.Generated;
 
-        foreach (var assignment in contract.Assignments)
+        foreach (var assignment in plan.Assignments)
         {
             AddAssignmentCore(assignment);
         }
 
-        foreach (var load in contract.ResourceLoads)
+        foreach (var load in plan.ResourceLoads)
         {
-            resourceLoads.Add(SchedulePlanResourceLoad.FromContract(load));
+            resourceLoads.Add(SchedulePlanResourceLoad.FromPlanSnapshot(load));
         }
 
-        foreach (var conflict in contract.Conflicts)
+        foreach (var conflict in plan.Conflicts)
         {
-            var entity = SchedulePlanConflict.FromContract(conflict);
+            var entity = SchedulePlanConflict.FromPlanSnapshot(conflict);
             conflicts.Add(entity);
         }
 
-        foreach (var unscheduled in contract.UnscheduledOperations)
+        foreach (var unscheduled in plan.UnscheduledOperations)
         {
-            unscheduledOperations.Add(SchedulePlanUnscheduledOperation.FromContract(unscheduled));
+            unscheduledOperations.Add(SchedulePlanUnscheduledOperation.FromPlanSnapshot(unscheduled));
         }
 
         this.AddDomainEvent(new SchedulePlanGeneratedDomainEvent(this));
@@ -136,13 +210,13 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
     public IReadOnlyCollection<SchedulePlanConflict> Conflicts => conflicts;
     public IReadOnlyCollection<SchedulePlanUnscheduledOperation> UnscheduledOperations => unscheduledOperations;
 
-    public static SchedulePlan FromGeneratedContract(
+    public static SchedulePlan FromGeneratedPlan(
         string organizationId,
         string environmentId,
-        SchedulePlanContract contract)
+        GeneratedSchedulePlanSnapshot plan)
     {
-        ArgumentNullException.ThrowIfNull(contract);
-        return new SchedulePlan(organizationId, environmentId, contract);
+        ArgumentNullException.ThrowIfNull(plan);
+        return new SchedulePlan(organizationId, environmentId, plan);
     }
 
     public void Release(DateTimeOffset releasedAtUtc)
@@ -157,67 +231,67 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         this.AddDomainEvent(new SchedulePlanReleasedDomainEvent(this));
     }
 
-    public void ReplaceGeneratedPlan(SchedulePlanContract contract)
+    public void ReplaceGeneratedPlan(GeneratedSchedulePlanSnapshot plan)
     {
         EnsureMutable();
-        ArgumentNullException.ThrowIfNull(contract);
+        ArgumentNullException.ThrowIfNull(plan);
 
-        if (contract.Status == SchedulePlanStatusContract.Released)
+        if (plan.Status == SchedulePlanInputStatus.Released)
         {
             throw new InvalidOperationException("Released contract plans cannot replace generated plans.");
         }
 
-        var replacementPlanId = Required(contract.PlanId, nameof(contract.PlanId));
+        var replacementPlanId = Required(plan.PlanId, nameof(plan.PlanId));
         if (!string.Equals(replacementPlanId, PlanId, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Replacement schedule plan contract must keep the same public plan identity.");
         }
 
-        ProblemId = Required(contract.ProblemId, nameof(contract.ProblemId));
-        ProblemFingerprint = Required(contract.ProblemFingerprint, nameof(contract.ProblemFingerprint));
-        AlgorithmVersion = Required(contract.AlgorithmVersion, nameof(contract.AlgorithmVersion));
-        ContractVersion = contract.ContractVersion;
-        GeneratedAtUtc = contract.GeneratedAtUtc;
+        ProblemId = Required(plan.ProblemId, nameof(plan.ProblemId));
+        ProblemFingerprint = Required(plan.ProblemFingerprint, nameof(plan.ProblemFingerprint));
+        AlgorithmVersion = Required(plan.AlgorithmVersion, nameof(plan.AlgorithmVersion));
+        ContractVersion = plan.ContractVersion;
+        GeneratedAtUtc = plan.GeneratedAtUtc;
         assignments.Clear();
         resourceLoads.Clear();
         conflicts.Clear();
         unscheduledOperations.Clear();
 
-        foreach (var assignment in contract.Assignments)
+        foreach (var assignment in plan.Assignments)
         {
             AddAssignmentCore(assignment);
         }
 
-        foreach (var load in contract.ResourceLoads)
+        foreach (var load in plan.ResourceLoads)
         {
-            resourceLoads.Add(SchedulePlanResourceLoad.FromContract(load));
+            resourceLoads.Add(SchedulePlanResourceLoad.FromPlanSnapshot(load));
         }
 
-        foreach (var conflict in contract.Conflicts)
+        foreach (var conflict in plan.Conflicts)
         {
-            var entity = SchedulePlanConflict.FromContract(conflict);
+            var entity = SchedulePlanConflict.FromPlanSnapshot(conflict);
             conflicts.Add(entity);
             this.AddDomainEvent(new ScheduleConflictDetectedDomainEvent(this, entity));
         }
 
-        foreach (var unscheduled in contract.UnscheduledOperations)
+        foreach (var unscheduled in plan.UnscheduledOperations)
         {
-            unscheduledOperations.Add(SchedulePlanUnscheduledOperation.FromContract(unscheduled));
+            unscheduledOperations.Add(SchedulePlanUnscheduledOperation.FromPlanSnapshot(unscheduled));
         }
 
         this.AddDomainEvent(new SchedulePlanGeneratedDomainEvent(this));
     }
 
-    public void AddAssignment(ScheduleAssignmentContract assignment)
+    public void AddAssignment(GeneratedScheduleAssignmentSnapshot assignment)
     {
         EnsureMutable();
         AddAssignmentCore(assignment);
     }
 
-    private void AddAssignmentCore(ScheduleAssignmentContract assignment)
+    private void AddAssignmentCore(GeneratedScheduleAssignmentSnapshot assignment)
     {
         ArgumentNullException.ThrowIfNull(assignment);
-        assignments.Add(SchedulePlanAssignment.FromContract(assignment));
+        assignments.Add(SchedulePlanAssignment.FromPlanSnapshot(assignment));
     }
 
     private void EnsureMutable()
@@ -245,7 +319,7 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
     {
     }
 
-    private SchedulePlanAssignment(ScheduleAssignmentContract contract)
+    private SchedulePlanAssignment(GeneratedScheduleAssignmentSnapshot contract)
     {
         AssignmentId = Required(contract.AssignmentId, nameof(contract.AssignmentId));
         WorkOrderId = Required(contract.OrderId, nameof(contract.OrderId));
@@ -271,7 +345,7 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
     public bool IsLocked { get; private set; }
     public string ExplanationCode { get; private set; } = string.Empty;
 
-    public static SchedulePlanAssignment FromContract(ScheduleAssignmentContract contract)
+    public static SchedulePlanAssignment FromPlanSnapshot(GeneratedScheduleAssignmentSnapshot contract)
     {
         return new SchedulePlanAssignment(contract);
     }
@@ -293,7 +367,7 @@ public sealed class SchedulePlanResourceLoad : Entity<SchedulePlanResourceLoadId
     {
     }
 
-    private SchedulePlanResourceLoad(ScheduleResourceLoadContract contract)
+    private SchedulePlanResourceLoad(GeneratedScheduleResourceLoadSnapshot contract)
     {
         ResourceId = Required(contract.ResourceId, nameof(contract.ResourceId));
         WindowStartUtc = contract.WindowStartUtc;
@@ -311,7 +385,7 @@ public sealed class SchedulePlanResourceLoad : Entity<SchedulePlanResourceLoadId
     public int AvailableMinutes { get; private set; }
     public decimal Utilization { get; private set; }
 
-    public static SchedulePlanResourceLoad FromContract(ScheduleResourceLoadContract contract)
+    public static SchedulePlanResourceLoad FromPlanSnapshot(GeneratedScheduleResourceLoadSnapshot contract)
     {
         return new SchedulePlanResourceLoad(contract);
     }
@@ -333,7 +407,7 @@ public sealed class SchedulePlanConflict : Entity<SchedulePlanConflictId>
     {
     }
 
-    private SchedulePlanConflict(ScheduleConflictContract contract)
+    private SchedulePlanConflict(GeneratedScheduleConflictSnapshot contract)
     {
         ConflictPublicId = Required(contract.ConflictId, nameof(contract.ConflictId));
         ReasonCode = contract.ReasonCode;
@@ -346,14 +420,14 @@ public sealed class SchedulePlanConflict : Entity<SchedulePlanConflictId>
 
     public SchedulePlanId SchedulePlanId { get; private set; } = null!;
     public string ConflictPublicId { get; private set; } = string.Empty;
-    public ScheduleConflictReasonCodeContract ReasonCode { get; private set; }
-    public ScheduleConflictSeverityContract Severity { get; private set; }
+    public ScheduleConflictReasonCode ReasonCode { get; private set; }
+    public ScheduleConflictSeverity Severity { get; private set; }
     public string WorkOrderId { get; private set; } = string.Empty;
     public string OperationId { get; private set; } = string.Empty;
     public string ResourceId { get; private set; } = string.Empty;
     public string Message { get; private set; } = string.Empty;
 
-    public static SchedulePlanConflict FromContract(ScheduleConflictContract contract)
+    public static SchedulePlanConflict FromPlanSnapshot(GeneratedScheduleConflictSnapshot contract)
     {
         return new SchedulePlanConflict(contract);
     }
@@ -375,7 +449,7 @@ public sealed class SchedulePlanUnscheduledOperation : Entity<SchedulePlanUnsche
     {
     }
 
-    private SchedulePlanUnscheduledOperation(UnscheduledOperationContract contract)
+    private SchedulePlanUnscheduledOperation(GeneratedUnscheduledOperationSnapshot contract)
     {
         WorkOrderId = Required(contract.OrderId, nameof(contract.OrderId));
         OperationId = Required(contract.OperationId, nameof(contract.OperationId));
@@ -386,10 +460,10 @@ public sealed class SchedulePlanUnscheduledOperation : Entity<SchedulePlanUnsche
     public SchedulePlanId SchedulePlanId { get; private set; } = null!;
     public string WorkOrderId { get; private set; } = string.Empty;
     public string OperationId { get; private set; } = string.Empty;
-    public ScheduleConflictReasonCodeContract ReasonCode { get; private set; }
+    public ScheduleConflictReasonCode ReasonCode { get; private set; }
     public string Message { get; private set; } = string.Empty;
 
-    public static SchedulePlanUnscheduledOperation FromContract(UnscheduledOperationContract contract)
+    public static SchedulePlanUnscheduledOperation FromPlanSnapshot(GeneratedUnscheduledOperationSnapshot contract)
     {
         return new SchedulePlanUnscheduledOperation(contract);
     }

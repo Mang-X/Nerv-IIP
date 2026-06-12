@@ -1,5 +1,4 @@
 using Nerv.IIP.Contracts.ConnectorProtocol;
-using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
 
 namespace Nerv.IIP.Ops.Domain.Tests;
@@ -28,8 +27,8 @@ public sealed class OpsStateStoreTests
         var store = new InMemoryOpsStateStore();
         var created = store.Create(CreateRequest("idem-001"), Now);
 
-        var first = store.ClaimPending(new ClaimOperationTasksRequest("org-001", "env-dev", "connector-host-001", 1), Now.AddSeconds(1));
-        var second = store.ClaimPending(new ClaimOperationTasksRequest("org-001", "env-dev", "connector-host-002", 1), Now.AddSeconds(2));
+        var first = store.ClaimPending(new ClaimOperationTasksInput("org-001", "env-dev", "connector-host-001", 1), Now.AddSeconds(1));
+        var second = store.ClaimPending(new ClaimOperationTasksInput("org-001", "env-dev", "connector-host-002", 1), Now.AddSeconds(2));
         var task = store.Get(created.OperationTaskId);
 
         var dispatch = Assert.Single(first.Items);
@@ -45,9 +44,9 @@ public sealed class OpsStateStoreTests
     {
         var store = new InMemoryOpsStateStore();
         store.Create(CreateRequest("idem-001"), Now);
-        var first = Assert.Single(store.ClaimPending(new ClaimOperationTasksRequest("org-001", "env-dev", "connector-host-001", 1, LeaseDurationSeconds: 30, MaxAttempts: 2), Now.AddSeconds(1)).Items);
+        var first = Assert.Single(store.ClaimPending(new ClaimOperationTasksInput("org-001", "env-dev", "connector-host-001", 1), Now.AddSeconds(1)).Items);
 
-        var retried = store.ClaimPending(new ClaimOperationTasksRequest("org-001", "env-dev", "connector-host-002", 1, LeaseDurationSeconds: 30, MaxAttempts: 2), first.LeasedUntilUtc.AddSeconds(1));
+        var retried = store.ClaimPending(new ClaimOperationTasksInput("org-001", "env-dev", "connector-host-002", 1), first.LeasedUntilUtc.AddSeconds(1));
 
         var second = Assert.Single(retried.Items);
         Assert.Equal(2, second.AttemptNo);
@@ -59,7 +58,7 @@ public sealed class OpsStateStoreTests
     {
         var store = new InMemoryOpsStateStore();
         store.CreateTemplate(
-            new CreateOperationTemplateRequest(
+            new CreateOperationTemplateInput(
                 "backup.snapshot",
                 "Backup snapshot",
                 "{}",
@@ -71,7 +70,7 @@ public sealed class OpsStateStoreTests
         store.Create(CreateRequest("idem-template-defaults") with { OperationCode = "backup.snapshot" }, Now);
 
         var dispatch = Assert.Single(store.ClaimPending(
-            new ClaimOperationTasksRequest("org-001", "env-dev", "connector-host-001", 1, LeaseDurationSeconds: 30, MaxAttempts: 1),
+            new ClaimOperationTasksInput("org-001", "env-dev", "connector-host-001", 1),
             Now.AddSeconds(1)).Items);
 
         Assert.Equal(4, dispatch.MaxAttempts);
@@ -83,10 +82,10 @@ public sealed class OpsStateStoreTests
     public void Template_creation_normalizes_operation_code_before_duplicate_check()
     {
         var store = new InMemoryOpsStateStore();
-        store.CreateTemplate(new CreateOperationTemplateRequest("backup.snapshot", "Backup", "{}", "low", 3, 300, false), Now);
+        store.CreateTemplate(new CreateOperationTemplateInput("backup.snapshot", "Backup", "{}", "low", 3, 300, false), Now);
 
         var duplicate = () => store.CreateTemplate(
-            new CreateOperationTemplateRequest(" backup.snapshot ", "Backup", "{}", "low", 3, 300, false),
+            new CreateOperationTemplateInput(" backup.snapshot ", "Backup", "{}", "low", 3, 300, false),
             Now);
 
         var ex = Assert.Throws<InvalidOperationTaskRequestException>(duplicate);
@@ -98,7 +97,7 @@ public sealed class OpsStateStoreTests
     {
         var store = new InMemoryOpsStateStore();
         var created = store.Create(CreateRequest("idem-001"), Now);
-        var dispatch = Assert.Single(store.ClaimPending(new ClaimOperationTasksRequest("org-001", "env-dev", "connector-host-001", 1), Now.AddSeconds(1)).Items);
+        var dispatch = Assert.Single(store.ClaimPending(new ClaimOperationTasksInput("org-001", "env-dev", "connector-host-001", 1), Now.AddSeconds(1)).Items);
         var mismatchedResult = Result(dispatch) with
         {
             Context = new ConnectorRequestContext("1.0", "1.0", "corr-001", Now.AddSeconds(20), "org-001", "env-dev", "connector-host-002")
@@ -110,23 +109,22 @@ public sealed class OpsStateStoreTests
         Assert.Equal("started", Assert.Single(task.Attempts).Status);
     }
 
-    private static CreateOperationTaskRequest CreateRequest(string idempotencyKey)
+    private static CreateOperationTaskInput CreateRequest(string idempotencyKey)
     {
-        return new CreateOperationTaskRequest(
+        return new CreateOperationTaskInput(
             "org-001",
             "env-dev",
             "demo-api-001",
             "lifecycle.restart",
             idempotencyKey,
             "local-admin",
-            "manual restart",
             "corr-001",
             new Dictionary<string, string>());
     }
 
-    private static OperationResult Result(OperationTaskDispatchItem dispatch)
+    private static OperationResultInput Result(OperationTaskDispatchFact dispatch)
     {
-        return new OperationResult(
+        return new OperationResultInput(
             new ConnectorRequestContext("1.0", "1.0", dispatch.CorrelationId, Now.AddSeconds(20), dispatch.OrganizationId, dispatch.EnvironmentId, dispatch.ConnectorHostId),
             dispatch.OperationTaskId,
             dispatch.AttemptId,
