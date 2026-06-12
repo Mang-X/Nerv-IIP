@@ -140,7 +140,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
             var calendar = WorkCalendar.Create(organizationId, environmentId, "STANDARD", "Standard Calendar");
             foreach (var day in new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday })
             {
-                calendar.AddWorkingTime(day, new TimeOnly(8, 0), new TimeOnly(17, 0));
+                calendar.AddWorkingDay(day);
             }
 
             dbContext.WorkCalendars.Add(calendar);

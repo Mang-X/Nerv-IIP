@@ -22165,14 +22165,6 @@
         "properties": {
           "dayOfWeek": {
             "$ref": "#/components/schemas/SystemDayOfWeek"
-          },
-          "startsAt": {
-            "type": "string",
-            "format": "time"
-          },
-          "endsAt": {
-            "type": "string",
-            "format": "time"
           }
         }
       },

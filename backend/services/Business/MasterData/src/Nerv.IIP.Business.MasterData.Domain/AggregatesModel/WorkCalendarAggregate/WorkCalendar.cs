@@ -42,15 +42,10 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
         return new WorkCalendar(organizationId, environmentId, code, name);
     }
 
-    public void AddWorkingTime(DayOfWeek dayOfWeek, TimeOnly startsAt, TimeOnly endsAt)
+    public void AddWorkingDay(DayOfWeek dayOfWeek)
     {
-        if (endsAt <= startsAt)
-        {
-            throw new ArgumentOutOfRangeException(nameof(endsAt), "Working time end must be after start.");
-        }
-
         EnsureEnabled();
-        workingTimes.Add(new WorkCalendarWorkingTime(dayOfWeek, startsAt, endsAt));
+        workingTimes.Add(new WorkCalendarWorkingTime(dayOfWeek));
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(WorkCalendar), OrganizationId, EnvironmentId, Code));
         this.AddDomainEvent(new WorkCalendarChangedDomainEvent(OrganizationId, EnvironmentId, Code));
@@ -69,7 +64,6 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
             workingTimes.Clear();
             foreach (var item in newWorkingTimes)
             {
-                ValidateWindow(item.StartsAt, item.EndsAt, nameof(newWorkingTimes));
                 workingTimes.Add(item);
             }
         }
@@ -162,6 +156,6 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
     }
 }
 
-public record WorkCalendarWorkingTime(DayOfWeek DayOfWeek, TimeOnly StartsAt, TimeOnly EndsAt);
+public record WorkCalendarWorkingTime(DayOfWeek DayOfWeek);
 public record WorkCalendarHoliday(DateOnly Date, string Name);
 public record WorkCalendarException(DateOnly Date, bool IsWorkingDay, TimeOnly? StartsAt, TimeOnly? EndsAt, string? Reason);

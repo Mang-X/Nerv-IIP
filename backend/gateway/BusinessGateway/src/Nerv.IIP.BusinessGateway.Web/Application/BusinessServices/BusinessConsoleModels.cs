@@ -253,9 +253,7 @@ public sealed record BusinessConsoleCreateWorkCalendarRequest(
     string Name);
 
 public sealed record BusinessConsoleWorkCalendarWorkingTime(
-    DayOfWeek DayOfWeek,
-    TimeOnly StartsAt,
-    TimeOnly EndsAt);
+    DayOfWeek DayOfWeek);
 
 public sealed record BusinessConsoleWorkCalendarHoliday(
     DateOnly Date,

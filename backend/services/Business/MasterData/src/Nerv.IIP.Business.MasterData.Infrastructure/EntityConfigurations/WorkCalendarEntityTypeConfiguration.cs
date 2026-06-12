@@ -7,7 +7,7 @@ public sealed class WorkCalendarEntityTypeConfiguration : IEntityTypeConfigurati
     public void Configure(EntityTypeBuilder<WorkCalendar> builder)
     {
         builder.ToTable("work_calendars", tableBuilder =>
-            tableBuilder.HasComment("Business master data work calendars defining recurring available working time."));
+            tableBuilder.HasComment("Business master data work calendars defining recurring working days, holidays, and exceptions."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Work calendar aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the work calendar.");
@@ -30,17 +30,15 @@ public sealed class WorkCalendarEntityTypeConfiguration : IEntityTypeConfigurati
     private static void ConfigureWorkingTimes(OwnedNavigationBuilder<WorkCalendar, WorkCalendarWorkingTime> builder)
     {
         builder.ToTable("work_calendar_working_times", tableBuilder =>
-            tableBuilder.HasComment("Recurring working time windows owned by a business master data work calendar."));
+            tableBuilder.HasComment("Recurring working day markers owned by a business master data work calendar."));
         builder.WithOwner().HasForeignKey("WorkCalendarId");
         builder.Property<WorkCalendarId>("WorkCalendarId")
             .HasColumnName("work_calendar_id")
             .HasConversion(id => id.Id, value => new WorkCalendarId(value))
             .HasComment("Owning work calendar aggregate id.");
-        builder.Property<Guid>("id").HasColumnName("id").ValueGeneratedOnAdd().HasComment("Work calendar working time row id.");
+        builder.Property<Guid>("id").HasColumnName("id").ValueGeneratedOnAdd().HasComment("Work calendar working day row id.");
         builder.HasKey("id");
-        builder.Property(x => x.DayOfWeek).HasColumnName("day_of_week").IsRequired().HasComment("Day of week for the recurring working time.");
-        builder.Property(x => x.StartsAt).HasColumnName("starts_at").IsRequired().HasComment("Local start time of the working window.");
-        builder.Property(x => x.EndsAt).HasColumnName("ends_at").IsRequired().HasComment("Local end time of the working window.");
+        builder.Property(x => x.DayOfWeek).HasColumnName("day_of_week").IsRequired().HasComment("Day of week for the recurring working day.");
         builder.HasIndex("WorkCalendarId");
     }
 
