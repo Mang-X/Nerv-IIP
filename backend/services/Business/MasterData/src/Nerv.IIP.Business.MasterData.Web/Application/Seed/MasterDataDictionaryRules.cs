@@ -13,7 +13,7 @@ public sealed record ReferenceDataDictionaryEntry(
     string Name,
     ReferenceDataCodeSetKind Kind = ReferenceDataCodeSetKind.PlatformPresetMaintained);
 
-public sealed record SkuControlledReference(string CodeSet, string Code, string Field);
+public sealed record ControlledReferenceData(string CodeSet, string Code, string Field);
 
 public static class MasterDataDictionaryRules
 {
@@ -119,7 +119,7 @@ public static class MasterDataDictionaryRules
             ["uom-dimension"] = new HashSet<string>(["mass", "quantity"], StringComparer.Ordinal)
         };
 
-    public static IEnumerable<SkuControlledReference> GetCreateSkuReferences(
+    public static IEnumerable<ControlledReferenceData> GetCreateSkuReferences(
         string category,
         string materialType,
         string batchTrackingPolicy,
@@ -143,7 +143,7 @@ public static class MasterDataDictionaryRules
         }
     }
 
-    public static IEnumerable<SkuControlledReference> GetUpdateSkuReferences(
+    public static IEnumerable<ControlledReferenceData> GetUpdateSkuReferences(
         string? category,
         string? materialType,
         string? batchTrackingPolicy,
@@ -159,6 +159,12 @@ public static class MasterDataDictionaryRules
         if (shelfLifePolicyCode is not null) yield return new("shelf-life-policy", shelfLifePolicyCode, "ShelfLifePolicyCode");
         if (storageConditionCode is not null) yield return new("storage-condition", storageConditionCode, "StorageConditionCode");
         if (defaultBarcodeRuleCode is not null) yield return new("barcode-rule", defaultBarcodeRuleCode, "DefaultBarcodeRuleCode");
+    }
+
+    public static IEnumerable<ControlledReferenceData> GetPersonnelSkillReferences(string skillCode, string level)
+    {
+        yield return new("skill", skillCode, "SkillCode");
+        yield return new("skill-level", level, "Level");
     }
 
     public static bool IsSystemManagedReferenceData(string codeSet, string code)

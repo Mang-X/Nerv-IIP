@@ -876,6 +876,41 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("worker-001:welding", created.Code);
     }
 
+    [Theory]
+    [InlineData("", "senior", "SkillCode", "skill")]
+    [InlineData("welding", "", "Level", "skill-level")]
+    public async Task Assign_personnel_skill_command_rejects_blank_controlled_reference_fields(
+        string skillCode,
+        string level,
+        string expectedField,
+        string expectedCodeSet)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new AssignPersonnelSkillCommandHandler(
+            new PersonnelSkillRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext));
+        if (!string.IsNullOrWhiteSpace(skillCode))
+        {
+            dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill", skillCode, skillCode));
+        }
+
+        if (!string.IsNullOrWhiteSpace(level))
+        {
+            dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", level, level));
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", skillCode, level, new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None));
+
+        Assert.Contains($"Personnel skill field '{expectedField}'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"'{expectedCodeSet}'", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Master_data_seed_is_idempotent_and_creates_controlled_reference_data()
     {

@@ -403,20 +403,16 @@ public sealed class AssignPersonnelSkillCommandHandler : ICommandHandler<AssignP
             return;
         }
 
-        await EnsureActiveReferenceDataAsync(
-            request.OrganizationId,
-            request.EnvironmentId,
-            "skill",
-            request.SkillCode,
-            "SkillCode",
-            cancellationToken);
-        await EnsureActiveReferenceDataAsync(
-            request.OrganizationId,
-            request.EnvironmentId,
-            "skill-level",
-            request.Level,
-            "Level",
-            cancellationToken);
+        foreach (var reference in MasterDataDictionaryRules.GetPersonnelSkillReferences(request.SkillCode, request.Level))
+        {
+            await EnsureActiveReferenceDataAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                reference.CodeSet,
+                reference.Code,
+                reference.Field,
+                cancellationToken);
+        }
     }
 
     private async Task EnsureActiveReferenceDataAsync(
