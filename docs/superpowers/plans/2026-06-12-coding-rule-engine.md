@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: 用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现本计划。步骤用 `- [ ]` 复选框跟踪。
 > 设计真相见配套 spec：[`2026-06-12-coding-rule-engine-design.md`](../specs/2026-06-12-coding-rule-engine-design.md)。术语、段类型、标准规则种子表、治理约定以 spec 为准，本计划不重复，只给可执行步骤。
 
-**Goal:** 新建可配置编码规则引擎 `Nerv.IIP.Coding`，用段化规则模板替换写死的 `Nerv.IIP.Numbering`，6 个业务服务全部切换，MasterData 全资源 `code` 改自动生成、去手填。
+**Goal:** 新建可配置编码规则引擎 `Nerv.IIP.Coding`，用段化规则模板替换写死的 `Nerv.IIP.Numbering`，5 个 Numbering 接入服务（MasterData、MES、ERP、DemandPlanning、ProductEngineering）全部切换，MasterData 全资源 `code` 改自动生成、去手填。（BarcodeLabel 自带 `BarcodeRule`、未引用 Numbering，不在本轮。）
 
 **Architecture:** 集中定义（`StandardCodeRules` 配置即代码 + MasterData `code_rules` 主数据表）+ service-local 计数（各服务本地 `code_counters`/`code_idempotency_keys`，乐观锁+重试+幂等）。引擎核心纯函数段求值 + EF 存储抽象，无跨服务运行时依赖。
 
@@ -18,18 +18,26 @@
 
 ## 文件结构总览
 
-**新建（引擎核心 + 契约 + 测试）：**
+**新建（纯契约规则模型 + 引擎核心 + 测试）：**
+
+> **依赖方向（按 review 修正）：`Nerv.IIP.Coding` → `Nerv.IIP.Contracts.Coding`，单向。** 契约层是纯规则模型 DTO（无 EF/实现依赖，沿用现有 `Contracts.*` 约定）；引擎引用契约、直接消费 `CodeRuleDefinition`，**不另设平行的运行时 `CodeRule` 类型**（DRY）。
+
 ```
+# 纯契约规则模型（无任何实现依赖；先建）
+backend/common/Contracts/Nerv.IIP.Contracts.Coding/Nerv.IIP.Contracts.Coding.csproj
+backend/common/Contracts/Nerv.IIP.Contracts.Coding/CodeRuleEnums.cs       # SegmentType, ResetPeriod, ScopeDimension, FieldTransform
+backend/common/Contracts/Nerv.IIP.Contracts.Coding/CodeRuleSegment.cs     # 段 DTO record + 工厂方法
+backend/common/Contracts/Nerv.IIP.Contracts.Coding/CodeRuleDefinition.cs  # 规则定义 DTO + Validate()
+backend/common/Contracts/Nerv.IIP.Contracts.Coding/StandardCodeRules.cs   # 标准规则目录（返回 CodeRuleDefinition）
+
+# 引擎核心（引用 Contracts.Coding）
 backend/common/Coding/Nerv.IIP.Coding/Nerv.IIP.Coding.csproj
-backend/common/Coding/Nerv.IIP.Coding/CodeRule.cs              # CodeRule, CodeRuleSegment, SegmentType, ResetPeriod, ScopeDimension, FieldTransform
-backend/common/Coding/Nerv.IIP.Coding/CodeAllocator.cs         # CodeAllocator + AllocationRequest/Result + CodeConcurrencyException
+backend/common/Coding/Nerv.IIP.Coding/CodeAllocator.cs         # CodeAllocator + CodeAllocationRequest/Allocation + CodeConcurrencyException（消费 CodeRuleDefinition）
 backend/common/Coding/Nerv.IIP.Coding/CodeEntities.cs          # CodeCounter, CodeIdempotencyKey
 backend/common/Coding/Nerv.IIP.Coding/ICodeStore.cs            # ICodeStore, CodeCounterScope
 backend/common/Coding/Nerv.IIP.Coding/EfCoreCodeStore.cs       # EfCoreCodeStore, CodeDbContextLease
-backend/common/Contracts/Nerv.IIP.Contracts.Coding/Nerv.IIP.Contracts.Coding.csproj
-backend/common/Contracts/Nerv.IIP.Contracts.Coding/CodeRuleDefinition.cs
-backend/common/Contracts/Nerv.IIP.Contracts.Coding/StandardCodeRules.cs
-backend/tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj
+
+backend/tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj          # 引用 Coding + Contracts.Coding
 backend/tests/Nerv.IIP.Coding.Tests/CodeAllocatorTests.cs
 backend/tests/Nerv.IIP.Coding.Tests/StandardCodeRulesTests.cs
 ```
@@ -54,50 +62,60 @@ backend/common/Numbering/                          （整目录）
 backend/tests/Nerv.IIP.Numbering.Tests/            （整目录）
 各服务 Infrastructure/Numbering/                    （整目录）
 各服务 Web/Application/Commands/**/*NumberingService.cs
-各服务 Migrations/*_AddNumberingCounters.{cs,Designer.cs}
 backend/Nerv.IIP.sln 中 Numbering / Numbering.Tests 工程项与 solution folder
 ```
 
+> ⚠️ **不要删除**历史 `*_AddNumberingCounters.cs` migration 文件：`numbering_*` 表的退场由各服务**新追加**的 `AddCodingTables` migration 通过模型 diff `DropTable` 完成（见 Task 8 Step 6），历史 migration 链保持不变。
+
 ---
 
-## Phase 1：引擎核心 `Nerv.IIP.Coding`（TDD，独立通过）
+## Phase 1：契约规则模型 + 引擎核心（TDD，独立通过）
 
-### Task 1：建工程骨架
+> **依赖方向（按 review 修正）**：先建纯契约 `Nerv.IIP.Contracts.Coding`（无 EF/实现依赖），引擎 `Nerv.IIP.Coding` 单向引用它并直接消费 `CodeRuleDefinition`。契约层**不得**引用引擎库。
+
+### Task 1：建两个工程骨架（契约 + 引擎，方向单向）
 
 **Files:**
+- Create: `backend/common/Contracts/Nerv.IIP.Contracts.Coding/Nerv.IIP.Contracts.Coding.csproj`
 - Create: `backend/common/Coding/Nerv.IIP.Coding/Nerv.IIP.Coding.csproj`
 - Modify: `backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: 创建 csproj（镜像现有 `Nerv.IIP.Numbering.csproj`，保留其 PackageReference/TargetFramework）**
+- [ ] **Step 1: 创建契约 csproj（纯净，无实现依赖）**
 
-读 `backend/common/Numbering/Nerv.IIP.Numbering/Nerv.IIP.Numbering.csproj`，原样复制为新文件，仅改 `RootNamespace`/`AssemblyName` 为 `Nerv.IIP.Coding`（若有显式声明）。依赖至少含：`Microsoft.EntityFrameworkCore`、`NetCorePal.Extensions.Primitives`（提供 `KnownException`）。
+镜像同目录其它 `Nerv.IIP.Contracts.*` 的 csproj（参考 `Nerv.IIP.Contracts.Scheduling.csproj`，**无任何 PackageReference/ProjectReference**——已核实现有 `Contracts.Scheduling` 零依赖、`Contracts.Inventory/Wms` 仅引用 `Contracts.IntegrationEvents`）。`Nerv.IIP.Contracts.Coding` **不引用 EF Core、不引用 `Nerv.IIP.Coding`**。
 
-- [ ] **Step 2: 加入 solution**
+- [ ] **Step 2: 创建引擎 csproj（引用契约）**
 
-Run: `dotnet sln backend/Nerv.IIP.sln add backend/common/Coding/Nerv.IIP.Coding/Nerv.IIP.Coding.csproj --solution-folder Coding`
-Expected: `Project ... added to the solution.`
+镜像 `Nerv.IIP.Numbering.csproj`（保留 `Microsoft.EntityFrameworkCore`、`NetCorePal.Extensions.Primitives`），并加 `ProjectReference` 指向 `Nerv.IIP.Contracts.Coding`。**方向只能 `Coding → Contracts.Coding`。**
 
-- [ ] **Step 3: 编译空库**
-
-Run: `dotnet build backend/common/Coding/Nerv.IIP.Coding/Nerv.IIP.Coding.csproj`
-Expected: Build succeeded.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: 加入 solution**
 
 ```bash
-git add backend/common/Coding backend/Nerv.IIP.sln
-git commit -m "chore(coding): scaffold Nerv.IIP.Coding library"
+dotnet sln backend/Nerv.IIP.sln add backend/common/Contracts/Nerv.IIP.Contracts.Coding/Nerv.IIP.Contracts.Coding.csproj --solution-folder Contracts
+dotnet sln backend/Nerv.IIP.sln add backend/common/Coding/Nerv.IIP.Coding/Nerv.IIP.Coding.csproj --solution-folder Coding
 ```
 
-### Task 2：规则模型 `CodeRule.cs`
+- [ ] **Step 4: 编译空库 + Commit**
+
+Run: `dotnet build backend/common/Coding/Nerv.IIP.Coding/Nerv.IIP.Coding.csproj` → succeeded
+```bash
+git add backend/common/Coding backend/common/Contracts/Nerv.IIP.Contracts.Coding backend/Nerv.IIP.sln
+git commit -m "chore(coding): scaffold Contracts.Coding + Coding libraries (one-way dependency)"
+```
+
+### Task 2：规则模型（纯契约层 `Nerv.IIP.Contracts.Coding`）
 
 **Files:**
-- Create: `backend/common/Coding/Nerv.IIP.Coding/CodeRule.cs`
+- Create: `backend/common/Contracts/Nerv.IIP.Contracts.Coding/CodeRuleEnums.cs`
+- Create: `backend/common/Contracts/Nerv.IIP.Contracts.Coding/CodeRuleSegment.cs`
+- Create: `backend/common/Contracts/Nerv.IIP.Contracts.Coding/CodeRuleDefinition.cs`
 
-- [ ] **Step 1: 写规则模型（不可变值对象 + 校验）**
+- [ ] **Step 1: 写规则模型（纯 DTO + 定义期校验，命名空间 `Nerv.IIP.Contracts.Coding`）**
+
+> 规则模型只有一份：契约层的 `CodeRuleDefinition`。引擎不再设平行运行时类型，直接消费它。`Validate()` 是结构校验，抛 `ArgumentException`（BCL，无需任何包依赖）。
 
 ```csharp
-namespace Nerv.IIP.Coding;
+namespace Nerv.IIP.Contracts.Coding;
 
 public enum SegmentType { Constant, Date, Sequence, Field, Checksum }
 public enum ResetPeriod { None, Day, Month, Year }
@@ -135,7 +153,7 @@ public sealed record CodeRuleSegment
         => new() { Type = SegmentType.Field, Source = source, Transform = transform, MaxLength = maxLength, Required = required };
 }
 
-public sealed record CodeRule
+public sealed record CodeRuleDefinition
 {
     private static readonly HashSet<string> AllowedDateFormats =
         ["yyyyMMdd", "yyMMdd", "yyyyMM", "yyMM", "yyyy", "yy"];
@@ -148,7 +166,7 @@ public sealed record CodeRule
     public bool IsActive { get; init; } = true;
     public int Version { get; init; } = 1;
 
-    /// <summary>规则定义合法性校验。无效抛 ArgumentException（定义期错误，非运行期）。</summary>
+    /// <summary>规则定义结构校验。无效抛 ArgumentException（定义期错误，非运行期）。</summary>
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(RuleKey)) throw new ArgumentException("RuleKey required.");
@@ -175,16 +193,18 @@ public sealed record CodeRule
 }
 ```
 
+> 拆三个文件（enums / segment / definition）即把上面三块按类型分别落文件；也可单文件，编译等价。
+
 - [ ] **Step 2: 编译**
 
-Run: `dotnet build backend/common/Coding/Nerv.IIP.Coding/Nerv.IIP.Coding.csproj`
-Expected: Build succeeded.
+Run: `dotnet build backend/common/Contracts/Nerv.IIP.Contracts.Coding/Nerv.IIP.Contracts.Coding.csproj`
+Expected: Build succeeded（纯 BCL，无外部包）。
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add backend/common/Coding/Nerv.IIP.Coding/CodeRule.cs
-git commit -m "feat(coding): add CodeRule and segment model with validation"
+git add backend/common/Contracts/Nerv.IIP.Contracts.Coding
+git commit -m "feat(coding): add CodeRuleDefinition rule model in Contracts.Coding"
 ```
 
 ### Task 3：EF 实体与存储抽象 `CodeEntities.cs` + `ICodeStore.cs`
@@ -288,26 +308,27 @@ git commit -m "feat(coding): add code counter/idempotency entities and store abs
 ### Task 4：分配核心 `CodeAllocator.cs`（先写测试）
 
 **Files:**
-- Create: `backend/tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj`（镜像 `Nerv.IIP.Numbering.Tests.csproj`，引用 `Nerv.IIP.Coding`）
+- Create: `backend/tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj`（镜像 `Nerv.IIP.Numbering.Tests.csproj`，引用 `Nerv.IIP.Coding` 与 `Nerv.IIP.Contracts.Coding`）
 - Create: `backend/tests/Nerv.IIP.Coding.Tests/CodeAllocatorTests.cs`
 - Create: `backend/common/Coding/Nerv.IIP.Coding/CodeAllocator.cs`
 
 - [ ] **Step 1: 建测试工程并入 sln**
 
-复制 `backend/tests/Nerv.IIP.Numbering.Tests/Nerv.IIP.Numbering.Tests.csproj` → 新路径，`ProjectReference` 指向 `Nerv.IIP.Coding`。
+复制 `backend/tests/Nerv.IIP.Numbering.Tests/Nerv.IIP.Numbering.Tests.csproj` → 新路径，`ProjectReference` 指向 `Nerv.IIP.Coding` 与 `Nerv.IIP.Contracts.Coding`。
 Run: `dotnet sln backend/Nerv.IIP.sln add backend/tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj --solution-folder tests`
 
 - [ ] **Step 2: 写失败测试（覆盖段求值、拼接、重置桶、start、field 大写/截断、in-memory 流水、幂等回放/冲突、规则校验）**
 
 ```csharp
 using Nerv.IIP.Coding;
+using Nerv.IIP.Contracts.Coding;
 using Xunit;
 
 namespace Nerv.IIP.Coding.Tests;
 
 public class CodeAllocatorTests
 {
-    private static CodeRule SkuRule() => new()
+    private static CodeRuleDefinition SkuRule() => new()
     {
         RuleKey = "sku", DisplayName = "SKU",
         Segments =
@@ -341,7 +362,7 @@ public class CodeAllocatorTests
     [Fact]
     public async Task Field_segment_uppercases_and_truncates()
     {
-        var rule = new CodeRule
+        var rule = new CodeRuleDefinition
         {
             RuleKey = "material", DisplayName = "物料",
             Segments =
@@ -364,7 +385,7 @@ public class CodeAllocatorTests
     [Fact]
     public async Task Missing_required_field_throws()
     {
-        var rule = new CodeRule
+        var rule = new CodeRuleDefinition
         {
             RuleKey = "material", DisplayName = "物料",
             Segments = [CodeRuleSegment.FieldOf("materialType"), CodeRuleSegment.SequenceOf(3)],
@@ -423,6 +444,7 @@ Expected: 编译失败/红（`CodeAllocator`、`CodeAllocationRequest` 未定义
 using System.Globalization;
 using System.Text;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Contracts.Coding;
 
 namespace Nerv.IIP.Coding;
 
@@ -431,7 +453,7 @@ public sealed record CodeAllocation(string Code, bool IsIdempotentReplay);
 public sealed record CodeAllocationRequest(
     string OrganizationId,
     string EnvironmentId,
-    CodeRule Rule,
+    CodeRuleDefinition Rule,
     IReadOnlyDictionary<string, string>? Fields,
     string? RequestedCode,
     string? IdempotencyKey,
@@ -647,49 +669,63 @@ git commit -m "feat(coding): add EfCoreCodeStore"
 
 ---
 
-## Phase 2：契约与标准规则 `Nerv.IIP.Contracts.Coding`
+## Phase 2：标准规则目录 + 分层守卫
 
-### Task 6：契约工程 + `CodeRuleDefinition`
+> 契约工程与 `CodeRuleDefinition` 已在 Task 1/2 落地（纯契约层）。本阶段补 `StandardCodeRules` 目录，并用测试钉死「契约层不依赖引擎」的分层约束。
+
+### Task 6：分层守卫测试 + 序列化往返
 
 **Files:**
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.Coding/Nerv.IIP.Contracts.Coding.csproj`（镜像同目录其它 `Nerv.IIP.Contracts.*` 的 csproj）
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.Coding/CodeRuleDefinition.cs`
+- Create: `backend/tests/Nerv.IIP.Coding.Tests/ContractsLayeringTests.cs`
 
-- [ ] **Step 1: 建工程并入 sln**（solution-folder 用 `Contracts`，参考现有 `Nerv.IIP.Contracts.Inventory` 在 sln 中的归属）。`Nerv.IIP.Contracts.Coding` 引用 `Nerv.IIP.Coding`（复用 `CodeRule`/段类型），不引用任何服务。
-
-- [ ] **Step 2: 写可序列化定义 DTO（用于 JSON 持久化与未来跨服务分发）**
+- [ ] **Step 1: 写守卫测试（断言 Contracts.Coding 不引用引擎 + 定义可 JSON 往返）**
 
 ```csharp
-namespace Nerv.IIP.Contracts.Coding;
+using System.Reflection;
+using System.Text.Json;
+using Nerv.IIP.Contracts.Coding;
+using Xunit;
 
-using Nerv.IIP.Coding;
+namespace Nerv.IIP.Coding.Tests;
 
-/// <summary>可序列化的规则定义快照（落 code_rules JSON 列、未来事件分发用）。</summary>
-public sealed record CodeRuleDefinition(
-    string RuleKey,
-    string DisplayName,
-    string AppliesTo,
-    ScopeDimension Scope,
-    IReadOnlyList<CodeRuleSegment> Segments,
-    bool IsActive,
-    int Version)
+public class ContractsLayeringTests
 {
-    public static CodeRuleDefinition From(CodeRule rule) =>
-        new(rule.RuleKey, rule.DisplayName, rule.AppliesTo, rule.Scope, rule.Segments, rule.IsActive, rule.Version);
-
-    public CodeRule ToRule() => new()
+    [Fact]
+    public void Contracts_assembly_does_not_reference_engine()
     {
-        RuleKey = RuleKey, DisplayName = DisplayName, AppliesTo = AppliesTo,
-        Scope = Scope, Segments = Segments, IsActive = IsActive, Version = Version,
-    };
+        var contracts = typeof(CodeRuleDefinition).Assembly;
+        Assert.DoesNotContain(
+            contracts.GetReferencedAssemblies(),
+            a => a.Name == "Nerv.IIP.Coding" || a.Name!.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CodeRuleDefinition_round_trips_through_json()
+    {
+        var rule = new CodeRuleDefinition
+        {
+            RuleKey = "sku", DisplayName = "SKU",
+            Segments = [CodeRuleSegment.ConstantOf("SKU"), CodeRuleSegment.SequenceOf(6, ResetPeriod.Day)],
+        };
+        var json = JsonSerializer.Serialize(rule);
+        var back = JsonSerializer.Deserialize<CodeRuleDefinition>(json)!;
+        back.Validate();
+        Assert.Equal(rule.RuleKey, back.RuleKey);
+        Assert.Equal(rule.Segments.Count, back.Segments.Count);
+    }
 }
 ```
 
-- [ ] **Step 3: 编译 + Commit**
+- [ ] **Step 2: 跑测试**
+
+Run: `dotnet test backend/tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj --filter ContractsLayeringTests`
+Expected: passed（若守卫红，说明误把 EF/引擎引用进了契约层，需移除）。
+
+- [ ] **Step 3: Commit**
 
 ```bash
-git add backend/common/Contracts/Nerv.IIP.Contracts.Coding backend/Nerv.IIP.sln
-git commit -m "feat(coding): add Nerv.IIP.Contracts.Coding with CodeRuleDefinition"
+git add backend/tests/Nerv.IIP.Coding.Tests/ContractsLayeringTests.cs
+git commit -m "test(coding): guard Contracts.Coding has no engine/EF dependency"
 ```
 
 ### Task 7：`StandardCodeRules`（spec §7 全表，配置即代码）
@@ -701,7 +737,6 @@ git commit -m "feat(coding): add Nerv.IIP.Contracts.Coding with CodeRuleDefiniti
 - [ ] **Step 1: 写失败测试（每条规则 Validate 通过、RuleKey 唯一、能产出示例编码）**
 
 ```csharp
-using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.Coding;
 using Xunit;
 
@@ -734,14 +769,13 @@ public class StandardCodeRulesTests
 - [ ] **Step 3: 实现 `StandardCodeRules`（按 spec §7.1 + §7.2 逐条；下示范，补全全表）**
 
 ```csharp
-namespace Nerv.IIP.Contracts.Coding;
+using static Nerv.IIP.Contracts.Coding.CodeRuleSegment;
 
-using Nerv.IIP.Coding;
-using static Nerv.IIP.Coding.CodeRuleSegment;
+namespace Nerv.IIP.Contracts.Coding;
 
 public static class StandardCodeRules
 {
-    public static IReadOnlyList<CodeRule> All { get; } =
+    public static IReadOnlyList<CodeRuleDefinition> All { get; } =
     [
         // §7.1 文档类
         Rule("sku", "SKU 编码", ConstantOf("SKU"), ConstantOf("-"), DateOf("yyyyMMdd"), ConstantOf("-"), SequenceOf(6, ResetPeriod.Day)),
@@ -761,11 +795,11 @@ public static class StandardCodeRules
         // ... 补齐 MasterData 全部其它资源类型（见 Task 12 资源清单），每个一行
     ];
 
-    public static CodeRule Get(string ruleKey) =>
+    public static CodeRuleDefinition Get(string ruleKey) =>
         All.FirstOrDefault(r => r.RuleKey == ruleKey)
         ?? throw new KeyNotFoundException($"Unknown code ruleKey '{ruleKey}'.");
 
-    private static CodeRule Rule(string key, string name, params CodeRuleSegment[] segments) =>
+    private static CodeRuleDefinition Rule(string key, string name, params CodeRuleSegment[] segments) =>
         new() { RuleKey = key, DisplayName = name, AppliesTo = name, Segments = segments };
 }
 ```
@@ -794,7 +828,8 @@ git commit -m "feat(coding): add StandardCodeRules catalog"
 - Modify: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Program.cs:45`
 - Modify: 调用点 `.../Commands/WorkOrders/CreateRushWorkOrderCommand.cs`、`.../Commands/Production/MesProductionCommands.cs`、`.../Commands/Workbench/MesWorkbenchCommands.cs`（把 `MesNumberingService`→`MesCodingService`，`AllocateWorkOrderIdAsync` 等→新签名）
 - Delete: `.../Infrastructure/Numbering/NumberingEntityTypeConfigurations.cs`、`.../Commands/WorkOrders/MesNumberingService.cs`
-- Migration: 新增 `AddCodingTables`，移除 `AddNumberingCounters`
+- Modify: `.../Nerv.IIP.Business.Mes.Infrastructure.csproj`（移除 `Nerv.IIP.Numbering` ProjectReference，新增 `Nerv.IIP.Coding`）；`.../Nerv.IIP.Business.Mes.Web.csproj` 同步（若直接引用过 Numbering）
+- Migration: **追加一条**新 migration `AddCodingTables`，由模型 diff 自动 drop `numbering_*` / create `code_*`。**绝不**对历史 migration 执行 `migrations remove`（见 Step 6 说明）
 
 - [ ] **Step 1: 写 EF 配置（移植 `NumberingEntityTypeConfigurations.cs`，表/列/索引改名）**
 
@@ -859,15 +894,18 @@ git rm backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Nu
 git rm backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/WorkOrders/MesNumberingService.cs
 ```
 
-- [ ] **Step 6: 重做迁移**
+- [ ] **Step 6: 追加迁移（不要用 `migrations remove`）**
+
+> ⚠️ **代码事实（已核实）**：`AddNumberingCounters` 不是 MES 迁移链的最新一条——其后还有 `AddMesMaterialSupplyFacts`、`AddMesDispatchAssignmentFacts`、`AddMesDemandPlanningSourcePlanReference`、`AddMesQualityAndShiftHandoverFacts`、`AddMesConsumerInboxIdempotency`。`dotnet ef migrations remove` 只会删**最新一条**（`AddMesConsumerInboxIdempotency`），**不会**删中间的 `AddNumberingCounters`，因此严禁用 `migrations remove` 去"撤回"编号表。
+>
+> 正确做法：Step 1/5 已把 `NumberingEntityTypeConfigurations` 删除、`Nerv.IIP.Numbering` ProjectReference 移除、`CodeEntityTypeConfigurations` 加入。此时模型里不再有 `NumberingCounter/NumberingIdempotencyKey`、新增了 `CodeCounter/CodeIdempotencyKey`。直接**追加一条新 migration**，EF 会按模型 diff 自动生成 `DropTable numbering_*` + `CreateTable code_*`，历史 migration 全部保持不变。
 
 ```bash
 dotnet tool restore
-# 设 PostgreSQL profile 环境变量（见 readiness 环境前置 11），然后：
-dotnet tool run dotnet-ef migrations remove --project backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure --startup-project backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web
+# 设 PostgreSQL profile 环境变量（见 readiness 环境前置 11），然后只 add，不 remove：
 dotnet tool run dotnet-ef migrations add AddCodingTables --project backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure --startup-project backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web
 ```
-Expected: 生成的 migration 含 `code_counters` / `code_idempotency_keys`，不含 `numbering_*`。
+Expected: 新生成的 `*_AddCodingTables` 的 `Up()` 含 `DropTable("numbering_counters")`、`DropTable("numbering_idempotency_keys")` 与 `CreateTable("code_counters")`、`CreateTable("code_idempotency_keys")`；`Down()` 反向；**已存在的历史 migration 文件无任何改动**（`git status` 仅新增 1 个 migration + 更新 1 个 ModelSnapshot）。
 
 - [ ] **Step 7: build + focused test**
 
@@ -888,7 +926,7 @@ git commit -m "refactor(coding): switch MES to Nerv.IIP.Coding engine"
 - 调用点：`.../Commands/Procurement/ErpProcurementCommands.cs`、`.../Commands/Sales/ErpSalesCommands.cs`、`.../Commands/Finance/ErpFinanceCommands.cs`。
 - 旧 `AllocateAsync(org, env, documentType, prefix, ...)`：每个 documentType 在 `StandardCodeRules` 注册对应 ruleKey（procurement/sales/finance 各单据），prefix 保持现值。
 - EF 配置：`.../Erp.Infrastructure/Numbering/` → `Coding/`，表改名同范本。
-- Migration：remove `AddNumberingCounters` → add `AddCodingTables`（Erp.Infrastructure / Erp.Web）。
+- Migration：同范本，只 `migrations add AddCodingTables`（Erp.Infrastructure / Erp.Web），由模型 diff 自动 drop `numbering_*`/create `code_*`；**不要** `migrations remove`（ERP 同样在 `AddNumberingCounters` 之后另有迁移）。
 - 验证：`scripts/verify-business-erp-procurement-sales-finance-mvp.ps1`。
 - Commit: `refactor(coding): switch ERP to Nerv.IIP.Coding engine`。
 
@@ -1034,17 +1072,22 @@ git commit -m "chore(coding): add verify script and update readiness/schema cata
 
 ## Self-Review（计划对 spec 覆盖核对）
 
-- spec §4 架构（库结构/归属/数据流）→ Task 1–7、8、13 ✓
-- spec §5 数据模型（CodeRule/段/表）→ Task 2、3、8(EF)、13(code_rules) ✓
+- spec §4 架构（分层/归属/数据流，含 Contracts→Coding 单向依赖）→ Task 1（双工程方向）、2（契约模型）、3–5（引擎）、6（分层守卫）、7、13 ✓
+- spec §5 数据模型（CodeRuleDefinition/段/表）→ Task 2（契约模型）、3（EF 实体）、8(EF 配置)、13(code_rules) ✓
 - spec §6 段类型（含 checksum 预留、无隐式分隔符、强制 sequence）→ Task 2(Validate)、4(求值) ✓
 - spec §7 标准规则种子（§7.1 文档 + §7.2 全主数据）→ Task 7、12(补全) ✓
 - spec §8 治理（requestedCode 保留、去手填）→ Task 4(requested)、12、14 ✓
 - spec §9 错误/并发/幂等 → Task 4、5 ✓
-- spec §10 测试与验证 → Task 4、7、8(schema test)、16(脚本) ✓
-- spec §2.1 删除 Numbering、6 服务切换、MasterData 全资源、前端联动 → Task 8–12、14、15 ✓
+- spec §10 测试与验证 → Task 4、6（分层守卫）、7、8(schema test)、16(脚本) ✓
+- spec §2.1 删除 Numbering、5 服务切换、MasterData 全资源、前端联动 → Task 8–12、14、15 ✓
 - spec §2.2 后置项 → 未排任务（正确，明确后置）✓
 
-**一致性核对：** 类型/方法签名跨任务一致——`CodeAllocator.AllocateAsync(CodeAllocationRequest, ct)`、`CodeAllocationRequest(org, env, CodeRule, Fields, RequestedCode, IdempotencyKey, PayloadFingerprint, ConflictResourceLabel, SiteCode)`、`ICodeStore.ReserveNextCounterValueAsync(CodeCounterScope, ct)`、`CodeCounterScope(...Start)`、`CodeCounter.AdvanceFrom(start)`、`EfCoreCodeStore.CreateDbContextLeaseFactory<T>`、`StandardCodeRules.Get/All`、`<Svc>CodingService.AllocateAsync(ruleKey, org, env, fields, requestedCode, idem, fp, ct)` 在 Task 3/4/5/7/8 一致使用。
+**一致性核对：** 类型/方法签名跨任务一致——规则模型唯一类型 `CodeRuleDefinition`（契约层，Task 2）；`CodeAllocator.AllocateAsync(CodeAllocationRequest, ct)`、`CodeAllocationRequest(org, env, CodeRuleDefinition Rule, Fields, RequestedCode, IdempotencyKey, PayloadFingerprint, ConflictResourceLabel, SiteCode)`（Task 4）、`ICodeStore.ReserveNextCounterValueAsync(CodeCounterScope, ct)`、`CodeCounterScope(...Start)`、`CodeCounter.AdvanceFrom(start)`、`EfCoreCodeStore.CreateDbContextLeaseFactory<T>`、`StandardCodeRules.Get/All`（返回 `CodeRuleDefinition`，Task 7）、`<Svc>CodingService.AllocateAsync(ruleKey, org, env, fields, requestedCode, idem, fp, ct)` 在 Task 3/4/5/7/8 一致使用。依赖方向 `Coding → Contracts.Coding` 单向（Task 1 建、Task 6 守卫）。
+
+**已按 PR #385 review 修正（代码事实已核实）：**
+1. 契约分层：`Contracts.Coding` 为纯模型层（无 EF/引擎依赖），引擎单向引用并消费 `CodeRuleDefinition`，不设平行运行时类型；Task 6 加分层守卫测试钉死。
+2. 迁移策略：各服务**只追加** `AddCodingTables`（模型 diff drop `numbering_*`/create `code_*`），**禁止** `migrations remove`（`AddNumberingCounters` 非各服务最新迁移）；历史 migration 文件不删。
+3. 范围口径：是 **5 个 Numbering 接入服务**（MasterData/MES/ERP/DemandPlanning/ProductEngineering）；BarcodeLabel 未引用 Numbering、不在本轮。
 
 **已知需实现期补全（非占位漏洞，均有明确指引）：**
 - Task 7/9/10/11 文档类规则的 prefix/ruleKey 需 grep 各服务现状逐一登记（已给方法）。

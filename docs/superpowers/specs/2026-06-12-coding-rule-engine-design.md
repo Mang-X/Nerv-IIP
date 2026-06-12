@@ -12,7 +12,7 @@
 
 平台已有两套与「编码/编号」相关的机制，但都是**规则写死**的：
 
-1. **`Nerv.IIP.Numbering`**（`backend/common/Numbering`，#188 生产级持久化基线）：跨 6 个业务服务复用的编号分配引擎，但生成格式硬编码为 `{Prefix}-{yyyyMMdd}-{NNNNNN}`（见 `NumberingServiceCore.NextNumberAsync`），段构成、位宽、重置周期、字段引用都不可配置。被 MasterData(SKU)、MES、ERP、DemandPlanning、ProductEngineering 接入。
+1. **`Nerv.IIP.Numbering`**（`backend/common/Numbering`，#188 生产级持久化基线）：跨 **5 个业务服务**复用的编号分配引擎，但生成格式硬编码为 `{Prefix}-{yyyyMMdd}-{NNNNNN}`（见 `NumberingServiceCore.NextNumberAsync`），段构成、位宽、重置周期、字段引用都不可配置。`csproj` 引用 `Nerv.IIP.Numbering` 的服务为 MasterData(SKU)、MES、ERP、DemandPlanning、ProductEngineering（已核实，BarcodeLabel 不引用 Numbering）。
 2. **`BarcodeRule`**（BarcodeLabel 服务）：条码值规则，`prefix/length/checksum/barcodeType` 等配置字段落库，但拼接逻辑 `{Prefix}{token}{sequence:D4}` 仍写死，且仅服务于条码场景。
 
 此外，MasterData 的多数基础资源（UOM、Site、Workshop、ProductionLine、Shift、WorkCenter、DeviceAsset、BusinessPartner、TeamMember 等）的业务 `code` 目前仍由用户**手工输入**，只有 SKU 走了 `Numbering` 自动分配。
@@ -22,7 +22,7 @@
 建设一个**可配置的编码规则引擎**，用规则模板（段化）描述编码构成，替换现有写死实现，并把平台所有需要业务编码的对象统一纳入「自动生成、不手动输入」：
 
 1. 新建 `Nerv.IIP.Coding` 能力库，用**有序段（segment）**配置驱动编码生成。
-2. **删除** `Nerv.IIP.Numbering`，6 个服务全部切换到新引擎。
+2. **删除** `Nerv.IIP.Numbering`，5 个 Numbering 接入服务全部切换到新引擎。
 3. **集中定义、service-local 计数**：编码规则作为一类主数据集中定义（配置即代码 + MasterData 可查表），但运行时的流水计数与幂等保持各服务本地，无分布式运行时依赖。
 4. **全覆盖基础数据自动编码**：MasterData 全部资源类型的 `code` 改为引擎自动生成，去掉前端手填编码框。
 5. 保留现有引擎已验证的并发（乐观锁+重试）与幂等（idempotency key + payload fingerprint）能力。
@@ -43,7 +43,8 @@
 - `Nerv.IIP.Contracts.Coding` 公共契约（规则定义 DTO + 标准规则常量）。
 - `backend/tests/Nerv.IIP.Coding.Tests` 引擎单测（替换 `Nerv.IIP.Numbering.Tests`）。
 - 删除 `Nerv.IIP.Numbering` 及各服务 `numbering_*` 表 / migration / 封装 / 测试，重建为 `code_*`。
-- 6 个现有服务接入：MasterData、MES、ERP、DemandPlanning、ProductEngineering（+ 评估 BarcodeLabel 编号位）。
+- **5 个现有 Numbering 接入服务**切换：MasterData、MES、ERP、DemandPlanning、ProductEngineering。
+- BarcodeLabel **不在本轮切换范围**：它自带 `BarcodeRule`、未引用 `Nerv.IIP.Numbering`；其编号位是否并入本引擎仅做评估（见 §2.2 后置）。
 - **MasterData 全资源类型** `code` 改自动生成，连带 BusinessGateway facade / OpenAPI / `@nerv-iip/api-client` / Business Console 表单移除手填编码输入。
 - 标准编码规则 seed（各文档类型 + 全主数据），MasterData 落 `code_rules` 主数据表。
 - schema convention tests、schema catalog、authorization matrix（如需）、readiness 文档、聚合验证脚本 `scripts/verify-coding-rule-engine.ps1`。
@@ -62,8 +63,8 @@
 
 | 术语 | 含义 |
 |---|---|
-| **CodeRule（编码规则）** | 一个对象/文档类型的编码模板，由 `ruleKey` 标识，含有序 `segments`、作用域维度、状态、版本。集中定义的一类主数据。 |
-| **CodeRuleSegment（段）** | 编码的一个组成部分。类型见 §6：`constant` / `date` / `sequence` / `field` / `checksum`。 |
+| **CodeRuleDefinition（编码规则定义）** | 一个对象/文档类型的编码模板，由 `ruleKey` 标识，含有序 `segments`、作用域维度、状态、版本。纯契约 DTO（`Nerv.IIP.Contracts.Coding`），是规则模型的唯一形状；集中定义的一类主数据。MasterData 侧另有同名领域聚合 `CodeRule`（`code_rules` 表）承载它的持久化与未来编辑。 |
+| **CodeRuleSegment（段）** | 编码的一个组成部分（契约 DTO）。类型见 §6：`constant` / `date` / `sequence` / `field` / `checksum`。 |
 | **ruleKey** | 规则的稳定业务键（kebab-case），如 `sku`、`material`、`work-order`、`uom`、`purchase-order`。各服务用它向引擎请求编码。 |
 | **CodeCounter** | service-local 流水计数器，scope = org/env/ruleKey/site/resetKey。 |
 | **resetKey** | 由 `sequence` 段的重置周期派生的计数器分桶键（如 `20260612`、`202606`、`2026`、空串=永不重置）。 |
@@ -77,20 +78,23 @@
 
 ### 4.1 库结构与落点
 
+> **分层约束（依赖方向，按 review 修正）**：`Nerv.IIP.Contracts.Coding` 是**纯规则模型契约层**（枚举 + 段 DTO + 规则定义 DTO + 标准规则目录 + 定义期校验），**不依赖任何实现库**（沿用现有 `Contracts.*` 只承载可序列化公共契约的约定——见 readiness §共享契约落点；已核实 `Contracts.Inventory/Scheduling/Wms` 均无 EF/实现依赖）。引擎库 `Nerv.IIP.Coding` **单向引用** `Nerv.IIP.Contracts.Coding`，分配核心**直接消费 `CodeRuleDefinition`**——不再设平行的运行时 `CodeRule` 类型（避免与契约 DTO 形状重复，DRY）。**依赖方向严格单向：`Coding` → `Contracts.Coding`**，契约层绝不反向依赖引擎，避免下游/未来 SDK 只想消费规则定义却被迫引入 EF Core 等实现依赖。
+
 ```
-backend/common/Coding/Nerv.IIP.Coding/                    # 引擎核心（替换 Numbering）
-  CodeRule.cs               # 规则模型 + 段模型（CodeRule, CodeRuleSegment, 枚举）
-  CodeAllocator.cs          # 分配核心（替换 NumberingServiceCore）
+backend/common/Contracts/Nerv.IIP.Contracts.Coding/       # 纯规则模型契约层（无 EF/实现依赖）
+  CodeRuleEnums.cs          # SegmentType, ResetPeriod, ScopeDimension, FieldTransform 枚举
+  CodeRuleSegment.cs        # 段 DTO（可序列化 record + 工厂方法）
+  CodeRuleDefinition.cs     # 规则定义 DTO（可序列化、可跨服务共享）+ 定义期 Validate()（结构校验，抛 ArgumentException）
+  StandardCodeRules.cs      # 标准规则目录（配置即代码，唯一事实源；All/Get 返回 CodeRuleDefinition）
+
+backend/common/Coding/Nerv.IIP.Coding/                    # 引擎核心（替换 Numbering，引用 Contracts.Coding）
+  CodeAllocator.cs          # 分配核心（消费 CodeRuleDefinition；替换 NumberingServiceCore；运行期缺值等抛 KnownException）
   CodeEntities.cs           # CodeCounter, CodeIdempotencyKey（EF 实体）
   ICodeStore.cs             # 存储抽象（替换 INumberingStore）
   EfCoreCodeStore.cs        # EF 实现（替换 EfCoreNumberingStore）
   CodeAllocatorOptions.cs   # 并发重试选项
 
-backend/common/Contracts/Nerv.IIP.Contracts.Coding/       # 公共契约
-  CodeRuleDefinition.cs     # 规则定义 DTO（可序列化、可跨服务共享）
-  StandardCodeRules.cs      # 标准规则常量（配置即代码，唯一事实源）
-
-backend/tests/Nerv.IIP.Coding.Tests/                      # 引擎单测
+backend/tests/Nerv.IIP.Coding.Tests/                      # 引擎单测（引用 Coding + Contracts.Coding）
 ```
 
 各服务侧（与现有 Numbering 接入对称）：
@@ -137,21 +141,23 @@ Command Handler（如 CreateSkuCommandHandler）
 
 ## 5. 数据模型
 
-### 5.1 CodeRule / CodeRuleSegment（规则模型，契约 DTO 与 MasterData 聚合共用形状）
+### 5.1 CodeRuleDefinition / CodeRuleSegment（规则模型，纯契约 DTO）
+
+> 规则模型只有一份：契约层的 `CodeRuleDefinition`（纯数据 record）。它落 `code_rules` JSON 列、跨服务共享、`StandardCodeRules` 返回此类型，引擎分配核心也直接消费它（不再有平行的运行时类型）。结构校验 `Validate()` 在契约层（抛 `ArgumentException`，定义期错误）；运行期错误（缺 `field` 值、规则 inactive 等）由引擎分配核心抛 `KnownException`。下表字段即 `CodeRuleDefinition` 形状。
 
 ```
 CodeRuleDefinition
-  ruleKey            : string   # 稳定业务键，kebab-case，唯一
-  displayName        : string   # 中文展示名（如「物料编码」）
-  appliesTo          : string   # 适用对象/文档类型描述
-  scopeDimensions    : enum[]   # 计数作用域：Organization, Environment, Site（默认 org+env；site 可选）
-  segments           : CodeRuleSegmentDefinition[]   # 有序
-  status             : enum     # active | inactive
-  version            : int      # 规则版本（用于未来变更追踪）
+  ruleKey      : string             # 稳定业务键，kebab-case，唯一
+  displayName  : string             # 中文展示名（如「物料编码」）
+  appliesTo    : string             # 适用对象/文档类型描述
+  scope        : ScopeDimension     # [Flags] 计数作用域：Organization|Environment|Site（默认 org+env；site 可选）
+  segments     : CodeRuleSegment[]  # 有序
+  isActive     : bool               # 启用状态（inactive 规则运行期请求抛 KnownException）
+  version      : int                # 规则版本（用于未来变更追踪）
 
-CodeRuleSegmentDefinition
-  type     : enum   # constant | date | sequence | field | checksum
-  # 各类型专有参数见 §6（用可空字段或 JSON value 承载）
+CodeRuleSegment
+  type     : SegmentType   # constant | date | sequence | field | checksum
+  # 各类型专有参数见 §6（用可空字段承载；序列化为 code_rules 的 JSON 列）
 ```
 
 ### 5.2 持久化表（service-local，替换 numbering_*）
@@ -264,7 +270,7 @@ CodeRuleSegmentDefinition
 
 | 风险 | 应对 |
 |---|---|
-| 删除 `Nerv.IIP.Numbering` 牵动 6 服务，回归面大 | 开发阶段无数据包袱；实施计划按服务分批切换 + 每批 focused gate；引擎核心先独立测试通过再接入。 |
+| 删除 `Nerv.IIP.Numbering` 牵动 5 服务，回归面大 | 开发阶段无数据包袱；实施计划按服务分批切换 + 每批 focused gate；引擎核心先独立测试通过再接入。 |
 | 全主数据「去手填」连带前端表单/Gateway/codegen 改动多 | 后端引擎与接入先行；前端按 MasterData 资源逐类移除手填框，复用现有 SKU 已落地的「系统生成」模式。 |
 | 配置即代码 vs 运行时可配置的张力 | 本轮锁定 seed/配置即代码；管理界面与事件热更新明确后置，规则模型预留 `version` 与 DTO 形状以便平滑演进。 |
 | `field` 段引用 CodeSet 值，跨主数据耦合 | `field` 仅消费调用方上下文传入的字段值（已是 code），引擎不反查别的 schema；映射/截断在引擎内纯函数完成。 |
