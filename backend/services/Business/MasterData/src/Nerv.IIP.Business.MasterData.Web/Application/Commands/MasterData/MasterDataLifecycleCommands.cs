@@ -284,7 +284,11 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<WorkCalendar> FindWorkCalendarAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
-        await dbContext.WorkCalendars.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        await dbContext.WorkCalendars
+            .Include(x => x.WorkingTimes)
+            .Include(x => x.Holidays)
+            .Include(x => x.Exceptions)
+            .SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<ProductionLine> FindProductionLineAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>

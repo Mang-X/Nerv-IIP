@@ -13,6 +13,9 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
+using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
+using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
+using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
@@ -66,6 +69,95 @@ public sealed class MasterDataPostgresProfileTests
             Assert.Equal(1, await db.Set<WorkCalendar>().CountAsync());
             Assert.Equal(1, await db.Set<WorkCalendarWorkingTime>().CountAsync());
         }
+    }
+
+    [PostgresFact]
+    public async Task Postgres_work_calendar_update_replaces_owned_details_after_reload()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole());
+        services.AddMediatR(configuration =>
+        {
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
+        });
+        services.AddMasterDataPostgreSqlPersistence(connectionString);
+
+        await using var provider = services.BuildServiceProvider();
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await DropMasterDataSchemaAsync(db);
+            await db.Database.MigrateAsync();
+
+            var calendar = WorkCalendar.Create("org-001", "env-dev", "CAL-001", "Default Calendar");
+            calendar.AddWorkingDay(DayOfWeek.Monday);
+            db.WorkCalendars.Add(calendar);
+            await db.SaveChangesAsync();
+        }
+
+        using (var firstUpdateScope = provider.CreateScope())
+        {
+            var db = firstUpdateScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var handler = new UpdateMasterDataResourceCommandHandler(db, new ReferenceDataCodeRepository(db));
+            await handler.Handle(
+                new UpdateMasterDataResourceCommand(
+                    "org-001",
+                    "env-dev",
+                    "work-calendar",
+                    "CAL-001",
+                    WorkingTimes:
+                    [
+                        new WorkCalendarWorkingTimeDetail(DayOfWeek.Monday),
+                        new WorkCalendarWorkingTimeDetail(DayOfWeek.Tuesday)
+                    ],
+                    Holidays: [new WorkCalendarHolidayDetail(new DateOnly(2026, 5, 1), "Labor Day")],
+                    Exceptions: [new WorkCalendarExceptionDetail(new DateOnly(2026, 5, 2), true, new TimeOnly(9, 0), new TimeOnly(15, 0), "Make-up shift")]),
+                CancellationToken.None);
+            await db.SaveChangesAsync();
+        }
+
+        using (var secondUpdateScope = provider.CreateScope())
+        {
+            var db = secondUpdateScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var handler = new UpdateMasterDataResourceCommandHandler(db, new ReferenceDataCodeRepository(db));
+            await handler.Handle(
+                new UpdateMasterDataResourceCommand(
+                    "org-001",
+                    "env-dev",
+                    "work-calendar",
+                    "CAL-001",
+                    WorkingTimes: [new WorkCalendarWorkingTimeDetail(DayOfWeek.Wednesday)],
+                    Holidays: [new WorkCalendarHolidayDetail(new DateOnly(2026, 10, 1), "National Day")],
+                    Exceptions: [new WorkCalendarExceptionDetail(new DateOnly(2026, 10, 2), false, null, null, "Shutdown")]),
+                CancellationToken.None);
+            await db.SaveChangesAsync();
+        }
+
+        using (var verifyScope = provider.CreateScope())
+        {
+            var db = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(1, await CountRowsAsync(db, "work_calendar_working_times"));
+            Assert.Equal(1, await CountRowsAsync(db, "work_calendar_holidays"));
+            Assert.Equal(1, await CountRowsAsync(db, "work_calendar_exceptions"));
+
+            var calendar = await db.WorkCalendars.SingleAsync(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev" && x.Code == "CAL-001");
+            Assert.Equal(DayOfWeek.Wednesday, Assert.Single(calendar.WorkingTimes).DayOfWeek);
+            Assert.Equal(new DateOnly(2026, 10, 1), Assert.Single(calendar.Holidays).Date);
+            Assert.Equal(new DateOnly(2026, 10, 2), Assert.Single(calendar.Exceptions).Date);
+        }
+    }
+
+    private static async Task<long> CountRowsAsync(ApplicationDbContext db, string table)
+    {
+        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(MasterDataFacts.Schema);
+        var quotedTable = new NpgsqlCommandBuilder().QuoteIdentifier(table);
+        await db.Database.OpenConnectionAsync();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM {quotedSchema}.{quotedTable}";
+        return (long)(await command.ExecuteScalarAsync() ?? 0L);
     }
 
     private static async Task DropMasterDataSchemaAsync(ApplicationDbContext db)
