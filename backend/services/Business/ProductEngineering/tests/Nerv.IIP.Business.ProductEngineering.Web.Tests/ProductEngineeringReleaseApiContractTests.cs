@@ -355,6 +355,30 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task List_queries_reject_unknown_status_filters()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        await Assert.ThrowsAsync<KnownException>(() => new ListEngineeringBomsQueryHandler(dbContext).Handle(
+            new ListEngineeringBomsQuery("org-001", "env-dev", null, "Released"),
+            CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => new ListManufacturingBomsQueryHandler(dbContext).Handle(
+            new ListManufacturingBomsQuery("org-001", "env-dev", null, "Released"),
+            CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => new ListRoutingsQueryHandler(dbContext).Handle(
+            new ListRoutingsQuery("org-001", "env-dev", null, "Released"),
+            CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => new ListEngineeringItemsQueryHandler(dbContext).Handle(
+            new ListEngineeringItemsQuery("org-001", "env-dev", null, "Released"),
+            CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => new ListEngineeringChangesQueryHandler(dbContext).Handle(
+            new ListEngineeringChangesQuery("org-001", "env-dev", "Released"),
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Get_document_item_and_change_return_known_exception_when_missing()
     {
         await using var provider = CreateInMemoryProvider();

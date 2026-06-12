@@ -3,6 +3,25 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVers
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
 
+internal static class EngineeringQueryParameters
+{
+    internal static int NormalizeSkip(int skip) => Math.Max(0, skip);
+
+    internal static int NormalizeTake(int take) => Math.Clamp(take, 1, 500);
+
+    internal static EngineeringVersionStatus? ParseStatusOrThrow(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return null;
+        }
+
+        return Enum.TryParse<EngineeringVersionStatus>(status, true, out var parsed)
+            ? parsed
+            : throw new KnownException($"Engineering version status '{status}' is invalid. Allowed values: Draft, Published, Archived.");
+    }
+}
+
 public sealed record EngineeringBomLineItem(string ChildItemCode, decimal Quantity, string UnitOfMeasureCode);
 
 public sealed record EngineeringBomListItem(
@@ -37,17 +56,18 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.ParentItemCode == request.ParentItemCode);
         }
 
-        if (Enum.TryParse<EngineeringVersionStatus>(request.Status, true, out var status))
+        var status = EngineeringQueryParameters.ParseStatusOrThrow(request.Status);
+        if (status is not null)
         {
-            query = query.Where(x => x.Status == status);
+            query = query.Where(x => x.Status == status.Value);
         }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
-            .Skip(NormalizeSkip(request.Skip))
-            .Take(NormalizeTake(request.Take))
+            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
+            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
             .Select(x => new EngineeringBomListItem(
                 x.BomCode,
                 x.Revision,
@@ -62,10 +82,6 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
 
         return new ListEngineeringBomsResponse(items, total);
     }
-
-    internal static int NormalizeSkip(int skip) => Math.Max(0, skip);
-
-    internal static int NormalizeTake(int take) => Math.Clamp(take, 1, 500);
 }
 
 public sealed record GetEngineeringBomQuery(string OrganizationId, string EnvironmentId, string BomCode, string Revision)
@@ -139,9 +155,10 @@ public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbCon
             query = query.Where(x => x.SkuCode == request.SkuCode);
         }
 
-        if (Enum.TryParse<EngineeringVersionStatus>(request.Status, true, out var status))
+        var status = EngineeringQueryParameters.ParseStatusOrThrow(request.Status);
+        if (status is not null)
         {
-            query = query.Where(x => x.Status == status);
+            query = query.Where(x => x.Status == status.Value);
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -149,8 +166,8 @@ public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbCon
             .OrderBy(x => x.SkuCode)
             .ThenBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
-            .Skip(ListEngineeringBomsQueryHandler.NormalizeSkip(request.Skip))
-            .Take(ListEngineeringBomsQueryHandler.NormalizeTake(request.Take))
+            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
+            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
             .Select(x => new ManufacturingBomListItem(
                 x.BomCode,
                 x.Revision,
@@ -252,17 +269,18 @@ public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
             query = query.Where(x => x.SkuCode == request.SkuCode);
         }
 
-        if (Enum.TryParse<EngineeringVersionStatus>(request.Status, true, out var status))
+        var status = EngineeringQueryParameters.ParseStatusOrThrow(request.Status);
+        if (status is not null)
         {
-            query = query.Where(x => x.Status == status);
+            query = query.Where(x => x.Status == status.Value);
         }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderBy(x => x.RoutingCode)
             .ThenBy(x => x.Revision)
-            .Skip(ListEngineeringBomsQueryHandler.NormalizeSkip(request.Skip))
-            .Take(ListEngineeringBomsQueryHandler.NormalizeTake(request.Take))
+            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
+            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
             .Select(x => new RoutingListItem(
                 x.RoutingCode,
                 x.Revision,
@@ -361,8 +379,8 @@ public sealed class ListEngineeringDocumentsQueryHandler(ApplicationDbContext db
         var items = await query
             .OrderBy(x => x.DocumentNumber)
             .ThenBy(x => x.Revision)
-            .Skip(ListEngineeringBomsQueryHandler.NormalizeSkip(request.Skip))
-            .Take(ListEngineeringBomsQueryHandler.NormalizeTake(request.Take))
+            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
+            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
             .Select(x => new EngineeringDocumentItem(x.DocumentNumber, x.Revision, x.ItemCode, x.FileId, x.FileName, x.ContentType, x.DocumentType, x.RegisteredAtUtc))
             .ToArrayAsync(cancellationToken);
 
@@ -422,17 +440,18 @@ public sealed class ListEngineeringItemsQueryHandler(ApplicationDbContext dbCont
             query = query.Where(x => x.ItemCode == request.ItemCode);
         }
 
-        if (Enum.TryParse<EngineeringVersionStatus>(request.Status, true, out var status))
+        var status = EngineeringQueryParameters.ParseStatusOrThrow(request.Status);
+        if (status is not null)
         {
-            query = query.Where(x => x.Status == status);
+            query = query.Where(x => x.Status == status.Value);
         }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderBy(x => x.ItemCode)
             .ThenBy(x => x.Revision)
-            .Skip(ListEngineeringBomsQueryHandler.NormalizeSkip(request.Skip))
-            .Take(ListEngineeringBomsQueryHandler.NormalizeTake(request.Take))
+            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
+            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
             .Select(x => new EngineeringItemRevisionItem(x.ItemCode, x.Revision, x.Name, x.Status.ToString(), x.CreatedAtUtc, x.UpdatedAtUtc))
             .ToArrayAsync(cancellationToken);
 
@@ -490,17 +509,18 @@ public sealed class ListEngineeringChangesQueryHandler(ApplicationDbContext dbCo
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (Enum.TryParse<EngineeringVersionStatus>(request.Status, true, out var status))
+        var status = EngineeringQueryParameters.ParseStatusOrThrow(request.Status);
+        if (status is not null)
         {
-            query = query.Where(x => x.Status == status);
+            query = query.Where(x => x.Status == status.Value);
         }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenBy(x => x.ChangeNumber)
-            .Skip(ListEngineeringBomsQueryHandler.NormalizeSkip(request.Skip))
-            .Take(ListEngineeringBomsQueryHandler.NormalizeTake(request.Take))
+            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
+            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
             .Select(x => new EngineeringChangeItem(
                 x.ChangeNumber,
                 x.Reason,
