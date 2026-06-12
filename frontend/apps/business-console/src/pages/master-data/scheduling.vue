@@ -529,6 +529,30 @@ async function toggleWeekday(day: SystemDayOfWeek) {
   await persistCalendar('每周工作模式已更新。')
 }
 
+// 节假日与例外日互斥：一个日期至多一种覆盖。检测到跨类型冲突时，弹确认对话框，
+// 确认后删掉另一类型再写入当前类型。冲突的待写入项暂存于 conflict。
+const conflict = reactive({
+  open: false,
+  // 'holiday' = 待加节假日（该日已有例外日）；'exception' = 待加例外日（该日已有节假日）。
+  kind: '' as '' | 'holiday' | 'exception',
+  date: '',
+  // 节假日待写入
+  name: '',
+  // 例外日待写入
+  isWorkingDay: true,
+  reason: null as string | null,
+})
+const conflictTitle = computed(() => {
+  if (conflict.kind === 'holiday') return `${formatDate(conflict.date)} 已设为例外日`
+  if (conflict.kind === 'exception') return `${formatDate(conflict.date)} 已是节假日`
+  return ''
+})
+const conflictDescription = computed(() => {
+  if (conflict.kind === 'holiday') return '节假日与例外日不能并存。确认后将删除该日期的例外日，并将其设为节假日。'
+  if (conflict.kind === 'exception') return '节假日与例外日不能并存。确认后将删除该日期的节假日，并将其设为例外日。'
+  return ''
+})
+
 // 加 / 删 节假日。
 const holidayDraft = reactive({ date: '', name: '' })
 async function addHoliday() {
@@ -536,6 +560,11 @@ async function addHoliday() {
   const key = holidayDraft.date
   if (holidayMap.value.has(key)) {
     notifyError(new Error('该日期已是节假日。'))
+    return
+  }
+  // 与例外日冲突 → 弹确认（替换）。
+  if (exceptionMap.value.has(key)) {
+    Object.assign(conflict, { open: true, kind: 'holiday', date: key, name: holidayDraft.name.trim() })
     return
   }
   holidays.value = [...holidays.value, { date: key, name: holidayDraft.name.trim() || '节假日' }]
@@ -559,6 +588,17 @@ async function addException() {
     notifyError(new Error('该日期已有例外设置。'))
     return
   }
+  // 与节假日冲突 → 弹确认（替换）。
+  if (holidayMap.value.has(key)) {
+    Object.assign(conflict, {
+      open: true,
+      kind: 'exception',
+      date: key,
+      isWorkingDay: exceptionDraft.isWorkingDay === 'true',
+      reason: exceptionDraft.reason.trim() || null,
+    })
+    return
+  }
   exceptions.value = [...exceptions.value, {
     date: key,
     isWorkingDay: exceptionDraft.isWorkingDay === 'true',
@@ -567,6 +607,39 @@ async function addException() {
   exceptionDraft.date = ''
   exceptionDraft.reason = ''
   await persistCalendar('例外日已添加。')
+}
+
+// 确认替换：删除另一类型在该日期的项，写入当前类型，单次持久化。
+async function resolveConflict() {
+  const key = conflict.date
+  if (!selectedCalCode.value || !key) {
+    conflict.open = false
+    return
+  }
+  if (conflict.kind === 'holiday') {
+    // 删该日例外日，加节假日。
+    exceptions.value = exceptions.value.filter((e) => toDateKey(e.date ?? '') !== key)
+    holidays.value = [...holidays.value, { date: key, name: conflict.name || '节假日' }]
+    holidayDraft.date = ''
+    holidayDraft.name = ''
+    conflict.open = false
+    conflict.kind = ''
+    await persistCalendar('已替换为节假日（原例外日已删除）。')
+  }
+  else if (conflict.kind === 'exception') {
+    // 删该日节假日，加例外日。
+    holidays.value = holidays.value.filter((h) => toDateKey(h.date ?? '') !== key)
+    exceptions.value = [...exceptions.value, { date: key, isWorkingDay: conflict.isWorkingDay, reason: conflict.reason }]
+    exceptionDraft.date = ''
+    exceptionDraft.reason = ''
+    conflict.open = false
+    conflict.kind = ''
+    await persistCalendar('已替换为例外日（原节假日已删除）。')
+  }
+}
+function cancelConflict() {
+  conflict.open = false
+  conflict.kind = ''
 }
 async function removeException(date: string) {
   if (!selectedCalCode.value) return
@@ -935,6 +1008,20 @@ const sortedExceptions = computed(() =>
             </div>
           </SheetContent>
         </Sheet>
+
+        <!-- 节假日 / 例外日互斥冲突确认（受控） -->
+        <AlertDialog v-model:open="conflict.open">
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{{ conflictTitle }}</AlertDialogTitle>
+              <AlertDialogDescription>{{ conflictDescription }}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel @click="cancelConflict">取消</AlertDialogCancel>
+              <AlertDialogAction :disabled="calBoardSaving" @click="resolveConflict">确认替换</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </TabsContent>
     </Tabs>
   </BusinessLayout>

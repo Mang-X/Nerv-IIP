@@ -402,14 +402,77 @@ describe('master-data scheduling page', () => {
 
     expect(wrapper.text()).toContain('确定删除例外日')
 
-    // 节假日 + 例外日各一个确认按钮；例外日是第二个。
-    const confirmBtns = wrapper.findAll('[data-testid="confirm-delete"]')
-    await confirmBtns.at(confirmBtns.length - 1)!.trigger('click')
+    // 在「确定删除例外日」那个确认弹层内点确认（按弹层文案定位，避开互斥冲突弹层）。
+    const exDialog = wrapper.findAll('[data-testid="confirm"]').find((d) => d.text().includes('确定删除例外日'))!
+    await exDialog.find('[data-testid="confirm-delete"]').trigger('click')
     await flushPromises()
 
     expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
     const [, patch] = actionStub.calUpdate.mock.calls[0]!
     expect(patch.exceptions.some((e: { date?: string }) => e.date === '2026-06-20')).toBe(false)
+  })
+
+  it('adding a holiday on a date that already has an exception prompts a conflict confirm, then replaces the exception with the holiday', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await flushPromises()
+
+    // 2026-06-20 当前是例外日（调休）。在节假日表单为该日加节假日 → 应弹冲突确认，先不写回。
+    const holidayForm = wrapper.findAll('form').find((f) => f.find('#holiday-name').exists())!
+    await holidayForm.find('input[type="date"]').setValue('2026-06-20')
+    await flushPromises()
+    await holidayForm.trigger('submit')
+    await flushPromises()
+
+    expect(actionStub.calUpdate).not.toHaveBeenCalled()
+    const conflictDialog = wrapper.findAll('[data-testid="confirm"]').find((d) => d.text().includes('已设为例外日'))
+    expect(conflictDialog).toBeTruthy()
+
+    // 确认替换：删掉该日例外日、加节假日，单次写回。
+    await conflictDialog!.find('[data-testid="confirm-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
+    const [code, patch] = actionStub.calUpdate.mock.calls[0]!
+    expect(code).toBe('CAL-A')
+    expect(patch.exceptions.some((e: { date?: string }) => e.date === '2026-06-20')).toBe(false)
+    expect(patch.holidays.some((h: { date?: string }) => h.date === '2026-06-20')).toBe(true)
+    expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('adding an exception on a date that already has a holiday prompts a conflict confirm, then replaces the holiday with the exception', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await flushPromises()
+
+    // 2026-06-19 当前是节假日（端午节）。在例外日表单为该日加例外日 → 应弹冲突确认。
+    const exceptionForm = wrapper.findAll('form').find((f) => f.find('#exception-reason').exists())!
+    await exceptionForm.find('input[type="date"]').setValue('2026-06-19')
+    await exceptionForm.find('select').setValue('false')
+    await exceptionForm.find('#exception-reason').setValue('替换')
+    await flushPromises()
+    await exceptionForm.trigger('submit')
+    await flushPromises()
+
+    expect(actionStub.calUpdate).not.toHaveBeenCalled()
+    const conflictDialog = wrapper.findAll('[data-testid="confirm"]').find((d) => d.text().includes('已是节假日'))
+    expect(conflictDialog).toBeTruthy()
+
+    await conflictDialog!.find('[data-testid="confirm-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
+    const [code, patch] = actionStub.calUpdate.mock.calls[0]!
+    expect(code).toBe('CAL-A')
+    expect(patch.holidays.some((h: { date?: string }) => h.date === '2026-06-19')).toBe(false)
+    expect(patch.exceptions.some((e: { date?: string, isWorkingDay?: boolean }) => e.date === '2026-06-19' && e.isWorkingDay === false)).toBe(true)
+    expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
   it('persistCalendar de-duplicates workingTimes/holidays/exceptions before sending', async () => {
