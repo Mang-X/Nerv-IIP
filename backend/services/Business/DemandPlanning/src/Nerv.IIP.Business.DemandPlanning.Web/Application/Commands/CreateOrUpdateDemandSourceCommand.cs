@@ -31,14 +31,14 @@ public sealed class CreateOrUpdateDemandSourceCommandValidator : AbstractValidat
     }
 }
 
-public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContext dbContext, DemandPlanningNumberingService? numberingService = null)
+public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContext dbContext, DemandPlanningCodingService? codingService = null)
     : ICommandHandler<CreateOrUpdateDemandSourceCommand, DemandSourceId>
 {
-    private readonly DemandPlanningNumberingService _numberingService = numberingService ?? new DemandPlanningNumberingService();
+    private readonly DemandPlanningCodingService _codingService = codingService ?? new DemandPlanningCodingService();
 
     public async Task<DemandSourceId> Handle(CreateOrUpdateDemandSourceCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateDemandReferenceAsync(
+        var allocation = await _codingService.AllocateDemandReferenceAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.SourceReference,
@@ -49,7 +49,7 @@ public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContex
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
             && x.DemandType == request.DemandType.ToLower()
-            && x.SourceReference == allocation.Number,
+            && x.SourceReference == allocation.Code,
             cancellationToken);
         if (demand is null)
         {
@@ -57,7 +57,7 @@ public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContex
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.DemandType,
-                allocation.Number,
+                allocation.Code,
                 request.SkuCode,
                 request.UomCode,
                 request.SiteCode,

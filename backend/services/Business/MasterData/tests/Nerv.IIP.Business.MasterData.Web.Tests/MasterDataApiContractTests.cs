@@ -873,7 +873,7 @@ public sealed class MasterDataApiContractTests
     public async Task Create_sku_command_generates_unique_server_codes_for_parallel_requests()
     {
         await using var provider = CreateInMemoryProvider();
-        var numbering = new MasterDataNumberingService();
+        var numbering = new MasterDataCodingService();
 
         var tasks = Enumerable.Range(1, 20)
             .Select(async index =>
@@ -900,7 +900,7 @@ public sealed class MasterDataApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var numbering = new MasterDataNumberingService();
+        var numbering = new MasterDataCodingService();
         var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
         var command = new CreateSkuCommand("org-001", "env-dev", null, "Finished Good", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-001");
 
@@ -1003,8 +1003,8 @@ public sealed class MasterDataApiContractTests
 
         using var observerScope = provider.CreateScope();
         var observerContext = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Single(observerContext.NumberingCounters);
-        Assert.Empty(observerContext.NumberingIdempotencyKeys);
+        Assert.Single(observerContext.CodeCounters);
+        Assert.Empty(observerContext.CodeIdempotencyKeys);
         Assert.Empty(observerContext.Skus);
     }
 
@@ -1022,9 +1022,9 @@ public sealed class MasterDataApiContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Matches("^SKU-[0-9]{8}-[0-9]{6}$", result.Code);
-        Assert.Single(dbContext.NumberingCounters);
-        var idempotency = Assert.Single(dbContext.NumberingIdempotencyKeys);
-        Assert.Equal(result.Code, idempotency.Number);
+        Assert.Single(dbContext.CodeCounters);
+        var idempotency = Assert.Single(dbContext.CodeIdempotencyKeys);
+        Assert.Equal(result.Code, idempotency.Code);
     }
 
     private static ServiceProvider CreateInMemoryProvider(string? databaseName = null)
@@ -1040,11 +1040,11 @@ public sealed class MasterDataApiContractTests
         return services.BuildServiceProvider();
     }
 
-    private static MasterDataNumberingService CreateNumberingService(IServiceScope scope)
+    private static MasterDataCodingService CreateNumberingService(IServiceScope scope)
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var serviceScopeFactory = scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>();
-        return new MasterDataNumberingService(dbContext, serviceScopeFactory);
+        return new MasterDataCodingService(dbContext, serviceScopeFactory);
     }
 
     private static void SeedSkuControlledReferenceData(ApplicationDbContext dbContext)

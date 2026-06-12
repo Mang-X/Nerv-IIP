@@ -292,7 +292,7 @@ public sealed class ErpProcurementEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var numbering = new ErpNumberingService();
+        var numbering = new ErpCodingService();
         var handler = new CreatePurchaseOrderCommandHandler(dbContext, numbering);
         var command = new CreatePurchaseOrderCommand(
             "org-001",

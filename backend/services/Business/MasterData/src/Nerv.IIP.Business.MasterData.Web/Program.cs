@@ -128,7 +128,7 @@ try
     builder.Services.AddMasterDataPostgreSqlPersistence(
         masterDataConnectionString,
         builder.Environment.IsDevelopment());
-    builder.Services.AddScoped<MasterDataNumberingService>();
+    builder.Services.AddScoped<MasterDataCodingService>();
     builder.Services.AddScoped<MasterDataSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();

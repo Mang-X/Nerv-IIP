@@ -40,30 +40,30 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
 {
     private readonly ISkuRepository _repository;
     private readonly IReferenceDataCodeRepository? _referenceDataRepository;
-    private readonly MasterDataNumberingService _numberingService;
+    private readonly MasterDataCodingService _codingService;
 
-    public CreateSkuCommandHandler(ISkuRepository repository, MasterDataNumberingService? numberingService = null)
+    public CreateSkuCommandHandler(ISkuRepository repository, MasterDataCodingService? codingService = null)
     {
         _repository = repository;
         _referenceDataRepository = null;
-        _numberingService = numberingService ?? new MasterDataNumberingService();
+        _codingService = codingService ?? new MasterDataCodingService();
     }
 
     public CreateSkuCommandHandler(
         ISkuRepository repository,
         IReferenceDataCodeRepository referenceDataRepository,
-        MasterDataNumberingService? numberingService = null)
+        MasterDataCodingService? codingService = null)
     {
         _repository = repository;
         _referenceDataRepository = referenceDataRepository;
-        _numberingService = numberingService ?? new MasterDataNumberingService();
+        _codingService = codingService ?? new MasterDataCodingService();
     }
 
     public async Task<MasterDataResourceResult> Handle(CreateSkuCommand request, CancellationToken cancellationToken)
     {
         await ValidateControlledReferenceDataAsync(request, cancellationToken);
 
-        var allocation = await _numberingService.AllocateSkuCodeAsync(
+        var allocation = await _codingService.AllocateSkuCodeAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.Code,

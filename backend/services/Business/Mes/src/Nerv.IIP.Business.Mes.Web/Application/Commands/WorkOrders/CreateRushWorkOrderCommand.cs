@@ -24,15 +24,15 @@ public sealed record CreateRushWorkOrderResponse(
     MesScheduleResult Schedule,
     IReadOnlyCollection<string> AffectedWorkOrderIds);
 
-public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, RuleScheduler scheduler, MesNumberingService? numberingService = null)
+public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, RuleScheduler scheduler, MesCodingService? codingService = null)
     : ICommandHandler<CreateRushWorkOrderCommand, CreateRushWorkOrderResponse>
 {
     private const int RushPriority = 1000;
-    private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
+    private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
 
     public async Task<CreateRushWorkOrderResponse> Handle(CreateRushWorkOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateWorkOrderIdAsync(
+        var allocation = await _codingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
@@ -42,13 +42,13 @@ public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, R
         if (allocation.IsIdempotentReplay)
         {
             return new CreateRushWorkOrderResponse(
-                allocation.Number,
+                allocation.Code,
                 new MesScheduleResult(0, RescheduleTrigger.RushOrder, request.RequestedAtUtc, [], []),
                 []);
         }
 
         var operationTaskId = string.IsNullOrWhiteSpace(request.OperationTaskId)
-            ? $"{allocation.Number}-OP-{request.OperationSequence}"
+            ? $"{allocation.Code}-OP-{request.OperationSequence}"
             : request.OperationTaskId.Trim();
         var baselinePlan = scheduler.Schedule(
             await store.GetScheduleOperationsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken),
@@ -57,14 +57,14 @@ public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, R
         store.AddWorkOrder(new PlannedWorkOrder(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.SkuId,
             request.ProductionVersionId,
             request.Quantity,
             RushPriority,
             request.DueUtc));
         store.AddOperationTask(new PlannedOperationTask(
-            allocation.Number,
+            allocation.Code,
             operationTaskId,
             OperationTaskStatus.Queued,
             request.OperationSequence,
@@ -87,7 +87,7 @@ public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, R
             baselinePlan.Assignments,
             cancellationToken);
         return new CreateRushWorkOrderResponse(
-            allocation.Number,
+            allocation.Code,
             schedule,
             schedule.AffectedWorkOrderIds);
     }

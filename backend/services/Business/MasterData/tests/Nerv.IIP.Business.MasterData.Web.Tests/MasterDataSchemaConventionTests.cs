@@ -19,7 +19,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
-using Nerv.IIP.Numbering;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
@@ -69,8 +69,8 @@ public sealed class MasterDataSchemaConventionTests
             typeof(WorkCalendar),
             typeof(WorkCalendarWorkingTime),
             typeof(DeviceAsset),
-            typeof(NumberingCounter),
-            typeof(NumberingIdempotencyKey),
+            typeof(CodeCounter),
+            typeof(CodeIdempotencyKey),
         };
 
         var failures = new List<string>();
