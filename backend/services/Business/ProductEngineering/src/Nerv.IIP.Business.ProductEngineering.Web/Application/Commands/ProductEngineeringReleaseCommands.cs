@@ -187,13 +187,17 @@ public sealed class ReleaseEngineeringBomCommandHandler(IEngineeringBomRepositor
             throw new KnownException($"Engineering BOM '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
-        var bom = EngineeringBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.ParentItemCode);
-        foreach (var line in request.Lines)
+        var bom = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
-            bom.AddLine(line.ComponentCode, line.Quantity, line.UnitOfMeasureCode);
-        }
+            var draft = EngineeringBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.ParentItemCode);
+            foreach (var line in request.Lines)
+            {
+                draft.AddLine(line.ComponentCode, line.Quantity, line.UnitOfMeasureCode);
+            }
 
-        bom.Release(request.EffectiveDate);
+            draft.Release(request.EffectiveDate);
+            return draft;
+        });
         await repository.AddAsync(bom, cancellationToken);
         return new EntityCommandResult(bom.BomCode);
     }
@@ -266,18 +270,22 @@ public sealed class ReleaseManufacturingBomCommandHandler(
             cancellationToken)
             ?? throw new KnownException($"Released engineering BOM '{request.EngineeringBomCode}' revision '{request.EngineeringBomRevision}' was not found.");
 
-        var bom = ManufacturingBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.SkuCode);
-        foreach (var line in request.MaterialLines)
+        var bom = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
-            bom.AddMaterialLine(line.SkuCode, line.Quantity, line.UnitOfMeasureCode, line.ScrapRate);
-        }
+            var draft = ManufacturingBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.SkuCode);
+            foreach (var line in request.MaterialLines)
+            {
+                draft.AddMaterialLine(line.SkuCode, line.Quantity, line.UnitOfMeasureCode, line.ScrapRate);
+            }
 
-        foreach (var line in request.RecipeLines)
-        {
-            bom.AddRecipeLine(line.ParameterCode, line.TargetValue, line.UnitOfMeasureCode);
-        }
+            foreach (var line in request.RecipeLines)
+            {
+                draft.AddRecipeLine(line.ParameterCode, line.TargetValue, line.UnitOfMeasureCode);
+            }
 
-        bom.ReleaseFromEngineeringBom($"{ebom.BomCode}:{ebom.Revision}", ebom.Status, request.EffectiveDate);
+            draft.ReleaseFromEngineeringBom($"{ebom.BomCode}:{ebom.Revision}", ebom.Status, request.EffectiveDate);
+            return draft;
+        });
         await manufacturingBomRepository.AddAsync(bom, cancellationToken);
         return new EntityCommandResult(bom.BomCode);
     }
@@ -340,15 +348,39 @@ public sealed class ReleaseRoutingCommandHandler(IRoutingRepository repository, 
             throw new KnownException($"Routing '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
-        var routing = Routing.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.SkuCode);
-        foreach (var operation in request.Operations)
+        var routing = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
-            routing.AddOperation(operation.Sequence, operation.WorkCenterCode, operation.OperationCode, operation.OperationName, operation.StandardMinutes);
-        }
+            var draft = Routing.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.SkuCode);
+            foreach (var operation in request.Operations)
+            {
+                draft.AddOperation(operation.Sequence, operation.WorkCenterCode, operation.OperationCode, operation.OperationName, operation.StandardMinutes);
+            }
 
-        routing.Release(request.EffectiveDate);
+            draft.Release(request.EffectiveDate);
+            return draft;
+        });
         await repository.AddAsync(routing, cancellationToken);
         return new EntityCommandResult(routing.RoutingCode);
+    }
+}
+
+internal static class ProductEngineeringReleaseValidation
+{
+    public static T AsKnownException<T>(Func<T> action)
+    {
+        try
+        {
+            // Keep the action limited to aggregate construction and invariant checks.
+            return action();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
     }
 }
 
