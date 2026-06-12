@@ -28,7 +28,7 @@ defineProps<{
 </script>
 
 <template>
-  <header :class="cn('flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2', $props.class)">
+  <header :class="cn('sticky top-0 z-30 -mx-4 flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border/60 bg-background px-4 py-3 md:-mx-6 md:px-6', $props.class)">
     <div class="flex min-w-0 items-center gap-2">
       <Breadcrumb>
         <BreadcrumbList>

@@ -13,6 +13,15 @@ import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.v
 import { useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
   Button,
   DataTable,
   DataTablePagination,
@@ -461,15 +470,40 @@ const selectedCalName = computed(() =>
   calendars.items.value.find((c) => c.code === selectedCalCode.value)?.displayName ?? selectedCalCode.value ?? '',
 )
 
+// 防御性去重：按某个键保留第一条。配合后端 #382(Clear 累积 bug),前端发送前先去重,
+// 避免自身制造重复数据。
+function dedupeBy<T>(items: T[], keyOf: (item: T) => string | null | undefined): T[] {
+  const seen = new Set<string>()
+  const out: T[] = []
+  for (const item of items) {
+    const key = keyOf(item)
+    if (key == null || key === '') {
+      out.push(item)
+      continue
+    }
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(item)
+  }
+  return out
+}
+
 // 写回：把当前编辑后的 workingTimes/holidays/exceptions 经 update 提交。
 async function persistCalendar(successMsg: string) {
   if (!selectedCalCode.value) return
   calBoardSaving.value = true
+  // 发送前去重：workingTimes 按 dayOfWeek、holidays / exceptions 按 date(归一化),各保留第一条。
+  const dedupedWorkingTimes = dedupeBy(workingTimes.value, (w) => w.dayOfWeek ?? '')
+  const dedupedHolidays = dedupeBy(holidays.value, (h) => (h.date ? toDateKey(h.date) : ''))
+  const dedupedExceptions = dedupeBy(exceptions.value, (e) => (e.date ? toDateKey(e.date) : ''))
+  workingTimes.value = dedupedWorkingTimes
+  holidays.value = dedupedHolidays
+  exceptions.value = dedupedExceptions
   try {
     await calActions.update(selectedCalCode.value, {
-      workingTimes: workingTimes.value,
-      holidays: holidays.value,
-      exceptions: exceptions.value,
+      workingTimes: dedupedWorkingTimes,
+      holidays: dedupedHolidays,
+      exceptions: dedupedExceptions,
     })
     notifySuccess(successMsg)
   }
@@ -488,7 +522,8 @@ async function toggleWeekday(day: SystemDayOfWeek) {
   if (exists) {
     workingTimes.value = workingTimes.value.filter((w) => w.dayOfWeek !== day)
   }
-  else {
+  // 仅当该星期尚无工作时段时才追加,避免重复添加同一 dayOfWeek。
+  else if (!workingTimes.value.some((w) => w.dayOfWeek === day)) {
     workingTimes.value = [...workingTimes.value, { dayOfWeek: day, startsAt: '08:00:00', endsAt: '17:00:00' }]
   }
   await persistCalendar('每周工作模式已更新。')
@@ -827,7 +862,21 @@ const sortedExceptions = computed(() =>
                 <ul v-else class="grid gap-1">
                   <li v-for="h in sortedHolidays" :key="h.date" class="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm">
                     <span><span class="font-medium tabular-nums">{{ formatDate(h.date) }}</span> <span class="text-muted-foreground">{{ h.name || '节假日' }}</span></span>
-                    <Button size="icon" variant="ghost" type="button" aria-label="删除节假日" :disabled="calBoardSaving" @click="removeHoliday(h.date!)"><Trash2Icon aria-hidden="true" /></Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger as-child>
+                        <Button size="icon" variant="ghost" type="button" aria-label="删除节假日" :disabled="calBoardSaving"><Trash2Icon aria-hidden="true" /></Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>确定删除节假日 {{ formatDate(h.date) }}{{ h.name ? ` ${h.name}` : '' }}？</AlertDialogTitle>
+                          <AlertDialogDescription>此操作立即生效，该日将不再标记为节假日。</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogAction :disabled="calBoardSaving" @click="removeHoliday(h.date!)">确认删除</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </li>
                 </ul>
               </section>
@@ -865,7 +914,21 @@ const sortedExceptions = computed(() =>
                 <ul v-else class="grid gap-1">
                   <li v-for="e in sortedExceptions" :key="e.date" class="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm">
                     <span><span class="font-medium tabular-nums">{{ formatDate(e.date) }}</span> <span class="text-muted-foreground">{{ e.isWorkingDay ? '当日上班' : '当日休息' }}{{ e.reason ? ` · ${e.reason}` : '' }}</span></span>
-                    <Button size="icon" variant="ghost" type="button" aria-label="删除例外日" :disabled="calBoardSaving" @click="removeException(e.date!)"><Trash2Icon aria-hidden="true" /></Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger as-child>
+                        <Button size="icon" variant="ghost" type="button" aria-label="删除例外日" :disabled="calBoardSaving"><Trash2Icon aria-hidden="true" /></Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>确定删除例外日 {{ formatDate(e.date) }}（{{ e.isWorkingDay ? '当日上班' : '当日休息' }}）？</AlertDialogTitle>
+                          <AlertDialogDescription>此操作立即生效，该日将恢复按每周工作模式判定。</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogAction :disabled="calBoardSaving" @click="removeException(e.date!)">确认删除</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </li>
                 </ul>
               </section>

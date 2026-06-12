@@ -119,7 +119,21 @@ const formSelectStubs = {
   SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
-const calStubs = { ...layoutStub, ...calRowActionStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs }
+// AlertDialog 内联展开：Trigger 渲染其插槽（即垃圾桶按钮），Action 渲染为可点击按钮，
+// 让测试能断言「点删 → 出现确认 → 确认后才调 remove」。
+const alertDialogStubs = {
+  AlertDialog: { template: '<div><slot /></div>' },
+  AlertDialogTrigger: { template: '<div><slot /></div>' },
+  AlertDialogContent: { template: '<div data-testid="confirm"><slot /></div>' },
+  AlertDialogHeader: { template: '<div><slot /></div>' },
+  AlertDialogFooter: { template: '<div><slot /></div>' },
+  AlertDialogTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogDescription: { template: '<p><slot /></p>' },
+  AlertDialogCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-delete" @click="$emit(\'click\', $event)"><slot /></button>' },
+}
+
+const calStubs = { ...layoutStub, ...calRowActionStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs, ...alertDialogStubs }
 
 async function switchTab(wrapper: ReturnType<typeof mount>, label: string) {
   const tab = wrapper.findAll('[role="tab"]').find((t) => t.text().includes(label))!
@@ -341,5 +355,105 @@ describe('master-data scheduling page', () => {
       expect.objectContaining({ date: '2026-10-08', isWorkingDay: false, reason: '补休' }),
     ]))
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('deleting a holiday asks for confirmation first, then calls remove (update) only after confirm', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await flushPromises()
+
+    // 找到节假日删除触发按钮（aria-label）；点它本身不应直接调 update。
+    const delTrigger = wrapper.findAll('button').find((b) => b.attributes('aria-label') === '删除节假日')
+    expect(delTrigger).toBeTruthy()
+    await delTrigger!.trigger('click')
+    await flushPromises()
+    expect(actionStub.calUpdate).not.toHaveBeenCalled()
+
+    // 确认文案出现。
+    expect(wrapper.text()).toContain('确定删除节假日')
+
+    // 点「确认删除」后才真正写回（删掉端午节）。
+    const confirmBtn = wrapper.findAll('[data-testid="confirm-delete"]').at(0)!
+    await confirmBtn.trigger('click')
+    await flushPromises()
+
+    expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
+    const [code, patch] = actionStub.calUpdate.mock.calls[0]!
+    expect(code).toBe('CAL-A')
+    expect(patch.holidays.some((h: { date?: string }) => h.date === '2026-06-19')).toBe(false)
+  })
+
+  it('deleting an exception asks for confirmation first, then calls remove only after confirm', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper.findAll('button').find((b) => b.text().includes('管理节假日'))!.trigger('click')
+    await flushPromises()
+
+    const delTrigger = wrapper.findAll('button').find((b) => b.attributes('aria-label') === '删除例外日')
+    expect(delTrigger).toBeTruthy()
+    await delTrigger!.trigger('click')
+    await flushPromises()
+    expect(actionStub.calUpdate).not.toHaveBeenCalled()
+
+    expect(wrapper.text()).toContain('确定删除例外日')
+
+    // 节假日 + 例外日各一个确认按钮；例外日是第二个。
+    const confirmBtns = wrapper.findAll('[data-testid="confirm-delete"]')
+    await confirmBtns.at(confirmBtns.length - 1)!.trigger('click')
+    await flushPromises()
+
+    expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
+    const [, patch] = actionStub.calUpdate.mock.calls[0]!
+    expect(patch.exceptions.some((e: { date?: string }) => e.date === '2026-06-20')).toBe(false)
+  })
+
+  it('persistCalendar de-duplicates workingTimes/holidays/exceptions before sending', async () => {
+    // 注入带重复项的明细，断言写回的 patch 中各集合已按键去重（保留第一条）。
+    actionStub.calFetchDetail.mockResolvedValueOnce({
+      name: '标准日历',
+      workingTimes: [
+        { dayOfWeek: 'monday', startsAt: '08:00:00', endsAt: '17:00:00' },
+        { dayOfWeek: 'monday', startsAt: '09:00:00', endsAt: '18:00:00' },
+        { dayOfWeek: 'tuesday', startsAt: '08:00:00', endsAt: '17:00:00' },
+      ],
+      holidays: [
+        { date: '2026-06-19', name: '端午节' },
+        { date: '2026-06-19', name: '端午节(重复)' },
+      ],
+      exceptions: [
+        { date: '2026-06-20', isWorkingDay: true, reason: '调休' },
+        { date: '2026-06-20', isWorkingDay: false, reason: '调休(重复)' },
+      ],
+    })
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    // 触发一次写回：切换周三（toggleWeekday → persistCalendar）。
+    const wedBtn = wrapper.findAll('button').find((b) => b.text().trim() === '周三')!
+    await wedBtn.trigger('click')
+    await flushPromises()
+
+    expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
+    const [, patch] = actionStub.calUpdate.mock.calls[0]!
+
+    // workingTimes 按 dayOfWeek 去重：monday 仅一条（保留第一条 08:00）。
+    const mondays = patch.workingTimes.filter((w: { dayOfWeek?: string }) => w.dayOfWeek === 'monday')
+    expect(mondays).toHaveLength(1)
+    expect(mondays[0].startsAt).toBe('08:00:00')
+
+    // holidays 按 date 去重。
+    expect(patch.holidays.filter((h: { date?: string }) => h.date === '2026-06-19')).toHaveLength(1)
+    expect(patch.holidays[0].name).toBe('端午节')
+
+    // exceptions 按 date 去重（保留第一条 isWorkingDay=true）。
+    const ex = patch.exceptions.filter((e: { date?: string }) => e.date === '2026-06-20')
+    expect(ex).toHaveLength(1)
+    expect(ex[0].isWorkingDay).toBe(true)
   })
 })
