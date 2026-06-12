@@ -42,7 +42,7 @@
 - `Nerv.IIP.Coding` 引擎核心库（规则模型、段类型、分配算法、并发、幂等、EF 存储）。
 - `Nerv.IIP.Contracts.Coding` 公共契约（规则定义 DTO + 标准规则常量）。
 - `backend/tests/Nerv.IIP.Coding.Tests` 引擎单测（替换 `Nerv.IIP.Numbering.Tests`）。
-- 删除 `Nerv.IIP.Numbering` 及各服务 `numbering_*` 表 / migration / 封装 / 测试，重建为 `code_*`。
+- 删除 `Nerv.IIP.Numbering` 及各服务 `numbering_*` 运行时表 / EF 模型 / 封装服务 / 测试，**历史 migration 文件保留**，并追加 `AddCodingTables` 使最终 runtime schema 不含 `numbering_*`、改用 `code_*`（迁移策略见 §5.2 注与实施计划 Task 8 Step 6，禁止 `migrations remove`）。
 - **5 个现有 Numbering 接入服务**切换：MasterData、MES、ERP、DemandPlanning、ProductEngineering。
 - BarcodeLabel **不在本轮切换范围**：它自带 `BarcodeRule`、未引用 `Nerv.IIP.Numbering`；其编号位是否并入本引擎仅做评估（见 §2.2 后置）。
 - **MasterData 全资源类型** `code` 改自动生成，连带 BusinessGateway facade / OpenAPI / `@nerv-iip/api-client` / Business Console 表单移除手填编码输入。
