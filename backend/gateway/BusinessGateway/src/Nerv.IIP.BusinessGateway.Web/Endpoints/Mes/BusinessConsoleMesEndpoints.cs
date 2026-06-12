@@ -24,7 +24,7 @@ public sealed class GetBusinessConsoleMesFoundationReadinessEndpoint(
         "supply",
         "quality",
         "equipment",
-        "barcode-numbering",
+        "barcode-coding",
         "iam-context",
     ];
 
@@ -220,13 +220,13 @@ public sealed class GetBusinessConsoleMesEquipmentReadinessEndpoint(
     : GetBusinessConsoleMesReadinessAreaEndpoint("equipment", auth, mes, tokenProvider);
 
 [Tags("Business Console MES")]
-[HttpGet("/api/business-console/v1/mes/foundation-readiness/barcode-numbering")]
-[BusinessGatewayOperationId("getBusinessConsoleMesBarcodeNumberingReadiness")]
-public sealed class GetBusinessConsoleMesBarcodeNumberingReadinessEndpoint(
+[HttpGet("/api/business-console/v1/mes/foundation-readiness/barcode-coding")]
+[BusinessGatewayOperationId("getBusinessConsoleMesBarcodeCodingReadiness")]
+public sealed class GetBusinessConsoleMesBarcodeCodingReadinessEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : GetBusinessConsoleMesReadinessAreaEndpoint("barcode-numbering", auth, mes, tokenProvider);
+    : GetBusinessConsoleMesReadinessAreaEndpoint("barcode-coding", auth, mes, tokenProvider);
 
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/overview")]

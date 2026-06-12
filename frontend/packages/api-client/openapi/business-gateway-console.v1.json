@@ -5036,13 +5036,13 @@
         ]
       }
     },
-    "/api/business-console/v1/mes/foundation-readiness/barcode-numbering": {
+    "/api/business-console/v1/mes/foundation-readiness/barcode-coding": {
       "get": {
         "tags": [
           "Business Console MES",
           "Api"
         ],
-        "operationId": "getBusinessConsoleMesBarcodeNumberingReadiness",
+        "operationId": "getBusinessConsoleMesBarcodeCodingReadiness",
         "parameters": [
           {
             "name": "organizationId",
@@ -18558,6 +18558,9 @@
           "workCenterCode": {
             "type": "string"
           },
+          "operationCode": {
+            "type": "string"
+          },
           "operationName": {
             "type": "string"
           },
@@ -22559,7 +22562,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "partnerType",
           "name"
         ],
@@ -22580,7 +22582,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "partnerType": {
             "type": "string",
@@ -22604,6 +22606,12 @@
           "taxId": {
             "type": "string",
             "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -22613,7 +22621,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name",
           "dimensionType",
           "roundingMode"
@@ -22635,7 +22642,7 @@
             "type": "string",
             "maxLength": 50,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
@@ -22659,6 +22666,12 @@
             "maxLength": 100,
             "minLength": 0,
             "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -22734,7 +22747,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name",
           "siteCode"
         ],
@@ -22755,7 +22767,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
@@ -22778,6 +22790,12 @@
           "description": {
             "type": "string",
             "maxLength": 500,
+            "minLength": 0,
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
             "minLength": 0,
             "nullable": true
           }
@@ -22865,7 +22883,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name",
           "timezone"
         ],
@@ -22886,7 +22903,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
@@ -22899,6 +22916,12 @@
             "maxLength": 100,
             "minLength": 0,
             "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -22908,7 +22931,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name",
           "siteCode"
         ],
@@ -22929,7 +22951,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
@@ -22948,6 +22970,12 @@
             "maxLength": 100,
             "minLength": 0,
             "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -22957,7 +22985,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name",
           "resourceType",
           "plantCode",
@@ -22982,7 +23009,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
@@ -23034,6 +23061,12 @@
             "maxLength": 100,
             "minLength": 0,
             "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -23043,7 +23076,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "model",
           "lineCode",
           "workCenterCode",
@@ -23070,7 +23102,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "model": {
             "type": "string",
@@ -23142,6 +23174,12 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -23151,7 +23189,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name"
         ],
         "properties": {
@@ -23171,7 +23208,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
@@ -23192,6 +23229,12 @@
             "format": "int32",
             "minimum": 0.0,
             "exclusiveMinimum": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -23201,7 +23244,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name"
         ],
         "properties": {
@@ -23221,13 +23263,19 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
             "maxLength": 200,
             "minLength": 0,
             "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -23237,7 +23285,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name",
           "departmentCode",
           "shiftCode"
@@ -23259,7 +23306,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
@@ -23278,6 +23325,12 @@
             "maxLength": 100,
             "minLength": 0,
             "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -23426,7 +23479,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "code",
           "name"
         ],
         "properties": {
@@ -23446,7 +23498,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "name": {
             "type": "string",
@@ -23457,6 +23509,12 @@
           "parentDepartmentCode": {
             "type": "string",
             "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
             "minLength": 0,
             "nullable": true
           }

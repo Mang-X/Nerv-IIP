@@ -120,20 +120,22 @@ public sealed record BusinessConsoleCreateSkuRequest(
 public sealed record BusinessConsoleCreateBusinessPartnerRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string PartnerType,
     string Name,
     IReadOnlyCollection<string>? PartnerRoles = null,
-    string? TaxId = null);
+    string? TaxId = null,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateUnitOfMeasureRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string DimensionType,
     int Precision,
-    string RoundingMode);
+    string RoundingMode,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateUomConversionRequest(
     string OrganizationId,
@@ -149,22 +151,24 @@ public sealed record BusinessConsoleCreateUomConversionRequest(
 public sealed record BusinessConsoleCreateSiteRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
-    string Timezone);
+    string Timezone,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateProductionLineRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string SiteCode,
-    string? WorkshopCode = null);
+    string? WorkshopCode = null,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateWorkCenterRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     int CapacityMinutesPerDay,
     string ResourceType,
@@ -173,16 +177,18 @@ public sealed record BusinessConsoleCreateWorkCenterRequest(
     string DefaultCalendarCode,
     string CapacityUnit,
     bool FiniteCapacity,
-    string? WorkshopCode = null);
+    string? WorkshopCode = null,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateWorkshopRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string SiteCode,
     string? ManagerUserId,
-    string? Description);
+    string? Description,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleAddTeamMemberRequest(
     string OrganizationId,
@@ -222,7 +228,7 @@ public sealed record BusinessConsoleTeamMemberListResponse(
 public sealed record BusinessConsoleRegisterDeviceAssetRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Model,
     string LineCode,
     string WorkCenterCode,
@@ -235,22 +241,25 @@ public sealed record BusinessConsoleRegisterDeviceAssetRequest(
     string Criticality,
     bool Maintainable,
     bool TelemetryEnabled,
-    IReadOnlyDictionary<string, string>? ExternalReferences);
+    IReadOnlyDictionary<string, string>? ExternalReferences,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateShiftRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     TimeOnly StartsAt,
     TimeOnly EndsAt,
-    int PaidMinutes);
+    int PaidMinutes,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateWorkCalendarRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
-    string Name);
+    string? Code,
+    string Name,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleWorkCalendarWorkingTime(
     DayOfWeek DayOfWeek);
@@ -269,17 +278,19 @@ public sealed record BusinessConsoleWorkCalendarException(
 public sealed record BusinessConsoleCreateTeamRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string DepartmentCode,
-    string ShiftCode);
+    string ShiftCode,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateDepartmentRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
-    string? ParentDepartmentCode);
+    string? ParentDepartmentCode,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleAssignPersonnelSkillRequest(
     string OrganizationId,
@@ -864,6 +875,7 @@ public sealed record BusinessConsoleReleaseRoutingRequest(
 public sealed record BusinessConsoleRoutingOperationRequest(
     int Sequence,
     string WorkCenterCode,
+    string OperationCode,
     string OperationName,
     int StandardMinutes);
 

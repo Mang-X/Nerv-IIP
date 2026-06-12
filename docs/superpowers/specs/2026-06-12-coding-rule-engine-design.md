@@ -193,7 +193,7 @@ CodeRuleSegment
 | `date` | `format`（`yyyyMMdd`/`yyMMdd`/`yyyyMM`/`yyMM`/`yyyy` 等白名单） | 取分配时刻 UTC 日期格式化 | `20260612` |
 | `sequence` | `width`、`start`(默认1)、`padChar`(默认`0`)、`reset`(`none`/`day`/`month`/`year`) | 由 `reset` 派生 resetKey 定位计数器并保留下一个值，按 width 左补零 | `000001` |
 | `field` | `source`（上下文字段名）、`transform`(`none`/`upper`/`lower`)、`maxLength`(可选)、`required`(默认true) | 从 AllocationContext.fields 取值（值本身已是 kebab-case code，如 material-type 的 code），按 transform/截断处理 | `raw-material`→`RAW`（配合 maxLength/upper） |
-| `checksum` | `algorithm`(`mod10`/`mod11`) | 对当前已拼接字符串计算校验位追加（**本轮预留实现，默认规则不启用**） | `7` |
+| `checksum` | `algorithm`(`hash-mod10`/`hash-mod11`) | 对当前已拼接字符串计算 hash 取模占位校验位追加（**本轮预留实现，默认规则不启用；不是 Luhn/ISBN 等行业标准校验位**） | `7` |
 
 **重置周期与计数器作用域**：`sequence.reset` 决定 `code_counters.reset_key`：
 - `none` → `""`（跨期累计，永不重置）

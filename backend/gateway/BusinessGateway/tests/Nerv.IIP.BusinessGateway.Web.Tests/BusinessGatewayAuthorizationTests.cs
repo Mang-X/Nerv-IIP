@@ -150,6 +150,39 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Business_console_routing_release_rejects_blank_operation_code_before_permission_check()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/engineering/routings/release", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            routingCode = "ROUTE-1000",
+            revision = "A",
+            skuCode = "SKU-FG-1000",
+            effectiveDate = "2026-06-01",
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 10,
+                    workCenterCode = "WC-MIX-01",
+                    operationCode = "   ",
+                    operationName = "混合",
+                    standardMinutes = 30,
+                },
+            },
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+    }
+
+    [Fact]
     public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();

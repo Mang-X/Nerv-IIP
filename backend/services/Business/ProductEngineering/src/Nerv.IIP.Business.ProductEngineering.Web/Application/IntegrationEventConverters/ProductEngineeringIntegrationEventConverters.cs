@@ -84,7 +84,7 @@ public sealed class RoutingReleasedIntegrationEventConverter(IProductEngineering
             new RoutingReleasedPayload(
                 EventIds.AggregateId(routing.Id?.Id, routing.RoutingCode, routing.Revision),
                 routing.SkuCode,
-                routing.Operations.Select(x => new RoutingReleasedOperation(x.Sequence, x.WorkCenterCode, x.OperationName, x.StandardMinutes)).ToArray(),
+                routing.Operations.Select(x => new RoutingReleasedOperation(x.Sequence, x.WorkCenterCode, x.OperationCode, x.OperationName, x.StandardMinutes)).ToArray(),
                 routing.EffectiveDate ?? DateOnly.FromDateTime(occurredAtUtc.UtcDateTime)));
     }
 }

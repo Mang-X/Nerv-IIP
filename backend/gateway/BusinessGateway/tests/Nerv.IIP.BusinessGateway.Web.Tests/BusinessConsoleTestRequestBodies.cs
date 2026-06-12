@@ -250,7 +250,7 @@ internal static class BusinessConsoleTestRequestBodies
             ["revision"] = "A",
             ["skuCode"] = "SKU-001",
             ["effectiveDate"] = "2026-06-01",
-            ["operations"] = new[] { new { sequence = 10, workCenterCode = "WC-001", operationName = "Assemble", standardMinutes = 15 } },
+            ["operations"] = new[] { new { sequence = 10, workCenterCode = "WC-001", operationCode = "assembly", operationName = "装配", standardMinutes = 15 } },
             ["idempotencyKey"] = "routing-001",
         },
         "/api/business-console/v1/engineering/engineering-changes/release" => new()

@@ -11,7 +11,7 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringIte
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
-using Nerv.IIP.Numbering;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
@@ -65,8 +65,8 @@ public sealed class ProductEngineeringSchemaConventionTests
             typeof(EngineeringChange),
             typeof(EngineeringChangeAffectedVersion),
             typeof(ProductionVersion),
-            typeof(NumberingCounter),
-            typeof(NumberingIdempotencyKey),
+            typeof(CodeCounter),
+            typeof(CodeIdempotencyKey),
         };
 
         var failures = new List<string>();

@@ -22,19 +22,19 @@ public sealed class OpenOpportunityCommandValidator : AbstractValidator<OpenOppo
     }
 }
 
-public sealed class OpenOpportunityCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null) : ICommandHandler<OpenOpportunityCommand, OpportunityId>
+public sealed class OpenOpportunityCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null) : ICommandHandler<OpenOpportunityCommand, OpportunityId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<OpportunityId> Handle(OpenOpportunityCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "opportunity", "OPP", request.OpportunityNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.CustomerCode, request.Topic), cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "opportunity", request.OpportunityNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.CustomerCode, request.Topic), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return (await dbContext.Opportunities.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.OpportunityNo == allocation.Number, cancellationToken)).Id;
+            return (await dbContext.Opportunities.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.OpportunityNo == allocation.Code, cancellationToken)).Id;
         }
 
-        var opportunity = Opportunity.Open(request.OrganizationId, request.EnvironmentId, allocation.Number, request.CustomerCode, request.Topic);
+        var opportunity = Opportunity.Open(request.OrganizationId, request.EnvironmentId, allocation.Code, request.CustomerCode, request.Topic);
         dbContext.Opportunities.Add(opportunity);
         return opportunity.Id;
     }
@@ -73,22 +73,22 @@ public sealed class CreateQuotationCommandValidator : AbstractValidator<CreateQu
     }
 }
 
-public sealed class CreateQuotationCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null) : ICommandHandler<CreateQuotationCommand, QuotationId>
+public sealed class CreateQuotationCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null) : ICommandHandler<CreateQuotationCommand, QuotationId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<QuotationId> Handle(CreateQuotationCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "quotation", "QUO", request.QuotationNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.CustomerCode, request.ExpiresOn, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.RequiredDate}")), cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "quotation", request.QuotationNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.CustomerCode, request.ExpiresOn, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.RequiredDate}")), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return (await dbContext.Quotations.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.QuotationNo == allocation.Number, cancellationToken)).Id;
+            return (await dbContext.Quotations.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.QuotationNo == allocation.Code, cancellationToken)).Id;
         }
 
         var quotation = Quotation.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.CustomerCode,
             request.ExpiresOn,
             request.Lines.Select(x => new QuotationLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.RequiredDate)));
@@ -136,16 +136,16 @@ public sealed class CreateSalesOrderCommandValidator : AbstractValidator<CreateS
     }
 }
 
-public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null) : ICommandHandler<CreateSalesOrderCommand, SalesOrderId>
+public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null) : ICommandHandler<CreateSalesOrderCommand, SalesOrderId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<SalesOrderId> Handle(CreateSalesOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "sales-order", "SO", request.SalesOrderNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.QuotationNo), cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "sales-order", request.SalesOrderNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.QuotationNo), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return (await dbContext.SalesOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == allocation.Number, cancellationToken)).Id;
+            return (await dbContext.SalesOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == allocation.Code, cancellationToken)).Id;
         }
 
         var quotation = await dbContext.Quotations
@@ -156,7 +156,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
                 && x.QuotationNo == request.QuotationNo,
                 cancellationToken)
             ?? throw new KnownException($"Quotation '{request.QuotationNo}' was not found.");
-        var order = SalesOrder.CreateFromQuotation(allocation.Number, quotation);
+        var order = SalesOrder.CreateFromQuotation(allocation.Code, quotation);
         dbContext.SalesOrders.Add(order);
         return order.Id;
     }
@@ -189,16 +189,16 @@ public sealed class ReleaseDeliveryOrderCommandValidator : AbstractValidator<Rel
     }
 }
 
-public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbContext, ErpNumberingService? numberingService = null) : ICommandHandler<ReleaseDeliveryOrderCommand, DeliveryOrderId>
+public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null) : ICommandHandler<ReleaseDeliveryOrderCommand, DeliveryOrderId>
 {
-    private readonly ErpNumberingService _numberingService = numberingService ?? new ErpNumberingService();
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
     public async Task<DeliveryOrderId> Handle(ReleaseDeliveryOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "delivery-order", "DO", request.DeliveryOrderNo, request.IdempotencyKey, ErpNumberingService.Fingerprint(request.SalesOrderNo, request.Lines.Select(x => $"{x.SalesOrderLineNo}:{x.Quantity}")), cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "delivery-order", request.DeliveryOrderNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SalesOrderNo, request.Lines.Select(x => $"{x.SalesOrderLineNo}:{x.Quantity}")), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return (await dbContext.DeliveryOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.DeliveryOrderNo == allocation.Number, cancellationToken)).Id;
+            return (await dbContext.DeliveryOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.DeliveryOrderNo == allocation.Code, cancellationToken)).Id;
         }
 
         var order = await dbContext.SalesOrders
@@ -211,7 +211,7 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
             ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
         var delivery = DeliveryOrder.Release(
             order,
-            allocation.Number,
+            allocation.Code,
             request.Lines.Select(x => new DeliveryOrderLineDraft(x.SalesOrderLineNo, x.Quantity)));
         dbContext.DeliveryOrders.Add(delivery);
         return delivery.Id;

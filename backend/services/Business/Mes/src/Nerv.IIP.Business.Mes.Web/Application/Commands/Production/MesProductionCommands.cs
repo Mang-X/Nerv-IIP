@@ -51,21 +51,19 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
     }
 }
 
-public sealed class RecordProductionReportCommandHandler(ApplicationDbContext dbContext, MesNumberingService? numberingService = null)
+public sealed class RecordProductionReportCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
     : ICommandHandler<RecordProductionReportCommand, ProductionReportCommandResult>
 {
-    private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
+    private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
 
     public async Task<ProductionReportCommandResult> Handle(RecordProductionReportCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "production-report",
-            "PRPT",
+            request.EnvironmentId, "production-report",
             null,
             request.IdempotencyKey,
-            MesNumberingService.Fingerprint(
+            MesCodingService.Fingerprint(
                 request.WorkOrderId,
                 request.OperationTaskId,
                 request.GoodQuantity,
@@ -79,7 +77,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             var existing = await dbContext.ProductionReports.SingleAsync(
                 x => x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId &&
-                    x.ReportNo == allocation.Number,
+                    x.ReportNo == allocation.Code,
                 cancellationToken);
             return new ProductionReportCommandResult(existing.Id, existing.ReportNo);
         }
@@ -87,7 +85,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
         var report = ProductionReport.Record(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.WorkOrderId,
             request.OperationTaskId,
             request.GoodQuantity,
@@ -207,28 +205,26 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandValidator : Abstract
     }
 }
 
-public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationDbContext dbContext, MesNumberingService? numberingService = null)
+public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
     : ICommandHandler<CreateFinishedGoodsReceiptRequestCommand, FinishedGoodsReceiptRequestCommandResult>
 {
-    private readonly MesNumberingService _numberingService = numberingService ?? new MesNumberingService();
+    private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
 
     public async Task<FinishedGoodsReceiptRequestCommandResult> Handle(CreateFinishedGoodsReceiptRequestCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "finished-goods-receipt-request",
-            "FGR",
+            request.EnvironmentId, "finished-goods-receipt-request",
             null,
             request.IdempotencyKey,
-            MesNumberingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc),
+            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             var existing = await dbContext.FinishedGoodsReceiptRequests.SingleAsync(
                 x => x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId &&
-                    x.RequestNo == allocation.Number,
+                    x.RequestNo == allocation.Code,
                 cancellationToken);
             return new FinishedGoodsReceiptRequestCommandResult(existing.Id, existing.RequestNo);
         }
@@ -236,7 +232,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
         var receiptRequest = FinishedGoodsReceiptRequest.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.WorkOrderId,
             request.SkuId,
             request.Quantity,

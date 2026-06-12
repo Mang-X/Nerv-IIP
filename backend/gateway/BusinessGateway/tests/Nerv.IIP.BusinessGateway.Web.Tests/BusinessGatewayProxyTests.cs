@@ -2054,7 +2054,7 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
         await client.ReleaseRoutingAsync(
             "internal-token-001",
-            new BusinessConsoleReleaseRoutingRequest("org-001", "env-dev", "RTG-001", "A", "SKU-001", new DateOnly(2026, 6, 1), [new BusinessConsoleRoutingOperationRequest(10, "WC-001", "Assemble", 15)]),
+            new BusinessConsoleReleaseRoutingRequest("org-001", "env-dev", "RTG-001", "A", "SKU-001", new DateOnly(2026, 6, 1), [new BusinessConsoleRoutingOperationRequest(10, "WC-001", "assembly", "装配", 15)]),
             CancellationToken.None);
         await client.ReleaseEngineeringChangeAsync(
             "internal-token-001",
@@ -3421,13 +3421,13 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         string internalBearerToken,
         string downstreamPath,
         string resourceType,
-        string code,
+        string? code,
         string displayName)
     {
         LastInternalToken = internalBearerToken;
         CreateResourceCallCount++;
         LastCreateResourcePath = downstreamPath;
-        return Task.FromResult(new BusinessConsoleResourceItem(resourceType, code, displayName, true, "v1"));
+        return Task.FromResult(new BusinessConsoleResourceItem(resourceType, code ?? $"{resourceType}-generated", displayName, true, "v1"));
     }
 
     private static BusinessConsoleMasterDataResourceDetail ResourceDetail(

@@ -91,15 +91,18 @@ public sealed class ProductEngineeringReleaseAggregateTests
     public void Routing_release_creates_ordered_work_center_operations()
     {
         var routing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-1000", "A", "SKU-FG-1000")
-            .AddOperation(20, "WC-PACK-01", "Pack", 15)
-            .AddOperation(10, "WC-MIX-01", "Mix", 30);
+            .AddOperation(20, "WC-PACK-01", "packaging", "包装", 15)
+            .AddOperation(10, "WC-MIX-01", "mixing", "混合", 30);
 
         routing.Release(new DateOnly(2026, 6, 1));
 
         Assert.Equal([10, 20], routing.Operations.Select(x => x.Sequence).ToArray());
+        Assert.Equal(["mixing", "packaging"], routing.Operations.Select(x => x.OperationCode).ToArray());
         Assert.Equal(EngineeringVersionStatus.Published, routing.Status);
         Assert.IsType<RoutingReleasedDomainEvent>(routing.GetDomainEvents().Single());
-        Assert.Throws<InvalidOperationException>(() => routing.AddOperation(30, "WC-QA-01", "Inspect", 10));
+        Assert.Throws<InvalidOperationException>(() => routing.AddOperation(30, "WC-QA-01", "inspection", "检验", 10));
+        Assert.Throws<ArgumentException>(() => Routing.CreateDraft("org-001", "env-dev", "ROUTE-1001", "A", "SKU-FG-1000")
+            .AddOperation(10, "WC-QA-01", " ", "检验", 10));
     }
 
     [Fact]
