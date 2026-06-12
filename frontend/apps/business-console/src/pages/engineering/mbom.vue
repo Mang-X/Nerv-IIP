@@ -203,6 +203,17 @@ function materialLineValid(line: MaterialLine) {
     && line.unitOfMeasureCode.trim().length > 0
 }
 const materialLinesValid = computed(() => form.materialLines.length > 0 && form.materialLines.every(materialLineValid))
+// 同一物料不能重复（后端拒绝重复物料行，否则 500）。返回第一个重复的物料编码。
+const duplicateMaterial = computed(() => {
+  const seen = new Set<string>()
+  for (const l of form.materialLines) {
+    const c = l.skuCode.trim()
+    if (!c) continue
+    if (seen.has(c)) return c
+    seen.add(c)
+  }
+  return ''
+})
 // 配方行可选；若填了某行，则该行参数 + 目标值须齐。
 function recipeLineComplete(line: RecipeLine) {
   return line.parameterCode.trim().length > 0 && line.targetValue.trim().length > 0
@@ -211,7 +222,7 @@ const recipeLinesValid = computed(() => form.recipeLines.every(recipeLineComplet
 const hasSelectorData = computed(() => ebomOptions.value.length > 0)
 const canSubmit = computed(() =>
   ebomValid.value && skuValid.value && revisionValid.value && effectiveValid.value
-  && materialLinesValid.value && recipeLinesValid.value,
+  && materialLinesValid.value && recipeLinesValid.value && !duplicateMaterial.value,
 )
 
 function openCreate() {
@@ -318,7 +329,10 @@ function formatScrap(rate?: number | null) {
               </DialogDescription>
             </DialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
-              <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+              <p v-if="showErrors && duplicateMaterial" class="text-sm text-destructive" role="alert">
+                物料「{{ skuLabel(duplicateMaterial) }}」重复了——同一物料只能有一行，请合并数量或删除重复行。
+              </p>
+              <p v-else-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项，并确保至少一行物料填好物料、数量（大于 0）与单位；填写了的配方行须含参数与目标值。
               </p>
               <p

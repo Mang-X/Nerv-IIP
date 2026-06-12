@@ -174,7 +174,18 @@ function lineValid(line: ComponentLine) {
     && line.unitOfMeasureCode.trim().length > 0
 }
 const linesValid = computed(() => form.lines.length > 0 && form.lines.every(lineValid))
-const canSubmit = computed(() => parentValid.value && revisionValid.value && effectiveValid.value && linesValid.value)
+// 同一组件不能重复（后端 AddLine 拒绝重复子件，否则 500）。返回第一个重复的组件编码。
+const duplicateComponent = computed(() => {
+  const seen = new Set<string>()
+  for (const l of form.lines) {
+    const c = l.componentCode.trim()
+    if (!c) continue
+    if (seen.has(c)) return c
+    seen.add(c)
+  }
+  return ''
+})
+const canSubmit = computed(() => parentValid.value && revisionValid.value && effectiveValid.value && linesValid.value && !duplicateComponent.value)
 
 function openCreate() {
   Object.assign(form, blankForm())
@@ -257,7 +268,10 @@ function formatError(error: unknown) {
               </DialogDescription>
             </DialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
-              <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+              <p v-if="showErrors && duplicateComponent" class="text-sm text-destructive" role="alert">
+                组件「{{ skuLabel(duplicateComponent) }}」重复了——同一组件只能有一行，请合并数量或删除重复行。
+              </p>
+              <p v-else-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项，并确保至少一行组件填好编码、数量（大于 0）与单位。
               </p>
 
