@@ -51,8 +51,8 @@ definePage({ meta: { requiresAuth: true, title: '人员技能' } })
 // 人员技能：矩阵（工人 × 技能，一屏可读「谁会什么、到期没」）+ 登记 Dialog（录入/更新某工人某技能等级）。
 const matrix = usePersonnelSkillMatrix()
 const skillAssignment = usePersonnelSkillAssignment()
-// 技能字典（personnel-skill）：把列头 skillCode 解析成技能中文名。
-const skillDict = useBusinessMasterDataResources('personnel-skill')
+// 技能目录字典（codeSet=skill，工厂在「数据字典 › 技能」维护）：登记选技能 + 矩阵列头解析中文名。
+const skillDict = useBusinessMasterDataResources('reference-data', { codeSet: 'skill' })
 // 工人目录（IAM 用户）：把行 userId 解析成工人姓名（工号 · 部门）。
 const workerDir = useBusinessWorkers()
 
@@ -87,6 +87,13 @@ const skillName = (skillCode: string): string => {
   const dict = skillDict.resources.value.find((s) => s.code === skillCode)
   return dict?.displayName?.trim() || skillCode
 }
+
+// 登记用技能下拉选项：取 skill 字典的启用码值（空时由 codex 注册 / 工厂在数据字典维护后自动填充）。
+const skillOptions = computed(() =>
+  skillDict.resources.value
+    .filter((s) => s.active !== false && (s.code ?? '').trim().length > 0)
+    .map((s) => ({ value: (s.code ?? '').trim(), label: s.displayName?.trim() || (s.code ?? '').trim() })),
+)
 
 // ── 矩阵行/格 ────────────────────────────────────────────────
 // 按列头从某行 skills 取对应格（无该技能则 undefined）。
@@ -366,7 +373,13 @@ async function submitSkill() {
             </Field>
             <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.skillCode)">
               <FieldLabel for="skill-code">技能 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="skill-code" v-model="skillForm.skillCode" autocomplete="off" required />
+              <Select v-model="skillForm.skillCode">
+                <SelectTrigger id="skill-code"><SelectValue placeholder="请选择技能" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="s in skillOptions" :key="s.value" :value="s.value">{{ s.label }}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p v-if="!skillOptions.length" class="text-xs text-muted-foreground">技能目录为空——请先在「数据字典 › 技能」里维护技能项。</p>
             </Field>
             <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.level)">
               <FieldLabel for="skill-level">等级 <span class="text-destructive">*</span></FieldLabel>

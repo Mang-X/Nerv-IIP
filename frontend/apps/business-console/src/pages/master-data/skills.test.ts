@@ -19,10 +19,13 @@ const stub = vi.hoisted(() => ({
   ] as Array<{ userId: string, skills: Array<{ skillCode: string, level: string, effectiveTo?: string }> }>,
 }))
 
-// 技能字典（personnel-skill）：SKILL-A → 焊接技能；工人解析另走 useBusinessWorkers。
+// 技能目录字典（reference-data, codeSet=skill）：SKILL-A → 焊接技能、SKILL-WELD → 电焊；工人解析另走 useBusinessWorkers。
 function stubReadonlyResource(resourceType: string) {
-  const rows = resourceType === 'personnel-skill'
-    ? [{ resourceType, code: 'SKILL-A', displayName: '焊接技能', active: true, snapshotVersion: '1' }]
+  const rows = resourceType === 'reference-data'
+    ? [
+        { resourceType, code: 'SKILL-A', displayName: '焊接技能', active: true, snapshotVersion: '1' },
+        { resourceType, code: 'SKILL-WELD', displayName: '电焊', active: true, snapshotVersion: '1' },
+      ]
     : []
   return {
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
@@ -190,7 +193,8 @@ describe('master-data skills page (matrix)', () => {
     await flushPromises()
     const workerSelect = wrapper.findAll('select').find((s) => s.html().includes('usr-1'))!
     await workerSelect.setValue('usr-1')
-    await wrapper.find('#skill-code').setValue('SKILL-WELD')
+    const skillSelect = wrapper.findAll('select').find((s) => s.html().includes('SKILL-WELD'))!
+    await skillSelect.setValue('SKILL-WELD')
     const levelSelect = wrapper.findAll('select').find((s) => s.html().includes('senior'))!
     await levelSelect.setValue('senior')
     await flushPromises()
