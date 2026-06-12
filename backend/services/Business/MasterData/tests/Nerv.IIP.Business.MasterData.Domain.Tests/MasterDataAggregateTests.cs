@@ -58,11 +58,43 @@ public sealed class MasterDataAggregateTests
     {
         var workCenter = WorkCenter.Create("org-001", "env-dev", "WC-CNC-01", "CNC Cell 01", 480);
         var calendar = WorkCalendar.Create("org-001", "env-dev", "CAL-DAY", "Day Shift Calendar");
-        calendar.AddWorkingTime(DayOfWeek.Monday, TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)), TimeOnly.FromTimeSpan(TimeSpan.FromHours(16)));
+        calendar.AddWorkingDay(DayOfWeek.Monday);
 
         Assert.Equal(480, workCenter.CapacityMinutesPerDay);
         Assert.Single(calendar.WorkingTimes);
         Assert.Throws<ArgumentOutOfRangeException>(() => WorkCenter.Create("org-001", "env-dev", "WC-BAD", "Bad Cell", 0));
+    }
+
+    [Fact]
+    public void Work_calendar_working_times_are_days_only_and_do_not_duplicate_shift_windows()
+    {
+        var properties = typeof(WorkCalendarWorkingTime)
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Select(property => property.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(["DayOfWeek"], properties);
+    }
+
+    [Fact]
+    public void Work_calendar_deduplicates_recurring_working_days()
+    {
+        var calendar = WorkCalendar.Create("org-001", "env-dev", "CAL-DAY", "Day Shift Calendar");
+
+        calendar.AddWorkingDay(DayOfWeek.Monday);
+        calendar.AddWorkingDay(DayOfWeek.Monday);
+        calendar.Update(
+            "Day Shift Calendar",
+            [
+                new WorkCalendarWorkingTime(DayOfWeek.Monday),
+                new WorkCalendarWorkingTime(DayOfWeek.Monday),
+                new WorkCalendarWorkingTime(DayOfWeek.Tuesday)
+            ],
+            null,
+            null);
+
+        Assert.Equal([DayOfWeek.Monday, DayOfWeek.Tuesday], calendar.WorkingTimes.Select(x => x.DayOfWeek).OrderBy(x => x).ToArray());
     }
 
     [Fact]
