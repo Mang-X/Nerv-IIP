@@ -293,6 +293,15 @@ const WEEK_DAYS: { key: SystemDayOfWeek, label: string, short: string }[] = [
 ]
 const WEEK_KEYS: SystemDayOfWeek[] = WEEK_DAYS.map((d) => d.key)
 
+// 后端 dayOfWeek 实际回传整数 0-6(契约写的是字符串,实测不一致),统一归一化成 'sunday'..'saturday'
+// 字符串键,避免「数字 vs 字符串」比较永远不成立导致星期亮不起来。数字字符串('1')也兼容。
+function normalizeDow(dow: string | number | null | undefined): SystemDayOfWeek | undefined {
+  if (dow == null || dow === '') return undefined
+  const n = typeof dow === 'number' ? dow : Number(dow)
+  if (Number.isInteger(n) && n >= 0 && n <= 6) return WEEK_KEYS[n]
+  return dow as SystemDayOfWeek
+}
+
 const selectedCalCode = shallowRef<string | null>(null)
 const calDetailLoading = shallowRef(false)
 const calDetailLoaded = shallowRef(false)
@@ -312,7 +321,7 @@ const monthLabel = computed(() => `${viewYear.value}-${String(viewMonth.value + 
 // 该日历配置了工作时段的星期集合（有 workingTime 即为工作日）。
 const workingDaySet = computed(() => {
   const set = new Set<SystemDayOfWeek>()
-  for (const wt of workingTimes.value) if (wt.dayOfWeek) set.add(wt.dayOfWeek)
+  for (const wt of workingTimes.value) { const k = normalizeDow(wt.dayOfWeek); if (k) set.add(k) }
   return set
 })
 const holidayMap = computed(() => {
@@ -493,7 +502,7 @@ async function persistCalendar(successMsg: string) {
   if (!selectedCalCode.value) return
   calBoardSaving.value = true
   // 发送前去重：workingTimes 按 dayOfWeek、holidays / exceptions 按 date(归一化),各保留第一条。
-  const dedupedWorkingTimes = dedupeBy(workingTimes.value, (w) => w.dayOfWeek ?? '')
+  const dedupedWorkingTimes = dedupeBy(workingTimes.value, (w) => normalizeDow(w.dayOfWeek) ?? '')
   const dedupedHolidays = dedupeBy(holidays.value, (h) => (h.date ? toDateKey(h.date) : ''))
   const dedupedExceptions = dedupeBy(exceptions.value, (e) => (e.date ? toDateKey(e.date) : ''))
   workingTimes.value = dedupedWorkingTimes
@@ -520,10 +529,10 @@ async function toggleWeekday(day: SystemDayOfWeek) {
   if (!selectedCalCode.value) return
   const exists = workingDaySet.value.has(day)
   if (exists) {
-    workingTimes.value = workingTimes.value.filter((w) => w.dayOfWeek !== day)
+    workingTimes.value = workingTimes.value.filter((w) => normalizeDow(w.dayOfWeek) !== day)
   }
   // 仅当该星期尚无工作时段时才追加,避免重复添加同一 dayOfWeek。
-  else if (!workingTimes.value.some((w) => w.dayOfWeek === day)) {
+  else if (!workingTimes.value.some((w) => normalizeDow(w.dayOfWeek) === day)) {
     workingTimes.value = [...workingTimes.value, { dayOfWeek: day, startsAt: '08:00:00', endsAt: '17:00:00' }]
   }
   await persistCalendar('每周工作模式已更新。')
@@ -868,7 +877,7 @@ const sortedExceptions = computed(() =>
                       {{ wd.label }}
                     </Button>
                   </div>
-                  <p class="text-xs text-muted-foreground">点亮的星期为工作日（默认 08:00–17:00）；点击切换，立即保存。</p>
+                  <p class="text-xs text-muted-foreground">点亮的星期为工作日；点击切换，立即保存。每天的作息时段由「班次」定义，日历只决定哪几天开工。</p>
                 </div>
 
                 <!-- 图例（放月历上方，免下拉才能看到；色 + 文字角标双编码，色盲友好） -->
