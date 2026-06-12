@@ -114,20 +114,25 @@ public sealed class CodeAllocator(
 
         foreach (var segment in request.Rule.Segments)
         {
+            if (segment.Type == SegmentType.Sequence && reservedSequence is null)
+            {
+                reservedSequence = await ReserveSequenceAsync(
+                    request,
+                    siteCode,
+                    resetKey,
+                    sequenceSegment.Start,
+                    cancellationToken);
+            }
+
             builder.Append(segment.Type switch
             {
                 SegmentType.Constant => segment.Value,
                 SegmentType.Date => now.ToString(segment.Format, CultureInfo.InvariantCulture),
                 SegmentType.Field => EvaluateFieldSegment(request, segment),
-                SegmentType.Sequence => FormatSequence(segment, await ReserveSequenceAsync(request, siteCode, resetKey, sequenceSegment.Start, reservedSequence, cancellationToken)),
+                SegmentType.Sequence => FormatSequence(segment, reservedSequence!.Value),
                 SegmentType.Checksum => EvaluateChecksum(builder.ToString(), segment.Algorithm),
                 _ => throw new KnownException($"Unsupported code rule segment type '{segment.Type}'."),
             });
-
-            if (segment.Type == SegmentType.Sequence && reservedSequence is null)
-            {
-                reservedSequence = long.Parse(builder.ToString().TakeLast(segment.Width).ToArray(), CultureInfo.InvariantCulture);
-            }
         }
 
         return builder.ToString();
@@ -138,14 +143,8 @@ public sealed class CodeAllocator(
         string siteCode,
         string resetKey,
         long start,
-        long? existingValue,
         CancellationToken cancellationToken)
     {
-        if (existingValue is not null)
-        {
-            return existingValue.Value;
-        }
-
         var scope = new CodeCounterScope(
             request.OrganizationId,
             request.EnvironmentId,

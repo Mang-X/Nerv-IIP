@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.CodeRuleAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
@@ -69,6 +70,7 @@ public sealed class MasterDataSchemaConventionTests
             typeof(WorkCalendar),
             typeof(WorkCalendarWorkingTime),
             typeof(DeviceAsset),
+            typeof(CodeRule),
             typeof(CodeCounter),
             typeof(CodeIdempotencyKey),
         };

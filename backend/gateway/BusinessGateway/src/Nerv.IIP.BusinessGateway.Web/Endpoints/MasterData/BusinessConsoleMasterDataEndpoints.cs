@@ -107,7 +107,7 @@ public sealed class BusinessConsoleCreateBusinessPartnerRequestValidator : Valid
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.PartnerType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
     }
@@ -119,7 +119,7 @@ public sealed class BusinessConsoleCreateUnitOfMeasureRequestValidator : Validat
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Code).MaximumLength(50);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.DimensionType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Precision).GreaterThanOrEqualTo(0);
@@ -168,7 +168,7 @@ public sealed class BusinessConsoleCreateWorkshopRequestValidator : Validator<Bu
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ManagerUserId).MaximumLength(100);
@@ -182,7 +182,7 @@ public sealed class BusinessConsoleCreateSiteRequestValidator : Validator<Busine
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Timezone).NotEmpty().MaximumLength(100);
     }
@@ -194,7 +194,7 @@ public sealed class BusinessConsoleCreateProductionLineRequestValidator : Valida
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkshopCode).MaximumLength(100);
@@ -207,7 +207,7 @@ public sealed class BusinessConsoleCreateWorkCenterRequestValidator : Validator<
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.CapacityMinutesPerDay).GreaterThan(0);
         RuleFor(x => x.ResourceType).NotEmpty().MaximumLength(100);
@@ -225,7 +225,7 @@ public sealed class BusinessConsoleRegisterDeviceAssetRequestValidator : Validat
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Model).NotEmpty().MaximumLength(200);
         RuleFor(x => x.LineCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkCenterCode).NotEmpty().MaximumLength(100);
@@ -245,7 +245,7 @@ public sealed class BusinessConsoleCreateShiftRequestValidator : Validator<Busin
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.PaidMinutes).GreaterThan(0);
     }
@@ -257,7 +257,7 @@ public sealed class BusinessConsoleCreateWorkCalendarRequestValidator : Validato
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
     }
 }
@@ -268,7 +268,7 @@ public sealed class BusinessConsoleCreateTeamRequestValidator : Validator<Busine
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.DepartmentCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ShiftCode).NotEmpty().MaximumLength(100);
@@ -315,7 +315,7 @@ public sealed class BusinessConsoleCreateDepartmentRequestValidator : Validator<
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.ParentDepartmentCode).MaximumLength(100);
     }

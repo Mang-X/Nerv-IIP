@@ -2219,7 +2219,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateBusinessPartnerRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     partnerType: string;
     name: string;
     partnerRoles?: Array<string> | null;
@@ -2229,7 +2229,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateUnitOfMeasureRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
     dimensionType: string;
     precision?: number;
@@ -2255,7 +2255,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleL
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkshopRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
     siteCode: string;
     managerUserId?: string | null;
@@ -2289,7 +2289,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSiteRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
     timezone: string;
 };
@@ -2297,7 +2297,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateProductionLineRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
     siteCode: string;
     workshopCode?: string | null;
@@ -2306,7 +2306,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCenterRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
     capacityMinutesPerDay?: number;
     resourceType: string;
@@ -2321,7 +2321,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterDeviceAssetRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     model: string;
     lineCode: string;
     workCenterCode: string;
@@ -2342,7 +2342,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
     startsAt?: string;
     endsAt?: string;
@@ -2352,14 +2352,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCalendarRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateTeamRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
     departmentCode: string;
     shiftCode: string;
@@ -2406,7 +2406,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateDepartmentRequest = {
     organizationId: string;
     environmentId: string;
-    code: string;
+    code?: string | null;
     name: string;
     parentDepartmentCode?: string | null;
 };
@@ -6170,7 +6170,7 @@ export type GetBusinessConsoleMesEquipmentReadinessResponses = {
 
 export type GetBusinessConsoleMesEquipmentReadinessResponse = GetBusinessConsoleMesEquipmentReadinessResponses[keyof GetBusinessConsoleMesEquipmentReadinessResponses];
 
-export type GetBusinessConsoleMesBarcodeNumberingReadinessData = {
+export type GetBusinessConsoleMesBarcodeCodingReadinessData = {
     body?: never;
     path?: never;
     query: {
@@ -6184,10 +6184,10 @@ export type GetBusinessConsoleMesBarcodeNumberingReadinessData = {
         plannedStartUtc?: string | null;
         plannedEndUtc?: string | null;
     };
-    url: '/api/business-console/v1/mes/foundation-readiness/barcode-numbering';
+    url: '/api/business-console/v1/mes/foundation-readiness/barcode-coding';
 };
 
-export type GetBusinessConsoleMesBarcodeNumberingReadinessErrors = {
+export type GetBusinessConsoleMesBarcodeCodingReadinessErrors = {
     /**
      * Unauthorized
      */
@@ -6198,14 +6198,14 @@ export type GetBusinessConsoleMesBarcodeNumberingReadinessErrors = {
     403: unknown;
 };
 
-export type GetBusinessConsoleMesBarcodeNumberingReadinessResponses = {
+export type GetBusinessConsoleMesBarcodeCodingReadinessResponses = {
     /**
      * Success
      */
     200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesReadinessArea;
 };
 
-export type GetBusinessConsoleMesBarcodeNumberingReadinessResponse = GetBusinessConsoleMesBarcodeNumberingReadinessResponses[keyof GetBusinessConsoleMesBarcodeNumberingReadinessResponses];
+export type GetBusinessConsoleMesBarcodeCodingReadinessResponse = GetBusinessConsoleMesBarcodeCodingReadinessResponses[keyof GetBusinessConsoleMesBarcodeCodingReadinessResponses];
 
 export type GetBusinessConsoleMesOverviewData = {
     body?: never;

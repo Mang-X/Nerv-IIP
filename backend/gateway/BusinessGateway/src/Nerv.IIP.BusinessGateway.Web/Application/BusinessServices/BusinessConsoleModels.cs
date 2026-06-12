@@ -120,7 +120,7 @@ public sealed record BusinessConsoleCreateSkuRequest(
 public sealed record BusinessConsoleCreateBusinessPartnerRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string PartnerType,
     string Name,
     IReadOnlyCollection<string>? PartnerRoles = null,
@@ -129,7 +129,7 @@ public sealed record BusinessConsoleCreateBusinessPartnerRequest(
 public sealed record BusinessConsoleCreateUnitOfMeasureRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string DimensionType,
     int Precision,
@@ -149,14 +149,14 @@ public sealed record BusinessConsoleCreateUomConversionRequest(
 public sealed record BusinessConsoleCreateSiteRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string Timezone);
 
 public sealed record BusinessConsoleCreateProductionLineRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string SiteCode,
     string? WorkshopCode = null);
@@ -164,7 +164,7 @@ public sealed record BusinessConsoleCreateProductionLineRequest(
 public sealed record BusinessConsoleCreateWorkCenterRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     int CapacityMinutesPerDay,
     string ResourceType,
@@ -178,7 +178,7 @@ public sealed record BusinessConsoleCreateWorkCenterRequest(
 public sealed record BusinessConsoleCreateWorkshopRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string SiteCode,
     string? ManagerUserId,
@@ -222,7 +222,7 @@ public sealed record BusinessConsoleTeamMemberListResponse(
 public sealed record BusinessConsoleRegisterDeviceAssetRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Model,
     string LineCode,
     string WorkCenterCode,
@@ -240,7 +240,7 @@ public sealed record BusinessConsoleRegisterDeviceAssetRequest(
 public sealed record BusinessConsoleCreateShiftRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     TimeOnly StartsAt,
     TimeOnly EndsAt,
@@ -249,7 +249,7 @@ public sealed record BusinessConsoleCreateShiftRequest(
 public sealed record BusinessConsoleCreateWorkCalendarRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name);
 
 public sealed record BusinessConsoleWorkCalendarWorkingTime(
@@ -269,7 +269,7 @@ public sealed record BusinessConsoleWorkCalendarException(
 public sealed record BusinessConsoleCreateTeamRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string DepartmentCode,
     string ShiftCode);
@@ -277,7 +277,7 @@ public sealed record BusinessConsoleCreateTeamRequest(
 public sealed record BusinessConsoleCreateDepartmentRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string? ParentDepartmentCode);
 

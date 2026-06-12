@@ -359,7 +359,7 @@ public sealed class CreateSkuEndpoint(ISender sender)
 public sealed record CreateUnitOfMeasureRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string DimensionType,
     int Precision,
@@ -427,7 +427,7 @@ public sealed class CreateUomConversionEndpoint(ISender sender)
 public sealed record CreateBusinessPartnerRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string PartnerType,
     string Name,
     IReadOnlyCollection<string>? PartnerRoles = null,
@@ -459,7 +459,7 @@ public sealed class CreateBusinessPartnerEndpoint(ISender sender)
 public sealed record CreateWorkCenterRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     int CapacityMinutesPerDay,
     string ResourceType,
@@ -473,14 +473,14 @@ public sealed record CreateWorkCenterRequest(
 public sealed record CreateDepartmentRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string? ParentDepartmentCode);
 
 public sealed record CreateTeamRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string DepartmentCode,
     string ShiftCode);
@@ -497,14 +497,14 @@ public sealed record AssignPersonnelSkillRequest(
 public sealed record CreateSiteRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string Timezone);
 
 public sealed record CreateWorkshopRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string SiteCode,
     string? ManagerUserId,
@@ -513,7 +513,7 @@ public sealed record CreateWorkshopRequest(
 public sealed record CreateProductionLineRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     string SiteCode,
     string? WorkshopCode = null);
@@ -521,7 +521,7 @@ public sealed record CreateProductionLineRequest(
 public sealed record CreateShiftRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name,
     TimeOnly StartsAt,
     TimeOnly EndsAt,
@@ -530,7 +530,7 @@ public sealed record CreateShiftRequest(
 public sealed record CreateWorkCalendarRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Name);
 
 public sealed class CreateDepartmentEndpoint(ISender sender)
@@ -853,7 +853,7 @@ public sealed class RemoveTeamMemberEndpoint(ISender sender)
 public sealed record RegisterDeviceAssetRequest(
     string OrganizationId,
     string EnvironmentId,
-    string Code,
+    string? Code,
     string Model,
     string LineCode,
     string WorkCenterCode,

@@ -356,7 +356,7 @@ public sealed class GetProductionPlanReadinessQueryHandler(MesFoundationReadines
             new MesReadinessArea("supply", "Ready", []),
             quality,
             new MesReadinessArea("equipment", "Ready", []),
-            new MesReadinessArea("barcode-numbering", "Ready", []),
+            new MesReadinessArea("barcode-coding", "Ready", []),
         };
         var blockingIssues = areas.SelectMany(x => x.Issues).Where(x => x.Severity == "Blocked").ToArray();
         return new MesProductionPlanReadinessResponse(blockingIssues.Length > 0 ? "Blocked" : "Ready", areas, blockingIssues, []);
