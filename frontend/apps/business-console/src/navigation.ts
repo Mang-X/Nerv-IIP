@@ -11,9 +11,11 @@ import {
   CpuIcon,
   FactoryIcon,
   FileTextIcon,
+  FolderTreeIcon,
   GitBranchIcon,
   GitForkIcon,
   GitPullRequestIcon,
+  GraduationCapIcon,
   LayersIcon,
   LayoutDashboardIcon,
   NetworkIcon,
@@ -72,12 +74,14 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       items: [
         { title: '组织与班组', icon: UsersRoundIcon, to: { path: '/master-data/organization' } },
         { title: '排班与日历', icon: CalendarRangeIcon, to: { path: '/master-data/scheduling' } },
+        { title: '技能目录', icon: GraduationCapIcon, to: { path: '/master-data/skill-catalog' } },
         { title: '人员技能', icon: AwardIcon, to: { path: '/master-data/skills' } },
       ],
     },
     {
       label: '受控数据',
       items: [
+        { title: '产品分类', icon: FolderTreeIcon, to: { path: '/master-data/product-categories' } },
         { title: '计量单位', icon: RulerIcon, to: { path: '/master-data/units' } },
         { title: '数据字典', icon: BookMarkedIcon, to: { path: '/master-data/reference-data' } },
       ],
@@ -159,6 +163,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       items: [
         { title: '检验任务与记录', to: { path: '/quality/inspections' } },
         { title: '不合格品处理', to: { path: '/quality/ncrs' } },
+        { title: '原因码目录', to: { path: '/quality/reason-codes' } },
       ],
     },
   ],

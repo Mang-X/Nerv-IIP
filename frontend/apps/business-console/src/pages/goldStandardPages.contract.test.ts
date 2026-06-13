@@ -20,6 +20,7 @@ const GOLD_STANDARD_PAGES = [
   'mes/quality.vue',
   'quality/inspections.vue',
   'quality/ncrs.vue',
+  'quality/reason-codes.vue',
   'engineering/production-versions.vue',
   'engineering/standard-operations.vue',
   'engineering/ebom.vue',
@@ -30,6 +31,8 @@ const GOLD_STANDARD_PAGES = [
   'engineering/eco.vue',
   'master-data/skus.vue',
   'master-data/partners.vue',
+  'master-data/product-categories.vue',
+  'master-data/skill-catalog.vue',
   // facilities.vue 是「工厂结构」树-详情示范页（左树 + 右详情），不再是黄金标准列表，
   // 不含 DataTable/DataTablePagination 必备块，故从此清单移除。树页自身约束见 facilities.test.ts。
   'master-data/devices.vue',
