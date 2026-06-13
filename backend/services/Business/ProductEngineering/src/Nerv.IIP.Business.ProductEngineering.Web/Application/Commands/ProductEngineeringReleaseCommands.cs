@@ -18,7 +18,8 @@ public sealed record RegisterEngineeringDocumentCommand(
     string FileName,
     string ContentType,
     string DocumentType,
-    string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
+    string? IdempotencyKey = null,
+    string? ItemCode = null) : ICommand<EntityCommandResult>;
 
 public sealed record EntityCommandResult(string Id);
 
@@ -34,46 +35,54 @@ public sealed class RegisterEngineeringDocumentCommandValidator : AbstractValida
         RuleFor(x => x.FileName).NotEmpty().MaximumLength(255);
         RuleFor(x => x.ContentType).NotEmpty().MaximumLength(120);
         RuleFor(x => x.DocumentType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ItemCode).MaximumLength(100);
     }
 }
 
-public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocumentRepository repository, ProductEngineeringNumberingService? numberingService = null)
+public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocumentRepository repository, ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<RegisterEngineeringDocumentCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
 
     public async Task<EntityCommandResult> Handle(RegisterEngineeringDocumentCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "engineering-document",
-            "EDOC",
+            request.EnvironmentId, "engineering-document",
             request.DocumentNumber,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.FileId, request.FileName, request.ContentType, request.DocumentType),
+            DocumentPayloadFingerprint(request),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, cancellationToken))
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Engineering document '{allocation.Number}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"Engineering document '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
         var document = EngineeringDocument.Register(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.Revision,
+            request.ItemCode,
             request.FileId,
             request.FileName,
             request.ContentType,
             request.DocumentType);
         await repository.AddAsync(document, cancellationToken);
         return new EntityCommandResult(document.DocumentNumber);
+    }
+
+    private static string DocumentPayloadFingerprint(RegisterEngineeringDocumentCommand request)
+    {
+        var itemCode = string.IsNullOrWhiteSpace(request.ItemCode) ? null : request.ItemCode.Trim();
+        return itemCode is null
+            ? ProductEngineeringCodingService.Fingerprint(request.Revision, request.FileId, request.FileName, request.ContentType, request.DocumentType)
+            : ProductEngineeringCodingService.Fingerprint(request.Revision, itemCode, request.FileId, request.FileName, request.ContentType, request.DocumentType);
     }
 }
 
@@ -98,36 +107,34 @@ public sealed class CreateEngineeringItemRevisionCommandValidator : AbstractVali
     }
 }
 
-public sealed class CreateEngineeringItemRevisionCommandHandler(IEngineeringItemRepository repository, ProductEngineeringNumberingService? numberingService = null)
+public sealed class CreateEngineeringItemRevisionCommandHandler(IEngineeringItemRepository repository, ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<CreateEngineeringItemRevisionCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
 
     public async Task<EntityCommandResult> Handle(CreateEngineeringItemRevisionCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "engineering-item",
-            "ITEM",
+            request.EnvironmentId, "engineering-item",
             request.ItemCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.Name, request.Release),
+            ProductEngineeringCodingService.Fingerprint(request.Revision, request.Name, request.Release),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, cancellationToken))
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Engineering item '{allocation.Number}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"Engineering item '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
         var item = EngineeringItem.CreateRevision(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.Revision,
             request.Name,
             request.Release);
@@ -167,39 +174,41 @@ public sealed class ReleaseEngineeringBomCommandValidator : AbstractValidator<Re
     }
 }
 
-public sealed class ReleaseEngineeringBomCommandHandler(IEngineeringBomRepository repository, ProductEngineeringNumberingService? numberingService = null)
+public sealed class ReleaseEngineeringBomCommandHandler(IEngineeringBomRepository repository, ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<ReleaseEngineeringBomCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringBomCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "engineering-bom",
-            "EBOM",
+            request.EnvironmentId, "engineering-bom",
             request.BomCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.ParentItemCode, request.EffectiveDate, request.Lines.Select(x => $"{x.ComponentCode}:{x.Quantity}:{x.UnitOfMeasureCode}")),
+            ProductEngineeringCodingService.Fingerprint(request.Revision, request.ParentItemCode, request.EffectiveDate, request.Lines.Select(x => $"{x.ComponentCode}:{x.Quantity}:{x.UnitOfMeasureCode}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        if (await repository.GetByBusinessKeyAsync(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, cancellationToken) is not null)
+        if (await repository.GetByBusinessKeyAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken) is not null)
         {
-            throw new KnownException($"Engineering BOM '{allocation.Number}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"Engineering BOM '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
-        var bom = EngineeringBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, request.ParentItemCode);
-        foreach (var line in request.Lines)
+        var bom = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
-            bom.AddLine(line.ComponentCode, line.Quantity, line.UnitOfMeasureCode);
-        }
+            var draft = EngineeringBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.ParentItemCode);
+            foreach (var line in request.Lines)
+            {
+                draft.AddLine(line.ComponentCode, line.Quantity, line.UnitOfMeasureCode);
+            }
 
-        bom.Release(request.EffectiveDate);
+            draft.Release(request.EffectiveDate);
+            return draft;
+        });
         await repository.AddAsync(bom, cancellationToken);
         return new EntityCommandResult(bom.BomCode);
     }
@@ -240,30 +249,28 @@ public sealed class ReleaseManufacturingBomCommandValidator : AbstractValidator<
 public sealed class ReleaseManufacturingBomCommandHandler(
     IEngineeringBomRepository engineeringBomRepository,
     IManufacturingBomRepository manufacturingBomRepository,
-    ProductEngineeringNumberingService? numberingService = null)
+    ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<ReleaseManufacturingBomCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
 
     public async Task<EntityCommandResult> Handle(ReleaseManufacturingBomCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "manufacturing-bom",
-            "MBOM",
+            request.EnvironmentId, "manufacturing-bom",
             request.BomCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.SkuCode, request.EngineeringBomCode, request.EngineeringBomRevision, request.EffectiveDate),
+            ProductEngineeringCodingService.Fingerprint(request.Revision, request.SkuCode, request.EngineeringBomCode, request.EngineeringBomRevision, request.EffectiveDate),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        if (await manufacturingBomRepository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, cancellationToken))
+        if (await manufacturingBomRepository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Manufacturing BOM '{allocation.Number}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"Manufacturing BOM '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
         var ebom = await engineeringBomRepository.GetByBusinessKeyAsync(
@@ -274,18 +281,22 @@ public sealed class ReleaseManufacturingBomCommandHandler(
             cancellationToken)
             ?? throw new KnownException($"Released engineering BOM '{request.EngineeringBomCode}' revision '{request.EngineeringBomRevision}' was not found.");
 
-        var bom = ManufacturingBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, request.SkuCode);
-        foreach (var line in request.MaterialLines)
+        var bom = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
-            bom.AddMaterialLine(line.SkuCode, line.Quantity, line.UnitOfMeasureCode, line.ScrapRate);
-        }
+            var draft = ManufacturingBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.SkuCode);
+            foreach (var line in request.MaterialLines)
+            {
+                draft.AddMaterialLine(line.SkuCode, line.Quantity, line.UnitOfMeasureCode, line.ScrapRate);
+            }
 
-        foreach (var line in request.RecipeLines)
-        {
-            bom.AddRecipeLine(line.ParameterCode, line.TargetValue, line.UnitOfMeasureCode);
-        }
+            foreach (var line in request.RecipeLines)
+            {
+                draft.AddRecipeLine(line.ParameterCode, line.TargetValue, line.UnitOfMeasureCode);
+            }
 
-        bom.ReleaseFromEngineeringBom($"{ebom.BomCode}:{ebom.Revision}", ebom.Status, request.EffectiveDate);
+            draft.ReleaseFromEngineeringBom($"{ebom.BomCode}:{ebom.Revision}", ebom.Status, request.EffectiveDate);
+            return draft;
+        });
         await manufacturingBomRepository.AddAsync(bom, cancellationToken);
         return new EntityCommandResult(bom.BomCode);
     }
@@ -301,7 +312,7 @@ public sealed record ReleaseRoutingCommand(
     IReadOnlyCollection<RoutingOperationCommand> Operations,
     string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
 
-public sealed record RoutingOperationCommand(int Sequence, string WorkCenterCode, string OperationName, int StandardMinutes);
+public sealed record RoutingOperationCommand(int Sequence, string WorkCenterCode, string OperationCode, string OperationName, int StandardMinutes);
 
 public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRoutingCommand>
 {
@@ -313,44 +324,74 @@ public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRo
         RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Operations).NotEmpty();
+        RuleForEach(x => x.Operations).ChildRules(operation =>
+        {
+            operation.RuleFor(x => x.Sequence).GreaterThan(0);
+            operation.RuleFor(x => x.WorkCenterCode).NotEmpty().MaximumLength(100);
+            operation.RuleFor(x => x.OperationCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
+            operation.RuleFor(x => x.OperationName).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(200);
+            operation.RuleFor(x => x.StandardMinutes).GreaterThan(0);
+        });
     }
 }
 
-public sealed class ReleaseRoutingCommandHandler(IRoutingRepository repository, ProductEngineeringNumberingService? numberingService = null)
+public sealed class ReleaseRoutingCommandHandler(IRoutingRepository repository, ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<ReleaseRoutingCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
 
     public async Task<EntityCommandResult> Handle(ReleaseRoutingCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "routing",
-            "RTG",
+            request.EnvironmentId, "routing",
             request.RoutingCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.WorkCenterCode}:{x.OperationName}:{x.StandardMinutes}")),
+            ProductEngineeringCodingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.WorkCenterCode}:{x.OperationCode}:{x.OperationName}:{x.StandardMinutes}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, cancellationToken))
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Routing '{allocation.Number}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"Routing '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
-        var routing = Routing.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, request.SkuCode);
-        foreach (var operation in request.Operations)
+        var routing = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
-            routing.AddOperation(operation.Sequence, operation.WorkCenterCode, operation.OperationName, operation.StandardMinutes);
-        }
+            var draft = Routing.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.SkuCode);
+            foreach (var operation in request.Operations)
+            {
+                draft.AddOperation(operation.Sequence, operation.WorkCenterCode, operation.OperationCode, operation.OperationName, operation.StandardMinutes);
+            }
 
-        routing.Release(request.EffectiveDate);
+            draft.Release(request.EffectiveDate);
+            return draft;
+        });
         await repository.AddAsync(routing, cancellationToken);
         return new EntityCommandResult(routing.RoutingCode);
+    }
+}
+
+internal static class ProductEngineeringReleaseValidation
+{
+    public static T AsKnownException<T>(Func<T> action)
+    {
+        try
+        {
+            // Keep the action limited to aggregate construction and invariant checks.
+            return action();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
     }
 }
 
@@ -379,28 +420,26 @@ public sealed class ReleaseEngineeringChangeCommandValidator : AbstractValidator
     }
 }
 
-public sealed class ReleaseEngineeringChangeCommandHandler(IEngineeringChangeRepository repository, ProductEngineeringNumberingService? numberingService = null)
+public sealed class ReleaseEngineeringChangeCommandHandler(IEngineeringChangeRepository repository, ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<ReleaseEngineeringChangeCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringChangeCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "engineering-change",
-            "ECO",
+            request.EnvironmentId, "engineering-change",
             request.ChangeNumber,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Reason, request.ApprovalReferenceId, request.EffectiveDate, request.AffectedVersions.Select(x => $"{x.VersionKind}:{x.VersionId}")),
+            ProductEngineeringCodingService.Fingerprint(request.Reason, request.ApprovalReferenceId, request.EffectiveDate, request.AffectedVersions.Select(x => $"{x.VersionKind}:{x.VersionId}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        var change = EngineeringChange.Open(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Reason)
+        var change = EngineeringChange.Open(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Reason)
             .Approve(request.ApprovalReferenceId);
         foreach (var affectedVersion in request.AffectedVersions)
         {

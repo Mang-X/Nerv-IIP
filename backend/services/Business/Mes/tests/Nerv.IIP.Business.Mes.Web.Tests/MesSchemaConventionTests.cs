@@ -13,7 +13,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
-using Nerv.IIP.Numbering;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -50,8 +50,8 @@ public sealed class MesSchemaConventionTests
             typeof(DeviceAssetWorkCenterMapping),
             typeof(FinishedGoodsReceiptRequest),
             typeof(ShiftHandover),
-            typeof(NumberingCounter),
-            typeof(NumberingIdempotencyKey),
+            typeof(CodeCounter),
+            typeof(CodeIdempotencyKey),
             typeof(ProcessedIntegrationEvent),
         };
 

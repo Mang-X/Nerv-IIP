@@ -136,6 +136,7 @@ public sealed record RoutingReleasedPayload(
 public sealed record RoutingReleasedOperation(
     int Sequence,
     string WorkCenterCode,
+    string OperationCode,
     string OperationName,
     int StandardMinutes);
 

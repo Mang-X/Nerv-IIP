@@ -21,7 +21,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Nerv.IIP.Ops.Domain\Nerv.IIP.Ops.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.ConnectorProtocol\Nerv.IIP.Contracts.ConnectorProtocol.csproj" />
-    <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
   </ItemGroup>
 
 </Project>

@@ -67,7 +67,7 @@ try
     }
 
     builder.Services.AddDemandPlanningPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddScoped<DemandPlanningNumberingService>();
+    builder.Services.AddScoped<DemandPlanningCodingService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     if (string.Equals(builder.Configuration["Planning:InputProvider"], "Fixture", StringComparison.OrdinalIgnoreCase))

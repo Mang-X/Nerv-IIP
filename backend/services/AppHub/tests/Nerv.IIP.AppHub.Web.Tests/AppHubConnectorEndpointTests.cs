@@ -98,6 +98,30 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
     }
 
     [Fact]
+    public async Task Instance_list_query_returns_effective_page_metadata()
+    {
+        var scenario = CreateScenario("effective-page");
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Connector-Host-Id", scenario.ConnectorHostId);
+        client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
+
+        using var registration = await client.PostAsJsonAsync("/api/connectors/v1/registrations", CreateRegistration(scenario));
+        Assert.Equal(HttpStatusCode.OK, registration.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        var query = new InstanceListQuery(scenario.OrganizationId, scenario.EnvironmentId, 0, 0, "instanceName", "asc", null);
+        using var list = await client.PostAsJsonAsync("/internal/apphub/v1/instances/query", query);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        var listBody = await ReadResponseDataAsync<InstanceListResponse>(list);
+
+        Assert.NotNull(listBody);
+        Assert.Equal(1, listBody.PageIndex);
+        Assert.Equal(1, listBody.PageSize);
+        Assert.Equal(1, listBody.TotalCount);
+        Assert.Single(listBody.Items);
+    }
+
+    [Fact]
     public async Task Connector_ingestion_uses_configured_connector_secret()
     {
         var scenario = CreateScenario("configured-secret");

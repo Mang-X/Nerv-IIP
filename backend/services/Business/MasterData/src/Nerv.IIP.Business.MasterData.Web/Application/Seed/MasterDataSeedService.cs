@@ -1,15 +1,20 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.CodeRuleAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
+using Nerv.IIP.Contracts.Coding;
+using System.Text.Json;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private static readonly UomSeed[] Units =
     [
         new("kg", "千克", "weight", 3, "half-up"),
@@ -27,6 +32,39 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 
     public async Task SeedAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
     {
+        foreach (var rule in StandardCodeRules.All)
+        {
+            var segmentsJson = JsonSerializer.Serialize(rule.Segments, JsonOptions);
+            var existing = await dbContext.CodeRules.SingleOrDefaultAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.RuleKey == rule.RuleKey,
+                cancellationToken);
+            if (existing is null)
+            {
+                dbContext.CodeRules.Add(CodeRule.Create(
+                    organizationId,
+                    environmentId,
+                    rule.RuleKey,
+                    rule.DisplayName,
+                    rule.AppliesTo,
+                    (int)rule.Scope,
+                    segmentsJson,
+                    rule.IsActive,
+                    rule.Version));
+            }
+            else
+            {
+                existing.ReplaceDefinition(
+                    rule.DisplayName,
+                    rule.AppliesTo,
+                    (int)rule.Scope,
+                    segmentsJson,
+                    rule.IsActive,
+                    rule.Version);
+            }
+        }
+
         foreach (var item in MasterDataDictionaryRules.StandardReferenceData)
         {
             var existing = await dbContext.ReferenceDataCodes.SingleOrDefaultAsync(x =>
@@ -140,7 +178,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
             var calendar = WorkCalendar.Create(organizationId, environmentId, "STANDARD", "Standard Calendar");
             foreach (var day in new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday })
             {
-                calendar.AddWorkingTime(day, new TimeOnly(8, 0), new TimeOnly(17, 0));
+                calendar.AddWorkingDay(day);
             }
 
             dbContext.WorkCalendars.Add(calendar);

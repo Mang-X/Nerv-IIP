@@ -1,8 +1,6 @@
 using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
-using Nerv.IIP.Contracts.ConnectorProtocol;
-using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.DomainEvents;
@@ -82,7 +80,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     public static OperationTask Create(
         OperationTaskId id,
-        CreateOperationTaskRequest request,
+        CreateOperationTaskInput request,
         OperationTemplateSnapshot template,
         DateTimeOffset now)
     {
@@ -120,7 +118,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         return task;
     }
 
-    public OperationTaskDispatchItem Claim(
+    public OperationTaskDispatchFact Claim(
         OperationAttemptId attemptId,
         AuditRecordId auditRecordId,
         string leaseId,
@@ -161,7 +159,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         this.AddDomainEvent(new OperationTaskDispatchedDomainEvent(this, attempt));
         AddAuditRecordedDomainEvent(auditRecord);
 
-        return new OperationTaskDispatchItem(
+        return new OperationTaskDispatchFact(
             Id.Id,
             attempt.Id.Id,
             OrganizationId,
@@ -193,17 +191,17 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         AddAuditRecordedDomainEvent(auditRecord);
     }
 
-    public OperationTaskResponse AbandonLease(string leaseId, string connectorHostId, string abandonReason, AuditRecordId auditRecordId, DateTimeOffset now)
+    public OperationTaskDetailFact AbandonLease(string leaseId, string connectorHostId, string abandonReason, AuditRecordId auditRecordId, DateTimeOffset now)
     {
         var attempt = GetMatchingActiveLease(leaseId, connectorHostId);
         attempt.Abandon(now, abandonReason);
         Status = attempt.AttemptNo >= attempt.MaxAttempts ? "failed" : "queued";
         var auditRecord = AddAudit(auditRecordId, "operation.abandoned", connectorHostId, now, CorrelationId);
         AddAuditRecordedDomainEvent(auditRecord);
-        return ToResponse();
+        return ToDetailFact();
     }
 
-    public OperationTaskResponse HeartbeatLease(string leaseId, string connectorHostId, DateTimeOffset now, TimeSpan leaseDuration, AuditRecordId auditRecordId)
+    public OperationTaskDetailFact HeartbeatLease(string leaseId, string connectorHostId, DateTimeOffset now, TimeSpan leaseDuration, AuditRecordId auditRecordId)
     {
         var attempt = GetMatchingActiveLease(leaseId, connectorHostId);
         if (attempt.LeasedUntilUtc <= now)
@@ -214,10 +212,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         attempt.Heartbeat(now.Add(leaseDuration));
         var auditRecord = AddAudit(auditRecordId, "operation.heartbeat", connectorHostId, now, CorrelationId);
         AddAuditRecordedDomainEvent(auditRecord);
-        return ToResponse();
+        return ToDetailFact();
     }
 
-    public OperationTaskResponse RecordResult(OperationResult result, AuditRecordId auditRecordId)
+    public OperationTaskDetailFact RecordResult(OperationResultInput result, AuditRecordId auditRecordId)
     {
         var attempt = _attempts.SingleOrDefault(x => x.Id.Id == result.AttemptId && x.OperationTaskId == Id)
             ?? throw new InvalidOperationResultException("Operation result does not match an existing attempt.");
@@ -240,10 +238,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             ? new OperationTaskCompletedDomainEvent(this, attempt, result)
             : new OperationTaskFailedDomainEvent(this, attempt, result));
         AddAuditRecordedDomainEvent(auditRecord);
-        return ToResponse();
+        return ToDetailFact();
     }
 
-    public OperationTaskResponse Approve(DecideOperationApprovalRequest request, AuditRecordId auditRecordId, DateTimeOffset now)
+    public OperationTaskDetailFact Approve(DecideOperationApprovalInput request, AuditRecordId auditRecordId, DateTimeOffset now)
     {
         ValidateApprovalDecision(request);
         if (!RequiresApproval)
@@ -265,10 +263,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         var auditRecord = AddAudit(auditRecordId, "operation.approved", request.Actor, now, request.CorrelationId);
         this.AddDomainEvent(new OperationTaskApprovedDomainEvent(this, request.Actor, request.DecisionReason, request.CorrelationId, now));
         AddAuditRecordedDomainEvent(auditRecord);
-        return ToResponse();
+        return ToDetailFact();
     }
 
-    public OperationTaskResponse Reject(DecideOperationApprovalRequest request, AuditRecordId auditRecordId, DateTimeOffset now)
+    public OperationTaskDetailFact Reject(DecideOperationApprovalInput request, AuditRecordId auditRecordId, DateTimeOffset now)
     {
         ValidateApprovalDecision(request);
         if (!RequiresApproval)
@@ -290,10 +288,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         var auditRecord = AddAudit(auditRecordId, "operation.rejected", request.Actor, now, request.CorrelationId);
         this.AddDomainEvent(new OperationTaskRejectedDomainEvent(this, request.Actor, request.DecisionReason, request.CorrelationId, now));
         AddAuditRecordedDomainEvent(auditRecord);
-        return ToResponse();
+        return ToDetailFact();
     }
 
-    public AuditIntentResponse SubmitAuditIntent(SubmitAuditIntentRequest request, AuditRecordId auditRecordId, DateTimeOffset now)
+    public AuditIntentResult SubmitAuditIntent(SubmitAuditIntentInput request, AuditRecordId auditRecordId, DateTimeOffset now)
     {
         AuditIntentValidator.Validate(request);
         if (!string.Equals(OrganizationId, request.OrganizationId, StringComparison.Ordinal)
@@ -304,7 +302,15 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         var auditRecord = AddAudit(auditRecordId, request.Action, request.Actor, now, request.CorrelationId);
         AddAuditRecordedDomainEvent(auditRecord);
-        return AuditRecordMapper.ToIntentResponse(auditRecord.ToFact());
+        var fact = auditRecord.ToFact();
+        return new AuditIntentResult(
+            fact.AuditRecordId,
+            fact.OperationTaskId,
+            fact.Action,
+            fact.Actor,
+            fact.OccurredAtUtc,
+            fact.CorrelationId,
+            fact.IntegrityHash);
     }
 
     public OperationTaskFact ToFact()
@@ -327,12 +333,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             ToApprovalFact());
     }
 
-    public OperationTaskResponse ToResponse()
+    public OperationTaskDetailFact ToDetailFact()
     {
-        return OperationTaskMapper.ToResponse(
+        return new OperationTaskDetailFact(
             ToFact(),
-            _attempts.Select(x => x.ToFact()),
-            _auditRecords.Select(x => x.ToFact()));
+            _attempts.Select(x => x.ToFact()).ToList(),
+            _auditRecords.Select(x => x.ToFact()).ToList());
     }
 
     public static string GetIdempotencyScope(string organizationId, string environmentId, string idempotencyKey)
@@ -392,7 +398,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         AddAuditRecordedDomainEvent(auditRecord);
     }
 
-    private void ValidateApprovalDecision(DecideOperationApprovalRequest request)
+    private void ValidateApprovalDecision(DecideOperationApprovalInput request)
     {
         if (!string.Equals(OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
@@ -419,7 +425,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     private IReadOnlyDictionary<string, string> Parameters =>
         JsonSerializer.Deserialize<Dictionary<string, string>>(ParametersJson, JsonOptions) ?? [];
 
-    private void ValidateResultOwnership(OperationAttempt attempt, OperationResult result)
+    private void ValidateResultOwnership(OperationAttempt attempt, OperationResultInput result)
     {
         if (!string.Equals(attempt.ConnectorHostId, result.Context.ConnectorHostId, StringComparison.Ordinal)
             || !string.Equals(OrganizationId, result.Context.OrganizationId, StringComparison.Ordinal)
@@ -513,7 +519,7 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
     public int? MaxAttempts { get; private set; }
     public string? AbandonReason { get; private set; }
 
-    internal void Record(string status, DateTimeOffset finishedAtUtc, FailureReason? failure)
+    internal void Record(string status, DateTimeOffset finishedAtUtc, OperationFailureFact? failure)
     {
         Status = status;
         FinishedAtUtc = finishedAtUtc;
@@ -550,7 +556,7 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
             Status,
             StartedAtUtc,
             FinishedAtUtc,
-            FailureJson is null ? null : JsonSerializer.Deserialize<FailureReason>(FailureJson, JsonOptions),
+            FailureJson is null ? null : JsonSerializer.Deserialize<OperationFailureFact>(FailureJson, JsonOptions),
             LeaseId ?? string.Empty,
             LeasedAtUtc ?? StartedAtUtc,
             LeasedUntilUtc ?? StartedAtUtc,

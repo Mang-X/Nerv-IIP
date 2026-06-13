@@ -1,5 +1,4 @@
 using Nerv.IIP.Contracts.ConnectorProtocol;
-using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 
 namespace Nerv.IIP.Ops.Domain;
@@ -14,20 +13,20 @@ public sealed class InvalidOperationTaskRequestException(string message) : OpsSt
 
 public interface IOpsStateStore
 {
-    OperationTaskResponse Create(CreateOperationTaskRequest request, DateTimeOffset now);
-    OperationTaskResponse Get(string operationTaskId);
-    PagedOperationTaskListResponse ListTasks(string organizationId, string environmentId, int? page, int? pageSize);
-    AuditRecordListResponse ListAuditRecords(string organizationId, string environmentId, string? operationTaskId);
-    AuditIntentResponse SubmitAuditIntent(SubmitAuditIntentRequest request, DateTimeOffset now);
-    OperationTemplateResponse CreateTemplate(CreateOperationTemplateRequest request, DateTimeOffset now);
-    OperationTemplateListResponse ListTemplates();
-    OperationTemplateResponse GetTemplate(string operationCode);
-    PendingOperationTasksResponse ClaimPending(ClaimOperationTasksRequest request, DateTimeOffset now);
-    OperationTaskResponse AbandonLease(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now);
-    OperationTaskResponse HeartbeatLease(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now);
-    OperationTaskResponse RecordResult(OperationResult result);
-    OperationTaskResponse Approve(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now);
-    OperationTaskResponse Reject(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now);
+    OperationTaskDetailFact Create(CreateOperationTaskInput request, DateTimeOffset now);
+    OperationTaskDetailFact Get(string operationTaskId);
+    OperationTaskListResult ListTasks(string organizationId, string environmentId, int? page, int? pageSize);
+    AuditRecordListResult ListAuditRecords(string organizationId, string environmentId, string? operationTaskId);
+    AuditIntentResult SubmitAuditIntent(SubmitAuditIntentInput request, DateTimeOffset now);
+    OperationTemplateFact CreateTemplate(CreateOperationTemplateInput request, DateTimeOffset now);
+    OperationTemplateListResult ListTemplates();
+    OperationTemplateFact GetTemplate(string operationCode);
+    PendingOperationTasksResult ClaimPending(ClaimOperationTasksInput request, DateTimeOffset now);
+    OperationTaskDetailFact AbandonLease(string operationTaskId, AbandonOperationTaskLeaseInput request, DateTimeOffset now);
+    OperationTaskDetailFact HeartbeatLease(string operationTaskId, HeartbeatOperationTaskLeaseInput request, DateTimeOffset now);
+    OperationTaskDetailFact RecordResult(OperationResultInput result);
+    OperationTaskDetailFact Approve(string operationTaskId, DecideOperationApprovalInput request, DateTimeOffset now);
+    OperationTaskDetailFact Reject(string operationTaskId, DecideOperationApprovalInput request, DateTimeOffset now);
 }
 
 public sealed class InMemoryOpsStateStore : IOpsStateStore
@@ -39,7 +38,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
     {
         ["lifecycle.restart"] = new OperationTemplateSnapshot("lifecycle.restart", true, 3, 300, false)
     };
-    private readonly Dictionary<string, OperationTemplateResponse> _templateResponses = new(StringComparer.Ordinal)
+    private readonly Dictionary<string, OperationTemplateFact> _templateResponses = new(StringComparer.Ordinal)
     {
         ["lifecycle.restart"] = BuiltInTemplateResponse()
     };
@@ -47,7 +46,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
     private readonly List<OperationAttemptFact> _attempts = [];
     private readonly List<AuditRecordFact> _auditRecords = [];
 
-    public OperationTaskResponse Create(CreateOperationTaskRequest request, DateTimeOffset now)
+    public OperationTaskDetailFact Create(CreateOperationTaskInput request, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -99,7 +98,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    public OperationTaskResponse Get(string operationTaskId)
+    public OperationTaskDetailFact Get(string operationTaskId)
     {
         lock (_gate)
         {
@@ -107,7 +106,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    public PagedOperationTaskListResponse ListTasks(string organizationId, string environmentId, int? page, int? pageSize)
+    public OperationTaskListResult ListTasks(string organizationId, string environmentId, int? page, int? pageSize)
     {
         lock (_gate)
         {
@@ -121,7 +120,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
             var items = query
                 .Skip((resolvedPage - 1) * resolvedPageSize)
                 .Take(resolvedPageSize)
-                .Select(x => new OperationTaskListItem(
+                .Select(x => new OperationTaskListItemFact(
                     x.OperationTaskId,
                     x.OrganizationId,
                     x.EnvironmentId,
@@ -137,11 +136,11 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                         .FirstOrDefault()))
                 .ToArray();
 
-            return new PagedOperationTaskListResponse(resolvedPage, resolvedPageSize, query.Length, items);
+            return new OperationTaskListResult(resolvedPage, resolvedPageSize, query.Length, items);
         }
     }
 
-    public AuditRecordListResponse ListAuditRecords(string organizationId, string environmentId, string? operationTaskId)
+    public AuditRecordListResult ListAuditRecords(string organizationId, string environmentId, string? operationTaskId)
     {
         lock (_gate)
         {
@@ -155,21 +154,13 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                 .OrderByDescending(x => x.OccurredAtUtc)
                 .ThenByDescending(x => x.AuditRecordId, StringComparer.Ordinal)
                 .Take(MaxAuditRecordsResponseSize)
-                .Select(x => new AuditRecordSummary(
-                    x.AuditRecordId,
-                    x.OperationTaskId,
-                    x.Action,
-                    x.Actor,
-                    x.OccurredAtUtc,
-                    x.CorrelationId,
-                    x.IntegrityHash))
                 .ToArray();
 
-            return new AuditRecordListResponse(items);
+            return new AuditRecordListResult(items);
         }
     }
 
-    public AuditIntentResponse SubmitAuditIntent(SubmitAuditIntentRequest request, DateTimeOffset now)
+    public AuditIntentResult SubmitAuditIntent(SubmitAuditIntentInput request, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -177,11 +168,18 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
             var task = FindTask(request.OperationTaskId);
             ValidateAuditIntentScope(task, request);
             var audit = AddAudit(request.OperationTaskId, request.Action, request.Actor, now, request.CorrelationId);
-            return AuditRecordMapper.ToIntentResponse(audit);
+            return new AuditIntentResult(
+                audit.AuditRecordId,
+                audit.OperationTaskId,
+                audit.Action,
+                audit.Actor,
+                audit.OccurredAtUtc,
+                audit.CorrelationId,
+                audit.IntegrityHash);
         }
     }
 
-    public OperationTemplateResponse CreateTemplate(CreateOperationTemplateRequest request, DateTimeOffset now)
+    public OperationTemplateFact CreateTemplate(CreateOperationTemplateInput request, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -200,7 +198,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                 throw new InvalidOperationTaskRequestException($"Operation template already exists: {template.OperationCode}");
             }
 
-            var response = new OperationTemplateResponse(
+            var response = new OperationTemplateFact(
                 template.Id.Id,
                 template.OperationCode,
                 template.DisplayName,
@@ -218,16 +216,16 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    public OperationTemplateListResponse ListTemplates()
+    public OperationTemplateListResult ListTemplates()
     {
         lock (_gate)
         {
-            return new OperationTemplateListResponse(
+            return new OperationTemplateListResult(
                 _templateResponses.Values.OrderBy(x => x.OperationCode, StringComparer.Ordinal).ToArray());
         }
     }
 
-    public OperationTemplateResponse GetTemplate(string operationCode)
+    public OperationTemplateFact GetTemplate(string operationCode)
     {
         lock (_gate)
         {
@@ -237,7 +235,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    public PendingOperationTasksResponse ClaimPending(ClaimOperationTasksRequest request, DateTimeOffset now)
+    public PendingOperationTasksResult ClaimPending(ClaimOperationTasksInput request, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -252,7 +250,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                 .Take(cappedTake)
                 .ToList();
 
-            var items = new List<OperationTaskDispatchItem>();
+            var items = new List<OperationTaskDispatchFact>();
             foreach (var task in pendingTasks)
             {
                 var attemptId = $"attempt-{_attempts.Count + 1:000000}";
@@ -285,7 +283,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                 ReplaceTask(task with { Status = "dispatched" });
                 AddAudit(task.OperationTaskId, "operation.claimed", request.ConnectorHostId, now, task.CorrelationId);
 
-                items.Add(new OperationTaskDispatchItem(
+                items.Add(new OperationTaskDispatchFact(
                     task.OperationTaskId,
                     attemptId,
                     task.OrganizationId,
@@ -303,11 +301,11 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                     maxAttempts));
             }
 
-            return new PendingOperationTasksResponse(items);
+            return new PendingOperationTasksResult(items);
         }
     }
 
-    public OperationTaskResponse AbandonLease(string operationTaskId, AbandonOperationTaskLeaseRequest request, DateTimeOffset now)
+    public OperationTaskDetailFact AbandonLease(string operationTaskId, AbandonOperationTaskLeaseInput request, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -325,7 +323,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    public OperationTaskResponse HeartbeatLease(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now)
+    public OperationTaskDetailFact HeartbeatLease(string operationTaskId, HeartbeatOperationTaskLeaseInput request, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -345,7 +343,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    public OperationTaskResponse RecordResult(OperationResult result)
+    public OperationTaskDetailFact RecordResult(OperationResultInput result)
     {
         lock (_gate)
         {
@@ -376,7 +374,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    public OperationTaskResponse Approve(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now)
+    public OperationTaskDetailFact Approve(string operationTaskId, DecideOperationApprovalInput request, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -405,7 +403,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    public OperationTaskResponse Reject(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now)
+    public OperationTaskDetailFact Reject(string operationTaskId, DecideOperationApprovalInput request, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -434,13 +432,13 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    private OperationTaskResponse GetUnlocked(string operationTaskId)
+    private OperationTaskDetailFact GetUnlocked(string operationTaskId)
     {
         var task = FindTask(operationTaskId);
-        return OperationTaskMapper.ToResponse(
+        return new OperationTaskDetailFact(
             task,
-            _attempts.Where(x => x.OperationTaskId == task.OperationTaskId),
-            _auditRecords.Where(x => x.OperationTaskId == task.OperationTaskId));
+            _attempts.Where(x => x.OperationTaskId == task.OperationTaskId).ToList(),
+            _auditRecords.Where(x => x.OperationTaskId == task.OperationTaskId).ToList());
     }
 
     private OperationTaskFact FindTask(string operationTaskId)
@@ -449,7 +447,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
             ?? throw new OperationTaskNotFoundException(operationTaskId);
     }
 
-    private static void ValidateResultOwnership(OperationTaskFact task, OperationAttemptFact attempt, OperationResult result)
+    private static void ValidateResultOwnership(OperationTaskFact task, OperationAttemptFact attempt, OperationResultInput result)
     {
         if (!string.Equals(attempt.ConnectorHostId, result.Context.ConnectorHostId, StringComparison.Ordinal)
             || !string.Equals(task.OrganizationId, result.Context.OrganizationId, StringComparison.Ordinal)
@@ -461,7 +459,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    private static void ValidateAuditIntentScope(OperationTaskFact task, SubmitAuditIntentRequest request)
+    private static void ValidateAuditIntentScope(OperationTaskFact task, SubmitAuditIntentInput request)
     {
         if (!string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
@@ -470,7 +468,7 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
-    private static void ValidateApprovalDecision(OperationTaskFact task, DecideOperationApprovalRequest request)
+    private static void ValidateApprovalDecision(OperationTaskFact task, DecideOperationApprovalInput request)
     {
         // TODO: Keep this in-memory validation aligned with OperationTask.ValidateApprovalDecision.
         if (!string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
@@ -574,10 +572,10 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         _attempts[_attempts.FindIndex(x => x.AttemptId == attempt.AttemptId)] = attempt;
     }
 
-    private static OperationTemplateResponse BuiltInTemplateResponse()
+    private static OperationTemplateFact BuiltInTemplateResponse()
     {
         var now = DateTimeOffset.Parse("2026-05-21T00:00:00Z");
-        return new OperationTemplateResponse(
+        return new OperationTemplateFact(
             "opt-lifecycle-restart",
             "lifecycle.restart",
             "Lifecycle restart",

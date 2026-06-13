@@ -184,7 +184,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 var calendar = await FindWorkCalendarAsync(request, cancellationToken);
                 calendar.Update(
                     request.Name ?? calendar.Name,
-                    request.WorkingTimes?.Select(x => new WorkCalendarWorkingTime(x.DayOfWeek, x.StartsAt, x.EndsAt)).ToArray(),
+                    request.WorkingTimes?.Select(x => new WorkCalendarWorkingTime(x.DayOfWeek)).ToArray(),
                     request.Holidays?.Select(x => new WorkCalendarHoliday(x.Date, x.Name)).ToArray(),
                     request.Exceptions?.Select(x => new WorkCalendarException(x.Date, x.IsWorkingDay, x.StartsAt, x.EndsAt, x.Reason)).ToArray());
                 return Detail(calendar);
@@ -284,7 +284,11 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<WorkCalendar> FindWorkCalendarAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
-        await dbContext.WorkCalendars.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        await dbContext.WorkCalendars
+            .Include(x => x.WorkingTimes)
+            .Include(x => x.Holidays)
+            .Include(x => x.Exceptions)
+            .SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<ProductionLine> FindProductionLineAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
@@ -425,7 +429,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
             x.EnvironmentId,
             x.Name,
             Status: x.Disabled ? "disabled" : "active",
-            WorkingTimes: x.WorkingTimes.Select(y => new WorkCalendarWorkingTimeDetail(y.DayOfWeek, y.StartsAt, y.EndsAt)).ToArray(),
+            WorkingTimes: x.WorkingTimes.Select(y => new WorkCalendarWorkingTimeDetail(y.DayOfWeek)).ToArray(),
             Holidays: x.Holidays.Select(y => new WorkCalendarHolidayDetail(y.Date, y.Name)).ToArray(),
             Exceptions: x.Exceptions.Select(y => new WorkCalendarExceptionDetail(y.Date, y.IsWorkingDay, y.StartsAt, y.EndsAt, y.Reason)).ToArray());
 

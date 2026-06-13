@@ -16,6 +16,7 @@ public sealed class EngineeringDocument : Entity<EngineeringDocumentId>, IAggreg
         string environmentId,
         string documentNumber,
         string revision,
+        string? itemCode,
         string fileId,
         string fileName,
         string contentType,
@@ -25,6 +26,7 @@ public sealed class EngineeringDocument : Entity<EngineeringDocumentId>, IAggreg
         EnvironmentId = Required(environmentId);
         DocumentNumber = Required(documentNumber);
         Revision = Required(revision);
+        ItemCode = string.IsNullOrWhiteSpace(itemCode) ? null : itemCode.Trim();
         FileId = Required(fileId);
         FileName = Required(fileName);
         ContentType = Required(contentType);
@@ -36,6 +38,7 @@ public sealed class EngineeringDocument : Entity<EngineeringDocumentId>, IAggreg
     public string EnvironmentId { get; private set; } = string.Empty;
     public string DocumentNumber { get; private set; } = string.Empty;
     public string Revision { get; private set; } = string.Empty;
+    public string? ItemCode { get; private set; }
     public string FileId { get; private set; } = string.Empty;
     public string FileName { get; private set; } = string.Empty;
     public string ContentType { get; private set; } = string.Empty;
@@ -52,11 +55,35 @@ public sealed class EngineeringDocument : Entity<EngineeringDocumentId>, IAggreg
         string contentType,
         string documentType)
     {
+        return Register(
+            organizationId,
+            environmentId,
+            documentNumber,
+            revision,
+            null,
+            fileId,
+            fileName,
+            contentType,
+            documentType);
+    }
+
+    public static EngineeringDocument Register(
+        string organizationId,
+        string environmentId,
+        string documentNumber,
+        string revision,
+        string? itemCode,
+        string fileId,
+        string fileName,
+        string contentType,
+        string documentType)
+    {
         var document = new EngineeringDocument(
             organizationId,
             environmentId,
             documentNumber,
             revision,
+            itemCode,
             fileId,
             fileName,
             contentType,

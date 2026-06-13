@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-06-06（FE-10 console 迁移完成、FE-11 仓储作业只读批次接入）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console 与 Business Console。代码事实校验日期为 2026-06-11（PDA 三域一线闭环全部落地：WMS 收货入库/复核发货/拣货/上架/盘点 五页（Plan 2 + #374 解锁 list facade，五个 WMS 入口点亮）、MES 工序执行/报工/领料/完工入库（Plan 3，字典点亮 + business-core MES StepFlow）、设备运维 报修/点检/报警查看（Plan 4，business-core 字典/StepFlow/标签落地）；此前 FE-10 console 迁移完成、FE-11 仓储作业只读批次接入）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 
@@ -145,6 +145,13 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | PDA/mobile | 一线报工、收货、拣货、盘点、巡检、报修、报警处理。 | 不复用 PC 菜单树；首页优先是我的任务、快捷应用墙和扫码直达。 |
 
 > PDA v1 任务地图与组件/UX 标准见 `docs/architecture/mobile-pda-module-product-design.md` 与 `docs/superpowers/specs/2026-06-09-mobile-pda-design.md`。实现轨为独立 app `frontend/apps/business-pda`，不复用 PC 菜单树。
+>
+> PDA 仓储作业状态（Plan 2 + #374，已建 5 页）：**收货入库 `/wms/inbound`、复核发货 `/wms/review`（写闭环 + 幂等）+ 拣货 `/wms/pick`、上架 `/wms/putaway`（只读任务清单）、盘点 `/wms/count`（写闭环 + 幂等）五页全量落地**；#374 拣货/上架/盘点 list facade 已交付并接出 curated barrel（`@nerv-iip/api-client`），首页应用墙五个 WMS 入口已点亮。拣货/上架无逐任务 complete 端点，做只读清单（写闭环经父单 complete）；盘点写经 count-executions complete（幂等键注入）。扫码 resolve 与真实个人任务过滤仍缺（#374 未含），按库位/状态过滤、不传非空 `operatorUserId`。
+>
+> PDA MES 状态（Plan 3，已建）：MES 工序执行/报工/领料/完工入库 已建——`@nerv-iip/business-core` 已点亮 `mes.operation`/`mes.report`/`mes.issue`/`mes.receipt` 四个应用墙入口（`routeReady=true`），并落地报工/完工入库的 `productionReportFlow`/`finishedGoodsReceiptFlow` StepFlow；MES facade 全就绪、无后端阻塞。
+>
+> **设备运维 PDA（Plan 4，已建）：** 设备运维 报修/点检/报警查看 已建 (Plan 4)（facade 就绪、无后端阻塞）。`@nerv-iip/business-core` 已点亮设备字典（`equipment.repair`/`equipment.inspect`/`equipment.alarms` routeReady=true，应用墙入口可跳）、落地设备 StepFlow（`repairOrderFlow`/`inspectionFlow`）与设备标签（severity/state/priority/工单状态/点检结果中文，镜像 PC `useBusinessEquipment`）；PDA 作业页 报修(故障报修)/点检/报警查看 三页 + 数据 composable（`useBusinessMaintenance`/`useBusinessEquipmentAlarms`）+ StepFlow/标签接线 + e2e 均已建 (Plan 4)。报警→报修保持上下文穿透（带 `deviceAssetId` + `sourceAlarmId`）。合并后 WMS/MES/设备运维三域 PDA 入口全部点亮，应用墙无 disabled 入口。
+>
 
 ### 角色导航样例
 

@@ -1,7 +1,70 @@
 using Nerv.IIP.Contracts.ConnectorProtocol;
-using Nerv.IIP.Contracts.Ops;
 
 namespace Nerv.IIP.Ops.Domain;
+
+public sealed record CreateOperationTaskInput(
+    string OrganizationId,
+    string EnvironmentId,
+    string InstanceKey,
+    string OperationCode,
+    string IdempotencyKey,
+    string RequestedBy,
+    string CorrelationId,
+    IReadOnlyDictionary<string, string> Parameters);
+
+public sealed record ClaimOperationTasksInput(
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    int Take);
+
+public sealed record AbandonOperationTaskLeaseInput(
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string LeaseId,
+    string AbandonReason);
+
+public sealed record HeartbeatOperationTaskLeaseInput(
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string LeaseId,
+    int LeaseDurationSeconds);
+
+public sealed record DecideOperationApprovalInput(
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string DecisionReason,
+    string CorrelationId);
+
+public sealed record SubmitAuditIntentInput(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationTaskId,
+    string Action,
+    string Actor,
+    string CorrelationId);
+
+public sealed record OperationResultInput(
+    ConnectorRequestContext Context,
+    string OperationTaskId,
+    string AttemptId,
+    string InstanceKey,
+    string OperationCode,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset FinishedAtUtc,
+    string ExecutionStatus,
+    OperationFailureFact? Failure,
+    IReadOnlyDictionary<string, string> Output);
+
+public sealed record OperationFailureFact(
+    string Code,
+    string Message,
+    string Category,
+    bool Retryable,
+    IReadOnlyDictionary<string, string> Detail);
 
 public sealed record OperationTaskFact(
     string OperationTaskId,
@@ -28,6 +91,23 @@ public sealed record OperationApprovalFact(
     DateTimeOffset? DecidedAtUtc,
     string? DecisionReason);
 
+public sealed record OperationTaskDetailFact(
+    OperationTaskFact Task,
+    IReadOnlyList<OperationAttemptFact> Attempts,
+    IReadOnlyList<AuditRecordFact> AuditRecords)
+{
+    public string OperationTaskId => Task.OperationTaskId;
+    public string OrganizationId => Task.OrganizationId;
+    public string EnvironmentId => Task.EnvironmentId;
+    public string InstanceKey => Task.InstanceKey;
+    public string OperationCode => Task.OperationCode;
+    public string Status => Task.Status;
+    public string RequestedBy => Task.RequestedBy;
+    public DateTimeOffset RequestedAtUtc => Task.RequestedAtUtc;
+    public OperationApprovalFact? Approval => Task.Approval;
+    public string? CurrentAttemptId => Attempts.OrderByDescending(x => x.StartedAtUtc).FirstOrDefault()?.AttemptId;
+}
+
 public sealed record OperationAttemptFact(
     string AttemptId,
     string OperationTaskId,
@@ -35,13 +115,16 @@ public sealed record OperationAttemptFact(
     string Status,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? FinishedAtUtc,
-    FailureReason? Failure,
+    OperationFailureFact? Failure,
     string LeaseId,
     DateTimeOffset LeasedAtUtc,
     DateTimeOffset LeasedUntilUtc,
     int AttemptNo,
     int MaxAttempts,
-    string? AbandonReason);
+    string? AbandonReason)
+{
+    public string? FailureCode => Failure?.Code;
+}
 
 public sealed record AuditRecordFact(
     string AuditRecordId,
@@ -52,26 +135,78 @@ public sealed record AuditRecordFact(
     string CorrelationId,
     string IntegrityHash);
 
-public static class AuditRecordMapper
-{
-    public static AuditIntentResponse ToIntentResponse(AuditRecordFact auditRecord)
-    {
-        return new AuditIntentResponse(
-            auditRecord.AuditRecordId,
-            auditRecord.OperationTaskId,
-            auditRecord.Action,
-            auditRecord.Actor,
-            auditRecord.OccurredAtUtc,
-            auditRecord.CorrelationId,
-            auditRecord.IntegrityHash);
-    }
-}
+public sealed record OperationTaskListResult(int Page, int PageSize, int TotalCount, IReadOnlyList<OperationTaskListItemFact> Items);
+
+public sealed record OperationTaskListItemFact(
+    string OperationTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string InstanceKey,
+    string OperationCode,
+    string Status,
+    string RequestedBy,
+    DateTimeOffset RequestedAtUtc,
+    string? CurrentAttemptId);
+
+public sealed record AuditRecordListResult(IReadOnlyList<AuditRecordFact> Items);
+
+public sealed record AuditIntentResult(
+    string AuditRecordId,
+    string OperationTaskId,
+    string Action,
+    string Actor,
+    DateTimeOffset OccurredAtUtc,
+    string CorrelationId,
+    string IntegrityHash);
+
+public sealed record CreateOperationTemplateInput(
+    string OperationCode,
+    string DisplayName,
+    string ParameterSchemaJson,
+    string RiskLevel,
+    int DefaultMaxAttempts,
+    int DefaultLeaseDurationSeconds,
+    bool RequiresApproval);
+
+public sealed record OperationTemplateFact(
+    string OperationTemplateId,
+    string OperationCode,
+    string DisplayName,
+    string ParameterSchemaJson,
+    string RiskLevel,
+    int DefaultMaxAttempts,
+    int DefaultLeaseDurationSeconds,
+    bool RequiresApproval,
+    bool Enabled,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record OperationTemplateListResult(IReadOnlyList<OperationTemplateFact> Items);
+
+public sealed record PendingOperationTasksResult(IReadOnlyList<OperationTaskDispatchFact> Items);
+
+public sealed record OperationTaskDispatchFact(
+    string OperationTaskId,
+    string AttemptId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string InstanceKey,
+    string OperationCode,
+    string CorrelationId,
+    IReadOnlyDictionary<string, string> Parameters,
+    string LeaseId,
+    DateTimeOffset LeasedAtUtc,
+    DateTimeOffset LeasedUntilUtc,
+    int AttemptNo,
+    int LeaseDurationSeconds,
+    int MaxAttempts);
 
 public static class AuditIntentValidator
 {
     private const int MaxAuditFieldLength = 128;
 
-    public static void Validate(SubmitAuditIntentRequest request)
+    public static void Validate(SubmitAuditIntentInput request)
     {
         ValidateRequired(request.OrganizationId, nameof(request.OrganizationId));
         ValidateRequired(request.EnvironmentId, nameof(request.EnvironmentId));
@@ -96,68 +231,5 @@ public static class AuditIntentValidator
         {
             throw new InvalidOperationTaskRequestException($"Audit intent {fieldName} is required.");
         }
-    }
-}
-
-public static class OperationTaskMapper
-{
-    public static OperationTaskResponse ToResponse(
-        OperationTaskFact task,
-        IEnumerable<OperationAttemptFact> attempts,
-        IEnumerable<AuditRecordFact> auditRecords)
-    {
-        var attemptSummaries = attempts
-            .Select(x => new OperationAttemptSummary(
-                x.AttemptId,
-                x.Status,
-                x.StartedAtUtc,
-                x.FinishedAtUtc,
-                x.Failure?.Code,
-                x.LeaseId,
-                x.LeasedAtUtc,
-                x.LeasedUntilUtc,
-                x.AttemptNo,
-                GetLeaseDurationSeconds(x.LeasedAtUtc, x.LeasedUntilUtc),
-                x.MaxAttempts,
-                x.AbandonReason))
-            .ToList();
-
-        var auditSummaries = auditRecords
-            .Select(x => new AuditRecordSummary(
-                x.AuditRecordId,
-                x.OperationTaskId,
-                x.Action,
-                x.Actor,
-                x.OccurredAtUtc,
-                x.CorrelationId,
-                x.IntegrityHash))
-            .ToList();
-
-        return new OperationTaskResponse(
-            task.OperationTaskId,
-            task.OrganizationId,
-            task.EnvironmentId,
-            task.InstanceKey,
-            task.OperationCode,
-            task.Status,
-            task.RequestedBy,
-            task.RequestedAtUtc,
-            task.Approval is null
-                ? null
-                : new OperationApprovalSummary(
-                    task.Approval.Status,
-                    task.Approval.RequestedBy,
-                    task.Approval.RequestedAtUtc,
-                    task.Approval.DecidedBy,
-                    task.Approval.DecidedAtUtc,
-                    task.Approval.DecisionReason),
-            attemptSummaries.LastOrDefault()?.AttemptId,
-            attemptSummaries,
-            auditSummaries);
-    }
-
-    private static int GetLeaseDurationSeconds(DateTimeOffset leasedAtUtc, DateTimeOffset leasedUntilUtc)
-    {
-        return Math.Max(0, (int)(leasedUntilUtc - leasedAtUtc).TotalSeconds);
     }
 }

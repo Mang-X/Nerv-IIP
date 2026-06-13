@@ -150,6 +150,39 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Business_console_routing_release_rejects_blank_operation_code_before_permission_check()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/engineering/routings/release", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            routingCode = "ROUTE-1000",
+            revision = "A",
+            skuCode = "SKU-FG-1000",
+            effectiveDate = "2026-06-01",
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 10,
+                    workCenterCode = "WC-MIX-01",
+                    operationCode = "   ",
+                    operationName = "混合",
+                    standardMinutes = 30,
+                },
+            },
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+    }
+
+    [Fact]
     public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -506,13 +539,22 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/ncrs/ncr-001/disposition", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/ncrs/ncr-001/close", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/documents", BusinessGatewayPermissions.EngineeringDocumentsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/documents", BusinessGatewayPermissions.EngineeringDocumentsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/documents/DOC-001/A", BusinessGatewayPermissions.EngineeringDocumentsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/items", BusinessGatewayPermissions.EngineeringItemsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/items", BusinessGatewayPermissions.EngineeringItemsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/items/ITEM-001/A", BusinessGatewayPermissions.EngineeringItemsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms/EBOM-001/A", BusinessGatewayPermissions.EngineeringBomsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-boms/release", BusinessGatewayPermissions.EngineeringBomsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms/MBOM-001/A", BusinessGatewayPermissions.EngineeringBomsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/manufacturing-boms/release", BusinessGatewayPermissions.EngineeringBomsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings", BusinessGatewayPermissions.EngineeringRoutingsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings/RTG-001/A", BusinessGatewayPermissions.EngineeringRoutingsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/routings/release", BusinessGatewayPermissions.EngineeringRoutingsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes", BusinessGatewayPermissions.EngineeringChangesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes/ECO-001", BusinessGatewayPermissions.EngineeringChangesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/release", BusinessGatewayPermissions.EngineeringChangesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
