@@ -70,10 +70,13 @@ Phase 2（codex 已补 list/get，本轮完成页面）
 4. **ECO 无 list/get + 无真实审批态**（后端一步 release）→ 变更看板建不了。补 `GET .../engineering-changes` + 若要真审批流则拆 Open/Approve/Release 状态机。
 5. **BOM 对比 / 有效性**：无任何端点，列为未来需求。
 6. 状态枚举对账：前端统一用 `Published`（非 `Released`）。
-7. **数据字典 codeSet 审计**（**#397**）：reference-data 里有 codeSet 是主数据/配置对象被塞进字典 → 丢结构。
-   - 🔴 `operation` 标准工序 → 升 `StandardOperation` 主数据（默认工作中心+标准工时+控制码）；交付前 routings 用字典过渡。
-   - 🔴 `barcode-rule` 条码规则 → 平台已有 BarcodeRule 服务（list/create-or-update + 模板/打印/扫码），字典这条是影子，**前端删除**即可（后端无动作）。
-   - ⚠️ `product-category`/`quality-reason`/`storage-condition`/`skill` → 视业务深度（层级/属性）决定是否升主数据，待产品拍板。
+7. **数据字典 codeSet 审计**（**#397**，已按标准系统建模定结论）：reference-data 里被塞进字典的主数据/配置对象 → 丢结构。
+   - 🔴 `operation` 标准工序 → 升 `StandardOperation` 主数据（默认工作中心+标准工时+控制码，对标 SAP CA21/CA11）；交付前 routings 用字典过渡。
+   - 🔴 `product-category` 产品/物料分类 → 升**分类树**主数据（SAP 产品层级/物料组、Oracle Category 分层；字典扁平存不了父子）。
+   - 🔴 `quality-reason` 质量原因 → 升**分组原因目录**（SAP QM Code Group→Code 两级 + 严重度/默认处置）。
+   - 🟡 `skill` 技能 → 升**分组技能目录**（+证书有效期，对标资质目录），低优先；现扁平 skill + skill-level 为过渡。
+   - 🔴 `barcode-rule` 条码规则 → 真实 BarcodeRule 实体在 business-barcode-label 服务（ruleCode/barcodeType/prefix/length/checksum），字典存的是 `code128` 码制替身（影子）。SKU 应引用真实 ruleCode；**前置依赖**：barcode-label 须种标准规则/开放维护（现无 Seeder），否则改接会卡 SKU 必填字段 → 协调后切，不盲改。
+   - ✅ `storage-condition` 保留字典（SAP 中即扁平判定键，温区/危害属性在仓型/危险品主数据上）；其余 10 个 codeSet 字典恰当。
 
 ## 6. UX 与重构顺序
 页型套 `master-data-templates.md`：生产版本=列表-详情/主从；MBOM/路线/EBOM=列表 + 发布向导（大 Drawer/全屏，非行内改单元格）；工序序列=有序行拖拽编辑器。全程「受控发布」语义显性化（状态徽章 + 生效日期 + 「发新修订」入口，不给「编辑已发布版本」）。
