@@ -595,6 +595,67 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Engineering_standard_operation_facades_use_internal_token_and_route_operation_code()
+    {
+        var engineering = new RecordingProductEngineeringClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var createResponse = await client.PostAsJsonAsync("/api/business-console/v1/engineering/standard-operations", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            operationCode = "OP-001",
+            operationName = "Assembly",
+            defaultWorkCenterCode = "WC-001",
+            standardSetupMinutes = 5,
+            standardRunMinutes = 15,
+            controlKey = "INHOUSE",
+            requiresReporting = true,
+            requiresQualityInspection = false,
+            isOutsourced = false,
+            description = "Assembly operation",
+        });
+        var updateResponse = await client.PutAsJsonAsync("/api/business-console/v1/engineering/standard-operations/OP-ROUTE", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            operationCode = "OP-BODY",
+            operationName = "Assembly updated",
+            defaultWorkCenterCode = "WC-002",
+            standardSetupMinutes = 6,
+            standardRunMinutes = 18,
+            controlKey = "INHOUSE",
+            requiresReporting = true,
+            requiresQualityInspection = true,
+            isOutsourced = false,
+            description = "Updated assembly operation",
+        });
+        var archiveResponse = await client.PostAsJsonAsync("/api/business-console/v1/engineering/standard-operations/OP-ARCHIVE/archive", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            operationCode = "OP-BODY",
+            reason = "Superseded",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, archiveResponse.StatusCode);
+        Assert.Equal("internal-test-token", engineering.LastInternalToken);
+        Assert.Equal("OP-001", engineering.LastCreateStandardOperationRequest!.OperationCode);
+        Assert.Equal("OP-ROUTE", engineering.LastUpdateStandardOperationRequest!.OperationCode);
+        Assert.Equal("OP-ARCHIVE", engineering.LastArchiveStandardOperationRequest!.OperationCode);
+    }
+
+    [Fact]
     public async Task Planning_mrp_run_uses_internal_service_token_for_downstream_business_service()
     {
         var planning = new RecordingPlanningClient();
@@ -1694,6 +1755,9 @@ public sealed class BusinessGatewayProxyTests
     [InlineData("/api/business-console/v1/engineering/engineering-boms/release", "parentItemCode")]
     [InlineData("/api/business-console/v1/engineering/manufacturing-boms/release", "skuCode")]
     [InlineData("/api/business-console/v1/engineering/routings/release", "skuCode")]
+    [InlineData("/api/business-console/v1/engineering/standard-operations", "operationName")]
+    [InlineData("/api/business-console/v1/engineering/standard-operations/OP-001", "defaultWorkCenterCode")]
+    [InlineData("/api/business-console/v1/engineering/standard-operations/OP-001/archive", "reason")]
     [InlineData("/api/business-console/v1/engineering/engineering-changes/release", "reason")]
     [InlineData("/api/business-console/v1/engineering/production-versions", "skuCode")]
     [InlineData("/api/business-console/v1/engineering/production-versions/pv-001", "mbomVersionId")]
@@ -1712,7 +1776,8 @@ public sealed class BusinessGatewayProxyTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
         var body = BusinessConsoleTestRequestBodies.ValidEngineeringWriteBody(gatewayPath);
         body[fieldName] = string.Empty;
-        var method = gatewayPath == "/api/business-console/v1/engineering/production-versions/pv-001"
+        var method = gatewayPath is "/api/business-console/v1/engineering/production-versions/pv-001"
+            or "/api/business-console/v1/engineering/standard-operations/OP-001"
             ? HttpMethod.Put
             : HttpMethod.Post;
         using var request = new HttpRequestMessage(
@@ -2136,6 +2201,25 @@ public sealed class BusinessGatewayProxyTests
             "internal-token-001",
             new BusinessConsoleReleaseRoutingRequest("org-001", "env-dev", "RTG-001", "A", "SKU-001", new DateOnly(2026, 6, 1), [new BusinessConsoleRoutingOperationRequest(10, "WC-001", "assembly", "装配", 15)]),
             CancellationToken.None);
+        await client.ListStandardOperationsAsync(
+            "internal-token-001",
+            new BusinessConsoleListStandardOperationsRequest("org-001", "env-dev", Enabled: true, Search: "assembly", Skip: 8, Take: 45),
+            CancellationToken.None);
+        await client.GetStandardOperationAsync("internal-token-001", "OP-001", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
+        await client.CreateStandardOperationAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateStandardOperationRequest("org-001", "env-dev", "OP-001", "Assembly", "WC-001", 5, 15, "INHOUSE", true, false, false, "Assembly operation"),
+            CancellationToken.None);
+        await client.UpdateStandardOperationAsync(
+            "internal-token-001",
+            "OP-001",
+            new BusinessConsoleUpdateStandardOperationRequest("org-001", "env-dev", "OP-BODY", "Assembly updated", "WC-002", 6, 18, "INHOUSE", true, true, false, "Updated assembly operation"),
+            CancellationToken.None);
+        await client.ArchiveStandardOperationAsync(
+            "internal-token-001",
+            "OP-001",
+            new BusinessConsoleArchiveStandardOperationRequest("org-001", "env-dev", "OP-BODY", "Superseded"),
+            CancellationToken.None);
         await client.ListEngineeringChangesAsync(
             "internal-token-001",
             new BusinessConsoleListEngineeringChangesRequest("org-001", "env-dev", "Published", Skip: 7, Take: 40),
@@ -2177,6 +2261,11 @@ public sealed class BusinessGatewayProxyTests
             request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/routings?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&status=Published&skip=6&take=35"),
             request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/routings/RTG-001/A?organizationId=org-001&environmentId=env-dev"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/routings/release"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/standard-operations?organizationId=org-001&environmentId=env-dev&enabled=true&search=assembly&skip=8&take=45"),
+            request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/standard-operations/OP-001?organizationId=org-001&environmentId=env-dev"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/standard-operations"),
+            request => AssertRequest(request, HttpMethod.Put, "/api/business/v1/engineering/standard-operations/OP-001"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/standard-operations/OP-001/archive"),
             request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/engineering-changes?organizationId=org-001&environmentId=env-dev&status=Published&skip=7&take=40"),
             request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/engineering-changes/ECO-001?organizationId=org-001&environmentId=env-dev"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-changes/release"),
@@ -2209,6 +2298,11 @@ public sealed class BusinessGatewayProxyTests
         Assert.Contains("ListRoutingsAsync", methodNames);
         Assert.Contains("GetRoutingAsync", methodNames);
         Assert.Contains("ReleaseRoutingAsync", methodNames);
+        Assert.Contains("ListStandardOperationsAsync", methodNames);
+        Assert.Contains("GetStandardOperationAsync", methodNames);
+        Assert.Contains("CreateStandardOperationAsync", methodNames);
+        Assert.Contains("UpdateStandardOperationAsync", methodNames);
+        Assert.Contains("ArchiveStandardOperationAsync", methodNames);
         Assert.Contains("ListEngineeringChangesAsync", methodNames);
         Assert.Contains("GetEngineeringChangeAsync", methodNames);
         Assert.Contains("ReleaseEngineeringChangeAsync", methodNames);
@@ -3231,6 +3325,21 @@ public sealed class BusinessGatewayProxyTests
             };
         }
 
+        if (path.Contains("/standard-operations", StringComparison.Ordinal) &&
+            !path.EndsWith("/archive", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new
+                {
+                    operationCode = "OP-001",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
         if (path.EndsWith("/archive", StringComparison.Ordinal))
         {
             return new
@@ -3779,6 +3888,12 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
 
     public BusinessConsoleReleaseManufacturingBomRequest? LastReleaseManufacturingBomRequest { get; private set; }
 
+    public BusinessConsoleCreateStandardOperationRequest? LastCreateStandardOperationRequest { get; private set; }
+
+    public BusinessConsoleUpdateStandardOperationRequest? LastUpdateStandardOperationRequest { get; private set; }
+
+    public BusinessConsoleArchiveStandardOperationRequest? LastArchiveStandardOperationRequest { get; private set; }
+
     public Task<BusinessConsoleEngineeringEntityResponse> RegisterEngineeringDocumentAsync(
         string internalBearerToken,
         BusinessConsoleRegisterEngineeringDocumentRequest request,
@@ -3928,6 +4043,74 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.RoutingCode ?? "RTG-001"));
+    }
+
+    public Task<BusinessConsoleStandardOperationListResponse> ListStandardOperationsAsync(
+        string internalBearerToken,
+        BusinessConsoleListStandardOperationsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleStandardOperationListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleStandardOperationItem> GetStandardOperationAsync(
+        string internalBearerToken,
+        string operationCode,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleStandardOperationItem(
+            operationCode,
+            "Assembly",
+            "WC-001",
+            5,
+            15,
+            20,
+            "INHOUSE",
+            true,
+            false,
+            false,
+            null,
+            true,
+            DateTime.UtcNow,
+            DateTime.UtcNow));
+    }
+
+    public Task<BusinessConsoleStandardOperationResponse> CreateStandardOperationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateStandardOperationRequest request,
+        CancellationToken cancellationToken)
+    {
+        WriteCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastCreateStandardOperationRequest = request;
+        return Task.FromResult(new BusinessConsoleStandardOperationResponse(request.OperationCode));
+    }
+
+    public Task<BusinessConsoleStandardOperationResponse> UpdateStandardOperationAsync(
+        string internalBearerToken,
+        string operationCode,
+        BusinessConsoleUpdateStandardOperationRequest request,
+        CancellationToken cancellationToken)
+    {
+        WriteCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastUpdateStandardOperationRequest = request with { OperationCode = operationCode };
+        return Task.FromResult(new BusinessConsoleStandardOperationResponse(operationCode));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> ArchiveStandardOperationAsync(
+        string internalBearerToken,
+        string operationCode,
+        BusinessConsoleArchiveStandardOperationRequest request,
+        CancellationToken cancellationToken)
+    {
+        WriteCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastArchiveStandardOperationRequest = request with { OperationCode = operationCode };
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 
     public Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringChangeAsync(

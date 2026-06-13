@@ -1228,6 +1228,87 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     standardMinutes?: number;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStandardOperationListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStandardOperationListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStandardOperationListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStandardOperationItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStandardOperationItem = {
+    operationCode?: string;
+    operationName?: string;
+    defaultWorkCenterCode?: string;
+    standardSetupMinutes?: number;
+    standardRunMinutes?: number;
+    standardMinutes?: number;
+    controlKey?: string;
+    requiresReporting?: boolean;
+    requiresQualityInspection?: boolean;
+    isOutsourced?: boolean;
+    description?: string | null;
+    enabled?: boolean;
+    createdAtUtc?: string;
+    updatedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListStandardOperationsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStandardOperationItem = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStandardOperationItem | null;
+};
+
+export type NervIipBusinessGatewayWebEndpointsProductEngineeringBusinessConsoleGetStandardOperationRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStandardOperationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStandardOperationResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleStandardOperationResponse = {
+    operationCode?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStandardOperationRequest = {
+    organizationId: string;
+    environmentId: string;
+    operationCode: string;
+    operationName: string;
+    defaultWorkCenterCode: string;
+    standardSetupMinutes?: number;
+    standardRunMinutes?: number;
+    controlKey: string;
+    requiresReporting?: boolean;
+    requiresQualityInspection?: boolean;
+    isOutsourced?: boolean;
+    description?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateStandardOperationRequest = {
+    organizationId: string;
+    environmentId: string;
+    operationName: string;
+    defaultWorkCenterCode: string;
+    standardSetupMinutes?: number;
+    standardRunMinutes?: number;
+    controlKey: string;
+    requiresReporting?: boolean;
+    requiresQualityInspection?: boolean;
+    isOutsourced?: boolean;
+    description?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleArchiveStandardOperationRequest = {
+    organizationId: string;
+    environmentId: string;
+    reason: string;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseEngineeringChangeRequest = {
     organizationId: string;
     environmentId: string;
@@ -6019,6 +6100,175 @@ export type ReleaseBusinessConsoleEngineeringRoutingResponses = {
 };
 
 export type ReleaseBusinessConsoleEngineeringRoutingResponse = ReleaseBusinessConsoleEngineeringRoutingResponses[keyof ReleaseBusinessConsoleEngineeringRoutingResponses];
+
+export type ListBusinessConsoleEngineeringStandardOperationsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        enabled?: boolean | null;
+        search?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/engineering/standard-operations';
+};
+
+export type ListBusinessConsoleEngineeringStandardOperationsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleEngineeringStandardOperationsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStandardOperationListResponse;
+};
+
+export type ListBusinessConsoleEngineeringStandardOperationsResponse = ListBusinessConsoleEngineeringStandardOperationsResponses[keyof ListBusinessConsoleEngineeringStandardOperationsResponses];
+
+export type CreateBusinessConsoleEngineeringStandardOperationData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStandardOperationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/engineering/standard-operations';
+};
+
+export type CreateBusinessConsoleEngineeringStandardOperationErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleEngineeringStandardOperationError = CreateBusinessConsoleEngineeringStandardOperationErrors[keyof CreateBusinessConsoleEngineeringStandardOperationErrors];
+
+export type CreateBusinessConsoleEngineeringStandardOperationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStandardOperationResponse;
+};
+
+export type CreateBusinessConsoleEngineeringStandardOperationResponse = CreateBusinessConsoleEngineeringStandardOperationResponses[keyof CreateBusinessConsoleEngineeringStandardOperationResponses];
+
+export type GetBusinessConsoleEngineeringStandardOperationData = {
+    body?: never;
+    path: {
+        operationCode: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/engineering/standard-operations/{operationCode}';
+};
+
+export type GetBusinessConsoleEngineeringStandardOperationErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleEngineeringStandardOperationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStandardOperationItem;
+};
+
+export type GetBusinessConsoleEngineeringStandardOperationResponse = GetBusinessConsoleEngineeringStandardOperationResponses[keyof GetBusinessConsoleEngineeringStandardOperationResponses];
+
+export type UpdateBusinessConsoleEngineeringStandardOperationData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateStandardOperationRequest;
+    path: {
+        operationCode: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/engineering/standard-operations/{operationCode}';
+};
+
+export type UpdateBusinessConsoleEngineeringStandardOperationErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpdateBusinessConsoleEngineeringStandardOperationError = UpdateBusinessConsoleEngineeringStandardOperationErrors[keyof UpdateBusinessConsoleEngineeringStandardOperationErrors];
+
+export type UpdateBusinessConsoleEngineeringStandardOperationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStandardOperationResponse;
+};
+
+export type UpdateBusinessConsoleEngineeringStandardOperationResponse = UpdateBusinessConsoleEngineeringStandardOperationResponses[keyof UpdateBusinessConsoleEngineeringStandardOperationResponses];
+
+export type ArchiveBusinessConsoleEngineeringStandardOperationData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleArchiveStandardOperationRequest;
+    path: {
+        operationCode: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/engineering/standard-operations/{operationCode}/archive';
+};
+
+export type ArchiveBusinessConsoleEngineeringStandardOperationErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ArchiveBusinessConsoleEngineeringStandardOperationError = ArchiveBusinessConsoleEngineeringStandardOperationErrors[keyof ArchiveBusinessConsoleEngineeringStandardOperationErrors];
+
+export type ArchiveBusinessConsoleEngineeringStandardOperationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type ArchiveBusinessConsoleEngineeringStandardOperationResponse = ArchiveBusinessConsoleEngineeringStandardOperationResponses[keyof ArchiveBusinessConsoleEngineeringStandardOperationResponses];
 
 export type ReleaseBusinessConsoleEngineeringChangeData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseEngineeringChangeRequest;

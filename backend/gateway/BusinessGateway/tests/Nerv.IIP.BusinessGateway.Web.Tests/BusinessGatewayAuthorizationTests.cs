@@ -587,6 +587,11 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings", BusinessGatewayPermissions.EngineeringRoutingsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings/RTG-001/A", BusinessGatewayPermissions.EngineeringRoutingsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/routings/release", BusinessGatewayPermissions.EngineeringRoutingsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/standard-operations", "business.engineering.standard-operations.read");
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/standard-operations/OP-001", "business.engineering.standard-operations.read");
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/standard-operations", "business.engineering.standard-operations.manage");
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/engineering/standard-operations/OP-001", "business.engineering.standard-operations.manage");
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/standard-operations/OP-001/archive", "business.engineering.standard-operations.manage");
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes", BusinessGatewayPermissions.EngineeringChangesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes/ECO-001", BusinessGatewayPermissions.EngineeringChangesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/release", BusinessGatewayPermissions.EngineeringChangesManage);

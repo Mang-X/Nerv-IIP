@@ -1009,6 +1009,70 @@ public sealed record BusinessConsoleRoutingOperationRequest(
     string OperationName,
     int StandardMinutes);
 
+public sealed record BusinessConsoleListStandardOperationsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    bool? Enabled = null,
+    string? Search = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleStandardOperationListResponse(
+    IReadOnlyCollection<BusinessConsoleStandardOperationItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleStandardOperationItem(
+    string OperationCode,
+    string OperationName,
+    string DefaultWorkCenterCode,
+    int StandardSetupMinutes,
+    int StandardRunMinutes,
+    int StandardMinutes,
+    string ControlKey,
+    bool RequiresReporting,
+    bool RequiresQualityInspection,
+    bool IsOutsourced,
+    string? Description,
+    bool Enabled,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record BusinessConsoleCreateStandardOperationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationCode,
+    string OperationName,
+    string DefaultWorkCenterCode,
+    int StandardSetupMinutes,
+    int StandardRunMinutes,
+    string ControlKey,
+    bool RequiresReporting,
+    bool RequiresQualityInspection,
+    bool IsOutsourced,
+    string? Description);
+
+public sealed record BusinessConsoleUpdateStandardOperationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationCode,
+    string OperationName,
+    string DefaultWorkCenterCode,
+    int StandardSetupMinutes,
+    int StandardRunMinutes,
+    string ControlKey,
+    bool RequiresReporting,
+    bool RequiresQualityInspection,
+    bool IsOutsourced,
+    string? Description);
+
+public sealed record BusinessConsoleArchiveStandardOperationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationCode,
+    string Reason);
+
+public sealed record BusinessConsoleStandardOperationResponse(string OperationCode);
+
 public sealed record BusinessConsoleReleaseEngineeringChangeRequest(
     string OrganizationId,
     string EnvironmentId,

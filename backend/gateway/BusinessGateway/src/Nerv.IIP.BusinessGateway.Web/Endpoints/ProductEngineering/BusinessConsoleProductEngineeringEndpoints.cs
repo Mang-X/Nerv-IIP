@@ -388,6 +388,151 @@ public sealed class ReleaseBusinessConsoleEngineeringRoutingEndpoint(
 }
 
 [Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/standard-operations")]
+[BusinessGatewayOperationId("listBusinessConsoleEngineeringStandardOperations")]
+public sealed class ListBusinessConsoleEngineeringStandardOperationsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleListStandardOperationsRequest, BusinessConsoleStandardOperationListResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringStandardOperationsRead)
+{
+    protected override string OrganizationId(BusinessConsoleListStandardOperationsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleListStandardOperationsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleStandardOperationListResponse> ForwardAsync(
+        BusinessConsoleListStandardOperationsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.ListStandardOperationsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed record BusinessConsoleGetStandardOperationRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: RouteParam] string OperationCode);
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/standard-operations/{operationCode}")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringStandardOperation")]
+public sealed class GetBusinessConsoleEngineeringStandardOperationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleGetStandardOperationRequest, BusinessConsoleStandardOperationItem>(
+        auth,
+        BusinessGatewayPermissions.EngineeringStandardOperationsRead)
+{
+    protected override string OrganizationId(BusinessConsoleGetStandardOperationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleGetStandardOperationRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleGetStandardOperationRequest request) => "standard-operation";
+
+    protected override string? ResourceId(BusinessConsoleGetStandardOperationRequest request) => request.OperationCode;
+
+    protected override Task<BusinessConsoleStandardOperationItem> ForwardAsync(
+        BusinessConsoleGetStandardOperationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetStandardOperationAsync(tokenProvider.BearerToken, request.OperationCode, new BusinessConsoleEngineeringContextRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpPost("/api/business-console/v1/engineering/standard-operations")]
+[BusinessGatewayOperationId("createBusinessConsoleEngineeringStandardOperation")]
+public sealed class CreateBusinessConsoleEngineeringStandardOperationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateStandardOperationRequest, BusinessConsoleStandardOperationResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringStandardOperationsManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateStandardOperationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateStandardOperationRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleCreateStandardOperationRequest request) => "standard-operation";
+
+    protected override string? ResourceId(BusinessConsoleCreateStandardOperationRequest request) => request.OperationCode;
+
+    protected override Task<BusinessConsoleStandardOperationResponse> ForwardAsync(
+        BusinessConsoleCreateStandardOperationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.CreateStandardOperationAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpPut("/api/business-console/v1/engineering/standard-operations/{operationCode}")]
+[BusinessGatewayOperationId("updateBusinessConsoleEngineeringStandardOperation")]
+public sealed class UpdateBusinessConsoleEngineeringStandardOperationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleUpdateStandardOperationRequest, BusinessConsoleStandardOperationResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringStandardOperationsManage)
+{
+    protected override string OrganizationId(BusinessConsoleUpdateStandardOperationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleUpdateStandardOperationRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleUpdateStandardOperationRequest request) => "standard-operation";
+
+    protected override string? ResourceId(BusinessConsoleUpdateStandardOperationRequest request) => Route<string>("operationCode") ?? request.OperationCode;
+
+    protected override Task<BusinessConsoleStandardOperationResponse> ForwardAsync(
+        BusinessConsoleUpdateStandardOperationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var operationCode = Route<string>("operationCode") ?? request.OperationCode;
+        return engineering.UpdateStandardOperationAsync(
+            tokenProvider.BearerToken,
+            operationCode,
+            request with { OperationCode = operationCode },
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpPost("/api/business-console/v1/engineering/standard-operations/{operationCode}/archive")]
+[BusinessGatewayOperationId("archiveBusinessConsoleEngineeringStandardOperation")]
+public sealed class ArchiveBusinessConsoleEngineeringStandardOperationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleArchiveStandardOperationRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringStandardOperationsManage)
+{
+    protected override string OrganizationId(BusinessConsoleArchiveStandardOperationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleArchiveStandardOperationRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleArchiveStandardOperationRequest request) => "standard-operation";
+
+    protected override string? ResourceId(BusinessConsoleArchiveStandardOperationRequest request) => Route<string>("operationCode") ?? request.OperationCode;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleArchiveStandardOperationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var operationCode = Route<string>("operationCode") ?? request.OperationCode;
+        return engineering.ArchiveStandardOperationAsync(
+            tokenProvider.BearerToken,
+            operationCode,
+            request with { OperationCode = operationCode },
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console Product Engineering")]
 [HttpPost("/api/business-console/v1/engineering/engineering-changes/release")]
 [BusinessGatewayOperationId("releaseBusinessConsoleEngineeringChange")]
 public sealed class ReleaseBusinessConsoleEngineeringChangeEndpoint(
@@ -705,6 +850,47 @@ public sealed class BusinessConsoleReleaseEngineeringChangeRequestValidator : Va
             version.RuleFor(x => x.VersionKind).NotEmpty().MaximumLength(100);
             version.RuleFor(x => x.VersionId).NotEmpty().MaximumLength(150);
         });
+    }
+}
+
+public sealed class BusinessConsoleCreateStandardOperationRequestValidator : Validator<BusinessConsoleCreateStandardOperationRequest>
+{
+    public BusinessConsoleCreateStandardOperationRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.DefaultWorkCenterCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.StandardSetupMinutes).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.StandardRunMinutes).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.ControlKey).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleUpdateStandardOperationRequestValidator : Validator<BusinessConsoleUpdateStandardOperationRequest>
+{
+    public BusinessConsoleUpdateStandardOperationRequestValidator()
+    {
+        RuleFor(x => x.OperationCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.DefaultWorkCenterCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.StandardSetupMinutes).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.StandardRunMinutes).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.ControlKey).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleArchiveStandardOperationRequestValidator : Validator<BusinessConsoleArchiveStandardOperationRequest>
+{
+    public BusinessConsoleArchiveStandardOperationRequestValidator()
+    {
+        RuleFor(x => x.OperationCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
 }
 
