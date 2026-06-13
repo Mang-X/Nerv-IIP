@@ -28,6 +28,10 @@ import {
   listBusinessConsoleEngineeringManufacturingBomsQueryOptions,
   listBusinessConsoleEngineeringProductionVersionsQueryOptions,
   listBusinessConsoleEngineeringRoutingsQueryOptions,
+  listBusinessConsoleEngineeringStandardOperationsQueryOptions,
+  createBusinessConsoleEngineeringStandardOperationMutationOptions,
+  updateBusinessConsoleEngineeringStandardOperationMutationOptions,
+  archiveBusinessConsoleEngineeringStandardOperationMutationOptions,
   registerBusinessConsoleEngineeringDocumentMutationOptions,
   releaseBusinessConsoleEngineeringBomMutationOptions,
   releaseBusinessConsoleEngineeringChangeMutationOptions,
@@ -54,6 +58,10 @@ import {
   type BusinessConsoleManufacturingBomListEnvelope,
   type BusinessConsoleProductionVersionItem,
   type BusinessConsoleProductionVersionListEnvelope,
+  type BusinessConsoleStandardOperationItem,
+  type BusinessConsoleStandardOperationListEnvelope,
+  type BusinessConsoleCreateStandardOperationRequest,
+  type BusinessConsoleUpdateStandardOperationRequest,
   type BusinessConsoleRegisterEngineeringDocumentRequest,
   type BusinessConsoleReleaseEngineeringBomRequest,
   type BusinessConsoleReleaseEngineeringChangeRequest,
@@ -843,104 +851,99 @@ export function useEngineeringChanges() {
 }
 
 /**
- * 标准工序 StandardOperation（⏳ #397 桩）。
+ * 标准工序 StandardOperation（#397 已交付，真实接线）。
  *
- * 后端「标准工序主数据」尚未交付（#397：独立 StandardOperation 实体 + facade，
- * 带默认工作中心 / 标准工时 / 控制标志）。此处先给**空数据 + 抛错的保存**，
- * 让前端把页面（IA / 列表 / 表单）搭起来，**不塞假数据**。
- *
- * 交付后只需：
- * 1. 把 import 换成生成层 list/create/update/archive options；
- * 2. 用 useQuery/useMutation 替换下面的空 ref / notReady()；
- * 页面（standard-operations.vue）模板与绑定**无需改动**。
+ * 关键契约（以生成层为准）：
+ * - 身份是 `operationCode`（用户自定义、创建必填，**不走自动编码**）；无独立 id。
+ * - 列表 `{ items, total }`，支持 enabled/search/skip/take 过滤。
+ * - 创建/更新 body 含 org/env；更新走 `PUT .../{operationCode}`（org/env 在 body，不在 query）。
+ * - 控制模型：`controlKey`(必填字符串) + 三个布尔 requiresReporting/requiresQualityInspection/isOutsourced。
+ * - 工时 `standardSetupMinutes`/`standardRunMinutes` 为整数分钟（可空）。
  */
-export interface StandardOperationItem {
-  /** 记录标识（后端 #397 交付后映射真实主键到此字段）。 */
-  id?: string
-  operationCode?: string
-  operationName?: string
-  defaultWorkCenterCode?: string | null
-  standardSetupMinutes?: number | null
-  standardRunMinutes?: number | null
-  /** 控制标志：是否需要报工。 */
-  reportProgress?: boolean
-  /** 控制标志：是否需要质检。 */
-  requireInspection?: boolean
-  /** 控制标志：是否外协。 */
-  outsourced?: boolean
-  description?: string | null
-  enabled?: boolean
-  status?: string
-}
-
 export interface StandardOperationListFilters {
   organizationId: string
   environmentId: string
+  enabled?: boolean
   search?: string
   skip: number
   take: number
 }
 
-export interface CreateStandardOperationRequest {
-  organizationId: string
-  environmentId: string
-  // 编码由系统按规则引擎自动生成，前端不传 code。
-  operationName: string
-  defaultWorkCenterCode?: string | null
-  standardSetupMinutes?: number | null
-  standardRunMinutes?: number | null
-  reportProgress?: boolean
-  requireInspection?: boolean
-  outsourced?: boolean
-  description?: string | null
-  enabled?: boolean
-}
-
-export type UpdateStandardOperationRequest = Omit<
-  CreateStandardOperationRequest,
-  'organizationId' | 'environmentId'
->
-
-/** #397 交付前，保存类操作统一拒绝并提示，避免「点了没反应」或假成功。 */
-const STANDARD_OPERATION_NOT_READY
-  = '标准工序主数据尚未交付（#397），当前为页面预览，保存暂不可用。'
-
 export function useStandardOperations() {
   const context = useBusinessContextStore()
+  const queryCache = useQueryCache()
   const filters = reactive<StandardOperationListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
+    enabled: undefined,
     search: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
   })
 
-  // TODO(#397) 后端交付后替换为 listBusinessConsoleStandardOperationsQueryOptions(...) 的 useQuery。
-  const items = ref<StandardOperationItem[]>([])
-  const pending = ref(false)
-  const error = ref<unknown>(null)
-  const total = ref(0)
-  const noPending = ref(false)
+  const listQuery = useQuery(() =>
+    listBusinessConsoleEngineeringStandardOperationsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('enabled', filters.enabled),
+        ...optionalQuery('search', filters.search),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
 
-  const notReady = (): Promise<never> =>
-    Promise.reject(new Error(STANDARD_OPERATION_NOT_READY))
+  function invalidateList() {
+    void queryCache
+      .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleEngineeringStandardOperations') })
+      .catch(ignoreBackgroundError)
+  }
+
+  const createMutation = useMutation({
+    ...createBusinessConsoleEngineeringStandardOperationMutationOptions(),
+    onSuccess: invalidateList,
+  })
+  const updateMutation = useMutation({
+    ...updateBusinessConsoleEngineeringStandardOperationMutationOptions(),
+    onSuccess: invalidateList,
+  } as unknown as UseMutationOptions)
+  const archiveMutation = useMutation({
+    ...archiveBusinessConsoleEngineeringStandardOperationMutationOptions(),
+    onSuccess: invalidateList,
+  } as unknown as UseMutationOptions)
 
   return {
-    /** 后端是否已就绪：页面据此显示「建设中」横幅、禁用保存。交付后改为 true。 */
-    backendReady: false as boolean,
     filters,
-    standardOperations: computed<StandardOperationItem[]>(() => items.value),
-    standardOperationsError: error,
-    standardOperationsPending: pending,
-    standardOperationsTotal: computed(() => total.value),
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    refresh: async () => {},
+    standardOperations: computed<BusinessConsoleStandardOperationItem[]>(() =>
+      unwrapItems(listQuery.data.value as BusinessConsoleStandardOperationListEnvelope | undefined),
+    ),
+    standardOperationsError: listQuery.error,
+    standardOperationsPending: listQuery.isLoading,
+    standardOperationsTotal: computed(() =>
+      unwrapTotal(listQuery.data.value as BusinessConsoleStandardOperationListEnvelope | undefined),
+    ),
+    refresh: listQuery.refetch,
 
-    createStandardOperation: (_body: CreateStandardOperationRequest) => notReady(),
-    createPending: noPending,
-    updateStandardOperation: (_id: string, _body: UpdateStandardOperationRequest) => notReady(),
-    updatePending: noPending,
-    archiveStandardOperation: (_id: string, _reason: string) => notReady(),
-    archivePending: noPending,
+    // 创建 body 含 org/env + 用户自定义 operationCode（页面提供）。
+    createStandardOperation: (body: BusinessConsoleCreateStandardOperationRequest) =>
+      createMutation.mutateAsync({ body }),
+    createPending: createMutation.isLoading,
+
+    // 更新走 `PUT .../{operationCode}`，org/env 在 body（无 query）。
+    updateStandardOperation: (operationCode: string, body: BusinessConsoleUpdateStandardOperationRequest) =>
+      (updateMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({
+        path: { operationCode },
+        body,
+      }),
+    updatePending: updateMutation.isLoading,
+
+    // 归档走 `POST .../{operationCode}/archive`，body 带 org/env + reason。
+    archiveStandardOperation: (operationCode: string, reason: string) =>
+      (archiveMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({
+        path: { operationCode },
+        body: { organizationId: filters.organizationId, environmentId: filters.environmentId, reason },
+      }),
+    archivePending: archiveMutation.isLoading,
   }
 }

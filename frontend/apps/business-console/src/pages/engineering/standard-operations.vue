@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type {
-  CreateStandardOperationRequest,
-  StandardOperationItem,
-} from '@/composables/useProductEngineering'
+  BusinessConsoleCreateStandardOperationRequest,
+  BusinessConsoleStandardOperationItem,
+} from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
@@ -52,7 +52,6 @@ definePage({ meta: { requiresAuth: true, title: '标准工序' } })
 const {
   archiveStandardOperation,
   archivePending,
-  backendReady,
   createStandardOperation,
   createPending,
   filters,
@@ -107,47 +106,48 @@ function formatMinutes(setup?: number | null, run?: number | null) {
   return `准备 ${setup ?? 0} / 加工 ${run ?? 0}`
 }
 
-const columns: DataTableColumn<StandardOperationItem>[] = [
+const columns: DataTableColumn<BusinessConsoleStandardOperationItem>[] = [
   { key: 'operationCode', header: '编码', width: 'w-32' },
   { key: 'operationName', header: '工序名', cellClass: 'font-medium' },
   { key: 'defaultWorkCenter', header: '默认工作中心' },
-  { key: 'standardMinutes', header: '标准工时（分）', width: 'w-44' },
-  { key: 'control', header: '控制', width: 'w-40' },
+  { key: 'standardMinutes', header: '标准工时（分）', width: 'w-40' },
+  { key: 'control', header: '控制', width: 'w-52' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
 // ── 新建 / 编辑表单 ─────────────────────────────────────────────
 interface StandardOperationForm {
+  operationCode: string
   operationName: string
   defaultWorkCenterCode: string
+  controlKey: string
   standardSetupMinutes: string
   standardRunMinutes: string
-  reportProgress: boolean
-  requireInspection: boolean
-  outsourced: boolean
+  requiresReporting: boolean
+  requiresQualityInspection: boolean
+  isOutsourced: boolean
   description: string
-  enabled: boolean
 }
 
 function blankForm(): StandardOperationForm {
   return {
+    operationCode: '',
     operationName: '',
     defaultWorkCenterCode: '',
+    controlKey: 'INHOUSE',
     standardSetupMinutes: '',
     standardRunMinutes: '',
-    reportProgress: true,
-    requireInspection: false,
-    outsourced: false,
+    requiresReporting: true,
+    requiresQualityInspection: false,
+    isOutsourced: false,
     description: '',
-    enabled: true,
   }
 }
 
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
-// null = 新建，否则为正在编辑工序的记录标识。
-const editingId = shallowRef<string | null>(null)
+// null = 新建，否则为正在编辑工序的 operationCode（编码即身份，编辑态只读）。
 const editingCode = shallowRef<string | null>(null)
 const form = reactive<StandardOperationForm>(blankForm())
 
@@ -160,33 +160,37 @@ function parseNumber(value: string): number | undefined {
 const setupMinutes = computed(() => parseNumber(form.standardSetupMinutes))
 const runMinutes = computed(() => parseNumber(form.standardRunMinutes))
 
+const codeValid = computed(() => !!editingCode.value || form.operationCode.trim().length > 0)
 const nameValid = computed(() => form.operationName.trim().length > 0)
+const workCenterValid = computed(() => form.defaultWorkCenterCode.trim().length > 0)
+const controlKeyValid = computed(() => form.controlKey.trim().length > 0)
 const setupValid = computed(() => form.standardSetupMinutes.trim() === '' || (setupMinutes.value != null && setupMinutes.value >= 0))
 const runValid = computed(() => form.standardRunMinutes.trim() === '' || (runMinutes.value != null && runMinutes.value >= 0))
-const canSubmit = computed(() => nameValid.value && setupValid.value && runValid.value)
+const canSubmit = computed(() =>
+  codeValid.value && nameValid.value && workCenterValid.value && controlKeyValid.value && setupValid.value && runValid.value,
+)
 
 function openCreate() {
-  editingId.value = null
   editingCode.value = null
   Object.assign(form, blankForm())
   showErrors.value = false
   formOpen.value = true
 }
-function openEdit(row: StandardOperationItem) {
-  if (!row.id) return
-  editingId.value = row.id
-  editingCode.value = row.operationCode ?? null
+function openEdit(row: BusinessConsoleStandardOperationItem) {
+  if (!row.operationCode) return
+  editingCode.value = row.operationCode
   showErrors.value = false
   Object.assign(form, {
+    operationCode: row.operationCode ?? '',
     operationName: row.operationName ?? '',
     defaultWorkCenterCode: row.defaultWorkCenterCode ?? '',
+    controlKey: row.controlKey ?? 'INHOUSE',
     standardSetupMinutes: row.standardSetupMinutes == null ? '' : String(row.standardSetupMinutes),
     standardRunMinutes: row.standardRunMinutes == null ? '' : String(row.standardRunMinutes),
-    reportProgress: row.reportProgress ?? true,
-    requireInspection: row.requireInspection ?? false,
-    outsourced: row.outsourced ?? false,
+    requiresReporting: row.requiresReporting ?? true,
+    requiresQualityInspection: row.requiresQualityInspection ?? false,
+    isOutsourced: row.isOutsourced ?? false,
     description: row.description ?? '',
-    enabled: row.enabled ?? true,
   })
   formOpen.value = true
 }
@@ -196,34 +200,39 @@ async function submitForm() {
     showErrors.value = true
     return
   }
-  const payload = {
+  const shared = {
     operationName: form.operationName.trim(),
-    defaultWorkCenterCode: form.defaultWorkCenterCode.trim() || null,
-    standardSetupMinutes: setupMinutes.value ?? null,
-    standardRunMinutes: runMinutes.value ?? null,
-    reportProgress: form.reportProgress,
-    requireInspection: form.requireInspection,
-    outsourced: form.outsourced,
+    defaultWorkCenterCode: form.defaultWorkCenterCode.trim(),
+    controlKey: form.controlKey.trim(),
+    standardSetupMinutes: setupMinutes.value,
+    standardRunMinutes: runMinutes.value,
+    requiresReporting: form.requiresReporting,
+    requiresQualityInspection: form.requiresQualityInspection,
+    isOutsourced: form.isOutsourced,
     description: form.description.trim() || null,
-    enabled: form.enabled,
   }
   try {
-    if (editingId.value) {
-      await updateStandardOperation(editingId.value, payload)
-      notifySuccess(`工序「${payload.operationName}」已更新。`)
-    }
-    else {
-      const body: CreateStandardOperationRequest = {
+    if (editingCode.value) {
+      await updateStandardOperation(editingCode.value, {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
-        ...payload,
+        ...shared,
+      })
+      notifySuccess(`工序「${shared.operationName}」已更新。`)
+    }
+    else {
+      const body: BusinessConsoleCreateStandardOperationRequest = {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        operationCode: form.operationCode.trim(),
+        ...shared,
       }
       await createStandardOperation(body)
-      notifySuccess(`已创建标准工序「${payload.operationName}」。`)
+      notifySuccess(`已创建标准工序「${shared.operationName}」。`)
     }
     showErrors.value = false
     formOpen.value = false
-    editingId.value = null
+    editingCode.value = null
   }
   catch (error) {
     notifyError(error)
@@ -232,17 +241,17 @@ async function submitForm() {
 
 // ── 停用 ────────────────────────────────────────────────────────
 const archiveOpen = shallowRef(false)
-const archiveTarget = shallowRef<StandardOperationItem | null>(null)
-function openArchive(row: StandardOperationItem) {
-  if (!row.id) return
+const archiveTarget = shallowRef<BusinessConsoleStandardOperationItem | null>(null)
+function openArchive(row: BusinessConsoleStandardOperationItem) {
+  if (!row.operationCode) return
   archiveTarget.value = row
   archiveOpen.value = true
 }
 async function confirmArchive() {
   const target = archiveTarget.value
-  if (!target?.id) return
+  if (!target?.operationCode) return
   try {
-    await archiveStandardOperation(target.id, '不再使用')
+    await archiveStandardOperation(target.operationCode, '不再使用')
     notifySuccess(`工序「${target.operationName}」已停用。`)
     archiveOpen.value = false
     archiveTarget.value = null
@@ -274,36 +283,47 @@ async function confirmArchive() {
           </DialogTrigger>
           <DialogContent class="sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{{ editingId ? '编辑标准工序' : '新建标准工序' }}</DialogTitle>
+              <DialogTitle>{{ editingCode ? '编辑标准工序' : '新建标准工序' }}</DialogTitle>
               <DialogDescription>
-                标准工序是可复用的工程主数据：预设默认工作中心与标准工时，工艺路线选用时自动带出，避免逐行重填。带 * 为必填项。
+                标准工序是可复用的工程主数据：预设默认工作中心、控制键与标准工时，工艺路线选用时自动带出，避免逐行重填。带 * 为必填项。
               </DialogDescription>
             </DialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请填写工序名，并确保标准工时为非负数（已标红）。
+                请填写带 * 的必填项，并确保标准工时为非负数（已标红）。
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
+                <Field :data-invalid="showErrors && !codeValid">
+                  <FieldLabel for="op-code">工序编码 <span class="text-destructive">*</span></FieldLabel>
+                  <Input
+                    v-if="!editingCode"
+                    id="op-code"
+                    v-model="form.operationCode"
+                    placeholder="例如：OP-CNC-ROUGH"
+                  />
+                  <Input v-else :model-value="editingCode" readonly disabled />
+                  <FieldDescription>{{ editingCode ? '编码是工序身份，不可更改。' : '由工厂自定义、需唯一。' }}</FieldDescription>
+                </Field>
                 <Field :data-invalid="showErrors && !nameValid">
                   <FieldLabel for="op-name">工序名 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="op-name" v-model="form.operationName" placeholder="例如：CNC 粗加工" />
                 </Field>
-                <Field v-if="editingCode">
-                  <FieldLabel>编码</FieldLabel>
-                  <Input :model-value="editingCode" readonly disabled />
-                  <FieldDescription>编码由系统自动生成，不可更改。</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel for="op-wc">默认工作中心</FieldLabel>
+                <Field :data-invalid="showErrors && !workCenterValid">
+                  <FieldLabel for="op-wc">默认工作中心 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="form.defaultWorkCenterCode" :disabled="workCentersPending">
-                    <SelectTrigger id="op-wc"><SelectValue placeholder="选择默认工作中心（可空）" /></SelectTrigger>
+                    <SelectTrigger id="op-wc"><SelectValue placeholder="选择默认工作中心" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
                     </SelectContent>
                   </Select>
                   <FieldDescription>来自基础数据工作中心；工艺路线选此工序时自动带出。</FieldDescription>
+                </Field>
+                <Field :data-invalid="showErrors && !controlKeyValid">
+                  <FieldLabel for="op-control">控制键 <span class="text-destructive">*</span></FieldLabel>
+                  <Input id="op-control" v-model="form.controlKey" placeholder="例如：INHOUSE / INHOUSE-QC" />
+                  <FieldDescription>决定报工/质检/外协等执行行为的控制键。</FieldDescription>
                 </Field>
               </FieldGroup>
 
@@ -324,15 +344,15 @@ async function confirmArchive() {
               <FieldGroup class="grid gap-2">
                 <label for="op-report" class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
                   <span>需要报工</span>
-                  <Checkbox id="op-report" v-model:checked="form.reportProgress" />
+                  <Checkbox id="op-report" v-model:checked="form.requiresReporting" />
                 </label>
                 <label for="op-inspect" class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
                   <span>需要质检</span>
-                  <Checkbox id="op-inspect" v-model:checked="form.requireInspection" />
+                  <Checkbox id="op-inspect" v-model:checked="form.requiresQualityInspection" />
                 </label>
                 <label for="op-outsource" class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
                   <span>外协工序</span>
-                  <Checkbox id="op-outsource" v-model:checked="form.outsourced" />
+                  <Checkbox id="op-outsource" v-model:checked="form.isOutsourced" />
                 </label>
               </FieldGroup>
 
@@ -342,20 +362,13 @@ async function confirmArchive() {
                   <FieldLabel for="op-desc">说明</FieldLabel>
                   <Input id="op-desc" v-model="form.description" placeholder="可选，工序用途或注意事项" />
                 </Field>
-                <Field class="self-start">
-                  <FieldLabel>启用</FieldLabel>
-                  <label for="op-enabled" class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm">
-                    <span>停用后不可在工艺路线中选用</span>
-                    <Checkbox id="op-enabled" v-model:checked="form.enabled" />
-                  </label>
-                </Field>
               </FieldGroup>
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
                 <Button type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
-                  {{ editingId ? '保存修改' : '创建工序' }}
+                  {{ editingCode ? '保存修改' : '创建工序' }}
                 </Button>
               </DialogFooter>
             </form>
@@ -364,14 +377,6 @@ async function confirmArchive() {
       </template>
     </PageHeader>
 
-    <p
-      v-if="!backendReady"
-      class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
-      role="status"
-    >
-      页面建设中：标准工序主数据正在后端实现（#397）。当前为 IA / 表单预览，列表为空、保存暂不可用；后端交付后此处即显示真实工序目录。
-    </p>
-
     <Toolbar v-model:search="search" search-placeholder="按工序名或编码筛选" />
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
@@ -379,9 +384,9 @@ async function confirmArchive() {
     <DataTable
       :columns="columns"
       :rows="standardOperations"
-      row-key="id"
+      row-key="operationCode"
       :loading="standardOperationsPending"
-      empty-message="标准工序目录为空。后端 #397 交付后，工厂在此维护可复用工序（默认工作中心 + 标准工时）。"
+      empty-message="标准工序目录为空。新建可复用工序（默认工作中心 + 标准工时 + 控制键），工艺路线即可选用。"
     >
       <template #cell-defaultWorkCenter="{ row }">
         <div class="flex flex-col gap-0.5">
@@ -393,11 +398,13 @@ async function confirmArchive() {
         <span class="tabular-nums text-muted-foreground">{{ formatMinutes(row.standardSetupMinutes, row.standardRunMinutes) }}</span>
       </template>
       <template #cell-control="{ row }">
-        <div class="flex flex-wrap gap-1">
-          <StatusBadge v-if="row.reportProgress" label="报工" tone="info" />
-          <StatusBadge v-if="row.requireInspection" label="质检" tone="warning" />
-          <StatusBadge v-if="row.outsourced" label="外协" tone="neutral" />
-          <span v-if="!row.reportProgress && !row.requireInspection && !row.outsourced" class="text-muted-foreground">—</span>
+        <div class="flex flex-col gap-1">
+          <div class="flex flex-wrap gap-1">
+            <StatusBadge v-if="row.requiresReporting" label="报工" tone="info" />
+            <StatusBadge v-if="row.requiresQualityInspection" label="质检" tone="warning" />
+            <StatusBadge v-if="row.isOutsourced" label="外协" tone="neutral" />
+          </div>
+          <span v-if="row.controlKey" class="text-xs text-muted-foreground">{{ row.controlKey }}</span>
         </div>
       </template>
       <template #cell-status="{ row }">
