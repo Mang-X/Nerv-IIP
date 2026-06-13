@@ -21,6 +21,7 @@ const GOLD_STANDARD_PAGES = [
   'quality/inspections.vue',
   'quality/ncrs.vue',
   'engineering/production-versions.vue',
+  'engineering/standard-operations.vue',
   'engineering/ebom.vue',
   'engineering/mbom.vue',
   'engineering/routings.vue',

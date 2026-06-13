@@ -24,6 +24,7 @@ import {
   RulerIcon,
   UsersRoundIcon,
   WarehouseIcon,
+  WrenchIcon,
 } from 'lucide-vue-next'
 
 /**
@@ -94,6 +95,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
     {
       label: '工艺与版本',
       items: [
+        { title: '标准工序', icon: WrenchIcon, to: { path: '/engineering/standard-operations' } },
         { title: '工艺路线', icon: RouteIcon, to: { path: '/engineering/routings' } },
         { title: '生产版本', icon: LayersIcon, to: { path: '/engineering/production-versions' } },
       ],
