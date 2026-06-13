@@ -122,6 +122,31 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Product_engineering_standard_operation_create_uses_collection_level_authorization()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var engineering = new RecordingProductEngineeringClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/engineering/standard-operations",
+            BusinessConsoleTestRequestBodies.ValidEngineeringWriteBody("/api/business-console/v1/engineering/standard-operations"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.EngineeringStandardOperationsManage, auth.LastRequirement!.PermissionCode);
+        Assert.Null(auth.LastRequirement.ResourceType);
+        Assert.Null(auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();

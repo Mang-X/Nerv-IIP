@@ -455,10 +455,6 @@ public sealed class CreateBusinessConsoleEngineeringStandardOperationEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleCreateStandardOperationRequest request) => request.EnvironmentId;
 
-    protected override string ResourceType(BusinessConsoleCreateStandardOperationRequest request) => "standard-operation";
-
-    protected override string? ResourceId(BusinessConsoleCreateStandardOperationRequest request) => request.OperationCode;
-
     protected override Task<BusinessConsoleStandardOperationResponse> ForwardAsync(
         BusinessConsoleCreateStandardOperationRequest request,
         string bearerToken,
