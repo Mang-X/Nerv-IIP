@@ -6,6 +6,7 @@ import EbomPage from './ebom.vue'
 
 const stub = vi.hoisted(() => ({
   releaseEbom: vi.fn().mockResolvedValue({ data: {} }),
+  fetchEbomDetail: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }))
@@ -31,6 +32,7 @@ vi.mock('@/composables/useProductEngineering', () => ({
     releaseEbom: stub.releaseEbom,
     releasePending: shallowRef(false),
     releaseError: shallowRef(undefined),
+    fetchEbomDetail: stub.fetchEbomDetail,
   }),
 }))
 
@@ -95,6 +97,8 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 
 beforeEach(() => {
   stub.releaseEbom.mockClear()
+  stub.fetchEbomDetail.mockReset()
+  stub.fetchEbomDetail.mockResolvedValue(undefined)
   stub.toastSuccess.mockClear()
   stub.toastError.mockClear()
   filters.parentItemCode = undefined
@@ -220,14 +224,27 @@ describe('engineering ebom page', () => {
     expect(stub.releaseEbom).not.toHaveBeenCalled()
   })
 
-  it('查看：行「查看」打开版本头并标注「明细待后端」', async () => {
+  it('查看：行「查看」拉 get-by-id 渲染真实组件行（组件名/数量/单位）', async () => {
+    stub.fetchEbomDetail.mockResolvedValue({
+      bomCode: 'EBOM-1',
+      revision: 'A',
+      parentItemCode: 'SKU-1',
+      status: 'Published',
+      lines: [
+        { childItemCode: 'SKU-2', quantity: 3, unitOfMeasureCode: 'PCS' },
+      ],
+    })
     const wrapper = mount(EbomPage, { global: { stubs: allStubs } })
     await flushPromises()
 
     await findButton(wrapper, '查看')!.trigger('click')
     await flushPromises()
 
+    expect(stub.fetchEbomDetail).toHaveBeenCalledWith('EBOM-1', 'A')
     const sheet = wrapper.find('[data-testid="sheet"]')
-    expect(sheet.text()).toContain('明细待后端')
+    expect(sheet.text()).toContain('主控板')
+    expect(sheet.text()).toContain('SKU-2')
+    expect(sheet.text()).toContain('个')
+    expect(sheet.text()).not.toContain('待后端')
   })
 })

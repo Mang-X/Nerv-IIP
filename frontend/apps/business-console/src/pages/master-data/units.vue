@@ -236,8 +236,7 @@ const listRows = computed(() => {
   )
 })
 const canCreateUom = computed(() =>
-  isNonEmpty(createForm.code)
-  && isNonEmpty(createForm.name)
+  isNonEmpty(createForm.name)
   && inOptions(dimensionOptions.value, createForm.dimensionType)
   && inOptions(ROUNDING_OPTIONS, createForm.roundingMode)
   && isPrecisionValid(createForm.precision),
@@ -373,7 +372,6 @@ async function submitUom() {
       const body: BusinessConsoleCreateUnitOfMeasureRequest = {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
-        code: createForm.code.trim(),
         name: createForm.name.trim(),
         dimensionType: createForm.dimensionType,
         precision: precisionNumber(createForm.precision),
@@ -477,14 +475,15 @@ async function submitConversion() {
                 <form class="grid gap-4" @submit.prevent="submitUom">
                   <p v-if="createShowErrors && !canCreateUom" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
-                      <FieldLabel for="uom-code">编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="uom-code" v-model="createForm.code" autocomplete="off" :disabled="!!editingCode" required />
-                      <FieldDescription>如 EA、pcs、kg。保存后不可修改。</FieldDescription>
+                    <Field v-if="editingCode">
+                      <FieldLabel for="uom-code">编码</FieldLabel>
+                      <Input id="uom-code" :model-value="createForm.code" disabled />
+                      <FieldDescription>系统分配，不可修改。</FieldDescription>
                     </Field>
                     <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                       <FieldLabel for="uom-name">名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="uom-name" v-model="createForm.name" autocomplete="off" required />
+                      <FieldDescription v-if="!editingCode">编码由系统自动生成（如 EA、pcs、kg）。</FieldDescription>
                     </Field>
                     <Field :data-invalid="createShowErrors && !inOptions(dimensionOptions, createForm.dimensionType)">
                       <FieldLabel for="uom-dimension">量纲 <span class="text-destructive">*</span></FieldLabel>

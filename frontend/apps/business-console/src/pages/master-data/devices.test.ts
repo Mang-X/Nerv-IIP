@@ -103,7 +103,7 @@ const selectStubs = {
 async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
   await wrapper.findAll('button').find((b) => b.text().includes('新建设备'))!.trigger('click')
   await flushPromises()
-  await wrapper.find('#dev-code').setValue('EQ-NEW')
+  // 新建态不再有编码输入框（编码由系统自动生成）。
   await wrapper.find('#dev-model').setValue('KR-210')
   await wrapper.find('#dev-maker').setValue('KUKA')
   await wrapper.find('#dev-serial').setValue('SN-9001')
@@ -184,8 +184,8 @@ describe('master-data devices page', () => {
     await flushPromises()
 
     expect(stub.create).toHaveBeenCalledTimes(1)
-    const body = stub.create.mock.calls[0]![0] as { code: string, model: string, lineCode: string, workCenterCode: string }
-    expect(body.code).toBe('EQ-NEW')
+    const body = stub.create.mock.calls[0]![0] as { code?: string, model: string, lineCode: string, workCenterCode: string }
+    expect(body.code).toBeUndefined()
     expect(body.model).toBe('KR-210')
     expect(body.lineCode).toBe('LINE-A')
     expect(body.workCenterCode).toBe('WC-A')

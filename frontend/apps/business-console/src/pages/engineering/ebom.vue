@@ -58,6 +58,7 @@ const {
   refresh,
   releaseEbom,
   releasePending,
+  fetchEbomDetail,
 } = useEngineeringEboms()
 
 const { skus } = useBusinessSkus()
@@ -250,16 +251,36 @@ async function submitForm() {
   }
 }
 
-// ── 查看版本头（list 无行 → 明细待后端 #389）─────────────────────
+// ── 查看版本明细（get-by-id 拉真实组件行）────────────────────────
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringBomItem | null>(null)
-function openView(row: BusinessConsoleEngineeringBomItem) {
+const detailPending = ref(false)
+const detailError = ref('')
+const viewLines = computed(() => viewTarget.value?.lines ?? [])
+async function openView(row: BusinessConsoleEngineeringBomItem) {
   viewTarget.value = row
   viewOpen.value = true
+  detailError.value = ''
+  if (!row.bomCode || !row.revision) return
+  detailPending.value = true
+  try {
+    const detail = await fetchEbomDetail(row.bomCode, row.revision)
+    if (detail) viewTarget.value = detail
+  }
+  catch (error) {
+    detailError.value = formatError(error) || '加载组件行失败，请稍后重试。'
+  }
+  finally {
+    detailPending.value = false
+  }
 }
 
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
+function uomLabel(code?: string | null) {
+  if (!code) return '—'
+  return uomOptions.value.find((o) => o.value === code)?.label ?? code
 }
 </script>
 
@@ -428,34 +449,57 @@ function formatError(error: unknown) {
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="ebomsTotal" />
 
     <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-md">
+      <SheetContent class="sm:max-w-lg">
         <SheetHeader>
-          <SheetTitle>设计 BOM 版本</SheetTitle>
-          <SheetDescription>查看该版本的版本头信息。</SheetDescription>
+          <SheetTitle>设计 BOM · 组件行</SheetTitle>
+          <SheetDescription>
+            {{ viewTarget ? `${viewTarget.bomCode} · 修订 ${viewTarget.revision} · ${skuLabel(viewTarget.parentItemCode)}` : '' }}
+          </SheetDescription>
         </SheetHeader>
-        <div v-if="viewTarget" class="grid gap-3 px-4 py-2 text-sm">
-          <div class="flex justify-between gap-3">
-            <span class="text-muted-foreground">BOM 编号</span>
-            <span class="font-medium">{{ viewTarget.bomCode || '—' }}</span>
+        <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
+          <div class="grid gap-2 text-sm">
+            <div class="flex justify-between gap-3">
+              <span class="text-muted-foreground">状态</span>
+              <StatusBadge :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-muted-foreground">生效日</span>
+              <span class="font-medium">{{ viewTarget.effectiveDate ? formatDate(viewTarget.effectiveDate) : '长期' }}</span>
+            </div>
           </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted-foreground">父项物料</span>
-            <span class="font-medium">{{ skuLabel(viewTarget.parentItemCode) }}</span>
+
+          <div v-if="detailPending" class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <Spinner aria-hidden="true" />
+            加载组件行…
           </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted-foreground">修订</span>
-            <span class="font-medium">{{ viewTarget.revision || '—' }}</span>
+          <p v-else-if="detailError" class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+            {{ detailError }}
+          </p>
+          <div v-else-if="viewLines.length" class="overflow-hidden rounded-md border">
+            <table class="w-full text-sm">
+              <thead class="bg-muted/40 text-muted-foreground">
+                <tr>
+                  <th class="px-3 py-2 text-left font-medium">组件</th>
+                  <th class="px-3 py-2 text-right font-medium">数量</th>
+                  <th class="px-3 py-2 text-left font-medium">单位</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(line, i) in viewLines" :key="i" class="border-t">
+                  <td class="px-3 py-2">
+                    <div class="flex flex-col gap-0.5">
+                      <span>{{ skuLabel(line.childItemCode) }}</span>
+                      <span class="text-xs text-muted-foreground">{{ line.childItemCode }}</span>
+                    </div>
+                  </td>
+                  <td class="px-3 py-2 text-right tabular-nums">{{ line.quantity ?? '—' }}</td>
+                  <td class="px-3 py-2">{{ uomLabel(line.unitOfMeasureCode) }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted-foreground">状态</span>
-            <StatusBadge :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
-          </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted-foreground">生效日</span>
-            <span class="font-medium">{{ viewTarget.effectiveDate ? formatDate(viewTarget.effectiveDate) : '长期' }}</span>
-          </div>
-          <p class="mt-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-warning">
-            组件行明细待后端提供（#389）。当前列表接口只回版本头，发布后无法在此逐行查看；如需改动请发布新修订。
+          <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+            该版本没有组件行。
           </p>
         </div>
       </SheetContent>

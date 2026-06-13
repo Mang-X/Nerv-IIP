@@ -6,6 +6,7 @@ import MbomPage from './mbom.vue'
 
 const stub = vi.hoisted(() => ({
   releaseMbom: vi.fn().mockResolvedValue({ data: {} }),
+  fetchMbomDetail: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }))
@@ -34,6 +35,7 @@ vi.mock('@/composables/useProductEngineering', () => ({
     releaseMbom: stub.releaseMbom,
     releasePending: shallowRef(false),
     releaseError: shallowRef(undefined),
+    fetchMbomDetail: stub.fetchMbomDetail,
   }),
   usePublishedEboms: () => ({
     eboms: computed(() => [{ bomCode: 'EBOM-1', revision: 'A', parentItemCode: 'SKU-1', status: 'Published' }]),
@@ -104,6 +106,8 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 
 beforeEach(() => {
   stub.releaseMbom.mockClear()
+  stub.fetchMbomDetail.mockReset()
+  stub.fetchMbomDetail.mockResolvedValue(undefined)
   stub.toastSuccess.mockClear()
   stub.toastError.mockClear()
   filters.skuCode = undefined
@@ -121,18 +125,34 @@ describe('engineering mbom page', () => {
     expect(wrapper.text()).toContain('已发布')
   })
 
-  it('查看物料：行「查看物料」展开物料行（list 带 MaterialLines），并标注配方待后端', async () => {
+  it('查看物料：list 物料行先显，get-by-id 补齐物料行 + 配方行（移除「待后端」标注）', async () => {
+    stub.fetchMbomDetail.mockResolvedValue({
+      bomCode: 'MBOM-1',
+      revision: 'A',
+      skuCode: 'SKU-1',
+      status: 'Published',
+      materialLines: [
+        { skuCode: 'SKU-2', quantity: 2, unitOfMeasureCode: 'PCS', scrapRate: 0.05 },
+      ],
+      recipeLines: [
+        { parameterCode: '温度', targetValue: '180', unitOfMeasureCode: '℃' },
+      ],
+    })
     const wrapper = mount(MbomPage, { global: { stubs: allStubs } })
     await flushPromises()
 
     await findButton(wrapper, '查看物料')!.trigger('click')
     await flushPromises()
 
+    expect(stub.fetchMbomDetail).toHaveBeenCalledWith('MBOM-1', 'A')
     const sheet = wrapper.find('[data-testid="sheet"]')
     // 物料行显名 + 损耗率
     expect(sheet.text()).toContain('主控板')
     expect(sheet.text()).toContain('5.0%')
-    expect(sheet.text()).toContain('配方明细暂不在列表回显')
+    // 配方行真实渲染。
+    expect(sheet.text()).toContain('温度')
+    expect(sheet.text()).toContain('180')
+    expect(sheet.text()).not.toContain('待后端')
   })
 
   it('发布向导：选已发布 EBOM + 产出物料 + 一行物料后提交，release 收到 engineeringBomCode/Revision', async () => {

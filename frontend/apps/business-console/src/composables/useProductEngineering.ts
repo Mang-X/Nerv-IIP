@@ -14,6 +14,9 @@
 import {
   archiveBusinessConsoleEngineeringProductionVersionMutationOptions,
   createBusinessConsoleEngineeringProductionVersionMutationOptions,
+  getBusinessConsoleEngineeringBom,
+  getBusinessConsoleEngineeringManufacturingBom,
+  getBusinessConsoleEngineeringRouting,
   listBusinessConsoleEngineeringBomsQueryOptions,
   listBusinessConsoleEngineeringManufacturingBomsQueryOptions,
   listBusinessConsoleEngineeringProductionVersionsQueryOptions,
@@ -24,8 +27,10 @@ import {
   resolveBusinessConsoleEngineeringProductionVersion,
   updateBusinessConsoleEngineeringProductionVersionMutationOptions,
   type BusinessConsoleCreateProductionVersionRequest,
+  type BusinessConsoleEngineeringBomDetailEnvelope,
   type BusinessConsoleEngineeringBomItem,
   type BusinessConsoleEngineeringBomListEnvelope,
+  type BusinessConsoleManufacturingBomDetailEnvelope,
   type BusinessConsoleManufacturingBomItem,
   type BusinessConsoleManufacturingBomListEnvelope,
   type BusinessConsoleProductionVersionItem,
@@ -35,6 +40,7 @@ import {
   type BusinessConsoleReleaseRoutingRequest,
   type BusinessConsoleResolveProductionVersionEnvelope,
   type BusinessConsoleResolveProductionVersionResponse,
+  type BusinessConsoleRoutingDetailEnvelope,
   type BusinessConsoleRoutingItem,
   type BusinessConsoleRoutingListEnvelope,
   type BusinessConsoleUpdateProductionVersionRequest,
@@ -101,6 +107,13 @@ function unwrapItems<T>(envelope: { success?: boolean, data?: { items?: T[] } | 
 function unwrapTotal(envelope: { success?: boolean, data?: { total?: number } | null } | undefined) {
   if (!envelope?.success) return 0
   return envelope.data?.total ?? 0
+}
+
+/** 解包 get-by-id 单体响应（SDK fn 返回 `{ data: envelope }`，envelope 是 `{ success, data }`）。 */
+function unwrapDetail<T>(res: { data?: { success?: boolean, data?: T | null } } | undefined): T | undefined {
+  const envelope = res?.data
+  if (!envelope?.success) return undefined
+  return envelope.data ?? undefined
 }
 
 function isBusinessQuery(id: string) {
@@ -318,8 +331,8 @@ export function usePublishedRoutings() {
 }
 
 /**
- * EBOM 列表（list + filters）+ 发布新版本（release）。
- * EBOM list **不含行明细**（行明细待后端 #389），故页面查看仅展示版本头。
+ * EBOM 列表（list + filters）+ 发布新版本（release）+ 按需取版本明细（get-by-id）。
+ * EBOM list 不含行明细；查看时用 `fetchEbomDetail(bomCode, revision)` 拉 get-by-id 取组件行（#389 已交付）。
  * release 后失效 EBOM 列表查询，即时刷新。
  */
 export function useEngineeringEboms() {
@@ -374,6 +387,17 @@ export function useEngineeringEboms() {
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
     releasePending: releaseMutation.isLoading,
     releaseError: releaseMutation.error,
+
+    // 按需取某版本明细（含组件行），用于「查看」。失败抛错由调用方处理。
+    fetchEbomDetail: async (bomCode: string, revision: string) => {
+      const res = await getBusinessConsoleEngineeringBom({
+        path: { bomCode, revision },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+      })
+      return unwrapDetail<BusinessConsoleEngineeringBomItem>(
+        res as { data?: BusinessConsoleEngineeringBomDetailEnvelope },
+      )
+    },
   }
 }
 
@@ -414,8 +438,9 @@ export function usePublishedEboms() {
 }
 
 /**
- * MBOM 列表（list + filters）+ 发布新版本（release）。
- * MBOM list **含 MaterialLines**（物料行可直接展开看），但 **不含 RecipeLines**（配方明细待后端）。
+ * MBOM 列表（list + filters）+ 发布新版本（release）+ 按需取版本明细（get-by-id）。
+ * MBOM list 含 MaterialLines，但不含 RecipeLines；查看时用 `fetchMbomDetail(bomCode, revision)`
+ * 拉 get-by-id，补齐物料行 + 配方行（#389 已交付）。
  */
 export function useEngineeringMboms() {
   const context = useBusinessContextStore()
@@ -469,12 +494,23 @@ export function useEngineeringMboms() {
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
     releasePending: releaseMutation.isLoading,
     releaseError: releaseMutation.error,
+
+    // 按需取某版本明细（含物料行 + 配方行），用于「查看」。失败抛错由调用方处理。
+    fetchMbomDetail: async (bomCode: string, revision: string) => {
+      const res = await getBusinessConsoleEngineeringManufacturingBom({
+        path: { bomCode, revision },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+      })
+      return unwrapDetail<BusinessConsoleManufacturingBomItem>(
+        res as { data?: BusinessConsoleManufacturingBomDetailEnvelope },
+      )
+    },
   }
 }
 
 /**
- * 工艺路线列表（list + filters）+ 发布新版本（release）。
- * Routing list **不含工序明细**（工序明细待后端 #389），故页面查看仅展示版本头。
+ * 工艺路线列表（list + filters）+ 发布新版本（release）+ 按需取版本明细（get-by-id）。
+ * Routing list 不含工序明细；查看时用 `fetchRoutingDetail(routingCode, revision)` 拉 get-by-id 取工序行（#389 已交付）。
  */
 export function useEngineeringRoutings() {
   const context = useBusinessContextStore()
@@ -528,5 +564,16 @@ export function useEngineeringRoutings() {
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
     releasePending: releaseMutation.isLoading,
     releaseError: releaseMutation.error,
+
+    // 按需取某版本明细（含工序行），用于「查看」。失败抛错由调用方处理。
+    fetchRoutingDetail: async (routingCode: string, revision: string) => {
+      const res = await getBusinessConsoleEngineeringRouting({
+        path: { routingCode, revision },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+      })
+      return unwrapDetail<BusinessConsoleRoutingItem>(
+        res as { data?: BusinessConsoleRoutingDetailEnvelope },
+      )
+    },
   }
 }

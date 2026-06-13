@@ -114,7 +114,7 @@ const shiftEditLoading = shallowRef(false)
 const shiftForm = reactive({ code: '', name: '', startsAt: '08:00', endsAt: '16:00', paidMinutes: '480' })
 const shiftRows = computed(() => filterRows(shifts.items.value, shiftKeyword.value))
 const shiftPaidValid = computed(() => (Number(shiftForm.paidMinutes) || 0) > 0)
-const canCreateShift = computed(() => [shiftForm.code, shiftForm.name].every(isNonEmpty) && shiftPaidValid.value)
+const canCreateShift = computed(() => isNonEmpty(shiftForm.name) && shiftPaidValid.value)
 // 编辑态也可改时段/计薪：名称必填 + 计薪 > 0。
 const shiftFormValid = computed(() => (shiftEditingCode.value ? isNonEmpty(shiftForm.name) && shiftPaidValid.value : canCreateShift.value))
 const shiftListError = computed(() => formatError(shifts.error.value))
@@ -198,7 +198,6 @@ async function submitShift() {
     await shifts.create({
       organizationId: shifts.filters.organizationId,
       environmentId: shifts.filters.environmentId,
-      code: shiftForm.code.trim(),
       name: shiftForm.name.trim(),
       startsAt: shiftForm.startsAt.trim() || undefined,
       endsAt: shiftForm.endsAt.trim() || undefined,
@@ -222,7 +221,7 @@ const calEditingCode = shallowRef<string | null>(null)
 const calEditLoading = shallowRef(false)
 const calForm = reactive({ code: '', name: '' })
 const calRows = computed(() => filterRows(calendars.items.value, calKeyword.value))
-const canCreateCal = computed(() => [calForm.code, calForm.name].every(isNonEmpty))
+const canCreateCal = computed(() => isNonEmpty(calForm.name))
 const calListError = computed(() => formatError(calendars.error.value))
 watch(calOpen, (open) => { if (open) calShowErrors.value = false })
 // 日历用整行可点列表（无分页），一次取足；通常数量很少。
@@ -266,7 +265,6 @@ async function submitCal() {
       await calendars.create({
         organizationId: calendars.filters.organizationId,
         environmentId: calendars.filters.environmentId,
-        code: calForm.code.trim(),
         name: calForm.name.trim(),
       })
       notifySuccess(`工作日历「${calForm.name.trim()}」已创建。`)
@@ -712,13 +710,14 @@ const sortedExceptions = computed(() =>
                 <form class="grid gap-4" @submit.prevent="submitShift">
                   <p v-if="shiftShowErrors && !shiftFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.code)">
-                      <FieldLabel for="shift-code">班次编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="shift-code" v-model="shiftForm.code" autocomplete="off" :disabled="!!shiftEditingCode" required />
+                    <Field v-if="shiftEditingCode">
+                      <FieldLabel for="shift-code">班次编码</FieldLabel>
+                      <Input id="shift-code" :model-value="shiftForm.code" disabled />
                     </Field>
                     <Field :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.name)">
                       <FieldLabel for="shift-name">班次名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="shift-name" v-model="shiftForm.name" autocomplete="off" required />
+                      <FieldDescription v-if="!shiftEditingCode">编码由系统自动生成。</FieldDescription>
                     </Field>
                     <Field>
                       <FieldLabel for="shift-start">开始时间</FieldLabel>
@@ -772,13 +771,14 @@ const sortedExceptions = computed(() =>
                 <form class="grid gap-4" @submit.prevent="submitCal">
                   <p v-if="calShowErrors && !canCreateCal" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
                   <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="calShowErrors && !isNonEmpty(calForm.code)">
-                      <FieldLabel for="cal-code">日历编码 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="cal-code" v-model="calForm.code" autocomplete="off" :disabled="!!calEditingCode" required />
+                    <Field v-if="calEditingCode">
+                      <FieldLabel for="cal-code">日历编码</FieldLabel>
+                      <Input id="cal-code" :model-value="calForm.code" disabled />
                     </Field>
                     <Field :data-invalid="calShowErrors && !isNonEmpty(calForm.name)">
                       <FieldLabel for="cal-name">日历名称 <span class="text-destructive">*</span></FieldLabel>
                       <Input id="cal-name" v-model="calForm.name" autocomplete="off" required />
+                      <FieldDescription v-if="!calEditingCode">编码由系统自动生成。</FieldDescription>
                     </Field>
                   </FieldGroup>
                   <DialogFooter>

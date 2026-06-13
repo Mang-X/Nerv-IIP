@@ -207,21 +207,22 @@ describe('master-data scheduling page', () => {
     expect(patch.paidMinutes).toBe(660)
   })
 
-  it('creating a shift posts code/name/paidMinutes and fires success toast', async () => {
+  it('creating a shift posts name/paidMinutes (no code — system-assigned) and fires success toast', async () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...dialogStubs } } })
     await flushPromises()
 
     await wrapper.findAll('button').find((b) => b.text().includes('新建班次'))!.trigger('click')
     await flushPromises()
-    await wrapper.find('#shift-code').setValue('SHIFT-NEW')
+    // 新建态不再有编码输入框（编码由系统自动生成）。
+    expect(wrapper.find('#shift-code').exists()).toBe(false)
     await wrapper.find('#shift-name').setValue('夜班')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
     expect(stub.create).toHaveBeenCalledTimes(1)
-    const body = stub.create.mock.calls[0]![0] as { code: string, name: string, paidMinutes: number }
-    expect(body.code).toBe('SHIFT-NEW')
+    const body = stub.create.mock.calls[0]![0] as { code?: string, name: string, paidMinutes: number }
+    expect(body.code).toBeUndefined()
     expect(body.name).toBe('夜班')
     expect(body.paidMinutes).toBe(480)
     expect(stub.toastSuccess).toHaveBeenCalled()

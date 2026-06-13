@@ -135,11 +135,10 @@ const selectStubs = {
   SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
-// 打开「新建计量单位」并填合法值（编码/名称为文本，量纲/取整为常量回退下拉）。
+// 打开「新建计量单位」并填合法值（名称为文本，量纲/取整为常量回退下拉；编码由系统自动生成）。
 async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
   await wrapper.findAll('button').find((b) => b.text().includes('新建计量单位'))!.trigger('click')
   await flushPromises()
-  await wrapper.find('#uom-code').setValue('EA')
   await wrapper.find('#uom-name').setValue('个')
   await flushPromises()
 }
@@ -189,8 +188,8 @@ describe('master-data units page', () => {
     await flushPromises()
 
     expect(stub.createUom).toHaveBeenCalledTimes(1)
-    const body = stub.createUom.mock.calls[0]![0] as { code: string, name: string, dimensionType: string, roundingMode: string }
-    expect(body.code).toBe('EA')
+    const body = stub.createUom.mock.calls[0]![0] as { code?: string, name: string, dimensionType: string, roundingMode: string }
+    expect(body.code).toBeUndefined()
     expect(body.name).toBe('个')
     expect(body.dimensionType).toBe('count')
     expect(body.roundingMode).toBe('half-up')
@@ -235,7 +234,7 @@ describe('master-data units page', () => {
     const wrapper = mount(UnitsPage, { global: { stubs: { ...layoutStub, ...dialogStubs } } })
     await flushPromises()
 
-    // 打开新建（重置为默认：编码/名称为空 → 非法）。
+    // 打开新建（重置为默认：名称为空 → 非法；编码已由系统自动生成）。
     const createBtn = wrapper.findAll('button').find((b) => b.text().includes('新建计量单位'))
     await createBtn!.trigger('click')
     await flushPromises()

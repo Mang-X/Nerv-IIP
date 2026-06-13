@@ -291,13 +291,13 @@ const teamListError = computed(() => {
 // ================= 新建部门（含就地建子部门，父 code 预填只读） =================
 const deptCreateOpen = ref(false)
 const deptShowErrors = ref(false)
-const deptForm = reactive({ code: '', name: '', parentDepartmentCode: '' })
+const deptForm = reactive({ name: '', parentDepartmentCode: '' })
 // 父归属是否就地带入（决定上级部门字段是否只读）。
 const deptParentLocked = ref(false)
-const canCreateDept = computed(() => [deptForm.code, deptForm.name].every(isNonEmpty))
+const canCreateDept = computed(() => isNonEmpty(deptForm.name))
 watch(deptCreateOpen, (open) => { if (open) deptShowErrors.value = false })
 function resetDeptForm() {
-  Object.assign(deptForm, { code: '', name: '', parentDepartmentCode: '' })
+  Object.assign(deptForm, { name: '', parentDepartmentCode: '' })
   deptParentLocked.value = false
 }
 function openCreateRootDept() {
@@ -322,7 +322,6 @@ async function submitCreateDept() {
     await departments.create({
       organizationId: departments.filters.organizationId,
       environmentId: departments.filters.environmentId,
-      code: deptForm.code.trim(),
       name,
       parentDepartmentCode: deptForm.parentDepartmentCode.trim() || null,
     })
@@ -398,7 +397,7 @@ const teamEditLoading = shallowRef(false)
 // departmentLocked：从选中部门「在此部门下新建班组」时带入且只读。
 const teamDepartmentLocked = ref(false)
 const teamForm = reactive({ code: '', name: '', departmentCode: '', shiftCode: '' })
-const canCreateTeam = computed(() => [teamForm.code, teamForm.name, teamForm.departmentCode, teamForm.shiftCode].every(isNonEmpty))
+const canCreateTeam = computed(() => [teamForm.name, teamForm.departmentCode, teamForm.shiftCode].every(isNonEmpty))
 // 编辑也校验归属（部门 / 班次可改但不可空）；新建额外校验 code。
 const teamFormValid = computed(() =>
   teamEditingCode.value
@@ -472,7 +471,6 @@ async function submitTeam() {
     await teams.create({
       organizationId: teams.filters.organizationId,
       environmentId: teams.filters.environmentId,
-      code: teamForm.code.trim(),
       name: teamForm.name.trim(),
       departmentCode: teamForm.departmentCode.trim(),
       shiftCode: teamForm.shiftCode.trim(),
@@ -686,13 +684,10 @@ function openMembers(row: BusinessConsoleResourceItem) {
         <form class="grid gap-4" @submit.prevent="submitCreateDept">
           <p v-if="deptShowErrors && !canCreateDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.code)">
-              <FieldLabel for="dept-code">部门编码 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="dept-code" v-model="deptForm.code" autocomplete="off" required />
-            </Field>
             <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.name)">
               <FieldLabel for="dept-name">部门名称 <span class="text-destructive">*</span></FieldLabel>
               <Input id="dept-name" v-model="deptForm.name" autocomplete="off" required />
+              <FieldDescription>编码由系统自动生成，保存后即可在树中查看。</FieldDescription>
             </Field>
             <Field v-if="deptParentLocked">
               <FieldLabel for="dept-parent">上级部门</FieldLabel>
@@ -773,13 +768,14 @@ function openMembers(row: BusinessConsoleResourceItem) {
         <form class="grid gap-4" @submit.prevent="submitTeam">
           <p v-if="teamShowErrors && !teamFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.code)">
-              <FieldLabel for="team-code">班组编码 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="team-code" v-model="teamForm.code" autocomplete="off" :disabled="!!teamEditingCode" required />
+            <Field v-if="teamEditingCode">
+              <FieldLabel for="team-code">班组编码</FieldLabel>
+              <Input id="team-code" :model-value="teamForm.code" disabled />
             </Field>
             <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.name)">
               <FieldLabel for="team-name">班组名称 <span class="text-destructive">*</span></FieldLabel>
               <Input id="team-name" v-model="teamForm.name" autocomplete="off" required />
+              <FieldDescription v-if="!teamEditingCode">编码由系统自动生成。</FieldDescription>
             </Field>
             <Field v-if="teamDepartmentLocked && !teamEditingCode">
               <FieldLabel for="team-dept-locked">所属部门</FieldLabel>

@@ -393,7 +393,6 @@ const createShowErrors = ref(false)
 // 父归属（就地建子级时带入，只读）。
 const parentCtx = reactive({ siteCode: '', workshopCode: '', lineCode: '', plantCode: '' })
 const createForm = reactive({
-  code: '',
   name: '',
   timezone: DEFAULT_TIMEZONE,
   defaultCalendarCode: '',
@@ -401,7 +400,7 @@ const createForm = reactive({
 })
 
 function resetCreateForm() {
-  Object.assign(createForm, { code: '', name: '', timezone: DEFAULT_TIMEZONE, defaultCalendarCode: '', capacityMinutesPerDay: '480' })
+  Object.assign(createForm, { name: '', timezone: DEFAULT_TIMEZONE, defaultCalendarCode: '', capacityMinutesPerDay: '480' })
   Object.assign(parentCtx, { siteCode: '', workshopCode: '', lineCode: '', plantCode: '' })
 }
 
@@ -454,7 +453,7 @@ const createDescription = computed(() => {
 })
 
 const canCreate = computed(() => {
-  if (!isNonEmpty(createForm.code) || !isNonEmpty(createForm.name)) return false
+  if (!isNonEmpty(createForm.name)) return false
   switch (createType.value) {
     case 'site': return isNonEmpty(createForm.timezone)
     case 'workshop': return isNonEmpty(parentCtx.siteCode)
@@ -480,14 +479,12 @@ async function submitCreate() {
     return
   }
   const name = createForm.name.trim()
-  const code = createForm.code.trim()
   try {
     switch (createType.value) {
       case 'site':
         await sites.create({
           organizationId: sites.filters.organizationId,
           environmentId: sites.filters.environmentId,
-          code,
           name,
           timezone: createForm.timezone.trim(),
         })
@@ -496,7 +493,6 @@ async function submitCreate() {
         await workshops.createWorkshop({
           organizationId: workshops.filters.organizationId,
           environmentId: workshops.filters.environmentId,
-          code,
           name,
           siteCode: parentCtx.siteCode.trim(),
         })
@@ -505,7 +501,6 @@ async function submitCreate() {
         await lines.create({
           organizationId: lines.filters.organizationId,
           environmentId: lines.filters.environmentId,
-          code,
           name,
           siteCode: parentCtx.siteCode.trim(),
           ...(parentCtx.workshopCode.trim() ? { workshopCode: parentCtx.workshopCode.trim() } : {}),
@@ -515,7 +510,6 @@ async function submitCreate() {
         await workCenters.create({
           organizationId: workCenters.filters.organizationId,
           environmentId: workCenters.filters.environmentId,
-          code,
           name,
           plantCode: parentCtx.plantCode.trim(),
           lineCode: parentCtx.lineCode.trim(),
@@ -857,13 +851,10 @@ function childLabelOf(type: string): string | undefined {
           <p v-if="createShowErrors && !canCreate" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
           <FormSectionTitle>基础信息</FormSectionTitle>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
-              <FieldLabel for="create-code">{{ NODE_LABEL[createType] }}编码 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="create-code" v-model="createForm.code" autocomplete="off" required />
-            </Field>
             <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
               <FieldLabel for="create-name">{{ NODE_LABEL[createType] }}名称 <span class="text-destructive">*</span></FieldLabel>
               <Input id="create-name" v-model="createForm.name" autocomplete="off" required />
+              <FieldDescription>编码由系统自动生成，保存后即可在列表查看。</FieldDescription>
             </Field>
             <!-- 工厂：时区 -->
             <Field v-if="createType === 'site'" :data-invalid="createShowErrors && !isNonEmpty(createForm.timezone)">

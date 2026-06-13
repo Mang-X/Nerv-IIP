@@ -228,7 +228,7 @@ describe('master-data organization (department tree) page', () => {
     expect(deptInput.disabled).toBe(true)
   })
 
-  it('creating a root department posts code/name and fires success toast', async () => {
+  it('creating a root department posts name (no code — system-assigned) and fires success toast', async () => {
     stub.createDept.mockClear()
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
@@ -237,15 +237,16 @@ describe('master-data organization (department tree) page', () => {
 
     await wrapper.findAll('button').find((b) => b.text().includes('新建部门'))!.trigger('click')
     await flushPromises()
-    await wrapper.find('#dept-code').setValue('DEPT-NEW')
+    // 新建态不再有编码输入框（编码由系统自动生成）。
+    expect(wrapper.find('#dept-code').exists()).toBe(false)
     await wrapper.find('#dept-name').setValue('喷涂部')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
     expect(stub.createDept).toHaveBeenCalledTimes(1)
-    const body = stub.createDept.mock.calls[0]![0] as { code: string, name: string }
-    expect(body.code).toBe('DEPT-NEW')
+    const body = stub.createDept.mock.calls[0]![0] as { code?: string, name: string }
+    expect(body.code).toBeUndefined()
     expect(body.name).toBe('喷涂部')
     expect(stub.toastSuccess).toHaveBeenCalled()
     expect(stub.toastError).not.toHaveBeenCalled()
@@ -276,7 +277,8 @@ describe('master-data organization (department tree) page', () => {
     await wrapper.findAll('button').find((b) => b.text().includes('在此部门下新建班组'))!.trigger('click')
     await flushPromises()
 
-    await wrapper.find('#team-code').setValue('TEAM-NEW')
+    // 新建态不再有编码输入框（编码由系统自动生成）。
+    expect(wrapper.find('#team-code').exists()).toBe(false)
     await wrapper.find('#team-name').setValue('夜班班组')
     // 班次 Select 桩渲染为 <select>；按其 SHIFT-A 选项定位（id 落在 SelectTrigger span 上）。
     const shiftSelect = wrapper.findAll('select').find((s) => s.html().includes('SHIFT-A'))!
@@ -286,8 +288,8 @@ describe('master-data organization (department tree) page', () => {
     await flushPromises()
 
     expect(stub.createTeam).toHaveBeenCalledTimes(1)
-    const body = stub.createTeam.mock.calls[0]![0] as { code: string, name: string, departmentCode: string, shiftCode: string }
-    expect(body.code).toBe('TEAM-NEW')
+    const body = stub.createTeam.mock.calls[0]![0] as { code?: string, name: string, departmentCode: string, shiftCode: string }
+    expect(body.code).toBeUndefined()
     expect(body.departmentCode).toBe('DEPT-A')
     expect(body.shiftCode).toBe('SHIFT-A')
     expect(stub.toastSuccess).toHaveBeenCalled()

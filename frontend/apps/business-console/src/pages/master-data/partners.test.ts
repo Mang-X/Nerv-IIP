@@ -93,11 +93,10 @@ const selectStubs = {
   SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
-// 打开「新建伙伴」并填好默认空的必填项（编码、名称；主角色默认 customer 合法）。
+// 打开「新建伙伴」并填好默认空的必填项（名称；主角色默认 customer 合法；编码由系统自动生成）。
 async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
   await wrapper.findAll('button').find((b) => b.text().includes('新建伙伴'))!.trigger('click')
   await flushPromises()
-  await wrapper.find('#partner-code').setValue('P-NEW')
   await wrapper.find('#partner-name').setValue('新伙伴公司')
   await flushPromises()
 }
@@ -168,7 +167,7 @@ describe('master-data partners page', () => {
     const wrapper = mount(PartnersPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    // 打开「新建伙伴」对话框（重置后 code/name 为空 → 非法）。
+    // 打开「新建伙伴」对话框（重置后 name 为空 → 非法；编码已由系统自动生成）。
     await wrapper.findAll('button').find((b) => b.text().includes('新建伙伴'))!.trigger('click')
     await flushPromises()
 
@@ -194,8 +193,8 @@ describe('master-data partners page', () => {
     await flushPromises()
 
     expect(stub.createPartner).toHaveBeenCalledTimes(1)
-    const body = stub.createPartner.mock.calls[0]![0] as { code: string, name: string, partnerType: string }
-    expect(body.code).toBe('P-NEW')
+    const body = stub.createPartner.mock.calls[0]![0] as { code?: string, name: string, partnerType: string }
+    expect(body.code).toBeUndefined()
     expect(body.name).toBe('新伙伴公司')
     expect(body.partnerType).toBe('customer')
     expect(stub.toastSuccess).toHaveBeenCalled()

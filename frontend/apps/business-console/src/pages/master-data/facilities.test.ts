@@ -230,15 +230,16 @@ describe('master-data facilities tree page', () => {
     await wrapper.findAll('button').find((b) => b.text().includes('新建车间'))!.trigger('click')
     await flushPromises()
 
-    await wrapper.find('#create-code').setValue('WS-NEW')
+    // 新建态不再有编码输入框（编码由系统自动生成）。
+    expect(wrapper.find('#create-code').exists()).toBe(false)
     await wrapper.find('#create-name').setValue('涂装车间')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
     expect(stub.createWorkshop).toHaveBeenCalledTimes(1)
-    const body = stub.createWorkshop.mock.calls[0]![0] as { code: string, name: string, siteCode: string }
-    expect(body.code).toBe('WS-NEW')
+    const body = stub.createWorkshop.mock.calls[0]![0] as { code?: string, name: string, siteCode: string }
+    expect(body.code).toBeUndefined()
     expect(body.name).toBe('涂装车间')
     expect(body.siteCode).toBe('PLANT-A')
     expect(stub.toastSuccess).toHaveBeenCalled()
@@ -254,15 +255,16 @@ describe('master-data facilities tree page', () => {
     await wrapper.findAll('button').find((b) => b.text().includes('新建工厂'))!.trigger('click')
     await flushPromises()
 
-    await wrapper.find('#create-code').setValue('PLANT-NEW')
+    // 新建态不再有编码输入框（编码由系统自动生成）。
+    expect(wrapper.find('#create-code').exists()).toBe(false)
     await wrapper.find('#create-name').setValue('广州工厂')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
     expect(stub.createSite).toHaveBeenCalledTimes(1)
-    const body = stub.createSite.mock.calls[0]![0] as { code: string, name: string, timezone: string }
-    expect(body.code).toBe('PLANT-NEW')
+    const body = stub.createSite.mock.calls[0]![0] as { code?: string, name: string, timezone: string }
+    expect(body.code).toBeUndefined()
     expect(body.name).toBe('广州工厂')
     expect(body.timezone).toBe('Asia/Shanghai')
     expect(stub.toastSuccess).toHaveBeenCalled()
@@ -275,7 +277,7 @@ describe('master-data facilities tree page', () => {
 
     await wrapper.findAll('button').find((b) => b.text().includes('新建工厂'))!.trigger('click')
     await flushPromises()
-    // 编码/名称留空 → 非法。
+    // 名称留空 → 非法（编码已由系统自动生成，不再校验）。
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -293,7 +295,6 @@ describe('master-data facilities tree page', () => {
 
     await wrapper.findAll('button').find((b) => b.text().includes('新建工厂'))!.trigger('click')
     await flushPromises()
-    await wrapper.find('#create-code').setValue('PLANT-NEW')
     await wrapper.find('#create-name').setValue('广州工厂')
     await flushPromises()
     await wrapper.find('form').trigger('submit')

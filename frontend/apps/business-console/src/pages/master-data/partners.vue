@@ -126,7 +126,7 @@ function selectedExtraRoles() {
     .filter((value) => extraRoleState[value] && value !== createForm.partnerType)
 }
 const canCreatePartner = computed(() =>
-  [createForm.code, createForm.name, createForm.partnerType].every(isNonEmpty),
+  [createForm.name, createForm.partnerType].every(isNonEmpty),
 )
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
@@ -226,7 +226,6 @@ async function submitPartner() {
       const body: BusinessConsoleCreateBusinessPartnerRequest = {
         organizationId: createForm.organizationId.trim(),
         environmentId: createForm.environmentId.trim(),
-        code: createForm.code.trim(),
         name: createForm.name.trim(),
         partnerType: createForm.partnerType.trim(),
         ...(roles.length ? { partnerRoles: roles } : {}),
@@ -281,13 +280,14 @@ function isNonEmpty(value: string) {
               <p v-if="createShowErrors && !canCreatePartner" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
-                  <FieldLabel for="partner-code">编码 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="partner-code" v-model="createForm.code" autocomplete="off" aria-required="true" :disabled="!!editingCode" required />
+                <Field v-if="editingCode">
+                  <FieldLabel for="partner-code">编码</FieldLabel>
+                  <Input id="partner-code" :model-value="createForm.code" disabled />
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                   <FieldLabel for="partner-name">名称 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="partner-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
+                  <FieldDescription v-if="!editingCode">编码由系统自动生成。</FieldDescription>
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.partnerType)">
                   <FieldLabel for="partner-type">主角色 <span class="text-destructive">*</span></FieldLabel>

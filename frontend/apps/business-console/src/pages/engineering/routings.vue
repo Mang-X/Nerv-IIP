@@ -58,10 +58,13 @@ const {
   refresh,
   releaseRouting,
   releasePending,
+  fetchRoutingDetail,
 } = useEngineeringRoutings()
 
 const { skus } = useBusinessSkus()
 const { resources: workCenters, resourcesPending: workCentersPending } = useBusinessMasterDataResources('work-center')
+// 标准工序字典（codeSet=operation，工厂在「数据字典 › 标准工序」维护）：工序名从此选，提交带 code + 中文名。
+const { resources: operationDict, resourcesPending: operationDictPending } = useBusinessMasterDataResources('reference-data', { codeSet: 'operation' })
 
 const STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'all' },
@@ -122,6 +125,23 @@ const workCenterOptions = computed(() =>
 )
 const hasWorkCenters = computed(() => workCenterOptions.value.length > 0)
 
+// 标准工序字典：启用且有 code 的码值才可选；label 显中文名，绑定值用 code。
+const operationOptions = computed(() =>
+  operationDict.value
+    .filter((o) => o.active !== false && (o.code ?? '').trim().length > 0)
+    .map((o) => ({ value: (o.code ?? '').trim(), label: o.displayName?.trim() || (o.code ?? '').trim() })),
+)
+const hasOperations = computed(() => operationOptions.value.length > 0)
+const operationNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const o of operationOptions.value) map.set(o.value, o.label)
+  return map
+})
+function operationLabel(code?: string | null, fallbackName?: string | null) {
+  if (!code) return fallbackName || '—'
+  return operationNameByCode.value.get(code) ?? fallbackName ?? code
+}
+
 function engStatus(status?: string | null): { label: string, tone: StatusTone } {
   const s = (status ?? '').toLowerCase()
   if (s === 'published') return { label: '已发布', tone: 'success' }
@@ -148,7 +168,7 @@ const columns: DataTableColumn<BusinessConsoleRoutingItem>[] = [
 interface Operation {
   sequence: number
   workCenterCode: string
-  operationName: string
+  operationCode: string
   standardMinutes: string | number
 }
 interface RoutingForm {
@@ -158,7 +178,7 @@ interface RoutingForm {
   operations: Operation[]
 }
 function blankOperation(sequence: number): Operation {
-  return { sequence, workCenterCode: '', operationName: '', standardMinutes: '' }
+  return { sequence, workCenterCode: '', operationCode: '', standardMinutes: '' }
 }
 function blankForm(): RoutingForm {
   return { skuCode: '', revision: '', effectiveDate: today(), operations: [blankOperation(10)] }
@@ -182,7 +202,7 @@ const revisionValid = computed(() => form.revision.trim().length > 0)
 const effectiveValid = computed(() => !!form.effectiveDate)
 function operationValid(op: Operation) {
   return op.workCenterCode.trim().length > 0
-    && op.operationName.trim().length > 0
+    && op.operationCode.trim().length > 0
     && (parseNumber(op.standardMinutes) ?? -1) >= 0
 }
 const operationsValid = computed(() => form.operations.length > 0 && form.operations.every(operationValid))
@@ -245,7 +265,9 @@ async function submitForm() {
     operations: form.operations.map((op) => ({
       sequence: op.sequence,
       workCenterCode: op.workCenterCode.trim(),
-      operationName: op.operationName.trim(),
+      // 工序从标准工序字典选：code 是受控标识，operationName 带出字典中文名（后端两个字段都收）。
+      operationCode: op.operationCode.trim(),
+      operationName: operationNameByCode.value.get(op.operationCode.trim()) ?? op.operationCode.trim(),
       standardMinutes: parseNumber(op.standardMinutes) ?? 0,
     })),
   }
@@ -260,12 +282,31 @@ async function submitForm() {
   }
 }
 
-// ── 查看版本头（list 无工序 → 工序明细待后端 #389）──────────────
+// ── 查看版本明细（get-by-id 拉真实工序行）────────────────────────
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleRoutingItem | null>(null)
-function openView(row: BusinessConsoleRoutingItem) {
+const detailPending = ref(false)
+const detailError = ref('')
+// 工序行（来自 get-by-id；按序号排好）。
+const viewOperations = computed(() =>
+  [...(viewTarget.value?.operations ?? [])].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0)),
+)
+async function openView(row: BusinessConsoleRoutingItem) {
   viewTarget.value = row
   viewOpen.value = true
+  detailError.value = ''
+  if (!row.routingCode || !row.revision) return
+  detailPending.value = true
+  try {
+    const detail = await fetchRoutingDetail(row.routingCode, row.revision)
+    if (detail) viewTarget.value = detail
+  }
+  catch (error) {
+    detailError.value = formatError(error) || '加载工序明细失败，请稍后重试。'
+  }
+  finally {
+    detailPending.value = false
+  }
 }
 
 function formatError(error: unknown) {
@@ -301,7 +342,7 @@ function formatError(error: unknown) {
             </DialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请完整填写带 * 的必填项，确保每道工序有工作中心、工序名与非负工时，且序号正整数且不重复。
+                请完整填写带 * 的必填项，确保每道工序有工作中心、标准工序与非负工时，且序号正整数且不重复。
               </p>
               <p
                 v-if="!workCentersPending && !hasWorkCenters"
@@ -310,6 +351,14 @@ function formatError(error: unknown) {
               >
                 还没有可指派的工作中心。
                 <RouterLink to="/master-data/facilities" class="font-medium underline">去基础数据维护工作中心 →</RouterLink>
+              </p>
+              <p
+                v-if="!operationDictPending && !hasOperations"
+                class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
+                role="alert"
+              >
+                还没有可选的标准工序。
+                <RouterLink to="/master-data/reference-data" class="font-medium underline">去数据字典 › 标准工序维护 →</RouterLink>
               </p>
 
               <FormSectionTitle>版本头</FormSectionTitle>
@@ -336,7 +385,7 @@ function formatError(error: unknown) {
 
               <div class="flex items-center justify-between">
                 <FormSectionTitle>工序（按顺序）</FormSectionTitle>
-                <Button type="button" variant="outline" size="sm" :disabled="!hasWorkCenters" @click="addOperation">
+                <Button type="button" variant="outline" size="sm" :disabled="!hasWorkCenters || !hasOperations" @click="addOperation">
                   <PlusIcon aria-hidden="true" />
                   增加工序
                 </Button>
@@ -363,9 +412,14 @@ function formatError(error: unknown) {
                       </SelectContent>
                     </Select>
                   </Field>
-                  <Field :data-invalid="showErrors && !op.operationName.trim()">
-                    <FieldLabel :for="`rt-name-${index}`">工序名 <span class="text-destructive">*</span></FieldLabel>
-                    <Input :id="`rt-name-${index}`" v-model="op.operationName" placeholder="如 焊接" />
+                  <Field :data-invalid="showErrors && !op.operationCode.trim()">
+                    <FieldLabel :for="`rt-name-${index}`">工序 <span class="text-destructive">*</span></FieldLabel>
+                    <Select v-model="op.operationCode">
+                      <SelectTrigger :id="`rt-name-${index}`"><SelectValue placeholder="选择标准工序" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem v-for="o in operationOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </Field>
                   <Field :data-invalid="showErrors && (parseNumber(op.standardMinutes) ?? -1) < 0">
                     <FieldLabel :for="`rt-min-${index}`">工时(分)</FieldLabel>
@@ -443,34 +497,54 @@ function formatError(error: unknown) {
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="routingsTotal" />
 
     <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-md">
+      <SheetContent class="sm:max-w-lg">
         <SheetHeader>
-          <SheetTitle>工艺路线版本</SheetTitle>
-          <SheetDescription>查看该版本的版本头信息。</SheetDescription>
+          <SheetTitle>工艺路线 · 工序</SheetTitle>
+          <SheetDescription>
+            {{ viewTarget ? `${viewTarget.routingCode} · 修订 ${viewTarget.revision} · ${skuLabel(viewTarget.skuCode)}` : '' }}
+          </SheetDescription>
         </SheetHeader>
-        <div v-if="viewTarget" class="grid gap-3 px-4 py-2 text-sm">
-          <div class="flex justify-between gap-3">
-            <span class="text-muted-foreground">路线号</span>
-            <span class="font-medium">{{ viewTarget.routingCode || '—' }}</span>
+        <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
+          <div class="grid gap-2 text-sm">
+            <div class="flex justify-between gap-3">
+              <span class="text-muted-foreground">状态</span>
+              <StatusBadge :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-muted-foreground">生效日</span>
+              <span class="font-medium">{{ viewTarget.effectiveDate ? formatDate(viewTarget.effectiveDate) : '长期' }}</span>
+            </div>
           </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted-foreground">产出物料</span>
-            <span class="font-medium">{{ skuLabel(viewTarget.skuCode) }}</span>
+
+          <div v-if="detailPending" class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <Spinner aria-hidden="true" />
+            加载工序明细…
           </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted-foreground">修订</span>
-            <span class="font-medium">{{ viewTarget.revision || '—' }}</span>
+          <p v-else-if="detailError" class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+            {{ detailError }}
+          </p>
+          <div v-else-if="viewOperations.length" class="overflow-hidden rounded-md border">
+            <table class="w-full text-sm">
+              <thead class="bg-muted/40 text-muted-foreground">
+                <tr>
+                  <th class="px-3 py-2 text-right font-medium">序号</th>
+                  <th class="px-3 py-2 text-left font-medium">工作中心</th>
+                  <th class="px-3 py-2 text-left font-medium">工序</th>
+                  <th class="px-3 py-2 text-right font-medium">工时(分)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(op, i) in viewOperations" :key="i" class="border-t">
+                  <td class="px-3 py-2 text-right tabular-nums">{{ op.sequence ?? '—' }}</td>
+                  <td class="px-3 py-2">{{ wcLabel(op.workCenterCode) }}</td>
+                  <td class="px-3 py-2">{{ operationLabel(op.operationCode, op.operationName) }}</td>
+                  <td class="px-3 py-2 text-right tabular-nums">{{ op.standardMinutes ?? '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted-foreground">状态</span>
-            <StatusBadge :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
-          </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted-foreground">生效日</span>
-            <span class="font-medium">{{ viewTarget.effectiveDate ? formatDate(viewTarget.effectiveDate) : '长期' }}</span>
-          </div>
-          <p class="mt-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-warning">
-            工序明细待后端提供（#389）。当前列表接口只回版本头，发布后无法在此逐道查看工序；如需改动请发布新修订。
+          <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+            该版本没有工序行。
           </p>
         </div>
       </SheetContent>

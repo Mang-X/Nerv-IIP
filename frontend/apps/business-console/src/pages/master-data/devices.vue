@@ -111,7 +111,7 @@ const listRows = computed(() => {
   )
 })
 const canCreateDevice = computed(() =>
-  [createForm.code, createForm.model, createForm.manufacturer, createForm.serialNo,
+  [createForm.model, createForm.manufacturer, createForm.serialNo,
     createForm.assetClassCode, createForm.lineCode, createForm.workCenterCode, createForm.criticality].every(isNonEmpty),
 )
 const listErrorMessage = computed(() => formatError(devices.error.value))
@@ -199,7 +199,6 @@ async function submitDevice() {
       await devices.create({
         organizationId: devices.filters.organizationId,
         environmentId: devices.filters.environmentId,
-        code: createForm.code.trim(),
         model: createForm.model.trim(),
         manufacturer: createForm.manufacturer.trim(),
         serialNo: createForm.serialNo.trim(),
@@ -247,13 +246,14 @@ async function submitDevice() {
             <form class="grid gap-4" @submit.prevent="submitDevice">
               <p v-if="createShowErrors && !canCreateDevice" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
-                  <FieldLabel for="dev-code">设备编码 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="dev-code" v-model="createForm.code" autocomplete="off" :disabled="!!editingCode" required />
+                <Field v-if="editingCode">
+                  <FieldLabel for="dev-code">设备编码</FieldLabel>
+                  <Input id="dev-code" :model-value="createForm.code" disabled />
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.model)">
                   <FieldLabel for="dev-model">设备型号 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="dev-model" v-model="createForm.model" autocomplete="off" required />
+                  <FieldDescription v-if="!editingCode">编码由系统自动生成。</FieldDescription>
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.manufacturer)">
                   <FieldLabel for="dev-maker">制造商 <span class="text-destructive">*</span></FieldLabel>

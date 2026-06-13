@@ -58,6 +58,7 @@ const {
   refresh,
   releaseMbom,
   releasePending,
+  fetchMbomDetail,
 } = useEngineeringMboms()
 
 const { eboms: publishedEboms, ebomsPending: publishedEbomsPending } = usePublishedEboms()
@@ -307,12 +308,30 @@ async function submitForm() {
   }
 }
 
-// ── 查看物料行（list 含 MaterialLines）──────────────────────────
+// ── 查看物料行 + 配方行（get-by-id 拉真实明细）─────────────────────
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleManufacturingBomItem | null>(null)
-function openView(row: BusinessConsoleManufacturingBomItem) {
+const detailPending = ref(false)
+const detailError = ref('')
+const viewMaterialLines = computed(() => viewTarget.value?.materialLines ?? [])
+const viewRecipeLines = computed(() => viewTarget.value?.recipeLines ?? [])
+async function openView(row: BusinessConsoleManufacturingBomItem) {
+  // list 已带物料行，先用它即时显示；再 get-by-id 补齐配方行并刷新物料行。
   viewTarget.value = row
   viewOpen.value = true
+  detailError.value = ''
+  if (!row.bomCode || !row.revision) return
+  detailPending.value = true
+  try {
+    const detail = await fetchMbomDetail(row.bomCode, row.revision)
+    if (detail) viewTarget.value = detail
+  }
+  catch (error) {
+    detailError.value = formatError(error) || '加载配方行失败，请稍后重试。'
+  }
+  finally {
+    detailPending.value = false
+  }
 }
 
 function formatError(error: unknown) {
@@ -321,6 +340,10 @@ function formatError(error: unknown) {
 function formatScrap(rate?: number | null) {
   if (rate == null) return '—'
   return `${(rate * 100).toFixed(1)}%`
+}
+function uomLabel(code?: string | null) {
+  if (!code) return '—'
+  return uomOptions.value.find((o) => o.value === code)?.label ?? code
 }
 </script>
 
@@ -460,7 +483,7 @@ function formatScrap(rate?: number | null) {
                 </Button>
               </div>
               <p class="text-xs text-muted-foreground">
-                配方参数（如温度、压力、时长）按需登记。发布后配方明细暂不在列表回显（待后端）。
+                配方参数（如温度、压力、时长）按需登记。发布后可在「查看物料」里查看配方行。
               </p>
               <div v-if="form.recipeLines.length" class="grid gap-2">
                 <div
@@ -554,38 +577,70 @@ function formatScrap(rate?: number | null) {
             {{ viewTarget ? `${viewTarget.bomCode} · 修订 ${viewTarget.revision} · ${skuLabel(viewTarget.skuCode)}` : '' }}
           </SheetDescription>
         </SheetHeader>
-        <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
-          <div v-if="viewTarget.materialLines?.length" class="overflow-hidden rounded-md border">
-            <table class="w-full text-sm">
-              <thead class="bg-muted/40 text-muted-foreground">
-                <tr>
-                  <th class="px-3 py-2 text-left font-medium">物料</th>
-                  <th class="px-3 py-2 text-right font-medium">数量</th>
-                  <th class="px-3 py-2 text-left font-medium">单位</th>
-                  <th class="px-3 py-2 text-right font-medium">损耗率</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(line, i) in viewTarget.materialLines" :key="i" class="border-t">
-                  <td class="px-3 py-2">
-                    <div class="flex flex-col gap-0.5">
-                      <span>{{ skuLabel(line.skuCode) }}</span>
-                      <span class="text-xs text-muted-foreground">{{ line.skuCode }}</span>
-                    </div>
-                  </td>
-                  <td class="px-3 py-2 text-right tabular-nums">{{ line.quantity ?? '—' }}</td>
-                  <td class="px-3 py-2">{{ line.unitOfMeasureCode || '—' }}</td>
-                  <td class="px-3 py-2 text-right tabular-nums">{{ formatScrap(line.scrapRate) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-            该版本没有物料行。
-          </p>
-          <p class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
-            配方明细暂不在列表回显（待后端）。当前接口只回物料行，配方行发布后无法在此查看。
-          </p>
+        <div v-if="viewTarget" class="grid gap-4 px-4 py-2">
+          <section class="grid gap-2">
+            <h3 class="text-sm font-medium text-muted-foreground">物料行</h3>
+            <div v-if="viewMaterialLines.length" class="overflow-hidden rounded-md border">
+              <table class="w-full text-sm">
+                <thead class="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th class="px-3 py-2 text-left font-medium">物料</th>
+                    <th class="px-3 py-2 text-right font-medium">数量</th>
+                    <th class="px-3 py-2 text-left font-medium">单位</th>
+                    <th class="px-3 py-2 text-right font-medium">损耗率</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(line, i) in viewMaterialLines" :key="i" class="border-t">
+                    <td class="px-3 py-2">
+                      <div class="flex flex-col gap-0.5">
+                        <span>{{ skuLabel(line.skuCode) }}</span>
+                        <span class="text-xs text-muted-foreground">{{ line.skuCode }}</span>
+                      </div>
+                    </td>
+                    <td class="px-3 py-2 text-right tabular-nums">{{ line.quantity ?? '—' }}</td>
+                    <td class="px-3 py-2">{{ uomLabel(line.unitOfMeasureCode) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">{{ formatScrap(line.scrapRate) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              该版本没有物料行。
+            </p>
+          </section>
+
+          <section class="grid gap-2">
+            <h3 class="text-sm font-medium text-muted-foreground">配方行</h3>
+            <div v-if="detailPending" class="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+              <Spinner aria-hidden="true" />
+              加载配方行…
+            </div>
+            <p v-else-if="detailError" class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+              {{ detailError }}
+            </p>
+            <div v-else-if="viewRecipeLines.length" class="overflow-hidden rounded-md border">
+              <table class="w-full text-sm">
+                <thead class="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th class="px-3 py-2 text-left font-medium">参数</th>
+                    <th class="px-3 py-2 text-left font-medium">目标值</th>
+                    <th class="px-3 py-2 text-left font-medium">单位</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(line, i) in viewRecipeLines" :key="i" class="border-t">
+                    <td class="px-3 py-2">{{ line.parameterCode || '—' }}</td>
+                    <td class="px-3 py-2">{{ line.targetValue || '—' }}</td>
+                    <td class="px-3 py-2">{{ line.unitOfMeasureCode || '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              该版本没有配方行。
+            </p>
+          </section>
         </div>
       </SheetContent>
     </Sheet>

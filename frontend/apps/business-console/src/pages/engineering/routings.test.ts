@@ -6,6 +6,7 @@ import RoutingsPage from './routings.vue'
 
 const stub = vi.hoisted(() => ({
   releaseRouting: vi.fn().mockResolvedValue({ data: {} }),
+  fetchRoutingDetail: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }))
@@ -23,6 +24,11 @@ const workCenters = ref([
   { code: 'WC-A', displayName: '焊接中心' },
   { code: 'WC-B', displayName: '装配中心' },
 ])
+// 标准工序字典（codeSet=operation）。
+const operationDict = ref([
+  { code: 'OP-WELD', displayName: '焊接', active: true },
+  { code: 'OP-ASSY', displayName: '装配', active: true },
+])
 
 vi.mock('@/composables/useProductEngineering', () => ({
   useEngineeringRoutings: () => ({
@@ -35,6 +41,7 @@ vi.mock('@/composables/useProductEngineering', () => ({
     releaseRouting: stub.releaseRouting,
     releasePending: shallowRef(false),
     releaseError: shallowRef(undefined),
+    fetchRoutingDetail: stub.fetchRoutingDetail,
   }),
 }))
 
@@ -42,8 +49,9 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessSkus: () => ({
     skus: computed(() => [{ code: 'SKU-1', displayName: '智能网关主机' }]),
   }),
-  useBusinessMasterDataResources: () => ({
-    resources: computed(() => workCenters.value),
+  // 第一个参数区分 work-center / operation 两个数据源。
+  useBusinessMasterDataResources: (resourceType: string, options: { codeSet?: string } = {}) => ({
+    resources: computed(() => (options.codeSet === 'operation' ? operationDict.value : workCenters.value)),
     resourcesPending: shallowRef(false),
     resourcesError: shallowRef(undefined),
     refreshResources: vi.fn(),
@@ -111,6 +119,8 @@ async function openAndFillHeader(wrapper: ReturnType<typeof mount>) {
 
 beforeEach(() => {
   stub.releaseRouting.mockClear()
+  stub.fetchRoutingDetail.mockReset()
+  stub.fetchRoutingDetail.mockResolvedValue(undefined)
   stub.toastSuccess.mockClear()
   stub.toastError.mockClear()
   filters.skuCode = undefined
@@ -118,6 +128,10 @@ beforeEach(() => {
   workCenters.value = [
     { code: 'WC-A', displayName: '焊接中心' },
     { code: 'WC-B', displayName: '装配中心' },
+  ]
+  operationDict.value = [
+    { code: 'OP-WELD', displayName: '焊接', active: true },
+    { code: 'OP-ASSY', displayName: '装配', active: true },
   ]
 })
 
@@ -138,9 +152,9 @@ describe('engineering routings page', () => {
     await openAndFillHeader(wrapper)
 
     const selects = wrapper.findAll('select')
-    // 顺序：产出物料(0)、工序行工作中心(1)…… 状态筛选最后。
+    // 顺序：产出物料(0)、工序行工作中心(1)、工序行标准工序(2)…… 状态筛选最后。
     await selects[1]!.setValue('WC-A')
-    await wrapper.find('#rt-name-0').setValue('焊接')
+    await selects[2]!.setValue('OP-WELD')
     await wrapper.find('#rt-min-0').setValue('12')
     await flushPromises()
 
@@ -154,6 +168,8 @@ describe('engineering routings page', () => {
     expect(ops).toHaveLength(1)
     expect(ops[0]!.sequence).toBe(10)
     expect(ops[0]!.workCenterCode).toBe('WC-A')
+    // 工序从字典选：提交带 code + 中文名。
+    expect(ops[0]!.operationCode).toBe('OP-WELD')
     expect(ops[0]!.operationName).toBe('焊接')
     expect(ops[0]!.standardMinutes).toBe(12)
     expect(stub.toastSuccess).toHaveBeenCalled()
@@ -180,14 +196,13 @@ describe('engineering routings page', () => {
     await findButton(wrapper, '增加工序')!.trigger('click')
     await flushPromises()
 
-    // 第 0 行工作中心 WC-A、第 1 行 WC-B，便于验证下移后顺序
+    // 每行两个 Select：工作中心 + 标准工序。两行后顺序为 sku(0)、行0 WC(1)、行0 op(2)、行1 WC(3)、行1 op(4)。
     const selects = wrapper.findAll('select')
     await selects[1]!.setValue('WC-A')
-    await wrapper.find('#rt-name-0').setValue('焊接')
+    await selects[2]!.setValue('OP-WELD')
     await wrapper.find('#rt-min-0').setValue('5')
-    const selectsAfter = wrapper.findAll('select')
-    await selectsAfter[2]!.setValue('WC-B')
-    await wrapper.find('#rt-name-1').setValue('装配')
+    await selects[3]!.setValue('WC-B')
+    await selects[4]!.setValue('OP-ASSY')
     await wrapper.find('#rt-min-1').setValue('8')
     await flushPromises()
 
@@ -201,8 +216,10 @@ describe('engineering routings page', () => {
     const body = stub.releaseRouting.mock.calls[0]![0] as Record<string, unknown>
     const ops = body.operations as Array<Record<string, unknown>>
     // 下移后第一道变成原第二道（装配），序号随显示顺序为 10。
+    expect(ops[0]!.operationCode).toBe('OP-ASSY')
     expect(ops[0]!.operationName).toBe('装配')
     expect(ops[0]!.sequence).toBe(10)
+    expect(ops[1]!.operationCode).toBe('OP-WELD')
     expect(ops[1]!.operationName).toBe('焊接')
     expect(ops[1]!.sequence).toBe(20)
   })
@@ -242,14 +259,43 @@ describe('engineering routings page', () => {
     expect((wrapper.findAll('input[type="date"]')[0]!.element as HTMLInputElement).value).toBe(ymd)
   })
 
-  it('查看：行「查看」打开版本头并标注「工序明细待后端」', async () => {
+  it('查看：行「查看」拉 get-by-id 渲染真实工序行（序号/工作中心/工序名/工时）', async () => {
+    stub.fetchRoutingDetail.mockResolvedValue({
+      routingCode: 'RT-1',
+      revision: 'A',
+      skuCode: 'SKU-1',
+      status: 'Published',
+      operations: [
+        { sequence: 20, workCenterCode: 'WC-B', operationCode: 'OP-ASSY', operationName: '装配', standardMinutes: 8 },
+        { sequence: 10, workCenterCode: 'WC-A', operationCode: 'OP-WELD', operationName: '焊接', standardMinutes: 12 },
+      ],
+    })
     const wrapper = mount(RoutingsPage, { global: { stubs: allStubs } })
     await flushPromises()
 
     await findButton(wrapper, '查看')!.trigger('click')
     await flushPromises()
 
+    expect(stub.fetchRoutingDetail).toHaveBeenCalledWith('RT-1', 'A')
     const sheet = wrapper.find('[data-testid="sheet"]')
-    expect(sheet.text()).toContain('工序明细待后端')
+    expect(sheet.text()).toContain('焊接')
+    expect(sheet.text()).toContain('装配')
+    expect(sheet.text()).toContain('焊接中心')
+    // 不再标注「待后端」。
+    expect(sheet.text()).not.toContain('待后端')
+    // 按序号排序：第一道为序号 10（焊接）。
+    const firstRow = sheet.findAll('tbody tr')[0]!
+    expect(firstRow.text()).toContain('焊接')
+  })
+
+  it('无标准工序时给出「去数据字典 › 标准工序维护」出路且禁用增加工序', async () => {
+    operationDict.value = []
+    const wrapper = mount(RoutingsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('去数据字典 › 标准工序维护')
+    expect(findButton(wrapper, '增加工序')!.attributes('disabled')).toBeDefined()
   })
 })
