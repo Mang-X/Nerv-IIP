@@ -30,6 +30,60 @@ public sealed class RegisterBusinessConsoleEngineeringDocumentEndpoint(
 }
 
 [Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/documents")]
+[BusinessGatewayOperationId("listBusinessConsoleEngineeringDocuments")]
+public sealed class ListBusinessConsoleEngineeringDocumentsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleListEngineeringDocumentsRequest, BusinessConsoleEngineeringDocumentListResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringDocumentsRead)
+{
+    protected override string OrganizationId(BusinessConsoleListEngineeringDocumentsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleListEngineeringDocumentsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleEngineeringDocumentListResponse> ForwardAsync(
+        BusinessConsoleListEngineeringDocumentsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.ListEngineeringDocumentsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed record BusinessConsoleGetEngineeringDocumentRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: RouteParam] string DocumentNumber,
+    [property: RouteParam] string Revision);
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/documents/{documentNumber}/{revision}")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringDocument")]
+public sealed class GetBusinessConsoleEngineeringDocumentEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleGetEngineeringDocumentRequest, BusinessConsoleEngineeringDocumentItem>(
+        auth,
+        BusinessGatewayPermissions.EngineeringDocumentsRead)
+{
+    protected override string OrganizationId(BusinessConsoleGetEngineeringDocumentRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleGetEngineeringDocumentRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleGetEngineeringDocumentRequest request) => "engineering-document";
+
+    protected override string? ResourceId(BusinessConsoleGetEngineeringDocumentRequest request) => $"{request.DocumentNumber}:{request.Revision}";
+
+    protected override Task<BusinessConsoleEngineeringDocumentItem> ForwardAsync(
+        BusinessConsoleGetEngineeringDocumentRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetEngineeringDocumentAsync(tokenProvider.BearerToken, request.DocumentNumber, request.Revision, new BusinessConsoleEngineeringContextRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
 [HttpPost("/api/business-console/v1/engineering/items")]
 [BusinessGatewayOperationId("createBusinessConsoleEngineeringItemRevision")]
 public sealed class CreateBusinessConsoleEngineeringItemRevisionEndpoint(
@@ -49,6 +103,60 @@ public sealed class CreateBusinessConsoleEngineeringItemRevisionEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         engineering.CreateEngineeringItemRevisionAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/items")]
+[BusinessGatewayOperationId("listBusinessConsoleEngineeringItems")]
+public sealed class ListBusinessConsoleEngineeringItemsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleListEngineeringItemsRequest, BusinessConsoleEngineeringItemListResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringItemsRead)
+{
+    protected override string OrganizationId(BusinessConsoleListEngineeringItemsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleListEngineeringItemsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleEngineeringItemListResponse> ForwardAsync(
+        BusinessConsoleListEngineeringItemsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.ListEngineeringItemsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed record BusinessConsoleGetEngineeringItemRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: RouteParam] string ItemCode,
+    [property: RouteParam] string Revision);
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/items/{itemCode}/{revision}")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringItem")]
+public sealed class GetBusinessConsoleEngineeringItemEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleGetEngineeringItemRequest, BusinessConsoleEngineeringItemRevisionItem>(
+        auth,
+        BusinessGatewayPermissions.EngineeringItemsRead)
+{
+    protected override string OrganizationId(BusinessConsoleGetEngineeringItemRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleGetEngineeringItemRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleGetEngineeringItemRequest request) => "engineering-item";
+
+    protected override string? ResourceId(BusinessConsoleGetEngineeringItemRequest request) => $"{request.ItemCode}:{request.Revision}";
+
+    protected override Task<BusinessConsoleEngineeringItemRevisionItem> ForwardAsync(
+        BusinessConsoleGetEngineeringItemRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetEngineeringItemAsync(tokenProvider.BearerToken, request.ItemCode, request.Revision, new BusinessConsoleEngineeringContextRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
 }
 
 [Tags("Business Console Product Engineering")]
@@ -95,6 +203,38 @@ public sealed class ListBusinessConsoleEngineeringBomsEndpoint(
         engineering.ListEngineeringBomsAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+public sealed record BusinessConsoleGetEngineeringBomRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: RouteParam] string BomCode,
+    [property: RouteParam] string Revision);
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/engineering-boms/{bomCode}/{revision}")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringBom")]
+public sealed class GetBusinessConsoleEngineeringBomEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleGetEngineeringBomRequest, BusinessConsoleEngineeringBomItem>(
+        auth,
+        BusinessGatewayPermissions.EngineeringBomsRead)
+{
+    protected override string OrganizationId(BusinessConsoleGetEngineeringBomRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleGetEngineeringBomRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleGetEngineeringBomRequest request) => "engineering-bom";
+
+    protected override string? ResourceId(BusinessConsoleGetEngineeringBomRequest request) => $"{request.BomCode}:{request.Revision}";
+
+    protected override Task<BusinessConsoleEngineeringBomItem> ForwardAsync(
+        BusinessConsoleGetEngineeringBomRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetEngineeringBomAsync(tokenProvider.BearerToken, request.BomCode, request.Revision, new BusinessConsoleEngineeringContextRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
+}
+
 [Tags("Business Console Product Engineering")]
 [HttpGet("/api/business-console/v1/engineering/manufacturing-boms")]
 [BusinessGatewayOperationId("listBusinessConsoleEngineeringManufacturingBoms")]
@@ -115,6 +255,38 @@ public sealed class ListBusinessConsoleEngineeringManufacturingBomsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         engineering.ListManufacturingBomsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed record BusinessConsoleGetManufacturingBomRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: RouteParam] string BomCode,
+    [property: RouteParam] string Revision);
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/manufacturing-boms/{bomCode}/{revision}")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringManufacturingBom")]
+public sealed class GetBusinessConsoleEngineeringManufacturingBomEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleGetManufacturingBomRequest, BusinessConsoleManufacturingBomItem>(
+        auth,
+        BusinessGatewayPermissions.EngineeringBomsRead)
+{
+    protected override string OrganizationId(BusinessConsoleGetManufacturingBomRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleGetManufacturingBomRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleGetManufacturingBomRequest request) => "manufacturing-bom";
+
+    protected override string? ResourceId(BusinessConsoleGetManufacturingBomRequest request) => $"{request.BomCode}:{request.Revision}";
+
+    protected override Task<BusinessConsoleManufacturingBomItem> ForwardAsync(
+        BusinessConsoleGetManufacturingBomRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetManufacturingBomAsync(tokenProvider.BearerToken, request.BomCode, request.Revision, new BusinessConsoleEngineeringContextRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
 }
 
 [Tags("Business Console Product Engineering")]
@@ -161,6 +333,38 @@ public sealed class ListBusinessConsoleEngineeringRoutingsEndpoint(
         engineering.ListRoutingsAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+public sealed record BusinessConsoleGetRoutingRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: RouteParam] string RoutingCode,
+    [property: RouteParam] string Revision);
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/routings/{routingCode}/{revision}")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringRouting")]
+public sealed class GetBusinessConsoleEngineeringRoutingEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleGetRoutingRequest, BusinessConsoleRoutingItem>(
+        auth,
+        BusinessGatewayPermissions.EngineeringRoutingsRead)
+{
+    protected override string OrganizationId(BusinessConsoleGetRoutingRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleGetRoutingRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleGetRoutingRequest request) => "routing";
+
+    protected override string? ResourceId(BusinessConsoleGetRoutingRequest request) => $"{request.RoutingCode}:{request.Revision}";
+
+    protected override Task<BusinessConsoleRoutingItem> ForwardAsync(
+        BusinessConsoleGetRoutingRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetRoutingAsync(tokenProvider.BearerToken, request.RoutingCode, request.Revision, new BusinessConsoleEngineeringContextRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
+}
+
 [Tags("Business Console Product Engineering")]
 [HttpPost("/api/business-console/v1/engineering/routings/release")]
 [BusinessGatewayOperationId("releaseBusinessConsoleEngineeringRouting")]
@@ -203,6 +407,59 @@ public sealed class ReleaseBusinessConsoleEngineeringChangeEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         engineering.ReleaseEngineeringChangeAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/engineering-changes")]
+[BusinessGatewayOperationId("listBusinessConsoleEngineeringChanges")]
+public sealed class ListBusinessConsoleEngineeringChangesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleListEngineeringChangesRequest, BusinessConsoleEngineeringChangeListResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringChangesRead)
+{
+    protected override string OrganizationId(BusinessConsoleListEngineeringChangesRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleListEngineeringChangesRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleEngineeringChangeListResponse> ForwardAsync(
+        BusinessConsoleListEngineeringChangesRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.ListEngineeringChangesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed record BusinessConsoleGetEngineeringChangeRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: RouteParam] string ChangeNumber);
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/engineering-changes/{changeNumber}")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringChange")]
+public sealed class GetBusinessConsoleEngineeringChangeEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleGetEngineeringChangeRequest, BusinessConsoleEngineeringChangeItem>(
+        auth,
+        BusinessGatewayPermissions.EngineeringChangesRead)
+{
+    protected override string OrganizationId(BusinessConsoleGetEngineeringChangeRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleGetEngineeringChangeRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleGetEngineeringChangeRequest request) => "engineering-change";
+
+    protected override string? ResourceId(BusinessConsoleGetEngineeringChangeRequest request) => request.ChangeNumber;
+
+    protected override Task<BusinessConsoleEngineeringChangeItem> ForwardAsync(
+        BusinessConsoleGetEngineeringChangeRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetEngineeringChangeAsync(tokenProvider.BearerToken, request.ChangeNumber, new BusinessConsoleEngineeringContextRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
 }
 
 [Tags("Business Console Product Engineering")]
@@ -349,6 +606,7 @@ public sealed class BusinessConsoleRegisterEngineeringDocumentRequestValidator :
         RuleFor(x => x.FileName).NotEmpty().MaximumLength(255);
         RuleFor(x => x.ContentType).NotEmpty().MaximumLength(120);
         RuleFor(x => x.DocumentType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ItemCode).MaximumLength(100);
     }
 }
 

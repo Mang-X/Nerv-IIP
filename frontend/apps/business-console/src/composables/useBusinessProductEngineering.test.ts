@@ -59,19 +59,19 @@ describe('business product engineering composable', () => {
     coladaState.queryOptionsById.clear()
   })
 
-  it('loads only released BOMs, routings, and active production versions by default', () => {
+  it('loads only published BOMs, routings, and active production versions by default', () => {
     coladaState.queryDataById.set('listBusinessConsoleEngineeringBoms', {
       success: true,
       data: {
         total: 11,
-        items: [{ bomCode: 'MBOM-FRONT', revision: 'R1', parentItemCode: 'FG-FRONT-SHOCK', status: 'Released' }],
+        items: [{ bomCode: 'MBOM-FRONT', revision: 'R1', parentItemCode: 'FG-FRONT-SHOCK', status: 'Published' }],
       },
     })
     coladaState.queryDataById.set('listBusinessConsoleEngineeringRoutings', {
       success: true,
       data: {
         total: 12,
-        items: [{ routingCode: 'RT-FRONT', revision: 'R1', skuCode: 'FG-FRONT-SHOCK', status: 'Released' }],
+        items: [{ routingCode: 'RT-FRONT', revision: 'R1', skuCode: 'FG-FRONT-SHOCK', status: 'Published' }],
       },
     })
     coladaState.queryDataById.set('listBusinessConsoleEngineeringProductionVersions', {
@@ -88,7 +88,7 @@ describe('business product engineering composable', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        status: 'Released',
+        status: 'Published',
         skip: 0,
         take: 100,
       },
@@ -97,7 +97,7 @@ describe('business product engineering composable', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
-        status: 'Released',
+        status: 'Published',
         skip: 0,
         take: 100,
       },
@@ -132,7 +132,7 @@ describe('business product engineering composable', () => {
       query: {
         organizationId: 'org-002',
         environmentId: 'prod',
-        status: 'Released',
+        status: 'Published',
         skip: 0,
         take: 100,
       },

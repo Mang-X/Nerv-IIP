@@ -737,6 +737,32 @@ public sealed record BusinessConsoleNcrCloseRequest(
 
 public sealed record BusinessConsoleAcceptedResponse(bool Accepted);
 
+public sealed record BusinessConsoleEngineeringContextRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleListEngineeringDocumentsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? ItemCode = null,
+    string? DocumentType = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleEngineeringDocumentListResponse(
+    IReadOnlyCollection<BusinessConsoleEngineeringDocumentItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleEngineeringDocumentItem(
+    string DocumentNumber,
+    string Revision,
+    string? ItemCode,
+    string FileId,
+    string FileName,
+    string ContentType,
+    string DocumentType,
+    DateTime RegisteredAtUtc);
+
 public sealed record BusinessConsoleListEngineeringBomsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -754,7 +780,13 @@ public sealed record BusinessConsoleEngineeringBomItem(
     string Revision,
     string ParentItemCode,
     string Status,
-    DateOnly? EffectiveDate);
+    DateOnly? EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleEngineeringBomLine> Lines);
+
+public sealed record BusinessConsoleEngineeringBomLine(
+    string ChildItemCode,
+    decimal Quantity,
+    string UnitOfMeasureCode);
 
 public sealed record BusinessConsoleRegisterEngineeringDocumentRequest(
     string OrganizationId,
@@ -765,7 +797,8 @@ public sealed record BusinessConsoleRegisterEngineeringDocumentRequest(
     string FileName,
     string ContentType,
     string DocumentType,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    string? ItemCode = null);
 
 public sealed record BusinessConsoleEngineeringEntityResponse(string Id);
 
@@ -777,6 +810,26 @@ public sealed record BusinessConsoleCreateEngineeringItemRevisionRequest(
     string Name,
     bool Release,
     string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleListEngineeringItemsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? ItemCode = null,
+    string? Status = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleEngineeringItemListResponse(
+    IReadOnlyCollection<BusinessConsoleEngineeringItemRevisionItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleEngineeringItemRevisionItem(
+    string ItemCode,
+    string Revision,
+    string Name,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
 
 public sealed record BusinessConsoleReleaseEngineeringBomRequest(
     string OrganizationId,
@@ -809,15 +862,22 @@ public sealed record BusinessConsoleManufacturingBomItem(
     string BomCode,
     string Revision,
     string SkuCode,
+    string EngineeringBomVersionId,
     string Status,
     DateOnly? EffectiveDate,
-    IReadOnlyCollection<BusinessConsoleManufacturingBomMaterialLine> MaterialLines);
+    IReadOnlyCollection<BusinessConsoleManufacturingBomMaterialLine> MaterialLines,
+    IReadOnlyCollection<BusinessConsoleRecipeLine> RecipeLines);
 
 public sealed record BusinessConsoleManufacturingBomMaterialLine(
     string SkuCode,
     decimal Quantity,
     string UnitOfMeasureCode,
     decimal ScrapRate);
+
+public sealed record BusinessConsoleRecipeLine(
+    string ParameterCode,
+    string TargetValue,
+    string UnitOfMeasureCode);
 
 public sealed record BusinessConsoleReleaseManufacturingBomRequest(
     string OrganizationId,
@@ -860,7 +920,15 @@ public sealed record BusinessConsoleRoutingItem(
     string Revision,
     string SkuCode,
     string Status,
-    DateOnly? EffectiveDate);
+    DateOnly? EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleRoutingOperationItem> Operations);
+
+public sealed record BusinessConsoleRoutingOperationItem(
+    int Sequence,
+    string WorkCenterCode,
+    string OperationCode,
+    string OperationName,
+    int StandardMinutes);
 
 public sealed record BusinessConsoleReleaseRoutingRequest(
     string OrganizationId,
@@ -890,6 +958,31 @@ public sealed record BusinessConsoleReleaseEngineeringChangeRequest(
     string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleAffectedVersionRequest(
+    string VersionKind,
+    string VersionId);
+
+public sealed record BusinessConsoleListEngineeringChangesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleEngineeringChangeListResponse(
+    IReadOnlyCollection<BusinessConsoleEngineeringChangeItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleEngineeringChangeItem(
+    string ChangeNumber,
+    string Reason,
+    string ApprovalReferenceId,
+    string Status,
+    DateOnly? EffectiveDate,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc,
+    IReadOnlyCollection<BusinessConsoleEngineeringChangeAffectedVersionItem> AffectedVersions);
+
+public sealed record BusinessConsoleEngineeringChangeAffectedVersionItem(
     string VersionKind,
     string VersionId);
 

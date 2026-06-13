@@ -42,8 +42,8 @@ function defaultListFilters(organizationId: string, environmentId: string): Engi
   return reactive({
     organizationId,
     environmentId,
-    bomStatus: 'Released',
-    routingStatus: 'Released',
+    bomStatus: 'Published',
+    routingStatus: 'Published',
     productionVersionStatus: 'active',
     skip: 0,
     take: DEFAULT_TAKE,
