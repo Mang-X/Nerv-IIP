@@ -130,7 +130,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListEngineeringBomsQueryHandler(dbContext).Handle(
-            new ListEngineeringBomsQuery("org-001", "env-dev", "ENG-1000", "Published"),
+            new ListEngineeringBomsQuery("org-001", "env-dev", " ENG-1000 ", "Published"),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
@@ -181,7 +181,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListManufacturingBomsQueryHandler(dbContext).Handle(
-            new ListManufacturingBomsQuery("org-001", "env-dev", "SKU-FG-1000", "Published"),
+            new ListManufacturingBomsQuery("org-001", "env-dev", " SKU-FG-1000 ", "Published"),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -253,7 +253,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListRoutingsQueryHandler(dbContext).Handle(
-            new ListRoutingsQuery("org-001", "env-dev", "SKU-FG-1000", "Published"),
+            new ListRoutingsQuery("org-001", "env-dev", " SKU-FG-1000 ", "Published"),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
@@ -322,7 +322,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListEngineeringItemsQueryHandler(dbContext).Handle(
-            new ListEngineeringItemsQuery("org-001", "env-dev", "ENG-1000", "Published", Skip: 0, Take: 10),
+            new ListEngineeringItemsQuery("org-001", "env-dev", " ENG-1000 ", "Published", Skip: 0, Take: 10),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);

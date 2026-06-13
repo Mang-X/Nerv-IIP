@@ -56,9 +56,10 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (!string.IsNullOrWhiteSpace(request.ParentItemCode))
+        var parentItemCode = EngineeringQueryParameters.NormalizeOptionalText(request.ParentItemCode);
+        if (parentItemCode is not null)
         {
-            query = query.Where(x => x.ParentItemCode == request.ParentItemCode);
+            query = query.Where(x => x.ParentItemCode == parentItemCode);
         }
 
         var status = EngineeringQueryParameters.ParseStatusOrThrow(request.Status);
@@ -155,9 +156,10 @@ public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbCon
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (!string.IsNullOrWhiteSpace(request.SkuCode))
+        var skuCode = EngineeringQueryParameters.NormalizeOptionalText(request.SkuCode);
+        if (skuCode is not null)
         {
-            query = query.Where(x => x.SkuCode == request.SkuCode);
+            query = query.Where(x => x.SkuCode == skuCode);
         }
 
         var status = EngineeringQueryParameters.ParseStatusOrThrow(request.Status);
@@ -269,9 +271,10 @@ public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (!string.IsNullOrWhiteSpace(request.SkuCode))
+        var skuCode = EngineeringQueryParameters.NormalizeOptionalText(request.SkuCode);
+        if (skuCode is not null)
         {
-            query = query.Where(x => x.SkuCode == request.SkuCode);
+            query = query.Where(x => x.SkuCode == skuCode);
         }
 
         var status = EngineeringQueryParameters.ParseStatusOrThrow(request.Status);
@@ -442,9 +445,10 @@ public sealed class ListEngineeringItemsQueryHandler(ApplicationDbContext dbCont
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (!string.IsNullOrWhiteSpace(request.ItemCode))
+        var itemCode = EngineeringQueryParameters.NormalizeOptionalText(request.ItemCode);
+        if (itemCode is not null)
         {
-            query = query.Where(x => x.ItemCode == request.ItemCode);
+            query = query.Where(x => x.ItemCode == itemCode);
         }
 
         var status = EngineeringQueryParameters.ParseStatusOrThrow(request.Status);
