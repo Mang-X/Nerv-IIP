@@ -324,6 +324,36 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             revokedBy = "u-manager",
         },
+        "/api/business-console/v1/master-data/code-rules/master-data.sku/versions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            ruleKey = "master-data.sku",
+            displayName = "SKU code v2",
+            appliesTo = "sku",
+            scope = 3,
+            segments = new object[]
+            {
+                new { type = 0, value = "SKU-" },
+                new { type = 2, width = 4, start = 1 },
+            },
+            isActive = true,
+            effectiveFromUtc = "2026-06-01T00:00:00Z",
+            createdBy = "admin-001",
+            changeReason = "align plant convention",
+        },
+        "/api/business-console/v1/master-data/code-rules/master-data.sku/preview" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            ruleKey = "master-data.sku",
+            segments = new object[]
+            {
+                new { type = 0, value = "SKU-" },
+                new { type = 2, width = 4, start = 42 },
+            },
+            siteCode = "SITE-01",
+        },
         "/api/business-console/v1/master-data/teams/T-001/members" => new
         {
             organizationId = "org-001",
@@ -529,6 +559,10 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/departments", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/personnel-skills", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/reference-data", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/code-rules", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/code-rules/master-data.sku", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/versions", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/preview", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/availability", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryMovementsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);

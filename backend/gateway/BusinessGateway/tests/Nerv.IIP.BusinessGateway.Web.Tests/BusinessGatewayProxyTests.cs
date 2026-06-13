@@ -234,6 +234,65 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Master_data_code_rule_facades_use_internal_service_token()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/master-data/code-rules?organizationId=org-001&environmentId=env-dev");
+        var detail = await client.GetAsync("/api/business-console/v1/master-data/code-rules/master-data.sku?organizationId=org-001&environmentId=env-dev");
+        var version = await client.PostAsJsonAsync("/api/business-console/v1/master-data/code-rules/master-data.sku/versions", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            ruleKey = "master-data.sku",
+            displayName = "SKU code v2",
+            appliesTo = "sku",
+            scope = 3,
+            segments = new object[]
+            {
+                new { type = 0, value = "SKU-" },
+                new { type = 2, width = 4, start = 1 },
+            },
+            isActive = true,
+            effectiveFromUtc = "2026-06-01T00:00:00Z",
+            createdBy = "admin-001",
+            changeReason = "align plant convention",
+        });
+        var preview = await client.PostAsJsonAsync("/api/business-console/v1/master-data/code-rules/master-data.sku/preview", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            ruleKey = "master-data.sku",
+            segments = new object[]
+            {
+                new { type = 0, value = "SKU-" },
+                new { type = 2, width = 4, start = 42 },
+            },
+            siteCode = "SITE-01",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, version.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+        Assert.Equal("internal-test-token", masterData.LastInternalToken);
+        Assert.Equal(new BusinessConsoleCodeRuleContextRequest("org-001", "env-dev"), masterData.LastCodeRuleListRequest);
+        Assert.Equal(new BusinessConsoleCodeRuleRequest("org-001", "env-dev", "master-data.sku"), masterData.LastCodeRuleDetailRequest);
+        Assert.Equal("master-data.sku", masterData.LastCodeRuleVersionRequest!.RuleKey);
+        Assert.Equal("admin-001", masterData.LastCodeRuleVersionRequest.CreatedBy);
+        Assert.Equal("master-data.sku", masterData.LastCodeRulePreviewRequest!.RuleKey);
+    }
+
+    [Fact]
     public async Task Inventory_availability_uses_internal_service_token_for_downstream_business_service()
     {
         var inventory = new RecordingInventoryClient();
@@ -3258,9 +3317,18 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public BusinessConsoleAddTeamMemberRequest? LastAddTeamMemberRequest { get; private set; }
 
     public BusinessConsoleListTeamMembersRequest? LastListTeamMembersRequest { get; private set; }
+
     public BusinessConsolePersonnelSkillMatrixRequest? LastPersonnelSkillMatrixRequest { get; private set; }
 
     public BusinessConsoleRemoveTeamMemberRequest? LastRemoveTeamMemberRequest { get; private set; }
+
+    public BusinessConsoleCodeRuleContextRequest? LastCodeRuleListRequest { get; private set; }
+
+    public BusinessConsoleCodeRuleRequest? LastCodeRuleDetailRequest { get; private set; }
+
+    public BusinessConsoleCreateCodeRuleVersionRequest? LastCodeRuleVersionRequest { get; private set; }
+
+    public BusinessConsolePreviewCodeRuleRequest? LastCodeRulePreviewRequest { get; private set; }
 
     public IReadOnlyCollection<BusinessConsoleResourceItem>? Resources { get; init; }
 
@@ -3465,6 +3533,63 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/reference-data", "reference-data-code", request.Code, request.Name);
 
+    public Task<BusinessConsoleCodeRuleListResponse> ListCodeRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleCodeRuleContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCodeRuleListRequest = request;
+        return Task.FromResult(new BusinessConsoleCodeRuleListResponse([CodeRuleItem()]));
+    }
+
+    public Task<BusinessConsoleCodeRuleDetailResponse> GetCodeRuleAsync(
+        string internalBearerToken,
+        BusinessConsoleCodeRuleRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCodeRuleDetailRequest = request;
+        return Task.FromResult(new BusinessConsoleCodeRuleDetailResponse(
+            CodeRuleItem(),
+            [
+                new BusinessConsoleCodeRuleVersionItem(
+                    request.RuleKey,
+                    1,
+                    "active",
+                    new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero),
+                    "seed",
+                    "standard seed",
+                    new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero)),
+            ]));
+    }
+
+    public Task<BusinessConsoleCodeRuleVersionResponse> CreateCodeRuleVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateCodeRuleVersionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCodeRuleVersionRequest = request;
+        return Task.FromResult(new BusinessConsoleCodeRuleVersionResponse(
+            request.RuleKey,
+            2,
+            "active",
+            request.EffectiveFromUtc ?? DateTimeOffset.UtcNow,
+            request.CreatedBy,
+            request.ChangeReason));
+    }
+
+    public Task<BusinessConsoleCodeRulePreviewResponse> PreviewCodeRuleAsync(
+        string internalBearerToken,
+        BusinessConsolePreviewCodeRuleRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCodeRulePreviewRequest = request;
+        return Task.FromResult(new BusinessConsoleCodeRulePreviewResponse(request.RuleKey, "SKU-0042"));
+    }
+
     private Task<BusinessConsoleResourceItem> CreateResourceAsync(
         string internalBearerToken,
         string downstreamPath,
@@ -3477,6 +3602,21 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         LastCreateResourcePath = downstreamPath;
         return Task.FromResult(new BusinessConsoleResourceItem(resourceType, code ?? $"{resourceType}-generated", displayName, true, "v1"));
     }
+
+    private static BusinessConsoleCodeRuleItem CodeRuleItem() =>
+        new(
+            "master-data.sku",
+            "SKU code",
+            "sku",
+            Nerv.IIP.Contracts.Coding.ScopeDimension.Organization | Nerv.IIP.Contracts.Coding.ScopeDimension.Environment,
+            [
+                Nerv.IIP.Contracts.Coding.CodeRuleSegment.ConstantOf("SKU-"),
+                Nerv.IIP.Contracts.Coding.CodeRuleSegment.SequenceOf(4),
+            ],
+            true,
+            1,
+            new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc),
+            new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
 
     private static BusinessConsoleMasterDataResourceDetail ResourceDetail(
         string resourceType,
