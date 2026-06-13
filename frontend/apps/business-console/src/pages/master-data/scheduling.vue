@@ -533,7 +533,7 @@ async function toggleWeekday(day: SystemDayOfWeek) {
   }
   // 仅当该星期尚无工作时段时才追加,避免重复添加同一 dayOfWeek。
   else if (!workingTimes.value.some((w) => normalizeDow(w.dayOfWeek) === day)) {
-    workingTimes.value = [...workingTimes.value, { dayOfWeek: day, startsAt: '08:00:00', endsAt: '17:00:00' }]
+    workingTimes.value = [...workingTimes.value, { dayOfWeek: day }]
   }
   await persistCalendar('每周工作模式已更新。')
 }
