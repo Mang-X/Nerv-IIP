@@ -50,20 +50,14 @@ public sealed class CreateCodeRuleVersionCommandHandler(ApplicationDbContext dbC
             x.RuleKey == request.RuleKey,
             cancellationToken);
 
-        var nextVersion = 1;
-        if (current is not null)
-        {
-            var latestVersion = await dbContext.CodeRuleVersions
-                .Where(x =>
-                    x.OrganizationId == request.OrganizationId &&
-                    x.EnvironmentId == request.EnvironmentId &&
-                    x.RuleKey == request.RuleKey)
-                .Select(x => (int?)x.Version)
-                .MaxAsync(cancellationToken);
-            nextVersion = latestVersion is null
-                ? current.Version + 1
-                : Math.Max(current.Version, latestVersion.Value) + 1;
-        }
+        var latestVersion = await dbContext.CodeRuleVersions
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RuleKey == request.RuleKey)
+            .Select(x => (int?)x.Version)
+            .MaxAsync(cancellationToken);
+        var nextVersion = Math.Max(current?.Version ?? 0, latestVersion ?? 0) + 1;
 
         var definition = new CodeRuleDefinition
         {
@@ -78,7 +72,7 @@ public sealed class CreateCodeRuleVersionCommandHandler(ApplicationDbContext dbC
         definition.Validate();
 
         var now = DateTimeOffset.UtcNow;
-        var status = request.EffectiveFromUtc <= now ? "active" : "scheduled";
+        var status = request.EffectiveFromUtc <= now ? CodeRuleVersionStatus.Active : CodeRuleVersionStatus.Scheduled;
         var segmentsJson = JsonSerializer.Serialize(request.Segments, CodeRuleJson.Options);
         var version = CodeRuleVersion.Record(
             request.OrganizationId,
@@ -97,7 +91,7 @@ public sealed class CreateCodeRuleVersionCommandHandler(ApplicationDbContext dbC
             now);
         dbContext.CodeRuleVersions.Add(version);
 
-        if (status == "active")
+        if (status == CodeRuleVersionStatus.Active)
         {
             if (current is null)
             {

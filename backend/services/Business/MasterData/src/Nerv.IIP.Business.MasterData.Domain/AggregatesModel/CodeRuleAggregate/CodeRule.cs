@@ -4,6 +4,13 @@ public partial record CodeRuleId : IGuidStronglyTypedId;
 
 public partial record CodeRuleVersionId : IGuidStronglyTypedId;
 
+public static class CodeRuleVersionStatus
+{
+    public const string Active = "active";
+
+    public const string Scheduled = "scheduled";
+}
+
 public class CodeRule : Entity<CodeRuleId>, IAggregateRoot
 {
     protected CodeRule()

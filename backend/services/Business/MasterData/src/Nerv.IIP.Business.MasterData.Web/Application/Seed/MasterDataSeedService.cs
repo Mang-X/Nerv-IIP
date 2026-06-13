@@ -81,7 +81,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
                     segmentsJson,
                     rule.IsActive,
                     rule.Version,
-                    "active",
+                    CodeRuleVersionStatus.Active,
                     DateTimeOffset.UnixEpoch,
                     "standard-seed",
                     "standard code rule seed",

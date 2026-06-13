@@ -65,7 +65,7 @@ public sealed class MasterDataCodeRuleGovernanceTests
             SegmentsJson(CodeRuleSegment.ConstantOf("SKU"), CodeRuleSegment.SequenceOf(5)),
             true,
             1,
-            "active",
+            CodeRuleVersionStatus.Active,
             new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero),
             "seed",
             "standard seed",
@@ -79,7 +79,7 @@ public sealed class MasterDataCodeRuleGovernanceTests
         Assert.Equal("master-data.sku", response.Rule.RuleKey);
         Assert.Equal(1, response.Rule.Version);
         var version = Assert.Single(response.Versions);
-        Assert.Equal("active", version.Status);
+        Assert.Equal(CodeRuleVersionStatus.Active, version.Status);
         Assert.Equal("seed", version.CreatedBy);
     }
 
@@ -117,7 +117,7 @@ public sealed class MasterDataCodeRuleGovernanceTests
         await dbContext.SaveChangesAsync();
 
         Assert.Equal(2, response.Version);
-        Assert.Equal("active", response.Status);
+        Assert.Equal(CodeRuleVersionStatus.Active, response.Status);
         var current = await dbContext.CodeRules.SingleAsync();
         Assert.Equal(2, current.Version);
         Assert.Equal("SKU code v2", current.DisplayName);
@@ -126,6 +126,53 @@ public sealed class MasterDataCodeRuleGovernanceTests
         Assert.Equal("admin-001", audit.CreatedBy);
         Assert.Equal("align plant convention", audit.ChangeReason);
         Assert.Equal(effectiveFromUtc, audit.EffectiveFromUtc);
+    }
+
+    [Fact]
+    public async Task Create_code_rule_version_advances_from_scheduled_audit_when_current_definition_missing()
+    {
+        await using var dbContext = CreateDbContext();
+        var handler = new CreateCodeRuleVersionCommandHandler(dbContext);
+
+        var firstResponse = await handler.Handle(
+            new CreateCodeRuleVersionCommand(
+                "org-001",
+                "env-dev",
+                "master-data.new-rule",
+                "New rule",
+                "new-resource",
+                ScopeDimension.Organization,
+                [CodeRuleSegment.ConstantOf("NEW-"), CodeRuleSegment.SequenceOf(4)],
+                true,
+                DateTimeOffset.UtcNow.AddDays(30),
+                "admin-001",
+                "schedule first version"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var secondResponse = await handler.Handle(
+            new CreateCodeRuleVersionCommand(
+                "org-001",
+                "env-dev",
+                "master-data.new-rule",
+                "New rule revised",
+                "new-resource",
+                ScopeDimension.Organization,
+                [CodeRuleSegment.ConstantOf("NR-"), CodeRuleSegment.SequenceOf(4)],
+                true,
+                DateTimeOffset.UtcNow.AddDays(31),
+                "admin-001",
+                "schedule second version"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(1, firstResponse.Version);
+        Assert.Equal(CodeRuleVersionStatus.Scheduled, firstResponse.Status);
+        Assert.Equal(2, secondResponse.Version);
+        Assert.Equal(CodeRuleVersionStatus.Scheduled, secondResponse.Status);
+        Assert.Empty(await dbContext.CodeRules.ToArrayAsync());
+        var versions = await dbContext.CodeRuleVersions.OrderBy(x => x.Version).Select(x => x.Version).ToArrayAsync();
+        Assert.Equal(new[] { 1, 2 }, versions);
     }
 
     [Fact]
