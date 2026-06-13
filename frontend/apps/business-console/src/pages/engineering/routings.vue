@@ -2,11 +2,12 @@
 import type {
   BusinessConsoleReleaseRoutingRequest,
   BusinessConsoleRoutingItem,
+  BusinessConsoleStandardOperationItem,
 } from '@nerv-iip/api-client'
 import type { DataTableColumn, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessMasterDataResources, useBusinessSkus } from '@/composables/useBusinessMasterData'
-import { useEngineeringRoutings } from '@/composables/useProductEngineering'
+import { useEngineeringRoutings, useStandardOperations } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -63,10 +64,8 @@ const {
 
 const { skus } = useBusinessSkus()
 const { resources: workCenters, resourcesPending: workCentersPending } = useBusinessMasterDataResources('work-center')
-// 标准工序字典（codeSet=operation，工厂在「数据字典 › 标准工序」维护）：工序名从此选，提交带 code + 中文名。
-// TODO(#397) 过渡方案：字典只有 code+名，无默认工作中心/标准工时。后端补 StandardOperation 主数据后，
-//   切换为从 standard-operations 取，选工序自动预填该行 workCenterCode/standardMinutes，并迁出「数据字典」独立成工程页。
-const { resources: operationDict, resourcesPending: operationDictPending } = useBusinessMasterDataResources('reference-data', { codeSet: 'operation' })
+// 标准工序主数据（#397）：工序从「产品工程 › 标准工序」选，选中后自动带出其默认工作中心与标准工时。
+const { standardOperations, standardOperationsPending: standardOpsPending } = useStandardOperations()
 
 const STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'all' },
@@ -127,21 +126,38 @@ const workCenterOptions = computed(() =>
 )
 const hasWorkCenters = computed(() => workCenterOptions.value.length > 0)
 
-// 标准工序字典：启用且有 code 的码值才可选；label 显中文名，绑定值用 code。
+// 标准工序：启用且有编码的工序可选；label 显工序名 + 编码，绑定值用 operationCode。
 const operationOptions = computed(() =>
-  operationDict.value
-    .filter((o) => o.active !== false && (o.code ?? '').trim().length > 0)
-    .map((o) => ({ value: (o.code ?? '').trim(), label: o.displayName?.trim() || (o.code ?? '').trim() })),
+  standardOperations.value
+    .filter((o) => o.enabled !== false && (o.operationCode ?? '').trim().length > 0)
+    .map((o) => ({ value: (o.operationCode ?? '').trim(), label: `${o.operationName ?? o.operationCode} · ${o.operationCode}` })),
 )
 const hasOperations = computed(() => operationOptions.value.length > 0)
+// 编码 → 工序全量（用于选中后带出默认工作中心/工时）。
+const operationByCode = computed(() => {
+  const map = new Map<string, BusinessConsoleStandardOperationItem>()
+  for (const o of standardOperations.value) {
+    if (o.operationCode) map.set(o.operationCode, o)
+  }
+  return map
+})
 const operationNameByCode = computed(() => {
   const map = new Map<string, string>()
-  for (const o of operationOptions.value) map.set(o.value, o.label)
+  for (const o of standardOperations.value) {
+    if (o.operationCode) map.set(o.operationCode, o.operationName ?? o.operationCode)
+  }
   return map
 })
 function operationLabel(code?: string | null, fallbackName?: string | null) {
   if (!code) return fallbackName || '—'
   return operationNameByCode.value.get(code) ?? fallbackName ?? code
+}
+// 选标准工序后带出其默认工作中心与标准工时（用户仍可逐行覆盖）。
+function applyOperationDefaults(op: Operation) {
+  const def = operationByCode.value.get(op.operationCode.trim())
+  if (!def) return
+  if (def.defaultWorkCenterCode) op.workCenterCode = def.defaultWorkCenterCode
+  op.standardMinutes = def.standardMinutes ?? ((def.standardSetupMinutes ?? 0) + (def.standardRunMinutes ?? 0))
 }
 
 function engStatus(status?: string | null): { label: string, tone: StatusTone } {
@@ -267,7 +283,7 @@ async function submitForm() {
     operations: form.operations.map((op) => ({
       sequence: op.sequence,
       workCenterCode: op.workCenterCode.trim(),
-      // 工序从标准工序字典选：code 是受控标识，operationName 带出字典中文名（后端两个字段都收）。
+      // 工序从标准工序主数据选：operationCode 是受控标识，operationName 带出工序名（后端两个字段都收）。
       operationCode: op.operationCode.trim(),
       operationName: operationNameByCode.value.get(op.operationCode.trim()) ?? op.operationCode.trim(),
       standardMinutes: parseNumber(op.standardMinutes) ?? 0,
@@ -355,12 +371,12 @@ function formatError(error: unknown) {
                 <RouterLink to="/master-data/facilities" class="font-medium underline">去基础数据维护工作中心 →</RouterLink>
               </p>
               <p
-                v-if="!operationDictPending && !hasOperations"
+                v-if="!standardOpsPending && !hasOperations"
                 class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
                 role="alert"
               >
                 还没有可选的标准工序。
-                <RouterLink to="/master-data/reference-data" class="font-medium underline">去数据字典 › 标准工序维护 →</RouterLink>
+                <RouterLink to="/engineering/standard-operations" class="font-medium underline">去标准工序维护 →</RouterLink>
               </p>
 
               <FormSectionTitle>版本头</FormSectionTitle>
@@ -416,7 +432,7 @@ function formatError(error: unknown) {
                   </Field>
                   <Field :data-invalid="showErrors && !op.operationCode.trim()">
                     <FieldLabel :for="`rt-name-${index}`">工序 <span class="text-destructive">*</span></FieldLabel>
-                    <Select v-model="op.operationCode">
+                    <Select v-model="op.operationCode" @update:model-value="applyOperationDefaults(op)">
                       <SelectTrigger :id="`rt-name-${index}`"><SelectValue placeholder="选择标准工序" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem v-for="o in operationOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
@@ -426,6 +442,7 @@ function formatError(error: unknown) {
                   <Field :data-invalid="showErrors && (parseNumber(op.standardMinutes) ?? -1) < 0">
                     <FieldLabel :for="`rt-min-${index}`">工时(分)</FieldLabel>
                     <Input :id="`rt-min-${index}`" v-model="op.standardMinutes" type="number" min="0" step="any" />
+                    <FieldDescription>选工序后自动带出，可改。</FieldDescription>
                   </Field>
                   <div class="flex gap-1">
                     <Button type="button" variant="ghost" size="icon" aria-label="上移工序" :disabled="index === 0" @click="moveUp(index)">

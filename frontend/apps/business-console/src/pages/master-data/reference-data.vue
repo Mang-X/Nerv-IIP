@@ -57,7 +57,7 @@ const CODE_SETS: CodeSetMeta[] = [
   { codeSet: 'partner-type', label: '伙伴角色', kind: 'system-enum' },
   { codeSet: 'skill', label: '技能', kind: 'factory-custom' },
   { codeSet: 'skill-level', label: '技能等级', kind: 'system-enum' },
-  { codeSet: 'operation', label: '标准工序', kind: 'factory-custom' },
+  // 标准工序已升为产品工程主数据（#397，见 /engineering/standard-operations），从数据字典迁出。
   { codeSet: 'quality-reason', label: '质量原因', kind: 'factory-custom' },
   { codeSet: 'compliance-tag', label: '合规标签', kind: 'platform-preset' },
   { codeSet: 'device-status', label: '设备状态', kind: 'system-enum' },

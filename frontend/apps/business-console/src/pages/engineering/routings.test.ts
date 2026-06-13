@@ -24,10 +24,10 @@ const workCenters = ref([
   { code: 'WC-A', displayName: '焊接中心' },
   { code: 'WC-B', displayName: '装配中心' },
 ])
-// 标准工序字典（codeSet=operation）。
-const operationDict = ref([
-  { code: 'OP-WELD', displayName: '焊接', active: true },
-  { code: 'OP-ASSY', displayName: '装配', active: true },
+// 标准工序主数据（#397）：每条带默认工作中心 + 标准工时，选中后自动带出。
+const standardOperations = ref([
+  { operationCode: 'OP-WELD', operationName: '焊接', defaultWorkCenterCode: 'WC-A', standardMinutes: 6, enabled: true },
+  { operationCode: 'OP-ASSY', operationName: '装配', defaultWorkCenterCode: 'WC-B', standardMinutes: 9, enabled: true },
 ])
 
 vi.mock('@/composables/useProductEngineering', () => ({
@@ -43,15 +43,18 @@ vi.mock('@/composables/useProductEngineering', () => ({
     releaseError: shallowRef(undefined),
     fetchRoutingDetail: stub.fetchRoutingDetail,
   }),
+  useStandardOperations: () => ({
+    standardOperations: computed(() => standardOperations.value),
+    standardOperationsPending: shallowRef(false),
+  }),
 }))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessSkus: () => ({
     skus: computed(() => [{ code: 'SKU-1', displayName: '智能网关主机' }]),
   }),
-  // 第一个参数区分 work-center / operation 两个数据源。
-  useBusinessMasterDataResources: (resourceType: string, options: { codeSet?: string } = {}) => ({
-    resources: computed(() => (options.codeSet === 'operation' ? operationDict.value : workCenters.value)),
+  useBusinessMasterDataResources: () => ({
+    resources: computed(() => workCenters.value),
     resourcesPending: shallowRef(false),
     resourcesError: shallowRef(undefined),
     refreshResources: vi.fn(),
@@ -129,9 +132,9 @@ beforeEach(() => {
     { code: 'WC-A', displayName: '焊接中心' },
     { code: 'WC-B', displayName: '装配中心' },
   ]
-  operationDict.value = [
-    { code: 'OP-WELD', displayName: '焊接', active: true },
-    { code: 'OP-ASSY', displayName: '装配', active: true },
+  standardOperations.value = [
+    { operationCode: 'OP-WELD', operationName: '焊接', defaultWorkCenterCode: 'WC-A', standardMinutes: 6, enabled: true },
+    { operationCode: 'OP-ASSY', operationName: '装配', defaultWorkCenterCode: 'WC-B', standardMinutes: 9, enabled: true },
   ]
 })
 
@@ -168,7 +171,7 @@ describe('engineering routings page', () => {
     expect(ops).toHaveLength(1)
     expect(ops[0]!.sequence).toBe(10)
     expect(ops[0]!.workCenterCode).toBe('WC-A')
-    // 工序从字典选：提交带 code + 中文名。
+    // 工序从标准工序选：提交带 operationCode + 工序名。
     expect(ops[0]!.operationCode).toBe('OP-WELD')
     expect(ops[0]!.operationName).toBe('焊接')
     expect(ops[0]!.standardMinutes).toBe(12)
@@ -288,14 +291,14 @@ describe('engineering routings page', () => {
     expect(firstRow.text()).toContain('焊接')
   })
 
-  it('无标准工序时给出「去数据字典 › 标准工序维护」出路且禁用增加工序', async () => {
-    operationDict.value = []
+  it('无标准工序时给出「去标准工序维护」出路且禁用增加工序', async () => {
+    standardOperations.value = []
     const wrapper = mount(RoutingsPage, { global: { stubs: allStubs } })
     await flushPromises()
     await findButton(wrapper, '发布新版本')!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('去数据字典 › 标准工序维护')
+    expect(wrapper.text()).toContain('去标准工序维护')
     expect(findButton(wrapper, '增加工序')!.attributes('disabled')).toBeDefined()
   })
 })
