@@ -287,6 +287,82 @@ public sealed class MasterDataCodeRuleGovernanceTests
     }
 
     [Fact]
+    public async Task Promote_due_scheduled_version_marks_it_superseded_when_newer_current_definition_exists()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.CodeRules.Add(CodeRule.Create(
+            "org-001",
+            "env-dev",
+            "master-data.sku",
+            "SKU code",
+            "sku",
+            (int)ScopeDimension.Organization,
+            SegmentsJson(CodeRuleSegment.ConstantOf("SKU"), CodeRuleSegment.SequenceOf(5)),
+            true,
+            1));
+        dbContext.CodeRuleVersions.Add(CodeRuleVersion.Record(
+            "org-001",
+            "env-dev",
+            "master-data.sku",
+            "SKU code",
+            "sku",
+            (int)ScopeDimension.Organization,
+            SegmentsJson(CodeRuleSegment.ConstantOf("SKU"), CodeRuleSegment.SequenceOf(5)),
+            true,
+            1,
+            CodeRuleVersionStatus.Active,
+            new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero),
+            "seed",
+            "standard seed",
+            new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero)));
+        dbContext.CodeRuleVersions.Add(CodeRuleVersion.Record(
+            "org-001",
+            "env-dev",
+            "master-data.sku",
+            "SKU code v2",
+            "sku",
+            (int)ScopeDimension.Organization,
+            SegmentsJson(CodeRuleSegment.ConstantOf("SKU2"), CodeRuleSegment.SequenceOf(4)),
+            true,
+            2,
+            CodeRuleVersionStatus.Scheduled,
+            new DateTimeOffset(2026, 6, 10, 0, 0, 0, TimeSpan.Zero),
+            "admin-001",
+            "scheduled v2",
+            new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero)));
+        await dbContext.SaveChangesAsync();
+
+        var immediateResponse = await new CreateCodeRuleVersionCommandHandler(dbContext).Handle(
+            new CreateCodeRuleVersionCommand(
+                "org-001",
+                "env-dev",
+                "master-data.sku",
+                "SKU code v3",
+                "sku",
+                ScopeDimension.Organization,
+                [CodeRuleSegment.ConstantOf("SKU3"), CodeRuleSegment.SequenceOf(3)],
+                true,
+                new DateTimeOffset(2026, 6, 2, 0, 0, 0, TimeSpan.Zero),
+                "admin-001",
+                "immediate v3"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var promoted = await new CodeRuleVersionActivationService(dbContext).PromoteDueVersionsAsync(
+            new DateTimeOffset(2026, 6, 11, 0, 0, 0, TimeSpan.Zero),
+            CancellationToken.None);
+
+        Assert.Equal(3, immediateResponse.Version);
+        Assert.Equal(0, promoted);
+        var current = await dbContext.CodeRules.SingleAsync();
+        Assert.Equal(3, current.Version);
+        var statuses = await dbContext.CodeRuleVersions.OrderBy(x => x.Version).Select(x => x.Status).ToArrayAsync();
+        Assert.Equal(
+            new[] { CodeRuleVersionStatus.Superseded, CodeRuleVersionStatus.Superseded, CodeRuleVersionStatus.Active },
+            statuses);
+    }
+
+    [Fact]
     public async Task Preview_code_rule_uses_candidate_segments_without_persisting_counters()
     {
         await using var dbContext = CreateDbContext();

@@ -29,6 +29,22 @@ public sealed class CodeRuleVersionActivationService(ApplicationDbContext dbCont
         foreach (var group in dueVersions.GroupBy(x => new { x.OrganizationId, x.EnvironmentId, x.RuleKey }))
         {
             var latestDue = group.OrderByDescending(x => x.Version).First();
+            var current = await dbContext.CodeRules.SingleOrDefaultAsync(x =>
+                x.OrganizationId == latestDue.OrganizationId &&
+                x.EnvironmentId == latestDue.EnvironmentId &&
+                x.RuleKey == latestDue.RuleKey,
+                cancellationToken);
+
+            if (current is not null && current.Version >= latestDue.Version)
+            {
+                foreach (var version in group)
+                {
+                    version.MarkSuperseded();
+                }
+
+                continue;
+            }
+
             var versionsToSupersede = await dbContext.CodeRuleVersions
                 .Where(x =>
                     x.OrganizationId == latestDue.OrganizationId &&
@@ -52,17 +68,6 @@ public sealed class CodeRuleVersionActivationService(ApplicationDbContext dbCont
                 {
                     version.MarkSuperseded();
                 }
-            }
-
-            var current = await dbContext.CodeRules.SingleOrDefaultAsync(x =>
-                x.OrganizationId == latestDue.OrganizationId &&
-                x.EnvironmentId == latestDue.EnvironmentId &&
-                x.RuleKey == latestDue.RuleKey,
-                cancellationToken);
-
-            if (current is not null && current.Version >= latestDue.Version)
-            {
-                continue;
             }
 
             if (current is null)
