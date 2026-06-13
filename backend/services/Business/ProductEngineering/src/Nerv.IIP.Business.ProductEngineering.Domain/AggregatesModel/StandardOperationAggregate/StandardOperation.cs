@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
 using static Nerv.IIP.Business.ProductEngineering.Domain.ProductEngineeringGuards;
 
 namespace Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
@@ -73,7 +74,7 @@ public sealed class StandardOperation : Entity<StandardOperationId>, IAggregateR
         bool isOutsourced,
         string? description)
     {
-        return new StandardOperation(
+        var operation = new StandardOperation(
             organizationId,
             environmentId,
             operationCode,
@@ -86,6 +87,8 @@ public sealed class StandardOperation : Entity<StandardOperationId>, IAggregateR
             requiresQualityInspection,
             isOutsourced,
             description);
+        operation.AddDomainEvent(new StandardOperationCreatedDomainEvent(operation));
+        return operation;
     }
 
     public void Update(
@@ -99,6 +102,7 @@ public sealed class StandardOperation : Entity<StandardOperationId>, IAggregateR
         bool isOutsourced,
         string? description)
     {
+        EnsureNotArchived();
         ApplyDetails(
             operationName,
             defaultWorkCenterCode,
@@ -109,15 +113,17 @@ public sealed class StandardOperation : Entity<StandardOperationId>, IAggregateR
             requiresQualityInspection,
             isOutsourced,
             description);
-        Enabled = true;
         Touch();
+        AddDomainEvent(new StandardOperationUpdatedDomainEvent(this));
     }
 
     public void Archive(string reason)
     {
         _ = Required(reason);
+        EnsureNotArchived();
         Enabled = false;
         Touch();
+        AddDomainEvent(new StandardOperationArchivedDomainEvent(this));
     }
 
     private void ApplyDetails(
@@ -155,5 +161,13 @@ public sealed class StandardOperation : Entity<StandardOperationId>, IAggregateR
     private void Touch()
     {
         UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    private void EnsureNotArchived()
+    {
+        if (!Enabled)
+        {
+            throw new InvalidOperationException("Archived standard operation cannot be changed or selected by new routing versions.");
+        }
     }
 }
