@@ -129,6 +129,58 @@ public sealed class MasterDataCodeRuleGovernanceTests
     }
 
     [Fact]
+    public async Task Create_immediate_code_rule_version_marks_previous_active_version_superseded()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.CodeRules.Add(CodeRule.Create(
+            "org-001",
+            "env-dev",
+            "master-data.sku",
+            "SKU code",
+            "sku",
+            (int)ScopeDimension.Organization,
+            SegmentsJson(CodeRuleSegment.ConstantOf("SKU"), CodeRuleSegment.SequenceOf(5)),
+            true,
+            1));
+        dbContext.CodeRuleVersions.Add(CodeRuleVersion.Record(
+            "org-001",
+            "env-dev",
+            "master-data.sku",
+            "SKU code",
+            "sku",
+            (int)ScopeDimension.Organization,
+            SegmentsJson(CodeRuleSegment.ConstantOf("SKU"), CodeRuleSegment.SequenceOf(5)),
+            true,
+            1,
+            CodeRuleVersionStatus.Active,
+            new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero),
+            "seed",
+            "standard seed",
+            new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero)));
+        await dbContext.SaveChangesAsync();
+
+        var response = await new CreateCodeRuleVersionCommandHandler(dbContext).Handle(
+            new CreateCodeRuleVersionCommand(
+                "org-001",
+                "env-dev",
+                "master-data.sku",
+                "SKU code v2",
+                "sku",
+                ScopeDimension.Organization,
+                [CodeRuleSegment.ConstantOf("SKU2"), CodeRuleSegment.SequenceOf(4)],
+                true,
+                new DateTimeOffset(2026, 6, 2, 0, 0, 0, TimeSpan.Zero),
+                "admin-001",
+                "align plant convention"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(2, response.Version);
+        var statuses = await dbContext.CodeRuleVersions.OrderBy(x => x.Version).Select(x => x.Status).ToArrayAsync();
+        Assert.Equal(new[] { CodeRuleVersionStatus.Superseded, CodeRuleVersionStatus.Active }, statuses);
+    }
+
+    [Fact]
     public async Task Create_code_rule_version_advances_from_scheduled_audit_when_current_definition_missing()
     {
         await using var dbContext = CreateDbContext();
@@ -231,7 +283,7 @@ public sealed class MasterDataCodeRuleGovernanceTests
         Assert.Equal("SKU code v3", current.DisplayName);
         Assert.Contains("SKU3", current.SegmentsJson, StringComparison.Ordinal);
         var statuses = await dbContext.CodeRuleVersions.OrderBy(x => x.Version).Select(x => x.Status).ToArrayAsync();
-        Assert.Equal(new[] { CodeRuleVersionStatus.Active, CodeRuleVersionStatus.Active }, statuses);
+        Assert.Equal(new[] { CodeRuleVersionStatus.Superseded, CodeRuleVersionStatus.Active }, statuses);
     }
 
     [Fact]

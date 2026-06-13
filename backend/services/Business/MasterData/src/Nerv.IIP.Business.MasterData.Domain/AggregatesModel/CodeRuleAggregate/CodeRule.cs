@@ -9,6 +9,8 @@ public static class CodeRuleVersionStatus
     public const string Active = "active";
 
     public const string Scheduled = "scheduled";
+
+    public const string Superseded = "superseded";
 }
 
 public class CodeRule : Entity<CodeRuleId>, IAggregateRoot
@@ -201,6 +203,11 @@ public class CodeRuleVersion : Entity<CodeRuleVersionId>
     public void MarkActive()
     {
         Status = CodeRuleVersionStatus.Active;
+    }
+
+    public void MarkSuperseded()
+    {
+        Status = CodeRuleVersionStatus.Superseded;
     }
 
     private static string Required(string value)

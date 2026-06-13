@@ -93,6 +93,19 @@ public sealed class CreateCodeRuleVersionCommandHandler(ApplicationDbContext dbC
 
         if (status == CodeRuleVersionStatus.Active)
         {
+            var previousActiveVersions = await dbContext.CodeRuleVersions
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.RuleKey == request.RuleKey &&
+                    x.Version < nextVersion &&
+                    x.Status == CodeRuleVersionStatus.Active)
+                .ToArrayAsync(cancellationToken);
+            foreach (var previousActiveVersion in previousActiveVersions)
+            {
+                previousActiveVersion.MarkSuperseded();
+            }
+
             if (current is null)
             {
                 dbContext.CodeRules.Add(CodeRule.Create(
