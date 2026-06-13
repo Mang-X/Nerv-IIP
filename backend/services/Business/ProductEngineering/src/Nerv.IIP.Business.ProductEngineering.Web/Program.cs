@@ -14,6 +14,7 @@ using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
+using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -146,6 +147,11 @@ try
             if (ProductionVersionEndpointContracts.TryGet(ctx.EndpointType, out var productionVersionContract))
             {
                 return productionVersionContract.OperationId;
+            }
+
+            if (StandardOperationEndpointContracts.TryGet(ctx.EndpointType, out var standardOperationContract))
+            {
+                return standardOperationContract.OperationId;
             }
 
             return ProductEngineeringEndpointContracts.TryGet(ctx.EndpointType, out var productEngineeringContract)

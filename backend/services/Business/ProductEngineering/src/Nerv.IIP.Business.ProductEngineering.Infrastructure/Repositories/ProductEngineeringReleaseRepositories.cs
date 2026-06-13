@@ -5,6 +5,7 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringIte
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
 
 namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 
@@ -99,6 +100,35 @@ public sealed class RoutingRepository(ApplicationDbContext context)
             x.EnvironmentId == environmentId &&
             x.RoutingCode == routingCode &&
             x.Revision == revision,
+            cancellationToken);
+    }
+}
+
+public interface IStandardOperationRepository : IRepository<StandardOperation, StandardOperationId>
+{
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string operationCode, CancellationToken cancellationToken = default);
+
+    Task<StandardOperation?> GetByCodeAsync(string organizationId, string environmentId, string operationCode, CancellationToken cancellationToken = default);
+}
+
+public sealed class StandardOperationRepository(ApplicationDbContext context)
+    : RepositoryBase<StandardOperation, StandardOperationId, ApplicationDbContext>(context), IStandardOperationRepository
+{
+    public async Task<bool> ExistsAsync(string organizationId, string environmentId, string operationCode, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.StandardOperations.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.OperationCode == operationCode,
+            cancellationToken);
+    }
+
+    public async Task<StandardOperation?> GetByCodeAsync(string organizationId, string environmentId, string operationCode, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.StandardOperations.SingleOrDefaultAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.OperationCode == operationCode,
             cancellationToken);
     }
 }

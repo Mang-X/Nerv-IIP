@@ -11,6 +11,7 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringIte
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Testing.EntityFramework;
 
@@ -62,6 +63,7 @@ public sealed class ProductEngineeringSchemaConventionTests
             typeof(ManufacturingBomRecipeLine),
             typeof(Routing),
             typeof(RoutingOperation),
+            typeof(StandardOperation),
             typeof(EngineeringChange),
             typeof(EngineeringChangeAffectedVersion),
             typeof(ProductionVersion),

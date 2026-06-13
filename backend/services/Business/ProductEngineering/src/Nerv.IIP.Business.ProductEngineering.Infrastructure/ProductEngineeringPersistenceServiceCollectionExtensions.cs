@@ -37,6 +37,7 @@ public static class ProductEngineeringPersistenceServiceCollectionExtensions
         services.AddScoped<IEngineeringBomRepository, EngineeringBomRepository>();
         services.AddScoped<IManufacturingBomRepository, ManufacturingBomRepository>();
         services.AddScoped<IRoutingRepository, RoutingRepository>();
+        services.AddScoped<IStandardOperationRepository, StandardOperationRepository>();
         services.AddScoped<IEngineeringChangeRepository, EngineeringChangeRepository>();
         services.AddScoped<IProductionVersionRepository, ProductionVersionRepository>();
         return services;

@@ -35,7 +35,7 @@ public sealed class RoutingEntityTypeConfiguration : IEntityTypeConfiguration<Ro
         builder.Property("routing_id").HasColumnName("routing_id").HasComment("Owning routing id.");
         builder.Property(x => x.Sequence).HasColumnName("sequence").IsRequired().HasComment("Positive operation sequence number.");
         builder.Property(x => x.WorkCenterCode).HasColumnName("work_center_code").IsRequired().HasMaxLength(100).HasComment("MasterData work center code reference.");
-        builder.Property(x => x.OperationCode).HasColumnName("operation_code").IsRequired().HasMaxLength(100).HasComment("MasterData reference-data operation code.");
+        builder.Property(x => x.OperationCode).HasColumnName("operation_code").IsRequired().HasMaxLength(100).HasComment("Standard operation code snapshot captured when the routing version was released.");
         builder.Property(x => x.OperationName).HasColumnName("operation_name").IsRequired().HasMaxLength(200).HasComment("Operation display name submitted with routing release.");
         builder.Property(x => x.StandardMinutes).HasColumnName("standard_minutes").IsRequired().HasComment("Standard operation duration in minutes.");
         builder.HasIndex("routing_id", nameof(RoutingOperation.Sequence)).IsUnique();
