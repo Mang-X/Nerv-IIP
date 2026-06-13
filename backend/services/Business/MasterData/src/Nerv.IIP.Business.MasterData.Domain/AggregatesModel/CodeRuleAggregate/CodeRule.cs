@@ -198,6 +198,11 @@ public class CodeRuleVersion : Entity<CodeRuleVersionId>
             createdAtUtc);
     }
 
+    public void MarkActive()
+    {
+        Status = CodeRuleVersionStatus.Active;
+    }
+
     private static string Required(string value)
     {
         return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
