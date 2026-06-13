@@ -22,6 +22,7 @@ using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
+using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
 
@@ -74,6 +75,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         var contracts = ProductEngineeringEndpointContracts.All
             .Select(contract => (contract.EndpointType, contract.Route))
             .Concat(ProductionVersionEndpointContracts.All.Select(contract => (contract.EndpointType, contract.Route)))
+            .Concat(StandardOperationEndpointContracts.All.Select(contract => (contract.EndpointType, contract.Route)))
             .ToArray();
 
         var failures = contracts

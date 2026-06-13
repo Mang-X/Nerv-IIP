@@ -25,6 +25,9 @@ internal static class BusinessConsoleTestRequestBodies
         "/api/business-console/v1/engineering/engineering-boms/release" or
         "/api/business-console/v1/engineering/manufacturing-boms/release" or
         "/api/business-console/v1/engineering/routings/release" or
+        "/api/business-console/v1/engineering/standard-operations" or
+        "/api/business-console/v1/engineering/standard-operations/OP-001" or
+        "/api/business-console/v1/engineering/standard-operations/OP-001/archive" or
         "/api/business-console/v1/engineering/engineering-changes/release" or
         "/api/business-console/v1/engineering/production-versions" or
         "/api/business-console/v1/engineering/production-versions/pv-001" or
@@ -252,6 +255,43 @@ internal static class BusinessConsoleTestRequestBodies
             ["effectiveDate"] = "2026-06-01",
             ["operations"] = new[] { new { sequence = 10, workCenterCode = "WC-001", operationCode = "assembly", operationName = "装配", standardMinutes = 15 } },
             ["idempotencyKey"] = "routing-001",
+        },
+        "/api/business-console/v1/engineering/standard-operations" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["operationCode"] = "OP-001",
+            ["operationName"] = "Assembly",
+            ["defaultWorkCenterCode"] = "WC-001",
+            ["standardSetupMinutes"] = 5,
+            ["standardRunMinutes"] = 15,
+            ["controlKey"] = "INHOUSE",
+            ["requiresReporting"] = true,
+            ["requiresQualityInspection"] = false,
+            ["isOutsourced"] = false,
+            ["description"] = "Assembly operation",
+        },
+        "/api/business-console/v1/engineering/standard-operations/OP-001" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["operationCode"] = "OP-001",
+            ["operationName"] = "Assembly",
+            ["defaultWorkCenterCode"] = "WC-002",
+            ["standardSetupMinutes"] = 6,
+            ["standardRunMinutes"] = 18,
+            ["controlKey"] = "INHOUSE",
+            ["requiresReporting"] = true,
+            ["requiresQualityInspection"] = true,
+            ["isOutsourced"] = false,
+            ["description"] = "Updated assembly operation",
+        },
+        "/api/business-console/v1/engineering/standard-operations/OP-001/archive" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["operationCode"] = "OP-001",
+            ["reason"] = "Superseded",
         },
         "/api/business-console/v1/engineering/engineering-changes/release" => new()
         {

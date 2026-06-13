@@ -100,6 +100,8 @@ public static class NervIipSeedPermissions
         "business.engineering.boms.manage",
         "business.engineering.routings.read",
         "business.engineering.routings.manage",
+        "business.engineering.standard-operations.read",
+        "business.engineering.standard-operations.manage",
         "business.engineering.production-versions.read",
         "business.engineering.production-versions.manage",
         "business.engineering.changes.read",

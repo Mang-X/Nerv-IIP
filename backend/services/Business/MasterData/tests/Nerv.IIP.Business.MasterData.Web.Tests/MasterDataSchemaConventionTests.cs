@@ -71,6 +71,7 @@ public sealed class MasterDataSchemaConventionTests
             typeof(WorkCalendarWorkingTime),
             typeof(DeviceAsset),
             typeof(CodeRule),
+            typeof(CodeRuleVersion),
             typeof(CodeCounter),
             typeof(CodeIdempotencyKey),
         };

@@ -129,6 +129,7 @@ try
         masterDataConnectionString,
         builder.Environment.IsDevelopment());
     builder.Services.AddScoped<MasterDataCodingService>();
+    builder.Services.AddScoped<CodeRuleVersionActivationService>();
     builder.Services.AddScoped<MasterDataSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
@@ -236,6 +237,10 @@ try
     if (!isTesting)
     {
         app.UseHangfireDashboard();
+        RecurringJob.AddOrUpdate<CodeRuleVersionActivationService>(
+            "business-master-data-code-rule-version-activation",
+            service => service.PromoteDueVersionsAsync(CancellationToken.None),
+            Cron.Minutely);
     }
     await app.RunAsync();
 }

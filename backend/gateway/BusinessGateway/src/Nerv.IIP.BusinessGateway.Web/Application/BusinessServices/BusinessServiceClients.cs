@@ -126,6 +126,26 @@ public interface IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsoleCreateReferenceDataCodeRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCodeRuleListResponse> ListCodeRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleCodeRuleContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCodeRuleDetailResponse> GetCodeRuleAsync(
+        string internalBearerToken,
+        BusinessConsoleCodeRuleRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCodeRuleVersionResponse> CreateCodeRuleVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateCodeRuleVersionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCodeRulePreviewResponse> PreviewCodeRuleAsync(
+        string internalBearerToken,
+        BusinessConsolePreviewCodeRuleRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessIamDirectoryClient
@@ -275,6 +295,34 @@ public interface IBusinessProductEngineeringClient
     Task<BusinessConsoleEngineeringEntityResponse> ReleaseRoutingAsync(
         string internalBearerToken,
         BusinessConsoleReleaseRoutingRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleStandardOperationListResponse> ListStandardOperationsAsync(
+        string internalBearerToken,
+        BusinessConsoleListStandardOperationsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleStandardOperationItem> GetStandardOperationAsync(
+        string internalBearerToken,
+        string operationCode,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleStandardOperationResponse> CreateStandardOperationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateStandardOperationRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleStandardOperationResponse> UpdateStandardOperationAsync(
+        string internalBearerToken,
+        string operationCode,
+        BusinessConsoleUpdateStandardOperationRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> ArchiveStandardOperationAsync(
+        string internalBearerToken,
+        string operationCode,
+        BusinessConsoleArchiveStandardOperationRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringChangeAsync(
@@ -1639,6 +1687,50 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/reference-data", request, cancellationToken);
 
+    public Task<BusinessConsoleCodeRuleListResponse> ListCodeRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleCodeRuleContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCodeRuleListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/master-data/code-rules?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleCodeRuleDetailResponse> GetCodeRuleAsync(
+        string internalBearerToken,
+        BusinessConsoleCodeRuleRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCodeRuleDetailResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            CodeRulePath(request.RuleKey) + "?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleCodeRuleVersionResponse> CreateCodeRuleVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateCodeRuleVersionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCodeRuleVersionResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            CodeRulePath(request.RuleKey) + "/versions",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleCodeRulePreviewResponse> PreviewCodeRuleAsync(
+        string internalBearerToken,
+        BusinessConsolePreviewCodeRuleRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCodeRulePreviewResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            CodeRulePath(request.RuleKey) + "/preview",
+            request,
+            cancellationToken);
+
     private Task<BusinessConsoleResourceItem> CreateResourceAsync(
         string internalBearerToken,
         string path,
@@ -1653,6 +1745,12 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
 
     private static string ResourcePath(string resourceType, string code) =>
         $"/api/business/v1/master-data/resources/{Uri.EscapeDataString(resourceType)}/{Uri.EscapeDataString(code)}";
+
+    private static string CodeRulePath(string ruleKey) =>
+        $"/api/business/v1/master-data/code-rules/{Uri.EscapeDataString(ruleKey)}";
+
+    private static string ContextQuery(string organizationId, string environmentId) =>
+        Query(("organizationId", organizationId), ("environmentId", environmentId));
 }
 
 public sealed class HttpBusinessIamDirectoryClient(HttpClient httpClient)
@@ -2172,6 +2270,73 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             "/api/business/v1/engineering/routings/release",
             request,
             cancellationToken);
+
+    public Task<BusinessConsoleStandardOperationListResponse> ListStandardOperationsAsync(
+        string internalBearerToken,
+        BusinessConsoleListStandardOperationsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleStandardOperationListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/standard-operations?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("enabled", request.Enabled),
+                ("search", request.Search),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleStandardOperationItem> GetStandardOperationAsync(
+        string internalBearerToken,
+        string operationCode,
+        BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleStandardOperationItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/engineering/standard-operations/{Uri.EscapeDataString(operationCode)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleStandardOperationResponse> CreateStandardOperationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateStandardOperationRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleStandardOperationResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/standard-operations",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleStandardOperationResponse> UpdateStandardOperationAsync(
+        string internalBearerToken,
+        string operationCode,
+        BusinessConsoleUpdateStandardOperationRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleStandardOperationResponse>(
+            internalBearerToken,
+            HttpMethod.Put,
+            $"/api/business/v1/engineering/standard-operations/{Uri.EscapeDataString(operationCode)}",
+            request with { OperationCode = operationCode },
+            cancellationToken);
+
+    public async Task<BusinessConsoleAcceptedResponse> ArchiveStandardOperationAsync(
+        string internalBearerToken,
+        string operationCode,
+        BusinessConsoleArchiveStandardOperationRequest request,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync<object>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/engineering/standard-operations/{Uri.EscapeDataString(operationCode)}/archive",
+            request with { OperationCode = operationCode },
+            cancellationToken);
+        return new BusinessConsoleAcceptedResponse(true);
+    }
 
     public Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringChangeAsync(
         string internalBearerToken,

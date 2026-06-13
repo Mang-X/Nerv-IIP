@@ -63,6 +63,30 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
                     rule.IsActive,
                     rule.Version);
             }
+
+            if (!await dbContext.CodeRuleVersions.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.RuleKey == rule.RuleKey &&
+                    x.Version == rule.Version,
+                    cancellationToken))
+            {
+                dbContext.CodeRuleVersions.Add(CodeRuleVersion.Record(
+                    organizationId,
+                    environmentId,
+                    rule.RuleKey,
+                    rule.DisplayName,
+                    rule.AppliesTo,
+                    (int)rule.Scope,
+                    segmentsJson,
+                    rule.IsActive,
+                    rule.Version,
+                    CodeRuleVersionStatus.Active,
+                    DateTimeOffset.UnixEpoch,
+                    "standard-seed",
+                    "standard code rule seed",
+                    DateTimeOffset.UtcNow));
+            }
         }
 
         foreach (var item in MasterDataDictionaryRules.StandardReferenceData)

@@ -62,6 +62,8 @@ public static class BusinessGatewayPermissions
     public const string EngineeringBomsManage = "business.engineering.boms.manage";
     public const string EngineeringRoutingsRead = "business.engineering.routings.read";
     public const string EngineeringRoutingsManage = "business.engineering.routings.manage";
+    public const string EngineeringStandardOperationsRead = "business.engineering.standard-operations.read";
+    public const string EngineeringStandardOperationsManage = "business.engineering.standard-operations.manage";
     public const string EngineeringChangesRead = "business.engineering.changes.read";
     public const string EngineeringChangesManage = "business.engineering.changes.manage";
     public const string EngineeringProductionVersionsRead = "business.engineering.production-versions.read";

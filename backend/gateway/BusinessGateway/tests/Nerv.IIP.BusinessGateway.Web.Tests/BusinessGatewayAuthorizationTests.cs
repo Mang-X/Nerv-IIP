@@ -122,6 +122,31 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Product_engineering_standard_operation_create_uses_collection_level_authorization()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var engineering = new RecordingProductEngineeringClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/engineering/standard-operations",
+            BusinessConsoleTestRequestBodies.ValidEngineeringWriteBody("/api/business-console/v1/engineering/standard-operations"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.EngineeringStandardOperationsManage, auth.LastRequirement!.PermissionCode);
+        Assert.Null(auth.LastRequirement.ResourceType);
+        Assert.Null(auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -323,6 +348,36 @@ public sealed class BusinessGatewayAuthorizationTests
         "/api/business-console/v1/approval/delegations/delegation-001/revoke" => new
         {
             revokedBy = "u-manager",
+        },
+        "/api/business-console/v1/master-data/code-rules/master-data.sku/versions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            ruleKey = "master-data.sku",
+            displayName = "SKU code v2",
+            appliesTo = "sku",
+            scope = 3,
+            segments = new object[]
+            {
+                new { type = 0, value = "SKU-" },
+                new { type = 2, width = 4, start = 1 },
+            },
+            isActive = true,
+            effectiveFromUtc = "2026-06-01T00:00:00Z",
+            createdBy = "admin-001",
+            changeReason = "align plant convention",
+        },
+        "/api/business-console/v1/master-data/code-rules/master-data.sku/preview" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            ruleKey = "master-data.sku",
+            segments = new object[]
+            {
+                new { type = 0, value = "SKU-" },
+                new { type = 2, width = 4, start = 42 },
+            },
+            siteCode = "SITE-01",
         },
         "/api/business-console/v1/master-data/teams/T-001/members" => new
         {
@@ -529,6 +584,10 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/departments", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/personnel-skills", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/reference-data", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/code-rules", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/code-rules/master-data.sku", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/versions", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/preview", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/availability", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryMovementsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
@@ -553,6 +612,11 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings", BusinessGatewayPermissions.EngineeringRoutingsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings/RTG-001/A", BusinessGatewayPermissions.EngineeringRoutingsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/routings/release", BusinessGatewayPermissions.EngineeringRoutingsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/standard-operations", "business.engineering.standard-operations.read");
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/standard-operations/OP-001", "business.engineering.standard-operations.read");
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/standard-operations", "business.engineering.standard-operations.manage");
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/engineering/standard-operations/OP-001", "business.engineering.standard-operations.manage");
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/standard-operations/OP-001/archive", "business.engineering.standard-operations.manage");
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes", BusinessGatewayPermissions.EngineeringChangesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes/ECO-001", BusinessGatewayPermissions.EngineeringChangesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/release", BusinessGatewayPermissions.EngineeringChangesManage);

@@ -1,4 +1,5 @@
 using FastEndpoints;
+using Nerv.IIP.Contracts.Coding;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -307,6 +308,67 @@ public sealed record BusinessConsoleCreateReferenceDataCodeRequest(
     string CodeSet,
     string Code,
     string Name);
+
+public sealed record BusinessConsoleCodeRuleContextRequest(string OrganizationId, string EnvironmentId);
+
+public sealed record BusinessConsoleCodeRuleRequest(string OrganizationId, string EnvironmentId, string RuleKey);
+
+public sealed record BusinessConsoleCreateCodeRuleVersionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string RuleKey,
+    string DisplayName,
+    string AppliesTo,
+    ScopeDimension Scope,
+    IReadOnlyList<CodeRuleSegment> Segments,
+    bool IsActive,
+    DateTimeOffset? EffectiveFromUtc,
+    string CreatedBy,
+    string ChangeReason);
+
+public sealed record BusinessConsolePreviewCodeRuleRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string RuleKey,
+    IReadOnlyList<CodeRuleSegment> Segments,
+    IReadOnlyDictionary<string, string>? Fields,
+    string SiteCode = "");
+
+public sealed record BusinessConsoleCodeRuleItem(
+    string RuleKey,
+    string DisplayName,
+    string AppliesTo,
+    ScopeDimension Scope,
+    IReadOnlyList<CodeRuleSegment> Segments,
+    bool IsActive,
+    int Version,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record BusinessConsoleCodeRuleVersionItem(
+    string RuleKey,
+    int Version,
+    string Status,
+    DateTimeOffset EffectiveFromUtc,
+    string CreatedBy,
+    string ChangeReason,
+    DateTimeOffset CreatedAtUtc);
+
+public sealed record BusinessConsoleCodeRuleListResponse(IReadOnlyCollection<BusinessConsoleCodeRuleItem> Rules);
+
+public sealed record BusinessConsoleCodeRuleDetailResponse(
+    BusinessConsoleCodeRuleItem Rule,
+    IReadOnlyCollection<BusinessConsoleCodeRuleVersionItem> Versions);
+
+public sealed record BusinessConsoleCodeRuleVersionResponse(
+    string RuleKey,
+    int Version,
+    string Status,
+    DateTimeOffset EffectiveFromUtc,
+    string CreatedBy,
+    string ChangeReason);
+
+public sealed record BusinessConsoleCodeRulePreviewResponse(string RuleKey, string SampleCode);
 
 public sealed record BusinessConsoleMasterDataResourceRequest(
     string OrganizationId,
@@ -946,6 +1008,70 @@ public sealed record BusinessConsoleRoutingOperationRequest(
     string OperationCode,
     string OperationName,
     int StandardMinutes);
+
+public sealed record BusinessConsoleListStandardOperationsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    bool? Enabled = null,
+    string? Search = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleStandardOperationListResponse(
+    IReadOnlyCollection<BusinessConsoleStandardOperationItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleStandardOperationItem(
+    string OperationCode,
+    string OperationName,
+    string DefaultWorkCenterCode,
+    int StandardSetupMinutes,
+    int StandardRunMinutes,
+    int StandardMinutes,
+    string ControlKey,
+    bool RequiresReporting,
+    bool RequiresQualityInspection,
+    bool IsOutsourced,
+    string? Description,
+    bool Enabled,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record BusinessConsoleCreateStandardOperationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationCode,
+    string OperationName,
+    string DefaultWorkCenterCode,
+    int StandardSetupMinutes,
+    int StandardRunMinutes,
+    string ControlKey,
+    bool RequiresReporting,
+    bool RequiresQualityInspection,
+    bool IsOutsourced,
+    string? Description);
+
+public sealed record BusinessConsoleUpdateStandardOperationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationCode,
+    string OperationName,
+    string DefaultWorkCenterCode,
+    int StandardSetupMinutes,
+    int StandardRunMinutes,
+    string ControlKey,
+    bool RequiresReporting,
+    bool RequiresQualityInspection,
+    bool IsOutsourced,
+    string? Description);
+
+public sealed record BusinessConsoleArchiveStandardOperationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationCode,
+    string Reason);
+
+public sealed record BusinessConsoleStandardOperationResponse(string OperationCode);
 
 public sealed record BusinessConsoleReleaseEngineeringChangeRequest(
     string OrganizationId,
