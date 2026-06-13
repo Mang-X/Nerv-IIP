@@ -42,8 +42,15 @@ Phase 2（codex 已补 list/get，本轮完成页面）
 ├─ 工程物料   /engineering/items                [列表 + 新建修订向导 + get 详情]  ✅
 ├─ 工程文档   /engineering/documents            [列表 + 登记文档（fileId 文本，文件上传待接入）+ get]  ✅
 └─ 工程变更   /engineering/eco                  [列表 + 发布变更（Open→Approve→Release 一步）+ get]  ✅
+规划中（依赖后端 #397，未交付前用字典过渡，不假做）
+└─ 标准工序   /engineering/standard-operations  [工序主数据：默认工作中心+标准工时]  ⏳ #397
 （BOM 对比/有效性视图：后端无端点，列为未来需求）
 注：ECO 后端为一步 release，无独立草稿/审批中间态；页面只呈现「已发布」真实态，不假做审批看板。文档 fileId 为文本登记，文件上传端点未接入。
+
+### 标准工序（工序主数据，⏳ 规划，依赖 #397）
+- **问题**：当前工艺路线的工序名走通用数据字典（`reference-data`，`codeSet=operation`），只有 code+名，**无默认工作中心/标准工时**；建路线时每行工作中心、工时仍逐行手填。成熟系统（SAP 标准工序 CA21 / 参考工序集 CA11、Oracle Standard Operations）把工序建模为**独立工程主数据**，预绑默认工作中心+标准工时+控制码，选工序即带出默认值。
+- **终态**：后端补 `StandardOperation` 实体 + facade（#397）后，前端独立成「标准工序」工程页（与生产版本/EBOM 同级，从「数据字典」迁出）；工艺路线发布向导的工序来源由字典切换为标准工序，选工序自动**预填**该行 `workCenterCode`/`standardMinutes`（仍可逐行覆盖）。
+- **过渡**：#397 交付前，routings.vue 继续用 `codeSet=operation` 字典（受控工序名，防自由手写），不假做主数据页。
 ```
 - **生产版本（示范）**：列表-详情；详情主从（主=版本头，从=绑定的 MBOM+路线只读卡）。三件套全可用：新建（选 SKU + 已发布 MBOM + 已发布路线 + 有效期/批量/优先级/默认）、编辑（改绑定，校验须 Published）、归档（带 reason + 二次确认）。保留 `resolve` 解析卡（验证给定条件 MES 选中哪版）。顶部可放「已就绪供 MES 消费」真实指标卡。
 - **MBOM**：list 带 MaterialLines → 行展开/Drawer 看物料行（SkuCode/Qty/UOM/ScrapRate）；RecipeLines 标「待后端明细」。发布向导：选已发布 EBOM（必填）+ SKU + 修订 + 物料行表 + 配方行表 → release。
@@ -63,6 +70,7 @@ Phase 2（codex 已补 list/get，本轮完成页面）
 4. **ECO 无 list/get + 无真实审批态**（后端一步 release）→ 变更看板建不了。补 `GET .../engineering-changes` + 若要真审批流则拆 Open/Approve/Release 状态机。
 5. **BOM 对比 / 有效性**：无任何端点，列为未来需求。
 6. 状态枚举对账：前端统一用 `Published`（非 `Released`）。
+7. **标准工序无主数据**（**#397**）：仅通用字典 `codeSet=operation`（code+名），无默认工作中心/标准工时。补 `StandardOperation` 实体 + `GET/POST/PUT .../standard-operations`（默认工作中心+标准工时+控制码），解锁「选工序带出默认值」与独立「标准工序」工程页。交付前 routings 用字典过渡。
 
 ## 6. UX 与重构顺序
 页型套 `master-data-templates.md`：生产版本=列表-详情/主从；MBOM/路线/EBOM=列表 + 发布向导（大 Drawer/全屏，非行内改单元格）；工序序列=有序行拖拽编辑器。全程「受控发布」语义显性化（状态徽章 + 生效日期 + 「发新修订」入口，不给「编辑已发布版本」）。

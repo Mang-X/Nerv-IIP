@@ -64,6 +64,8 @@ const {
 const { skus } = useBusinessSkus()
 const { resources: workCenters, resourcesPending: workCentersPending } = useBusinessMasterDataResources('work-center')
 // 标准工序字典（codeSet=operation，工厂在「数据字典 › 标准工序」维护）：工序名从此选，提交带 code + 中文名。
+// TODO(#397) 过渡方案：字典只有 code+名，无默认工作中心/标准工时。后端补 StandardOperation 主数据后，
+//   切换为从 standard-operations 取，选工序自动预填该行 workCenterCode/standardMinutes，并迁出「数据字典」独立成工程页。
 const { resources: operationDict, resourcesPending: operationDictPending } = useBusinessMasterDataResources('reference-data', { codeSet: 'operation' })
 
 const STATUS_FILTER_OPTIONS = [
