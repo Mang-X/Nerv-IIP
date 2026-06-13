@@ -70,7 +70,10 @@ Phase 2（codex 已补 list/get，本轮完成页面）
 4. **ECO 无 list/get + 无真实审批态**（后端一步 release）→ 变更看板建不了。补 `GET .../engineering-changes` + 若要真审批流则拆 Open/Approve/Release 状态机。
 5. **BOM 对比 / 有效性**：无任何端点，列为未来需求。
 6. 状态枚举对账：前端统一用 `Published`（非 `Released`）。
-7. **标准工序无主数据**（**#397**）：仅通用字典 `codeSet=operation`（code+名），无默认工作中心/标准工时。补 `StandardOperation` 实体 + `GET/POST/PUT .../standard-operations`（默认工作中心+标准工时+控制码），解锁「选工序带出默认值」与独立「标准工序」工程页。交付前 routings 用字典过渡。
+7. **数据字典 codeSet 审计**（**#397**）：reference-data 里有 codeSet 是主数据/配置对象被塞进字典 → 丢结构。
+   - 🔴 `operation` 标准工序 → 升 `StandardOperation` 主数据（默认工作中心+标准工时+控制码）；交付前 routings 用字典过渡。
+   - 🔴 `barcode-rule` 条码规则 → 平台已有 BarcodeRule 服务（list/create-or-update + 模板/打印/扫码），字典这条是影子，**前端删除**即可（后端无动作）。
+   - ⚠️ `product-category`/`quality-reason`/`storage-condition`/`skill` → 视业务深度（层级/属性）决定是否升主数据，待产品拍板。
 
 ## 6. UX 与重构顺序
 页型套 `master-data-templates.md`：生产版本=列表-详情/主从；MBOM/路线/EBOM=列表 + 发布向导（大 Drawer/全屏，非行内改单元格）；工序序列=有序行拖拽编辑器。全程「受控发布」语义显性化（状态徽章 + 生效日期 + 「发新修订」入口，不给「编辑已发布版本」）。
