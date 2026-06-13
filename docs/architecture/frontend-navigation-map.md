@@ -247,7 +247,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 基础数据 | `/master-data/resources` | 已落地（FE-5 金标准） | 工厂/产线/工作中心/设备/班次/日历/班组/人员技能资源列表（按类型筛选），已去除演示场景层级数据。 |
 | 基础数据 | `/master-data/reference-data` | 已落地（FE-5 金标准） | 字典/参考数据列表，消费 MasterData `reference-data` resource facade（只读；可配置维护 facade 出现前不做创建/编辑）。 |
 | 基础数据 | `/master-data/process` | 已收敛/退出导航（FE-6） | 旧"工艺与版本"本地演示页；工程版本已收敛到产品工程 `/engineering`，该路由已从导航移除，不再扩展（路由保留待后续清理）。 |
-| 基础数据（门禁） | 编码规则 / 标签条码 | 规划/隐藏 | 编码（numbering）当前是服务内持久编号、无配置 facade；标签条码依赖后端 #269 BarcodeLabel facade。两者 facade 就绪前不入可见导航、不做空跳转。 |
+| 基础数据（门禁） | 编码规则 / 标签条码 | 后端 facade 已落地/前端待建 | 编码规则后端已通过 BusinessGateway 暴露 list/detail/version/preview facade，并由 MasterData 版本审计表保留配置生效边界；前端配置页仍需后续 issue 建设。标签条码依赖 BarcodeLabel facade 和前端页面分期。 |
 | 产品工程 | `/engineering` | 已落地（FE-6 金标准） | 按 FE-4 原型重做（PageHeader + SectionCards + 生产版本解析卡 + Toolbar + Tabs[MBOM/工艺路线/生产版本] DataTable），消费 ProductEngineering MBOM/工艺路线/生产版本/resolve facade；已去除 BusinessContextBar 的 org/env 暴露。工程文档、工程物料、ECO/ECN 维护页（后端 facade 未覆盖前）待建。 |
 | 需求与计划 | `/planning` | 已落地（FE-7 金标准） | 按 FE-4 原型重做（PageHeader + 新建需求/运行 MRP Dialog + SectionCards + Tabs[需求池/MRP 运行+追溯/计划建议]）；消费 DemandPlanning 需求/MRP run/pegging/建议 facade，接受建议下达 MES/ERP；已去除 BusinessContextBar 的 org/env 暴露。MPS 与计划执行分析待建。 |
 | 经营管理 | `/erp` | 已落地/窄化 | 当前是采购与供应页，消费 BusinessGateway ERP Procurement 采购订单 facade，展示供应商编码、预计到货、未到数量和部分收货状态；ERP 销售、财务和完整采购申请/RFQ/报价操作页仍按后续分期推进。 |

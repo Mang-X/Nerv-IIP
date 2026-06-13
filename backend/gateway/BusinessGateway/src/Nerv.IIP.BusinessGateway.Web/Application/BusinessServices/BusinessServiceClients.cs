@@ -126,6 +126,26 @@ public interface IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsoleCreateReferenceDataCodeRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCodeRuleListResponse> ListCodeRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleCodeRuleContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCodeRuleDetailResponse> GetCodeRuleAsync(
+        string internalBearerToken,
+        BusinessConsoleCodeRuleRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCodeRuleVersionResponse> CreateCodeRuleVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateCodeRuleVersionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCodeRulePreviewResponse> PreviewCodeRuleAsync(
+        string internalBearerToken,
+        BusinessConsolePreviewCodeRuleRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessIamDirectoryClient
@@ -1639,6 +1659,50 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/reference-data", request, cancellationToken);
 
+    public Task<BusinessConsoleCodeRuleListResponse> ListCodeRulesAsync(
+        string internalBearerToken,
+        BusinessConsoleCodeRuleContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCodeRuleListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/master-data/code-rules?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleCodeRuleDetailResponse> GetCodeRuleAsync(
+        string internalBearerToken,
+        BusinessConsoleCodeRuleRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCodeRuleDetailResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            CodeRulePath(request.RuleKey) + "?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleCodeRuleVersionResponse> CreateCodeRuleVersionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateCodeRuleVersionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCodeRuleVersionResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            CodeRulePath(request.RuleKey) + "/versions",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleCodeRulePreviewResponse> PreviewCodeRuleAsync(
+        string internalBearerToken,
+        BusinessConsolePreviewCodeRuleRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCodeRulePreviewResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            CodeRulePath(request.RuleKey) + "/preview",
+            request,
+            cancellationToken);
+
     private Task<BusinessConsoleResourceItem> CreateResourceAsync(
         string internalBearerToken,
         string path,
@@ -1653,6 +1717,12 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
 
     private static string ResourcePath(string resourceType, string code) =>
         $"/api/business/v1/master-data/resources/{Uri.EscapeDataString(resourceType)}/{Uri.EscapeDataString(code)}";
+
+    private static string CodeRulePath(string ruleKey) =>
+        $"/api/business/v1/master-data/code-rules/{Uri.EscapeDataString(ruleKey)}";
+
+    private static string ContextQuery(string organizationId, string environmentId) =>
+        Query(("organizationId", organizationId), ("environmentId", environmentId));
 }
 
 public sealed class HttpBusinessIamDirectoryClient(HttpClient httpClient)

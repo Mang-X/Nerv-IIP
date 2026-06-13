@@ -44,6 +44,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<WorkCalendar> WorkCalendars => Set<WorkCalendar>();
     public DbSet<DeviceAsset> DeviceAssets => Set<DeviceAsset>();
     public DbSet<CodeRule> CodeRules => Set<CodeRule>();
+    public DbSet<CodeRuleVersion> CodeRuleVersions => Set<CodeRuleVersion>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
     public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
