@@ -4,13 +4,16 @@ import {
   AwardIcon,
   BookMarkedIcon,
   BoxesIcon,
+  BoxIcon,
   Building2Icon,
   CalendarRangeIcon,
   ClipboardCheckIcon,
   CpuIcon,
   FactoryIcon,
+  FileTextIcon,
   GitBranchIcon,
   GitForkIcon,
+  GitPullRequestIcon,
   LayersIcon,
   LayoutDashboardIcon,
   NetworkIcon,
@@ -81,11 +84,25 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
   ],
   'engineering': [
     {
+      label: '物料与结构',
       items: [
+        { title: '工程物料', icon: BoxIcon, to: { path: '/engineering/items' } },
         { title: '设计 BOM', icon: NetworkIcon, to: { path: '/engineering/ebom' } },
         { title: '制造 BOM', icon: GitForkIcon, to: { path: '/engineering/mbom' } },
+      ],
+    },
+    {
+      label: '工艺与版本',
+      items: [
         { title: '工艺路线', icon: RouteIcon, to: { path: '/engineering/routings' } },
         { title: '生产版本', icon: LayersIcon, to: { path: '/engineering/production-versions' } },
+      ],
+    },
+    {
+      label: '变更与文档',
+      items: [
+        { title: '工程变更', icon: GitPullRequestIcon, to: { path: '/engineering/eco' } },
+        { title: '工程文档', icon: FileTextIcon, to: { path: '/engineering/documents' } },
       ],
     },
   ],

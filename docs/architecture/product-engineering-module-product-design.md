@@ -38,11 +38,12 @@ Phase 1（后端已支持，本轮做）
 ├─ MBOM       /engineering/mbom                 [列表 + 行展开看物料行 + 发布向导]
 ├─ 工艺路线   /engineering/routings             [列表 + 工序序列 + 发布向导]
 └─ EBOM       /engineering/ebom                 [列表 + 发布向导（查看仅版本头，明细待后端）]
-Phase 2（后端缺读端点/审批态，建壳+发缺口，不假做）
-├─ 工程物料   /engineering/items                [物料-修订列表]  待后端 list
-├─ 工程文档   /engineering/documents            [文档列表]      待后端 list
-└─ 工程变更   /engineering/eco                  [变更工作流]    待后端 list/get + 审批态
+Phase 2（codex 已补 list/get，本轮完成页面）
+├─ 工程物料   /engineering/items                [列表 + 新建修订向导 + get 详情]  ✅
+├─ 工程文档   /engineering/documents            [列表 + 登记文档（fileId 文本，文件上传待接入）+ get]  ✅
+└─ 工程变更   /engineering/eco                  [列表 + 发布变更（Open→Approve→Release 一步）+ get]  ✅
 （BOM 对比/有效性视图：后端无端点，列为未来需求）
+注：ECO 后端为一步 release，无独立草稿/审批中间态；页面只呈现「已发布」真实态，不假做审批看板。文档 fileId 为文本登记，文件上传端点未接入。
 ```
 - **生产版本（示范）**：列表-详情；详情主从（主=版本头，从=绑定的 MBOM+路线只读卡）。三件套全可用：新建（选 SKU + 已发布 MBOM + 已发布路线 + 有效期/批量/优先级/默认）、编辑（改绑定，校验须 Published）、归档（带 reason + 二次确认）。保留 `resolve` 解析卡（验证给定条件 MES 选中哪版）。顶部可放「已就绪供 MES 消费」真实指标卡。
 - **MBOM**：list 带 MaterialLines → 行展开/Drawer 看物料行（SkuCode/Qty/UOM/ScrapRate）；RecipeLines 标「待后端明细」。发布向导：选已发布 EBOM（必填）+ SKU + 修订 + 物料行表 + 配方行表 → release。
