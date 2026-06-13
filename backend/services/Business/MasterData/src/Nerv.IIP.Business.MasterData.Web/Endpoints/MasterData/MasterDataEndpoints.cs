@@ -2,6 +2,7 @@ using FastEndpoints;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
+using Nerv.IIP.Contracts.Coding;
 using NetCorePal.Extensions.Dto;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
@@ -950,6 +951,110 @@ public sealed class CreateReferenceDataCodeEndpoint(ISender sender)
     }
 }
 
+public sealed record ListCodeRulesRequest(string OrganizationId, string EnvironmentId);
+
+public sealed class ListCodeRulesEndpoint(ISender sender)
+    : MasterDataEndpoint<ListCodeRulesRequest, ResponseData<ListCodeRulesResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<ListCodeRulesEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(ListCodeRulesRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListCodeRulesQuery(req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed record GetCodeRuleDetailRequest(string OrganizationId, string EnvironmentId, string RuleKey);
+
+public sealed class GetCodeRuleDetailEndpoint(ISender sender)
+    : MasterDataEndpoint<GetCodeRuleDetailRequest, ResponseData<CodeRuleDetailResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<GetCodeRuleDetailEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(GetCodeRuleDetailRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetCodeRuleDetailQuery(req.OrganizationId, req.EnvironmentId, req.RuleKey), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed record CreateCodeRuleVersionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string RuleKey,
+    string DisplayName,
+    string AppliesTo,
+    ScopeDimension Scope,
+    IReadOnlyList<CodeRuleSegment> Segments,
+    bool IsActive,
+    DateTimeOffset? EffectiveFromUtc,
+    string CreatedBy,
+    string ChangeReason);
+
+public sealed class CreateCodeRuleVersionEndpoint(ISender sender)
+    : MasterDataEndpoint<CreateCodeRuleVersionRequest, ResponseData<CodeRuleVersionResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<CreateCodeRuleVersionEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(CreateCodeRuleVersionRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new CreateCodeRuleVersionCommand(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.RuleKey,
+                req.DisplayName,
+                req.AppliesTo,
+                req.Scope,
+                req.Segments,
+                req.IsActive,
+                req.EffectiveFromUtc ?? DateTimeOffset.UtcNow,
+                req.CreatedBy,
+                req.ChangeReason),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed record PreviewCodeRuleRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string RuleKey,
+    IReadOnlyList<CodeRuleSegment> Segments,
+    IReadOnlyDictionary<string, string>? Fields,
+    string SiteCode = "");
+
+public sealed class PreviewCodeRuleEndpoint(ISender sender)
+    : MasterDataEndpoint<PreviewCodeRuleRequest, ResponseData<CodeRulePreviewResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<PreviewCodeRuleEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(PreviewCodeRuleRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new PreviewCodeRuleCommand(req.OrganizationId, req.EnvironmentId, req.RuleKey, req.Segments, req.Fields, req.SiteCode),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class ResolveMasterDataReferencesEndpoint(ISender sender)
     : MasterDataEndpoint<ResolveMasterDataReferencesQuery, ResponseData<ResolveMasterDataReferencesResponse>>
 {
@@ -1017,6 +1122,10 @@ public static class MasterDataEndpointContracts
         new(typeof(CreateWorkCenterEndpoint), "POST", "/api/business/v1/master-data/work-centers", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorkCenter"),
         new(typeof(RegisterDeviceAssetEndpoint), "POST", "/api/business/v1/master-data/device-assets", BusinessPermissionCodes.MasterDataResourcesManage, "registerBusinessMasterDataDeviceAsset"),
         new(typeof(CreateReferenceDataCodeEndpoint), "POST", "/api/business/v1/master-data/reference-data", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataReferenceDataCode"),
+        new(typeof(ListCodeRulesEndpoint), "GET", "/api/business/v1/master-data/code-rules", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataCodeRules"),
+        new(typeof(GetCodeRuleDetailEndpoint), "GET", "/api/business/v1/master-data/code-rules/{ruleKey}", BusinessPermissionCodes.MasterDataResourcesRead, "getBusinessMasterDataCodeRule"),
+        new(typeof(CreateCodeRuleVersionEndpoint), "POST", "/api/business/v1/master-data/code-rules/{ruleKey}/versions", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataCodeRuleVersion"),
+        new(typeof(PreviewCodeRuleEndpoint), "POST", "/api/business/v1/master-data/code-rules/{ruleKey}/preview", BusinessPermissionCodes.MasterDataResourcesRead, "previewBusinessMasterDataCodeRule"),
         new(typeof(ResolveMasterDataReferencesEndpoint), "POST", "/api/business/v1/master-data/references/resolve", BusinessPermissionCodes.MasterDataResourcesRead, "resolveBusinessMasterDataReferences"),
         new(typeof(ValidateMasterDataReferencesEndpoint), "POST", "/api/business/v1/master-data/references/validate", BusinessPermissionCodes.MasterDataResourcesRead, "validateBusinessMasterDataReferences"),
     ];

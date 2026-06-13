@@ -1,4 +1,5 @@
 using FastEndpoints;
+using Nerv.IIP.Contracts.Coding;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -307,6 +308,67 @@ public sealed record BusinessConsoleCreateReferenceDataCodeRequest(
     string CodeSet,
     string Code,
     string Name);
+
+public sealed record BusinessConsoleCodeRuleContextRequest(string OrganizationId, string EnvironmentId);
+
+public sealed record BusinessConsoleCodeRuleRequest(string OrganizationId, string EnvironmentId, string RuleKey);
+
+public sealed record BusinessConsoleCreateCodeRuleVersionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string RuleKey,
+    string DisplayName,
+    string AppliesTo,
+    ScopeDimension Scope,
+    IReadOnlyList<CodeRuleSegment> Segments,
+    bool IsActive,
+    DateTimeOffset? EffectiveFromUtc,
+    string CreatedBy,
+    string ChangeReason);
+
+public sealed record BusinessConsolePreviewCodeRuleRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string RuleKey,
+    IReadOnlyList<CodeRuleSegment> Segments,
+    IReadOnlyDictionary<string, string>? Fields,
+    string SiteCode = "");
+
+public sealed record BusinessConsoleCodeRuleItem(
+    string RuleKey,
+    string DisplayName,
+    string AppliesTo,
+    ScopeDimension Scope,
+    IReadOnlyList<CodeRuleSegment> Segments,
+    bool IsActive,
+    int Version,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record BusinessConsoleCodeRuleVersionItem(
+    string RuleKey,
+    int Version,
+    string Status,
+    DateTimeOffset EffectiveFromUtc,
+    string CreatedBy,
+    string ChangeReason,
+    DateTimeOffset CreatedAtUtc);
+
+public sealed record BusinessConsoleCodeRuleListResponse(IReadOnlyCollection<BusinessConsoleCodeRuleItem> Rules);
+
+public sealed record BusinessConsoleCodeRuleDetailResponse(
+    BusinessConsoleCodeRuleItem Rule,
+    IReadOnlyCollection<BusinessConsoleCodeRuleVersionItem> Versions);
+
+public sealed record BusinessConsoleCodeRuleVersionResponse(
+    string RuleKey,
+    int Version,
+    string Status,
+    DateTimeOffset EffectiveFromUtc,
+    string CreatedBy,
+    string ChangeReason);
+
+public sealed record BusinessConsoleCodeRulePreviewResponse(string RuleKey, string SampleCode);
 
 public sealed record BusinessConsoleMasterDataResourceRequest(
     string OrganizationId,
