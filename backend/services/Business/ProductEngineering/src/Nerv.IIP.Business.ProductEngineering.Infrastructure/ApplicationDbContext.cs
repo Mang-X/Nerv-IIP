@@ -8,6 +8,7 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringIte
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
 using Nerv.IIP.Coding;
 
 namespace Nerv.IIP.Business.ProductEngineering.Infrastructure;
@@ -20,6 +21,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<EngineeringBom> EngineeringBoms => Set<EngineeringBom>();
     public DbSet<ManufacturingBom> ManufacturingBoms => Set<ManufacturingBom>();
     public DbSet<Routing> Routings => Set<Routing>();
+    public DbSet<StandardOperation> StandardOperations => Set<StandardOperation>();
     public DbSet<EngineeringChange> EngineeringChanges => Set<EngineeringChange>();
     public DbSet<ProductionVersion> ProductionVersions => Set<ProductionVersion>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();

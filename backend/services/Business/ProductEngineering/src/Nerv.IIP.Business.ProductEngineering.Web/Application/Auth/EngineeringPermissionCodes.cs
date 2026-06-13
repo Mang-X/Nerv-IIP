@@ -10,6 +10,8 @@ public static class EngineeringPermissionCodes
     public const string BomsManage = "business.engineering.boms.manage";
     public const string RoutingsRead = "business.engineering.routings.read";
     public const string RoutingsManage = "business.engineering.routings.manage";
+    public const string StandardOperationsRead = "business.engineering.standard-operations.read";
+    public const string StandardOperationsManage = "business.engineering.standard-operations.manage";
     public const string ChangesRead = "business.engineering.changes.read";
     public const string ChangesManage = "business.engineering.changes.manage";
     public const string ProductionVersionsRead = "business.engineering.production-versions.read";
@@ -25,6 +27,8 @@ public static class EngineeringPermissionCodes
         BomsManage,
         RoutingsRead,
         RoutingsManage,
+        StandardOperationsRead,
+        StandardOperationsManage,
         ChangesRead,
         ChangesManage,
         ProductionVersionsRead,
